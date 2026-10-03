@@ -243,7 +243,11 @@ def _with_readable_nodes(rows: list[dict]) -> list[dict]:
     """
     decks = list({row["presentation"] for row in rows if row["presentation"]})
     nodes = (
-        dict(frappe.get_all(DOCTYPE, filters={"name": ["in", decks]}, fields=["name", NODE_FIELD], as_list=True))
+        dict(
+            frappe.get_all(
+                DOCTYPE, filters={"name": ["in", decks]}, fields=["name", NODE_FIELD], as_list=True
+            )
+        )
         if decks
         else {}
     )

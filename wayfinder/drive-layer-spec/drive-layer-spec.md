@@ -202,7 +202,7 @@ Naming: `autoname: hash`, which is a 10-char id
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
 | `title` | Data | | reqd 1 | Display name. Unique among Active siblings. |
-| `parent` | Link | Drive Node | | Parent node. Top-level entries point to the root node; NULL only for a root node. |
+| `parent_node` | Link | Drive Node | | Parent node. Top-level entries point to the root node; NULL only for a root node. Named `parent_node` because `parent` is a framework column on every table and a restricted fieldname. |
 | `root` | Link | Drive Node | | Root node id, required for every non-root node. NULL on a root node itself. |
 | `path` | Data | | length 500 | Ids of the ancestors below the root, `/<id>/<id>/`. Empty string at top level. Depth cap 40. |
 | `kind` | Select | `root`<br>`folder`<br>`file`<br>`link`<br>`document` | reqd 1 | What the node is. |
@@ -228,12 +228,12 @@ Rules on the columns:
 - The tree is a logical namespace only. `frappe.storage` keys a blob by its sha256, so no root and no path maps to a storage location. Every cost in §5 and §7 is database work [001].
 - A `document` node may hold child nodes (media, embeds) and is always a leaf in every listing [012 §1].
 - `kind`, `state`, and `is_template` are three separate fields [012 §6].
-- Root nodes have `kind = root`, `parent = NULL`, `root = NULL`, `path = ""`,
+- Root nodes have `kind = root`, `parent_node = NULL`, `root = NULL`, `path = ""`,
   `state = Active`, `size = 0`, and `is_template = 0`. They hold no blob,
   content document, URL, version, or preview. Archive state lives only on
   their matching `Drive Root` record.
 - Every non-root node has a parent and a `root` Link to a node with
-  `kind = root`. Direct children have `parent = root` and `path = ""`.
+  `kind = root`. Direct children have `parent_node = root` and `path = ""`.
   Deeper nodes store ancestor ids below the root, as before. Root nodes
   are excluded from ordinary sibling-title uniqueness; separate roots may
   have the same display title.
@@ -253,8 +253,8 @@ actual migrated ids and index creation must be checked before shipping.
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | PRIMARY (`name`) | framework | Node fetch by id; every side table joins on it. |
-| `node_parent_page (parent, state, title)` | `add_index` in `on_doctype_update()` | Folder page: `parent = ? AND state = 'Active' ORDER BY title`. Frozen by [004]: 11.7 ms to 0.57 ms at 10k children, index-only. Also the WebDAV path lookup by title and the children of a content document. |
-| `node_root_page (root, parent, state, title)` | Candidate only; no default creation | Reassess after the root-node change. Root listings now use `parent = root_node_id`, so the existing `node_parent_page` index is the primary baseline. Retain an extra index only if measurement justifies it. |
+| `node_parent_page (parent_node, state, title)` | `add_index` in `on_doctype_update()` | Folder page: `parent_node = ? AND state = 'Active' ORDER BY title`. Frozen by [004]: 11.7 ms to 0.57 ms at 10k children, index-only. Also the WebDAV path lookup by title and the children of a content document. |
+| `node_root_page (root, parent_node, state, title)` | Candidate only; no default creation | Reassess after the root-node change. Root listings now use `parent_node = root_node_id`, so the existing `node_parent_page` index is the primary baseline. Retain an extra index only if measurement justifies it. |
 | `node_subtree (root, path)` | `add_index` | Path-prefix `LIKE` for move, trash, restore, purge cascade, `revoke_below`, and the cross-root byte sum: `root = ? AND path LIKE '<prefix>%'`. |
 | `node_content (content_doctype, content_docname)` | `add_index` | Content reference lookup: the node of one content document, run on every autosave check and every satellite check (§10). |
 | `trash_root` | `search_index: 1` | Restore and purge of one trashed subtree: `trash_root = ?`. A path prefix cannot be used, because a subtree can hold nodes trashed earlier under their own trash root. |
@@ -264,8 +264,8 @@ actual migrated ids and index creation must be checked before shipping.
 
 Not created:
 
-- `(parent, state)`. A redundant prefix of the frozen index [004].
-- `(parent, state, modified)` and `(parent, state, size)`. Sorting a big folder by date or size stays a filesort: 11.5 ms at 10k children, 1.2 ms at 1k, 0.24 ms at 48. Add `(parent, state, modified)` alone only if telemetry shows the sort in use; it costs +11.5 MB per 250k nodes and about +5% on insert [004].
+- `(parent_node, state)`. A redundant prefix of the frozen index [004].
+- `(parent_node, state, modified)` and `(parent_node, state, size)`. Sorting a big folder by date or size stays a filesort: 11.5 ms at 10k children, 1.2 ms at 1k, 0.24 ms at 48. Add `(parent_node, state, modified)` alone only if telemetry shows the sort in use; it costs +11.5 MB per 250k nodes and about +5% on insert [004].
 - Any index for shared-with-me. That view starts from the `grant_principal` index on `Drive Grant` and fetches nodes by PRIMARY key (§5.4).
 
 Accepted in [accepted decisions](#accepted-decisions): decide whether an extra
@@ -303,7 +303,6 @@ The shared key preserves existing root-id API and accounting semantics.
 | `state` | Select | `Active`<br>`Archived` | reqd 1, default `Active` | Archived is offboarding: one field, no node writes [001]. |
 | `quota_bytes` | Int, length 20 | | default 0 | 0 means inherit the site default for the kind [010 §6]. |
 | `used_bytes` | Int, length 20 | | default 0 | The counter (§7.2). Maintained in the same transaction as every charged write. |
-| `acl_generation` | Int | | default 0 | Reserved [001]. No reader in this spec. Nothing increments it. |
 
 Rules:
 
@@ -676,6 +675,11 @@ principals are the ones anyone can present. The split is the two passes
 of §5.1, and it is structural: `Principals.own` and `Principals.open`
 are separate tuples, never re-derived from the string at compose time.
 
+A `$LINK:<token>` spelling is a credential. It travels in the
+`X-Drive-Links` header and in the body of `POST /links/unlock`, never in a
+URL: a link grant that exists is changed or removed through
+`/grants/<id>`, by its row id (§11.2).
+
 ### 4.5 Creator grant
 
 When a user whose effective role at the parent is below EDIT creates a
@@ -717,12 +721,11 @@ def principals_for_request() -> Principals:
 	links = tuple(valid_link_principals(frappe.request.headers.get("X-Drive-Links")))
 	if user == "Guest":
 		return Principals(user, (), ("$PUBLIC", *links), False)
-	groups = frappe.cache().hget(
-		"drive_user_groups", user, generator=lambda: _user_groups(user)
-	)
-	own = (user, *(f"$GROUP:{g}" for g in groups), "$GENERAL")
+	own = (user, *(f"$GROUP:{g}" for g in _user_groups(user)), "$GENERAL")
 	return Principals(user, own, ("$PUBLIC", *links), is_drive_admin(user))
 ```
+
+- Group membership is read on every call and never cached, so adding or removing a member, or deleting a group, decides the next request. The query costs under a millisecond at a thousand memberships.
 
 - A signed-in user sends the header too, so a link a colleague pasted works without signing out [008 §2].
 - `is_drive_admin(user)` keeps today's rule: `Administrator`, or the `Suite Admin` role (`suite/drive/api/permissions.py:31`).
@@ -944,16 +947,16 @@ The children window, the grants on the parent chain, and the grants on the
 page's child ids [design].
 
 ```sql
--- 1. the child window. Index: node_parent_page (parent, state, title)
-SELECT name, parent, root, path, title, kind, state, blob, size, mime, url,
+-- 1. the child window. Index: node_parent_page (parent_node, state, title)
+SELECT name, parent_node, root, path, title, kind, state, blob, size, mime, url,
        content_doctype, content_docname, content_modified,
        is_template, owner, creation, modified
 FROM `tabDrive Node`
-WHERE parent = %(parent)s AND state = 'Active' AND is_template = 0
+WHERE parent_node = %(parent_node)s AND state = 'Active' AND is_template = 0
 ORDER BY title
 LIMIT %(limit)s OFFSET %(offset)s
 
--- A root page uses this exact query with parent = root_node_id.
+-- A root page uses this exact query with parent_node = root_node_id.
 -- The parent index is the baseline; any extra index requires measurement (§3.1).
 
 -- 2. grants on the parent chain (root ... parent). Index: grant_node_principal
@@ -990,16 +993,12 @@ def effective_roles(chain: list[str], child_rows: dict[str, list], chain_rows, p
 The caller drops every row whose role is below READ and returns the rest.
 `expand=access` adds the role and the derived flags to each row (§11).
 
-The child window always sorts folders before non-folders. With no grouping,
-that folder partition is global. `group_by=type|owner|modified` first makes
-the selected groups contiguous, then sorts folders before non-folders inside
-each group. `order_by` is the stable secondary order. Every form ends with
-the node id as its final tie-breaker. Type groups use the stored node kind.
-Owner groups use the stored owner. Modified groups use one calendar date per
-bucket in the database session's site timezone, newest bucket first. The
-server owns these bucket boundaries. The Files area no longer offers
-grouping, so no client sends `group_by` now. The parameter stays until it is
-removed or used again [Faris, 2026-10-02].
+The child window always sorts folders before non-folders, in every
+`order_by`. `order_by` is the stable secondary order, and every form ends
+with the node id as its final tie-breaker. There is no server-side grouping:
+the Files area dropped it, and a client that wants groups builds them over
+the rows it holds. The former `group_by` parameter was removed before the
+API froze [Faris, 2026-10-02; A4, 2026-10-03].
 
 `type=` is a comma-separated list of types, such as `type=pdf,image`, and
 keeps the nodes of any of them. The types are `folder`, `document`,
@@ -1270,12 +1269,12 @@ writes a row.
 | 8 | `principal` starts with `$LINK:` and the target is a root node (`kind=root`) | `DriveForbidden` | [008 §9] |
 | 9 | `principal` starts with `$LINK:` and `role > EDIT` | `DriveForbidden` | [002] |
 | 10 | `password` is set and the principal is not a link | `DriveForbidden` | [008 §8] |
-| 11 | `role = 0` and the principal is the `user` of the Personal root that contains the node (the root itself included) | `DriveForbidden` | [002] |
+| 11 | `role = 0` and the principal is the `user` of the Personal root that contains the node (the root itself included); or the target is that root and `role < MANAGE` or `expires_on` is set, which would lower or expire the root's anchor grant | `DriveForbidden` | [002] |
 | 12 | `expires_on` is in the past | `frappe.ValidationError` | |
 | 13 | `send_to` is given and the principal is not the bare `$LINK`, or `send_to` is not exactly one bare email address | `frappe.ValidationError` | [issue 44, D21] |
 | 14 | `notify` is true and the principal is not an `<email>` | `frappe.ValidationError` | [issue 44, D22] |
 
-Refusals 7, 8, and 11 bind a Suite Admin as well.
+Refusals 7, 8 and 11 bind a Suite Admin as well.
 
 Accepted in [accepted decisions](#accepted-decisions): refusals 3, 4, 5, and
 12 raise `frappe.ValidationError`, mapped to HTTP 400 by the Drive adapter.
@@ -1321,8 +1320,10 @@ There is no publish activity verb or separate publish capability [007 §3].
 def revoke(node_id: str, principal: str, p: Principals) -> None
 ```
 
-Refusals: 1 and 2 of §5.9. It deletes the row and writes one
-`share_remove` activity row.
+Refusals: 1 and 2 of §5.9, and removing a Personal root's anchor row
+(refusal 11). A node's `owner` has no row of their own that is kept: the
+creator grant is an ordinary grant that whoever manages the node may lower
+or remove. It deletes the row and writes one `share_remove` activity row.
 
 **Remove a grant or explicitly deny access.** Accepted on 2026-09-05 in
 [accepted decisions](#accepted-decisions): these are separate user actions.
@@ -1843,7 +1844,7 @@ def create_document(p: Principals, parent: str, title: str, *, content_doctype: 
 	from_node: str | None = None, is_template: bool = False) -> str: ...
 def create_link(p: Principals, parent: str, title: str, *, url: str) -> str: ...
 def get(p: Principals, node: str, *, expand: tuple[str, ...] = ()) -> dict: ...
-def update(p: Principals, node: str, *, title: str | None = None, parent: str | None = None,
+def update(p: Principals, node: str, *, title: str | None = None, parent_node: str | None = None,
 	state: str | None = None,          # "Active" | "Trashed"
 	blob: str | None = None, size: int | None = None, mime: str | None = None,
 	content_modified: datetime | None = None) -> dict: ...
@@ -1857,19 +1858,19 @@ def views(p: Principals, name: str, *, cursor: str | None = None, limit: int = 6
 # suite/drive/_core/upload.py
 def create_upload(p: Principals, parent: str, filename: str, size: int, *, mime: str | None = None,
 	replaces: str | None = None) -> dict: ...
-def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, title: str | None = None,
+def finish_upload(p: Principals, upload_id: str, *, parent_node: str | None = None, title: str | None = None,
 	checksum: str | None = None, content_modified: datetime | None = None,
 	replaces: str | None = None) -> str: ...
 ```
 
-`finish_upload` takes either `parent` and `title` (a create) or `replaces`
+`finish_upload` takes either `parent_node` and `title` (a create) or `replaces`
 (a replace), never both and never neither. Any other combination raises
 `frappe.ValidationError`.
 
 `create_upload(replaces=<node>)` opens a replace session. It needs EDIT on
 that node, which must be an Active file below `parent`. The node's own title
 does not block `filename`; another sibling's title still does. The session
-finishes only with the same `replaces`: a finish with `parent` and `title`, or
+finishes only with the same `replaces`: a finish with `parent_node` and `title`, or
 with a different `replaces`, raises `DriveForbidden` before any byte is
 claimed. This is how a client replaces after a collision (unified frontend
 ask D11). Its quota preflight asks only for the growth over the replaced
@@ -1891,7 +1892,7 @@ so the client retries that session under the free title. `PUT /nodes/<id>/conten
 | `create_link` | UPLOAD on `parent` | `create`: `kind`, `title`, `url` | none | `DriveForbidden`, `DriveConflict` |
 | `get` | READ on `node` | none | none | `DriveNotFound`, `DriveLocked`, `DriveLinkExpired` |
 | `update(title=)` | EDIT on `node` | `rename`: `old_title`, `new_title` | none | `DriveForbidden`, `DriveConflict`, `ValidationError` (a file's extension, §8.6) |
-| `update(parent=)` | EDIT on `node`, UPLOAD on the new parent [002] | `move`: `from`, `to`, `from_root`, `to_root` | moves `SUM(size)` of the subtree plus its versions between roots [010 §8] | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` (cycle, depth > 40) |
+| `update(parent=)` | EDIT on `node`, UPLOAD on the new parent [002] | `move`: `from`, `to`, `from_root`, `to_root` | moves `SUM(size)` of the subtree plus its versions between roots [010 §8] | `DriveForbidden`, `DriveOverQuota`, `DriveConflict` (cycle, depth > 40), `DriveMoved` (`expect_parent_node` given and the node is no longer there; §8.7) |
 | `update(state="Trashed")` | EDIT on `node` | `trash`: `trash_root`, `nodes` | none; trash stays charged [010 §2] | `DriveForbidden` |
 | `update(state="Active")` | EDIT when the actor trashed it, else MANAGE [002] | `restore`: `trash_root`, `nodes`, `reparented_to` | none | `DriveForbidden`, `DriveConflict` |
 | `update(blob=)` | EDIT on `node` | `edit`: `blob`, `size`, `version` | `+new_size` (the old head stays charged as a version) | `DriveForbidden`, `DriveOverQuota` |
@@ -1946,7 +1947,7 @@ which is what `sheets/doctype/sheet/sheet.py:55` and
 Ten steps. Names in `frappe.storage.*` are the functions on branch
 `forge/storage-v2`.
 
-1. `POST /api/suite/drive/uploads` with `parent`, `filename`, `size`.
+1. `POST /api/suite/drive/uploads` with `parent_node`, `filename`, `size`.
    The handler calls `sdk.upload.create_upload`.
 2. `access.require(parent, UPLOAD)`.
 3. Preflight, a plain read and no write. First `filename` against the
@@ -1971,8 +1972,9 @@ Ten steps. Names in `frappe.storage.*` are the functions on branch
    the session's destination binding and current Drive access (§13.7).
    Cumulative size is enforced per chunk by the framework.
    Direct mode: the browser `PUT`s the bytes to the driver's target.
-6. `POST /api/suite/drive/uploads/<upload_id>/finish` with `parent`,
-   `title`, optional `checksum`, optional `content_modified` (epoch ms),
+6. `POST /api/suite/drive/uploads/<upload_id>/finish` with `parent_node`,
+   `title`, optional `checksum`, optional `content_modified` (RFC 3339 with
+   its offset, §11.3),
    optional `replaces`. The handler calls `sdk.upload.finish_upload`.
    A create locks the parent chain (the order `create_file` uses) and checks
    `title` against the Active siblings before step 7. A collision answers
@@ -2096,7 +2098,9 @@ Guards, in order, before any write.
 
 | Guard | Result |
 |---|---|
-| `access.require(node, EDIT)` and `access.require(dest, UPLOAD)` | `DriveForbidden` |
+| `access.require(node, EDIT)` | `DriveForbidden` |
+| `expect_parent_node` given and `node.parent_node <> expect_parent_node` | `DriveMoved` |
+| `access.require(dest, UPLOAD)` | `DriveForbidden` |
 | `dest = node`, or `dest.path LIKE CONCAT('%/', :node, '/%')` | `DriveConflict` |
 | `depth(dest) + height(subtree) > 40` | `DriveConflict` |
 | Active sibling with the same title under `dest` | `DriveConflict` |
@@ -2115,7 +2119,7 @@ WHERE root = %(src_root)s
 
 -- 2. the node itself
 UPDATE `tabDrive Node`
-SET parent = %(dest)s,
+SET parent_node = %(dest)s,
     path = %(dest_child_path)s,
     root = %(dest_root)s,
     modified = %(now)s,
@@ -2134,7 +2138,7 @@ ids and no id changes [009 §7]. The creator grant fires when the mover
 lands below EDIT at the destination.
 
 Benchmark: the subtree rewrite is 9.1 ms for 1000 nodes and is not affected
-by the frozen `(parent, state, title)` index [004].
+by the frozen `(parent_node, state, title)` index [004].
 
 ### 8.8 Trash, restore, purge
 
@@ -2193,8 +2197,8 @@ Drive must not select the nearest Active ancestor or root automatically.
 - If the original parent chain is Active, ordinary restore keeps the original
   location.
 - Otherwise, require an explicit eligible Active destination in the same root.
-  The client submits the selected destination through `update(parent=...,
-  state="Active")`. The HTTP request carries both `parent` and `state`.
+  The client submits the selected destination through `update(parent_node=...,
+  state="Active")`. The HTTP request carries both `parent_node` and `state`.
 - Without that destination, raise `DriveRestoreDestinationRequired`, a
   `DriveConflict` subclass with status 409, before changing any state,
   paths, titles, or activity. The envelope `type` is the subclass name, on
@@ -2311,13 +2315,37 @@ decided name [009 §9].
 |---|---|
 | create, replace | now, or the client mtime when one is given |
 | `content.touch` | now [005 §4] |
-| browser upload | the `content_modified` argument, epoch ms |
+| browser upload | the `content_modified` argument, RFC 3339 with its offset (§11.3) |
 | WebDAV PUT | `X-OC-Mtime` (`suite/drive/webdav/put.py:941`), or `Win32LastModifiedTime` |
 | a preview push | never [012 §8] |
 | a grant write | never |
 
 Read by the listing sort, the recents view, DAV `getlastmodified`, and the
 ETag input for documents. `modified` stays the framework row time.
+
+### 8.12 Concurrency and lock order
+
+**Decision:** Drive's HTTP and WebDAV write requests run at READ COMMITTED
+(`framework.begin_drive_write`, called by a `before_request` hook and by
+`webdav/dispatch.py`). Every tree write takes the tree lock first, the root
+`Drive Node` row, then locks the tree's other rows top-down. The full order,
+including `User`, `Drive Root` and the reservation, is in the
+[`suite.drive` docstring](../../suite/drive/__init__.py) ("Ordering").
+
+- **Stable reads:** READ COMMITTED gives each statement a fresh snapshot.
+  Code inside a Drive write that needs a value to stay fixed until it commits
+  reads it with `FOR UPDATE`. For example, `versions._insert_version` reads
+  `MAX(seq)` that way, so two writers cannot take the same sequence.
+- **Why:** at REPEATABLE READ, range reads and updates also took gap locks.
+  Those gaps reached into neighbouring trees, so writes to two different trees
+  deadlocked with no row in common. In a repro of 2,800 writes to separate
+  trees (2 threads, 200 operations each), the old code deadlocked 2 to 12
+  times per run. The new lock order alone still deadlocked once in each of
+  three runs, on a gap lock. With READ COMMITTED as well, there were 0
+  deadlocks in 2,800 writes at 2 threads and 0 in 5,600 at 4 threads.
+- **Not covered:** background jobs and content saves through
+  `/api/v2/document` still run at REPEATABLE READ. A batch across several
+  roots locks its trees in item order, not id order.
 
 ---
 
@@ -3011,20 +3039,35 @@ handler parses nothing beyond its arguments: it seeds principals from
 
 ### 11.2 Route table
 
-`R` is the role and the node it is answered against. Every route may raise
-`DriveNotFound`, `DriveLocked`, and `DriveLinkExpired`; only extra errors
-are listed.
+`R` is the role and the node it is answered against. Every row of the table
+is one `Route` in `suite/drive/http/translator.py`, and each row declares
+what travels: a `body` TypedDict on every POST, PUT and PATCH (`Empty` when
+nothing is sent), a `query` TypedDict on a GET or DELETE that takes
+arguments, an `output` TypedDict, and the refusals it may answer. A row
+whose bytes are not JSON (a chunk PUT, a download GET) is marked `stream`.
+Every route under `/nodes/<id>` may raise `DriveNotFound`, `DriveLocked`,
+and `DriveLinkExpired`; the translator puts that trio first on each of those
+rows, so only extra errors are listed below. A malformed argument is a plain
+400 `DriveError` and is never declared. The contract export
+(`suite.composition.contract.write_all`) reads these declarations, so the
+generated client validates every request and knows every answer.
+
+Three answer shapes recur. A write that creates or changes one resource
+answers that resource's shape (a node, a grant, a version, a thread, a
+comment). A write that removes or touches rows answers `{count: <n>}`: every
+DELETE, a purge, a visit, a star, a read receipt. A listing answers a cursor
+page (§11.4).
 
 **Nodes**
 
 | Method | Path | R | Body | `data` | Extra errors |
 |---|---|---|---|---|---|
-| POST | `/nodes` | UPLOAD on `parent` | `{parent, title, kind, blob?, size?, mime?, url?, content_doctype?, from_node?, content_modified?}` | node shape | 403, 409, 413 |
+| POST | `/nodes` | UPLOAD on `parent_node` | one body per kind: `{kind: "folder", parent_node, title}` \| `{kind: "file", parent_node, title, blob, size, mime, content_modified?}` \| `{kind: "link", parent_node, title, url}` \| `{kind: "document", parent_node, title, content_doctype, from_node?, is_template?}` | node shape | 403, 409, 413 |
 | GET | `/nodes/<id>` | READ on node | `?expand=access,breadcrumbs,preview` | node shape | none |
-| PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent}` \| `{state}` \| `{parent, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409, 413 |
-| DELETE | `/nodes/<id>` | MANAGE on node | none | `{purged: <n>}` | 403, 409 when the node is not a trash root |
-| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&group_by=type\|owner\|modified&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
-| POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent` | `{parent, title?}` | node shape | 403, 409, 413 |
+| PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent_node, expect_parent_node?}` \| `{state}` \| `{parent_node, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409 (`DriveMoved` when `expect_parent_node` no longer holds), 413 |
+| DELETE | `/nodes/<id>` | MANAGE on node | none | `{count}` | 403, 409 when the node is not a trash root |
+| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
+| POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent_node` | `{parent_node, title?}` | node shape | 403, 409, 413 |
 | POST | `/nodes/<id>/archive` | READ on every included node | none | `{status, file_name, size, error}` | 409 above the synchronous cap |
 | GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
 | GET | `/nodes/<id>/archive/download` | READ on folder | none | streamed ZIP when ready | none |
@@ -3035,12 +3078,23 @@ are listed.
 | GET | `/nodes/<id>/media` | READ on node | none | `{media: [{node, title, mime, size, url, expires}]}` | 403 |
 | POST | `/nodes/<id>/preview` | EDIT on node | `{image: <base64>, mime}` | `{preview: {...}}` | 403 |
 | GET | `/nodes/<id>/activity` | READ on node | `?limit=&cursor=` | cursor page of activity rows | none |
-| POST | `/nodes/<id>/visit` | READ on node | none | `{}` | none |
-| PUT | `/nodes/<id>/favourite` | READ on node | none | `{}` | 403 on a trashed node |
-| DELETE | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
+| POST | `/nodes/<id>/visit` | READ on node | none | `{count}` | none |
+| PUT | `/nodes/<id>/favourite` | READ on node | none | `{count}` | 403 on a trashed node |
+| DELETE | `/nodes/<id>/favourite` | READ on node | none | `{count}` | none |
 
-A title collision on `POST /nodes`, for every kind, answers `DriveConflict`
-with `free_title` in the error envelope (§8.6, §11.6).
+`POST /nodes` takes four bodies, one per kind, and `kind` picks the body. The
+generated client exposes them as four operations
+(`node_create.create_folder`, `.create_file`, `.create_link`,
+`.create_document`), so a folder cannot be sent with a `url` and a document
+cannot omit its `content_doctype`. A title collision, for every kind,
+answers `DriveConflict` with `free_title` in the error envelope (§8.6,
+§11.6).
+
+A move may name the folder the caller last saw the node in,
+`expect_parent_node`. When the node is no longer there, the move is refused
+with `DriveMoved` (a `DriveConflict`, 409) before any write (§8.2, §8.7).
+That is what makes Undo safe: undoing an earlier move cannot pull a node out
+of the folder a later move put it in.
 
 `POST /nodes/batch/purge` is `DELETE /nodes/<id>` per node, each in its own
 savepoint, with one activity row per purged node (unified frontend ask D15).
@@ -3066,9 +3120,9 @@ the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| POST | `/uploads` | UPLOAD on `parent`, EDIT on `replaces` | `{parent, filename, size, mime?, replaces?}` | `{mode, upload_id, ...}`; 409 with `free_title` when `filename` is taken by a node other than `replaces` |
-| PUT | `/uploads/<upload_id>/chunk` | UPLOAD on `parent` | raw bytes, `?offset=` | `{upload_id, received}` |
-| POST | `/uploads/<upload_id>/finish` | UPLOAD on `parent`, EDIT on `replaces` | `{parent, title, checksum?, content_modified?, replaces?}` | node shape |
+| POST | `/uploads` | UPLOAD on `parent_node`, EDIT on `replaces` | `{parent_node, filename, size, mime?, replaces?}` | `{mode, upload_id, ...}`; 409 with `free_title` when `filename` is taken by a node other than `replaces` |
+| PUT | `/uploads/<upload_id>/chunk` | UPLOAD on `parent_node` | raw bytes, `?offset=` | `{upload_id, received}` |
+| POST | `/uploads/<upload_id>/finish` | UPLOAD on `parent_node`, EDIT on `replaces` | `{parent_node, title, checksum?, content_modified?, replaces?}` | node shape |
 
 `POST /uploads` refuses on the declared size before a session exists. A
 size above the site's per-file limit (Frappe's `max_file_size`, 1 GB unless
@@ -3085,27 +3139,41 @@ and get the same error [012].
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| GET | `/nodes/<id>/grants` | MANAGE on node | `?principal=<p>` for the explain chain; `?inherited=1` for ancestor grants | `{grants: [...], inherited?: [{grant, redacted, source_node, source_title}], explain?: {role, source, rows}}` |
-| PUT | `/nodes/<id>/grants/<principal>` | MANAGE on node | `{role, expires_on?, password?, send_to?, notify?}` | `{grant, url?}` |
-| DELETE | `/nodes/<id>/grants/<principal>` | MANAGE on node | `?below=1` for revoke-below | `{"result": "revoked"}`, or `{"result": "revoked", "rows": <n>}` with `below=1` |
-| POST | `/grants/<id>/rotate` | MANAGE on the grant's node | none | `{grant, url}` |
-| POST | `/links/<token>/unlock` | none | `{password}` | `{ticket, expires}` |
+| GET | `/nodes/<id>/grants` | MANAGE on node | `?principal=<p>` for the explain chain; `?inherited=1` for ancestor grants | `{grants: [...], owner, inherited?: [{grant, redacted, source_node, source_title}], explain?: {role, source, rows}}` |
+| PUT | `/nodes/<id>/grants/<principal>` | MANAGE on node | `{role, expires_on?, password?, send_to?, notify?}` | grant row |
+| DELETE | `/nodes/<id>/grants/<principal>` | MANAGE on node | `?below=1` for revoke-below | `{count}`: 1, or the rows removed with `below=1` |
+| PATCH | `/grants/<id>` | MANAGE on the grant's node | `{role, expires_on?, password?}` | grant row |
+| DELETE | `/grants/<id>` | MANAGE on the grant's node | none | `{count}` |
+| POST | `/grants/<id>/rotate` | MANAGE on the grant's node | none | grant row |
+| POST | `/links/unlock` | none | `{token, password}` | `{ticket, expires}` |
 
-- Publish is `PUT .../grants/$PUBLIC {role: 10}`. DELETE removes only the
-  local grant, for every principal. It never writes a deny. An explicit
+- A grant is written two ways. `PUT .../grants/<principal>` creates or
+  replaces the row for one principal under the node, and is how a share is
+  made. A row that exists is addressed by its id: `PATCH /grants/<id>`
+  changes it and `DELETE /grants/<id>` removes it. This is the only way to
+  change or remove a share link, because its `$LINK:<token>` principal is the
+  credential and never belongs in a path (§4.4). The share dialog edits the
+  rows it listed by id, and never rebuilds a principal spelling.
+- Publish is `PUT .../grants/$PUBLIC {role: 10}`. Either DELETE removes only
+  the local grant, for every principal. It never writes a deny. An explicit
   deny is `PUT .../grants/<principal> {role: 0}`, including `$PUBLIC`.
   Inherited access after deletion is shown by the grants explanation.
   There are no separate publish activity verbs [007 §1; accepted decisions].
-- `?below=1` on the DELETE is `revoke_below` (§5.10). It deletes the
-  principal's grants on the node and on every node under it, and returns the
-  count [002].
+- `?below=1` on the principal DELETE is `revoke_below` (§5.10). It deletes
+  the principal's grants on the node and on every node under it, and `count`
+  is the rows removed [002].
 - A link is created with principal `$LINK`; the server mints the 22-char
   base62 token and returns `url = "/l/<token>"`. Rotate and the grant list
   return the same `url` for every link grant [008 §1, 014; unified frontend
   ask D17].
-- A grant row is `{name, node, principal, role, expires_on, has_password,
-  sent_to, url?}`. `grants` holds the node's local rows, expired ones
-  included. `inherited` holds every live grant on an ancestor, nearest
+- A grant row is `{name, node, principal, role, person?, expires_on,
+  has_password, sent_to, url?}`. `principal` is the stored spelling (§4.4)
+  and the row key; `person` is the §11.3 person object, present when the
+  principal is a user, so the dialog shows a name and an avatar without a
+  second request. `owner` on the list is the person whose Personal root
+  holds the node, `null` in the Shared root. `grants` holds the node's
+  local rows, expired ones included. `inherited` holds every live grant on
+  an ancestor, nearest
   ancestor first, read in one query over the chain (`EXPLAIN_SQL` without
   the node itself). A deny on the node itself is local and stays in
   `grants` [issue 44, D19].
@@ -3116,8 +3184,9 @@ and get the same error [012].
   `redacted: true` and its `grant` is exactly `{node, principal: "$LINK",
   role, expires_on, has_password}`, with no other key. Every other entry has
   `redacted: false` and a full grant row.
-- PUT body: `role` and `expires_on` replace; an omitted or null
-  `expires_on` clears the expiry. `password` patches: omitted keeps the
+- PUT and PATCH body: `role` and `expires_on` replace; an omitted or null
+  `expires_on` clears the expiry, and a set one is RFC 3339 with its offset
+  (§11.3). `password` patches: omitted keeps the
   hash, null or `""` clears it, a string sets it [issue 44, D20].
   `send_to: <email>` on `$LINK` mints the link, stores the address, and
   emails the link. It takes exactly one bare address; a list, a
@@ -3134,7 +3203,9 @@ and get the same error [012].
 - `rotate` mints a new token, keeps the role, the password, and the expiry,
   and writes one `share_edit` activity row carrying `old_principal`
   [008 §8].
-- `unlock` verifies the passlib hash, counts failures per token in the site
+- `unlock` takes the token in the body beside the password, because both
+  are secrets and neither belongs in a URL or an access log. It verifies the
+  passlib hash, counts failures per token in the site
   cache and refuses after 5 in 15 minutes with a 15-minute lockout. A wrong
   password before the limit answers 401 `DriveLocked`. The fifth failure, and
   every attempt during the lockout, answers 429 `RateLimitExceededError` with
@@ -3178,35 +3249,43 @@ caller cannot read marked as unreadable, instead of dropping it silently
 `shared`, `recents`, `favourites`, `trash` and `search` accept the same
 `?type=` as folder children, filtered in the query before the window. An
 unknown value is refused (400). `templates` filters by `?content_doctype=`
-instead, and `archived-roots` has no type filter.
+instead, and `archived-roots` lists roots, not nodes; both refuse `?type=`
+(400) rather than ignore it.
 
 `DELETE /api/suite/drive/views/recents` clears the caller's recents and
-never touches favourites [014]. Every view excludes `is_template` nodes
+never touches favourites [014]. `?nodes=a,b` clears those entries only; it
+answers `{count}`. Every view excludes `is_template` nodes
 except `templates`. Root nodes appear only through explicit root entry
 points, not general node views. No view returns the children of a document node
 [012 §1, 014].
 
 Every node-valued view accepts `expand=access`; the workflow resolves roles
-with one grant union for the page. Search also accepts
-`expand=breadcrumbs`; it fetches ancestor titles from one union for the page.
-There is no per-row access or breadcrumb query.
+with one grant union for the page. `search`, `shared` and `favourites` also
+accept `expand=breadcrumbs`, because their rows come from anywhere in the
+tree and the page shows where each one lives; the ancestor titles come from
+one union for the page. There is no per-row access or breadcrumb query.
 
 **Versions, comments**
 
-| Method | Path | R | `data` |
-|---|---|---|---|
-| GET | `/nodes/<id>/versions` | READ | cursor page of version rows |
-| POST | `/nodes/<id>/versions` | EDIT | `{seq}` |
-| PATCH | `/nodes/<id>/versions/<seq>` | EDIT | `{label, pinned}` |
-| DELETE | `/nodes/<id>/versions/<seq>` | MANAGE | `{}` |
-| GET | `/nodes/<id>/versions/<seq>/content` | READ | 302 to a signed `/f/` URL |
-| POST | `/nodes/<id>/versions/<seq>/restore` | EDIT | `{seq}` (the version taken first) |
-| GET | `/nodes/<id>/threads` | READ | `{threads: [...]}` |
-| POST | `/nodes/<id>/threads` | COMMENT | `{thread, comment}` |
-| PATCH | `/threads/<id>` | COMMENT | `{resolved}` |
-| POST | `/threads/<id>/comments` | COMMENT | `{comment}` |
-| PATCH | `/comments/<id>` | EDIT or author | `{}` |
-| DELETE | `/comments/<id>` | EDIT or author | `{}` |
+| Method | Path | R | Body | `data` |
+|---|---|---|---|---|
+| GET | `/nodes/<id>/versions` | READ | `?limit=&cursor=` | cursor page of version rows |
+| POST | `/nodes/<id>/versions` | EDIT | `{kind?: auto\|named\|milestone, label?}` | version row |
+| PATCH | `/nodes/<id>/versions/<seq>` | EDIT | `{label?, pinned?}` | version row |
+| DELETE | `/nodes/<id>/versions/<seq>` | MANAGE | none | `{count}` |
+| GET | `/nodes/<id>/versions/<seq>/content` | READ | none | 302 to a signed `/f/` URL |
+| POST | `/nodes/<id>/versions/<seq>/restore` | EDIT | none | the version taken of the head first, so the client can offer the way back; `null` when a zero-byte head left nothing to capture |
+| GET | `/nodes/<id>/threads` | READ | `?resolved=` | `{threads: [...]}` |
+| POST | `/nodes/<id>/threads` | COMMENT | `{anchor, text, author_name?}` | thread row, its first comment inside |
+| PATCH | `/threads/<id>` | COMMENT | `{resolved}` | thread row |
+| POST | `/threads/<id>/comments` | COMMENT | `{text, author_name?}` | comment row |
+| PATCH | `/comments/<id>` | EDIT or author | `{text}` | comment row |
+| DELETE | `/comments/<id>` | EDIT or author | none | `{count}` |
+
+A version row is `{name, node, seq, kind, label, pinned, actor, size,
+creation}`. A thread row is `{name, node, anchor, resolved, resolved_by,
+resolved_at, creation, comments: [...]}` and a comment row is `{name, thread,
+node, content, author, author_name, mentions, creation, modified}`.
 
 **Notifications, roots, admin**
 
@@ -3214,12 +3293,12 @@ There is no per-row access or breadcrumb query.
 |---|---|---|---|---|
 | GET | `/notifications` | own | `?limit=&cursor=&unread=` | cursor page of `{activity, read, ...}` |
 | GET | `/notifications/unread-count` | own | none | `{unread: <n>}` |
-| POST | `/notifications/read` | own | `{notifications: [...]}` or `{all: true}` | `{read: <n>}` |
+| POST | `/notifications/read` | own | `{notifications: [...]}` or `{all: true}` | `{count}` |
 | GET | `/roots` | signed-in caller | none | `{personal: {node, title}, organization: {node, title} \| null}` |
 | GET | `/roots/<id>/usage` | own root, or Suite Admin for any | `?expand=breakdown` | `{used_bytes, reserved_bytes, quota_bytes, effective_quota}`; `breakdown` adds `by_type: [{type, bytes}]` and `largest: [{node, title, size, mime, kind, type}]` |
-| PATCH | `/roots/<id>` | Suite Admin | `{quota_bytes}` \| `{state}` | root shape |
-| DELETE | `/roots/<id>` | Suite Admin | none | `{purged: <n>}` |
-| POST | `/roots/<id>/trash/empty` | MANAGE on the root node | none | `{purged: <n>}` |
+| PATCH | `/roots/<id>` | Suite Admin | `{quota_bytes}` \| `{state: "Archived"}` | root shape |
+| DELETE | `/roots/<id>` | Suite Admin | none | `{count}` |
+| POST | `/roots/<id>/trash/empty` | MANAGE on the root node | none | `{count}` |
 
 `DELETE /roots/<id>` purges every node in an Archived Root. Only a Suite
 Admin may call it, and only on an Archived Root. It removes the root pair
@@ -3287,13 +3366,37 @@ Base fields, identical in a list row and in a detail fetch [014 §7]:
 
 ```json
 { "name": "a1b2c3d4e5", "title": "Q3 deck", "kind": "document",
-  "parent": "f9e8d7c6b5", "root": "r1a2b3c4d5", "state": "Active",
+  "parent_node": "f9e8d7c6b5", "root": "r1a2b3c4d5", "state": "Active",
   "trash_root": null, "size": 0, "mime": "frappe/slides", "url": null,
   "content_doctype": "Presentation", "content_docname": "deck-7",
-  "is_template": 0, "owner": "priya@example.com",
-  "creation": "2026-09-01 09:14:22", "modified": "2026-09-04 11:02:10",
-  "content_modified": "2026-09-04 11:02:10" }
+  "is_template": 0,
+  "owner": { "id": "priya@example.com", "full_name": "Priya Nair",
+             "user_image": "/files/priya.png" },
+  "creation": "2026-09-01T03:44:22Z", "modified": "2026-09-04T05:32:10Z",
+  "content_modified": "2026-09-04T05:32:10Z" }
 ```
+
+**People on the wire.** A user the API publishes - a node's `owner`, a
+grant's `person`, the `owner` of a grants list - is one person object,
+`{id, full_name, user_image}`, never a bare email. `id` is the `User` id,
+the value the columns store. `full_name` falls back to the id when the User
+row is gone, and `user_image` is the stored `/files` URL or `null`. The
+rows of one page are resolved in one query (`_core/people.py`), so a listing
+never costs a lookup per row, and a client renders a name and an avatar
+without a second request. `actor`, `author` and `resolved_by` on activity,
+version, thread and comment rows are bare ids today; they become person
+objects when a page needs them, not before.
+
+**Times on the wire.** Every time the API publishes - `creation`,
+`modified`, `content_modified`, `trashed_at`, `expires_on`, `at`,
+`opened_at`, `resolved_at` - is RFC 3339 in UTC to the second, with a `Z`:
+`2026-09-01T03:44:22Z`. The columns store the site's zone, naive (§3.1);
+`suite/drive/_core/times.py` converts in both directions, and WebDAV
+publishes the same string for the same row (§12.4). A time a client sends
+(`content_modified`, `expires_on`) must carry its offset or `Z`. One without
+it is `DriveError` 400: the sender does not know the site's zone, so the
+server refuses to guess rather than read the time in a zone the sender never
+meant. A browser formats every time in the viewer's zone.
 
 `trash_root` is the stored column (§3.1): the node's own `name` on a trash
 root, the trash root's `name` on a node trashed with it, and `null` while
@@ -3315,15 +3418,15 @@ copy archive state or quota counters into the node's stored fields.
 
 `access` is available on every node-valued detail, children page, and frozen
 view. It is resolved in one batch per page. `breadcrumbs` is available on a
-node detail and children page, and on search with one ancestor-title union per
-page. A `recents` row additionally carries `opened_at`; this is a view field,
+node detail and children page, and on the `search`, `shared` and
+`favourites` views with one ancestor-title union per page. A `recents` row additionally carries `opened_at`; this is a view field,
 not a stored node field.
 
 Every node-valued detail, children page, and node view also carries
 `favourite: true | false`, the caller's own `Drive Favourite` mark. It is read
 in one query per page, is not an expansion, and is `false` for a Guest. A write
-answers without it (`PUT` and `DELETE /nodes/<id>/favourite` keep `{}`), so a
-client that needs it again re-reads the node.
+answers without it (`PUT` and `DELETE /nodes/<id>/favourite` answer
+`{count}`), so a client that needs it again re-reads the node.
 
 ### 11.4 Cursor
 
@@ -3344,7 +3447,7 @@ client that needs it again re-reads the node.
 
 ```
 POST /api/suite/drive/nodes/batch
-{ "nodes": ["a", "b", "c"], "patch": { "parent": "folder-9" } }
+{ "nodes": ["a", "b", "c"], "patch": { "parent_node": "folder-9" } }
 
 { "data": { "ok": ["a", "b"],
             "failed": [ { "node": "c", "type": "DriveForbidden",
@@ -3352,7 +3455,10 @@ POST /api/suite/drive/nodes/batch
 ```
 
 Partial success is a result, not an error, and the response is 200. `patch`
-takes the same fields as `PATCH /nodes/<id>`. One gesture is one request
+takes the same fields as `PATCH /nodes/<id>`, `expect_parent_node` included:
+an Undo of a batch move sends the folder it moved the nodes from, and each
+node that has moved again since fails alone as `DriveMoved` while the rest
+go back. One gesture is one request
 and produces one activity row per node that moved [014 §8].
 
 `POST /nodes/batch/purge` takes `{nodes}` and answers the same shape, in
@@ -3377,6 +3483,7 @@ class DriveFileTooLarge(DriveError): http_status_code = 422
 class DriveConflict(DriveError):    http_status_code = 409
 
 class DriveRestoreDestinationRequired(DriveConflict): pass   # 409
+class DriveMoved(DriveConflict): pass                        # 409
 ```
 
 | Condition | Class | Status |
@@ -3388,7 +3495,9 @@ class DriveRestoreDestinationRequired(DriveConflict): pass   # 409
 | Admission `UPDATE` hit zero rows | `DriveOverQuota` | 413 |
 | One file above the site's per-file limit | `DriveFileTooLarge` | 422 |
 | Title taken, or node moved under itself | `DriveConflict` | 409 |
-| Restore with the original parent chain gone and no `parent` | `DriveRestoreDestinationRequired` | 409 |
+| Restore with the original parent chain gone and no `parent_node` | `DriveRestoreDestinationRequired` | 409 |
+| Move with `expect_parent_node`, and the node is no longer in that folder | `DriveMoved` | 409 |
+| A malformed argument (a bad value, a naive time, an unknown `type`) | `DriveError` | 400 |
 
 The body is the v2 envelope, produced by the framework:
 
@@ -3412,20 +3521,20 @@ title §8.6's dedupe rule would give:
                 "free_title": "report (2).pdf" } ] }
 ```
 
-### 11.7 The shim plan
+### 11.7 The old method names
 
-Build adds the routes and keeps every one of the 69 old whitelisted method
-names answering on `/api/method/` during the Build release. Cleanup deletes
-all 69 one release later, gated on every Suite client having moved [014 §9;
-unified frontend ticket 017]. Counted from the code on this bench: 69
-methods in 11 files, 26 of them guest-callable.
+The release that ships the routes deletes every one of the 69 old
+whitelisted method names (`suite.drive.api.*`, `suite.drive.overrides.file.*`)
+with the code behind them. Nothing answers them: a caller gets Frappe's
+standard 404 for an unknown method. There was a staged plan, with shims
+answering the old names for one release and a call counter deciding when
+they could go; it was dropped on 2026-10-03 (see §14.10). The only legacy
+shape that stays is `Drive Legacy Route`, the table the composition
+redirect sends old page URLs and old share links through (unified frontend
+spec §14.4).
 
-No `suite.drive.api.*` name outlives Cleanup. `suite/drive/http/shims.py`
-classifies each name (`CLASSIFICATION`) by how it answers until then: a
-forwarder into the new workflow, a retained legacy body, a retirement
-refusal (410), or an untouched legacy body with no Drive route. The class
-decides the answer during the Build release, not whether the name is
-deleted.
+The tables below record which route replaced each old name, so a reader of
+an old client or an old bug report can find the new call.
 
 **`suite.drive.api.files` (26)**
 
@@ -3435,7 +3544,7 @@ deleted.
 | `create_folder` | `POST /nodes` with `kind=folder` |
 | `create_link` | `POST /nodes` with `kind=link` |
 | `rename` | `PATCH /nodes/<id>` `{title}` |
-| `move` | `PATCH /nodes/<id>` `{parent}`, or `POST /nodes/batch` |
+| `move` | `PATCH /nodes/<id>` `{parent_node}`, or `POST /nodes/batch` |
 | `remove_or_restore` | `PATCH /nodes/<id>` `{state}`, or `POST /nodes/batch` |
 | `delete_entities` | `DELETE /nodes/<id>`; `clear_all` is `POST /roots/<id>/trash/empty` on the caller's Home |
 | `update_access` | `PUT`/`DELETE /nodes/<id>/grants/<principal>` |
@@ -3455,8 +3564,8 @@ deleted.
 | `get_entity_type` | `GET /nodes/<id>` |
 | `get_root_folder` | `GET /roots` |
 | `redirect_to_original` | `GET /nodes/<id>` |
-| `translate_old_name` | a forwarder over `Drive Legacy Route` until Cleanup; after that the composition redirect table reads the table (unified frontend spec §14.4) |
-| `resolve_legacy_route` | a forwarder over `Drive Legacy Route` until Cleanup; after that the composition redirect table reads the table (unified frontend spec §14.4) |
+| `translate_old_name` | the composition redirect reads `Drive Legacy Route` (unified frontend spec §14.4) |
+| `resolve_legacy_route` | the composition redirect reads `Drive Legacy Route` (unified frontend spec §14.4) |
 
 **`suite.drive.api.list` (6)**: `files` to `GET /nodes/<id>/children`;
 `shared`, `favourites`, `recents`, `trash` to `GET /views/<name>`;
@@ -3684,7 +3793,8 @@ versions are not copied, dead properties are cloned [009 §8].
 ### 12.4 `content_modified`, ETag, auth, quota
 
 - `content_modified` feeds `getlastmodified` and is set by a client mtime
-  header (§8.11) [009 §9].
+  header (§8.11) [009 §9]. `getlastmodified`, `creationdate` and the HTTP
+  API publish the same UTC instant for the same row (§11.3).
 - ETags stay strong: the blob checksum for a file node, and
   `content_modified` plus the latest version seq for a document
   [009 §9]. Today's fallback shape is at
@@ -3703,7 +3813,7 @@ versions are not copied, dead properties are cloned [009 §8].
 ### 12.5 Modules kept and deleted
 
 Kept, relinked to `Drive Node`: `dispatch`, `auth`, `context`, `pathmap`
-(title lookup on the frozen `(parent, state, title)` index), `propfind`,
+(title lookup on the frozen `(parent_node, state, title)` index), `propfind`,
 `proppatch`, `deadprops`, `locks`, `lock`, `ifheader`, `conditional`,
 `xmlutil`, `options`, `settings`, `log`. `Drive DAV Lock` and
 `Drive DAV Property` keep their shape with `entity` retargeted.
@@ -4066,6 +4176,22 @@ Precondition outside this spec: Frappe Cloud must allowlist
 `storage_driver` and `storage_driver_config` before `suite.frappe.io`
 migrates.
 
+**Upgrade floor.** Only a site whose `Patch Log` holds
+`suite.drive.patches.drop_team_doctypes #2` is supported
+(`build.gate.UPGRADE_FLOOR_PATCH`). Every older Drive patch was deleted from
+`patches.txt` and disk, so Build may assume that schema. A site with older
+Drive patches in its log but not the floor is refused before any step runs,
+both in the `pre_model_sync` rename and in Build; the operator upgrades to
+the last release that still carried those patches first. A site with no
+Drive patch at all is a fresh install and passes.
+
+Two read-only checks run before the migrate, by hand:
+`bench --site X execute suite.drive.patches.build.preflight.check` (GO /
+NO-GO on storage config, bucket reach, the floor and a sample object per
+legacy key layout) and
+`bench --site X execute suite.drive.patches.build.dry_run.run` (the census
+of rows Build would write and skip). Neither writes.
+
 ### 14.2 Build order
 
 1. Gate.
@@ -4106,25 +4232,38 @@ so bookmarks, shared URLs, and every side table keep working [011 §4].
 |---|---|
 | the `Drive` folder | one `kind=root` node plus its Shared metadata, state Active; both retain the File id |
 | `Users/<email>` | a `kind=root` node plus Personal metadata with `user = <email>`; metadata Active when enabled, otherwise Archived; node remains Active |
-| children of a root folder | top-level nodes with `parent = root_node_id`, `root = root_node_id`, `path = ""` |
+| children of a root folder | top-level nodes with `parent_node = root_node_id`, `root = root_node_id`, `path = ""` |
 | the `Users` row | dropped |
 | a user with no folder | no row; a Personal Root is created lazily on first use |
 
 ### 14.4 Nodes
 
 Only rows reachable by walking `folder` up to `Drive` or a `Users/<email>`
-folder become nodes. Framework attachments under `Home` stay File rows.
-Broken chains are skipped and reported [011 §6].
+folder become nodes. Framework attachments under `Home` stay File rows,
+except Slides media, which §14.7 turns into nodes and Cleanup then removes
+(§14.10). Broken chains are skipped and reported [011 §6].
+
+Reachability is the whole rule: `attached_to_*` is not consulted. A
+framework attachment the legacy hooks filed under a Drive root (a user's
+avatar, the Suite Settings logo, a Meet recording) is a Drive row and
+becomes a file node from its own blob like any upload; its `File` row,
+and with it the `attached_to_*` link, leaves in Cleanup step 1, while the
+bytes stay where they are and the URL stored on the attached document is
+not rewritten. Because Build gives every reachable row a node (or reports
+it as a skip the operator must accept) in the same migrate, Cleanup's gate
+1 never refuses a site because of attachments; it refused the development
+site only because the legacy hooks kept filing new rows for two days after
+Build had run.
 
 | `Drive Node` | From |
 |---|---|
 | `title` | `file_name` |
-| `parent` | `folder`, including the root node id directly under a root; NULL only on root nodes |
+| `parent_node` | `folder`, including the root node id directly under a root; NULL only on root nodes |
 | `root` | the root node reached; NULL on the root node itself |
 | `path` | ids of the ancestors below the root |
 | `kind` | `root` for the root folders handled in §14.3; else `folder` if `is_folder`; `link` if `file_type = "Link"` (with `url = file_url`); `document` if `content_doctype` is `Writer Document`, `Presentation`, or `Sheet` (with the content ref); else `file` |
 | `blob` | `File.blob`, file nodes only |
-| `size` | `file_size` for files, 0 for folders |
+| `size` | `File Blob.file_size` for files with a blob; 0 for folders and files whose bytes are missing |
 | `mime` | `mime_type` |
 | `content_modified` | `file_modified` |
 | `owner`, `creation`, `modified` | copied |
@@ -4192,6 +4331,24 @@ the Personal root node; `$GENERAL` read on `Drive` becomes `$GENERAL` READ
 on the Shared root node. Migrated sites keep what their row maps to; the fresh-site
 `$GENERAL` UPLOAD anchor is not forced on them [002, 011 §9].
 
+Creator grants: legacy gave an entity's `owner` every right without a
+permission row; `owner` grants nothing here (§3.1), and a fresh node gets
+an EDIT grant for its creator when the parent gives less (§4.2,
+`access.add_creator_grant`). After every row above has become a grant,
+Build applies that same rule once to migrated nodes: for each non-root
+node whose `owner` is a person (not Administrator or Guest) and whose
+effective role on the node, as the engine answers it, is below EDIT, Build
+writes `(node, owner, EDIT)`, or raises the owner's own lower grant to
+EDIT. An owner never ends below EDIT on their own node, so an explicit
+deny on the owner is raised to EDIT as well (legacy ignored it for the
+owner); this is the one place a stored deny moves up, and §14.9 counts
+each one under `creator_denies_overridden` so the operator sees which
+decisions were overridden. A dead owner is counted. Without this, a user
+who uploaded into a folder they held UPLOAD on could only download their
+own files and could not restore the ones they had trashed. §14.9 reports
+`creator_grants_minted` (rows written or raised from a lower positive
+role) and `creator_denies_overridden`; the two are disjoint.
+
 ### 14.6 Side tables and content-app data
 
 | Source | Target | Rule |
@@ -4242,7 +4399,8 @@ From the [012] amendment to [011]:
   within a deck collapse to one node. A video poster is a media node like
   any other. A media File that was Trashed in the old tree becomes an
   Active child of an Active deck, so the deck is not purged out from under
-  a body that still draws it.
+  a body that still draws it. The media `File` row stays until Cleanup step
+  1 deletes it (§14.10).
 - `Slide.elements` JSON is rewritten: `src` holds the node id,
   `attachmentName` is dropped. `Slide.background` and legacy `/files/`
   paths are rewritten the same way. A legacy `poster` may be a dict, not a
@@ -4280,7 +4438,8 @@ Printed and saved as JSON under the site's private directory [011].
   "blobless_nodes": 0, "title_renames": 0,
   "grant_rows_dropped": { "dead_principal": 0, "unmigrated_entity": 0,
                           "no_flags": 0, "root_guardrail": 0 },
-  "links_minted": 0, "docshare_rows_dropped": 0,
+  "links_minted": 0, "creator_grants_minted": 0, "creator_denies_overridden": 0,
+  "docshare_rows_dropped": 0,
   "trash_disagreements": 0, "orphan_content_docs_adopted": 0,
   "activity_rows_dropped": 0, "activity_verbs_derived": 0,
   "versions_to_thin": 0,
@@ -4295,56 +4454,127 @@ Printed and saved as JSON under the site's private directory [011].
 `links_minted` is the count owners must be told about: their old
 anyone-with-link URLs changed [011 §9].
 
+**Skipped rows.** Counts are not enough to act on. After the report Build
+writes `private/drive-build-skipped.json`: every row it read and did not
+convert, with its id and reason, plus every file whose bytes were missing
+(`missing_bytes`: a node with no blob, never a lost node or a crash). A
+*refusing* skip is a reachable, not Removed row that ended with no node
+(`over_capacity_skipped`, `invalid_parent_skipped`, `unsaveable_skipped`,
+`roots_skipped`, `unmigrated_reachable`). While any is present Build raises
+after writing the file, so the migrate stops with the converted rows
+committed and the operator either fixes the rows and migrates again or sets
+site config `drive_build_accept_skips` to accept the loss. Removed rows,
+broken chains, missing bytes and dropped grants and shares are reported but
+do not refuse.
+
+**Restored database.** The record lives in `private/`, not the database. A
+database restored without its `private/` directory would meet a record that
+says the tree is done and a `Drive Root` table that is empty; Build refuses
+that pair instead of reporting a finished migration over nothing.
+
+**Copied objects.** Every legacy S3 object the copy step placed is appended
+to `private/drive-build-copied-objects.jsonl` by key, before the `File.blob`
+link is written. Build and Cleanup delete no bucket object; §14.11's manual
+command reads this ledger.
+
 ### 14.10 Cleanup
 
-Ships one release after Build. It refuses to run unless all three hold
-[011 §14, 014 §9]:
+Runs in the same `bench migrate` as Build: `suite/patches.txt` names
+`suite.drive.patches.cleanup` directly after `suite.drive.patches.build`,
+both under `[post_model_sync]`. Frappe's model sync never drops a column
+and removes orphan doctypes only after the patches have run, so every table
+and column Build read is still there when Cleanup starts. The code that
+ships with this release is new-model only: no legacy doctype has a
+controller, no old method name answers (§11.7), and both runtime switches
+(`suite_flip_shell`, `suite_flip_files`) are gone. Deploying the release is
+the point of no return (decision of 2026-10-03; the earlier plan of one
+release between Build and Cleanup, and the "Ticket 36" deferral, are void).
 
-1. Every reachable Drive `File` row has a node.
-2. `frappe.storage.gc.blob_reference_columns()` exists, so deleting File
-   rows does not orphan every blob under the framework GC [003].
-3. Every Suite client has moved off all 69 old method names: the SPA
-   (`frontend/src`), the Desk file picker (`suite/public/js`), and Suite
-   Python outside `suite/drive/api` and `suite/drive/http` imports none of
-   the bodies below (§11.7). No name is exempt. The runtime evidence is the
-   legacy-call counter (§11.7): on every site Cleanup runs on, no count on
-   any name rose between the first and the last read of the hold (unified
-   plan stage 14).
+Cleanup refuses to run, before it changes anything, unless all of these
+hold:
+
+1. The operator has recorded the backup taken before this migrate, in site
+   config: `bench --site <site> set-config drive_cleanup_backup "<backup>"`.
+   `<backup>` is free text naming the backup (a path, an S3 URL, an id). The
+   value is written into Cleanup's state record.
+2. Every reachable Drive `File` row has a node, checked live against the
+   site, not against Build's state.
+3. `frappe.storage.gc.blob_reference_columns()` exists and names all four of
+   Drive's blob columns, so deleting File rows does not orphan every blob
+   under the framework GC [003].
+
+Each refusal names the gate and what to do about it. Cleanup needs no
+bucket access at all: it deletes no bucket object (see the last step).
 
 Then, in order:
 
 - Delete the Drive-owned `File` rows, the `Drive` and `Users` root rows, and
-  every Removed row.
-- Delete the seven `File` custom fields
-  (`suite/fixtures/custom_field.json`: `section_break_nfot8`, `mime_type`,
+  every Removed row. Also delete the Slides media `File` rows Build turned
+  into nodes (§14.7): a row goes when a `file` node directly under its
+  deck's node holds the row's own blob and no slide body on the site still
+  names the row's URL (Build leaves a URL it could not adopt in place). Only
+  the row goes; the bytes stay with the node's blob. Thumbnail-only rows
+  and rows whose blob Build swapped for a same-content one stay. The state
+  file counts the rows deleted and the rows kept because a body names them.
+- Delete the seven `File` custom fields (`section_break_nfot8`, `mime_type`,
   `status`, `file_modified`, `column_break_tapww`, `content_doctype`,
-  `content_docname`) and the three property setters
-  (`suite/fixtures/property_setter.json`).
-- Drop `Drive Permission`, `Drive Entity Activity Log`, `Drive Token`,
-  and the old notification columns. Keep `Drive User Invitation` and
-  `Account Request` with their rows (§3.16). Remove the two
-  `Drive User Invitation` permission hooks (`suite/hooks.py:207`, `:251`);
-  the doctype falls back to its standard role permissions.
+  `content_docname`), drop the five `tabFile` columns they created (Frappe
+  leaves a deleted Custom Field's column behind), and delete the three
+  `File` property setters. Their fixture files are gone with this release,
+  so a later `bench migrate` cannot recreate them.
+- Drop every legacy Drive doctype's table (`Drive Permission`, `Drive Entity
+  Activity Log`, `Drive Token`, `Drive User Invitation`, `Account Request`,
+  `Drive Legacy Call`, `Drive Entity Log`; `Drive Team` and `Drive Team
+  Member` were dropped by the upgrade-floor patch Build requires) and the old
+  `Drive Notification` columns, after which `Drive Notification.activity`
+  becomes required.
 - Check that no `DocShare` row remains on a governed doctype (Build deleted
   them); drop `Writer Version`, `Writer Doc Version`, `Writer Template`, and
-  `Sheet Snapshot`; clear `ycomments`; strip cell
-  comments from `sheets_data`. `Writer Doc Version` is the child table
-  behind `Writer Document.versions`, so dropping the field drops it.
+  `Sheet Snapshot`; clear `ycomments`; strip cell comments from
+  `sheets_data`.
 - Drop the title and trashed columns on content doctypes; `user_folder` and
-  `quota` on `Drive Settings`; `quota` and the S3 fields on
-  `Drive Disk Settings`; `storage_owner` on `Drive Storage Reservation`.
-- Drop the legacy-call counter (§11.7): the `Drive Legacy Call` doctype and
-  its table, `suite/drive/http/legacy_calls.py`, the `drive-legacy-calls`
-  command, and the `count_legacy_call` and `flush_legacy_calls` hook entries.
-- Delete all 69 legacy names (§11.7): `suite/drive/http/shims.py`, every
-  module under `suite/drive/api/` including `product.py` and `s3.py`, and
-  `suite/drive/overrides/file.py` with the `File` override. `after_request`
-  (the CSP hook at `suite/hooks.py:440`) moves to `suite/drive/framework.py`
-  first. Remove `/api/method/suite.drive.api.` from
-  `ALLOWED_WILDCARD_PATHS`. Only `/dav` stays.
-- Delete the `.thumbnail` sidecars.
-- On S3 sites, enqueue a long job that deletes Drive's legacy prefix in the
-  bucket.
+  `quota` on `Drive Settings`; `quota`, `root_folder`, `thumbnail_prefix`,
+  `flat` and the S3 fields on `Drive Disk Settings`; `storage_owner` on
+  `Drive Storage Reservation`. The doctype JSON files no longer declare any
+  of them.
+- Delete the local `.thumbnail` sidecars. On an S3 site this step deletes
+  nothing and records 0.
+- Nothing in the bucket. Cleanup deletes no bucket object, so after the
+  migrate every legacy object Build copied is still in place next to its
+  canonical copy, and the backup restore of §14.11 is still a complete
+  rollback. Deleting the legacy objects is a separate, manual command run
+  later (decision of 2026-10-03):
+
+  ```
+  bench --site <site> execute suite.drive.patches.cleanup.delete_legacy_objects.run
+  bench --site <site> execute suite.drive.patches.cleanup.delete_legacy_objects.run \
+      --kwargs "{'confirm': True}"
+  ```
+
+  The first form is a dry run. It reports, per legacy key layout (leading
+  slash, bare key at the bucket root, under `root_folder`, per-user folder
+  at the root), how many keys it would delete and their bytes, how many it
+  must keep and why, and how many `File` rows Build recorded under
+  `missing_bytes`, whose objects it never touches. The second form deletes,
+  in batches of 1000. The command works only from Build's copy ledger
+  (§14.9), never from a bucket listing, and HEADs every canonical copy in a
+  batch before deleting the batch, requiring its size to equal the ledger's;
+  a missing or mismatched copy stops the run before that batch and names
+  the key. Every deleted key is appended to
+  `private/drive-legacy-objects-deleted.jsonl`, so a rerun skips it, and a
+  legacy key the HEAD finds gone counts as done. Keys are HEADed and
+  deleted exactly as the ledger spells them. A ledger key is kept when it
+  starts with `private/` or `public/`, equals its own destination, or is
+  named by a `File Blob` row.
+
+  The command refuses, with or without `confirm`, naming every failed
+  condition at once, unless Cleanup has completed every phase, Build's
+  storage step has completed, the copy ledger exists and is not empty,
+  `storage_v2` is on with `storage_driver = "s3"` and the configured bucket
+  is the ledger's bucket, and at least one `File Blob` row has
+  `driver = "s3"`. The last check is what catches a database restored from
+  the pre-migration backup: no row then references a canonical copy, and
+  the command answers "no blob references, refusing".
 
 Local legacy files are never deleted: backfilled blobs point at them in
 place through `../<rel_path>` keys.
@@ -4357,14 +4587,22 @@ place on local disk (`driver = "local"`). The framework's
 `relocate_blobs()` (§13) folds them into one. It runs after Build, at any
 time. Build and Cleanup do not depend on it [011 amendment].
 
-| Stage | Rollback |
-|---|---|
-| after Build | truncate the new tables and ship the old code |
-| after Cleanup | a database restore, and nothing smaller |
+Rollback is the backup restore named by `drive_cleanup_backup`, and nothing
+smaller. There is no partial undo at any stage: Build and Cleanup run in one
+migrate, and the release carries no code that could serve the old model.
+The `DocShare` preimage journal (§14.5) is kept as a record of what Build
+deleted; it is not a rollback path.
 
-The `DocShare` preimage journal (§14.5) restores the share rows Build
-deleted. Content documents purged for Removed-only File rows are not
-restored: their bytes were already gone.
+That restore (database plus the site's files) is a complete rollback for as
+long as the legacy objects are in the bucket, and the migrate leaves them
+there: Build copies, Cleanup deletes no bucket object (§14.10). The
+restored rows point at the legacy keys, and the legacy keys still answer.
+The rollback window closes only when an operator runs
+`suite.drive.patches.cleanup.delete_legacy_objects.run` with
+`--kwargs "{'confirm': True}"`. After that the legacy objects are gone and
+only the canonical copies remain, so the backup restore no longer brings
+back a working site. Run it once the migrated site has been checked, not as
+part of the migrate.
 
 ---
 
@@ -4392,7 +4630,7 @@ the spec.
 | `Drive Node.path` column length | `varchar(500)`; validate actual ids, depth, and full-index creation on the target database | §3.1 | accepted; verification pending |
 | Build commit batch | 1000 rows | §14.2 | [011] |
 | S3 multipart copy threshold | 5 GB | §14.2 | [011] |
-| Whitelisted methods shimmed | 69, in 11 files, 26 guest-callable | §11.7 | [014] |
+| Old whitelisted methods deleted | 69, in 11 files, 26 guest-callable | §11.7 | [014] |
 | Daily jobs | five: usage recompute, preview gap sweep, version thinning, trash purge, unused-media sweep | §7.7, §8.8, §9.1, §9.2, §10.6 | [006, 010, 011, 012]; expiry retention accepted |
 | Framework GC orphan age | 24 h | §2.4, §8.4, §8.8, §13.1 | framework, `gc.py:17` |
 | Framework GC batch | 500 rows | §13.1 | framework, `gc.py:16` |

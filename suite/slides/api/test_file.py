@@ -9,7 +9,6 @@ from werkzeug.exceptions import Forbidden, NotFound, RequestedRangeNotSatisfiabl
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
-from suite.drive.overrides.file import File as DriveFile
 from suite.slides.api.file import get_media_response, get_reference_presentations, validate_media_file
 from suite.slides.tests.utils import (
     PNG_1PX,
@@ -232,7 +231,6 @@ class TestMediaFileAccess(IntegrationTestCase):
             template = make_presentation(title, is_template=True)
             file = make_private_image(template.name)
 
-        self.assertIsNone(DriveFile.get_for_doc("Presentation", template.name))
         self.assertFalse(frappe.db.get_value("Presentation", template.name, "is_template"))
         self.assertTrue(frappe.db.get_value("Drive Node", node_of(template.name), "is_template"))
         return template, file

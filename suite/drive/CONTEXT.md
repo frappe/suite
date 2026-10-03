@@ -194,7 +194,8 @@ _Avoid_: Sync, Save hook, Update event
 
 **Content Time**:
 When a node's content last changed, as its content says. A client may set
-it to the time a file carried before upload.
+it to the time a file carried before upload. On the wire it is RFC 3339 in
+UTC like every Drive time (spec §11.3).
 _Avoid_: Modified, Last modified, mtime, Row timestamp
 
 ### Record
@@ -221,12 +222,6 @@ _Avoid_: Alert, Message, Inbox item
 One email that tells one address a node or a Share Link was shared with
 it. Sent only when the grant write asks for it, and never stored as a flag.
 _Avoid_: Invite, Invitation, Share notification
-
-**Legacy Call**:
-One count of calls to one legacy `suite.drive` name from one user agent,
-kept until Cleanup deletes the names. It proves which clients still call
-the old API.
-_Avoid_: API log, Request log, Hit
 
 ### Deployment
 

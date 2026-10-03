@@ -57,11 +57,11 @@ WHERE `root` = %(root)s
         queries = {
             "root_page_union": (
                 folder_query,
-                {"parent": ROOTS[0], "limit": 60, "offset": 0},
+                {"parent_node": ROOTS[0], "limit": 60, "offset": 0},
             ),
             "subtree_folder_page_union": (
                 folder_query,
-                {"parent": SUBTREE_PARENT, "limit": 60, "offset": 0},
+                {"parent_node": SUBTREE_PARENT, "limit": 60, "offset": 0},
             ),
             "subtree_projection": (
                 subtree_query,
@@ -342,8 +342,7 @@ HANDLER_STATUS = (
 def _handler_status() -> dict[str, int]:
     names = ",".join(f"'{name}'" for name in HANDLER_STATUS)
     return {
-        row[0]: int(row[1])
-        for row in frappe.db.sql(f"SHOW SESSION STATUS WHERE Variable_name IN ({names})")
+        row[0]: int(row[1]) for row in frappe.db.sql(f"SHOW SESSION STATUS WHERE Variable_name IN ({names})")
     }
 
 
@@ -369,12 +368,9 @@ def _measure_read(query: str, values: dict, iterations: int) -> dict:
         "latency_ms_p95": round(_percentile(latencies, 0.95), 3),
         "handler_reads_median": int(_percentile(handler_reads, 0.5)),
         "handler_reads_p95": int(_percentile(handler_reads, 0.95)),
-        "server_rows_read_median": int(
-            _percentile([delta["Rows_read"] for delta in handler_deltas], 0.5)
-        ),
+        "server_rows_read_median": int(_percentile([delta["Rows_read"] for delta in handler_deltas], 0.5)),
         "handler_deltas_median": {
-            name: int(_percentile([delta[name] for delta in handler_deltas], 0.5))
-            for name in HANDLER_STATUS
+            name: int(_percentile([delta[name] for delta in handler_deltas], 0.5)) for name in HANDLER_STATUS
         },
     }
 
@@ -386,7 +382,7 @@ def _measure_folder_page(
     chain: list[str],
     iterations: int,
 ) -> dict:
-    folder_values = {"parent": parent, "limit": 60, "offset": 0}
+    folder_values = {"parent_node": parent, "limit": 60, "offset": 0}
     principals = ("benchmark@example.com", "$GROUP:benchmark", "$GENERAL", "$PUBLIC")
     grant_base = {"principals": principals, "now": "2026-09-06 00:00:01"}
 
@@ -447,8 +443,7 @@ def _measure_folder_page(
         "handler_reads_p95": int(_percentile(handler_reads, 0.95)),
         "server_rows_read_median": int(_percentile(server_rows_read, 0.5)),
         "handler_deltas_median": {
-            name: int(_percentile([delta[name] for delta in handler_deltas], 0.5))
-            for name in HANDLER_STATUS
+            name: int(_percentile([delta[name] for delta in handler_deltas], 0.5)) for name in HANDLER_STATUS
         },
     }
 
@@ -534,9 +529,7 @@ FROM `{TEMP_TABLE}`
 
 
 def _target_inventory() -> dict:
-    path_column = frappe.db.sql(
-        "SHOW FULL COLUMNS FROM `tabDrive Node` LIKE 'path'", as_dict=True
-    )[0]
+    path_column = frappe.db.sql("SHOW FULL COLUMNS FROM `tabDrive Node` LIKE 'path'", as_dict=True)[0]
     indexes = frappe.db.sql(
         """
 SELECT INDEX_NAME, SEQ_IN_INDEX, COLUMN_NAME, SUB_PART
@@ -643,10 +636,7 @@ def _indexes() -> list[dict]:
 def _measure_writes(iterations: int) -> dict:
     rename = _measure_updates(
         f"UPDATE `{TEMP_TABLE}` SET `title` = %s WHERE `name` = %s",
-        [
-            (f"Renamed {iteration % 2}", "bn00000000")
-            for iteration in range(iterations)
-        ],
+        [(f"Renamed {iteration % 2}", "bn00000000") for iteration in range(iterations)],
     )
 
     move_values = []

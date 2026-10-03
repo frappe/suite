@@ -41,6 +41,7 @@ class _CreatePresentationBase(unittest.TestCase):
         self.drive.create_document.return_value = "node-1"
         self.slides_drive.docname_for_node.return_value = "PRES-1"
         self.new_doc = mock.MagicMock(node_title="Server Title")
+        self.new_doc.as_dict.return_value = {"name": "PRES-1"}
         self.frappe.get_doc.return_value = self.new_doc
 
 
@@ -61,17 +62,17 @@ class CreatePresentationFromADuplicate(_CreatePresentationBase):
         )
         self.slides_drive.docname_for_node.assert_called_once_with("node-1")
         self.frappe.get_doc.assert_called_once_with("Presentation", "PRES-1")
-        self.assertIs(result, self.new_doc)
+        self.assertEqual(result["name"], "PRES-1")
 
-    def test_the_response_title_is_read_from_the_node_not_the_frozen_column(self):
-        # Drive owns the title and keeps no mirror (§10.2): the legacy column
-        # stays blank on a fresh deck, so the caller-facing title has to come
-        # from the node the adapter just created.
+    def test_the_response_title_is_read_from_the_node(self):
+        # Drive owns the title and the deck keeps no copy of it (§10.2), so
+        # the caller-facing title has to come from the node the adapter just
+        # created.
         from suite.slides.doctype.presentation import presentation
 
         result = presentation.create_presentation(duplicate_from="PRES-source", parent="folder-1")
 
-        self.assertEqual(result.title, "Server Title")
+        self.assertEqual(result["title"], "Server Title")
 
     def test_requires_read_permission_on_the_source(self):
         from suite.slides.doctype.presentation import presentation

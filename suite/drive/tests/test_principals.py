@@ -104,11 +104,10 @@ class TestRequestPrincipals(UnitTestCase):
         self.assertEqual(principals.ticket_for(f"$LINK:{TOKEN_A}"), (exp, mac))
 
     @patch("suite.drive.framework.is_drive_admin", return_value=False)
-    @patch("suite.drive.framework.frappe.cache")
+    @patch("suite.drive.framework._user_groups", return_value=("alpha", "beta"))
     @patch("suite.drive.framework.frappe.session")
-    def test_signed_in_identity_keeps_groups_and_general_in_own_pass(self, session, cache, _is_admin):
+    def test_signed_in_identity_keeps_groups_and_general_in_own_pass(self, session, _groups, _is_admin):
         session.user = "user@example.com"
-        cache.return_value.hget.return_value = ("alpha", "beta")
 
         principals = principals_for_request()
 
@@ -119,9 +118,8 @@ class TestRequestPrincipals(UnitTestCase):
         self.assertEqual(principals.open, ("$PUBLIC",))
 
     @patch("suite.drive.framework.is_drive_admin", return_value=True)
-    @patch("suite.drive.framework.frappe.cache")
+    @patch("suite.drive.framework._user_groups", return_value=())
     @patch("suite.drive.framework.frappe.session")
-    def test_admin_status_is_carried_structurally(self, session, cache, _is_admin):
+    def test_admin_status_is_carried_structurally(self, session, _groups, _is_admin):
         session.user = "Administrator"
-        cache.return_value.hget.return_value = ()
         self.assertTrue(principals_for_request().is_admin)

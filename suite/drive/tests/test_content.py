@@ -662,7 +662,7 @@ class TestContentContract(UnitTestCase):
             stub_db(MagicMock()) as db,
             patch("suite.drive.framework._node_allows") as allows,
         ):
-            db.get_value.return_value = frappe._dict(name="node-a", parent="folder-a")
+            db.get_value.return_value = frappe._dict(name="node-a", parent_node="folder-a")
             allows.side_effect = lambda node, role, user: asked.append((node, role)) or True
             self.assertTrue(framework.doc_has_permission(doc=doc, ptype="create", user=USER))
             self.assertTrue(framework.doc_has_permission(doc=doc, ptype="write", user=USER))
@@ -676,7 +676,11 @@ class TestContentContract(UnitTestCase):
         # Fail closed. A node that is gone, or one with no parent, is a root or
         # a broken tree, and neither can hold a content document.
         doc = frappe._dict(doctype=CONTENT_DOCTYPE, name=None, node="node-a")
-        for row in (None, frappe._dict(name="node-a", parent=None), frappe._dict(name="node-a", parent="")):
+        for row in (
+            None,
+            frappe._dict(name="node-a", parent_node=None),
+            frappe._dict(name="node-a", parent_node=""),
+        ):
             with (
                 self.subTest(row=row),
                 registered(spec()),
@@ -1301,7 +1305,7 @@ class TestContentWorkflows(IntegrationTestCase):
 
         media = frappe.get_all(
             "Drive Node",
-            filters={"parent": copied, "state": "Active"},
+            filters={"parent_node": copied, "state": "Active"},
             fields=["name", "blob", "size"],
         )
         self.assertEqual(len(media), 2, "one media node per blob inside one document")
@@ -1331,7 +1335,7 @@ class TestContentWorkflows(IntegrationTestCase):
 
         copied_document = frappe.get_all(
             "Drive Node",
-            filters={"parent": copied_folder, "kind": "document"},
+            filters={"parent_node": copied_folder, "kind": "document"},
             fields=["name", "content_docname"],
         )
         self.assertEqual(len(copied_document), 1)
@@ -1341,7 +1345,7 @@ class TestContentWorkflows(IntegrationTestCase):
             copied_document[0].name,
         )
         self.assertEqual(
-            frappe.db.count("Drive Node", {"parent": copied_document[0].name, "state": "Active"}),
+            frappe.db.count("Drive Node", {"parent_node": copied_document[0].name, "state": "Active"}),
             1,
         )
 
@@ -1352,7 +1356,7 @@ class TestContentWorkflows(IntegrationTestCase):
             charged_before = self._used_bytes()
             folder = create_folder(self.admin, self.root.name, "Copies")
             copied = copy(self.admin, document, folder)
-        self.assertEqual(frappe.db.count("Drive Node", {"parent": copied}), 0)
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": copied}), 0)
         self.assertEqual(self._used_bytes(), charged_before)
 
     def test_media_below_a_document_is_never_copied_or_moved_on_its_own(self):
@@ -1365,7 +1369,7 @@ class TestContentWorkflows(IntegrationTestCase):
             with self.assertRaises(DriveConflict):
                 copy(self.admin, media, folder)
             with self.assertRaises(DriveConflict):
-                update(self.admin, media, parent=folder)
+                update(self.admin, media, parent_node=folder)
 
     # adoption across documents
 
@@ -1383,8 +1387,8 @@ class TestContentWorkflows(IntegrationTestCase):
             mapping = adopt_media(self.admin, destination, [picture])
         adopted = mapping[picture]
         self.assertNotEqual(adopted, picture)
-        row = frappe.db.get_value("Drive Node", adopted, ["parent", "path", "blob"], as_dict=True)
-        self.assertEqual(row.parent, destination)
+        row = frappe.db.get_value("Drive Node", adopted, ["parent_node", "path", "blob"], as_dict=True)
+        self.assertEqual(row.parent_node, destination)
         self.assertEqual(row.blob, frappe.db.get_value("Drive Node", picture, "blob"))
         self.assertEqual(frappe.db.get_value("Drive Node", destination, "path"), "")
         self.assertEqual(row.path, f"/{destination}/")
@@ -1398,7 +1402,7 @@ class TestContentWorkflows(IntegrationTestCase):
             destination = self._document("Destination", parent=folder)
             mapping = adopt_media(self.admin, destination, [picture])
         self.assertEqual(frappe.db.get_value("Drive Node", destination, "path"), f"/{folder}/")
-        self.assertEqual(frappe.db.get_value("Drive Node", mapping[picture], "parent"), destination)
+        self.assertEqual(frappe.db.get_value("Drive Node", mapping[picture], "parent_node"), destination)
 
     def test_adoption_refuses_a_destination_whose_path_disagrees_with_its_parent(self):
         # The sound paste first, so the refusal below is the corruption talking
@@ -1410,11 +1414,11 @@ class TestContentWorkflows(IntegrationTestCase):
             elsewhere = create_folder(self.admin, self.root.name, "Elsewhere")
             destination = self._document("Destination")
             self.assertIn(first, adopt_media(self.admin, destination, [first]))
-            before = frappe.db.count("Drive Node", {"parent": destination})
+            before = frappe.db.count("Drive Node", {"parent_node": destination})
             self._corrupt(destination, "path", f"/{elsewhere}/")
             with self.assertRaises(DriveConflict):
                 adopt_media(self.admin, destination, [second])
-        self.assertEqual(frappe.db.count("Drive Node", {"parent": destination}), before)
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": destination}), before)
 
     def test_adoption_refuses_a_destination_that_stores_no_parent_at_all(self):
         with registered(spec()):
@@ -1423,11 +1427,11 @@ class TestContentWorkflows(IntegrationTestCase):
             second = self._media(source, "second.png", b"second-bytes")
             destination = self._document("Destination")
             self.assertIn(first, adopt_media(self.admin, destination, [first]))
-            before = frappe.db.count("Drive Node", {"parent": destination})
-            self._corrupt(destination, "parent", "")
+            before = frappe.db.count("Drive Node", {"parent_node": destination})
+            self._corrupt(destination, "parent_node", "")
             with self.assertRaises(DriveConflict):
                 adopt_media(self.admin, destination, [second])
-        self.assertEqual(frappe.db.count("Drive Node", {"parent": destination}), before)
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": destination}), before)
 
     def test_the_document_row_carries_every_field_the_position_check_walks(self):
         # `_document_node` reads a narrow field list, and the position check
@@ -1442,7 +1446,7 @@ class TestContentWorkflows(IntegrationTestCase):
             and isinstance(attribute.value, ast.Name)
             and attribute.value.id == "cursor"
         }
-        self.assertIn("parent", walked)
+        self.assertIn("parent_node", walked)
         self.assertEqual(walked - set(DOCUMENT_NODE_FIELDS), set())
 
     def test_a_copy_is_refused_whole_when_the_app_factory_fails(self):
@@ -1471,7 +1475,7 @@ class TestContentWorkflows(IntegrationTestCase):
             grant(folder, USER, UPLOAD, self.admin)
             copied = copy(self.person, document, folder)
 
-        media = frappe.get_all("Drive Node", filters={"parent": copied}, pluck="name")
+        media = frappe.get_all("Drive Node", filters={"parent_node": copied}, pluck="name")
         self.assertEqual(len(media), 2)
         self.assertEqual(frappe.db.count("Drive Grant", {"node": copied, "principal": USER}), 1)
         self.assertEqual(
@@ -1579,7 +1583,7 @@ class TestContentWorkflows(IntegrationTestCase):
             update(self.admin, document, state="Trashed")
             purge(self.admin, document)
         self.assertFalse(frappe.db.exists(CONTENT_DOCTYPE, docname))
-        self.assertEqual(frappe.db.count("Drive Node", {"parent": document}), 0)
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": document}), 0)
         self.assertEqual(self._used_bytes(), 0)
 
     def test_versions_read_the_body_through_the_same_registry(self):
@@ -1698,7 +1702,7 @@ class TestContentWorkflows(IntegrationTestCase):
             self.assertEqual(frappe.db.get_value("Drive Node", stale, "state"), "Trashed")
             restored = update(self.admin, stale, state="Active")
         self.assertEqual(
-            (restored.state, restored.parent),
+            (restored.state, restored.parent_node),
             ("Active", document),
             "a bin the owner cannot restore from is not a bin",
         )

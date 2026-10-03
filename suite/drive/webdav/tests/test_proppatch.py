@@ -344,7 +344,7 @@ class TestWebDAVProppatch(IntegrationTestCase):
         (§12.4). Explorer PROPPATCHes this after every copy and reads it back,
         so the property itself is stored as well.
         """
-        with patch("suite.drive.webdav.properties._site_zone", return_value=SITE_ZONE):
+        with patch("suite.drive._core.times.site_zone", return_value=SITE_ZONE):
             parsed = multistatus(self._proppatch(SET_WIN32_MTIME))
             self.assertEqual(
                 prop_statuses(parsed)["{urn:schemas-microsoft-com:}Win32LastModifiedTime"],

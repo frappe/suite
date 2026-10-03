@@ -8,7 +8,9 @@ the bound on a streamed chunk. The workflows have their own tests, and
 
 import io
 import unittest
+from datetime import datetime
 from unittest.mock import MagicMock, call, patch
+from zoneinfo import ZoneInfo
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -27,12 +29,22 @@ from suite.drive._core.errors import (
     DriveNotFound,
     DriveOverQuota,
 )
+from suite.drive._core.people import person
 from suite.drive._core.principals import Principals
 from suite.drive.http import routes
 from suite.drive.http.tests import ensure_local_context, local_attribute
 from suite.www import drive_link
 
 SOMEONE = Principals(user="a@example.com", own=("a@example.com",), open=("$PUBLIC",), is_admin=False)
+
+
+def fake_people(ids):
+    """The `User` table, without the table: every id is a person named by it."""
+    return {user: person(user, None, None) for user in ids if user}
+
+
+def version_row(seq, **fields):
+    return frappe._dict({"name": f"v{seq}", "node": "n1", "seq": seq, "kind": "auto", "size": 10, **fields})
 
 
 def setUpModule():
@@ -49,6 +61,10 @@ class BoundaryCase(UnitTestCase):
         self.principals = patch.object(routes, "_principals", return_value=SOMEONE)
         self.principals.start()
         self.addCleanup(self.principals.stop)
+        # Shapes name people. The `User` lookup is not what these tests prove.
+        self.people = patch.object(routes.shapes, "people", side_effect=fake_people)
+        self.people.start()
+        self.addCleanup(self.people.stop)
 
 
 class TestRefusalMapping(BoundaryCase):
@@ -105,7 +121,7 @@ class TestRefusalMapping(BoundaryCase):
             (routes.node_batch, {"nodes": [], "patch": {"title": "a"}}),
             (routes.node_batch, {"nodes": ["n1"], "patch": {"blob": "x"}}),
             (routes.node_preview, {"node": "n1", "image": "not base64!", "mime": "image/png"}),
-            (routes.upload_create, {"parent": "f1", "filename": "", "size": 1}),
+            (routes.upload_create, {"parent_node": "f1", "filename": "", "size": 1}),
         ):
             with self.subTest(call=handler.__name__, kwargs=kwargs):
                 with self.assertRaises(DriveError) as caught:
@@ -201,7 +217,9 @@ class TestExpansions(BoundaryCase):
 
     def setUp(self):
         super().setUp()
-        self.row = frappe._dict({"name": "n1", "title": "t", "kind": "file", "root": "r1"})
+        self.row = frappe._dict(
+            {"name": "n1", "title": "t", "kind": "file", "root": "r1", "owner": "a@example.com"}
+        )
         self.get = patch.object(routes.node_core, "get", return_value=self.row)
         self.get.start()
         self.addCleanup(self.get.stop)
@@ -238,7 +256,7 @@ class TestPageEnvelope(BoundaryCase):
     """§11.4: rows, and an opaque cursor that is null on the last page."""
 
     def page_for(self, next_cursor):
-        result = {"rows": [], "next_cursor": next_cursor, "parent": frappe._dict({"name": "f1"})}
+        result = {"rows": [], "next_cursor": next_cursor, "parent_node": frappe._dict({"name": "f1"})}
         with patch.object(routes.node_core, "children", return_value=result) as listed:
             return routes.node_children(node="f1", limit="10", cursor="b2Zmc2V0OjEw"), listed
 
@@ -253,23 +271,22 @@ class TestPageEnvelope(BoundaryCase):
         self.assertIsNone(answer["next_cursor"])
 
     def test_an_empty_cursor_is_the_first_page_not_a_malformed_one(self):
-        result = {"rows": [], "next_cursor": None, "parent": frappe._dict({"name": "f1"})}
+        result = {"rows": [], "next_cursor": None, "parent_node": frappe._dict({"name": "f1"})}
         with patch.object(routes.node_core, "children", return_value=result) as listed:
             routes.node_children(node="f1", cursor="")
         self.assertIsNone(listed.call_args.kwargs["cursor"])
 
     def test_presentation_changes_start_from_an_absent_cursor(self):
-        result = {"rows": [], "next_cursor": None, "parent": frappe._dict({"name": "f1"})}
+        result = {"rows": [], "next_cursor": None, "parent_node": frappe._dict({"name": "f1"})}
         with patch.object(routes.node_core, "children", return_value=result) as listed:
             routes.node_children(
                 node="f1",
                 order_by="modified",
                 ascending="0",
-                group_by="owner",
                 type="folder, pdf,,folder",
             )
         self.assertIsNone(listed.call_args.kwargs["cursor"])
-        self.assertEqual(listed.call_args.kwargs["group_by"], "owner")
+        self.assertNotIn("group_by", listed.call_args.kwargs)
         self.assertEqual(listed.call_args.kwargs["listing_types"], ("folder", "pdf"))
 
     def test_a_cursor_seeking_past_the_bound_is_a_bad_request_not_a_query(self):
@@ -375,8 +392,8 @@ class TestShareLinkPage(BoundaryCase):
     """§6.2: `/l/<token>` answers which node, never whether."""
 
     def context_for(self, token, **patched):
-        # `node_url` is stubbed, so no case reads the site's `suite_flip_files`
-        # or a node row. `test_drive_link` covers the address per kind and key.
+        # `node_url` is stubbed, so no case reads a node row. `test_drive_link`
+        # covers the address per kind.
         frappe.local.form_dict = frappe._dict({"token": token})
         frappe.flags.redirect_location = None
         with (
@@ -554,7 +571,7 @@ class TestChunkBody(BoundaryCase):
     def test_an_oversized_chunk_is_refused_as_a_bad_request(self):
         with patch.object(routes.upload_core, "MAX_CHUNK_BYTES", 16):
             self.request_with(b"y" * 64)
-            with patch.object(routes.upload_core, "authorize_chunk", return_value={"parent": "f1"}):
+            with patch.object(routes.upload_core, "authorize_chunk", return_value={"parent_node": "f1"}):
                 with self.assertRaises(DriveError) as caught:
                     routes.upload_chunk(upload_id="u1", offset="0")
         self.assertEqual(caught.exception.http_status_code, 400)
@@ -576,7 +593,7 @@ class TestChunkBody(BoundaryCase):
     def test_the_coerced_offset_is_the_one_storage_is_given(self):
         # `?offset=` is the only argument that says where the bytes land.
         self.request_with(b"payload")
-        with patch.object(routes.upload_core, "authorize_chunk", return_value={"parent": "f1"}):
+        with patch.object(routes.upload_core, "authorize_chunk", return_value={"parent_node": "f1"}):
             with patch.object(routes.upload_core, "upload_chunk", return_value={}) as written:
                 routes.upload_chunk(upload_id="u1", offset="4096")
         self.assertEqual(written.call_args.args[1:], ("u1", 4096, b"payload"))
@@ -586,10 +603,9 @@ class TestGrantRoutes(BoundaryCase):
     """§5.8 to §5.11 at the boundary: what is asked, and what comes back."""
 
     def test_no_named_principal_asks_for_no_explanation(self):
-        owner = {"user": "o@example.com", "full_name": "Owner"}
         listed = {
             "grants": [{"name": "g1", "node": "n1", "principal": "a@example.com", "role": 40}],
-            "owner": owner,
+            "owner": "o@example.com",
         }
         with patch.object(routes.access, "grants_for", return_value=listed) as workflow:
             with patch.object(routes.framework, "principals_for_principal") as resolved:
@@ -597,7 +613,9 @@ class TestGrantRoutes(BoundaryCase):
         self.assertIsNone(workflow.call_args.kwargs["resolve_subject"])
         resolved.assert_not_called()
         self.assertEqual(set(answer), {"grants", "owner"})
-        self.assertEqual(answer["owner"], owner)
+        # The owner and every user grant are published as people (B2).
+        self.assertEqual(answer["owner"], person("o@example.com", None, None))
+        self.assertEqual(answer["grants"][0]["person"], person("a@example.com", None, None))
 
     def test_a_named_principal_is_resolved_and_its_explanation_is_published(self):
         subject = Principals(user="b@example.com", own=("b@example.com",), open=(), is_admin=False)
@@ -623,20 +641,65 @@ class TestGrantRoutes(BoundaryCase):
 
     def test_a_blank_password_is_no_password_and_is_never_hashed(self):
         with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
-            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password="")
+            routes.node_put_grant(node="n1", principal="$LINK", role=20, password="")
         self.assertIsNone(workflow.call_args.kwargs["password"])
 
     def test_an_omitted_password_keeps_the_stored_one_and_null_clears_it(self):
         # D20: §5.9 step 3 patches the password. Omitted keeps the hash, null
         # and blank clear it, and a string sets it.
         with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
-            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20)
+            routes.node_put_grant(node="n1", principal="$LINK", role=20)
             self.assertIs(workflow.call_args.kwargs["password"], routes.access.KEEP)
             frappe.local.form_dict = frappe._dict(password=None)
-            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password=None)
+            routes.node_put_grant(node="n1", principal="$LINK", role=20, password=None)
             self.assertIsNone(workflow.call_args.kwargs["password"])
-            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password="secret")
+            routes.node_put_grant(node="n1", principal="$LINK", role=20, password="secret")
             self.assertEqual(workflow.call_args.kwargs["password"], "secret")
+
+    def test_a_grant_patch_addresses_the_row_and_reads_the_password_the_same_way(self):
+        # A5: an existing link is changed by its grant id. The three fields
+        # are read exactly as `PUT` reads them.
+        with patch.object(routes.access, "update_grant", return_value={"name": "g1"}) as workflow:
+            routes.grant_patch(grant="g1", role="20")
+            self.assertEqual(workflow.call_args.args, ("g1", SOMEONE))
+            self.assertEqual(workflow.call_args.kwargs["role"], 20)
+            self.assertIs(workflow.call_args.kwargs["password"], routes.access.KEEP)
+            frappe.local.form_dict = frappe._dict(password=None)
+            routes.grant_patch(grant="g1", role=20, password=None, expires_on="2026-10-01T18:29:59Z")
+            self.assertIsNone(workflow.call_args.kwargs["password"])
+            self.assertEqual(workflow.call_args.kwargs["expires_on"], datetime(2026, 10, 1, 23, 59, 59))
+            routes.grant_patch(grant="g1", role=20, password="secret")
+            self.assertEqual(workflow.call_args.kwargs["password"], "secret")
+
+    def test_a_grant_patch_without_a_role_or_without_an_id_writes_nothing(self):
+        with patch.object(routes.access, "update_grant") as workflow:
+            for kwargs in ({"grant": "g1"}, {"grant": "g1", "role": ""}, {"grant": " ", "role": 20}):
+                with self.subTest(kwargs=kwargs):
+                    with self.assertRaises(DriveError) as caught:
+                        routes.grant_patch(**kwargs)
+                    self.assertEqual(caught.exception.http_status_code, 400)
+        workflow.assert_not_called()
+
+    def test_a_grant_delete_by_id_answers_the_row_count(self):
+        with patch.object(routes.access, "revoke_grant", return_value=1) as workflow:
+            self.assertEqual(routes.grant_delete(grant="g1"), {"count": 1})
+        workflow.assert_called_once_with("g1", SOMEONE)
+
+    def test_a_link_token_in_a_grant_path_is_refused_before_any_workflow(self):
+        # The token is the credential. An address is what proxies and
+        # browsers log, so a link is only ever addressed by its grant id.
+        with patch.object(routes.access, "grant") as write:
+            with patch.object(routes.access, "revoke") as remove:
+                for handler, kwargs in (
+                    (routes.node_put_grant, {"role": 20}),
+                    (routes.node_delete_grant, {}),
+                ):
+                    with self.subTest(call=handler.__name__):
+                        with self.assertRaises(DriveError) as caught:
+                            handler(node="n1", principal="$LINK:tok", **kwargs)
+                        self.assertEqual(caught.exception.http_status_code, 400)
+        write.assert_not_called()
+        remove.assert_not_called()
 
     def test_send_to_and_notify_reach_the_workflow_and_default_to_no_mail(self):
         with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
@@ -689,28 +752,43 @@ class TestGrantRoutes(BoundaryCase):
         self.assertIs(workflow.call_args.args[3], SOMEONE)
 
     def test_the_role_and_the_principal_are_forwarded_as_they_arrived(self):
-        with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
-            routes.node_put_grant(node="n1", principal="$PUBLIC", role="10", expires_on="2026-10-01")
+        # §11.3: the expiry arrives as RFC 3339 with its offset and reaches the
+        # workflow as the site-naive instant the column stores.
+        with (
+            patch("suite.drive._core.times.site_zone", return_value=ZoneInfo("Asia/Kolkata")),
+            patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow,
+        ):
+            routes.node_put_grant(
+                node="n1", principal="$PUBLIC", role="10", expires_on="2026-10-01T18:29:59Z"
+            )
         self.assertEqual(workflow.call_args.args[:3], ("n1", "$PUBLIC", 10))
-        self.assertEqual(workflow.call_args.kwargs["expires_on"], "2026-10-01")
+        self.assertEqual(workflow.call_args.kwargs["expires_on"], datetime(2026, 10, 1, 23, 59, 59))
 
-    def test_a_link_url_is_published_beside_the_row_only_when_one_was_minted(self):
+    def test_an_expiry_without_an_offset_is_refused_before_the_workflow(self):
+        with patch.object(routes.access, "grant") as workflow:
+            with self.assertRaises(DriveError) as caught:
+                routes.node_put_grant(node="n1", principal="$PUBLIC", role="10", expires_on="2026-10-01")
+        self.assertEqual(caught.exception.http_status_code, 400)
+        workflow.assert_not_called()
+
+    def test_a_link_url_is_published_on_the_row_only_when_one_was_minted(self):
         minted = {"name": "g1", "node": "n1", "principal": "$LINK:tok", "role": 20, "url": "/l/tok"}
         with patch.object(routes.access, "grant", return_value=minted):
             answer = routes.node_put_grant(node="n1", principal="$LINK", role=20)
-        self.assertEqual(set(answer), {"grant", "url"})
         self.assertEqual(answer["url"], "/l/tok")
-        with patch.object(routes.access, "grant", return_value={"name": "g2", "role": 40}):
+        self.assertEqual(answer["name"], "g1")
+        with patch.object(routes.access, "grant", return_value={"name": "g2", "principal": "b@example.com"}):
             answer = routes.node_put_grant(node="n1", principal="b@example.com", role=40)
-        self.assertEqual(set(answer), {"grant"})
+        self.assertNotIn("url", answer)
+        self.assertEqual(answer["person"]["id"], "b@example.com")
 
     def test_a_delete_without_below_removes_the_local_row_alone(self):
-        with patch.object(routes.access, "revoke") as revoke:
+        with patch.object(routes.access, "revoke", return_value=1) as revoke:
             with patch.object(routes.access, "revoke_below") as evict:
                 answer = routes.node_delete_grant(node="n1", principal="b@example.com")
         revoke.assert_called_once_with("n1", "b@example.com", SOMEONE)
         evict.assert_not_called()
-        self.assertEqual(answer, {"result": "revoked"})
+        self.assertEqual(answer, {"count": 1})
 
     def test_below_evicts_the_subtree_and_reports_the_row_count(self):
         with patch.object(routes.access, "revoke") as revoke:
@@ -718,7 +796,7 @@ class TestGrantRoutes(BoundaryCase):
                 answer = routes.node_delete_grant(node="n1", principal="b@example.com", below="1")
         evict.assert_called_once_with("n1", "b@example.com", SOMEONE)
         revoke.assert_not_called()
-        self.assertEqual(answer, {"result": "revoked", "rows": 7})
+        self.assertEqual(answer, {"count": 7})
 
     def test_a_delete_never_writes_a_deny(self):
         # §5.10 keeps removal and denial apart. Only PUT with `role: 0` denies,
@@ -776,7 +854,9 @@ class TestViewRoutes(BoundaryCase):
 
     def setUp(self):
         super().setUp()
-        self.row = frappe._dict({"name": "n1", "title": "t", "kind": "file", "root": "r1"})
+        self.row = frappe._dict(
+            {"name": "n1", "title": "t", "kind": "file", "root": "r1", "owner": "a@example.com"}
+        )
         self.views = patch.object(
             routes.node_core, "views", return_value={"rows": [self.row], "next_cursor": None}
         )
@@ -822,7 +902,7 @@ class TestViewRoutes(BoundaryCase):
         # state and the quota counters the view exists to show.
         root = frappe._dict({"name": "r1", "state": "Archived", "quota_bytes": 10, "used_bytes": 4})
         self.workflow.return_value = {"rows": [root], "next_cursor": None}
-        with patch.object(routes.shapes, "node_shape") as shaped:
+        with patch.object(routes.shapes, "node_shapes") as shaped:
             answer = routes.view_list(view="archived-roots")
         shaped.assert_not_called()
         self.assertEqual(answer["rows"], [dict(root)])
@@ -839,8 +919,9 @@ class TestViewRoutes(BoundaryCase):
         )
         for name, filters in expected:
             with self.subTest(view=name):
+                typed = "" if name in ("templates", "archived-roots") else "pdf,image"
                 routes.view_list(
-                    view=name, root="r1", content_doctype="Presentation", term="budget", type="pdf,image"
+                    view=name, root="r1", content_doctype="Presentation", term="budget", type=typed
                 )
                 passed = dict(self.workflow.call_args.kwargs)
                 passed.pop("cursor")
@@ -849,10 +930,18 @@ class TestViewRoutes(BoundaryCase):
                 passed.pop("with_breadcrumbs")
                 self.assertEqual(passed, filters)
 
+    def test_the_views_that_list_no_nodes_refuse_a_type_filter(self):
+        for name in ("templates", "archived-roots"):
+            with self.subTest(view=name):
+                with self.assertRaises(frappe.ValidationError):
+                    routes.view_list(view=name, type="folder")
+
     def test_recents_publish_the_visit_time_beside_the_base_node(self):
+        # Stored site-naive (IST here), published as UTC `Z` like every time (§11.3).
         self.row.opened_at = "2026-09-15 12:30:00"
-        answer = routes.view_list(view="recents")
-        self.assertEqual(answer["rows"][0]["opened_at"], "2026-09-15 12:30:00")
+        with patch("suite.drive._core.times.site_zone", return_value=ZoneInfo("Asia/Kolkata")):
+            answer = routes.view_list(view="recents")
+        self.assertEqual(answer["rows"][0]["opened_at"], "2026-09-15T07:00:00Z")
 
     def test_trash_without_a_root_and_search_without_a_term_page_nothing(self):
         for kwargs in ({"view": "trash"}, {"view": "search"}):
@@ -866,13 +955,13 @@ class TestViewRoutes(BoundaryCase):
         with patch.object(routes.activity_core, "clear_recents", return_value=12) as workflow:
             answer = routes.view_clear_recents()
         self.assertEqual(workflow.call_args.args, (SOMEONE, None))
-        self.assertEqual(answer, {"cleared": 12})
+        self.assertEqual(answer, {"count": 12})
 
     def test_naming_nodes_clears_only_the_coerced_list(self):
         with patch.object(routes.activity_core, "clear_recents", return_value=2) as workflow:
             answer = routes.view_clear_recents(nodes=["n1", "n2", "n1"])
         self.assertEqual(workflow.call_args.args, (SOMEONE, ("n1", "n2")))
-        self.assertEqual(answer, {"cleared": 2})
+        self.assertEqual(answer, {"count": 2})
 
 
 class TestVersionRoutes(BoundaryCase):
@@ -890,39 +979,46 @@ class TestVersionRoutes(BoundaryCase):
         self.assertEqual(workflow.call_args.kwargs["limit"], 10)
 
     def test_an_unnamed_version_kind_is_an_automatic_one(self):
+        # A3: a write answers the version it made, as the list would show it.
         with patch.object(routes.versions, "take_version", return_value=4) as workflow:
-            answer = routes.node_version_create(node="n1")
+            with patch.object(routes.versions, "get_version", return_value=version_row(4)) as read:
+                answer = routes.node_version_create(node="n1")
         self.assertEqual(workflow.call_args.kwargs["kind"], "auto")
         self.assertIsNone(workflow.call_args.kwargs["label"])
-        self.assertEqual(answer, {"seq": 4})
+        self.assertEqual(read.call_args.args, (SOMEONE, "n1", 4))
+        self.assertEqual((answer["seq"], answer["name"]), (4, "v4"))
+        self.assertNotIn("blob", answer)
 
     def test_a_named_kind_and_label_reach_the_workflow_as_they_arrived(self):
         with patch.object(routes.versions, "take_version", return_value=5) as workflow:
-            answer = routes.node_version_create(node="n1", kind="milestone", label="Q3 sign-off")
+            with patch.object(
+                routes.versions, "get_version", return_value=version_row(5, label="Q3 sign-off")
+            ):
+                answer = routes.node_version_create(node="n1", kind="milestone", label="Q3 sign-off")
         self.assertEqual(workflow.call_args.kwargs["kind"], "milestone")
         self.assertEqual(workflow.call_args.kwargs["label"], "Q3 sign-off")
-        self.assertEqual(answer, {"seq": 5})
+        self.assertEqual((answer["seq"], answer["label"]), (5, "Q3 sign-off"))
 
     def test_a_label_and_a_pin_are_forwarded_and_the_row_state_is_published(self):
-        stored = {"label": "Q3", "pinned": 1}
+        stored = version_row(3, label="Q3", pinned=1)
         with patch.object(routes.versions, "label_version", return_value=stored) as workflow:
             answer = routes.node_version_patch(node="n1", seq="3", label="Q3", pinned="1")
         self.assertEqual(workflow.call_args.args[1:], ("n1", 3))
         self.assertEqual(workflow.call_args.kwargs, {"label": "Q3", "pinned": True})
-        self.assertEqual(answer, stored)
+        self.assertEqual((answer["seq"], answer["label"], answer["pinned"]), (3, "Q3", 1))
 
     def test_a_field_the_request_did_not_name_is_not_forwarded(self):
         # §9.1 makes `pinned` a retention exemption, so a rename that defaulted
         # it to false would silently hand a milestone to the daily thinner.
-        with patch.object(routes.versions, "label_version", return_value={}) as workflow:
+        with patch.object(routes.versions, "label_version", return_value=version_row(3)) as workflow:
             routes.node_version_patch(node="n1", seq="3", label="Q3")
         self.assertEqual(workflow.call_args.kwargs, {"label": "Q3"})
-        with patch.object(routes.versions, "label_version", return_value={}) as workflow:
+        with patch.object(routes.versions, "label_version", return_value=version_row(3)) as workflow:
             routes.node_version_patch(node="n1", seq="3", pinned=True)
         self.assertEqual(workflow.call_args.kwargs, {"pinned": True})
 
     def test_an_empty_label_clears_one_and_an_absent_label_does_not(self):
-        with patch.object(routes.versions, "label_version", return_value={}) as workflow:
+        with patch.object(routes.versions, "label_version", return_value=version_row(3)) as workflow:
             routes.node_version_patch(node="n1", seq="3", label="")
         self.assertEqual(workflow.call_args.kwargs, {"label": None})
 
@@ -932,11 +1028,11 @@ class TestVersionRoutes(BoundaryCase):
                 routes.node_version_patch(node="n1", seq="3")
         workflow.assert_not_called()
 
-    def test_deleting_a_version_answers_an_empty_body(self):
+    def test_deleting_a_version_answers_the_one_row_it_removed(self):
         with patch.object(routes.versions, "delete_version") as workflow:
             answer = routes.node_version_delete(node="n1", seq="2")
         self.assertEqual(workflow.call_args.args[1:], ("n1", 2))
-        self.assertEqual(answer, {})
+        self.assertEqual(answer, {"count": 1})
 
     def test_version_bytes_redirect_to_the_minted_signature_and_are_never_cached(self):
         with patch.object(routes.versions, "version_content_url", return_value={"url": "/f/b/v.bin?e=1&s=x"}):
@@ -949,9 +1045,19 @@ class TestVersionRoutes(BoundaryCase):
         # §9.1: restore captures the current state before it writes, and that
         # capture is the sequence a client needs to undo the restore.
         with patch.object(routes.versions, "restore_version", return_value=9) as workflow:
-            answer = routes.node_version_restore(node="n1", seq="3")
+            with patch.object(routes.versions, "get_version", return_value=version_row(9)) as read:
+                answer = routes.node_version_restore(node="n1", seq="3")
         self.assertEqual(workflow.call_args.args[1:], ("n1", 3))
-        self.assertEqual(answer, {"seq": 9})
+        self.assertEqual(read.call_args.args, (SOMEONE, "n1", 9))
+        self.assertEqual(answer["seq"], 9)
+
+    def test_a_restore_that_captured_nothing_answers_null(self):
+        # An empty head has no bytes to keep, and there is no version to name.
+        with patch.object(routes.versions, "restore_version", return_value=0):
+            with patch.object(routes.versions, "get_version") as read:
+                answer = routes.node_version_restore(node="n1", seq="3")
+        read.assert_not_called()
+        self.assertIsNone(answer)
 
     def test_sequence_zero_and_an_absent_sequence_name_no_version(self):
         # A sequence starts at 1, so 0 is a malformed address rather than the
@@ -984,17 +1090,27 @@ class TestRecordRoutes(BoundaryCase):
                     routes.node_threads(node="n1", resolved=asked)
                 self.assertIs(workflow.call_args.kwargs["resolved"], forwarded)
 
-    def test_a_new_thread_publishes_the_pair_the_workflow_returned(self):
-        written = {"thread": "t1", "comment": "c1"}
+    def test_a_new_thread_publishes_the_thread_the_workflow_returned(self):
+        # A3: the answer is the thread as the list shows it, first comment inside.
+        comment = frappe._dict(
+            {"name": "c1", "thread": "t1", "node": "n1", "content": "hello", "mentions": []}
+        )
+        written = frappe._dict(
+            {"name": "t1", "node": "n1", "anchor": "a1", "resolved": 0, "comments": [comment]}
+        )
         with patch.object(routes.comments, "create_thread", return_value=written) as workflow:
             answer = routes.node_thread_create(node="n1", anchor="a1", text="hello")
-        self.assertEqual(answer, written)
+        self.assertEqual((answer["name"], answer["anchor"], answer["resolved"]), ("t1", "a1", False))
+        self.assertEqual([row["name"] for row in answer["comments"]], ["c1"])
         self.assertEqual(workflow.call_args.args[1:], ("n1", "a1", "hello"))
 
-    def test_a_reply_publishes_only_the_comment_id_the_workflow_minted(self):
-        with patch.object(routes.comments, "reply", return_value="c2") as workflow:
+    def test_a_reply_publishes_the_comment_the_workflow_minted(self):
+        written = frappe._dict(
+            {"name": "c2", "thread": "t1", "node": "n1", "content": "second", "mentions": []}
+        )
+        with patch.object(routes.comments, "reply", return_value=written) as workflow:
             answer = routes.thread_comment_create(thread="t1", text="second", author_name="Ada")
-        self.assertEqual(answer, {"comment": "c2"})
+        self.assertEqual((answer["name"], answer["content"]), ("c2", "second"))
         self.assertEqual(workflow.call_args.args[1:], ("t1", "second"))
         self.assertEqual(workflow.call_args.kwargs["author_name"], "Ada")
 
@@ -1064,19 +1180,19 @@ class TestRecordRoutes(BoundaryCase):
         with patch.object(routes.activity_core, "mark_read", return_value=0) as workflow:
             answer = routes.notifications_read(notifications=[])
         self.assertEqual(workflow.call_args.args, (SOMEONE, ()))
-        self.assertEqual(answer, {"read": 0})
+        self.assertEqual(answer, {"count": 0})
 
     def test_the_all_flag_names_no_notification(self):
         with patch.object(routes.activity_core, "mark_read", return_value=8) as workflow:
             answer = routes.notifications_read(all="1")
         self.assertEqual(workflow.call_args.args, (SOMEONE, None))
-        self.assertEqual(answer, {"read": 8})
+        self.assertEqual(answer, {"count": 8})
 
     def test_a_visit_forwards_the_caller_s_own_principals(self):
         with patch.object(routes.activity_core, "visit") as workflow:
             answer = routes.node_visit(node="n1")
         self.assertEqual(workflow.call_args.args, (SOMEONE, "n1"))
-        self.assertEqual(answer, {})
+        self.assertEqual(answer, {"count": 1})
 
     def test_a_star_and_an_unstar_are_the_same_call_with_the_two_values(self):
         for handler, value in ((routes.node_put_favourite, True), (routes.node_delete_favourite, False)):
@@ -1084,7 +1200,7 @@ class TestRecordRoutes(BoundaryCase):
                 with patch.object(routes.activity_core, "set_favourite") as workflow:
                     answer = handler(node="n1")
                 self.assertEqual(workflow.call_args.args, (SOMEONE, "n1", value))
-                self.assertEqual(answer, {})
+                self.assertEqual(answer, {"count": 1})
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ import base64
 import binascii
 import functools
 import unicodedata
+from datetime import datetime
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -165,7 +166,7 @@ def _mark_favourites(principals, answers: list[shapes.NodeShape]) -> None:
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
 def node_create(
-    parent: Given = None,
+    parent_node: Given = None,
     title: Given = None,
     kind: Given = None,
     blob: Given = None,
@@ -177,7 +178,7 @@ def node_create(
     from_node: Given = None,
     is_template: Given = None,
 ) -> shapes.NodeShape:
-    """Create one node of any kind a client may create below `parent` (§8.3).
+    """Create one node of any kind a client may create below `parent_node` (§8.3).
 
     `blob`, `size`, and `mime` are §11.2's declared body, and they are claims
     the workflow checks, not values it stores. `create_file` re-reads the blob
@@ -190,13 +191,13 @@ def node_create(
     principals = _principals()
     created = node_core.create(
         principals,
-        shapes.required_text(parent, "parent"),
+        shapes.required_text(parent_node, "parent_node"),
         shapes.required_text(title, "title"),
         kind=shapes.required_text(kind, "kind"),
         blob=shapes.text(blob, "blob"),
         size=None if size is None else shapes.whole(size, "size", 0),
         mime=shapes.text(mime, "mime"),
-        content_modified=content_modified,
+        content_modified=shapes.moment(content_modified, "content_modified"),
         url=shapes.text(url, "url"),
         content_doctype=shapes.text(content_doctype, "content_doctype"),
         from_node=shapes.text(from_node, "from_node"),
@@ -228,22 +229,25 @@ def node_get(node: Given = None, expand: Given = None) -> shapes.NodeShape:
 def node_patch(
     node: Given = None,
     title: Given = None,
-    parent: Given = None,
+    parent_node: Given = None,
     state: Given = None,
     content_modified: Given = None,
+    expect_parent_node: Given = None,
 ) -> shapes.NodeShape:
     """Rename, move, trash, restore, or stamp one node (§8.2).
 
     §11.2 gives this route five whole bodies and no more: `{title}`,
-    `{parent}`, `{state}`, `{parent, state: "Active"}`, and
+    `{parent_node}`, `{state}`, `{parent_node, state: "Active"}`, and
     `{content_modified}`. `update` takes exactly one of them, and two at once
-    is a `ValidationError`.
+    is a `ValidationError`. A move may add `expect_parent_node`, the folder
+    the caller last saw the node in; the workflow answers `DriveMoved` (409)
+    when it has moved on, and writes nothing.
 
     Bytes are not among them. A file head is replaced through
     `PUT /nodes/<id>/content`, which names an upload session the caller
     finished, so this route never takes a blob id.
 
-    A restore whose original parent chain is gone carries both `parent` and
+    A restore whose original parent chain is gone carries both `parent_node` and
     `state: "Active"`: the destination is the user's choice, and `_restore`
     answers `DriveConflict` when it is missing rather than picking one.
     """
@@ -253,23 +257,23 @@ def node_patch(
             principals,
             shapes.required_text(node, "node"),
             title=shapes.text(title, "title"),
-            parent=shapes.text(parent, "parent"),
+            parent_node=shapes.text(parent_node, "parent_node"),
             state=shapes.text(state, "state"),
-            content_modified=content_modified,
+            content_modified=shapes.moment(content_modified, "content_modified"),
+            expect_parent_node=shapes.text(expect_parent_node, "expect_parent_node"),
         )
     )
 
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def node_purge(node: Given = None) -> dict:
+def node_purge(node: Given = None) -> shapes.Count:
     """Permanently remove one trash root's subtree (§8.8).
 
     MANAGE only, so never a link holder. Any node that is not a trash root is
     `DriveConflict`: an Active node goes to the trash first.
     """
-    purged = node_core.purge(_principals(), shapes.required_text(node, "node"))
-    return {"purged": purged}
+    return {"count": node_core.purge(_principals(), shapes.required_text(node, "node"))}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -281,7 +285,6 @@ def node_children(
     order_by: Given = None,
     ascending: Given = None,
     type: Given = None,
-    group_by: Given = None,
     expand: Given = None,
 ) -> shapes.Page[shapes.NodeShape]:
     """Page one folder's readable children in §11.4's opaque-cursor envelope."""
@@ -296,7 +299,6 @@ def node_children(
         order_by=shapes.text(order_by, "order_by") or "title",
         ascending=shapes.flag(ascending, "ascending", True),
         listing_types=shapes.listing_types(type),
-        group_by=shapes.text(group_by, "group_by"),
         with_access="access" in asked,
     )
     rows = [shapes.node_shape(row) for row in result["rows"]]
@@ -313,7 +315,7 @@ def node_children(
         # folder's own trail with the folder itself appended. `children`
         # already read and authorized that folder: reading it again would let
         # a grant revoked mid-request 404 a page the plain listing answered.
-        listed = result["parent"]
+        listed = result["container"]
         trail = [*node_core.breadcrumbs(listed, principals), {"name": listed.name, "title": listed.title}]
         for answer in rows:
             answer["breadcrumbs"] = list(trail)
@@ -322,13 +324,13 @@ def node_children(
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_copy(node: Given = None, parent: Given = None, title: Given = None) -> shapes.NodeShape:
-    """Copy one readable tree into `parent`, sharing blobs but no authority."""
+def node_copy(node: Given = None, parent_node: Given = None, title: Given = None) -> shapes.NodeShape:
+    """Copy one readable tree into `parent_node`, sharing blobs but no authority."""
     principals = _principals()
     copied = node_core.copy(
         principals,
         shapes.required_text(node, "node"),
-        shapes.required_text(parent, "parent"),
+        shapes.required_text(parent_node, "parent_node"),
         title=shapes.text(title, "title"),
     )
     return shapes.node_shape(node_core.stored(copied))
@@ -390,9 +392,10 @@ def node_batch(nodes: Given = None, patch: Given = None) -> shapes.BatchResult:
             principals,
             node,
             title=shapes.text(mutation.get("title"), "title"),
-            parent=shapes.text(mutation.get("parent"), "parent"),
+            parent_node=shapes.text(mutation.get("parent_node"), "parent_node"),
             state=shapes.text(mutation.get("state"), "state"),
-            content_modified=mutation.get("content_modified"),
+            content_modified=shapes.moment(mutation.get("content_modified"), "content_modified"),
+            expect_parent_node=shapes.text(mutation.get("expect_parent_node"), "expect_parent_node"),
         ),
     )
 
@@ -456,7 +459,7 @@ def node_put_content(
         principals,
         shapes.required_text(upload_id, "upload_id"),
         checksum=shapes.text(checksum, "checksum"),
-        content_modified=content_modified,
+        content_modified=shapes.moment(content_modified, "content_modified"),
         replaces=shapes.required_text(node, "node"),
     )
     return shapes.node_shape(node_core.stored(replaced))
@@ -531,7 +534,7 @@ def node_preview(node: Given = None, image: Given = None, mime: Given = None) ->
     wanted = shapes.required_text(node, "node")
     try:
         pixels = base64.b64decode(shapes.required_text(image, "image"), validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         frappe.throw(_("Drive argument image is invalid"), frappe.ValidationError)
     previews.push_preview(principals, wanted, pixels, shapes.required_text(mime, "mime"))
     return {"preview": previews.preview_expansions([wanted]).get(wanted)}
@@ -545,7 +548,7 @@ def node_preview(node: Given = None, image: Given = None, mime: Given = None) ->
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
 def upload_create(
-    parent: Given = None,
+    parent_node: Given = None,
     filename: Given = None,
     size: Given = None,
     mime: Given = None,
@@ -561,7 +564,7 @@ def upload_create(
     """
     return upload_core.create_upload(
         _principals(),
-        shapes.required_text(parent, "parent"),
+        shapes.required_text(parent_node, "parent_node"),
         shapes.required_text(filename, "filename"),
         shapes.whole(size, "size", 0),
         mime=shapes.text(mime, "mime"),
@@ -589,7 +592,7 @@ def upload_chunk(upload_id: Given = None, offset: Given = None) -> dict:
 @_route
 def upload_finish(
     upload_id: Given = None,
-    parent: Given = None,
+    parent_node: Given = None,
     title: Given = None,
     checksum: Given = None,
     content_modified: Given = None,
@@ -600,10 +603,10 @@ def upload_finish(
     node = upload_core.finish_upload(
         principals,
         shapes.required_text(upload_id, "upload_id"),
-        parent=shapes.text(parent, "parent"),
+        parent_node=shapes.text(parent_node, "parent_node"),
         title=shapes.text(title, "title"),
         checksum=shapes.text(checksum, "checksum"),
-        content_modified=content_modified,
+        content_modified=shapes.moment(content_modified, "content_modified"),
         replaces=shapes.text(replaces, "replaces"),
     )
     return shapes.node_shape(node_core.stored(node))
@@ -654,11 +657,11 @@ def root_patch(
     root: Given = None,
     quota_bytes: Given = None,
     state: Given = None,
-) -> dict:
+) -> shapes.RootShape:
     """Apply exactly one Suite Admin change to one root's metadata."""
     wanted = shapes.required_text(root, "root")
     quota = None if quota_bytes is None else shapes.whole(quota_bytes, "quota_bytes", 0)
-    return dict(
+    return shapes.root_shape(
         roots.update_root(
             wanted,
             _principals(),
@@ -670,16 +673,16 @@ def root_patch(
 
 @frappe.whitelist(methods=["POST"])
 @_route
-def root_empty_trash(root: Given = None) -> dict:
+def root_empty_trash(root: Given = None) -> shapes.Count:
     """Purge every trashed tree in one root. MANAGE on the root node (§8.8)."""
-    return {"purged": node_core.empty_trash(_principals(), shapes.required_text(root, "root"))}
+    return {"count": node_core.empty_trash(_principals(), shapes.required_text(root, "root"))}
 
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def root_purge(root: Given = None) -> dict:
+def root_purge(root: Given = None) -> shapes.Count:
     """Purge one Archived root pair and everything below it. Suite Admin only."""
-    return dict(roots.purge_root(shapes.required_text(root, "root"), _principals()))
+    return {"count": roots.purge_root(shapes.required_text(root, "root"), _principals()).purged}
 
 
 # --------------------------------------------------------------------------
@@ -689,16 +692,17 @@ def root_purge(root: Given = None) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 @_route
-def node_grants(node: Given = None, principal: Given = None, inherited: Given = None) -> dict:
+def node_grants(node: Given = None, principal: Given = None, inherited: Given = None) -> shapes.GrantsShape:
     """Answer one node's local grants, and optionally one explanation (§11.2).
 
     `?inherited=1` adds every live grant on an ancestor, each with the node it
     sits on and that node's title, nearest ancestor first. The share dialog
     shows them under "From <folder>" (issue 44, D19).
 
-    `owner` is the user whose Personal root holds the node, as `{user,
-    full_name}`, or null in the Shared root. The dialog lists them first, as
-    Owner, with nothing to change.
+    `owner` is the person whose Personal root holds the node, or null in the
+    Shared root. The dialog lists them first, as Owner, with nothing to
+    change. Every user the answer names is published as a person, from one
+    lookup for the whole answer.
 
     `?principal=` is the accepted spelling of §5.8's `explain`. MANAGE on the
     target is what the caller needs, and it is checked before the named
@@ -722,12 +726,7 @@ def node_grants(node: Given = None, principal: Given = None, inherited: Given = 
         inherited=shapes.flag(inherited, "inherited", False),
         resolve_subject=(lambda: framework.principals_for_principal(named)) if named else None,
     )
-    shaped = {"grants": [shapes.grant_shape(row) for row in answer["grants"]], "owner": answer["owner"]}
-    if "inherited" in answer:
-        shaped["inherited"] = [shapes.inherited_grant_shape(row) for row in answer["inherited"]]
-    if "explain" in answer:
-        shaped["explain"] = shapes.explain_shape(answer["explain"])
-    return shaped
+    return shapes.grants_shape(answer)
 
 
 @frappe.whitelist(methods=["PUT"])
@@ -740,7 +739,7 @@ def node_put_grant(
     password: Given = None,
     send_to: Given = None,
     notify: Given = None,
-) -> dict:
+) -> shapes.GrantShape:
     """Write one grant, including an explicit deny and a new share link (§5.9).
 
     `role` is required and is never defaulted. Every one of §5.9's twelve
@@ -760,7 +759,52 @@ def node_put_grant(
     `send_to` on `$LINK` mails the new link to one address and stores it on
     the row. `notify: true` on a user principal mails that user. `notify` is
     never stored. Both mails leave the request path (§9.5).
+
+    An existing link is addressed by its grant id (`PATCH /grants/<id>`),
+    never by `$LINK:<token>` here: the token is the credential, and a path is
+    what proxies log and browsers keep.
     """
+    role, expires_on, password = _grant_write(role, expires_on, password)
+    written = access.grant(
+        shapes.required_text(node, "node"),
+        _path_principal(principal),
+        role,
+        _principals(),
+        expires_on=expires_on,
+        password=password,
+        send_to=shapes.text(send_to, "send_to"),
+        notify=shapes.flag(notify, "notify", False),
+    )
+    return shapes.grant_shape(written)
+
+
+@frappe.whitelist(methods=["PATCH"])
+@_route
+def grant_patch(
+    grant: Given = None,
+    role: Given = None,
+    expires_on: Given = None,
+    password: Given = None,
+) -> shapes.GrantShape:
+    """Rewrite one grant by its id: the same write as `PUT`, on a row already there.
+
+    This is how a share link's role, expiry, or password changes. The row's
+    node and principal are read from the row, so the token never leaves the
+    body of a listing. Every refusal of §5.9 applies as it does on `PUT`.
+    """
+    role, expires_on, password = _grant_write(role, expires_on, password)
+    written = access.update_grant(
+        shapes.required_text(grant, "grant"),
+        _principals(),
+        role=role,
+        expires_on=expires_on,
+        password=password,
+    )
+    return shapes.grant_shape(written)
+
+
+def _grant_write(role: Given, expires_on: Given, password: Given) -> tuple[int, datetime | None, str | None]:
+    """Read the three fields a grant write shares between `PUT` and `PATCH`."""
     # An absent role and a blank one are the same refusal. `shapes.whole` reads
     # `""` as its default, and the default a role would take is 0, which is the
     # explicit deny of §5.10. A dropped form field must never become a denial.
@@ -771,26 +815,30 @@ def node_put_grant(
     # things here: keep the password, or clear it.
     if password is None and "password" not in frappe.form_dict:
         password = access.KEEP
-    written = access.grant(
-        shapes.required_text(node, "node"),
-        shapes.required_text(principal, "principal"),
+    return (
         shapes.whole(role, "role", 0),
-        _principals(),
-        expires_on=expires_on,
+        shapes.moment(expires_on, "expires_on"),
         # A blank password is a cleared one. `""` reaching the workflow would
         # be hashed and stored, and §6.3's unlock would then guard the link
         # behind a secret nobody typed; on a principal that is not a link it
         # would trip refusal 10 and answer 403 for an empty form field.
-        password=password if password is access.KEEP else shapes.text(password, "password") or None,
-        send_to=shapes.text(send_to, "send_to"),
-        notify=shapes.flag(notify, "notify", False),
+        password if password is access.KEEP else shapes.text(password, "password") or None,
     )
-    return _grant_answer(written)
+
+
+def _path_principal(principal: Given) -> str:
+    """A principal named in a path: any of §4.4's spellings but a link token."""
+    named = shapes.required_text(principal, "principal")
+    if named.startswith("$LINK:"):
+        frappe.throw(
+            _("A Drive share link is addressed by its grant id, not its token"), frappe.ValidationError
+        )
+    return named
 
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def node_delete_grant(node: Given = None, principal: Given = None, below: Given = None) -> dict:
+def node_delete_grant(node: Given = None, principal: Given = None, below: Given = None) -> shapes.Count:
     """Remove this principal's local grant, or every grant below it (§5.10).
 
     Removal is never a denial. This writes no row of its own: access inherited
@@ -799,41 +847,43 @@ def node_delete_grant(node: Given = None, principal: Given = None, below: Given 
 
     `?below=1` is `revoke_below`, the eviction the creator grant makes
     necessary (§4.5): a creator grant sits under the folder being revoked at,
-    and nearest-wins would keep it alive.
+    and nearest-wins would keep it alive. The count is the rows removed, the
+    row here included.
     """
     principals = _principals()
     wanted = shapes.required_text(node, "node")
-    named = shapes.required_text(principal, "principal")
+    named = _path_principal(principal)
     if shapes.flag(below, "below", False):
-        return {"result": "revoked", "rows": access.revoke_below(wanted, named, principals)}
-    access.revoke(wanted, named, principals)
-    return {"result": "revoked"}
+        return {"count": access.revoke_below(wanted, named, principals)}
+    return {"count": access.revoke(wanted, named, principals)}
+
+
+@frappe.whitelist(methods=["DELETE"])
+@_route
+def grant_delete(grant: Given = None) -> shapes.Count:
+    """Remove one grant by its id. How a share link is removed (§5.10)."""
+    return {"count": access.revoke_grant(shapes.required_text(grant, "grant"), _principals())}
 
 
 @frappe.whitelist(methods=["POST"])
 @_route
-def grant_rotate(grant: Given = None) -> dict:
+def grant_rotate(grant: Given = None) -> shapes.GrantShape:
     """Mint a new token for one share link, keeping everything else (§5.11).
 
     The address is the `Drive Grant` id, not the old token: rotation is a
     management act on a row, and naming the token in the URL would put the
     secret being replaced into the access log.
     """
-    return _grant_answer(access.rotate_link(shapes.required_text(grant, "grant"), _principals()))
-
-
-def _grant_answer(written: dict) -> dict:
-    """Split §11.2's `{grant, url?}`: the row, and the link URL beside it."""
-    answer = {"grant": shapes.grant_shape(written)}
-    if written.get("url"):
-        answer["url"] = written["url"]
-    return answer
+    return shapes.grant_shape(access.rotate_link(shapes.required_text(grant, "grant"), _principals()))
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 @_route
-def link_unlock(token: Given = None, password: Given = None) -> dict:
+def link_unlock(token: Given = None, password: Given = None) -> shapes.UnlockTicket:
     """Trade one link password for the stateless 30-day ticket of §4.8.
+
+    The token travels in the body with the password, never in the path: both
+    are secrets, and a path is logged where a body is not.
 
     No role is needed and no row is written: the password is the whole proof,
     and the ticket is an HMAC over the token, the stored hash, and an expiry,
@@ -875,8 +925,11 @@ def view_list(
     nothing to be shown here and a shared `Guest` recents list would be one
     list for every anonymous visitor on the site.
 
-    Access and preview expansions are built once for the whole page. Search
-    also accepts breadcrumbs, whose ancestor titles are fetched as one union.
+    Access and preview expansions are built once for the whole page. Search,
+    shared, and favourites also accept breadcrumbs, whose ancestor titles are
+    fetched as one union: a folder opened from those lists shows its trail at
+    once. Recents hides folders and trash shows the trash root's own trail, so
+    neither takes them.
 
     `archived-roots` answers root metadata, not nodes (§5.5), so its rows are
     passed through as they are.
@@ -885,7 +938,7 @@ def view_list(
     name = shapes.required_text(view, "view")
     asked = shapes.expansions(expand)
     supported = {"preview", "access"}
-    if name == "search":
+    if name in ("search", "shared", "favourites"):
         supported.add("breadcrumbs")
     if name == "archived-roots":
         supported = set()
@@ -906,7 +959,7 @@ def view_list(
     )
     if name == "archived-roots":
         return shapes.page(result, [dict(row) for row in result["rows"]])
-    rows = [shapes.node_shape(row) for row in result["rows"]]
+    rows = shapes.node_shapes(result["rows"])
     _mark_favourites(principals, rows)
     for answer, row in zip(rows, result["rows"], strict=True):
         if "access" in asked:
@@ -930,8 +983,11 @@ def _view_filters(name: str, root: Given, content_doctype: Given, term: Given, l
     work rather than an argument that does not exist.
 
     Every node view but `templates` takes `?type=`. Templates are documents
-    only, and filter by `content_doctype`.
+    only, and filter by `content_doctype`; `archived-roots` lists roots, not
+    nodes. Both refuse `?type=` rather than ignore it.
     """
+    if name in ("templates", "archived-roots") and shapes.text(listing_types, "type"):
+        frappe.throw(_("The {0} view does not filter by type").format(name), frappe.ValidationError)
     if name == "templates":
         return {"content_doctype": shapes.text(content_doctype, "content_doctype")}
     if name == "archived-roots":
@@ -946,10 +1002,10 @@ def _view_filters(name: str, root: Given, content_doctype: Given, term: Given, l
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def view_clear_recents(nodes: Given = None) -> dict:
+def view_clear_recents(nodes: Given = None) -> shapes.Count:
     """Clear the caller's own recents, and never their favourites (§9.5)."""
     named = None if nodes is None else shapes.name_list(nodes, "nodes")
-    return {"cleared": activity_core.clear_recents(_principals(), named)}
+    return {"count": activity_core.clear_recents(_principals(), named)}
 
 
 # --------------------------------------------------------------------------
@@ -972,20 +1028,22 @@ def node_versions(node: Given = None, limit: Given = None, cursor: Given = None)
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 @_route
-def node_version_create(node: Given = None, kind: Given = None, label: Given = None) -> dict:
-    """Store the node's current bytes as a version and answer its sequence.
+def node_version_create(node: Given = None, kind: Given = None, label: Given = None) -> shapes.VersionShape:
+    """Store the node's current bytes as a version and answer that version.
 
     `kind` and `label` are §9.1's own arguments: `auto` is what a save path
     takes, and a person naming or pinning a milestone takes `named` or
     `milestone`. Which kinds exist is the workflow's rule, not this route's.
     """
+    principals = _principals()
+    wanted = shapes.required_text(node, "node")
     seq = versions.take_version(
-        _principals(),
-        shapes.required_text(node, "node"),
+        principals,
+        wanted,
         kind=shapes.text(kind, "kind") or "auto",
         label=shapes.text(label, "label"),
     )
-    return {"seq": seq}
+    return shapes.version_shape(versions.get_version(principals, wanted, seq))
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["PATCH"])
@@ -995,7 +1053,7 @@ def node_version_patch(
     seq: Given = None,
     label: Given = None,
     pinned: Given = None,
-) -> dict:
+) -> shapes.VersionShape:
     """Set either mutable field of an otherwise immutable version (§9.1).
 
     A field the request does not name is left alone. Defaulting `pinned` to
@@ -1010,24 +1068,27 @@ def node_version_patch(
         changes["pinned"] = shapes.flag(pinned, "pinned", False)
     if not changes:
         frappe.throw(_("Drive requires either label or pinned"), frappe.ValidationError)
-    return versions.label_version(
-        _principals(),
-        shapes.required_text(node, "node"),
-        shapes.sequence(seq, "seq"),
-        **changes,
+    return shapes.version_shape(
+        versions.label_version(
+            _principals(),
+            shapes.required_text(node, "node"),
+            shapes.sequence(seq, "seq"),
+            **changes,
+        )
     )
 
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def node_version_delete(node: Given = None, seq: Given = None) -> dict:
+def node_version_delete(node: Given = None, seq: Given = None) -> shapes.Count:
     """Delete one version and release its bytes. MANAGE, so never a link."""
     versions.delete_version(
         _principals(),
         shapes.required_text(node, "node"),
         shapes.sequence(seq, "seq"),
     )
-    return {}
+    # The workflow removes exactly the one row it was named, or raises.
+    return {"count": 1}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -1047,19 +1108,20 @@ def node_version_content(node: Given = None, seq: Given = None) -> Response:
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_version_restore(node: Given = None, seq: Given = None) -> dict:
-    """Restore one version, answering the sequence taken first (§9.1).
+def node_version_restore(node: Given = None, seq: Given = None) -> shapes.VersionShape | None:
+    """Restore one version, answering the version taken first (§9.1).
 
     Restore is never destructive: the workflow captures the current state as a
-    version before it writes, and that captured sequence is what comes back.
+    version before it writes, and that captured version is what comes back,
+    so a client can offer the way back. A zero-byte file head has nothing to
+    capture, and the answer is null.
     """
-    return {
-        "seq": versions.restore_version(
-            _principals(),
-            shapes.required_text(node, "node"),
-            shapes.sequence(seq, "seq"),
-        )
-    }
+    principals = _principals()
+    wanted = shapes.required_text(node, "node")
+    captured = versions.restore_version(principals, wanted, shapes.sequence(seq, "seq"))
+    if not captured:
+        return None
+    return shapes.version_shape(versions.get_version(principals, wanted, captured))
 
 
 # --------------------------------------------------------------------------
@@ -1072,16 +1134,15 @@ def node_version_restore(node: Given = None, seq: Given = None) -> dict:
 def node_threads(node: Given = None, resolved: Given = None) -> dict:
     """List one readable document's comment threads and their comments."""
     return {
-        "threads": [
-            shapes.thread_shape(row)
-            for row in comments.threads(
+        "threads": shapes.thread_shapes(
+            comments.threads(
                 _principals(),
                 shapes.required_text(node, "node"),
                 resolved=None
                 if resolved is None or resolved == ""
                 else shapes.flag(resolved, "resolved", False),
             )
-        ]
+        )
     }
 
 
@@ -1092,31 +1153,35 @@ def node_thread_create(
     anchor: Given = None,
     text: Given = None,
     author_name: Given = None,
-) -> dict:
+) -> shapes.ThreadShape:
     """Open one thread and its first comment in one write (§9.3).
 
     The anchor is opaque here: Drive stores and lists it, and the content app
     resolves it on screen. The author is the server's to set - a guest supplies
-    only the display name they typed, never the identity (§6.7).
+    only the display name they typed, never the identity (§6.7). The answer is
+    the thread as `GET .../threads` lists it, its first comment inside.
     """
-    return comments.create_thread(
-        _principals(),
-        shapes.required_text(node, "node"),
-        shapes.required_text(anchor, "anchor"),
-        shapes.required_text(text, "text"),
-        author_name=shapes.text(author_name, "author_name"),
+    return shapes.thread_shape(
+        comments.create_thread(
+            _principals(),
+            shapes.required_text(node, "node"),
+            shapes.required_text(anchor, "anchor"),
+            shapes.required_text(text, "text"),
+            author_name=shapes.text(author_name, "author_name"),
+        )
     )
 
 
 @frappe.whitelist(allow_guest=True, methods=["PATCH"])
 @_route
-def thread_patch(thread: Given = None, resolved: Given = None) -> dict:
+def thread_patch(thread: Given = None, resolved: Given = None) -> shapes.ThreadShape:
     """Resolve or reopen one thread. COMMENT, and idempotent (§9.3)."""
     if resolved is None:
         frappe.throw(_("Drive argument resolved is required"), frappe.ValidationError)
     wanted = shapes.flag(resolved, "resolved", False)
-    comments.resolve(_principals(), shapes.required_text(thread, "thread"), wanted)
-    return {"resolved": wanted}
+    return shapes.thread_shape(
+        comments.resolve(_principals(), shapes.required_text(thread, "thread"), wanted)
+    )
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
@@ -1125,36 +1190,38 @@ def thread_comment_create(
     thread: Given = None,
     text: Given = None,
     author_name: Given = None,
-) -> dict:
+) -> shapes.CommentShape:
     """Append one comment to an existing thread. COMMENT on its node."""
-    return {
-        "comment": comments.reply(
+    return shapes.comment_shape(
+        comments.reply(
             _principals(),
             shapes.required_text(thread, "thread"),
             shapes.required_text(text, "text"),
             author_name=shapes.text(author_name, "author_name"),
         )
-    }
+    )
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["PATCH"])
 @_route
-def comment_patch(comment: Given = None, text: Given = None) -> dict:
+def comment_patch(comment: Given = None, text: Given = None) -> shapes.CommentShape:
     """Rewrite one comment's body. EDIT on the node, or being its author."""
-    comments.edit_comment(
-        _principals(),
-        shapes.required_text(comment, "comment"),
-        shapes.required_text(text, "text"),
+    return shapes.comment_shape(
+        comments.edit_comment(
+            _principals(),
+            shapes.required_text(comment, "comment"),
+            shapes.required_text(text, "text"),
+        )
     )
-    return {}
 
 
 @frappe.whitelist(allow_guest=True, methods=["DELETE"])
 @_route
-def comment_delete(comment: Given = None) -> dict:
+def comment_delete(comment: Given = None) -> shapes.Count:
     """Delete one comment. EDIT on the node, or being its author."""
     comments.delete_comment(_principals(), shapes.required_text(comment, "comment"))
-    return {}
+    # The workflow removes exactly the one row it was named, or raises.
+    return {"count": 1}
 
 
 # --------------------------------------------------------------------------
@@ -1177,23 +1244,23 @@ def node_activity(node: Given = None, limit: Given = None, cursor: Given = None)
 
 @frappe.whitelist(methods=["POST"])
 @_route
-def node_visit(node: Given = None) -> shapes.Empty:
+def node_visit(node: Given = None) -> shapes.Count:
     """Record that the caller opened this node. One Recent, no Activity."""
     activity_core.visit(_principals(), shapes.required_text(node, "node"))
-    return {}
+    return {"count": 1}
 
 
 @frappe.whitelist(methods=["PUT"])
 @_route
-def node_put_favourite(node: Given = None) -> shapes.Empty:
+def node_put_favourite(node: Given = None) -> shapes.Count:
     """Star one readable node for the caller alone."""
     activity_core.set_favourite(_principals(), shapes.required_text(node, "node"), True)
-    return {}
+    return {"count": 1}
 
 
 @frappe.whitelist(methods=["DELETE"])
 @_route
-def node_delete_favourite(node: Given = None) -> shapes.Empty:
+def node_delete_favourite(node: Given = None) -> shapes.Count:
     """Unstar one node for the caller alone.
 
     Clearing takes no check on the node, deliberately: a star on something the
@@ -1201,7 +1268,7 @@ def node_delete_favourite(node: Given = None) -> shapes.Empty:
     neither see nor remove.
     """
     activity_core.set_favourite(_principals(), shapes.required_text(node, "node"), False)
-    return {}
+    return {"count": 1}
 
 
 # --------------------------------------------------------------------------
@@ -1233,7 +1300,7 @@ def notifications_unread_count() -> shapes.UnreadCount:
 
 @frappe.whitelist(methods=["POST"])
 @_route
-def notifications_read(notifications: Given = None, all: Given = None) -> shapes.ReadResult:
+def notifications_read(notifications: Given = None, all: Given = None) -> shapes.Count:
     """Mark named, or all, of the caller's notifications read (§11.2).
 
     Caller-scoped on both sides: the workflow reads the caller's own unread
@@ -1246,7 +1313,7 @@ def notifications_read(notifications: Given = None, all: Given = None) -> shapes
             _("Drive requires either notifications or all"),
             frappe.ValidationError,
         )
-    return {"read": activity_core.mark_read(_principals(), named)}
+    return {"count": activity_core.mark_read(_principals(), named)}
 
 
 # --------------------------------------------------------------------------
@@ -1292,9 +1359,7 @@ def site_settings_get() -> shapes.SiteSettings | shapes.AdminSiteSettings:
 def site_settings_patch(webdav_enabled: Given = None) -> shapes.AdminSiteSettings:
     """Turn the site's DAV mount on or off. A Drive admin only.
 
-    The other §3.13 fields are set in Desk. The legacy `disk_settings` write
-    (root folder and the S3 fields) is not carried: Cleanup drops every field
-    it wrote.
+    The other §3.13 fields are set in Desk.
     """
     if webdav_enabled is None:
         frappe.throw(_("Drive argument webdav_enabled is required"), frappe.ValidationError)

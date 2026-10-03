@@ -244,7 +244,7 @@ def recents(
     page: list = []
     read = 0
     exhausted = False
-    for _ in range(MAX_RECENT_WINDOWS):
+    for _window in range(MAX_RECENT_WINDOWS):
         values["offset"] = offset + read
         rows = frappe.db.sql(query, values, as_dict=True)
         kept = {row.name for row in _visible_personal_rows(principals, rows, with_access=with_access)}
@@ -595,10 +595,7 @@ def _visible_personal_rows(
         filters={"name": ["in", wanted]},
         fields=NODE_FIELD_NAMES,
     )
-    visible = {
-        node.name: node
-        for node in _readable_rows(stored, principals, with_access=with_access)
-    }
+    visible = {node.name: node for node in _readable_rows(stored, principals, with_access=with_access)}
     answer = []
     for row in rows:
         node = visible.get(row.node)

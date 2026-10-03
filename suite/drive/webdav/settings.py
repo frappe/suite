@@ -14,11 +14,10 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from suite.drive._core.errors import DriveForbidden
+from suite.drive._core.errors import DriveForbidden, rollback_savepoint
 from suite.drive.webdav import ALLOWED_METHODS, parse_webdav_methods
 
 # What a Drive admin reads from `Drive Disk Settings` beyond what everyone reads.
-# The rest of the Single is dropped in Cleanup (§3.13) and is not published.
 ADMIN_SITE_FIELDS = ("webdav_enabled", "webdav_allowed_methods", "default_personal_quota", "shared_quota")
 
 
@@ -56,8 +55,8 @@ def set_user_webdav_enabled(user: str, enabled: bool) -> None:
                 {"doctype": "Drive Settings", "user": user, "webdav_enabled": int(enabled)}
             ).insert()
             return
-        except frappe.DuplicateEntryError:
-            frappe.db.rollback(save_point="drive_settings_first_write")
+        except frappe.DuplicateEntryError as error:
+            rollback_savepoint("drive_settings_first_write", error)
     settings = frappe.get_doc("Drive Settings", user)
     settings.webdav_enabled = int(enabled)
     settings.save()

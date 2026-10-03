@@ -22,22 +22,15 @@ loaded for the editor, then sets a ``bootstrapped`` flag inside the
 Y.Doc so concurrent first-openers don't double-hydrate. Keeps the
 collab server schema-agnostic.
 
-## A linked sheet answers from Drive (§6.7)
+## Access is Drive's answer (§6.7)
 
-``check_collab_access`` reads the sheet's ``node`` column and answers on one of
-two sides, the same split every other staged Sheets guard makes:
-
-  node set    `Drive Grant` decides, through one point check. EDIT and above
-              writes, READ or COMMENT connects read-only, anything lower is
-              refused. The caller's link credentials arrive in the request's
-              ``X-Drive-Links`` header, which the collab server forwards from
-              the browser, so `suite.drive` builds the same principals it would
-              for any other request and the 20-item limit is enforced in the
-              one place that owns it
-              (`suite.drive._core.principals.parse_link_header`).
-  no node     A legacy row Build has not linked. Unchanged Frappe permission
-              behaviour, and a Guest is still refused: a legacy sheet has no
-              link grant to hold.
+``check_collab_access`` reads the sheet's ``node`` column and asks `Drive Grant`
+through one point check. EDIT and above writes, READ or COMMENT connects
+read-only, anything lower is refused. The caller's link credentials arrive in
+the request's ``X-Drive-Links`` header, which the collab server forwards from
+the browser, so `suite.drive` builds the same principals it would for any other
+request and the 20-item limit is enforced in the one place that owns it
+(`suite.drive._core.principals.parse_link_header`).
 
 Access is not decided once. Every answer carries ``recheckSeconds``, and the
 collab server rechecks each live connection on that cadence: a revoked or
@@ -90,16 +83,19 @@ def check_collab_access(name: str) -> dict:
 
     ``allow_guest=True`` is what lets a link grant work. A Guest with no link
     credential still gets nothing: `Drive Grant` is the only thing that can
-    answer for them, and a legacy sheet has none.
+    answer for them.
+
+    A name no sheet carries is refused like a node the caller may not see
+    (§5.4), so the reply never says whether the sheet exists.
     """
     node = frappe.db.get_value("Sheet", name, "node")
-    if node:
-        return _drive_access(node)
-    return _legacy_access(name)
+    if not node:
+        return _refused("DriveNotFound")
+    return _drive_access(node)
 
 
 def _drive_access(node: str) -> dict:
-    """Answer one linked sheet from `Drive Grant` alone (§1, §6.7).
+    """Answer one sheet from `Drive Grant` alone (§1, §6.7).
 
     Two point checks, not one: the ladder decides the capability, so EDIT is
     asked separately from READ. Each is one indexed grant query over the node's
@@ -132,28 +128,6 @@ def _may_edit(node: str) -> bool:
     except drive.DriveError:
         return False
     return True
-
-
-def _legacy_access(name: str) -> dict:
-    """Answer one sheet Build has not linked, exactly as before ticket 19.
-
-    A Guest is refused, not thrown at. A legacy sheet has no link grant to
-    hold, so the answer is settled and permanent — and the collab server counts
-    a thrown status as an unreachable Frappe, which burns its three fail-closed
-    periods and reports a deterministic refusal as a network problem.
-    """
-    if frappe.session.user == "Guest":
-        return _refused("DriveNotFound")
-
-    can_read = bool(frappe.has_permission("Sheet", doc=name, ptype="read", throw=False))
-    if not can_read:
-        # Don't 403 here — the collab server treats {canRead: False} as a
-        # clean refusal and closes the socket. Returning structured data
-        # is easier to surface to the client than parsing exception text.
-        return _refused("DriveForbidden")
-
-    can_write = bool(frappe.has_permission("Sheet", doc=name, ptype="write", throw=False))
-    return _granted(frappe.session.user, can_write)
 
 
 def _refused(reason: str) -> dict:

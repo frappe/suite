@@ -133,7 +133,7 @@ def _conditional_gate(ctx: DavContext, submitted: IfHeader) -> None:
                     if segment
                 ]
             )
-        except (BadRequest, UnicodeDecodeError):
+        except BadRequest, UnicodeDecodeError:
             # an href the URL namespace itself would refuse is simply unmapped
             return None
         return readable(pathmap.resolve(segments, ctx.user))

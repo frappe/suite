@@ -6,7 +6,9 @@ things under test - what `API_URL_MAP.bind_to_environ` will match, and what
 `get_api_version` will read - are properties of a real request object.
 """
 
+import types
 import unittest
+from typing import Union, get_args, get_origin, get_type_hints
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -16,7 +18,8 @@ from werkzeug.wrappers import Request
 from suite.composition.http import compile_template
 from suite.composition.tests.http_conformance import HttpConformanceMixin
 from suite.drive import framework
-from suite.drive.http import routes, translator
+from suite.drive._core.errors import DriveError
+from suite.drive.http import routes, shapes, translator
 from suite.drive.http.tests import ensure_local_context
 
 
@@ -85,6 +88,8 @@ SESSION_ONLY_ROUTES = frozenset(
         "node_grants",
         "node_put_grant",
         "node_delete_grant",
+        "grant_patch",
+        "grant_delete",
         "grant_rotate",
         "node_version_delete",
         "node_visit",
@@ -175,8 +180,10 @@ class TestTranslator(HttpConformanceMixin, UnitTestCase):
                 "node_delete_grant",
                 {"node": "n1", "principal": "a@example.com"},
             ),
+            ("PATCH", "/api/suite/drive/grants/g1", "grant_patch", {"grant": "g1"}),
+            ("DELETE", "/api/suite/drive/grants/g1", "grant_delete", {"grant": "g1"}),
             ("POST", "/api/suite/drive/grants/g1/rotate", "grant_rotate", {"grant": "g1"}),
-            ("POST", "/api/suite/drive/links/t1/unlock", "link_unlock", {"token": "t1"}),
+            ("POST", "/api/suite/drive/links/unlock", "link_unlock", {}),
             ("DELETE", "/api/suite/drive/views/recents", "view_clear_recents", {}),
             ("GET", "/api/suite/drive/views/shared", "view_list", {"view": "shared"}),
             ("GET", "/api/suite/drive/nodes/n1/versions", "node_versions", {"node": "n1"}),
@@ -433,12 +440,67 @@ class TestRouteTable(UnitTestCase):
                 naming.add(name)
         self.assertEqual(naming, {"node_create"})
 
+    def test_every_node_row_refuses_with_the_common_trio_first(self):
+        # Every `nodes/{node}` row resolves its node through `access.require`,
+        # so each can answer 404, 401 and 410. The table injects them once.
+        for route in translator.ROUTES:
+            if not route.path.startswith("nodes/{node}"):
+                continue
+            with self.subTest(row=f"{route.method} {route.path}"):
+                self.assertEqual(route.errors[:3], translator._COMMON_NODE_ERRORS)
+                self.assertEqual(len(set(route.errors)), len(route.errors))
+
+    def test_a_malformed_argument_is_never_a_declared_refusal(self):
+        # `DriveError` (400) is possible on every route, so listing it would
+        # say nothing. The error list is what a route adds.
+        for route in translator.ROUTES:
+            with self.subTest(row=f"{route.method} {route.path}"):
+                self.assertNotIn(DriveError, route.errors)
+
+    def test_the_bytes_rows_are_the_four_declared_streams(self):
+        streams = {(route.method, route.path) for route in translator.ROUTES if route.stream}
+        self.assertEqual(
+            streams,
+            {
+                ("GET", "nodes/{node}/archive/download"),
+                ("GET", "nodes/{node}/content"),
+                ("GET", "nodes/{node}/versions/{seq}/content"),
+                ("PUT", "uploads/{upload_id}/chunk"),
+            },
+        )
+
+    def test_the_create_body_is_exactly_the_four_kinds(self):
+        row = next(route for route in translator.ROUTES if route.handler == "node_create")
+        self.assertEqual(
+            set(get_args(row.body)),
+            {shapes.CreateFolder, shapes.CreateFile, shapes.CreateLink, shapes.CreateDocument},
+        )
+        for member in get_args(row.body):
+            self.assertEqual(get_args(member.__annotations__["kind"]), (member.__name__[6:].lower(),))
+
+    def test_every_handler_parameter_is_declared_on_its_row_and_nothing_else(self):
+        # The declarations are what the client is generated from. A handler
+        # argument no shape names is unreachable from a typed client; a shape
+        # field no handler reads is a lie.
+        import inspect
+
+        for route in translator.ROUTES:
+            declared = set(compile_template(route.path).names)
+            for shape in (*_members(route.body), *_members(route.query)):
+                declared |= set(get_type_hints(shape))
+            with self.subTest(row=f"{route.method} {route.path}"):
+                parameters = set(inspect.signature(inspect.unwrap(getattr(routes, route.handler))).parameters)
+                self.assertEqual(parameters, declared)
+
     def test_the_patch_body_is_exactly_the_five_declared_alternatives(self):
-        # §11.2's PATCH row. `node` is the path id the translator writes in.
+        # §11.2's PATCH row, plus the folder a move may say it expects. `node`
+        # is the path id the translator writes in.
         import inspect
 
         parameters = set(inspect.signature(inspect.unwrap(routes.node_patch)).parameters)
-        self.assertEqual(parameters, {"node", "title", "parent", "state", "content_modified"})
+        self.assertEqual(
+            parameters, {"node", "title", "parent_node", "state", "content_modified", "expect_parent_node"}
+        )
 
     def test_no_handler_takes_a_storage_key_or_a_bare_url(self):
         # A blob id is checked against the stored row. These are not checkable
@@ -450,6 +512,14 @@ class TestRouteTable(UnitTestCase):
             with self.subTest(handler=name):
                 parameters = set(inspect.signature(inspect.unwrap(getattr(routes, name))).parameters)
                 self.assertEqual(parameters & forbidden, set())
+
+
+def _members(annotation) -> tuple:
+    if annotation is None:
+        return ()
+    if get_origin(annotation) in (types.UnionType, Union):
+        return get_args(annotation)
+    return (annotation,)
 
 
 if __name__ == "__main__":

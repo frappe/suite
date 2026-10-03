@@ -21,6 +21,77 @@ LARGEST_FILES = 10
 # such as Markdown, so the extension decides the type instead.
 GENERIC_MIMES = frozenset({"", "application/octet-stream", "binary/octet-stream"})
 
+# The storage types the usage report groups a file's bytes under, by mime.
+STORAGE_TYPES: dict[str, tuple[str, ...]] = {
+    "Image": (
+        "image/png",
+        "image/jpeg",
+        "image/svg+xml",
+        "image/heic",
+        "image/heif",
+        "image/avif",
+        "image/webp",
+        "image/tiff",
+        "image/gif",
+    ),
+    "PDF": ("application/pdf",),
+    "Text": ("text/plain",),
+    "XML Data": ("application/xml",),
+    "Document": (
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.apple.pages",
+        "application/x-abiword",
+    ),
+    "Spreadsheet": (
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "text/csv",
+        "application/vnd.apple.numbers",
+    ),
+    "Presentation": (
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/vnd.apple.keynote",
+    ),
+    "Code": (
+        "text/x-python",
+        "text/html",
+        "text/css",
+        "text/javascript",
+        "application/javascript",
+        "text/rich-text",
+        "text/x-shellscript",
+        "text/markdown",
+        "application/json",
+        "application/x-httpd-php",
+        "application/x-python-script",
+        "application/x-sql",
+        "text/x-perl",
+        "text/x-csrc",
+        "text/x-sh",
+    ),
+    "Audio": ("audio/mpeg", "audio/wav", "audio/x-midi", "audio/ogg", "audio/mp4", "audio/mp3"),
+    "Video": ("video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-matroska"),
+    "Book": ("application/epub+zip", "application/x-mobipocket-ebook"),
+    "Application": (
+        "application/octet-stream",
+        "application/x-sh",
+        "application/vnd.microsoft.portable-executable",
+    ),
+    "Archive": (
+        "application/zip",
+        "application/x-rar-compressed",
+        "application/x-tar",
+        "application/gzip",
+        "application/x-bzip2",
+    ),
+}
+STORAGE_TYPE_BY_MIME = {mime: kind for kind, mimes in STORAGE_TYPES.items() for mime in mimes}
+
 
 def create_root(
     *,
@@ -118,10 +189,14 @@ def provision_personal_root(user: str, *, title: str = "My Drive") -> str | None
 def archive_personal_root(user: str) -> str | None:
     """Archive only root metadata during offboarding."""
     _lock_identity(PERSONAL, user)
-    root = active_root_for(kind=PERSONAL, user=user, for_update=True)
+    # Found unlocked, then locked through its pair: the root node row before
+    # the Drive Root row, the order every tree write takes them in.
+    root = active_root_for(kind=PERSONAL, user=user)
     if not root:
         return None
     pair = validate_root_pair(root, for_update=True)
+    if pair.root.state != ACTIVE:
+        return None
     if pair.root.user != user:
         raise frappe.ValidationError(_("The Personal Drive root owner does not match"))
     frappe.db.set_value("Drive Root", root, "state", "Archived", update_modified=False)
@@ -206,7 +281,7 @@ def _breakdown(root: str) -> dict:
     """
     holder = """
         FROM `tabDrive Node` n
-        LEFT JOIN `tabDrive Node` d ON d.name = n.parent AND d.kind = 'document'
+        LEFT JOIN `tabDrive Node` d ON d.name = n.parent_node AND d.kind = 'document'
         JOIN `tabDrive Node` item ON item.name = COALESCE(d.name, n.name)
         WHERE n.root = %(root)s AND n.state = 'Active' AND n.kind IN ('file', 'document') AND n.size > 0
     """
@@ -257,19 +332,16 @@ def _storage_type(row) -> str:
     """Name the storage type a node's bytes count under.
 
     A content document is its content doctype. A file is its mime family from
-    the legacy mime table, which is still the clients' vocabulary; a mime the
-    table does not hold is "Unknown". A generic mime is replaced by the one its
-    title's extension names, when there is one. The import is function-local
-    because `suite.drive.utils` builds a query-builder DocType at import time.
+    `STORAGE_TYPES`, which is the clients' vocabulary; a mime the table does
+    not hold is "Unknown". A generic mime is replaced by the one its title's
+    extension names, when there is one.
     """
-    from suite.drive.utils import get_file_type
-
     if row.get("kind") == "document":
         return row.get("content_doctype") or "Unknown"
     mime = row.get("mime") or ""
     if mime in GENERIC_MIMES:
         mime = mimetypes.guess_type(row.get("title") or "")[0] or mime
-    return get_file_type(mime)
+    return STORAGE_TYPE_BY_MIME.get(mime, "Unknown")
 
 
 def purge_root(root: str, principals: Principals) -> frappe._dict:
@@ -301,6 +373,20 @@ def purge_root(root: str, principals: Principals) -> frappe._dict:
     return frappe._dict(purged=len(descendants) + 1)
 
 
+def lock_trees(*roots: str) -> None:
+    """Take the tree lock on each named tree: its root node row, in id order.
+
+    Every workflow that writes a tree takes this lock before any other row of
+    that tree, so two writes to one tree wait at the root instead of meeting
+    halfway down in opposite orders. A write that spans two trees (a move or a
+    copy between roots) names both, and the id order keeps a pair of them from
+    waiting on each other. The lock order is in the `suite.drive` docstring.
+    """
+    for root in sorted(set(roots)):
+        if not frappe.db.get_value("Drive Node", root, "name", for_update=True):
+            raise DriveConflict(_("The Drive node has an invalid tree position"))
+
+
 def validate_root_pair(node_id: str, *, for_update: bool = False) -> frappe._dict:
     """Validate both directions and every root-node invariant."""
     locking = {"for_update": True} if for_update else {}
@@ -310,7 +396,7 @@ def validate_root_pair(node_id: str, *, for_update: bool = False) -> frappe._dic
         [
             "name",
             "title",
-            "parent",
+            "parent_node",
             "root",
             "path",
             "kind",
@@ -335,7 +421,7 @@ def validate_root_pair(node_id: str, *, for_update: bool = False) -> frappe._dic
         node.kind != "root"
         or any(
             (
-                node.parent,
+                node.parent_node,
                 node.root,
                 node.path,
                 node.blob,
@@ -436,7 +522,6 @@ def _insert_root_metadata(
             "state": ACTIVE,
             "quota_bytes": quota_bytes,
             "used_bytes": 0,
-            "acl_generation": 0,
         }
     )
     root.flags.drive_root_lifecycle = True
@@ -504,7 +589,7 @@ def _validate_root_descendants(root: str, descendants: list[frappe._dict]) -> No
     by_name = {row.name: row for row in descendants}
     for row in descendants:
         parent = frappe.db.get_value(
-            "Drive Node", row.parent, ["name", "root", "path", "kind"], as_dict=True, for_update=True
+            "Drive Node", row.parent_node, ["name", "root", "path", "kind"], as_dict=True, for_update=True
         )
         if not parent:
             raise DriveConflict(_("The Archived Drive root tree is incomplete"))
@@ -521,7 +606,7 @@ def _validate_root_descendants(root: str, descendants: list[frappe._dict]) -> No
     node_ids = (root, *tuple(by_name))
     escaped = frappe.db.sql(
         """SELECT name FROM `tabDrive Node`
-           WHERE parent IN %(parents)s AND name NOT IN %(nodes)s
+           WHERE parent_node IN %(parents)s AND name NOT IN %(nodes)s
            LIMIT 1 FOR UPDATE""",
         {"parents": node_ids, "nodes": node_ids},
     )

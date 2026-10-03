@@ -1,13 +1,11 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
-"""The legacy Sheets API, on sheets Drive owns (ticket 29).
+"""The Sheets API names a sheet by its node.
 
-`Sheet.title` is frozen once the declaration is registered (§10.2), so a sheet
-written since activation carries its name on its node and nothing else. These
-run on a site, through the whitelisted endpoints, and check the one thing the
-shape tests in `test_list_sheets.py` cannot: that the name a caller gave
-`create_sheet` is the name `get_sheet` and `list_sheets` give back, and that
-reading Drive's column with permissions off does not widen who may see it.
+A sheet carries its name on its Drive node and nowhere else. These run on a
+site, through the whitelisted endpoints, and check that the name a caller gave
+`create_sheet` is the name `get_sheet` gives back, and that a stranger is not
+told the sheet exists.
 """
 
 from __future__ import annotations
@@ -53,48 +51,14 @@ class TestSheetTitlesOnSite(IntegrationTestCase):
         purge(admin, node)
         frappe.db.commit()
 
-    def _listed(self, **kwargs) -> dict | None:
-        rows = api.list_sheets(**kwargs)["sheets"]
-        return next((row for row in rows if row["name"] == self.name), None)
-
-    def test_the_new_sheet_is_named_on_its_node_and_not_on_its_row(self):
+    def test_the_new_sheet_is_named_on_its_node(self):
         self.assertEqual(frappe.db.get_value("Drive Node", self.node, "title"), self.title)
-        self.assertFalse(frappe.db.get_value("Sheet", self.name, "title"))
 
     def test_the_editor_opens_it_under_the_name_it_was_given(self):
         self.assertEqual(api.get_sheet(self.name)["title"], self.title)
 
     def test_the_editor_gets_the_node_it_records_a_visit_on(self):
         self.assertEqual(api.get_sheet(self.name)["node"], self.node)
-
-    def test_the_list_names_it_the_same_way(self):
-        row = self._listed()
-        self.assertIsNotNone(row)
-        self.assertEqual(row["title"], self.title)
-
-    def test_the_list_does_not_publish_the_node_id(self):
-        self.assertNotIn("node", self._listed())
-
-    def test_a_search_finds_it_by_the_name_on_its_node(self):
-        row = self._listed(search=self.title.split()[-1])
-        self.assertIsNotNone(row, "the frozen column holds nothing to match")
-
-    def test_a_search_that_matches_nothing_returns_nothing(self):
-        self.assertEqual(api.list_sheets(search=frappe.generate_hash(10))["sheets"], [])
-
-    def test_a_stranger_searching_the_same_word_is_not_shown_it(self):
-        """`_sheets_titled_like` reads Drive's title column with permissions
-        off, so the refusal has to come from the `Sheet` query it feeds."""
-        frappe.set_user(OTHER)
-        self.assertIsNone(self._listed(search=self.title.split()[-1]))
-
-    def test_the_count_a_stranger_is_given_does_not_include_it(self):
-        frappe.set_user(USER)
-        mine = api.list_sheets(search=self.title.split()[-1])["total"]
-        frappe.set_user(OTHER)
-        theirs = api.list_sheets(search=self.title.split()[-1])["total"]
-        self.assertEqual(mine, 1)
-        self.assertEqual(theirs, 0)
 
     def test_a_stranger_cannot_open_it_by_id(self):
         frappe.set_user(OTHER)

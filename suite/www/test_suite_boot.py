@@ -7,8 +7,6 @@ from suite.www import suite as www
 class SuiteBoot(unittest.TestCase):
     def setUp(self):
         self.frappe = self.enterContext(mock.patch("suite.www.suite.frappe"))
-        # the flip keys are read through `suite_core.flips`, from the same site config
-        self.enterContext(mock.patch("suite.suite_core.flips.frappe", self.frappe))
         self.frappe.session.user = "alice@example.com"
         self.frappe.local.site = "test.localhost"
         self.frappe.get_system_settings.return_value = 0
@@ -38,49 +36,15 @@ class SuiteBoot(unittest.TestCase):
         self.assertEqual(boot["socketio_port"], 9000)
         self.assertEqual(boot["push_relay_server_url"], "")
         self.assertIs(boot["disable_slides_service_worker"], False)
-        self.assertIs(boot["suite_flip_shell"], False)
-        self.assertIs(boot["suite_flip_files"], False)
         self.assertEqual(boot["max_file_size"], 1024 * 1024 * 1024)
+        self.assertNotIn("suite_flip_shell", boot)
+        self.assertNotIn("suite_flip_files", boot)
 
     def test_kill_switch_reaches_the_boot(self):
         self.frappe.conf.get.side_effect = lambda key, default=None: (
             1 if key == "disable_slides_service_worker" else default
         )
         self.assertIs(www.get_boot()["disable_slides_service_worker"], True)
-
-    def test_shell_flip_reads_on_only_for_one_or_true(self):
-        # A list, not a dict: 1 and True (0 and False) are one dict key.
-        cases = [
-            (1, True),
-            ("1", True),
-            (True, True),
-            ("true", True),
-            ("TRUE", True),
-            ("True", True),
-            (0, False),
-            ("0", False),
-            (False, False),
-            ("false", False),
-            ("False", False),
-            ("", False),
-            ("yes", False),
-            (2, False),
-            (None, False),
-        ]
-        for value, expected in cases:
-            with self.subTest(value=value):
-                self.frappe.conf.get.side_effect = lambda key, default=None, value=value: (
-                    value if key == "suite_flip_shell" else default
-                )
-                self.assertIs(www.get_boot()["suite_flip_shell"], expected)
-
-    def test_each_flip_reaches_the_boot_from_its_own_key(self):
-        for key, other in (("suite_flip_shell", "suite_flip_files"), ("suite_flip_files", "suite_flip_shell")):
-            with self.subTest(key=key):
-                self.frappe.conf.get.side_effect = lambda k, default=None, key=key: 1 if k == key else default
-                boot = www.get_boot()
-                self.assertIs(boot[key], True)
-                self.assertIs(boot[other], False)
 
     def test_guest_boot_is_redacted(self):
         self.frappe.session.user = "Guest"

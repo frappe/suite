@@ -200,24 +200,12 @@ def restore_version(docname: str, stream) -> None:
     )
 
 
-def version_html(stream) -> str:
-    """Answer the rendered HTML one stored version carries.
-
-    Writer wrote the bytes with `version_bytes`, so Writer is the only reader
-    that can turn them back into a snapshot. `suite.writer.api.general.
-    get_versions` publishes the legacy history shape from them; the migrated
-    HTML form §14.6 copies is read by the same fork `restore_version` uses.
-    """
-    return _version_payload(_read_bounded(stream))["html"]
-
-
 def on_purge(docname: str) -> None:
     """Delete the document and the app-owned rows behind it.
 
-    `delete_doc` runs the controller's `on_trash`, which clears the legacy
-    `Writer Version` rows. §9.1 sends a purged node's history with it, and
-    `force=1` already skips the link check, so the cascade is what the rows
-    are for, not a way around a refusal.
+    §9.1 sends a purged node's history (`Drive Node Version`) with it, so
+    there is nothing of the document's own to cascade; `force=1` skips the
+    link check because Drive has already decided the purge.
 
     `delete_permanently` is what makes a purge a purge. Without it Frappe keeps
     the whole row as JSON in `Deleted Document`
@@ -454,7 +442,7 @@ def _raw_text(content: str | None) -> str:
         return ""
     try:
         decoded = base64.b64decode(content, validate=True).decode("utf-8", "ignore")
-    except (ValueError, binascii.Error):
+    except ValueError, binascii.Error:
         return content
     return f"{content}{decoded}"
 
@@ -475,7 +463,7 @@ def _readable_body():
     """
     try:
         yield
-    except (KeyboardInterrupt, SystemExit, UnreadableBody):
+    except KeyboardInterrupt, SystemExit, UnreadableBody:
         raise
     except BaseException as unreadable:
         raise UnreadableBody(_("This Writer document body cannot be read")) from unreadable

@@ -35,7 +35,9 @@ REFUSED = (frappe.PermissionError, drive.DriveError)
 @contextmanager
 def link_header(*codes: str):
     """Carry the given link codes in `X-Drive-Links`, as the Drive client does."""
-    environ = EnvironBuilder(path="/api/method/suite.sheets.api.get_sheet", headers={"X-Drive-Links": ",".join(codes)})
+    environ = EnvironBuilder(
+        path="/api/method/suite.sheets.api.get_sheet", headers={"X-Drive-Links": ",".join(codes)}
+    )
     previous = getattr(frappe.local, "request", None)
     frappe.local.request = Request(environ.get_environ())
     try:
@@ -76,7 +78,10 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         from frappe.auth import CookieManager, LoginManager
         from frappe.utils import set_request
 
-        kept = {name: getattr(frappe.local, name, None) for name in ("request", "session", "login_manager", "cookie_manager")}
+        kept = {
+            name: getattr(frappe.local, name, None)
+            for name in ("request", "session", "login_manager", "cookie_manager")
+        }
         set_request(path="/")
         try:
             frappe.local.cookie_manager = CookieManager()
@@ -117,7 +122,7 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
 
     def _link(self, role: int) -> str:
         answer = self._drive("PUT", f"nodes/{self.node}/grants/$LINK", {"role": role})
-        return answer["data"]["grant"]["principal"].removeprefix("$LINK:")
+        return answer["data"]["principal"].removeprefix("$LINK:")
 
     def _trash(self):
         self._drive("PATCH", f"nodes/{self.node}", {"state": "Trashed"})
@@ -169,10 +174,6 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         with self.assertRaises(REFUSED):
             api.save_sheet("Ignored", BODY, name=self.name)
 
-    def test_a_save_leaves_the_frozen_title_column_alone(self):
-        api.save_sheet("A new name the editor sent", BODY, name=self.name)
-        self.assertFalse(frappe.db.get_value("Sheet", self.name, "title"))
-
     def test_a_relayed_update_goes_to_the_sheet_room_only(self):
         api.yjs_relay(self.name, "yjs_update", "{}")
         call = next(call for call in self.published.call_args_list if call.args[0] == "yjs_update")
@@ -189,4 +190,3 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         frappe.set_user(STRANGER)
         with self.assertRaises(REFUSED):
             may_join("Sheet", self.name)
-

@@ -12,18 +12,14 @@ from suite.drive._core.errors import DriveForbidden, DriveNotFound
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     create_presentation,
-    delete_presentation,
     get_composite_presentation,
-    get_presentation_thumbnail,
     get_presentations,
     get_public_presentation,
     get_templates,
     get_updated_json,
-    save_base64_image,
     save_presentation_thumbnail,
     update_slide_attachments,
     update_theme,
-    update_title,
 )
 from suite.slides.tests.utils import (
     PNG_1PX,
@@ -104,25 +100,6 @@ class TestPresentationSecurity(IntegrationTestCase):
                 with self.assertRaises(DriveForbidden):
                     func(*args)
 
-    def test_legacy_endpoints_refuse_a_linked_deck_outright(self):
-        """The four §14.7 retires. They refuse the owner too, not only a stranger.
-
-        A linked deck never falls back to the `File`: that would be a way
-        around `Drive Grant` (§1). Each refusal names the Drive workflow that
-        replaces it, and `suite.slides.tests.test_drive_adoption` pins the
-        whole list; these four are the ones this module used to reach through
-        a permission check.
-        """
-        for func, *args in (
-            (save_base64_image, PNG_1PX, self.owner_presentation, "x"),
-            (update_title, self.owner_presentation, "Hijacked"),
-            (delete_presentation, self.owner_presentation),
-            (get_presentation_thumbnail, self.owner_presentation),
-        ):
-            with self.subTest(func.__name__), self.set_user(OWNER):
-                with self.assertRaises(frappe.ValidationError):
-                    func(*args)
-
     def test_duplicate_requires_read(self):
         with self.set_user(OTHER_USER):
             with self.assertRaises(frappe.PermissionError):
@@ -171,13 +148,11 @@ class TestPresentationSecurity(IntegrationTestCase):
         )
 
     def test_image_payload_is_validated_before_anything_is_stored(self):
-        """The data-URI validator, on the path that still reaches it.
+        """The data-URI validator, on the one path that reaches it.
 
-        `save_base64_image` is legacy-only now, so the three cases that used
-        to reach the validator through it reach it through
-        `save_presentation_thumbnail` instead, which is the shape a linked
-        deck still accepts. Neither a URI that is not one nor an SVG gets as
-        far as a stored byte.
+        `save_presentation_thumbnail` is the only endpoint that takes a data
+        URI. Neither a URI that is not one nor an SVG gets as far as a stored
+        byte.
         """
         for payload in ("not-a-data-uri", SVG, PNG_1PX):
             with self.subTest(payload=payload[:20]), self.set_user(OWNER):
@@ -352,10 +327,8 @@ class TestVersionHandshake(IntegrationTestCase):
 class TestDeckList(IntegrationTestCase):
     """`get_presentations` answers the Home cards off both stores.
 
-    Drive owns a linked deck's title, its template flag, and its lifecycle,
-    with no mirror on the frozen legacy columns (§10.2), so the columns alone
-    named every deck blank and listed trashed decks and templates as ordinary
-    ones.
+    Drive owns a deck's title, its template flag, and its lifecycle on the
+    node (§10.2); the `Presentation` row carries none of them.
     """
 
     @classmethod
@@ -367,15 +340,15 @@ class TestDeckList(IntegrationTestCase):
         super().setUp()
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
-        self.deck = make_presentation(f"Deck {frappe.generate_hash(6)}")
+        self.title = f"Deck {frappe.generate_hash(6)}"
+        self.deck = make_presentation(self.title)
 
     def _rows(self) -> dict:
         frappe.set_user(OWNER)
         return {row["name"]: row for row in get_presentations()}
 
-    def test_a_deck_is_named_by_its_node_not_by_the_frozen_column(self):
-        self.assertFalse(frappe.db.get_value("Presentation", self.deck.name, "title"))
-        self.assertEqual(self._rows()[self.deck.name]["title"], title_of(self.deck.name))
+    def test_a_deck_is_listed_under_the_title_it_was_created_with(self):
+        self.assertEqual(self._rows()[self.deck.name]["title"], self.title)
 
     def test_a_linked_deck_publishes_no_thumbnail_here(self):
         """Its preview is a `Drive Node Preview` on §6.8's signed byte path,

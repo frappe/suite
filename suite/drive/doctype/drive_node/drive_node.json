@@ -5,7 +5,7 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
-  "parent",
+  "parent_node",
   "root",
   "path",
   "kind",
@@ -29,9 +29,9 @@
    "reqd": 1
   },
   {
-   "fieldname": "parent",
+   "fieldname": "parent_node",
    "fieldtype": "Link",
-   "label": "Parent",
+   "label": "Parent Node",
    "options": "Drive Node"
   },
   {

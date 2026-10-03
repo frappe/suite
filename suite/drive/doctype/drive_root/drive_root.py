@@ -12,7 +12,6 @@ class DriveRoot(Document):
     if TYPE_CHECKING:
         from frappe.types import DF
 
-        acl_generation: DF.Int
         kind: DF.Literal["Personal", "Shared"]
         node: DF.Link
         quota_bytes: DF.Int

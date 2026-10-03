@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import hashlib
+import io
 import json
 import time
 import uuid
@@ -13,10 +14,9 @@ from unittest.mock import Mock, patch
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_to_date, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime
 
 from suite import drive
-from suite.drive.utils import create_drive_file
 from suite.meet.api.recording import (
     BYTES_PER_SECOND,
     MAX_BUDGET_BYTES,
@@ -473,17 +473,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             chunk=content,
             chunk_sha256=digest,
         )
-        artifact = None
         try:
             frappe.set_user("Guest")
             with (
                 patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}),
-                patch(
-                    "suite.meet.recording.ingest._recordings_folder",
-                    return_value=recording.drive_home_folder,
-                ),
-                patch("suite.drive.utils.update_file_size"),
-                patch("suite.drive.utils.files.FileManager.upload_file"),
                 patch("suite.meet.recording.ingest.frappe.enqueue") as enqueue,
                 patch("suite.meet.api.recording._publish_state") as publish_state,
             ):
@@ -491,25 +484,28 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 result = process_upload(recording.name)
                 self.assertEqual(process_upload(recording.name), result)
 
-            enqueue.assert_called_once_with(
-                process_upload,
-                recording_name=recording.name,
-                queue="long",
-                timeout=6 * 60 * 60 + 5 * 60,
-                enqueue_after_commit=True,
-                job_id=f"meet-recording-upload::{recording.name}",
-                deduplicate=True,
+            # Drive enqueues its own preview render for the stored file through
+            # the same `frappe.enqueue`; only Meet's processing job is asserted.
+            processing_jobs = [c for c in enqueue.call_args_list if c.args and c.args[0] is process_upload]
+            self.assertEqual(len(processing_jobs), 1)
+            self.assertEqual(
+                processing_jobs[0].kwargs,
+                {
+                    "recording_name": recording.name,
+                    "queue": "long",
+                    "timeout": 6 * 60 * 60 + 5 * 60,
+                    "enqueue_after_commit": True,
+                    "job_id": f"meet-recording-upload::{recording.name}",
+                    "deduplicate": True,
+                },
             )
             self.assertEqual(publish_state.call_count, 1)
             self.assertEqual(publish_state.call_args.args[1].status, "Ready")
 
             completed = frappe.get_doc("Meet Recording", recording.name)
-            artifact = frappe.get_doc("File", completed.artifact)
-            self.assertEqual(result, {"artifact": artifact.name, "status": "Ready"})
+            self.assertEqual(result, {"artifact": completed.artifact, "status": "Ready"})
             self.assertEqual(completed.artifact_size, len(content))
             self.assertEqual(completed.artifact_sha256, digest)
-            self.assertEqual(artifact.name, completed.publication_key)
-            self.assertEqual(artifact.content_hash, digest)
             self.assertEqual(completed.finalization_stage, "Terminal")
             self.assertIsNotNone(completed.validated_at)
             self.assertIsNotNone(completed.published_at)
@@ -521,25 +517,44 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             completed.reload()
             self.assertIsNotNone(completed.terminal_acknowledged_at)
             self.assertTrue(completed.notification_pending)
+
+            # The reservation became the file: it is gone, and the owner's root
+            # is charged the artifact's bytes exactly once.
             self.assertIsNone(
                 drive.get_storage_reservation(recording_storage_reservation_key(recording.name))
             )
+            self.assertEqual(
+                get_storage_usage(self.owner)["total_size"], usage_before["total_size"] + len(content)
+            )
+
+            artifact = frappe.db.get_value(
+                "Drive Node",
+                completed.artifact,
+                ["owner", "kind", "state", "size", "title", "parent_node"],
+                as_dict=True,
+            )
             self.assertEqual(artifact.owner, self.owner)
-            self.assertEqual(artifact.folder, recording.drive_home_folder)
-            self.assertEqual(artifact.file_type, "Video")
-            self.assertEqual(artifact.mime_type, "video/mp4")
-            self.assertTrue(artifact.file_name.startswith(f"{self.room.name} - "))
-            artifact.status = "Trashed"
-            artifact.save(ignore_permissions=True)
-            self.assertTrue(frappe.db.exists("Meet Recording", recording.name))
-            artifact.status = "Removed"
-            artifact.save(ignore_permissions=True)
-            self.assertFalse(frappe.db.exists("Meet Recording", recording.name))
+            self.assertEqual(artifact.kind, "file")
+            self.assertEqual(artifact.state, "Active")
+            self.assertEqual(artifact.size, len(content))
+            self.assertTrue(artifact.title.startswith(f"{self.room.name} - "))
+            self.assertTrue(artifact.title.endswith(".mp4"))
+            folder = frappe.db.get_value(
+                "Drive Node", artifact.parent_node, ["title", "kind", "parent_node", "owner"], as_dict=True
+            )
+            self.assertEqual(folder.title, "Meet Recordings")
+            self.assertEqual(folder.kind, "folder")
+            self.assertEqual(folder.owner, self.owner)
+            self.assertEqual(folder.parent_node, recording.drive_home_folder)
+            self.assertEqual(recording.drive_home_folder, drive.personal_root_for(self.owner))
+
+            frappe.set_user(self.owner)
+            stream, _mime = drive.read_file(completed.artifact)
+            with stream:
+                self.assertEqual(stream.read(), content)
         finally:
             frappe.set_user(self.owner)
             path.unlink(missing_ok=True)
-            if artifact:
-                frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
 
     def test_finalization_resumes_verified_bytes_and_retries_infrastructure_failures(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -673,18 +688,15 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
         recording = frappe.get_doc("Meet Recording", started["name"])
-        artifact = create_drive_file(
-            "Weekly planning recording.mp4",
+        artifact = drive.store_file(
             recording.drive_home_folder,
-            "Video",
-            "/weekly-planning-recording.mp4",
-            mime_type="video/mp4",
-            owner=self.owner,
+            f"Weekly planning recording {frappe.generate_hash(length=8)}.mp4",
+            io.BytesIO(b"weekly-planning-recording"),
         )
         recording.db_set(
             {
                 "status": "Ready",
-                "artifact": artifact.name,
+                "artifact": artifact,
                 "artifact_size": 1,
                 "artifact_duration": 1,
                 "artifact_sha256": "a" * 64,
@@ -694,65 +706,23 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             update_modified=False,
         )
 
-        artifact_url = f"https://suite.test/drive/f/{artifact.name}"
-        try:
-            with (
-                patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
-                patch("suite.meet.recording.ingest.frappe.utils.get_url", return_value=artifact_url),
-            ):
-                deliver_recording_notification(recording.name)
+        artifact_url = f"https://suite.test/d/{artifact}"
+        with (
+            patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
+            patch("suite.meet.recording.ingest.frappe.utils.get_url", return_value=artifact_url) as get_url,
+        ):
+            deliver_recording_notification(recording.name)
 
-            self.assertEqual(sendmail.call_args.kwargs["recipients"], [self.owner])
-            self.assertEqual(
-                sendmail.call_args.kwargs["subject"],
-                "Your recording of Weekly planning is ready",
-            )
-            self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
-            self.assertIn("Weekly planning", sendmail.call_args.kwargs["args"]["description"])
-            self.assertEqual(sendmail.call_args.kwargs["args"]["link"], artifact_url)
-            self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
-        finally:
-            frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
-
-    def test_an_artifact_with_no_node_links_the_meeting_and_is_not_retried(self):
-        self.room.db_set("title", "Weekly planning")
-        started = start(self.room.name, str(uuid.uuid4()))
-        stop(self.room.name)
-        recording = frappe.get_doc("Meet Recording", started["name"])
-        artifact = create_drive_file(
-            "Weekly planning recording.mp4",
-            recording.drive_home_folder,
-            "Video",
-            "/weekly-planning-recording.mp4",
-            mime_type="video/mp4",
-            owner=self.owner,
+        self.assertIn(artifact, get_url.call_args.args[0])
+        self.assertEqual(sendmail.call_args.kwargs["recipients"], [self.owner])
+        self.assertEqual(
+            sendmail.call_args.kwargs["subject"],
+            "Your recording of Weekly planning is ready",
         )
-        self.assertFalse(frappe.db.exists("Drive Node", artifact.name))
-        recording.db_set(
-            {
-                "status": "Ready",
-                "artifact": artifact.name,
-                "artifact_size": 1,
-                "artifact_duration": 1,
-                "artifact_sha256": "a" * 64,
-                "notification_pending": 1,
-                "notification_next_retry_at": now_datetime(),
-            },
-            update_modified=False,
-        )
-        try:
-            with (
-                patch.dict(frappe.conf, {"suite_flip_files": 1}),
-                patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
-            ):
-                deliver_recording_notification(recording.name)
-
-            args = sendmail.call_args.kwargs["args"]
-            self.assertEqual(args["link"], frappe.utils.get_url(f"/meet/{self.room.name}"))
-            self.assertEqual(args["link_label"], "Open meeting")
-            self.assertEqual(frappe.db.get_value("Meet Recording", recording.name, "notification_pending"), 0)
-        finally:
-            frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
+        self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
+        self.assertIn("Weekly planning", sendmail.call_args.kwargs["args"]["description"])
+        self.assertEqual(sendmail.call_args.kwargs["args"]["link"], artifact_url)
+        self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
 
     def test_completed_upload_with_capture_gap_creates_partial_artifact(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -781,28 +751,19 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         path = _upload_path(recording.upload_id)
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
         complete_upload(recording.name, event_sequence=7)
-        artifact = None
         try:
-            with (
-                patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}),
-                patch(
-                    "suite.meet.recording.ingest._recordings_folder",
-                    return_value=recording.drive_home_folder,
-                ),
-                patch("suite.drive.utils.update_file_size"),
-                patch("suite.drive.utils.files.FileManager.upload_file"),
-            ):
+            with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
                 result = process_upload(recording.name)
             completed = frappe.get_doc("Meet Recording", recording.name)
-            artifact = frappe.get_doc("File", completed.artifact)
             self.assertEqual(result["status"], "Partial")
             self.assertEqual(frappe.parse_json(completed.capture_gaps), [gap])
+            self.assertEqual(frappe.db.get_value("Drive Node", completed.artifact, "size"), len(content))
             with (
                 patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
                 patch(
                     "suite.meet.recording.ingest.frappe.utils.get_url",
-                    return_value=f"https://suite.test/drive/f/{artifact.name}",
-                ),
+                    return_value=f"https://suite.test/d/{completed.artifact}",
+                ) as get_url,
             ):
                 deliver_recording_notification(completed.name)
             self.assertIn("partial recording", sendmail.call_args.kwargs["subject"])
@@ -811,11 +772,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 "Some portions could not be captured",
                 sendmail.call_args.kwargs["args"]["description"],
             )
-            self.assertIn(f"/drive/f/{artifact.name}", sendmail.call_args.kwargs["args"]["link"])
+            self.assertIn(completed.artifact, get_url.call_args.args[0])
+            self.assertIn(completed.artifact, sendmail.call_args.kwargs["args"]["link"])
         finally:
             path.unlink(missing_ok=True)
-            if artifact:
-                frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
 
     def test_outsider_cannot_preflight_or_read_state(self):
         outsider = "recording-outsider@example.com"
@@ -1457,10 +1417,14 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         # administration workflow until the HTTP routes land (ticket 21), and
         # this owner cannot be deleted while a Meet Room links to them, so the
         # fixture writes the archive directly. Recorded in BASELINE_DEBT.
+        # The quota leaves room for exactly 123 bytes beyond what the root already
+        # holds: this recording's reservation plus any files stored under it.
+        used_bytes = cint(frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"))
+        stored_bytes = used_bytes - cint(recording.budget_bytes)
         frappe.db.set_value(
             "Drive Root",
             self.drive_root,
-            {"state": "Archived", "quota_bytes": recording.budget_bytes + 123},
+            {"state": "Archived", "quota_bytes": used_bytes + 123},
             update_modified=False,
         )
         replacement_root = drive.ensure_personal_root(self.owner)
@@ -1494,13 +1458,14 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                     recording.name,
                     recording.recorder_job_id,
                     recording.recorder_event_sequence + 1,
+                    1,
                     "processing_failed",
                 )
 
             self.assertIsNone(
                 drive.get_storage_reservation(recording_storage_reservation_key(started["name"]))
             )
-            self.assertEqual(frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"), 0)
+            self.assertEqual(frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"), stored_bytes)
             self.assertEqual(frappe.db.get_value("Drive Root", replacement_root, "used_bytes"), 0)
         finally:
             # The archived root stays archived: that is what an offboarded

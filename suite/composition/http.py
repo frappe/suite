@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache, lru_cache
 from typing import Any
 
 import frappe
@@ -22,6 +22,14 @@ class BadRequest(frappe.ValidationError):
 
 @dataclass(frozen=True)
 class Route:
+    """One row of an owner's table: the address, the handler, and what travels.
+
+    `body`, `query` and `output` are the TypedDicts the contract exports.
+    `stream` marks a row whose bytes are not JSON: a PUT that receives raw
+    bytes, or a GET that sends them. A stream row declares no `body`, and a
+    GET stream row no `output`; its query and errors are declared as usual.
+    """
+
     method: str
     path: str
     handler: str
@@ -31,6 +39,7 @@ class Route:
     query: Any = None
     output: Any = None
     entity: dict[str, str] | None = None
+    stream: bool = False
 
 
 @dataclass(frozen=True)
@@ -51,7 +60,7 @@ class _Matcher:
     names: tuple[str, ...]
 
 
-@lru_cache(maxsize=None)
+@cache
 def compile_template(template: str) -> _Matcher:
     """Compile a route template without letting literals become regex."""
 

@@ -24,6 +24,7 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, READ
 from suite.drive._core.roots import create_root
 from suite.drive.patches.build import comments as build_comments
+from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.tests.utils import ensure_user, stub_db
 
 OWNER = "drive-comment-owner@example.com"
@@ -46,12 +47,13 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.owner = Principals(OWNER, (OWNER,), ())
         self.commenter = Principals(COMMENTER, (COMMENTER,), ())
         self.outsider = Principals(OUTSIDER, (OUTSIDER,), ())
+        ensure_rootless_user(OWNER)
         self.root = create_root(kind="Personal", title="Comment root", user=OWNER)
         self.document = frappe.get_doc(
             {
                 "doctype": "Drive Node",
                 "title": "Document",
-                "parent": self.root.name,
+                "parent_node": self.root.name,
                 "root": self.root.name,
                 "path": "",
                 "kind": "document",
@@ -79,11 +81,14 @@ class TestCommentWorkflows(IntegrationTestCase):
 
     def test_anchor_replies_resolution_and_server_authorship(self):
         anchor = 'sheet-1:{"cell":"A1"}'
-        thread = create_thread(self.commenter, self.document.name, anchor, "First", author_name="Forged")[
-            "thread"
-        ]
-        reply_id = reply(self.owner, thread, "Second")
-        resolve(self.commenter, thread)
+        opened = create_thread(self.commenter, self.document.name, anchor, "First", author_name="Forged")
+        thread = opened.name
+        # A write answers the row it made, as the list would show it.
+        self.assertEqual([row.content for row in opened.comments], ["First"])
+        replied = reply(self.owner, thread, "Second")
+        reply_id = replied.name
+        self.assertEqual((replied.thread, replied.content, replied.author), (thread, "Second", OWNER))
+        self.assertTrue(resolve(self.commenter, thread).resolved)
 
         result = threads(self.owner, self.document.name)
         self.assertEqual(len(result), 1)
@@ -99,7 +104,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         )
 
     def test_author_can_edit_at_read_but_non_author_cannot(self):
-        thread = create_thread(self.commenter, self.document.name, "anchor", "Original")["thread"]
+        thread = create_thread(self.commenter, self.document.name, "anchor", "Original").name
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
         grant(self.document.name, COMMENTER, READ, self.admin)
 
@@ -113,6 +118,30 @@ class TestCommentWorkflows(IntegrationTestCase):
             delete_comment(self.outsider, comment)
         delete_comment(self.commenter, comment)
         self.assertFalse(frappe.db.exists("Drive Comment", comment))
+
+    def test_deleting_the_last_comment_removes_its_thread(self):
+        thread = create_thread(self.commenter, self.document.name, "anchor", "Only one").name
+        kept = create_thread(self.commenter, self.document.name, "other", "First").name
+        reply(self.owner, kept, "Second")
+        first_of_kept, second_of_kept = [
+            row.name for row in threads(self.owner, self.document.name)[1].comments
+        ]
+        only = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
+
+        delete_comment(self.commenter, only)
+        delete_comment(self.commenter, first_of_kept)
+
+        listed = threads(self.owner, self.document.name)
+        self.assertEqual([row.name for row in listed], [kept])
+        self.assertEqual([row.name for row in listed[0].comments], [second_of_kept])
+        self.assertFalse(frappe.db.exists("Drive Comment Thread", thread))
+        # The history keeps both deletions, the removed thread's included.
+        deletions = frappe.get_all(
+            "Drive Activity",
+            filters={"node": self.document.name, "action": "comment"},
+            pluck="detail",
+        )
+        self.assertIn(thread, {frappe.parse_json(detail).get("thread") for detail in deletions})
 
     def test_guest_name_and_link_attribution_distinguish_guest_authors(self):
         # §5.9 step 1 mints the token server-side, so the fixture asks for two
@@ -136,9 +165,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         )
         guest_a = Principals("Guest", (), (link_a,))
         guest_b = Principals("Guest", (), (link_b,))
-        thread = create_thread(guest_a, self.document.name, "opaque", "Guest text", author_name="Ada")[
-            "thread"
-        ]
+        thread = create_thread(guest_a, self.document.name, "opaque", "Guest text", author_name="Ada").name
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
 
         row = frappe.db.get_value("Drive Comment", comment, ["author", "author_name"], as_dict=True)
@@ -161,7 +188,7 @@ class TestCommentWorkflows(IntegrationTestCase):
             self.document.name,
             "anchor",
             f"Hello @{MENTIONED} and @[{MENTIONED}]",
-        )["thread"]
+        ).name
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, ["name", "mentions"], as_dict=True)
         mentions = (
             frappe.parse_json(comment.mentions) if isinstance(comment.mentions, str) else comment.mentions
@@ -179,7 +206,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(frappe.parse_json(activity.detail)["comment"], comment.name)
 
     def test_unreadable_threads_are_hidden_and_trash_refuses_writes(self):
-        thread = create_thread(self.owner, self.document.name, "anchor", "Before trash")["thread"]
+        thread = create_thread(self.owner, self.document.name, "anchor", "Before trash").name
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
         with self.assertRaises(DriveNotFound):
             threads(self.outsider, self.document.name)
@@ -207,7 +234,7 @@ class TestCommentLockOrder(UnitTestCase):
                 seen.append(doctype)
             if doctype == "Drive Node":
                 return frappe._dict(
-                    name="node-1", parent="p-1", root="r-1", path="/a", kind="document", state="Active"
+                    name="node-1", parent_node="p-1", root="r-1", path="/a", kind="document", state="Active"
                 )
             if doctype == "Drive Comment Thread":
                 return frappe._dict(
@@ -299,7 +326,7 @@ class TestMigratedCommentOrdering(UnitTestCase):
         # they read back ordered by a sha256 id.
         source = pathlib.Path(build_comments.__file__).read_text()
         self.assertIn('"idx": index', source)
-        self.assertIn("idx asc", inspect.getsource(comments.threads))
+        self.assertIn("idx asc", inspect.getsource(comments._thread_views))
 
     def test_the_comment_columns_build_orders_by_exist_on_the_shipped_doctype(self):
         doctypes = pathlib.Path(comments.__file__).parents[1] / "doctype"

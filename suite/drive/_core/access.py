@@ -16,6 +16,7 @@ from frappe.utils import get_datetime, now, now_datetime, validate_email_address
 from frappe.utils.password import passlibctx
 
 from suite.drive._core.errors import (
+    DriveConflict,
     DriveForbidden,
     DriveLinkExpired,
     DriveLocked,
@@ -24,6 +25,8 @@ from suite.drive._core.errors import (
 )
 from suite.drive._core.principals import TICKET_TTL, Principals, make_ticket, ticket_ok
 from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, ROLES
+from suite.drive._core.roots import lock_trees
+from suite.drive._core.times import publish
 
 POINT_SQL = """
 SELECT node, principal, role, password_hash
@@ -62,8 +65,7 @@ WHERE node IN %(chain)s
 
 BASE62 = string.ascii_letters + string.digits
 # The share-link entry route (§6.2). A website route, outside the Drive area,
-# so the URL a grant returns stays valid whichever route table
-# `suite_flip_files` mounts under `/drive`.
+# so the URL a grant returns names no node and survives a route change.
 LINK_ROUTE = "/l/"
 UNLOCK_FAILURE_LIMIT = 5
 UNLOCK_WINDOW_SECONDS = 15 * 60
@@ -613,10 +615,10 @@ def grants_for(
     them at the call site would answer "that names no user" to a caller with no
     right to ask anything about this node at all.
 
-    `owner` names the user whose Personal root holds the node, with their full
-    name, or is None in the Shared root. Their access comes from the root's
-    anchor grant, and `grant` refuses to deny them, so the dialog lists them
-    first as Owner with no actions.
+    `owner` is the id of the user whose Personal root holds the node, or None
+    in the Shared root. Their access comes from the root's anchor grant, and
+    `grant` refuses to deny them, so the dialog lists them first as Owner with
+    no actions.
     """
     node = _node_or_not_found(node_id)
     require(node, MANAGE, principals)
@@ -626,10 +628,9 @@ def grants_for(
         fields=["name", "node", "principal", "role", "expires_on", "password_hash", "sent_to"],
         order_by="principal asc",
     )
-    owner = _personal_root_owner(node)
     answer = {
         "grants": [_grant_result(row) for row in rows],
-        "owner": _user_entry(owner) if owner else None,
+        "owner": _personal_root_owner(node),
     }
     if inherited:
         answer["inherited"] = _inherited_grants(node, principals)
@@ -803,6 +804,7 @@ def grant(
     savepoint = f"drive_grant_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        node = _lock_node_tree(node_id)
         existing = frappe.db.get_value(
             "Drive Grant",
             {"node": node_id, "principal": stored_principal},
@@ -905,14 +907,20 @@ def _only_takes_access_away(
     return expires_on is not None and expires_on <= existing["expires_on"]
 
 
-def revoke(node_id: str, principal: str, principals: Principals) -> None:
-    """Delete only the named local grant; inherited rows remain untouched."""
+def revoke(node_id: str, principal: str, principals: Principals) -> int:
+    """Delete only the named local grant; inherited rows remain untouched.
+
+    Answers the rows removed: 1, or 0 when no local row named the principal.
+    Removing nothing is not an error, because the caller's intent - that no
+    local row remains - already holds.
+    """
     node = _node_or_not_found(node_id)
     _require_manage(node, principals)
     _refuse_owner_loss(node, principal)
     savepoint = f"drive_revoke_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        _lock_node_tree(node_id)
         existing = frappe.db.get_value(
             "Drive Grant",
             {"node": node_id, "principal": principal},
@@ -922,7 +930,7 @@ def revoke(node_id: str, principal: str, principals: Principals) -> None:
         )
         if not existing:
             frappe.db.release_savepoint(savepoint)
-            return
+            return 0
         frappe.db.delete("Drive Grant", {"name": existing.name})
         _write_activity(
             node_id,
@@ -935,6 +943,39 @@ def revoke(node_id: str, principal: str, principals: Principals) -> None:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    return 1
+
+
+def update_grant(
+    grant_id: str,
+    principals: Principals,
+    *,
+    role: int,
+    expires_on: datetime | str | None = None,
+    password: str | None | Keep = KEEP,
+) -> dict:
+    """Rewrite one existing grant, addressed by its id (§11.2).
+
+    This is `grant` on the row's own node and principal, so every refusal of
+    §5.9 applies unchanged. It exists so a share link is changed by its grant
+    id and its token never travels in a URL: a path is logged by proxies and
+    kept in browser history, and the token is the whole credential.
+    """
+    row = _grant_or_not_found(grant_id)
+    return grant(row.node, row.principal, role, principals, expires_on=expires_on, password=password)
+
+
+def revoke_grant(grant_id: str, principals: Principals) -> int:
+    """Delete one grant, addressed by its id; `revoke` with the row's own names."""
+    row = _grant_or_not_found(grant_id)
+    return revoke(row.node, row.principal, principals)
+
+
+def _grant_or_not_found(grant_id: str) -> frappe._dict:
+    row = frappe.db.get_value("Drive Grant", grant_id, ["name", "node", "principal"], as_dict=True)
+    if not row:
+        raise DriveNotFound(_("Drive grant {0} was not found").format(grant_id))
+    return row
 
 
 def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
@@ -949,6 +990,7 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
     savepoint = f"drive_revoke_below_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        _lock_node_tree(node_id)
         frappe.db.sql(
             """
             DELETE g FROM `tabDrive Grant` g
@@ -1001,6 +1043,7 @@ def rotate_link(grant_id: str, principals: Principals) -> dict:
     savepoint = f"drive_rotate_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        _lock_node_tree(existing.node)
         locked = frappe.db.get_value(
             "Drive Grant",
             grant_id,
@@ -1160,16 +1203,37 @@ def _record_unlock_failure(cache, raw_cache_key: bytes) -> int:
     )
 
 
-def _node_or_not_found(node_id: str) -> frappe._dict:
+def _node_or_not_found(node_id: str, *, for_update: bool = False) -> frappe._dict:
     node = frappe.db.get_value(
         "Drive Node",
         node_id,
-        ["name", "root", "path", "kind", "state"],
+        ["name", "root", "path", "kind", "state", "owner"],
         as_dict=True,
+        for_update=for_update,
     )
     if not node:
         raise DriveNotFound(_("Drive node {0} was not found").format(node_id))
     return node
+
+
+def _lock_node_tree(node_id: str) -> frappe._dict:
+    """Take the node's tree lock before any grant row, and return the locked node.
+
+    A grant write locks its grant rows, and a purge of the same tree deletes
+    them under the tree lock, so the grant takes the tree lock first too. The
+    node is read again under the lock: a trash that committed while this call
+    waited is what decides whether the node may still gain access.
+    """
+    tree = _tree(_node_or_not_found(node_id))
+    lock_trees(tree)
+    node = _node_or_not_found(node_id, for_update=True)
+    if _tree(node) != tree:
+        raise DriveConflict(_("The Drive tree changed; retry the operation"))
+    return node
+
+
+def _tree(node: Mapping) -> str:
+    return node.get("name") if node.get("kind") == "root" else node.get("root")
 
 
 def _require_manage(node: Mapping, principals: Principals) -> None:
@@ -1247,21 +1311,18 @@ def _personal_root_owner(node: Mapping) -> str | None:
 def _refuse_owner_loss(
     node: Mapping, principal: str, *, role: int | None = None, expires_on: datetime | str | None = None
 ) -> None:
-    """Refuse a write to a Personal root's anchor grant, which gives its owner MANAGE.
+    """Refuse a grant write that would lock a Personal root's user out of it.
 
-    Removing that row, lowering it, or giving it an expiry would lock the
-    owner out of their own files. Rows below the root are ordinary grants.
-    `role=None` is a removal, and on the root `revoke_below` removes the
-    anchor too.
+    The root's `user` keeps MANAGE through the anchor grant on the root:
+    removing that row, lowering it, or giving it an expiry would lock them out
+    of their own files. `role=None` is a removal. Every other row, including
+    the creator grant on a node someone uploaded, is an ordinary grant that
+    whoever manages the node may change.
     """
     if node.get("kind") != "root" or not _is_personal_root_owner(node, principal):
         return
     if role is None or role < MANAGE or expires_on is not None:
         raise DriveForbidden(_("The owner of a Personal Drive root keeps Manage on their own files"))
-
-
-def _user_entry(user: str) -> dict:
-    return {"user": user, "full_name": frappe.db.get_value("User", user, "full_name") or user}
 
 
 def _is_personal_root_owner(node: Mapping, principal: str) -> bool:
@@ -1277,7 +1338,7 @@ def _future_expiry(expires_on: datetime | str | None) -> datetime | None:
         if expiry is None:
             raise ValueError
         is_past = expiry < now_datetime()
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         frappe.throw(_("Drive grant expiry is invalid"), frappe.ValidationError)
     if is_past:
         frappe.throw(_("Drive grant expiry cannot be in the past"), frappe.ValidationError)
@@ -1331,7 +1392,8 @@ def _single_address(value) -> bool:
 
 
 def _json_datetime(value) -> str | None:
-    return str(value) if value else None
+    # Activity detail is published as it is stored, so it takes the wire form.
+    return publish(value) if value else None
 
 
 def _grant_result(row: Mapping) -> dict:

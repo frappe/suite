@@ -6,9 +6,8 @@ Adoption was an expand phase. Sheets declared its `ContentTypeSpec` at ticket
 19 and `Sheet` gained the `node` Link; ticket 28 linked every row, and ticket
 29 made the registry entry and the hook changes together. So `suite/hooks.py`
 now names `suite.sheets.drive.SPEC` and points `Sheet`, `Sheet Op Log`, and
-`Sheet Collab State` at `suite.drive.framework`. `Sheet Snapshot` keeps its own
-guard: §14.6 migrates its rows into `Drive Node Version`, so it stays a Build
-source until Cleanup.
+`Sheet Collab State` at `suite.drive.framework`. A sheet's history is
+`Drive Node Version`; the legacy snapshot doctype is gone.
 
 The classes here:
 
@@ -17,8 +16,7 @@ The classes here:
 `TestSheetsWorkbook`      the xlsx importer, the version envelope, and the media
                           scan, exercised as the pure functions they are.
 `TestSheetsAfterActivation`
-                          what activation settled: a sheet needs its node, and
-                          every legacy path refuses a linked one.
+                          what activation settled: a sheet needs its node.
 `TestSheetsInDrive`       the Drive-native lifecycle, versions, purge, media,
                           and satellites.
 
@@ -214,10 +212,6 @@ class TestSheetsDeclaration(unittest.TestCase):
             [(OP_LOG, "sheet"), (COLLAB_STATE, "sheet")],
         )
 
-    def test_sheet_snapshot_is_not_a_satellite_because_build_still_reads_it(self):
-        """§14.6 migrates its rows into `Drive Node Version` (§14.10 drops it)."""
-        self.assertNotIn("Sheet Snapshot", [one.doctype for one in sheets.SPEC.satellites])
-
     def test_the_media_sweep_can_ask_what_a_body_names(self):
         self.assertIs(sheets.SPEC.used_nodes, sheets.used_nodes)
 
@@ -225,13 +219,8 @@ class TestSheetsDeclaration(unittest.TestCase):
         """Declaring a no-op would let a copy carry media nothing names (§8.9)."""
         self.assertIsNone(sheets.SPEC.remap_media)
 
-    def test_the_four_cleanup_pending_columns_are_declared(self):
-        self.assertEqual(sheets.SPEC.legacy_fields, ("title", "trashed", "trashed_on", "trashed_by"))
-
-    def test_head_snapshot_needs_no_exemption_because_ten_two_allows_it(self):
-        from suite.drive._core.content import FORBIDDEN_FIELD_NAMES
-
-        self.assertNotIn("head_snapshot", FORBIDDEN_FIELD_NAMES)
+    def test_no_legacy_column_is_declared_because_cleanup_dropped_them_all(self):
+        self.assertEqual(sheets.SPEC.legacy_fields, ())
 
     # the `All` DocPerm, which the guards deny against
 
@@ -290,19 +279,6 @@ class TestSheetsDeclaration(unittest.TestCase):
                     suite_hooks.permission_query_conditions[doctype],
                     "suite.drive.framework.satellite_query_conditions",
                 )
-
-    def test_sheet_snapshot_keeps_its_own_guard(self):
-        """No spec declares it and its role rows are open, so the guard is the
-        only thing holding the migrated history back. §14.6 reads the rows into
-        `Drive Node Version` and §14.10 drops the doctype with the guard."""
-        self.assertEqual(
-            suite_hooks.has_permission["Sheet Snapshot"],
-            "suite.sheets.permissions.sheet_snapshot_has_permission",
-        )
-        self.assertEqual(
-            suite_hooks.permission_query_conditions["Sheet Snapshot"],
-            "suite.sheets.permissions.sheet_snapshot_query",
-        )
 
     def test_the_registry_answers_with_exactly_this_declaration(self):
         with activated():
@@ -738,7 +714,7 @@ class TestSheetsWorkbook(unittest.TestCase):
 
 
 class TestSheetsAfterActivation(IntegrationTestCase):
-    """A sheet needs its node, and every legacy path refuses a linked one.
+    """A sheet needs its node.
 
     A sheet with no node cannot exist here: `require_node` holds §5.13 for a
     registered doctype (`content.py:757-770`), so the legacy-sheet cases this
@@ -762,12 +738,6 @@ class TestSheetsAfterActivation(IntegrationTestCase):
     def _remove_fixture_rows(self):
         frappe.set_user("Administrator")
         _purge_fixture_roots()
-        for name in frappe.get_all(DOCTYPE, filters={"title": ("like", "adoption-%")}, pluck="name"):
-            frappe.db.delete(OP_LOG, {"sheet": name})
-            frappe.db.delete("Sheet Seq", {"sheet": name})
-            frappe.db.delete("DocShare", {"share_doctype": DOCTYPE, "share_name": name})
-            frappe.delete_doc(DOCTYPE, name, force=1, ignore_permissions=True, ignore_missing=True)
-            _drop_backing_file(name)
         frappe.db.commit()
 
     def _linked_sheet(self) -> tuple[str, str]:
@@ -784,55 +754,7 @@ class TestSheetsAfterActivation(IntegrationTestCase):
         is what makes the node mandatory, and `DriveContent.before_insert` is
         where the refusal lands (`content.py:606-607`)."""
         with self.assertRaises(DriveConflict):
-            frappe.get_doc({"doctype": DOCTYPE, "title": "adoption-orphan", "sheets_data": "{}"}).insert()
-
-    # a linked row refuses every legacy path
-
-    def test_a_linked_sheet_gets_no_backing_file(self):
-        """A second backing row would be a second answer to "who may open this"."""
-        from suite.drive.overrides.file import File as DriveFile
-
-        _node, docname = self._linked_sheet()
-        self.assertFalse(DriveFile.get_for_doc(DOCTYPE, docname))
-
-    def test_every_legacy_endpoint_refuses_a_linked_sheet(self):
-        from suite.sheets import api
-
-        _node, docname = self._linked_sheet()
-        calls = {
-            "get_sheet_shares": lambda: api.get_sheet_shares(docname),
-            "share_sheet": lambda: api.share_sheet(docname, OTHER, write=1),
-            "unshare_sheet": lambda: api.unshare_sheet(docname, OTHER),
-            "delete_sheet": lambda: api.delete_sheet(docname),
-            "restore_sheet": lambda: api.restore_sheet(docname),
-            "delete_sheet_permanent": lambda: api.delete_sheet_permanent(docname),
-            "rename_sheet": lambda: api.rename_sheet(docname, "nope"),
-            "duplicate_sheet": lambda: api.duplicate_sheet(docname),
-        }
-        for label, call in calls.items():
-            with self.subTest(endpoint=label), self.assertRaises(frappe.ValidationError):
-                call()
-
-    def test_the_sheets_trash_cascade_refuses_a_linked_sheet(self):
-        from suite.sheets.trash import hard_delete_sheet
-
-        _node, docname = self._linked_sheet()
-        with self.assertRaises(frappe.ValidationError):
-            hard_delete_sheet(docname)
-
-    def test_the_nightly_purge_never_sees_a_linked_sheet(self):
-        from suite.sheets.trash import purge_trashed_sheets
-
-        _node, docname = self._linked_sheet()
-        # Even with the frozen column forced past the retention window.
-        frappe.db.set_value(
-            DOCTYPE,
-            docname,
-            {"trashed": 1, "trashed_on": "2020-01-01 00:00:00"},
-            update_modified=False,
-        )
-        purge_trashed_sheets()
-        self.assertTrue(frappe.db.exists(DOCTYPE, docname))
+            frappe.get_doc({"doctype": DOCTYPE, "sheets_data": "{}"}).insert()
 
 
 # ── the Drive-native lifecycle ───────────────────────────────────────────────
@@ -923,11 +845,11 @@ class TestSheetsInDrive(IntegrationTestCase):
         self.assertEqual(row.content_doctype, DOCTYPE)
         self.assertEqual(frappe.db.get_value(DOCTYPE, row.content_docname, "node"), node)
 
-    def test_a_new_sheet_starts_empty_and_has_no_title_of_its_own(self):
+    def test_a_new_sheet_starts_empty_and_is_titled_on_its_node(self):
         node = self._sheet(title="Budget")
-        row = frappe.db.get_value(DOCTYPE, self._docname(node), ("title", "sheets_data"), as_dict=True)
-        self.assertFalse(row.title, "Drive owns the title; §10.2 forbids a mirror")
-        self.assertEqual(decode_sheets_data(row.sheets_data), "{}")
+        sheet = frappe.get_doc(DOCTYPE, self._docname(node))
+        self.assertEqual(sheet.node_title, "Budget")
+        self.assertEqual(decode_sheets_data(sheet.sheets_data), "{}")
 
     def test_a_new_sheet_opens_its_history_with_a_create_op(self):
         node = self._sheet()
@@ -937,30 +859,6 @@ class TestSheetsInDrive(IntegrationTestCase):
         node = self._sheet()
         ops = self._ops(node)
         self.assertEqual(frappe.db.get_value(DOCTYPE, self._docname(node), "head_seq"), ops[-1]["seq"])
-
-    def test_a_linked_sheet_cannot_write_the_frozen_legacy_title(self):
-        node = self._sheet()
-        sheet = frappe.get_doc(DOCTYPE, self._docname(node))
-        sheet.title = "A mirror of the node title"
-        with self.assertRaises(DriveConflict):
-            sheet.save(ignore_permissions=True)
-
-    def test_a_linked_sheet_cannot_write_the_frozen_trash_columns(self):
-        node = self._sheet()
-        sheet = frappe.get_doc(DOCTYPE, self._docname(node))
-        sheet.trashed = 1
-        with self.assertRaises(DriveConflict):
-            sheet.save(ignore_permissions=True)
-
-    def test_a_save_keeps_the_build_title_so_the_rollback_source_survives(self):
-        """§14.11: the post-Build rollback is "ship the old code", which reads it."""
-        node = self._sheet()
-        docname = self._docname(node)
-        frappe.db.set_value(DOCTYPE, docname, "title", "The Build title", update_modified=False)
-        sheet = frappe.get_doc(DOCTYPE, docname)
-        sheet.sheets_data = encode_sheets_data('{"a":1}')
-        sheet.save(ignore_permissions=True)
-        self.assertEqual(frappe.db.get_value(DOCTYPE, docname, "title"), "The Build title")
 
     def test_a_sheet_cannot_be_repointed_at_another_node(self):
         first = self._sheet(title="One")
@@ -998,7 +896,6 @@ class TestSheetsInDrive(IntegrationTestCase):
         node = self._sheet(title="Source")
         copy = drive.copy(node, self.root.node, title="Copy")
         self.assertEqual(frappe.db.get_value("Drive Node", copy, "title"), "Copy")
-        self.assertFalse(frappe.db.get_value(DOCTYPE, self._docname(copy), "title"))
 
     # xlsx import
 
@@ -1024,9 +921,9 @@ class TestSheetsInDrive(IntegrationTestCase):
     def test_an_import_leaves_the_source_file_exactly_as_it_was(self):
         """An import is neither a move nor a copy."""
         source = self._xlsx_node(simple_workbook())
-        before = frappe.db.get_value("Drive Node", source, ("parent", "state", "blob"), as_dict=True)
+        before = frappe.db.get_value("Drive Node", source, ("parent_node", "state", "blob"), as_dict=True)
         drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
-        after = frappe.db.get_value("Drive Node", source, ("parent", "state", "blob"), as_dict=True)
+        after = frappe.db.get_value("Drive Node", source, ("parent_node", "state", "blob"), as_dict=True)
         self.assertEqual(before, after)
 
     def test_a_caller_who_cannot_read_the_file_cannot_import_it(self):
@@ -1212,7 +1109,6 @@ GATE_USERS = (GATE_OWNER, GATE_VICTIM)
 _GATE_ADDED = (
     OP_LOG,
     "Sheet Seq",
-    "Sheet Snapshot",
     COLLAB_STATE,
     "Sheet Cell",
     "DocShare",
@@ -1224,16 +1120,14 @@ _GATE_ADDED = (
     "ToDo",
     DOCTYPE,
 )
-# `File` and its activity log are witnesses rather than deletions: they belong
-# to Drive, and a test may not write a `Drive *` table (ARCHITECTURE.md rule
-# 2.2). `_drop_backing_file` hands them back through the File controller.
+# Drive's tables are witnesses rather than deletions: a test may not write a
+# `Drive *` table (ARCHITECTURE.md rule 2.2).
 _GATE_WITNESS = (
     "Drive Root",
     "Drive Node",
     "Drive Grant",
     "File",
     "File Blob",
-    "Drive Entity Activity Log",
     "User",
 )
 
@@ -1345,7 +1239,6 @@ class TestTheGateProbes(IntegrationTestCase):
 
     def _drop_gate_rows(self) -> None:
         frappe.set_user("Administrator")
-        sheets = set(frappe.get_all(DOCTYPE, pluck="name")) - self.census[DOCTYPE]
         for doctype in _GATE_ADDED:
             added = tuple(set(frappe.get_all(doctype, pluck="name")) - self.census[doctype])
             if not added:
@@ -1353,11 +1246,6 @@ class TestTheGateProbes(IntegrationTestCase):
             frappe.db.delete(doctype, {"name": ("in", added)})
             if doctype == "Email Queue":
                 frappe.db.delete("Email Queue Recipient", {"parent": ("in", added)})
-        # The backing `File` last. Its `after_delete` cascades into the content
-        # document (`suite/drive/overrides/file.py:146-152`), so it has to run
-        # when there is no longer one to take with it.
-        for sheet in sheets:
-            _drop_backing_file(sheet)
         frappe.db.commit()
 
     def _assert_no_residue(self) -> None:
@@ -1442,53 +1330,6 @@ class TestTheGateProbes(IntegrationTestCase):
         with self.assertRaises(DriveForbidden):
             _listed(OP_LOG, "sheet")
 
-    def test_a_share_on_one_snapshot_row_refuses_the_whole_snapshot_list(self):
-        """`Sheet Snapshot` keeps its own guard past activation, and gets the
-        same refusal for the same reason."""
-        _node, docname = self._linked_sheet()
-        snapshot = self._preserved_snapshot(docname)
-        self._share("Sheet Snapshot", snapshot, GATE_VICTIM, read=1)
-
-        self._as(GATE_VICTIM)
-        with self.assertRaises(DriveForbidden):
-            _listed("Sheet Snapshot", "sheet")
-
-    def test_a_new_snapshot_under_a_linked_sheet_is_refused_on_insert(self):
-        """`SheetSnapshot.validate` is the guard `_preserved_snapshot` skips.
-
-        Build preserves rows that predate the link, so the fixture needs
-        `ignore_validate`. Nothing else may: a legacy snapshot written after
-        the link would be history Drive does not own (§8, "Refuse linked-Sheet
-        mutations in every legacy create, restore, label, pin, delete, and
-        pruning path").
-        """
-        _node, docname = self._linked_sheet()
-        row = frappe.get_doc(
-            {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 2, "kind": "auto", "sheets_data": "{}"}
-        )
-        with self.assertRaises(frappe.ValidationError):
-            row.insert(ignore_permissions=True)
-
-    def test_deleting_a_preserved_snapshot_under_a_linked_sheet_is_refused(self):
-        """`SheetSnapshot.on_trash` is the other half. Drive prunes migrated
-        history; the legacy pruner must not reach a linked sheet's rows."""
-        _node, docname = self._linked_sheet()
-        snapshot = self._preserved_snapshot(docname)
-        with self.assertRaises(frappe.ValidationError):
-            frappe.delete_doc("Sheet Snapshot", snapshot, ignore_permissions=True)
-
-    def _preserved_snapshot(self, docname: str) -> str:
-        """One `Sheet Snapshot` row standing in for one Build preserved.
-
-        It predates the link, so it never met `SheetSnapshot.validate`, which
-        refuses a linked parent.
-        """
-        row = frappe.get_doc(
-            {"doctype": "Sheet Snapshot", "sheet": docname, "seq": 1, "kind": "auto", "sheets_data": "{}"}
-        )
-        row.flags.ignore_validate = True
-        return row.insert(ignore_permissions=True).name
-
     # the one share that cannot be written at all
 
     def test_a_new_share_on_a_linked_sheet_is_refused_outright(self):
@@ -1514,25 +1355,6 @@ def _drop_fixture_users(users: tuple[str, ...] = (USER, OTHER)) -> None:
     for user in users:
         frappe.delete_doc("User", user, force=1, ignore_permissions=True, ignore_missing=True)
     frappe.db.commit()
-
-
-def _drop_backing_file(docname: str) -> None:
-    """Take the legacy `File` a `Sheet` insert provisions off the site.
-
-    `File.permanent_delete` marks the row `Removed` rather than deleting it
-    (`suite/drive/overrides/file.py:402-406`), so a fixture that deletes only
-    its `Sheet` leaves one orphan row behind on every run. Ticket 23 removes
-    the backing for good; until then a test takes back what it made.
-
-    Through `delete_doc`, not a raw delete: `File.after_delete` is what clears
-    the activity log and the favourites that hang off the row
-    (`suite/drive/overrides/file.py:131-145`), and a test may not write a
-    `Drive *` table itself (ARCHITECTURE.md rule 2.2).
-    """
-    for name in frappe.get_all(
-        "File", filters={"content_doctype": DOCTYPE, "content_docname": docname}, pluck="name"
-    ):
-        frappe.delete_doc("File", name, force=1, ignore_permissions=True, ignore_missing=True)
 
 
 def _purge_fixture_roots(users: tuple[str, ...] = (USER, OTHER)) -> None:

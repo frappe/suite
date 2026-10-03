@@ -37,10 +37,10 @@ from suite.drive._core.versions import (
     thin,
 )
 from suite.drive.jobs import thin_versions
+from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.drive.tests.test_content import registered as registered_content
 from suite.drive.tests.test_content import spec as content_spec
 from suite.hooks import scheduler_events
-from suite.tests.utils import ensure_user
 
 USER = "drive-version-user@example.com"
 OTHER = "drive-version-other@example.com"
@@ -157,15 +157,10 @@ class TestVersionLadder(UnitTestCase):
 
 
 class TestVersionWorkflows(IntegrationTestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        ensure_user(USER)
-        ensure_user(OTHER)
-
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
+        ensure_rootless_user(USER, OTHER)
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
         self.root = create_root(kind="Personal", title="Version root", user=USER)
         self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
@@ -213,7 +208,7 @@ class TestVersionWorkflows(IntegrationTestCase):
                 {
                     "doctype": "Drive Node",
                     "title": "Document",
-                    "parent": self.root.name,
+                    "parent_node": self.root.name,
                     "root": self.root.name,
                     "path": "",
                     "kind": "document",
@@ -284,7 +279,9 @@ class TestVersionWorkflows(IntegrationTestCase):
         answered = label_version(self.admin, node, 1, label="Release", pinned=True)
         version = frappe.get_doc("Drive Node Version", rows[0].name)
         self.assertEqual((version.label, version.pinned), ("Release", 1))
-        self.assertEqual(answered, {"label": "Release", "pinned": 1})
+        # The answer is the version row with the change applied.
+        self.assertEqual((answered.seq, answered.label, answered.pinned), (1, "Release", 1))
+        self.assertEqual(answered.name, rows[0].name)
 
         # A change that names one field leaves the other alone. §9.1 makes the
         # pin a retention exemption, so a rename that cleared it would hand a
@@ -498,14 +495,31 @@ class TestVersionWorkflows(IntegrationTestCase):
         admit(self.root.name, len(cases))
         used_before = frappe.db.get_value("Drive Root", self.root.name, "used_bytes")
 
-        with patch("suite.drive._core.versions.now_datetime", return_value=now):
+        # `thin` scans every node on the site and commits each one. Only this
+        # node is thinned for real, so the pass stays inside the test's data.
+        visited = []
+
+        def thin_this_node_only(candidate, *args):
+            visited.append(candidate)
+            if candidate == node:
+                return _thin_node(candidate, *args)
+            return {"scanned": 0, "deleted": 0, "released_bytes": 0}
+
+        with (
+            patch("suite.drive._core.versions.now_datetime", return_value=now),
+            patch("suite.drive._core.versions._thin_node", side_effect=thin_this_node_only),
+        ):
             result = thin()
 
         remaining = set(
             frappe.get_all("Drive Node Version", filters={"node": node}, pluck="seq", order_by="seq")
         )
         self.assertEqual(remaining, {1, 4, 5, 6})
-        self.assertEqual(result, {"nodes": 1, "scanned": 3, "deleted": 2, "released_bytes": 2, "failed": 0})
+        self.assertIn(node, visited)
+        self.assertEqual(
+            result,
+            {"nodes": len(visited), "scanned": 3, "deleted": 2, "released_bytes": 2, "failed": 0},
+        )
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), used_before - 2)
 
     def test_trashed_node_keeps_history_management_but_refuses_content_writes(self):

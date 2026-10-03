@@ -38,15 +38,6 @@ def _debt(owner, removal, entries):
 
 BASELINE_DEBT = {
     **_debt(
-        "Suite Slides",
-        "Remove with the Slides Drive adapter (18) and the legacy compatibility ticket (23).",
-        (
-            "suite/slides/doctype/presentation/patches/integrate_with_drive.py"
-            "|drive-table-write|Drive Permission",
-            "suite/slides/doctype/presentation/presentation.py|drive-table-write|Drive Permission",
-        ),
-    ),
-    **_debt(
         "Suite Drive and Meet",
         "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
         ("suite/meet/api/test/test_recording.py|drive-table-write|Drive Root",),
@@ -55,67 +46,36 @@ BASELINE_DEBT = {
         "Drive and adopting product owners",
         "Remove through Drive implementation tickets 15-23 and the backend integration review (30).",
         (
-            "suite/drive/api/list.py|import|suite.slides.doctype.presentation.presentation",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_file",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_permission",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_settings",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_invitation",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_activity_log",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_favourite",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_recent",
-            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_notif",
-            "suite/hooks.py|dotted-string|suite.drive.api.permissions.user_has_permission",
-            "suite/hooks.py|dotted-string|suite.drive.api.permissions.drive_permission_has_permission",
-            "suite/hooks.py|dotted-string|suite.drive.api.permissions.activity_log_has_permission",
-            "suite/hooks.py|dotted-string|suite.drive.api.permissions.drive_settings_has_permission",
-            "suite/hooks.py|dotted-string|suite.drive.api.permissions.drive_invitation_has_permission",
-            "suite/hooks.py|dotted-string|suite.drive.overrides.file.File",
-            "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache",
-            "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache#2",
-            "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_download_archives",
             "suite/hooks.py|dotted-string|suite.drive.webdav.locks.purge_expired_locks",
-            "suite/hooks.py|dotted-string|suite.drive.overrides.file.after_file_upload",
-            "suite/hooks.py|dotted-string|suite.drive.api.product.after_request",
             "suite/hooks.py|dotted-string|suite.drive.webdav.dispatch.handle_before_request",
-            "suite/meet/api/recording.py|import|suite.drive.utils",
-            "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.api.files",
-            "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.utils",
-            "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.utils.files",
-            "suite/meet/recording/ingest.py|import|suite.drive.utils",
-            "suite/meet/recording/ingest.py|import|suite.drive.utils.files",
-            "suite/sheets/doctype/sheet/sheet.py|import|suite.drive.overrides.file",
-            "suite/sheets/patches/integrate_with_drive.py|import|suite.drive.utils",
-            "suite/slides/api/test_file.py|import|suite.drive.overrides.file",
-            "suite/slides/doctype/presentation/patches/integrate_with_drive.py|import|suite.drive.utils",
-            "suite/slides/doctype/presentation/presentation.py|import|suite.drive.overrides.file",
-            "suite/slides/doctype/presentation/presentation.py|import|suite.drive.overrides.file#2",
-            "suite/writer/api/docs.py|import|suite.drive.api.permissions",
-            "suite/writer/api/docs.py|import|suite.drive.utils.files",
-            "suite/writer/api/embed.py|import|suite.drive.api.files",
-            "suite/writer/api/embed.py|import|suite.drive.api.permissions",
-            "suite/writer/api/general.py|import|suite.drive.api.permissions",
-            "suite/writer/api/general.py|import|suite.drive.utils",
             "suite/writer/doctype/writer_document/test_writer_document.py|import|suite.drive._core.errors",
-            "suite/writer/doctype/writer_document/writer_document.py|import|suite.drive.api.notifications",
-            "suite/writer/overrides/__init__.py|import|suite.drive.api.permissions",
-            "suite/writer/overrides/__init__.py|import|suite.drive.overrides.file",
         ),
     ),
     **_debt(
         "Suite migration",
-        "Remove with the Cleanup release: these two fixtures assert what the shipped "
-        "`drive_content_types` hook holds, so they name a spec until the hook does not.",
-        # Ticket 29 filled `drive_content_types`, so a Drive test that proves
-        # what activation settled has to name the three dotted paths the hook
-        # ships. Naming a path is not importing one: nothing here reaches into
-        # a content product, and the registry is still built by the framework.
+        "Remove when this fixture stops asserting what the shipped `drive_content_types` hook holds.",
+        # A Drive test that proves what activation settled has to name the
+        # three dotted paths the hook ships. Naming a path is not importing
+        # one: nothing here reaches into a content product, and the registry
+        # is still built by the framework.
         (
-            "suite/drive/http/tests/test_shims.py|dotted-string|suite.sheets.drive.SPEC",
-            "suite/drive/http/tests/test_shims.py|dotted-string|suite.slides.drive.SPEC",
-            "suite/drive/http/tests/test_shims.py|dotted-string|suite.writer.drive.SPEC",
             "suite/drive/tests/test_content.py|dotted-string|suite.sheets.drive.SPEC",
             "suite/drive/tests/test_content.py|dotted-string|suite.slides.drive.SPEC",
             "suite/drive/tests/test_content.py|dotted-string|suite.writer.drive.SPEC",
+        ),
+    ),
+    **_debt(
+        "Suite Drive",
+        "Remove when `suite.drive` exposes a grant workflow and a shipped-templates folder for "
+        "Administrator (the seed in `suite/slides/install.py` then needs nothing below the facade).",
+        # Issue 38: the Slides template seed replaced the `Presentation`
+        # fixture. §8.10 puts shipped templates in Administrator's Personal
+        # root with a `$GENERAL` READ grant on each; the facade refuses
+        # Administrator in `ensure_personal_root` and has no grant call.
+        (
+            "suite/slides/install.py|import|suite.drive._core.access",
+            "suite/slides/install.py|import|suite.drive._core.roots",
+            "suite/slides/install.py|import|suite.drive.framework",
         ),
     ),
     **_debt(
@@ -138,31 +98,14 @@ BASELINE_DEBT = {
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.roots",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive.framework",
-            # The legacy-read fixture creates its document through
-            # `docs.create_document`, which ticket 29 made Drive-native, so it
-            # has to hand the document back through Drive's trash and purge.
-            # `suite.drive` exposes neither yet.
-            "suite/writer/api/tests/test_general.py|import|suite.drive._core.nodes",
-            "suite/writer/api/tests/test_general.py|import|suite.drive._core.principals",
-            # The list fixtures share and re-open a document to pin legacy's
-            # one share number and its stale-recent drop. Granting, revoking,
-            # and recording a visit are Drive workflows with no public call
-            # yet, and the roles are the ladder each grant names.
-            "suite/writer/api/tests/test_general.py|import|suite.drive._core.access",
-            "suite/writer/api/tests/test_general.py|import|suite.drive._core.activity",
-            "suite/writer/api/tests/test_general.py|import|suite.drive._core.roles",
-            # `create_document` is atomic over Drive now, so the create and
-            # comment fixtures build, grant on, and purge nodes directly.
+            # The comment fixture grants on and purges nodes directly; Drive
+            # exposes neither as a public call yet.
             "suite/writer/api/tests/test_docs.py|import|suite.drive._core.access",
-            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.errors",
             "suite/writer/api/tests/test_docs.py|import|suite.drive._core.nodes",
             "suite/writer/api/tests/test_docs.py|import|suite.drive._core.principals",
-            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.roles",
             # An embedded picture is a media node below the document (§9.4),
             # so the fixture builds roots and nodes and reads Drive's own
-            # upload path. The dotted string patches the realtime publish that
-            # path makes; there is no upload fixture above it yet.
-            "suite/writer/api/tests/test_embed.py|dotted-string|suite.drive.api.files.frappe.publish_realtime",
+            # upload path; there is no upload fixture above it yet.
             "suite/writer/api/tests/test_embed.py|import|suite.drive._core.access",
             "suite/writer/api/tests/test_embed.py|import|suite.drive._core.errors",
             "suite/writer/api/tests/test_embed.py|import|suite.drive._core.nodes",
@@ -173,20 +116,17 @@ BASELINE_DEBT = {
     ),
     **_debt(
         "Suite Writer",
-        "Remove with the Cleanup release (36), which drops the legacy `Writer Version` "
-        "rows this fixture stands in for.",
-        # §14.6 copies a `Writer Version` snapshot into a `Drive Node Version`
+        "Remove when a public Drive call writes a version from caller-supplied bytes.",
+        # §14.6 copied a `Writer Version` snapshot into a `Drive Node Version`
         # as raw HTML. No public Drive call writes a version from caller-supplied
         # bytes, so proving that a migrated version restores means writing the
-        # row the way Build writes it.
+        # row the way Build wrote it.
         ("suite/writer/tests/test_drive_adoption.py|drive-table-write|Drive Node Version",),
     ),
     **_debt(
         "Suite Slides",
         "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
         (
-            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.content._build_registry",
-            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.content._build_registry#2",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.content.spec_for",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.copy_preview",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
@@ -195,21 +135,18 @@ BASELINE_DEBT = {
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission#2",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions#2",
-            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.refuse_unlinked_documents",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission#2",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions",
             "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions#2",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.access",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.content",
-            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.content#2",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.errors",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.nodes",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.principals",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.roots",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive.framework",
-            "suite/slides/tests/test_drive_adoption.py|import|suite.drive.overrides.file",
             # Ticket 29 activated the registry, so a deck fixture is a Drive
             # node and `make_public` is a `Drive Grant`, not a `Drive Permission`
             # row. `suite.drive` exposes no grant workflow, so the shared Slides
@@ -250,14 +187,12 @@ BASELINE_DEBT = {
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.access",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.content",
-            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.content#2",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.errors",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.nodes",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.principals",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.roots",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.framework",
-            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.overrides.file",
             # The title fixtures create a sheet through the endpoint and hand
             # it back through Drive's trash and purge, which `suite.drive` does
             # not expose yet.
@@ -356,33 +291,6 @@ BASELINE_DEBT = {
             "suite/suite_core/doctype/suite_settings/suite_settings.py|import|suite.mail.utils",
             "suite/suite_core/test_utils.py|import|suite.mail.utils",
         ),
-    ),
-    **_debt(
-        "Meet and Drive owners",
-        "Remove when Meet recording reaches Drive through `suite.drive` (tickets 15-23).",
-        # Source: upstream `develop`, merged at a3dba155c. Recording ingest
-        # and its tests still use legacy Drive file helpers that `suite.drive`
-        # does not export.
-        (
-            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.files.FileManager.upload_file",
-            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.files.FileManager.upload_file#2",
-            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.update_file_size",
-            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.utils.update_file_size#2",
-            "suite/meet/api/test/test_recording.py|import|suite.drive.utils",
-            "suite/meet/api/test/test_recording_reliability.py"
-            "|dotted-string|suite.drive.utils.files.FileManager.upload_file",
-            "suite/meet/api/test/test_recording_reliability.py|dotted-string|suite.drive.utils.update_file_size",
-            "suite/meet/recording/ingest.py|import|suite.drive.utils#2",
-            "suite/meet/recording/ingest.py|import|suite.drive.utils.files#2",
-            "suite/meet/recording/ingest.py|import|suite.drive.utils.files#3",
-        ),
-    ),
-    **_debt(
-        "Suite Writer and Drive owners",
-        "Remove when Drive exposes search through `suite.drive` or Writer stops merging legacy Drive results.",
-        # Source: upstream `develop`, merged at a3dba155c. Legacy Drive search
-        # is not part of the `suite.drive` interface.
-        ("suite/writer/api/general.py|import|suite.drive.api.files",),
     ),
     **_debt(
         "Suite composition",
@@ -640,6 +548,7 @@ class TestArchitecture(unittest.TestCase):
                 "create_document",
                 "create_file",
                 "create_storage_reservation",
+                "ensure_folder",
                 "ensure_personal_root",
                 "get_storage_reservation",
                 "get_storage_usage",
@@ -651,7 +560,7 @@ class TestArchitecture(unittest.TestCase):
                 "personal_root_for",
                 "push_preview",
                 "read_file",
-                "read_version",
+                "record_comment",
                 "reduce_storage_reservation",
                 "refuse_shared_child_rows",
                 "refuse_shared_linked_rows",
@@ -659,6 +568,7 @@ class TestArchitecture(unittest.TestCase):
                 "release_storage_reservation",
                 "resolve_share_link",
                 "rollback_savepoint",
+                "store_file",
                 "take_version",
                 "touch",
             ),

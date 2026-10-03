@@ -1,8 +1,8 @@
-"""Send old page URLs to the flip-2 routes (unified frontend spec §14.3).
+"""Send old page URLs to their new routes (unified frontend spec §14.3).
 
 One table, one row per old path. `handle_before_request` applies it to every
-cold load, email link and bookmark while `suite_flip_files` is on. With the key
-off, every old URL mounts its old page, so the table answers nothing.
+cold load, email link and bookmark, so an old Drive, Writer, Sheets or Slides
+URL keeps working after the old pages are gone.
 
 Rules:
 
@@ -47,9 +47,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.utils import redirect
 
 from suite import drive
-from suite.suite_core.flips import flip_is_on
 
-FLAG = "suite_flip_files"
 CLIENT_TABLE = Path(__file__).resolve().parents[2] / "frontend/src/composition/redirects.json"
 
 # How a row finds its target when the path alone does not say it:
@@ -121,7 +119,7 @@ ROWS: tuple[Row, ...] = (
 )
 
 # The first path segment of every row. Any other request leaves on one set
-# lookup, before the flag or the table is read.
+# lookup, before the table is read.
 PREFIXES = frozenset(row.segments[0] for row in ROWS)
 
 
@@ -136,12 +134,12 @@ _ROWS_BY_LENGTH = _by_length(ROWS)
 
 
 def handle_before_request() -> None:
-    """Answer 302 for an old page URL while `suite_flip_files` is on."""
+    """Answer 302 for an old page URL."""
     request = getattr(frappe.local, "request", None)
     if request is None or request.method not in ("GET", "HEAD"):
         return
     path = request.path
-    if path[1:].split("/", 1)[0] not in PREFIXES or not flip_is_on(FLAG):
+    if path[1:].split("/", 1)[0] not in PREFIXES:
         return
     if _has_encoded_separator(request.environ):
         return
@@ -251,10 +249,7 @@ LOOKUPS: dict[Lookup, Callable[[str], str | None]] = {
 
 def client_table() -> dict:
     """The table as the client guard reads it."""
-    return {
-        "flag": FLAG,
-        "rows": [{"old": row.old, "new": row.new, "lookup": row.lookup} for row in ROWS],
-    }
+    return {"rows": [{"old": row.old, "new": row.new, "lookup": row.lookup} for row in ROWS]}
 
 
 def write_client_table() -> str:

@@ -2,9 +2,9 @@
 # See license.txt
 """`check_collab_access` on a sheet Drive owns (ticket 19, §6.7).
 
-Everything here is the Drive-native side of the endpoint. The legacy side —
-cookie auth, Guest refused, Frappe's own read/write split — stays in
-`suite.sheets.tests.test_collab`, and the two together are the whole endpoint.
+Drive answers the endpoint: a Guest with no link credential holds nothing at
+the node, and the persistence endpoints beside it are covered in
+`suite.sheets.tests.test_collab`.
 
 No database. `suite.sheets.collab.drive` is replaced with a stub that answers a
 role ladder, so each test states one caller's role at the node and asserts
@@ -91,7 +91,7 @@ class _AccessCase(unittest.TestCase):
 
     def answer(self, role: int, *, user: str = "alice@example.com", refusal=_DriveNotFound) -> dict:
         self.drive = _drive_at(role, refusal)
-        frappe, patcher = _patched_frappe(user=user)
+        _, patcher = _patched_frappe(user=user)
         self.addCleanup(patcher.stop)
         with (
             mock.patch.object(collab, "drive", self.drive),
@@ -252,49 +252,6 @@ class GuestIdentity(_AccessCase):
         self.assertEqual(answer["fullName"], "Alice Adams")
         self.assertEqual(answer["initials"], "AA")
         self.assertEqual(answer["userImage"], "/files/alice.png")
-
-
-class TheTwoSides(unittest.TestCase):
-    """The node column is what chooses the answer, and nothing else."""
-
-    def test_a_linked_sheet_never_asks_frappe_has_permission(self):
-        """`DocShare` cannot open a sheet Drive owns (§1)."""
-        frappe, patcher = _patched_frappe()
-        self.addCleanup(patcher.stop)
-        with (
-            mock.patch.object(collab, "drive", _drive_at(EDIT)),
-            mock.patch.object(collab, "_user_identity", return_value=_ALICE),
-        ):
-            collab.check_collab_access(SHEET)
-        frappe.has_permission.assert_not_called()
-
-    def test_a_legacy_sheet_never_asks_drive(self):
-        frappe, patcher = _patched_frappe(node=None)
-        self.addCleanup(patcher.stop)
-        frappe.has_permission.return_value = True
-        drive = mock.MagicMock()
-        drive.DriveError = _DriveError
-        with (
-            mock.patch.object(collab, "drive", drive),
-            mock.patch.object(collab, "_user_identity", return_value=_ALICE),
-        ):
-            answer = collab.check_collab_access(SHEET)
-        drive.check.assert_not_called()
-        self.assertTrue(answer["canRead"])
-
-    def test_a_legacy_sheet_still_refuses_guest(self):
-        """A legacy row has no link grant to hold, so there is nothing to check.
-
-        The refusal is the same shape a linked sheet's is. A raised status would
-        read to the collab server as an unreachable Frappe, and it would spend
-        three whole recheck periods retrying an answer that cannot change.
-        """
-        _frappe, patcher = _patched_frappe(node=None, user="Guest")
-        self.addCleanup(patcher.stop)
-        answer = collab.check_collab_access(SHEET)
-        self.assertFalse(answer["canRead"])
-        self.assertEqual(answer["recheckSeconds"], collab.RECHECK_SECONDS)
-        self.assertNotIn("fullName", answer)
 
 
 if __name__ == "__main__":

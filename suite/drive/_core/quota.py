@@ -165,7 +165,8 @@ def create_storage_reservation(root: str, key: str, reserved_bytes: int) -> frap
 def bind_legacy_storage_reservation(root: str, key: str, reserved_bytes: int) -> frappe._dict:
     """Adopt one pre-root reservation onto a root and charge it exactly once.
 
-    Migration-only. An unbound legacy row was never counted in any
+    Migration-only: a patch that runs before Build finds reservation rows the
+    old Drive wrote with no root. Such a row was never counted in any
     ``Drive Root.used_bytes``, so adoption runs the admission UPDATE. A row
     that already names a root keeps that binding for good: only its byte
     amount is corrected, on the root it is already charged to.
@@ -198,7 +199,7 @@ def bind_legacy_storage_reservation(root: str, key: str, reserved_bytes: int) ->
         frappe.db.set_value(
             "Drive Storage Reservation",
             key,
-            {"root": root, "storage_owner": None, "reserved_bytes": reserved_bytes},
+            {"root": root, "reserved_bytes": reserved_bytes},
             update_modified=False,
         )
         return frappe._dict(name=key, root=root, reserved_bytes=reserved_bytes)

@@ -6,8 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
-  "node",
-  "entity"
+  "node"
  ],
  "fields": [
   {
@@ -23,17 +22,12 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Node",
-   "options": "Drive Node"
-  },
-  {
-   "fieldname": "entity",
-   "fieldtype": "Link",
-   "label": "Legacy File",
-   "options": "File"
+   "options": "Drive Node",
+   "reqd": 1
   }
  ],
  "links": [],
- "modified": "2026-03-09 13:07:27.233796",
+ "modified": "2026-10-03 03:54:36.555178",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Favourite",

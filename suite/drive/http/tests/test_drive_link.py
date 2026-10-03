@@ -1,20 +1,14 @@
 """`/l/<token>` opens the node a share link addresses (Drive §6.2, unified §10.1).
 
 Two seams. `drive.node_url` is the one place the server spells a node's
-address, and the answer depends on `suite_flip_files`. The website route is
-tested as a whole request through Frappe's WSGI application, so the rule in
-`hooks.py`, the page, and the redirect are all in the path.
-
-The request runs on its own thread and rebuilds `frappe.conf` from the site
-config there, so the key is switched on by wrapping the config read itself.
+address. The website route is tested as a whole request through Frappe's WSGI
+application, so the rule in `hooks.py`, the page, and the redirect are all in
+the path.
 """
 
-from contextlib import contextmanager
 from html import unescape
-from unittest.mock import patch
 
 import frappe
-import frappe.config
 
 from suite import drive
 from suite.drive._core.access import grant
@@ -25,21 +19,6 @@ from suite.drive.http.tests.test_dispatch import OWNER, DriveHTTPCase
 PAST = "2000-01-01 00:00:00"
 
 
-@contextmanager
-def files_flipped(on: bool):
-    """Answer every site config read, in any thread, with the key set."""
-    read = frappe.config.get_site_config
-
-    def with_key(*args, **kwargs):
-        conf = read(*args, **kwargs)
-        conf["suite_flip_files"] = 1 if on else 0
-        return conf
-
-    with patch("frappe.config.get_site_config", side_effect=with_key):
-        with patch.dict(frappe.conf, {"suite_flip_files": 1 if on else 0}):
-            yield
-
-
 class TestNodeUrl(DriveHTTPCase):
     @classmethod
     def setUpClass(cls):
@@ -47,7 +26,7 @@ class TestNodeUrl(DriveHTTPCase):
         cls.link_node = create_link(cls.owner, cls.folder, "Site", url="https://example.com")
         frappe.db.commit()
 
-    def test_with_the_key_on_a_container_opens_the_folder_route_and_anything_else_the_document_route(self):
+    def test_a_container_opens_the_folder_route_and_anything_else_the_document_route(self):
         expected = {
             self.root.name: f"/drive/f/{self.root.name}",
             self.folder: f"/drive/f/{self.folder}",
@@ -55,16 +34,10 @@ class TestNodeUrl(DriveHTTPCase):
             self.document: f"/d/{self.document}",
             self.link_node: f"/d/{self.link_node}",
         }
-        with files_flipped(True):
-            self.assertEqual({node: drive.node_url(node) for node in expected}, expected)
-
-    def test_with_the_key_off_every_kind_keeps_the_legacy_address(self):
-        nodes = (self.root.name, self.folder, self.file, self.document, self.link_node)
-        with files_flipped(False):
-            self.assertEqual([drive.node_url(node) for node in nodes], [f"/drive/g/{node}" for node in nodes])
+        self.assertEqual({node: drive.node_url(node) for node in expected}, expected)
 
     def test_an_unknown_node_has_no_address(self):
-        with files_flipped(True), self.assertRaises(drive.DriveNotFound):
+        with self.assertRaises(drive.DriveNotFound):
             drive.node_url("no-such-node")
 
 
@@ -80,9 +53,8 @@ class TestShareLinkRoute(DriveHTTPCase):
         frappe.db.delete("Drive Grant", {"name": name})
         frappe.db.commit()
 
-    def open(self, path: str, *, flipped: bool):
-        with files_flipped(flipped):
-            return self.drive("GET", path)
+    def open(self, path: str):
+        return self.drive("GET", path)
 
     def assertRedirect(self, response, location: str) -> None:
         self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
@@ -90,19 +62,16 @@ class TestShareLinkRoute(DriveHTTPCase):
 
     def test_a_folder_link_opens_the_folder_with_the_token_in_the_fragment(self):
         _created, token = self.link(self.folder)
-        self.assertRedirect(self.open(f"/l/{token}", flipped=True), f"/drive/f/{self.folder}#link={token}")
-        self.assertRedirect(self.open(f"/l/{token}", flipped=False), f"/drive/g/{self.folder}#link={token}")
+        self.assertRedirect(self.open(f"/l/{token}"), f"/drive/f/{self.folder}#link={token}")
 
     def test_a_file_link_opens_the_document_route_with_the_token_in_the_fragment(self):
         _created, token = self.link(self.file)
-        self.assertRedirect(self.open(f"/l/{token}", flipped=True), f"/d/{self.file}#link={token}")
-        self.assertRedirect(self.open(f"/l/{token}", flipped=False), f"/drive/g/{self.file}#link={token}")
+        self.assertRedirect(self.open(f"/l/{token}"), f"/d/{self.file}#link={token}")
 
-    def test_the_old_address_still_resolves_the_same_link(self):
+    def test_the_old_address_is_sent_to_the_new_one(self):
         _created, token = self.link(self.file)
-        # With the key on, the composition redirect table sends it to the new address first.
-        self.assertRedirect(self.open(f"/drive/l/{token}", flipped=True), f"/l/{token}")
-        self.assertRedirect(self.open(f"/drive/l/{token}", flipped=False), f"/drive/g/{self.file}#link={token}")
+        # The composition redirect table answers before the page does.
+        self.assertRedirect(self.open(f"/drive/l/{token}"), f"/l/{token}")
 
     def assertRefused(self, response, status: int) -> None:
         # The page answers, not Frappe's own not-found page for an unrouted path.
@@ -110,11 +79,11 @@ class TestShareLinkRoute(DriveHTTPCase):
         self.assertIn("Link unavailable", response.get_data(as_text=True))
 
     def test_an_unknown_token_is_not_found_and_an_expired_one_is_gone(self):
-        self.assertRefused(self.open(f"/l/{'a' * 22}", flipped=True), 404)
+        self.assertRefused(self.open(f"/l/{'a' * 22}"), 404)
         created, token = self.link(self.folder)
         frappe.db.set_value("Drive Grant", created["name"], "expires_on", PAST, update_modified=False)
         frappe.db.commit()
-        self.assertRefused(self.open(f"/l/{token}", flipped=True), 410)
+        self.assertRefused(self.open(f"/l/{token}"), 410)
 
 
 class TestDeadLinkPage(DriveHTTPCase):
@@ -156,11 +125,9 @@ class TestDeadLinkPage(DriveHTTPCase):
         self.assertNotIn("Sign in", body)
 
     def test_a_signed_in_visitor_can_go_to_home(self):
-        # `/home` answers a signed-in user with the files flip on and off alike.
         sid = self.session_for(OWNER)
         expired = self.expired_link()
-        for flipped in (True, False):
-            for path, status in ((self.UNKNOWN, 404), (expired, 410)):
-                with self.subTest(flipped=flipped, status=status), files_flipped(flipped):
-                    body = self.page(path, status, sid=sid)
-                    self.assertIn('<a class="home" href="/home">Go to Home</a>', body)
+        for path, status in ((self.UNKNOWN, 404), (expired, 410)):
+            with self.subTest(status=status):
+                body = self.page(path, status, sid=sid)
+                self.assertIn('<a class="home" href="/home">Go to Home</a>', body)

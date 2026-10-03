@@ -107,6 +107,12 @@ class StubbedDatabase(UnitTestCase):
         # "no such row" `None` here keeps that path a normal, harmless miss.
         self.db.get_value.return_value = None
         frappe.local.db = self.db
+        # The grant scan stamps `now()` into its query, and Frappe reads the
+        # site timezone for that through `System Settings`, hooks and the real
+        # database. Pin it so the proof never depends on a warm cache.
+        clock = patch.object(node_workflows, "now", return_value="2026-01-01 00:00:00")
+        clock.start()
+        self.addCleanup(clock.stop)
 
         def restore():
             if previous is missing:
@@ -322,7 +328,7 @@ class TestTheClientDoorProvesItsBlob(StubbedDatabase):
             "mime": "image/png",
             **overrides,
         }
-        return node_workflows.create(principals(), "parent", "t.png", **arguments)
+        return node_workflows.create(principals(), "parent_node", "t.png", **arguments)
 
     def test_a_client_naming_a_blob_it_cannot_read_is_refused(self):
         """The whole attack, end to end through the entry the route calls.
@@ -429,7 +435,7 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
             self.assertRaises(RuntimeError),
         ):
             node_workflows.create_file(
-                principals(), "parent", "t.png", blob="blob-we-just-stored", size=1, mime="image/png"
+                principals(), "parent_node", "t.png", blob="blob-we-just-stored", size=1, mime="image/png"
             )
 
         proof.assert_not_called()
@@ -476,14 +482,14 @@ class TestOnlyTheClientDoorAsksForTheProof(StubbedDatabase):
                 "suite/drive/__init__.py:create_file",
                 "suite/drive/_core/upload.py:finish_upload",
                 "suite/drive/webdav/put.py:handle",
-                # The legacy `File` adoption helper, a different function of
-                # the same name in `suite/drive/utils` (§11.7's expand phase).
-                "suite/drive/overrides/file.py:create_for_doc",
+                # Stores the bytes itself with `put_blob` in the same call, so
+                # the blob it names is one it just wrote (§8.4).
+                "suite/drive/_core/nodes.py:store_file",
             },
         )
 
     def test_the_public_facade_forwards_the_flag_too(self):
-        """The fifth caller found above must be a proven one, not a silent gap."""
+        """The facade caller found above must be a proven one, not a silent gap."""
         import suite.drive as public_facade
 
         self.assertEqual(forwarded_flags(inspect.getsource(public_facade.create_file)), [True])

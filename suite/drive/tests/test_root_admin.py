@@ -16,6 +16,7 @@ from suite.drive._core.roots import (
     purge_root,
     update_root,
 )
+from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.tests.utils import stub_db
 
 
@@ -51,7 +52,7 @@ class TestRootPurgeLockOrder(UnitTestCase):
         node = frappe._dict(
             name=self.ROOT,
             title="My Drive",
-            parent=None,
+            parent_node=None,
             root=None,
             path="",
             kind="root",
@@ -105,10 +106,12 @@ class TestRootPurgeLockOrder(UnitTestCase):
 
 
 class TestRootAdministration(IntegrationTestCase):
-    user = "Administrator"
+    user = "drive-root-admin@example.com"
 
     def setUp(self):
         super().setUp()
+        frappe.set_user("Administrator")
+        ensure_rootless_user(self.user)
         self.before_roots = set(frappe.get_all("Drive Root", pluck="name"))
         self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
 
@@ -134,7 +137,7 @@ class TestRootAdministration(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": f"Folder {uuid4().hex[:8]}",
-                "parent": root,
+                "parent_node": root,
                 "root": root,
                 "path": "",
                 "kind": "folder",
@@ -241,7 +244,6 @@ class TestUserOffboarding(IntegrationTestCase):
                     "new_password": uuid4().hex,
                 }
             )
-            user.flags.skip_drive_setup = True
             user.insert(ignore_permissions=True)
             first = personal_root_for(email)
             created_roots.append(first)
@@ -260,7 +262,6 @@ class TestUserOffboarding(IntegrationTestCase):
                     "new_password": uuid4().hex,
                 }
             )
-            replacement.flags.skip_drive_setup = True
             replacement.insert(ignore_permissions=True)
             second = personal_root_for(email)
             created_roots.append(second)
@@ -291,7 +292,6 @@ class TestUserOffboarding(IntegrationTestCase):
                     "new_password": uuid4().hex,
                 }
             )
-            user.flags.skip_drive_setup = True
             user.insert(ignore_permissions=True)
             root = personal_root_for(email)
             created_roots.append(root)
@@ -324,7 +324,6 @@ class TestUserOffboarding(IntegrationTestCase):
                     "new_password": uuid4().hex,
                 }
             )
-            replacement.flags.skip_drive_setup = True
             replacement.insert(ignore_permissions=True)
             created_roots.append(personal_root_for(email))
 

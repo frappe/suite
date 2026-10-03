@@ -5,13 +5,11 @@ import json
 import math
 import os
 import re
-import shutil
 import subprocess
 from contextlib import suppress
 from datetime import UTC
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -20,9 +18,6 @@ from frappe.utils import add_to_date, cint, format_datetime, get_datetime, get_s
 
 from suite import drive
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
-
-if TYPE_CHECKING:
-    from suite.drive.utils.files import FileManager
 
 CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_DIRECTORY = ".recording-uploads"
@@ -343,9 +338,16 @@ def _claim_finalization(recording_name: str):
 
 
 def _publish_artifact(recording_name: str, path: Path) -> dict:
-    from suite.drive.utils import create_drive_file, get_new_file_name, update_file_size
-    from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url
+    """File the validated upload in the owner's Drive and mark the recording terminal.
 
+    The file node and the recording row are written in one transaction, so a
+    retry after any failure finds either a Ready recording or nothing. The
+    bytes go in as a content-addressed blob: a retry stores the same bytes
+    into the same blob, and the framework drops the bytes of a rolled-back
+    store itself. The recording's storage reservation is consumed by the same
+    `store_file` call that admits the bytes, so the owner's root is never
+    charged for them twice.
+    """
     recording = _locked_recording(recording_name)
     if recording.status in ("Ready", "Partial"):
         return {"artifact": recording.artifact, "status": recording.status}
@@ -358,42 +360,20 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
     try:
         frappe.set_user(recording.room_owner)
         parent = _recordings_folder(recording)
-        existing_name = frappe.db.get_value("File", recording.publication_key, "file_name")
-        file_name = existing_name or get_new_file_name(_artifact_name(recording), parent, "Video")
+        with path.open("rb") as stream:
+            artifact = drive.store_file(
+                parent,
+                _artifact_name(recording),
+                stream,
+                # `ended_at` is naive UTC; an aware instant says so, and Drive
+                # converts it to the site zone it stores.
+                content_modified=get_datetime(recording.ended_at).replace(tzinfo=UTC),
+                reservation=recording_storage_reservation_key(recording.name),
+            )
     finally:
         frappe.set_user(callback_user)
 
-    manager = FileManager()
-    drive_file = _reconcile_publication(manager, recording, parent, file_name)
-    created = drive_file is None
-    if created:
-        drive_file = create_drive_file(
-            file_name,
-            parent,
-            "Video",
-            lambda entity: "/" + str(manager.get_disk_path(entity)),
-            mime_type="video/mp4",
-            file_size=recording.upload_size,
-            owner=recording.room_owner,
-            name=recording.publication_key,
-        )
-        frappe.db.after_rollback.add(lambda: _delete_drive_blob(manager, drive_file))
-        transfer_path = path.with_name(f"{path.name}.{frappe.generate_hash(length=12)}.transfer")
-        try:
-            shutil.copyfile(path, transfer_path)
-            manager.upload_file(transfer_path, drive_file)
-            if manager.s3_enabled:
-                drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
-            drive_file.content_hash = recording.upload_sha256
-            drive_file.save(ignore_permissions=True)
-            update_file_size(parent, recording.upload_size)
-        except Exception:
-            _delete_drive_blob(manager, drive_file)
-            raise
-        finally:
-            transfer_path.unlink(missing_ok=True)
-
-    recording.artifact = drive_file.name
+    recording.artifact = artifact
     recording.artifact_size = recording.upload_size
     recording.artifact_duration = recording.upload_duration_ms / 1000
     recording.artifact_sha256 = recording.upload_sha256
@@ -409,26 +389,7 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
     frappe.db.after_commit.add(lambda: path.unlink(missing_ok=True))
-    return {"artifact": drive_file.name, "status": recording.status}
-
-
-def _reconcile_publication(manager: FileManager, recording, parent: str, file_name: str):
-    if not frappe.db.exists("File", recording.publication_key):
-        return None
-    drive_file = frappe.get_doc("File", recording.publication_key)
-    if (
-        drive_file.owner == recording.room_owner
-        and drive_file.folder == parent
-        and drive_file.file_name == file_name
-        and drive_file.file_type == "Video"
-        and drive_file.status == "Active"
-        and cint(drive_file.file_size) == cint(recording.upload_size)
-        and drive_file.content_hash == recording.upload_sha256
-    ):
-        return drive_file
-    _delete_drive_blob(manager, drive_file)
-    frappe.delete_doc("File", drive_file.name, force=True, ignore_permissions=True)
-    return None
+    return {"artifact": artifact, "status": recording.status}
 
 
 def _record_finalization_failure(recording_name: str, error: Exception, *, deterministic: bool) -> dict:
@@ -530,6 +491,7 @@ def reconcile_due_finalizations():
             job_id=f"meet-recording-notification::{name}",
             deduplicate=True,
         )
+    delete_recordings_for_purged_artifacts()
 
 
 def deliver_recording_notification(recording_name: str):
@@ -604,14 +566,7 @@ def _recording_email_content(recording) -> tuple[str, dict]:
 
     args = {"description": description, "link": None}
     if recording.artifact:
-        try:
-            args["link"] = frappe.utils.get_url(drive.node_url(recording.artifact))
-        except drive.DriveNotFound:
-            # The artifact is a legacy `File` row with no node yet, so it has no
-            # address in the new Drive area. Point at the meeting instead, and
-            # send the email rather than retry a link that will never exist.
-            args["link"] = frappe.utils.get_url(f"/meet/{recording.meet_room}")
-            args["link_label"] = _("Open meeting")
+        args["link"] = frappe.utils.get_url(drive.node_url(recording.artifact))
     return subject, args
 
 
@@ -640,11 +595,6 @@ def _truncate_upload(path: Path, offset: int):
             stream.truncate(offset)
             stream.flush()
             os.fsync(stream.fileno())
-
-
-def _delete_drive_blob(manager: FileManager, drive_file):
-    with suppress(Exception):
-        manager.delete_file(drive_file)
 
 
 def _sha256(value: str) -> bool:
@@ -780,44 +730,12 @@ def _callback_datetime(value):
 
 
 def _recordings_folder(recording) -> str:
-    from suite.drive.utils import create_drive_file
-    from suite.drive.utils.files import FileManager
+    """Answer the owner's "Meet Recordings" folder below the recording's home, creating it once.
 
-    existing = frappe.db.get_value(
-        "File",
-        {
-            "folder": recording.drive_home_folder,
-            "file_name": "Meet Recordings",
-            "is_folder": 1,
-            "status": "Active",
-            "owner": recording.room_owner,
-        },
-        "name",
-    )
-    if existing:
-        return existing
-    manager = FileManager()
-    folder_name = "Meet Recordings"
-    suffix = 1
-    while frappe.db.exists(
-        "File",
-        {
-            "folder": recording.drive_home_folder,
-            "file_name": folder_name,
-            "is_folder": 1,
-            "status": "Active",
-        },
-    ):
-        folder_name = f"Meet Recordings ({suffix})"
-        suffix += 1
-    folder = create_drive_file(
-        folder_name,
-        recording.drive_home_folder,
-        "Folder",
-        lambda entity: manager.create_folder(entity),
-        owner=recording.room_owner,
-    )
-    return folder.name
+    Runs as the room owner: Drive reuses only a folder the owner created, so a
+    same-named folder a co-host made in the owner's Drive is never written to.
+    """
+    return drive.ensure_folder(recording.drive_home_folder, "Meet Recordings")
 
 
 def _artifact_name(recording) -> str:
@@ -834,9 +752,29 @@ def _artifact_name(recording) -> str:
     return f"{safe_title or 'Meet Recording'} - {started}.mp4"
 
 
-def delete_recording_metadata_for_removed_artifact(doc, _method=None):
-    if doc.status != "Removed":
-        return
-    recording = frappe.db.get_value("Meet Recording", {"artifact": doc.name}, "name")
-    if recording:
-        frappe.delete_doc("Meet Recording", recording, ignore_permissions=True)
+def delete_recordings_for_purged_artifacts():
+    """Drop the metadata of every recording whose artifact was deleted forever from Drive.
+
+    Trashing the file keeps the recording: the node still exists and can be
+    restored. Purging removes the node row outright, with no document event to
+    hook, so the sweep reads for recordings whose `artifact` names no node.
+    """
+    orphaned = frappe.db.sql(
+        """
+        SELECT recording.name
+        FROM `tabMeet Recording` recording
+        LEFT JOIN `tabDrive Node` node ON node.name = recording.artifact
+        WHERE recording.artifact IS NOT NULL AND recording.artifact <> '' AND node.name IS NULL
+        """,
+        pluck=True,
+    )
+    for name in orphaned:
+        try:
+            frappe.delete_doc("Meet Recording", name, ignore_permissions=True)
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback()
+            frappe.log_error(
+                title=f"Meet recording cleanup for a purged artifact failed for {name}",
+                message=frappe.get_traceback(),
+            )

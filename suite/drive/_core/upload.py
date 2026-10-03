@@ -1,5 +1,6 @@
 """Drive-authorized browser uploads backed by trusted blob sessions."""
 
+import io
 import math
 
 import frappe
@@ -81,7 +82,7 @@ def create_upload(
 
     result = create_blob_upload(filename, size, is_private=True)
     binding = {
-        "parent": parent_row.name,
+        "parent_node": parent_row.name,
         "user": principals.user,
         "authority": "link" if via_link else "own",
         "via_link": via_link,
@@ -174,14 +175,14 @@ def finish_upload(
     principals: Principals,
     upload_id: str,
     *,
-    parent: str | None = None,
+    parent_node: str | None = None,
     title: str | None = None,
     checksum: str | None = None,
     content_modified=None,
     replaces: str | None = None,
 ) -> str:
     """Finish one create or replace after binding and destination reauthorization."""
-    _validate_finish_arguments(parent=parent, title=title, replaces=replaces)
+    _validate_finish_arguments(parent_node=parent_node, title=title, replaces=replaces)
     normalized_content_time = _content_time(content_modified) if content_modified is not None else None
     binding = _authorized_binding(principals, upload_id)
     _reauthorize_original_destination(principals, binding)
@@ -189,27 +190,31 @@ def finish_upload(
     if binding.get("replaces") and replaces != binding["replaces"]:
         raise DriveForbidden(_("This upload can only replace the file it was opened for"))
     if replaces:
-        _require_replaceable(principals, replaces, binding["parent"])
+        _require_replaceable(principals, replaces, binding["parent_node"])
     else:
-        if parent != binding["parent"]:
+        if parent_node != binding["parent_node"]:
             raise DriveForbidden(_("The finish destination does not match this upload"))
         # The collision check runs under the parent-chain lock that
         # `create_file` takes again below, and before storage claims the
         # session. A finish that lost its title to a concurrent one is refused
         # with the free title and keeps its session, so the client can retry.
-        target = _lock_create_parent(parent)
+        target = _lock_create_parent(parent_node)
         require(target, UPLOAD, principals)
         _validate_parent(target)
         _refuse_sibling_collision(target.name, title)
 
     # Delete the binding only after storage successfully claims and finalizes
-    # the session. In particular, an empty/no-data session remains retryable.
+    # the session. In particular, a session still waiting for its bytes
+    # remains retryable.
     #
     # The blob below is the one this bound session just stored, so neither
     # write is a client naming bytes it learned: §8.4's binding is already the
     # proof. `nodes.create`'s `_client_named_blob` proof is for the §11.2 door
     # that has no session to show.
-    blob = finish_upload_to_blob(upload_id, checksum=checksum)
+    if int(binding.get("declared_size") or 0) == 0:
+        blob = _store_empty_file(upload_id, filename=title or binding["filename"], checksum=checksum)
+    else:
+        blob = finish_upload_to_blob(upload_id, checksum=checksum)
     frappe.cache().delete_value(_binding_key(upload_id))
 
     if replaces:
@@ -221,14 +226,14 @@ def finish_upload(
             mime=blob.mime_type,
             content_modified=normalized_content_time,
             _via_link=binding.get("via_link"),
-            _bound_parent=binding["parent"],
+            _bound_parent=binding["parent_node"],
             # §8.5: a browser replace keeps no version of the old head.
             _keep_old_head=False,
         )
         return replaces
     return create_file(
         principals,
-        parent,
+        parent_node,
         title,
         blob=blob.name,
         size=blob.file_size,
@@ -238,30 +243,61 @@ def finish_upload(
     )
 
 
+def _store_empty_file(upload_id: str, *, filename: str, checksum: str | None):
+    """Finish a zero-byte session as an empty blob, without storage's finish.
+
+    An empty file is a file (§7.3: a WebDAV PUT with no body creates an empty
+    head), but the framework's `finish_upload_to_blob` refuses a session that
+    received no bytes, because for a declared size above zero that means the
+    client has not sent them yet. A session declared at 0 is the one case
+    where no bytes is the whole file, so the blob is stored here and the
+    session, whose part file could never hold anything, is discarded. The
+    session is still loaded first: that is the owner check every finish runs.
+    """
+    from frappe.storage.blob import put_blob, validate_upload
+    from frappe.storage.upload import delete_session, load_session
+
+    meta, meta_path, part_path = load_session(upload_id)
+    delete_session(meta_path, part_path)
+    if meta.get("mode") == "direct":
+        # A direct client may have sent its empty object to the bucket already.
+        from frappe.storage.driver import get_driver
+
+        try:
+            get_driver().delete(f"uploads/{upload_id}", is_private=bool(meta.get("is_private")))
+        except Exception:
+            frappe.logger("storage").warning(f"storage: could not delete empty direct upload {upload_id}")
+    blob = put_blob(io.BytesIO(b""), is_private=True, filename=filename)
+    if checksum and blob.checksum != checksum:
+        frappe.throw(_("Checksum mismatch"), frappe.ValidationError)
+    validate_upload(blob, filename)
+    return blob
+
+
 def _require_replaceable(principals: Principals, replaces: str, parent: str) -> frappe._dict:
     target = _node(replaces)
     require(target, EDIT, principals)
     if target.kind != "file" or target.state != "Active":
         raise DriveForbidden(_("Only an active Drive file can be replaced"))
-    if target.parent != parent:
+    if target.parent_node != parent:
         raise DriveForbidden(_("The replacement is outside this upload's destination"))
     return target
 
 
-def _validate_finish_arguments(*, parent: str | None, title: str | None, replaces: str | None) -> None:
-    create = parent is not None or title is not None
+def _validate_finish_arguments(*, parent_node: str | None, title: str | None, replaces: str | None) -> None:
+    create = parent_node is not None or title is not None
     replace = replaces is not None
     valid_create = (
-        isinstance(parent, str)
-        and bool(parent)
+        isinstance(parent_node, str)
+        and bool(parent_node)
         and isinstance(title, str)
         and bool(title.strip())
         and replaces is None
     )
-    valid_replace = isinstance(replaces, str) and bool(replaces) and parent is None and title is None
+    valid_replace = isinstance(replaces, str) and bool(replaces) and parent_node is None and title is None
     if create == replace or not (valid_create or valid_replace):
         frappe.throw(
-            _("Finish an upload with either parent and title, or replaces"),
+            _("Finish an upload with either parent_node and title, or replaces"),
             frappe.ValidationError,
         )
 
@@ -274,14 +310,14 @@ def _authorized_binding(principals: Principals, upload_id: str) -> dict:
         raise DriveNotFound(_("Drive upload session was not found or has expired"))
     try:
         binding = frappe.parse_json(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise DriveNotFound(_("Drive upload session was not found or has expired")) from None
-    required = {"parent", "user", "authority", "filename", "declared_size"}
+    required = {"parent_node", "user", "authority", "filename", "declared_size"}
     valid_shape = (
         isinstance(binding, dict)
         and required.issubset(binding)
-        and isinstance(binding.get("parent"), str)
-        and bool(binding.get("parent"))
+        and isinstance(binding.get("parent_node"), str)
+        and bool(binding.get("parent_node"))
         and isinstance(binding.get("user"), str)
         and bool(binding.get("user"))
         and binding.get("authority") in ("own", "link")
@@ -309,7 +345,7 @@ def _authorized_binding(principals: Principals, upload_id: str) -> dict:
 
 
 def _reauthorize_original_destination(principals: Principals, binding: dict) -> None:
-    parent = _node(binding["parent"])
+    parent = _node(binding["parent_node"])
     _validate_parent(parent)
     via_link = binding.get("via_link")
     if via_link:

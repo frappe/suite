@@ -88,12 +88,12 @@ DEFAULT_NODE_FIELD = "node"
 DOCUMENT_LISTING_TYPES = ("document", "spreadsheet", "presentation")
 
 # What every content workflow reads about the document node it acts on.
-# `parent` is here for `nodes._validate_stored_position`, which walks the stored
-# `parent` link upwards: a row read without it looks like a node with no parent,
-# which the validator has to refuse as an invalid tree position.
+# `parent_node` is here for `nodes._validate_stored_position`, which walks the
+# stored `parent_node` link upwards: a row read without it looks like a node
+# with no parent, which the validator has to refuse as an invalid tree position.
 DOCUMENT_NODE_FIELDS = (
     "name",
-    "parent",
+    "parent_node",
     "kind",
     "root",
     "path",
@@ -104,11 +104,11 @@ DOCUMENT_NODE_FIELDS = (
 )
 MEDIA_ROW_FIELDS = ("name", "title", "kind", "blob", "size", "mime", "creation", "content_modified")
 # What `adopt_media` reads about a media node it is asked to bring across.
-# `parent`, `root`, and `path` are what `access.chain_ids` walks, so the READ
-# check below costs one read and no extra tree query.
+# `parent_node`, `root`, and `path` are what `access.chain_ids` walks, so the
+# READ check below costs one read and no extra tree query.
 MEDIA_SOURCE_FIELDS = (
     "name",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "title",
@@ -893,7 +893,7 @@ def media_rows(node: str, *, for_update: bool = False) -> list[frappe._dict]:
         f"""
         SELECT {", ".join(f"`{field}`" for field in MEDIA_ROW_FIELDS)}
         FROM `tabDrive Node`
-        WHERE parent = %(node)s AND state = 'Active' AND kind = 'file' AND `blob` IS NOT NULL
+        WHERE parent_node = %(node)s AND state = 'Active' AND kind = 'file' AND `blob` IS NOT NULL
         ORDER BY creation, name
         {"FOR UPDATE" if for_update else ""}
         """,
@@ -1046,7 +1046,12 @@ def adopt_media(principals: Principals, document_node: str, media_nodes: Iterabl
     An id that names a node which is not active media below a content document
     is a caller error, not a body value, and is refused.
     """
-    from suite.drive._core.nodes import _insert_node, _rollback_savepoint, _validate_stored_position
+    from suite.drive._core.nodes import (
+        _insert_node,
+        _lock_node,
+        _rollback_savepoint,
+        _validate_stored_position,
+    )
     from suite.drive._core.previews import copy_preview
     from suite.drive._core.quota import admit
 
@@ -1066,6 +1071,7 @@ def adopt_media(principals: Principals, document_node: str, media_nodes: Iterabl
     savepoint = f"drive_adopt_media_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        _lock_node(document_node)
         target = _document_node(document_node, for_update=True)
         via_link = require(target, UPLOAD, principals)
         _refuse_trashed_write(target, UPLOAD)
@@ -1079,7 +1085,7 @@ def adopt_media(principals: Principals, document_node: str, media_nodes: Iterabl
                 continue
             try:
                 require(source, READ, principals)
-            except (DriveNotFound, DriveForbidden, DriveLocked, DriveLinkExpired):
+            except DriveNotFound, DriveForbidden, DriveLocked, DriveLinkExpired:
                 # Every "you cannot read this" answer skips the id. `require`
                 # raises `DriveLocked` and `DriveLinkExpired` before it decides
                 # the role, so catching `DriveNotFound` alone let one expired
@@ -1208,7 +1214,7 @@ def _sweep_cursor() -> tuple[str | None, str | None]:
         return None, None
     try:
         value = frappe.parse_json(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None, None
     if (
         not isinstance(value, dict)

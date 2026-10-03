@@ -8,6 +8,7 @@ import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.drive._core.errors import DriveForbidden, DriveNotFound, DriveOverQuota
+from suite.drive._core.principals import Principals
 from suite.drive._core.quota import (
     ADMIT_SQL,
     RELEASE_SQL,
@@ -26,9 +27,9 @@ from suite.drive._core.quota import (
     root_for_node,
     site_quota_bytes,
 )
-from suite.drive._core.principals import Principals
 from suite.drive._core.roots import LARGEST_FILES, create_root, personal_root_for, usage_for
 from suite.drive.jobs import recompute_root_usage
+from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.hooks import scheduler_events
 
 
@@ -197,10 +198,11 @@ class TestSiteDefaultQuota(IntegrationTestCase):
     to reject malformed values before Frappe casts them to zero.
     """
 
-    user = "Administrator"
+    user = "drive-quota-default@example.com"
 
     def setUp(self):
         super().setUp()
+        ensure_rootless_user(self.user)
         self.previous = {
             field: frappe.db.get_single_value("Drive Disk Settings", field)
             for field in ("default_personal_quota", "shared_quota")
@@ -258,10 +260,12 @@ class TestSiteDefaultQuota(IntegrationTestCase):
 
 
 class TestRootReservationsAndRecompute(IntegrationTestCase):
-    user = "Administrator"
+    user = "drive-quota-reservations@example.com"
+    other_user = "drive-quota-other@example.com"
 
     def setUp(self):
         super().setUp()
+        ensure_rootless_user(self.user)
         self.root = create_root(
             kind="Personal", title="Reservation root", user=self.user, quota_bytes=100
         ).name
@@ -278,7 +282,9 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         super().tearDown()
 
     def test_create_resize_release_are_root_keyed_idempotent_and_charged(self):
-        self.assertTrue(frappe.db.has_index("tabDrive Storage Reservation", "root_index"))
+        # Frappe names a `search_index` key `root` when it creates the table and
+        # `root_index` when it adds the key to an existing one, so match the column.
+        self.assertTrue(frappe.db.get_column_index("tabDrive Storage Reservation", "root", unique=False))
         created = create_storage_reservation(self.root, "quota-test", 60)
         retried = create_storage_reservation(self.root, "quota-test", 60)
         self.assertEqual(created, retried)
@@ -301,7 +307,7 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": "Charged node",
-                "parent": self.root,
+                "parent_node": self.root,
                 "root": self.root,
                 "path": "",
                 "kind": "folder",
@@ -400,24 +406,26 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 60)
         release_storage_reservation(None, "archived-limit")
 
+    def _insert_unbound_reservation(self, key: str, reserved_bytes: int) -> None:
+        """A row the old Drive wrote: no root, as a pre-Build patch finds it."""
+        frappe.db.sql(
+            """INSERT INTO `tabDrive Storage Reservation` (name, creation, modified, reserved_bytes)
+            VALUES (%(name)s, NOW(), NOW(), %(reserved_bytes)s)""",
+            {"name": key, "reserved_bytes": reserved_bytes},
+        )
+        self.addCleanup(frappe.db.delete, "Drive Storage Reservation", {"name": key})
+
     def test_binding_a_legacy_reservation_charges_it_once_and_never_rebinds(self):
-        frappe.get_doc(
-            {
-                "doctype": "Drive Storage Reservation",
-                "name": "legacy-adopt",
-                "storage_owner": self.user,
-                "reserved_bytes": 30,
-            }
-        ).insert(ignore_permissions=True)
+        self._insert_unbound_reservation("legacy-adopt", 30)
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
 
         adopted = bind_legacy_storage_reservation(self.root, "legacy-adopt", 30)
 
         self.assertEqual((adopted.root, adopted.reserved_bytes), (self.root, 30))
-        self.assertIsNone(frappe.db.get_value("Drive Storage Reservation", "legacy-adopt", "storage_owner"))
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 30)
 
-        other = create_root(kind="Shared", title="Other root", quota_bytes=100)
+        ensure_rootless_user(self.other_user)
+        other = create_root(kind="Personal", title="Other root", user=self.other_user, quota_bytes=100)
         self.addCleanup(self._drop_root, other.name)
 
         # A rerun against a different root keeps the original binding and only
@@ -432,14 +440,7 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
 
     def test_releasing_an_unbound_legacy_reservation_charges_no_root(self):
-        frappe.get_doc(
-            {
-                "doctype": "Drive Storage Reservation",
-                "name": "legacy-release",
-                "storage_owner": self.user,
-                "reserved_bytes": 30,
-            }
-        ).insert(ignore_permissions=True)
+        self._insert_unbound_reservation("legacy-release", 30)
 
         release_storage_reservation(None, "legacy-release")
         release_storage_reservation(None, "legacy-release")
@@ -505,12 +506,7 @@ class TestRootBreakdown(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
-        from suite.drive.tests.fixtures import drop_personal_root
-        from suite.tests.utils import ensure_user
-
-        for user in (BREAKDOWN_OWNER, BREAKDOWN_OTHER):
-            ensure_user(user)
-            drop_personal_root(user)
+        ensure_rootless_user(BREAKDOWN_OWNER, BREAKDOWN_OTHER)
         self.owner = Principals(BREAKDOWN_OWNER, (BREAKDOWN_OWNER, "$GENERAL"), ("$PUBLIC",))
         self.other = Principals(BREAKDOWN_OTHER, (BREAKDOWN_OTHER, "$GENERAL"), ("$PUBLIC",))
         self.root = create_root(kind="Personal", title="Breakdown root", user=BREAKDOWN_OWNER).name
@@ -532,7 +528,7 @@ class TestRootBreakdown(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": title,
-                "parent": root,
+                "parent_node": root,
                 "root": root,
                 "path": "",
                 "kind": kind,
@@ -637,7 +633,7 @@ class TestRootBreakdown(IntegrationTestCase):
             content_doctype="Presentation",
             content_docname="d1",
         )
-        inside = {"parent": deck, "path": f"/{deck}/"}
+        inside = {"parent_node": deck, "path": f"/{deck}/"}
         self.node("talk.mp4", 4000, mime="video/mp4", **inside)
         self.node("slide.png", 1000, mime="image/png", **inside)
         clip = self.node("clip.mp4", 3000, mime="video/mp4")
@@ -659,7 +655,9 @@ class TestRootBreakdown(IntegrationTestCase):
 
         usage = usage_for(self.root, self.owner, breakdown=True)
 
-        self.assertEqual(usage.by_type, [{"type": "Code", "bytes": 700}, {"type": "Application", "bytes": 300}])
+        self.assertEqual(
+            usage.by_type, [{"type": "Code", "bytes": 700}, {"type": "Application", "bytes": 300}]
+        )
         self.assertEqual(usage.largest[0]["node"], notes)
         self.assertEqual(usage.largest[0]["type"], "Code")
 
@@ -694,37 +692,3 @@ class TestRootBreakdown(IntegrationTestCase):
         self.assertEqual(set(usage_for(self.root, self.other)), USAGE_KEYS)
         with self.assertRaises(DriveForbidden):
             usage_for(self.root, self.other, breakdown=True)
-
-    def test_the_legacy_shim_answers_the_same_aggregates(self):
-        from suite.drive.http import shims
-
-        big = self.node("a.pdf", 900, mime="application/pdf", owner=BREAKDOWN_OTHER)
-        self.node("b.png", 300, mime="image/png")
-        usage = usage_for(self.root, self.owner, breakdown=True)
-
-        with patch.object(shims, "_principals", return_value=self.owner):
-            legacy = shims.storage_breakdown()
-
-        # The legacy tab reads `mime_type` and maps it through its own mime table.
-        self.assertEqual(
-            legacy["total"],
-            [
-                {"mime_type": "application/pdf", "file_size": 900},
-                {"mime_type": "image/png", "file_size": 300},
-            ],
-        )
-        self.assertEqual([row["bytes"] for row in usage.by_type], [900, 300])
-        self.assertEqual(
-            legacy["entities"],
-            [
-                {
-                    "name": row["node"],
-                    "file_name": row["title"],
-                    "file_size": row["size"],
-                    "file_type": row["type"],
-                }
-                for row in usage.largest
-            ],
-        )
-        # The file another user put in this root is charged here, so it is listed here.
-        self.assertEqual(legacy["entities"][0]["name"], big)

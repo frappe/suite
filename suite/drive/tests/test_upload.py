@@ -38,6 +38,7 @@ from suite.drive._core.upload import (
     finish_upload,
     upload_chunk,
 )
+from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.tests.utils import ensure_user
 
 USER = "drive-upload-user@example.com"
@@ -110,7 +111,7 @@ class TestUploadBinding(UnitTestCase):
         create_blob.assert_called_once_with("archive.zip", 20, is_private=True)
         binding = store.call_args.args[1]
         self.assertEqual(binding["user"], "Guest")
-        self.assertEqual(binding["parent"], "folder")
+        self.assertEqual(binding["parent_node"], "folder")
         self.assertEqual(binding["via_link"], LINK)
 
     @patch("suite.drive._core.upload.create_blob_upload")
@@ -135,7 +136,7 @@ class TestUploadBinding(UnitTestCase):
     def test_guest_identity_alone_cannot_claim_another_link_upload(self, cache):
         cache.return_value.get_value.return_value = frappe.as_json(
             {
-                "parent": "folder",
+                "parent_node": "folder",
                 "user": "Guest",
                 "authority": "link",
                 "via_link": LINK,
@@ -153,7 +154,7 @@ class TestUploadBinding(UnitTestCase):
     def test_every_chunk_reauthorizes_and_refreshes_the_binding(
         self, binding, reauthorize, storage_chunk, store
     ):
-        bound = {"parent": "folder", "user": "Guest", "authority": "link", "via_link": LINK}
+        bound = {"parent_node": "folder", "user": "Guest", "authority": "link", "via_link": LINK}
         binding.return_value = bound
 
         result = upload_chunk(self.guest, "upload123", 0, b"data")
@@ -173,10 +174,10 @@ class TestUploadBinding(UnitTestCase):
     def test_create_and_replace_finish_arguments_are_mutually_exclusive(self, binding):
         invalid = (
             {},
-            {"parent": "folder"},
+            {"parent_node": "folder"},
             {"title": "a.txt"},
             {"replaces": ""},
-            {"parent": "folder", "title": "a.txt", "replaces": "node"},
+            {"parent_node": "folder", "title": "a.txt", "replaces": "node"},
         )
         for kwargs in invalid:
             with self.subTest(kwargs=kwargs), self.assertRaises(frappe.ValidationError):
@@ -213,6 +214,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
         super().setUp()
         frappe.set_user("Administrator")
         self._upload_ids = []
+        ensure_rootless_user(USER, OTHER)
         self._nodes_before = set(frappe.get_all("Drive Node", pluck="name"))
         self._roots_before = set(frappe.get_all("Drive Root", pluck="name"))
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
@@ -263,7 +265,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": title,
-                "parent": self.root.name,
+                "parent_node": self.root.name,
                 "root": self.root.name,
                 "path": "",
                 "kind": "folder",
@@ -306,7 +308,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 blob=new.name,
                 size=new.file_size,
                 mime=new.mime_type,
-                content_modified=1_700_000_000_000,
+                content_modified=datetime.fromtimestamp(1_700_000_000, tz=UTC),
             )
 
         version = frappe.get_all(
@@ -445,7 +447,11 @@ class TestDriveFileAccounting(IntegrationTestCase):
 
     def test_a_file_at_the_site_limit_opens_a_session(self):
         frappe.set_user(USER)
-        with patch("frappe.core.api.file.get_max_file_size", return_value=1024):
+        with (
+            storage_v2_on(),
+            frappe.storage.fake(),
+            patch("frappe.core.api.file.get_max_file_size", return_value=1024),
+        ):
             opened = self._open(self.principals, self.root.name, "exact.bin", 1024)
             self.assertEqual(opened["mode"], "chunked")
             with self.assertRaises(DriveFileTooLarge) as caught:
@@ -536,7 +542,10 @@ class TestDriveFileAccounting(IntegrationTestCase):
             self._upload_ids.append(opened["upload_id"])
             upload_chunk(self.principals, opened["upload_id"], 0, payload)
             with patch("suite.drive._core.upload.finish_upload_to_blob") as finalizer:
-                for wrong in ({"parent": self.root.name, "title": "report (2).pdf"}, {"replaces": other}):
+                for wrong in (
+                    {"parent_node": self.root.name, "title": "report (2).pdf"},
+                    {"replaces": other},
+                ):
                     with self.subTest(finish=wrong), self.assertRaises(DriveForbidden):
                         finish_upload(self.principals, opened["upload_id"], **wrong)
             finalizer.assert_not_called()
@@ -618,7 +627,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 finish_upload(
                     self.principals,
                     opened["upload_id"],
-                    parent=self.root.name,
+                    parent_node=self.root.name,
                     title="retry.bin",
                 )
             self.assertTrue(frappe.cache().get_value(_binding_key(opened["upload_id"])))
@@ -627,12 +636,35 @@ class TestDriveFileAccounting(IntegrationTestCase):
             node = finish_upload(
                 self.principals,
                 opened["upload_id"],
-                parent=self.root.name,
+                parent_node=self.root.name,
                 title="retry.bin",
             )
 
         self.assertTrue(frappe.db.exists("Drive Node", node))
         self.assertFalse(frappe.cache().get_value(_binding_key(opened["upload_id"])))
+
+    def test_a_zero_byte_file_uploads_as_an_empty_head(self):
+        """An empty file is a file (§7.3), not a session still waiting for bytes."""
+        frappe.set_user(USER)
+        used_before = frappe.db.get_value("Drive Root", self.root.name, "used_bytes")
+        with storage_v2_on(), frappe.storage.fake():
+            opened = self._open(self.principals, self.root.name, "notes.txt", 0)
+            node = finish_upload(
+                self.principals,
+                opened["upload_id"],
+                parent_node=self.root.name,
+                title="notes.txt",
+                checksum=hashlib.sha256(b"").hexdigest(),
+            )
+
+        row = frappe.db.get_value("Drive Node", node, ["title", "size", "blob"], as_dict=True)
+        self.assertEqual((row.title, row.size), ("notes.txt", 0))
+        self.assertEqual(frappe.db.get_value("File Blob", row.blob, "file_size"), 0)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), used_before)
+        self.assertFalse(frappe.cache().get_value(_binding_key(opened["upload_id"])))
+        # the session is gone with the finish: a replay has nothing to claim
+        with self.assertRaises(frappe.ValidationError):
+            finish_upload(self.principals, opened["upload_id"], parent_node=self.root.name, title="notes.txt")
 
     def test_revoked_and_expired_bound_links_refuse_chunk_and_finish(self):
         folder = self._folder("Guest destination")
@@ -650,7 +682,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 finish_upload(
                     guest,
                     revoked["upload_id"],
-                    parent=folder.name,
+                    parent_node=folder.name,
                     title="revoked.bin",
                 )
 
@@ -667,7 +699,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 finish_upload(
                     guest,
                     expired["upload_id"],
-                    parent=folder.name,
+                    parent_node=folder.name,
                     title="expired.bin",
                 )
 
@@ -683,7 +715,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                     finish_upload(
                         self.principals,
                         opened["upload_id"],
-                        parent=second.name,
+                        parent_node=second.name,
                         title="forged.bin",
                     )
             finalizer.assert_not_called()
@@ -802,7 +834,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 size=old.file_size,
                 mime=old.mime_type,
             )
-            parent_blob = self._blob(b"parent")
+            parent_blob = self._blob(b"parent_node")
             file_parent = create_file(
                 self.principals,
                 self.root.name,
@@ -816,7 +848,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             frappe.db.set_value(
                 "Drive Node",
                 target,
-                {"parent": file_parent, "path": f"/{file_parent}/"},
+                {"parent_node": file_parent, "path": f"/{file_parent}/"},
             )
             with self.assertRaises(DriveConflict):
                 update(
@@ -855,7 +887,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             version.save(ignore_permissions=True)
 
-    def test_content_time_accepts_epoch_milliseconds_and_defaults_to_now(self):
+    def test_content_time_accepts_an_aware_instant_and_defaults_to_now(self):
         fixed = datetime(2026, 9, 6, 12, 34, 56)
         with frappe.storage.fake(), patch("suite.drive._core.nodes.now_datetime", return_value=fixed):
             first_blob = self._blob(b"first")
@@ -875,7 +907,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 blob=second_blob.name,
                 size=second_blob.file_size,
                 mime=second_blob.mime_type,
-                content_modified=1_700_000_000_000,
+                content_modified=datetime.fromtimestamp(1_700_000_000, tz=UTC),
             )
 
         expected = frappe.utils.convert_utc_to_system_timezone(
@@ -946,7 +978,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 }
             ).insert(ignore_permissions=True)
             frappe.set_user(OTHER)
-            node = finish_upload(linked, opened["upload_id"], parent=folder.name, title="bound.bin")
+            node = finish_upload(linked, opened["upload_id"], parent_node=folder.name, title="bound.bin")
 
         self.assertFalse(frappe.db.exists("Drive Grant", {"node": node, "principal": OTHER}))
         self.assertEqual(frappe.db.get_value("Drive Activity", {"node": node}, "via_link"), LINK)
@@ -1009,7 +1041,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                 finish_upload(
                     self.principals,
                     opened["upload_id"],
-                    parent=self.root.name,
+                    parent_node=self.root.name,
                     title="direct.bin",
                 )
             self.assertFalse(driver.exists(f"uploads/{opened['upload_id']}", is_private=True))
@@ -1032,7 +1064,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             node = finish_upload(
                 self.principals,
                 opened["upload_id"],
-                parent=self.root.name,
+                parent_node=self.root.name,
                 title="direct-ok.bin",
             )
             self.assertFalse(driver.exists(f"uploads/{opened['upload_id']}", is_private=True))
@@ -1130,7 +1162,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             node = finish_upload(
                 principals,
                 opened["upload_id"],
-                parent=self.root.name,
+                parent_node=self.root.name,
                 title="website.zip",
                 checksum=hashlib.sha256(content).hexdigest(),
             )
@@ -1144,7 +1176,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             finish_upload(
                 principals,
                 opened["upload_id"],
-                parent=self.root.name,
+                parent_node=self.root.name,
                 title="website-copy.zip",
             )
 
@@ -1209,7 +1241,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
                     node = finish_upload(
                         self.principals,
                         sessions[index]["upload_id"],
-                        parent=self.root.name,
+                        parent_node=self.root.name,
                         title=f"quota-{marker}-{index}.bin",
                     )
                     frappe.db.commit()
@@ -1328,7 +1360,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             try:
                 barrier.wait(timeout=10)
                 try:
-                    node = finish_upload(self.principals, upload_id, parent=self.root.name, title=title)
+                    node = finish_upload(self.principals, upload_id, parent_node=self.root.name, title=title)
                     frappe.db.commit()
                     return ("created", upload_id, node)
                 except DriveConflict as refusal:
@@ -1345,7 +1377,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
         _status, loser, free_title = next(result for result in results if result[0] == "refused")
         self.assertEqual(free_title, f"race-{marker} (2).bin")
         with storage_v2_on(), use_driver(driver):
-            retried = finish_upload(self.principals, loser, parent=self.root.name, title=free_title)
+            retried = finish_upload(self.principals, loser, parent_node=self.root.name, title=free_title)
         self.assertEqual(frappe.db.get_value("Drive Node", retried, "title"), free_title)
 
     def test_concurrent_finish_has_one_node_and_one_activity(self):
@@ -1377,12 +1409,12 @@ class TestDriveFileAccounting(IntegrationTestCase):
                     created = finish_upload(
                         self.principals,
                         opened["upload_id"],
-                        parent=self.root.name,
+                        parent_node=self.root.name,
                         title=f"finish-{marker}.bin",
                     )
                     frappe.db.commit()
                     return ("created", created)
-                except (DriveNotFound, frappe.ValidationError):
+                except DriveNotFound, frappe.ValidationError:
                     frappe.db.rollback()
                     return ("refused", None)
             finally:

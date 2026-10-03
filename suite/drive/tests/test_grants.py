@@ -9,6 +9,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 from frappe.utils.password import passlibctx
 
+from suite import drive
 from suite.drive import node_url
 from suite.drive._core.access import (
     UNLOCK_WINDOW_SECONDS,
@@ -20,8 +21,10 @@ from suite.drive._core.access import (
     resolve_link,
     revoke,
     revoke_below,
+    revoke_grant,
     rotate_link,
     unlock_link,
+    update_grant,
 )
 from suite.drive._core.errors import (
     DriveForbidden,
@@ -29,9 +32,11 @@ from suite.drive._core.errors import (
     DriveLocked,
     DriveNotFound,
 )
+from suite.drive._core.nodes import create_empty_file, create_folder
 from suite.drive._core.principals import Principals, ticket_ok
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
-from suite.drive._core.roots import create_root, personal_root_for
+from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, UPLOAD
+from suite.drive._core.roots import create_root, personal_root_for, provision_personal_root
+from suite.drive.framework import principals_for
 from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
 
@@ -108,7 +113,7 @@ class _GrantFixture(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": title,
-                "parent": parent.name,
+                "parent_node": parent.name,
                 "root": root,
                 "path": path,
                 "kind": "folder",
@@ -806,6 +811,40 @@ class TestShareLinks(_GrantFixture):
         self.assertEqual(updated["name"], created["name"])
         self.assertEqual(updated["role"], EDIT)
 
+    def test_a_grant_is_rewritten_and_removed_by_its_id(self):
+        # A5: a share link is only ever addressed by its row, never by the
+        # token that is its credential.
+        created = grant(self.folder.name, "$LINK", READ, self.admin)
+
+        updated = update_grant(created["name"], self.admin, role=EDIT)
+        self.assertEqual(
+            (updated["name"], updated["principal"], updated["role"]),
+            (created["name"], created["principal"], EDIT),
+        )
+        self.assertEqual(frappe.db.get_value("Drive Grant", created["name"], "role"), EDIT)
+
+        self.assertEqual(revoke_grant(created["name"], self.admin), 1)
+        self.assertFalse(frappe.db.exists("Drive Grant", created["name"]))
+        with self.assertRaises(DriveNotFound):
+            update_grant(created["name"], self.admin, role=READ)
+        with self.assertRaises(DriveNotFound):
+            revoke_grant(created["name"], self.admin)
+
+    def test_a_grant_rewrite_by_id_is_gated_like_the_write_it_repeats(self):
+        created = grant(self.folder.name, "$LINK", READ, self.admin)
+        # The same refusal `grant` and `revoke` give a caller without MANAGE.
+        outsider = Principals(UNHELD, (UNHELD,), ("$PUBLIC",))
+        with self.assertRaises(DriveForbidden):
+            update_grant(created["name"], outsider, role=EDIT)
+        with self.assertRaises(DriveForbidden):
+            revoke_grant(created["name"], outsider)
+        self.assertEqual(frappe.db.get_value("Drive Grant", created["name"], "role"), READ)
+
+    def test_revoke_counts_the_row_it_removed_and_zero_when_there_was_none(self):
+        grant(self.folder.name, MANAGER, EDIT, self.admin)
+        self.assertEqual(revoke(self.folder.name, MANAGER, self.admin), 1)
+        self.assertEqual(revoke(self.folder.name, MANAGER, self.admin), 0)
+
     def test_a_deny_naming_a_link_stays_legal_on_a_descendant(self):
         # §6.1 states this case explicitly, so the borrowed-token refusal must
         # not reach it.
@@ -971,12 +1010,9 @@ class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
     def test_the_listing_names_the_personal_root_owner(self):
         from suite.drive._core.access import grants_for
 
-        frappe.db.set_value("User", TARGET, "full_name", "Grant Target")
+        # The id alone: the HTTP boundary looks the person up once per answer.
         for node in (self.root.name, self.folder.name):
-            self.assertEqual(
-                grants_for(node, self.admin)["owner"],
-                {"user": TARGET, "full_name": "Grant Target"},
-            )
+            self.assertEqual(grants_for(node, self.admin)["owner"], TARGET)
 
     def test_a_link_password_is_kept_cleared_and_set(self):
         created = grant(self.folder.name, "$LINK", READ, self.admin, password="first secret")
@@ -1142,3 +1178,119 @@ class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
         self.assertEqual(link["grant"]["principal"], f"$LINK:{token}")
         self.assertEqual(link["grant"]["url"], f"/l/{token}")
         self.assertEqual(link["grant"]["sent_to"], OUTSIDER)
+
+
+GROUP_OWNER = "drive-group-owner@example.com"
+GROUP_MEMBER = "drive-group-member@example.com"
+
+
+class TestGroupGrantFollowsMembership(IntegrationTestCase):
+    """A `$GROUP` grant reaches whoever is in the group at the moment of asking.
+
+    Each step changes the group the way an admin does in the desk, then asks
+    again in the same process, as the next request would.
+    """
+
+    def setUp(self):
+        super().setUp()
+        ensure_user(GROUP_OWNER)
+        ensure_user(GROUP_MEMBER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        frappe.set_user("Administrator")
+        # A group needs one member, so the owner is always in it. Only the
+        # member's place in it changes.
+        self.group = frappe.get_doc(
+            {
+                "doctype": "User Group",
+                "name": f"drive-team-{frappe.generate_hash(length=6)}",
+                "user_group_members": [{"user": GROUP_OWNER}],
+            }
+        )
+        self.group.insert()
+        frappe.set_user(GROUP_OWNER)
+        owner = principals_for(GROUP_OWNER)
+        self.folder = create_folder(owner, provision_personal_root(GROUP_OWNER), "Team folder")
+        grant(self.folder, f"$GROUP:{self.group.name}", READ, owner)
+
+    def _member_can_read(self) -> bool:
+        frappe.set_user(GROUP_MEMBER)
+        try:
+            drive.check(self.folder, READ)
+        except DriveNotFound:
+            return False
+        finally:
+            frappe.set_user("Administrator")
+        return True
+
+    def _set_members(self, *users: str) -> None:
+        self.group.set("user_group_members", [{"user": user} for user in (GROUP_OWNER, *users)])
+        self.group.save()
+
+    def test_adding_removing_and_deleting_decide_the_next_check(self):
+        self.assertFalse(self._member_can_read(), "not a member yet")
+
+        self._set_members(GROUP_MEMBER)
+        self.assertTrue(self._member_can_read(), "added to the group")
+
+        self._set_members()
+        self.assertFalse(self._member_can_read(), "removed from the group")
+
+        self._set_members(GROUP_MEMBER)
+        self.assertTrue(self._member_can_read(), "added back")
+        self.group.delete()
+        self.assertFalse(self._member_can_read(), "the group is deleted")
+
+
+UPLOADER = "drive-uploader@example.com"
+FOLDER_MANAGER = "drive-folder-manager@example.com"
+
+
+class TestTheFolderManagerDecidesAnUploadersAccess(IntegrationTestCase):
+    """An uploader's creator grant is an ordinary grant: the folder's manager may change it.
+
+    `owner` records who uploaded the file. It gives them nothing once the
+    manager takes their grants away.
+    """
+
+    def setUp(self):
+        super().setUp()
+        ensure_user(UPLOADER)
+        ensure_user(FOLDER_MANAGER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        frappe.set_user(FOLDER_MANAGER)
+        self.manager = principals_for(FOLDER_MANAGER)
+        self.folder = create_folder(
+            self.manager,
+            provision_personal_root(FOLDER_MANAGER),
+            f"Drop box {frappe.generate_hash(length=6)}",
+        )
+        grant(self.folder, UPLOADER, UPLOAD, self.manager)
+        frappe.set_user(UPLOADER)
+        self.file = create_empty_file(principals_for(UPLOADER), self.folder, "notes.txt")
+        frappe.set_user(FOLDER_MANAGER)
+
+    def _uploader_holds(self, role: int) -> bool:
+        frappe.set_user(UPLOADER)
+        try:
+            drive.check(self.file, role)
+        except DriveNotFound, DriveForbidden:
+            return False
+        finally:
+            frappe.set_user(FOLDER_MANAGER)
+        return True
+
+    def test_the_uploader_starts_with_edit_on_their_file(self):
+        self.assertEqual(frappe.db.get_value("Drive Node", self.file, "owner"), UPLOADER)
+        self.assertTrue(self._uploader_holds(EDIT))
+
+    def test_revoking_below_the_folder_removes_the_uploaders_access_to_their_file(self):
+        revoke_below(self.folder, UPLOADER, self.manager)
+
+        self.assertFalse(self._uploader_holds(READ))
+        self.assertEqual(frappe.db.get_value("Drive Node", self.file, "owner"), UPLOADER)
+
+    def test_lowering_the_uploaders_grant_leaves_them_able_to_view_but_not_edit(self):
+        grant(self.file, UPLOADER, READ, self.manager)
+
+        self.assertTrue(self._uploader_holds(READ))
+        self.assertFalse(self._uploader_holds(EDIT))

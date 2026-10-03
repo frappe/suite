@@ -20,15 +20,16 @@ cannot reach it. These helpers raise `frappe.ValidationError`, which the route
 boundary maps to 400.
 """
 
-from collections.abc import Mapping
-from datetime import date, datetime
-from typing import Generic, Literal, NotRequired, TypedDict, TypeVar
+from collections.abc import Iterable, Mapping
+from datetime import datetime
+from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
 from pydantic import with_config
 
-from suite.drive._core import nodes
+from suite.drive._core import nodes, times
+from suite.drive._core.people import Person, people
 
 EXPANSIONS = ("access", "breadcrumbs", "preview")
 USAGE_EXPANSIONS = ("breakdown",)
@@ -40,8 +41,6 @@ MAX_BATCH_NODES = nodes.MAX_PAGE_SIZE
 
 _TRUE = ("1", "true", "yes", "on")
 _FALSE = ("0", "false", "no", "off")
-
-T = TypeVar("T")
 
 
 class AccessShape(TypedDict, total=False):
@@ -65,7 +64,7 @@ class NodeShape(TypedDict):
     name: str
     title: str
     kind: str
-    parent: str | None
+    parent_node: str | None
     root: str
     state: str
     # The node whose trashing trashed this one: its own name on a trash root,
@@ -77,7 +76,8 @@ class NodeShape(TypedDict):
     content_doctype: str | None
     content_docname: str | None
     is_template: int
-    owner: str
+    # The user whose row this is, published as a person, never as a bare id.
+    owner: Person
     creation: str | None
     modified: str | None
     content_modified: str | None
@@ -108,7 +108,7 @@ class NotificationShape(TypedDict):
     activity: ActivityShape
 
 
-class Page(TypedDict, Generic[T]):
+class Page[T](TypedDict):
     rows: list[T]
     next_cursor: str | None
 
@@ -118,7 +118,10 @@ class Rename(TypedDict):
 
 
 class Move(TypedDict):
-    parent: str
+    parent_node: str
+    # The folder the caller last saw the node in. The move is refused with
+    # `DriveMoved` (409) when the node is no longer there (§8.2).
+    expect_parent_node: NotRequired[str]
 
 
 class Trash(TypedDict):
@@ -127,11 +130,60 @@ class Trash(TypedDict):
 
 class Restore(TypedDict):
     state: Literal["Active"]
-    parent: NotRequired[str]
+    parent_node: NotRequired[str]
 
 
 class Stamp(TypedDict):
     content_modified: str
+
+
+# The four things `POST /nodes` creates (§8.3). `kind` picks the alternative,
+# so each is one operation in the generated client.
+class CreateFolder(TypedDict):
+    kind: Literal["folder"]
+    parent_node: str
+    title: str
+
+
+class CreateFile(TypedDict):
+    """A file from a blob the caller already owns. `size` and `mime` are claims
+    `create_file` checks against the stored row (§8.4)."""
+
+    kind: Literal["file"]
+    parent_node: str
+    title: str
+    blob: str
+    size: int
+    mime: str
+    content_modified: NotRequired[str]
+
+
+class CreateLink(TypedDict):
+    kind: Literal["link"]
+    parent_node: str
+    title: str
+    url: str
+
+
+class CreateDocument(TypedDict):
+    """A content document of `content_doctype`, blank or from a template node."""
+
+    kind: Literal["document"]
+    parent_node: str
+    title: str
+    content_doctype: str
+    from_node: NotRequired[str]
+    is_template: NotRequired[bool]
+
+
+@with_config(extra="forbid")
+class Empty(TypedDict):
+    """The body of a write that takes nothing but its path: `{}`."""
+
+
+class PageQuery(TypedDict, total=False):
+    limit: int
+    cursor: str
 
 
 class NodeGetQuery(TypedDict, total=False):
@@ -145,18 +197,19 @@ class ChildrenQuery(TypedDict, total=False):
     ascending: bool
     # A comma-separated list of `nodes.LISTING_TYPES`, as `listing_types` reads it.
     type: str
-    group_by: Literal["type", "owner", "modified"]
     expand: str
 
 
 class CopyNode(TypedDict):
-    parent: str
+    parent_node: str
     title: NotRequired[str]
 
 
 class BatchPatch(TypedDict, total=False):
     title: str
-    parent: str
+    parent_node: str
+    # Only with `parent_node`, as on `Move`.
+    expect_parent_node: str
     state: Literal["Active", "Trashed"]
     content_modified: str
 
@@ -166,20 +219,100 @@ class BatchNodes(TypedDict):
     patch: BatchPatch
 
 
+class ReplaceContent(TypedDict):
+    """`PUT /nodes/<id>/content`: a new head from the caller's finished session."""
+
+    upload_id: str
+    checksum: NotRequired[str]
+    content_modified: NotRequired[str]
+
+
+class ContentQuery(TypedDict, total=False):
+    # An export format a content app offers; a file ignores it.
+    format: str
+
+
+class MediaItem(TypedDict):
+    node: str
+    title: str
+    mime: str | None
+    size: int
+    url: str
+    expires: int
+
+
+class MediaList(TypedDict):
+    media: list[MediaItem]
+
+
+class PreviewPush(TypedDict):
+    """`POST /nodes/<id>/preview`: the rendered image, base64, and its MIME type."""
+
+    image: str
+    mime: str
+
+
+class PreviewAnswer(TypedDict):
+    preview: PreviewShape | None
+
+
 class OpenUpload(TypedDict):
-    parent: str
+    parent_node: str
     filename: str
     size: int
     mime: NotRequired[str]
     replaces: NotRequired[str]
 
 
+class ChunkedUpload(TypedDict):
+    """A session that takes its bytes through `PUT /uploads/<id>/chunk`."""
+
+    upload_id: str
+    mode: Literal["chunked"]
+
+
+class DirectUpload(TypedDict):
+    """A session that takes its bytes at the storage `url`, `fields` first."""
+
+    upload_id: str
+    mode: Literal["direct"]
+    url: str
+    fields: dict[str, str]
+
+
+class ChunkQuery(TypedDict):
+    offset: int
+
+
+class UploadProgress(TypedDict):
+    upload_id: str
+    # Bytes the server holds for the session after this chunk.
+    received: int
+
+
+class FinishUpload(TypedDict, total=False):
+    """`POST /uploads/<id>/finish`: `parent_node` and `title` for a new file, or
+    `replaces` for a new head; the session binds which."""
+
+    parent_node: str
+    title: str
+    replaces: str
+    checksum: str
+    content_modified: str
+
+
 class BatchPurge(TypedDict):
     nodes: list[str]
 
 
-class Purged(TypedDict):
-    purged: int
+class Count(TypedDict):
+    """The answer to a write that removes or touches rows rather than shaping one.
+
+    Every delete answers it, and so does a write whose only result is a
+    number of rows: a visit, a star, a read receipt (`http/__init__.py`).
+    """
+
+    count: int
 
 
 class BatchFailure(TypedDict):
@@ -191,10 +324,6 @@ class BatchFailure(TypedDict):
 class BatchResult(TypedDict):
     ok: list[str]
     failed: list[BatchFailure]
-
-
-class Empty(TypedDict):
-    pass
 
 
 class ViewQuery(TypedDict, total=False):
@@ -222,10 +351,6 @@ class AllNotifications(TypedDict):
     all: Literal[True]
 
 
-class ReadResult(TypedDict):
-    read: int
-
-
 class UnreadCount(TypedDict):
     unread: int
 
@@ -247,6 +372,203 @@ class ArchivedRootShape(TypedDict):
     quota_bytes: int
 
 
+class RootShape(TypedDict):
+    """One `Drive Root` with its node's title, as `PATCH /roots/<id>` answers it."""
+
+    name: str
+    node: str
+    kind: str
+    user: str | None
+    state: str
+    quota_bytes: int
+    used_bytes: int
+    title: str
+
+
+class GrantShape(TypedDict):
+    name: str
+    node: str
+    # One of §4.4's five spellings. The row key; `person` is who it names.
+    principal: str
+    role: int
+    # Only when the principal is a user.
+    person: NotRequired[Person]
+    expires_on: str | None
+    has_password: bool
+    sent_to: str | None
+    # `/l/<token>`, on a link row only.
+    url: NotRequired[str]
+
+
+class RedactedGrantShape(TypedDict):
+    """An ancestor's link the caller does not manage: no name, URL, or recipient."""
+
+    node: str
+    principal: Literal["$LINK"]
+    role: int
+    expires_on: str | None
+    has_password: bool
+
+
+class InheritedGrantShape(TypedDict):
+    grant: GrantShape | RedactedGrantShape
+    redacted: bool
+    source_node: str
+    source_title: str
+
+
+# §5.8 names a key `pass`, a Python keyword, so this one is the functional form.
+ExplainRowShape = TypedDict(
+    "ExplainRowShape",
+    {
+        "node": str,
+        "depth": int,
+        "principal": str,
+        "role": int,
+        "expires_on": str | None,
+        "pass": int,
+        "held": bool,
+        "winner": bool,
+    },
+)
+
+
+class ExplainShape(TypedDict):
+    role: int
+    source: str
+    rows: list[ExplainRowShape]
+
+
+class GrantsShape(TypedDict):
+    """`GET /nodes/<id>/grants`: the local rows, who owns the tree, and the asked-for extras."""
+
+    grants: list[GrantShape]
+    # The user whose Personal root holds the node. None in the Shared root.
+    owner: Person | None
+    inherited: NotRequired[list[InheritedGrantShape]]
+    explain: NotRequired[ExplainShape]
+
+
+class GrantWrite(TypedDict):
+    """`PUT /nodes/<id>/grants/<principal>`: `role` and `expires_on` replace; `password` patches."""
+
+    role: int
+    expires_on: NotRequired[str | None]
+    password: NotRequired[str | None]
+    send_to: NotRequired[str]
+    notify: NotRequired[bool]
+
+
+class GrantPatch(TypedDict):
+    """`PATCH /grants/<id>`: the same write on a row named by its id."""
+
+    role: int
+    expires_on: NotRequired[str | None]
+    password: NotRequired[str | None]
+
+
+class GrantsQuery(TypedDict, total=False):
+    # `?inherited=1` adds the ancestors' live grants; `?principal=` adds §5.8's explanation.
+    inherited: bool
+    principal: str
+
+
+class RevokeQuery(TypedDict, total=False):
+    # `?below=1` also removes the principal's grants under the node (§5.10).
+    below: bool
+
+
+class Unlock(TypedDict):
+    token: str
+    password: str
+
+
+class UnlockTicket(TypedDict):
+    ticket: str
+    expires: int
+
+
+class VersionShape(TypedDict):
+    name: str
+    node: str
+    seq: int
+    kind: str
+    label: str | None
+    pinned: int
+    actor: str
+    size: int
+    creation: str | None
+
+
+class VersionTake(TypedDict, total=False):
+    kind: Literal["auto", "named", "milestone"]
+    label: str
+
+
+class VersionPatch(TypedDict, total=False):
+    """Either field; an empty `label` clears it (§9.1)."""
+
+    label: str
+    pinned: bool
+
+
+class CommentShape(TypedDict):
+    name: str
+    thread: str
+    node: str
+    content: str
+    author: str
+    # The name a Guest typed (§6.7). A signed-in author is published as `person`.
+    author_name: str | None
+    # The signed-in author. Absent for a Guest.
+    person: NotRequired[Person]
+    mentions: list[str]
+    creation: str | None
+    modified: str | None
+
+
+class ThreadShape(TypedDict):
+    name: str
+    node: str
+    anchor: str
+    resolved: bool
+    resolved_by: str | None
+    resolved_at: str | None
+    creation: str | None
+    comments: list[CommentShape]
+
+
+class ThreadsQuery(TypedDict, total=False):
+    # Absent lists every thread; true or false keeps one side.
+    resolved: bool
+
+
+class ThreadList(TypedDict):
+    threads: list[ThreadShape]
+
+
+class ThreadOpen(TypedDict):
+    """`POST /nodes/<id>/threads`: the anchor is the content app's to resolve."""
+
+    anchor: str
+    text: str
+    # A guest's typed display name; a user's identity comes from the session (§6.7).
+    author_name: NotRequired[str]
+
+
+class ThreadResolve(TypedDict):
+    resolved: bool
+
+
+class CommentWrite(TypedDict):
+    text: str
+    author_name: NotRequired[str]
+
+
+class CommentEdit(TypedDict):
+    text: str
+
+
 class ArchiveStatus(TypedDict):
     status: Literal["building", "ready", "failed"]
     file_name: str | None
@@ -256,6 +578,21 @@ class ArchiveStatus(TypedDict):
 
 class RootUsageQuery(TypedDict, total=False):
     expand: Literal["breakdown"]
+
+
+class RootQuota(TypedDict):
+    # Bytes; 0 is unlimited.
+    quota_bytes: int
+
+
+class RootArchive(TypedDict):
+    # The one state change a root takes: Active to Archived.
+    state: Literal["Archived"]
+
+
+class ClearRecents(TypedDict, total=False):
+    # Absent clears every recent row of the caller; named clears those nodes.
+    nodes: list[str]
 
 
 class TypeBytes(TypedDict):
@@ -340,13 +677,26 @@ class WebdavConnection(WebdavOff):
     api_key: str | None
 
 
-def node_shape(row: Mapping) -> NodeShape:
-    """Return one stored node row as §11.3's shape."""
+def node_shapes(rows: list[Mapping]) -> list[NodeShape]:
+    """Shape a page of node rows with one lookup of the people they name."""
+    known = people({row.get("owner") for row in rows})
+    return [node_shape(row, known) for row in rows]
+
+
+def node_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> NodeShape:
+    """Return one stored node row as §11.3's shape.
+
+    `known` is a page's people, looked up once by `node_shapes`. A single row
+    looks its owner up itself.
+    """
+    owner = row.get("owner")
+    if known is None:
+        known = people((owner,))
     return {
         "name": row.get("name"),
         "title": row.get("title"),
         "kind": row.get("kind"),
-        "parent": row.get("parent"),
+        "parent_node": row.get("parent_node"),
         "root": nodes.root_id(row),
         "state": row.get("state"),
         "trash_root": row.get("trash_root"),
@@ -356,14 +706,14 @@ def node_shape(row: Mapping) -> NodeShape:
         "content_doctype": row.get("content_doctype"),
         "content_docname": row.get("content_docname"),
         "is_template": int(row.get("is_template") or 0),
-        "owner": row.get("owner"),
+        "owner": known[owner],
         "creation": stamp(row.get("creation")),
         "modified": stamp(row.get("modified")),
         "content_modified": stamp(row.get("content_modified")),
     }
 
 
-def version_shape(row: Mapping) -> dict:
+def version_shape(row: Mapping) -> VersionShape:
     """Return one stored version row as the shape `GET .../versions` publishes.
 
     `blob` is dropped for the reason `node_shape` drops it: a storage id is not
@@ -438,23 +788,58 @@ def notification_shape(row: Mapping) -> NotificationShape:
     }
 
 
-def grant_shape(row: Mapping) -> dict:
-    """Return one grant row as §11.2 publishes it, with its expiry formatted."""
-    answer = {
+def grants_shape(answer: Mapping) -> GrantsShape:
+    """Shape `grants_for`'s answer with one lookup of every user it names.
+
+    The owner, each local user grant, and each unredacted inherited user grant
+    name a person; the lookup is one query for the whole dialog.
+    """
+    inherited = answer.get("inherited")
+    named = [answer.get("owner")]
+    named += [row.get("principal") for row in answer["grants"]]
+    named += [row["grant"].get("principal") for row in inherited or () if not row.get("redacted")]
+    known = people({user for user in named if user and _is_user_principal(user)})
+    owner = answer.get("owner")
+    shaped: GrantsShape = {
+        "grants": [grant_shape(row, known) for row in answer["grants"]],
+        "owner": known[owner] if owner else None,
+    }
+    if inherited is not None:
+        shaped["inherited"] = [inherited_grant_shape(row, known) for row in inherited]
+    if "explain" in answer:
+        shaped["explain"] = explain_shape(answer["explain"])
+    return shaped
+
+
+def grant_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> GrantShape:
+    """Return one grant row as §11.2 publishes it: expiry formatted, its person named.
+
+    A write answers one row and looks its person up itself; a list passes the
+    people it looked up once.
+    """
+    principal = row.get("principal")
+    answer: GrantShape = {
         "name": row.get("name"),
         "node": row.get("node"),
-        "principal": row.get("principal"),
+        "principal": principal,
         "role": row.get("role"),
         "expires_on": stamp(row.get("expires_on")),
         "has_password": bool(row.get("has_password")),
         "sent_to": row.get("sent_to"),
     }
+    if principal and _is_user_principal(principal):
+        answer["person"] = (known if known is not None else people((principal,)))[principal]
     if row.get("url"):
         answer["url"] = row["url"]
     return answer
 
 
-def inherited_grant_shape(row: Mapping) -> dict:
+def _is_user_principal(principal: str) -> bool:
+    """§4.4: every principal that is not a user starts with `$`."""
+    return not principal.startswith("$")
+
+
+def inherited_grant_shape(row: Mapping, known: Mapping[str, Person]) -> InheritedGrantShape:
     """Return one ancestor's grant with the node it sits on (issue 44, D19).
 
     A `redacted` row is a link on an ancestor the caller does not manage. Its
@@ -464,14 +849,14 @@ def inherited_grant_shape(row: Mapping) -> dict:
     grant = row.get("grant") or {}
     redacted = bool(row.get("redacted"))
     return {
-        "grant": _redacted_grant_shape(grant) if redacted else grant_shape(grant),
+        "grant": _redacted_grant_shape(grant) if redacted else grant_shape(grant, known),
         "redacted": redacted,
         "source_node": row.get("source_node"),
         "source_title": row.get("source_title"),
     }
 
 
-def _redacted_grant_shape(row: Mapping) -> dict:
+def _redacted_grant_shape(row: Mapping) -> RedactedGrantShape:
     return {
         "node": row.get("node"),
         "principal": "$LINK",
@@ -481,7 +866,21 @@ def _redacted_grant_shape(row: Mapping) -> dict:
     }
 
 
-def explain_shape(result: Mapping) -> dict:
+def root_shape(row: Mapping) -> RootShape:
+    """Return one root's metadata as `PATCH /roots/<id>` answers it."""
+    return {
+        "name": row.get("name"),
+        "node": row.get("node"),
+        "kind": row.get("kind"),
+        "user": row.get("user"),
+        "state": row.get("state"),
+        "quota_bytes": int(row.get("quota_bytes") or 0),
+        "used_bytes": int(row.get("used_bytes") or 0),
+        "title": row.get("title"),
+    }
+
+
+def explain_shape(result: Mapping) -> ExplainShape:
     """Return §5.8's explanation with its row times formatted.
 
     The keys are §5.8's exactly - `role`, `source`, and one row per candidate
@@ -509,8 +908,22 @@ def explain_shape(result: Mapping) -> dict:
     }
 
 
-def thread_shape(row: Mapping) -> dict:
-    """Return one comment thread and its comments, times formatted."""
+def thread_shapes(rows: Iterable[Mapping]) -> list[ThreadShape]:
+    """Shape a document's threads with one lookup of every author they name."""
+    rows = list(rows)
+    known = people(_comment_authors(comment for row in rows for comment in row.get("comments") or ()))
+    return [thread_shape(row, known) for row in rows]
+
+
+def thread_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> ThreadShape:
+    """Return one comment thread and its comments, times formatted.
+
+    `known` is a listing's people, looked up once by `thread_shapes`. A single
+    thread, the answer to a write, looks up its own authors.
+    """
+    comments = row.get("comments") or ()
+    if known is None:
+        known = people(_comment_authors(comments))
     return {
         "name": row.get("name"),
         "node": row.get("node"),
@@ -519,37 +932,56 @@ def thread_shape(row: Mapping) -> dict:
         "resolved_by": row.get("resolved_by"),
         "resolved_at": stamp(row.get("resolved_at")),
         "creation": stamp(row.get("creation")),
-        "comments": [comment_shape(comment) for comment in row.get("comments") or ()],
+        "comments": [comment_shape(comment, known) for comment in comments],
     }
 
 
-def comment_shape(row: Mapping) -> dict:
-    """Return one comment row, times formatted."""
-    return {
+def comment_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> CommentShape:
+    """Return one comment row, times formatted, with its signed-in author as a Person."""
+    author = row.get("author")
+    answer: CommentShape = {
         "name": row.get("name"),
         "thread": row.get("thread"),
         "node": row.get("node"),
         "content": row.get("content"),
-        "author": row.get("author"),
+        "author": author,
         "author_name": row.get("author_name"),
         "mentions": list(row.get("mentions") or ()),
         "creation": stamp(row.get("creation")),
         "modified": stamp(row.get("modified")),
     }
+    if _is_signed_in_author(author):
+        answer["person"] = (known if known is not None else people((author,)))[author]
+    return answer
+
+
+def _comment_authors(comments: Iterable[Mapping]) -> set[str]:
+    return {comment.get("author") for comment in comments if _is_signed_in_author(comment.get("author"))}
+
+
+def _is_signed_in_author(author: str | None) -> bool:
+    """A comment's author is a User id, or the literal `Guest` for a link visitor."""
+    return bool(author) and author != "Guest"
 
 
 def stamp(value) -> str | None:
-    """Format one row time to the second, the shape §11.3 publishes."""
+    """Publish one stored time as §11.3 does: RFC 3339 in UTC, to the second."""
+    return times.publish(value)
+
+
+def moment(value, name: str) -> datetime | None:
+    """Accept an absent time, or one RFC 3339 time that carries its offset.
+
+    The stored form is site-naive, and the client does not know the site's
+    zone, so a naive string is refused rather than read in a zone the sender
+    never meant (§11.3).
+    """
     if value is None or value == "":
         return None
-    if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M:%S")
-    if isinstance(value, date):
-        return value.strftime("%Y-%m-%d 00:00:00")
-    return str(value)
+    return times.parse(value, name)
 
 
-def page(result: Mapping, rows: list[T]) -> Page[T]:
+def page[T](result: Mapping, rows: list[T]) -> Page[T]:
     """Wrap already-shaped rows in §11.4's opaque-cursor page."""
     return {"rows": rows, "next_cursor": result.get("next_cursor")}
 
@@ -691,7 +1123,7 @@ def patch(value, name: str) -> dict:
     """
     if not isinstance(value, Mapping) or not value:
         _refuse(name)
-    allowed = ("title", "parent", "state", "content_modified")
+    allowed = ("title", "parent_node", "expect_parent_node", "state", "content_modified")
     unknown = sorted(set(value) - set(allowed))
     if unknown:
         frappe.throw(

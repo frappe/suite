@@ -33,7 +33,7 @@ def _preview_longest_side() -> int:
     """
     try:
         value = int(frappe.db.get_single_value("Drive Disk Settings", "preview_size"))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return PREVIEW_LONGEST_SIDE
     return value if value > 0 else PREVIEW_LONGEST_SIDE
 
@@ -179,7 +179,7 @@ def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: st
 
     try:
         preview_bytes = _image_webp(io.BytesIO(image_bytes), _preview_longest_side())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         # A header that parsed and a body that did not: Pillow raises
         # `OSError` on truncated data, which is a malformed argument, not a
         # server fault.
@@ -382,7 +382,7 @@ def _sweep_cursor() -> tuple[str | None, str | None]:
         return None, None
     try:
         value = frappe.parse_json(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None, None
     if (
         not isinstance(value, dict)

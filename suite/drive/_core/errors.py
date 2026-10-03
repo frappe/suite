@@ -57,6 +57,16 @@ class DriveRestoreDestinationRequired(DriveConflict):
     """Restore needs a destination: the original parent chain is not Active (§8.8)."""
 
 
+class DriveMoved(DriveConflict):
+    """The node is not in the folder the caller expected (§8.2).
+
+    A move may name `expect_parent_node`, the folder the caller last saw the
+    node in. When the node has moved on since, the move is refused before any
+    write, so an Undo cannot pull an item out of a folder a later move put it
+    in. It is its own class so a client can tell it from a title clash.
+    """
+
+
 def rollback_savepoint(savepoint: str, error: Exception) -> None:
     """Rollback one workflow without masking MariaDB's original deadlock.
 

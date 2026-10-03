@@ -55,6 +55,7 @@ def export(registration: HttpOwner) -> dict:
                     "errors": [error.__name__ for error in route.errors],
                     "entity": route.entity,
                     "nodeParams": [name for name in path_params if name == "node"],
+                    "stream": route.stream,
                 }
             )
     return {"owner": registration.owner, "prefix": registration.prefix, "operations": operations}

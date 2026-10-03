@@ -1,14 +1,14 @@
 // Generated from src/apps/drive/client/contract.json. Do not edit.
 import type { Operation } from '@/platform/transport'
 
-export type NodeCreateInput = Record<string, never>
+export type NodeCreateCreateFolderInput = { "kind": "folder"; "parent_node": string; "title": string }
 
-export type NodeCreateOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodeCreateCreateFolderOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodeCreateError = "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
+export type NodeCreateCreateFolderError = "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
 
-const operationNodeCreate: Operation<NodeCreateInput, NodeCreateOutput, NodeCreateError> = {
-  id: "node_create",
+const operationNodeCreateCreateFolder: Operation<NodeCreateCreateFolderInput, NodeCreateCreateFolderOutput, NodeCreateCreateFolderError> = {
+  id: "node_create.create_folder",
   owner: "drive",
   method: "POST",
   path: "nodes",
@@ -17,11 +17,71 @@ const operationNodeCreate: Operation<NodeCreateInput, NodeCreateOutput, NodeCrea
   nodeParams: [],
   entity: null,
   errors: ["DriveForbidden","DriveConflict","DriveOverQuota"],
-  validateInput(value): asserts value is NodeCreateInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'node_create input') },
-  validateOutput(value): asserts value is NodeCreateOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_create output') },
+  validateInput(value): asserts value is NodeCreateCreateFolderInput { assertSchema(value, {"type":"object","properties":{"kind":{"const":"folder","title":"Kind","type":"string"},"parent_node":{"title":"Parent Node","type":"string"},"title":{"title":"Title","type":"string"}},"required":["kind","parent_node","title"],"additionalProperties":false,"$defs":{}}, 'node_create.create_folder input') },
+  validateOutput(value): asserts value is NodeCreateCreateFolderOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_create.create_folder output') },
 }
 
-export type NodeBatchInput = { "nodes": Array<string>; "patch": { "title"?: string; "parent"?: string; "state"?: "Active" | "Trashed"; "content_modified"?: string } }
+export type NodeCreateCreateFileInput = { "kind": "file"; "parent_node": string; "title": string; "blob": string; "size": number; "mime": string; "content_modified"?: string }
+
+export type NodeCreateCreateFileOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+
+export type NodeCreateCreateFileError = "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
+
+const operationNodeCreateCreateFile: Operation<NodeCreateCreateFileInput, NodeCreateCreateFileOutput, NodeCreateCreateFileError> = {
+  id: "node_create.create_file",
+  owner: "drive",
+  method: "POST",
+  path: "nodes",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ["DriveForbidden","DriveConflict","DriveOverQuota"],
+  validateInput(value): asserts value is NodeCreateCreateFileInput { assertSchema(value, {"type":"object","properties":{"kind":{"const":"file","title":"Kind","type":"string"},"parent_node":{"title":"Parent Node","type":"string"},"title":{"title":"Title","type":"string"},"blob":{"title":"Blob","type":"string"},"size":{"title":"Size","type":"integer"},"mime":{"title":"Mime","type":"string"},"content_modified":{"title":"Content Modified","type":"string"}},"required":["kind","parent_node","title","blob","size","mime"],"additionalProperties":false,"$defs":{}}, 'node_create.create_file input') },
+  validateOutput(value): asserts value is NodeCreateCreateFileOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_create.create_file output') },
+}
+
+export type NodeCreateCreateLinkInput = { "kind": "link"; "parent_node": string; "title": string; "url": string }
+
+export type NodeCreateCreateLinkOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+
+export type NodeCreateCreateLinkError = "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
+
+const operationNodeCreateCreateLink: Operation<NodeCreateCreateLinkInput, NodeCreateCreateLinkOutput, NodeCreateCreateLinkError> = {
+  id: "node_create.create_link",
+  owner: "drive",
+  method: "POST",
+  path: "nodes",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ["DriveForbidden","DriveConflict","DriveOverQuota"],
+  validateInput(value): asserts value is NodeCreateCreateLinkInput { assertSchema(value, {"type":"object","properties":{"kind":{"const":"link","title":"Kind","type":"string"},"parent_node":{"title":"Parent Node","type":"string"},"title":{"title":"Title","type":"string"},"url":{"title":"Url","type":"string"}},"required":["kind","parent_node","title","url"],"additionalProperties":false,"$defs":{}}, 'node_create.create_link input') },
+  validateOutput(value): asserts value is NodeCreateCreateLinkOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_create.create_link output') },
+}
+
+export type NodeCreateCreateDocumentInput = { "kind": "document"; "parent_node": string; "title": string; "content_doctype": string; "from_node"?: string; "is_template"?: boolean }
+
+export type NodeCreateCreateDocumentOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+
+export type NodeCreateCreateDocumentError = "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
+
+const operationNodeCreateCreateDocument: Operation<NodeCreateCreateDocumentInput, NodeCreateCreateDocumentOutput, NodeCreateCreateDocumentError> = {
+  id: "node_create.create_document",
+  owner: "drive",
+  method: "POST",
+  path: "nodes",
+  prefix: "/api/suite/drive/",
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ["DriveForbidden","DriveConflict","DriveOverQuota"],
+  validateInput(value): asserts value is NodeCreateCreateDocumentInput { assertSchema(value, {"type":"object","properties":{"kind":{"const":"document","title":"Kind","type":"string"},"parent_node":{"title":"Parent Node","type":"string"},"title":{"title":"Title","type":"string"},"content_doctype":{"title":"Content Doctype","type":"string"},"from_node":{"title":"From Node","type":"string"},"is_template":{"title":"Is Template","type":"boolean"}},"required":["kind","parent_node","title","content_doctype"],"additionalProperties":false,"$defs":{}}, 'node_create.create_document input') },
+  validateOutput(value): asserts value is NodeCreateCreateDocumentOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_create.create_document output') },
+}
+
+export type NodeBatchInput = { "nodes": Array<string>; "patch": { "title"?: string; "parent_node"?: string; "expect_parent_node"?: string; "state"?: "Active" | "Trashed"; "content_modified"?: string } }
 
 export type NodeBatchOutput = { "ok": Array<string>; "failed": Array<{ "node": string; "type": string; "message": string }> }
 
@@ -37,7 +97,7 @@ const operationNodeBatch: Operation<NodeBatchInput, NodeBatchOutput, NodeBatchEr
   nodeParams: [],
   entity: null,
   errors: [],
-  validateInput(value): asserts value is NodeBatchInput { assertSchema(value, {"type":"object","properties":{"nodes":{"items":{"type":"string"},"title":"Nodes","type":"array"},"patch":{"$ref":"#/$defs/BatchPatch"}},"required":["nodes","patch"],"additionalProperties":false,"$defs":{"BatchPatch":{"properties":{"title":{"title":"Title","type":"string"},"parent":{"title":"Parent","type":"string"},"state":{"enum":["Active","Trashed"],"title":"State","type":"string"},"content_modified":{"title":"Content Modified","type":"string"}},"title":"BatchPatch","type":"object"}}}, 'node_batch input') },
+  validateInput(value): asserts value is NodeBatchInput { assertSchema(value, {"type":"object","properties":{"nodes":{"items":{"type":"string"},"title":"Nodes","type":"array"},"patch":{"$ref":"#/$defs/BatchPatch"}},"required":["nodes","patch"],"additionalProperties":false,"$defs":{"BatchPatch":{"properties":{"title":{"title":"Title","type":"string"},"parent_node":{"title":"Parent Node","type":"string"},"expect_parent_node":{"title":"Expect Parent Node","type":"string"},"state":{"enum":["Active","Trashed"],"title":"State","type":"string"},"content_modified":{"title":"Content Modified","type":"string"}},"title":"BatchPatch","type":"object"}}}, 'node_batch input') },
   validateOutput(value): asserts value is NodeBatchOutput { assertSchema(value, {"$defs":{"BatchFailure":{"properties":{"node":{"title":"Node","type":"string"},"type":{"title":"Type","type":"string"},"message":{"title":"Message","type":"string"}},"required":["node","type","message"],"title":"BatchFailure","type":"object"}},"properties":{"ok":{"items":{"type":"string"},"title":"Ok","type":"array"},"failed":{"items":{"$ref":"#/$defs/BatchFailure"},"title":"Failed","type":"array"}},"required":["ok","failed"],"title":"BatchResult","type":"object"}, 'node_batch output') },
 }
 
@@ -63,7 +123,7 @@ const operationNodeBatchPurge: Operation<NodeBatchPurgeInput, NodeBatchPurgeOutp
 
 export type NodeGetInput = { "expand"?: string; "node": string }
 
-export type NodeGetOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodeGetOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
 export type NodeGetError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired"
 
@@ -78,14 +138,14 @@ const operationNodeGet: Operation<NodeGetInput, NodeGetOutput, NodeGetError> = {
   entity: {"tag":"DriveNode","id":"name","version":"modified"},
   errors: ["DriveNotFound","DriveLocked","DriveLinkExpired"],
   validateInput(value): asserts value is NodeGetInput { assertSchema(value, {"type":"object","properties":{"expand":{"title":"Expand","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_get input') },
-  validateOutput(value): asserts value is NodeGetOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_get output') },
+  validateOutput(value): asserts value is NodeGetOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_get output') },
 }
 
 export type NodePatchRenameInput = { "title": string; "node": string }
 
-export type NodePatchRenameOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodePatchRenameOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodePatchRenameError = "DriveForbidden" | "DriveConflict" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
+export type NodePatchRenameError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict" | "DriveMoved" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
 
 const operationNodePatchRename: Operation<NodePatchRenameInput, NodePatchRenameOutput, NodePatchRenameError> = {
   id: "node_patch.rename",
@@ -96,16 +156,16 @@ const operationNodePatchRename: Operation<NodePatchRenameInput, NodePatchRenameO
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: {"tag":"DriveNode","id":"name","version":"modified"},
-  errors: ["DriveForbidden","DriveConflict","DriveRestoreDestinationRequired","DriveOverQuota"],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict","DriveMoved","DriveRestoreDestinationRequired","DriveOverQuota"],
   validateInput(value): asserts value is NodePatchRenameInput { assertSchema(value, {"type":"object","properties":{"title":{"title":"Title","type":"string"},"node":{"type":"string"}},"required":["title","node"],"additionalProperties":false,"$defs":{}}, 'node_patch.rename input') },
-  validateOutput(value): asserts value is NodePatchRenameOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.rename output') },
+  validateOutput(value): asserts value is NodePatchRenameOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.rename output') },
 }
 
-export type NodePatchMoveInput = { "parent": string; "node": string }
+export type NodePatchMoveInput = { "parent_node": string; "expect_parent_node"?: string; "node": string }
 
-export type NodePatchMoveOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodePatchMoveOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodePatchMoveError = "DriveForbidden" | "DriveConflict" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
+export type NodePatchMoveError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict" | "DriveMoved" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
 
 const operationNodePatchMove: Operation<NodePatchMoveInput, NodePatchMoveOutput, NodePatchMoveError> = {
   id: "node_patch.move",
@@ -116,16 +176,16 @@ const operationNodePatchMove: Operation<NodePatchMoveInput, NodePatchMoveOutput,
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: {"tag":"DriveNode","id":"name","version":"modified"},
-  errors: ["DriveForbidden","DriveConflict","DriveRestoreDestinationRequired","DriveOverQuota"],
-  validateInput(value): asserts value is NodePatchMoveInput { assertSchema(value, {"type":"object","properties":{"parent":{"title":"Parent","type":"string"},"node":{"type":"string"}},"required":["parent","node"],"additionalProperties":false,"$defs":{}}, 'node_patch.move input') },
-  validateOutput(value): asserts value is NodePatchMoveOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.move output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict","DriveMoved","DriveRestoreDestinationRequired","DriveOverQuota"],
+  validateInput(value): asserts value is NodePatchMoveInput { assertSchema(value, {"type":"object","properties":{"parent_node":{"title":"Parent Node","type":"string"},"expect_parent_node":{"title":"Expect Parent Node","type":"string"},"node":{"type":"string"}},"required":["parent_node","node"],"additionalProperties":false,"$defs":{}}, 'node_patch.move input') },
+  validateOutput(value): asserts value is NodePatchMoveOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.move output') },
 }
 
 export type NodePatchTrashInput = { "state": "Trashed"; "node": string }
 
-export type NodePatchTrashOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodePatchTrashOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodePatchTrashError = "DriveForbidden" | "DriveConflict" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
+export type NodePatchTrashError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict" | "DriveMoved" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
 
 const operationNodePatchTrash: Operation<NodePatchTrashInput, NodePatchTrashOutput, NodePatchTrashError> = {
   id: "node_patch.trash",
@@ -136,16 +196,16 @@ const operationNodePatchTrash: Operation<NodePatchTrashInput, NodePatchTrashOutp
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: {"tag":"DriveNode","id":"name","version":"modified"},
-  errors: ["DriveForbidden","DriveConflict","DriveRestoreDestinationRequired","DriveOverQuota"],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict","DriveMoved","DriveRestoreDestinationRequired","DriveOverQuota"],
   validateInput(value): asserts value is NodePatchTrashInput { assertSchema(value, {"type":"object","properties":{"state":{"const":"Trashed","title":"State","type":"string"},"node":{"type":"string"}},"required":["state","node"],"additionalProperties":false,"$defs":{}}, 'node_patch.trash input') },
-  validateOutput(value): asserts value is NodePatchTrashOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.trash output') },
+  validateOutput(value): asserts value is NodePatchTrashOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.trash output') },
 }
 
-export type NodePatchRestoreInput = { "state": "Active"; "parent"?: string; "node": string }
+export type NodePatchRestoreInput = { "state": "Active"; "parent_node"?: string; "node": string }
 
-export type NodePatchRestoreOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodePatchRestoreOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodePatchRestoreError = "DriveForbidden" | "DriveConflict" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
+export type NodePatchRestoreError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict" | "DriveMoved" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
 
 const operationNodePatchRestore: Operation<NodePatchRestoreInput, NodePatchRestoreOutput, NodePatchRestoreError> = {
   id: "node_patch.restore",
@@ -156,16 +216,16 @@ const operationNodePatchRestore: Operation<NodePatchRestoreInput, NodePatchResto
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: {"tag":"DriveNode","id":"name","version":"modified"},
-  errors: ["DriveForbidden","DriveConflict","DriveRestoreDestinationRequired","DriveOverQuota"],
-  validateInput(value): asserts value is NodePatchRestoreInput { assertSchema(value, {"type":"object","properties":{"state":{"const":"Active","title":"State","type":"string"},"parent":{"title":"Parent","type":"string"},"node":{"type":"string"}},"required":["state","node"],"additionalProperties":false,"$defs":{}}, 'node_patch.restore input') },
-  validateOutput(value): asserts value is NodePatchRestoreOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.restore output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict","DriveMoved","DriveRestoreDestinationRequired","DriveOverQuota"],
+  validateInput(value): asserts value is NodePatchRestoreInput { assertSchema(value, {"type":"object","properties":{"state":{"const":"Active","title":"State","type":"string"},"parent_node":{"title":"Parent Node","type":"string"},"node":{"type":"string"}},"required":["state","node"],"additionalProperties":false,"$defs":{}}, 'node_patch.restore input') },
+  validateOutput(value): asserts value is NodePatchRestoreOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.restore output') },
 }
 
 export type NodePatchStampInput = { "content_modified": string; "node": string }
 
-export type NodePatchStampOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodePatchStampOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodePatchStampError = "DriveForbidden" | "DriveConflict" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
+export type NodePatchStampError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict" | "DriveMoved" | "DriveRestoreDestinationRequired" | "DriveOverQuota"
 
 const operationNodePatchStamp: Operation<NodePatchStampInput, NodePatchStampOutput, NodePatchStampError> = {
   id: "node_patch.stamp",
@@ -176,16 +236,16 @@ const operationNodePatchStamp: Operation<NodePatchStampInput, NodePatchStampOutp
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: {"tag":"DriveNode","id":"name","version":"modified"},
-  errors: ["DriveForbidden","DriveConflict","DriveRestoreDestinationRequired","DriveOverQuota"],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict","DriveMoved","DriveRestoreDestinationRequired","DriveOverQuota"],
   validateInput(value): asserts value is NodePatchStampInput { assertSchema(value, {"type":"object","properties":{"content_modified":{"title":"Content Modified","type":"string"},"node":{"type":"string"}},"required":["content_modified","node"],"additionalProperties":false,"$defs":{}}, 'node_patch.stamp input') },
-  validateOutput(value): asserts value is NodePatchStampOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.stamp output') },
+  validateOutput(value): asserts value is NodePatchStampOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_patch.stamp output') },
 }
 
 export type NodePurgeInput = { "node": string }
 
-export type NodePurgeOutput = {  }
+export type NodePurgeOutput = { "count": number }
 
-export type NodePurgeError = "DriveForbidden" | "DriveConflict"
+export type NodePurgeError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodePurge: Operation<NodePurgeInput, NodePurgeOutput, NodePurgeError> = {
   id: "node_purge",
@@ -196,16 +256,16 @@ const operationNodePurge: Operation<NodePurgeInput, NodePurgeOutput, NodePurgeEr
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: ["DriveForbidden","DriveConflict"],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
   validateInput(value): asserts value is NodePurgeInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_purge input') },
-  validateOutput(value): asserts value is NodePurgeOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_purge output') },
+  validateOutput(value): asserts value is NodePurgeOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'node_purge output') },
 }
 
-export type NodeChildrenInput = { "limit"?: number; "cursor"?: string; "order_by"?: string; "ascending"?: boolean; "type"?: string; "group_by"?: "type" | "owner" | "modified"; "expand"?: string; "node": string }
+export type NodeChildrenInput = { "limit"?: number; "cursor"?: string; "order_by"?: string; "ascending"?: boolean; "type"?: string; "expand"?: string; "node": string }
 
-export type NodeChildrenOutput = { "rows": Array<{ "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }>; "next_cursor": (string) | (null) }
+export type NodeChildrenOutput = { "rows": Array<{ "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }>; "next_cursor": (string) | (null) }
 
-export type NodeChildrenError = "DriveConflict"
+export type NodeChildrenError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeChildren: Operation<NodeChildrenInput, NodeChildrenOutput, NodeChildrenError> = {
   id: "node_children",
@@ -216,16 +276,16 @@ const operationNodeChildren: Operation<NodeChildrenInput, NodeChildrenOutput, No
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: ["DriveConflict"],
-  validateInput(value): asserts value is NodeChildrenInput { assertSchema(value, {"type":"object","properties":{"limit":{"title":"Limit","type":"integer"},"cursor":{"title":"Cursor","type":"string"},"order_by":{"title":"Order By","type":"string"},"ascending":{"title":"Ascending","type":"boolean"},"type":{"title":"Type","type":"string"},"group_by":{"enum":["type","owner","modified"],"title":"Group By","type":"string"},"expand":{"title":"Expand","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_children input') },
-  validateOutput(value): asserts value is NodeChildrenOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"NodeShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"rows":{"items":{"$ref":"#/$defs/NodeShape"},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"Page","type":"object"}, 'node_children output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
+  validateInput(value): asserts value is NodeChildrenInput { assertSchema(value, {"type":"object","properties":{"limit":{"title":"Limit","type":"integer"},"cursor":{"title":"Cursor","type":"string"},"order_by":{"title":"Order By","type":"string"},"ascending":{"title":"Ascending","type":"boolean"},"type":{"title":"Type","type":"string"},"expand":{"title":"Expand","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_children input') },
+  validateOutput(value): asserts value is NodeChildrenOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"NodeShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"rows":{"items":{"$ref":"#/$defs/NodeShape"},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"Page","type":"object"}, 'node_children output') },
 }
 
-export type NodeCopyInput = { "parent": string; "title"?: string; "node": string }
+export type NodeCopyInput = { "parent_node": string; "title"?: string; "node": string }
 
-export type NodeCopyOutput = { "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
+export type NodeCopyOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodeCopyError = "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
+export type NodeCopyError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict" | "DriveOverQuota"
 
 const operationNodeCopy: Operation<NodeCopyInput, NodeCopyOutput, NodeCopyError> = {
   id: "node_copy",
@@ -236,16 +296,16 @@ const operationNodeCopy: Operation<NodeCopyInput, NodeCopyOutput, NodeCopyError>
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: ["DriveForbidden","DriveConflict","DriveOverQuota"],
-  validateInput(value): asserts value is NodeCopyInput { assertSchema(value, {"type":"object","properties":{"parent":{"title":"Parent","type":"string"},"title":{"title":"Title","type":"string"},"node":{"type":"string"}},"required":["parent","node"],"additionalProperties":false,"$defs":{}}, 'node_copy input') },
-  validateOutput(value): asserts value is NodeCopyOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_copy output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict","DriveOverQuota"],
+  validateInput(value): asserts value is NodeCopyInput { assertSchema(value, {"type":"object","properties":{"parent_node":{"title":"Parent Node","type":"string"},"title":{"title":"Title","type":"string"},"node":{"type":"string"}},"required":["parent_node","node"],"additionalProperties":false,"$defs":{}}, 'node_copy input') },
+  validateOutput(value): asserts value is NodeCopyOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_copy output') },
 }
 
 export type NodeArchiveStartInput = { "node": string }
 
 export type NodeArchiveStartOutput = { "status": "building" | "ready" | "failed"; "file_name": (string) | (null); "size": (number) | (null); "error": (string) | (null) }
 
-export type NodeArchiveStartError = "DriveConflict"
+export type NodeArchiveStartError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeArchiveStart: Operation<NodeArchiveStartInput, NodeArchiveStartOutput, NodeArchiveStartError> = {
   id: "node_archive_start",
@@ -256,7 +316,7 @@ const operationNodeArchiveStart: Operation<NodeArchiveStartInput, NodeArchiveSta
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: ["DriveConflict"],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
   validateInput(value): asserts value is NodeArchiveStartInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_archive_start input') },
   validateOutput(value): asserts value is NodeArchiveStartOutput { assertSchema(value, {"properties":{"status":{"enum":["building","ready","failed"],"title":"Status","type":"string"},"file_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"File Name"},"size":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Size"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"}},"required":["status","file_name","size","error"],"title":"ArchiveStatus","type":"object"}, 'node_archive_start output') },
 }
@@ -265,7 +325,7 @@ export type NodeArchiveStatusInput = { "node": string }
 
 export type NodeArchiveStatusOutput = { "status": "building" | "ready" | "failed"; "file_name": (string) | (null); "size": (number) | (null); "error": (string) | (null) }
 
-export type NodeArchiveStatusError = "DriveNotFound" | "DriveConflict"
+export type NodeArchiveStatusError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeArchiveStatus: Operation<NodeArchiveStatusInput, NodeArchiveStatusOutput, NodeArchiveStatusError> = {
   id: "node_archive_status",
@@ -276,16 +336,16 @@ const operationNodeArchiveStatus: Operation<NodeArchiveStatusInput, NodeArchiveS
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: ["DriveNotFound","DriveConflict"],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
   validateInput(value): asserts value is NodeArchiveStatusInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_archive_status input') },
   validateOutput(value): asserts value is NodeArchiveStatusOutput { assertSchema(value, {"properties":{"status":{"enum":["building","ready","failed"],"title":"Status","type":"string"},"file_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"File Name"},"size":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Size"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"}},"required":["status","file_name","size","error"],"title":"ArchiveStatus","type":"object"}, 'node_archive_status output') },
 }
 
 export type NodeArchiveDownloadInput = { "node": string }
 
-export type NodeArchiveDownloadOutput = unknown
+export type NodeArchiveDownloadOutput = Blob
 
-export type NodeArchiveDownloadError = never
+export type NodeArchiveDownloadError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeArchiveDownload: Operation<NodeArchiveDownloadInput, NodeArchiveDownloadOutput, NodeArchiveDownloadError> = {
   id: "node_archive_download",
@@ -296,16 +356,16 @@ const operationNodeArchiveDownload: Operation<NodeArchiveDownloadInput, NodeArch
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
   validateInput(value): asserts value is NodeArchiveDownloadInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_archive_download input') },
-  validateOutput(value): asserts value is NodeArchiveDownloadOutput { assertSchema(value, {}, 'node_archive_download output') },
+  validateOutput(value): asserts value is NodeArchiveDownloadOutput { void value },
 }
 
-export type NodePutContentInput = { "node": string }
+export type NodePutContentInput = { "upload_id": string; "checksum"?: string; "content_modified"?: string; "node": string }
 
-export type NodePutContentOutput = {  }
+export type NodePutContentOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type NodePutContentError = never
+export type NodePutContentError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict" | "DriveOverQuota" | "DriveFileTooLarge"
 
 const operationNodePutContent: Operation<NodePutContentInput, NodePutContentOutput, NodePutContentError> = {
   id: "node_put_content",
@@ -316,16 +376,16 @@ const operationNodePutContent: Operation<NodePutContentInput, NodePutContentOutp
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodePutContentInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_put_content input') },
-  validateOutput(value): asserts value is NodePutContentOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_put_content output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict","DriveOverQuota","DriveFileTooLarge"],
+  validateInput(value): asserts value is NodePutContentInput { assertSchema(value, {"type":"object","properties":{"upload_id":{"title":"Upload Id","type":"string"},"checksum":{"title":"Checksum","type":"string"},"content_modified":{"title":"Content Modified","type":"string"},"node":{"type":"string"}},"required":["upload_id","node"],"additionalProperties":false,"$defs":{}}, 'node_put_content input') },
+  validateOutput(value): asserts value is NodePutContentOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'node_put_content output') },
 }
 
-export type NodeGetContentInput = { "node": string }
+export type NodeGetContentInput = { "format"?: string; "node": string }
 
-export type NodeGetContentOutput = unknown
+export type NodeGetContentOutput = Blob
 
-export type NodeGetContentError = never
+export type NodeGetContentError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodeGetContent: Operation<NodeGetContentInput, NodeGetContentOutput, NodeGetContentError> = {
   id: "node_get_content",
@@ -336,16 +396,16 @@ const operationNodeGetContent: Operation<NodeGetContentInput, NodeGetContentOutp
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeGetContentInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_get_content input') },
-  validateOutput(value): asserts value is NodeGetContentOutput { assertSchema(value, {}, 'node_get_content output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is NodeGetContentInput { assertSchema(value, {"type":"object","properties":{"format":{"title":"Format","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_get_content input') },
+  validateOutput(value): asserts value is NodeGetContentOutput { void value },
 }
 
 export type NodeMediaInput = { "node": string }
 
-export type NodeMediaOutput = {  }
+export type NodeMediaOutput = { "media": Array<{ "node": string; "title": string; "mime": (string) | (null); "size": number; "url": string; "expires": number }> }
 
-export type NodeMediaError = never
+export type NodeMediaError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeMedia: Operation<NodeMediaInput, NodeMediaOutput, NodeMediaError> = {
   id: "node_media",
@@ -356,16 +416,16 @@ const operationNodeMedia: Operation<NodeMediaInput, NodeMediaOutput, NodeMediaEr
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
   validateInput(value): asserts value is NodeMediaInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_media input') },
-  validateOutput(value): asserts value is NodeMediaOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_media output') },
+  validateOutput(value): asserts value is NodeMediaOutput { assertSchema(value, {"$defs":{"MediaItem":{"properties":{"node":{"title":"Node","type":"string"},"title":{"title":"Title","type":"string"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"size":{"title":"Size","type":"integer"},"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["node","title","mime","size","url","expires"],"title":"MediaItem","type":"object"}},"properties":{"media":{"items":{"$ref":"#/$defs/MediaItem"},"title":"Media","type":"array"}},"required":["media"],"title":"MediaList","type":"object"}, 'node_media output') },
 }
 
-export type NodePreviewInput = { "node": string }
+export type NodePreviewInput = { "image": string; "mime": string; "node": string }
 
-export type NodePreviewOutput = {  }
+export type NodePreviewOutput = { "preview": ({ "url": string; "expires": number }) | (null) }
 
-export type NodePreviewError = never
+export type NodePreviewError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden"
 
 const operationNodePreview: Operation<NodePreviewInput, NodePreviewOutput, NodePreviewError> = {
   id: "node_preview",
@@ -376,14 +436,14 @@ const operationNodePreview: Operation<NodePreviewInput, NodePreviewOutput, NodeP
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodePreviewInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_preview input') },
-  validateOutput(value): asserts value is NodePreviewOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_preview output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden"],
+  validateInput(value): asserts value is NodePreviewInput { assertSchema(value, {"type":"object","properties":{"image":{"title":"Image","type":"string"},"mime":{"title":"Mime","type":"string"},"node":{"type":"string"}},"required":["image","mime","node"],"additionalProperties":false,"$defs":{}}, 'node_preview input') },
+  validateOutput(value): asserts value is NodePreviewOutput { assertSchema(value, {"$defs":{"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]}},"required":["preview"],"title":"PreviewAnswer","type":"object"}, 'node_preview output') },
 }
 
-export type UploadCreateInput = { "parent": string; "filename": string; "size": number; "mime"?: string; "replaces"?: string }
+export type UploadCreateInput = { "parent_node": string; "filename": string; "size": number; "mime"?: string; "replaces"?: string }
 
-export type UploadCreateOutput = {  }
+export type UploadCreateOutput = ({ "upload_id": string; "mode": "chunked" }) | ({ "upload_id": string; "mode": "direct"; "url": string; "fields": { [key: string]: string } })
 
 export type UploadCreateError = "DriveNotFound" | "DriveForbidden" | "DriveConflict" | "DriveOverQuota" | "DriveFileTooLarge"
 
@@ -397,15 +457,15 @@ const operationUploadCreate: Operation<UploadCreateInput, UploadCreateOutput, Up
   nodeParams: [],
   entity: null,
   errors: ["DriveNotFound","DriveForbidden","DriveConflict","DriveOverQuota","DriveFileTooLarge"],
-  validateInput(value): asserts value is UploadCreateInput { assertSchema(value, {"type":"object","properties":{"parent":{"title":"Parent","type":"string"},"filename":{"title":"Filename","type":"string"},"size":{"title":"Size","type":"integer"},"mime":{"title":"Mime","type":"string"},"replaces":{"title":"Replaces","type":"string"}},"required":["parent","filename","size"],"additionalProperties":false,"$defs":{}}, 'upload_create input') },
-  validateOutput(value): asserts value is UploadCreateOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'upload_create output') },
+  validateInput(value): asserts value is UploadCreateInput { assertSchema(value, {"type":"object","properties":{"parent_node":{"title":"Parent Node","type":"string"},"filename":{"title":"Filename","type":"string"},"size":{"title":"Size","type":"integer"},"mime":{"title":"Mime","type":"string"},"replaces":{"title":"Replaces","type":"string"}},"required":["parent_node","filename","size"],"additionalProperties":false,"$defs":{}}, 'upload_create input') },
+  validateOutput(value): asserts value is UploadCreateOutput { assertSchema(value, {"$defs":{"ChunkedUpload":{"description":"A session that takes its bytes through `PUT /uploads/<id>/chunk`.","properties":{"upload_id":{"title":"Upload Id","type":"string"},"mode":{"const":"chunked","title":"Mode","type":"string"}},"required":["upload_id","mode"],"title":"ChunkedUpload","type":"object"},"DirectUpload":{"description":"A session that takes its bytes at the storage `url`, `fields` first.","properties":{"upload_id":{"title":"Upload Id","type":"string"},"mode":{"const":"direct","title":"Mode","type":"string"},"url":{"title":"Url","type":"string"},"fields":{"additionalProperties":{"type":"string"},"title":"Fields","type":"object"}},"required":["upload_id","mode","url","fields"],"title":"DirectUpload","type":"object"}},"anyOf":[{"$ref":"#/$defs/ChunkedUpload"},{"$ref":"#/$defs/DirectUpload"}]}, 'upload_create output') },
 }
 
-export type UploadChunkInput = { "upload_id": string }
+export type UploadChunkInput = { "offset": number; "upload_id": string; "chunk": unknown } & { chunk: Blob }
 
-export type UploadChunkOutput = {  }
+export type UploadChunkOutput = { "upload_id": string; "received": number }
 
-export type UploadChunkError = never
+export type UploadChunkError = "DriveNotFound" | "DriveForbidden" | "DriveConflict" | "DriveFileTooLarge"
 
 const operationUploadChunk: Operation<UploadChunkInput, UploadChunkOutput, UploadChunkError> = {
   id: "upload_chunk",
@@ -416,16 +476,17 @@ const operationUploadChunk: Operation<UploadChunkInput, UploadChunkOutput, Uploa
   pathParams: ["upload_id"],
   nodeParams: [],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is UploadChunkInput { assertSchema(value, {"type":"object","properties":{"upload_id":{"type":"string"}},"required":["upload_id"],"additionalProperties":false,"$defs":{}}, 'upload_chunk input') },
-  validateOutput(value): asserts value is UploadChunkOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'upload_chunk output') },
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict","DriveFileTooLarge"],
+  body: 'chunk',
+  validateInput(value): asserts value is UploadChunkInput { assertSchema(value, {"type":"object","properties":{"offset":{"title":"Offset","type":"integer"},"upload_id":{"type":"string"},"chunk":{}},"required":["offset","upload_id","chunk"],"additionalProperties":false,"$defs":{}}, 'upload_chunk input') },
+  validateOutput(value): asserts value is UploadChunkOutput { assertSchema(value, {"properties":{"upload_id":{"title":"Upload Id","type":"string"},"received":{"title":"Received","type":"integer"}},"required":["upload_id","received"],"title":"UploadProgress","type":"object"}, 'upload_chunk output') },
 }
 
-export type UploadFinishInput = { "upload_id": string }
+export type UploadFinishInput = { "parent_node"?: string; "title"?: string; "replaces"?: string; "checksum"?: string; "content_modified"?: string; "upload_id": string }
 
-export type UploadFinishOutput = {  }
+export type UploadFinishOutput = { "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }
 
-export type UploadFinishError = never
+export type UploadFinishError = "DriveNotFound" | "DriveForbidden" | "DriveConflict" | "DriveOverQuota" | "DriveFileTooLarge"
 
 const operationUploadFinish: Operation<UploadFinishInput, UploadFinishOutput, UploadFinishError> = {
   id: "upload_finish",
@@ -436,16 +497,16 @@ const operationUploadFinish: Operation<UploadFinishInput, UploadFinishOutput, Up
   pathParams: ["upload_id"],
   nodeParams: [],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is UploadFinishInput { assertSchema(value, {"type":"object","properties":{"upload_id":{"type":"string"}},"required":["upload_id"],"additionalProperties":false,"$defs":{}}, 'upload_finish input') },
-  validateOutput(value): asserts value is UploadFinishOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'upload_finish output') },
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict","DriveOverQuota","DriveFileTooLarge"],
+  validateInput(value): asserts value is UploadFinishInput { assertSchema(value, {"type":"object","properties":{"parent_node":{"title":"Parent Node","type":"string"},"title":{"title":"Title","type":"string"},"replaces":{"title":"Replaces","type":"string"},"checksum":{"title":"Checksum","type":"string"},"content_modified":{"title":"Content Modified","type":"string"},"upload_id":{"type":"string"}},"required":["upload_id"],"additionalProperties":false,"$defs":{}}, 'upload_finish input') },
+  validateOutput(value): asserts value is UploadFinishOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"}, 'upload_finish output') },
 }
 
-export type NodeActivityInput = { "node": string }
+export type NodeActivityInput = { "limit"?: number; "cursor"?: string; "node": string }
 
-export type NodeActivityOutput = {  }
+export type NodeActivityOutput = { "rows": Array<{ "name": string; "node": string; "action": string; "actor": string; "at": (string) | (null); "via_link": (string) | (null); "client": (string) | (null); "detail": {  } }>; "next_cursor": (string) | (null) }
 
-export type NodeActivityError = never
+export type NodeActivityError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodeActivity: Operation<NodeActivityInput, NodeActivityOutput, NodeActivityError> = {
   id: "node_activity",
@@ -456,16 +517,16 @@ const operationNodeActivity: Operation<NodeActivityInput, NodeActivityOutput, No
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeActivityInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_activity input') },
-  validateOutput(value): asserts value is NodeActivityOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_activity output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is NodeActivityInput { assertSchema(value, {"type":"object","properties":{"limit":{"title":"Limit","type":"integer"},"cursor":{"title":"Cursor","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_activity input') },
+  validateOutput(value): asserts value is NodeActivityOutput { assertSchema(value, {"$defs":{"ActivityShape":{"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"action":{"title":"Action","type":"string"},"actor":{"title":"Actor","type":"string"},"at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"At"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"client":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Client"},"detail":{"additionalProperties":true,"title":"Detail","type":"object"}},"required":["name","node","action","actor","at","via_link","client","detail"],"title":"ActivityShape","type":"object"}},"properties":{"rows":{"items":{"$ref":"#/$defs/ActivityShape"},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"Page","type":"object"}, 'node_activity output') },
 }
 
 export type NodeVisitInput = { "node": string }
 
-export type NodeVisitOutput = {  }
+export type NodeVisitOutput = { "count": number }
 
-export type NodeVisitError = never
+export type NodeVisitError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeVisit: Operation<NodeVisitInput, NodeVisitOutput, NodeVisitError> = {
   id: "node_visit",
@@ -476,16 +537,16 @@ const operationNodeVisit: Operation<NodeVisitInput, NodeVisitOutput, NodeVisitEr
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
   validateInput(value): asserts value is NodeVisitInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_visit input') },
-  validateOutput(value): asserts value is NodeVisitOutput { assertSchema(value, {"properties":{},"title":"Empty","type":"object"}, 'node_visit output') },
+  validateOutput(value): asserts value is NodeVisitOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'node_visit output') },
 }
 
 export type NodePutFavouriteInput = { "node": string }
 
-export type NodePutFavouriteOutput = {  }
+export type NodePutFavouriteOutput = { "count": number }
 
-export type NodePutFavouriteError = "DriveForbidden"
+export type NodePutFavouriteError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden"
 
 const operationNodePutFavourite: Operation<NodePutFavouriteInput, NodePutFavouriteOutput, NodePutFavouriteError> = {
   id: "node_put_favourite",
@@ -496,16 +557,16 @@ const operationNodePutFavourite: Operation<NodePutFavouriteInput, NodePutFavouri
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: ["DriveForbidden"],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden"],
   validateInput(value): asserts value is NodePutFavouriteInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_put_favourite input') },
-  validateOutput(value): asserts value is NodePutFavouriteOutput { assertSchema(value, {"properties":{},"title":"Empty","type":"object"}, 'node_put_favourite output') },
+  validateOutput(value): asserts value is NodePutFavouriteOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'node_put_favourite output') },
 }
 
 export type NodeDeleteFavouriteInput = { "node": string }
 
-export type NodeDeleteFavouriteOutput = {  }
+export type NodeDeleteFavouriteOutput = { "count": number }
 
-export type NodeDeleteFavouriteError = never
+export type NodeDeleteFavouriteError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired"
 
 const operationNodeDeleteFavourite: Operation<NodeDeleteFavouriteInput, NodeDeleteFavouriteOutput, NodeDeleteFavouriteError> = {
   id: "node_delete_favourite",
@@ -516,16 +577,16 @@ const operationNodeDeleteFavourite: Operation<NodeDeleteFavouriteInput, NodeDele
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired"],
   validateInput(value): asserts value is NodeDeleteFavouriteInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_delete_favourite input') },
-  validateOutput(value): asserts value is NodeDeleteFavouriteOutput { assertSchema(value, {"properties":{},"title":"Empty","type":"object"}, 'node_delete_favourite output') },
+  validateOutput(value): asserts value is NodeDeleteFavouriteOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'node_delete_favourite output') },
 }
 
-export type NodeGrantsInput = { "node": string }
+export type NodeGrantsInput = { "inherited"?: boolean; "principal"?: string; "node": string }
 
-export type NodeGrantsOutput = {  }
+export type NodeGrantsOutput = { "grants": Array<{ "name": string; "node": string; "principal": string; "role": number; "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "expires_on": (string) | (null); "has_password": boolean; "sent_to": (string) | (null); "url"?: string }>; "owner": ({ "id": string; "full_name": string; "user_image": (string) | (null) }) | (null); "inherited"?: Array<{ "grant": ({ "name": string; "node": string; "principal": string; "role": number; "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "expires_on": (string) | (null); "has_password": boolean; "sent_to": (string) | (null); "url"?: string }) | ({ "node": string; "principal": "$LINK"; "role": number; "expires_on": (string) | (null); "has_password": boolean }); "redacted": boolean; "source_node": string; "source_title": string }>; "explain"?: { "role": number; "source": string; "rows": Array<{ "node": string; "depth": number; "principal": string; "role": number; "expires_on": (string) | (null); "pass": number; "held": boolean; "winner": boolean }> } }
 
-export type NodeGrantsError = never
+export type NodeGrantsError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden"
 
 const operationNodeGrants: Operation<NodeGrantsInput, NodeGrantsOutput, NodeGrantsError> = {
   id: "node_grants",
@@ -536,16 +597,16 @@ const operationNodeGrants: Operation<NodeGrantsInput, NodeGrantsOutput, NodeGran
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeGrantsInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_grants input') },
-  validateOutput(value): asserts value is NodeGrantsOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_grants output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden"],
+  validateInput(value): asserts value is NodeGrantsInput { assertSchema(value, {"type":"object","properties":{"inherited":{"title":"Inherited","type":"boolean"},"principal":{"title":"Principal","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_grants input') },
+  validateOutput(value): asserts value is NodeGrantsOutput { assertSchema(value, {"$defs":{"ExplainRowShape":{"properties":{"node":{"title":"Node","type":"string"},"depth":{"title":"Depth","type":"integer"},"principal":{"title":"Principal","type":"string"},"role":{"title":"Role","type":"integer"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"pass":{"title":"Pass","type":"integer"},"held":{"title":"Held","type":"boolean"},"winner":{"title":"Winner","type":"boolean"}},"required":["node","depth","principal","role","expires_on","pass","held","winner"],"title":"ExplainRowShape","type":"object"},"ExplainShape":{"properties":{"role":{"title":"Role","type":"integer"},"source":{"title":"Source","type":"string"},"rows":{"items":{"$ref":"#/$defs/ExplainRowShape"},"title":"Rows","type":"array"}},"required":["role","source","rows"],"title":"ExplainShape","type":"object"},"GrantShape":{"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"principal":{"title":"Principal","type":"string"},"role":{"title":"Role","type":"integer"},"person":{"$ref":"#/$defs/Person"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"has_password":{"title":"Has Password","type":"boolean"},"sent_to":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Sent To"},"url":{"title":"Url","type":"string"}},"required":["name","node","principal","role","expires_on","has_password","sent_to"],"title":"GrantShape","type":"object"},"InheritedGrantShape":{"properties":{"grant":{"anyOf":[{"$ref":"#/$defs/GrantShape"},{"$ref":"#/$defs/RedactedGrantShape"}],"title":"Grant"},"redacted":{"title":"Redacted","type":"boolean"},"source_node":{"title":"Source Node","type":"string"},"source_title":{"title":"Source Title","type":"string"}},"required":["grant","redacted","source_node","source_title"],"title":"InheritedGrantShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"RedactedGrantShape":{"description":"An ancestor's link the caller does not manage: no name, URL, or recipient.","properties":{"node":{"title":"Node","type":"string"},"principal":{"const":"$LINK","title":"Principal","type":"string"},"role":{"title":"Role","type":"integer"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"has_password":{"title":"Has Password","type":"boolean"}},"required":["node","principal","role","expires_on","has_password"],"title":"RedactedGrantShape","type":"object"}},"description":"`GET /nodes/<id>/grants`: the local rows, who owns the tree, and the asked-for extras.","properties":{"grants":{"items":{"$ref":"#/$defs/GrantShape"},"title":"Grants","type":"array"},"owner":{"anyOf":[{"$ref":"#/$defs/Person"},{"type":"null"}]},"inherited":{"items":{"$ref":"#/$defs/InheritedGrantShape"},"title":"Inherited","type":"array"},"explain":{"$ref":"#/$defs/ExplainShape"}},"required":["grants","owner"],"title":"GrantsShape","type":"object"}, 'node_grants output') },
 }
 
-export type NodePutGrantInput = { "node": string; "principal": string }
+export type NodePutGrantInput = { "role": number; "expires_on"?: (string) | (null); "password"?: (string) | (null); "send_to"?: string; "notify"?: boolean; "node": string; "principal": string }
 
-export type NodePutGrantOutput = {  }
+export type NodePutGrantOutput = { "name": string; "node": string; "principal": string; "role": number; "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "expires_on": (string) | (null); "has_password": boolean; "sent_to": (string) | (null); "url"?: string }
 
-export type NodePutGrantError = never
+export type NodePutGrantError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden"
 
 const operationNodePutGrant: Operation<NodePutGrantInput, NodePutGrantOutput, NodePutGrantError> = {
   id: "node_put_grant",
@@ -556,16 +617,16 @@ const operationNodePutGrant: Operation<NodePutGrantInput, NodePutGrantOutput, No
   pathParams: ["node","principal"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodePutGrantInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"principal":{"type":"string"}},"required":["node","principal"],"additionalProperties":false,"$defs":{}}, 'node_put_grant input') },
-  validateOutput(value): asserts value is NodePutGrantOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_put_grant output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden"],
+  validateInput(value): asserts value is NodePutGrantInput { assertSchema(value, {"type":"object","properties":{"role":{"title":"Role","type":"integer"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"password":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Password"},"send_to":{"title":"Send To","type":"string"},"notify":{"title":"Notify","type":"boolean"},"node":{"type":"string"},"principal":{"type":"string"}},"required":["role","node","principal"],"additionalProperties":false,"$defs":{}}, 'node_put_grant input') },
+  validateOutput(value): asserts value is NodePutGrantOutput { assertSchema(value, {"$defs":{"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"principal":{"title":"Principal","type":"string"},"role":{"title":"Role","type":"integer"},"person":{"$ref":"#/$defs/Person"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"has_password":{"title":"Has Password","type":"boolean"},"sent_to":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Sent To"},"url":{"title":"Url","type":"string"}},"required":["name","node","principal","role","expires_on","has_password","sent_to"],"title":"GrantShape","type":"object"}, 'node_put_grant output') },
 }
 
-export type NodeDeleteGrantInput = { "node": string; "principal": string }
+export type NodeDeleteGrantInput = { "below"?: boolean; "node": string; "principal": string }
 
-export type NodeDeleteGrantOutput = {  }
+export type NodeDeleteGrantOutput = { "count": number }
 
-export type NodeDeleteGrantError = never
+export type NodeDeleteGrantError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden"
 
 const operationNodeDeleteGrant: Operation<NodeDeleteGrantInput, NodeDeleteGrantOutput, NodeDeleteGrantError> = {
   id: "node_delete_grant",
@@ -576,16 +637,56 @@ const operationNodeDeleteGrant: Operation<NodeDeleteGrantInput, NodeDeleteGrantO
   pathParams: ["node","principal"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeDeleteGrantInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"principal":{"type":"string"}},"required":["node","principal"],"additionalProperties":false,"$defs":{}}, 'node_delete_grant input') },
-  validateOutput(value): asserts value is NodeDeleteGrantOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_delete_grant output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden"],
+  validateInput(value): asserts value is NodeDeleteGrantInput { assertSchema(value, {"type":"object","properties":{"below":{"title":"Below","type":"boolean"},"node":{"type":"string"},"principal":{"type":"string"}},"required":["node","principal"],"additionalProperties":false,"$defs":{}}, 'node_delete_grant input') },
+  validateOutput(value): asserts value is NodeDeleteGrantOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'node_delete_grant output') },
+}
+
+export type GrantPatchInput = { "role": number; "expires_on"?: (string) | (null); "password"?: (string) | (null); "grant": string }
+
+export type GrantPatchOutput = { "name": string; "node": string; "principal": string; "role": number; "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "expires_on": (string) | (null); "has_password": boolean; "sent_to": (string) | (null); "url"?: string }
+
+export type GrantPatchError = "DriveNotFound" | "DriveForbidden"
+
+const operationGrantPatch: Operation<GrantPatchInput, GrantPatchOutput, GrantPatchError> = {
+  id: "grant_patch",
+  owner: "drive",
+  method: "PATCH",
+  path: "grants/{grant}",
+  prefix: "/api/suite/drive/",
+  pathParams: ["grant"],
+  nodeParams: [],
+  entity: null,
+  errors: ["DriveNotFound","DriveForbidden"],
+  validateInput(value): asserts value is GrantPatchInput { assertSchema(value, {"type":"object","properties":{"role":{"title":"Role","type":"integer"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"password":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Password"},"grant":{"type":"string"}},"required":["role","grant"],"additionalProperties":false,"$defs":{}}, 'grant_patch input') },
+  validateOutput(value): asserts value is GrantPatchOutput { assertSchema(value, {"$defs":{"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"principal":{"title":"Principal","type":"string"},"role":{"title":"Role","type":"integer"},"person":{"$ref":"#/$defs/Person"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"has_password":{"title":"Has Password","type":"boolean"},"sent_to":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Sent To"},"url":{"title":"Url","type":"string"}},"required":["name","node","principal","role","expires_on","has_password","sent_to"],"title":"GrantShape","type":"object"}, 'grant_patch output') },
+}
+
+export type GrantDeleteInput = { "grant": string }
+
+export type GrantDeleteOutput = { "count": number }
+
+export type GrantDeleteError = "DriveNotFound" | "DriveForbidden"
+
+const operationGrantDelete: Operation<GrantDeleteInput, GrantDeleteOutput, GrantDeleteError> = {
+  id: "grant_delete",
+  owner: "drive",
+  method: "DELETE",
+  path: "grants/{grant}",
+  prefix: "/api/suite/drive/",
+  pathParams: ["grant"],
+  nodeParams: [],
+  entity: null,
+  errors: ["DriveNotFound","DriveForbidden"],
+  validateInput(value): asserts value is GrantDeleteInput { assertSchema(value, {"type":"object","properties":{"grant":{"type":"string"}},"required":["grant"],"additionalProperties":false,"$defs":{}}, 'grant_delete input') },
+  validateOutput(value): asserts value is GrantDeleteOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'grant_delete output') },
 }
 
 export type GrantRotateInput = { "grant": string }
 
-export type GrantRotateOutput = {  }
+export type GrantRotateOutput = { "name": string; "node": string; "principal": string; "role": number; "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "expires_on": (string) | (null); "has_password": boolean; "sent_to": (string) | (null); "url"?: string }
 
-export type GrantRotateError = never
+export type GrantRotateError = "DriveNotFound" | "DriveForbidden"
 
 const operationGrantRotate: Operation<GrantRotateInput, GrantRotateOutput, GrantRotateError> = {
   id: "grant_rotate",
@@ -596,34 +697,34 @@ const operationGrantRotate: Operation<GrantRotateInput, GrantRotateOutput, Grant
   pathParams: ["grant"],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveForbidden"],
   validateInput(value): asserts value is GrantRotateInput { assertSchema(value, {"type":"object","properties":{"grant":{"type":"string"}},"required":["grant"],"additionalProperties":false,"$defs":{}}, 'grant_rotate input') },
-  validateOutput(value): asserts value is GrantRotateOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'grant_rotate output') },
+  validateOutput(value): asserts value is GrantRotateOutput { assertSchema(value, {"$defs":{"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"principal":{"title":"Principal","type":"string"},"role":{"title":"Role","type":"integer"},"person":{"$ref":"#/$defs/Person"},"expires_on":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires On"},"has_password":{"title":"Has Password","type":"boolean"},"sent_to":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Sent To"},"url":{"title":"Url","type":"string"}},"required":["name","node","principal","role","expires_on","has_password","sent_to"],"title":"GrantShape","type":"object"}, 'grant_rotate output') },
 }
 
-export type LinkUnlockInput = { "token": string }
+export type LinkUnlockInput = { "token": string; "password": string }
 
-export type LinkUnlockOutput = {  }
+export type LinkUnlockOutput = { "ticket": string; "expires": number }
 
-export type LinkUnlockError = never
+export type LinkUnlockError = "DriveNotFound" | "DriveForbidden" | "DriveLocked" | "DriveLinkExpired" | "RateLimitExceededError"
 
 const operationLinkUnlock: Operation<LinkUnlockInput, LinkUnlockOutput, LinkUnlockError> = {
   id: "link_unlock",
   owner: "drive",
   method: "POST",
-  path: "links/{token}/unlock",
+  path: "links/unlock",
   prefix: "/api/suite/drive/",
-  pathParams: ["token"],
+  pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is LinkUnlockInput { assertSchema(value, {"type":"object","properties":{"token":{"type":"string"}},"required":["token"],"additionalProperties":false,"$defs":{}}, 'link_unlock input') },
-  validateOutput(value): asserts value is LinkUnlockOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'link_unlock output') },
+  errors: ["DriveNotFound","DriveForbidden","DriveLocked","DriveLinkExpired","RateLimitExceededError"],
+  validateInput(value): asserts value is LinkUnlockInput { assertSchema(value, {"type":"object","properties":{"token":{"title":"Token","type":"string"},"password":{"title":"Password","type":"string"}},"required":["token","password"],"additionalProperties":false,"$defs":{}}, 'link_unlock input') },
+  validateOutput(value): asserts value is LinkUnlockOutput { assertSchema(value, {"properties":{"ticket":{"title":"Ticket","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["ticket","expires"],"title":"UnlockTicket","type":"object"}, 'link_unlock output') },
 }
 
-export type ViewClearRecentsInput = Record<string, never>
+export type ViewClearRecentsInput = { "nodes"?: Array<string> }
 
-export type ViewClearRecentsOutput = {  }
+export type ViewClearRecentsOutput = { "count": number }
 
 export type ViewClearRecentsError = never
 
@@ -637,15 +738,15 @@ const operationViewClearRecents: Operation<ViewClearRecentsInput, ViewClearRecen
   nodeParams: [],
   entity: null,
   errors: [],
-  validateInput(value): asserts value is ViewClearRecentsInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'view_clear_recents input') },
-  validateOutput(value): asserts value is ViewClearRecentsOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'view_clear_recents output') },
+  validateInput(value): asserts value is ViewClearRecentsInput { assertSchema(value, {"type":"object","properties":{"nodes":{"items":{"type":"string"},"title":"Nodes","type":"array"}},"required":[],"additionalProperties":false,"$defs":{}}, 'view_clear_recents input') },
+  validateOutput(value): asserts value is ViewClearRecentsOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'view_clear_recents output') },
 }
 
 export type ViewListInput = { "limit"?: number; "cursor"?: string; "root"?: string; "content_doctype"?: string; "term"?: string; "type"?: string; "expand"?: string; "view": string }
 
-export type ViewListOutput = { "rows": Array<({ "name": string; "title": string; "kind": string; "parent": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": string; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }) | ({ "root": string; "user": (string) | (null); "used_bytes": number; "quota_bytes": number })>; "next_cursor": (string) | (null) }
+export type ViewListOutput = { "rows": Array<({ "name": string; "title": string; "kind": string; "parent_node": (string) | (null); "root": string; "state": string; "trash_root": (string) | (null); "size": number; "mime": (string) | (null); "url": (string) | (null); "content_doctype": (string) | (null); "content_docname": (string) | (null); "is_template": number; "owner": { "id": string; "full_name": string; "user_image": (string) | (null) }; "creation": (string) | (null); "modified": (string) | (null); "content_modified": (string) | (null); "access"?: { "role"?: number; "via_link"?: (string) | (null); "source_node"?: (string) | (null); "source_principal"?: (string) | (null) }; "breadcrumbs"?: Array<{ "name": string; "title": string }>; "preview"?: ({ "url": string; "expires": number }) | (null); "opened_at"?: (string) | (null); "favourite"?: boolean }) | ({ "root": string; "user": (string) | (null); "used_bytes": number; "quota_bytes": number })>; "next_cursor": (string) | (null) }
 
-export type ViewListError = never
+export type ViewListError = "DriveNotFound" | "DriveForbidden"
 
 const operationViewList: Operation<ViewListInput, ViewListOutput, ViewListError> = {
   id: "view_list",
@@ -656,16 +757,16 @@ const operationViewList: Operation<ViewListInput, ViewListOutput, ViewListError>
   pathParams: ["view"],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveForbidden"],
   validateInput(value): asserts value is ViewListInput { assertSchema(value, {"type":"object","properties":{"limit":{"title":"Limit","type":"integer"},"cursor":{"title":"Cursor","type":"string"},"root":{"title":"Root","type":"string"},"content_doctype":{"title":"Content Doctype","type":"string"},"term":{"title":"Term","type":"string"},"type":{"title":"Type","type":"string"},"expand":{"title":"Expand","type":"string"},"view":{"type":"string"}},"required":["view"],"additionalProperties":false,"$defs":{}}, 'view_list input') },
-  validateOutput(value): asserts value is ViewListOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"ArchivedRootShape":{"properties":{"root":{"title":"Root","type":"string"},"user":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User"},"used_bytes":{"title":"Used Bytes","type":"integer"},"quota_bytes":{"title":"Quota Bytes","type":"integer"}},"required":["root","user","used_bytes","quota_bytes"],"title":"ArchivedRootShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"NodeShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"title":"Owner","type":"string"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"rows":{"items":{"anyOf":[{"$ref":"#/$defs/NodeShape"},{"$ref":"#/$defs/ArchivedRootShape"}]},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"Page","type":"object"}, 'view_list output') },
+  validateOutput(value): asserts value is ViewListOutput { assertSchema(value, {"$defs":{"AccessShape":{"properties":{"role":{"title":"Role","type":"integer"},"via_link":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Via Link"},"source_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Node"},"source_principal":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Source Principal"}},"title":"AccessShape","type":"object"},"ArchivedRootShape":{"properties":{"root":{"title":"Root","type":"string"},"user":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User"},"used_bytes":{"title":"Used Bytes","type":"integer"},"quota_bytes":{"title":"Quota Bytes","type":"integer"}},"required":["root","user","used_bytes","quota_bytes"],"title":"ArchivedRootShape","type":"object"},"BreadcrumbShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"}},"required":["name","title"],"title":"BreadcrumbShape","type":"object"},"NodeShape":{"properties":{"name":{"title":"Name","type":"string"},"title":{"title":"Title","type":"string"},"kind":{"title":"Kind","type":"string"},"parent_node":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Parent Node"},"root":{"title":"Root","type":"string"},"state":{"title":"State","type":"string"},"trash_root":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Trash Root"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"content_doctype":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Doctype"},"content_docname":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Docname"},"is_template":{"title":"Is Template","type":"integer"},"owner":{"$ref":"#/$defs/Person"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"},"content_modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Content Modified"},"access":{"$ref":"#/$defs/AccessShape"},"breadcrumbs":{"items":{"$ref":"#/$defs/BreadcrumbShape"},"title":"Breadcrumbs","type":"array"},"preview":{"anyOf":[{"$ref":"#/$defs/PreviewShape"},{"type":"null"}]},"opened_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Opened At"},"favourite":{"title":"Favourite","type":"boolean"}},"required":["name","title","kind","parent_node","root","state","trash_root","size","mime","url","content_doctype","content_docname","is_template","owner","creation","modified","content_modified"],"title":"NodeShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"PreviewShape":{"properties":{"url":{"title":"Url","type":"string"},"expires":{"title":"Expires","type":"integer"}},"required":["url","expires"],"title":"PreviewShape","type":"object"}},"properties":{"rows":{"items":{"anyOf":[{"$ref":"#/$defs/NodeShape"},{"$ref":"#/$defs/ArchivedRootShape"}]},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"Page","type":"object"}, 'view_list output') },
 }
 
-export type NodeVersionsInput = { "node": string }
+export type NodeVersionsInput = { "limit"?: number; "cursor"?: string; "node": string }
 
-export type NodeVersionsOutput = {  }
+export type NodeVersionsOutput = { "rows": Array<{ "name": string; "node": string; "seq": number; "kind": string; "label": (string) | (null); "pinned": number; "actor": string; "size": number; "creation": (string) | (null) }>; "next_cursor": (string) | (null) }
 
-export type NodeVersionsError = never
+export type NodeVersionsError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeVersions: Operation<NodeVersionsInput, NodeVersionsOutput, NodeVersionsError> = {
   id: "node_versions",
@@ -676,16 +777,16 @@ const operationNodeVersions: Operation<NodeVersionsInput, NodeVersionsOutput, No
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeVersionsInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_versions input') },
-  validateOutput(value): asserts value is NodeVersionsOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_versions output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
+  validateInput(value): asserts value is NodeVersionsInput { assertSchema(value, {"type":"object","properties":{"limit":{"title":"Limit","type":"integer"},"cursor":{"title":"Cursor","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_versions input') },
+  validateOutput(value): asserts value is NodeVersionsOutput { assertSchema(value, {"$defs":{"VersionShape":{"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"seq":{"title":"Seq","type":"integer"},"kind":{"title":"Kind","type":"string"},"label":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Label"},"pinned":{"title":"Pinned","type":"integer"},"actor":{"title":"Actor","type":"string"},"size":{"title":"Size","type":"integer"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"}},"required":["name","node","seq","kind","label","pinned","actor","size","creation"],"title":"VersionShape","type":"object"}},"properties":{"rows":{"items":{"$ref":"#/$defs/VersionShape"},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"Page","type":"object"}, 'node_versions output') },
 }
 
-export type NodeVersionCreateInput = { "node": string }
+export type NodeVersionCreateInput = { "kind"?: "auto" | "named" | "milestone"; "label"?: string; "node": string }
 
-export type NodeVersionCreateOutput = {  }
+export type NodeVersionCreateOutput = { "name": string; "node": string; "seq": number; "kind": string; "label": (string) | (null); "pinned": number; "actor": string; "size": number; "creation": (string) | (null) }
 
-export type NodeVersionCreateError = never
+export type NodeVersionCreateError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodeVersionCreate: Operation<NodeVersionCreateInput, NodeVersionCreateOutput, NodeVersionCreateError> = {
   id: "node_version_create",
@@ -696,16 +797,16 @@ const operationNodeVersionCreate: Operation<NodeVersionCreateInput, NodeVersionC
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeVersionCreateInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_version_create input') },
-  validateOutput(value): asserts value is NodeVersionCreateOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_version_create output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is NodeVersionCreateInput { assertSchema(value, {"type":"object","properties":{"kind":{"enum":["auto","named","milestone"],"title":"Kind","type":"string"},"label":{"title":"Label","type":"string"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_version_create input') },
+  validateOutput(value): asserts value is NodeVersionCreateOutput { assertSchema(value, {"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"seq":{"title":"Seq","type":"integer"},"kind":{"title":"Kind","type":"string"},"label":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Label"},"pinned":{"title":"Pinned","type":"integer"},"actor":{"title":"Actor","type":"string"},"size":{"title":"Size","type":"integer"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"}},"required":["name","node","seq","kind","label","pinned","actor","size","creation"],"title":"VersionShape","type":"object"}, 'node_version_create output') },
 }
 
-export type NodeVersionPatchInput = { "node": string; "seq": string }
+export type NodeVersionPatchInput = { "label"?: string; "pinned"?: boolean; "node": string; "seq": string }
 
-export type NodeVersionPatchOutput = {  }
+export type NodeVersionPatchOutput = { "name": string; "node": string; "seq": number; "kind": string; "label": (string) | (null); "pinned": number; "actor": string; "size": number; "creation": (string) | (null) }
 
-export type NodeVersionPatchError = never
+export type NodeVersionPatchError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodeVersionPatch: Operation<NodeVersionPatchInput, NodeVersionPatchOutput, NodeVersionPatchError> = {
   id: "node_version_patch",
@@ -716,16 +817,16 @@ const operationNodeVersionPatch: Operation<NodeVersionPatchInput, NodeVersionPat
   pathParams: ["node","seq"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeVersionPatchInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"seq":{"type":"string"}},"required":["node","seq"],"additionalProperties":false,"$defs":{}}, 'node_version_patch input') },
-  validateOutput(value): asserts value is NodeVersionPatchOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_version_patch output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is NodeVersionPatchInput { assertSchema(value, {"type":"object","properties":{"label":{"title":"Label","type":"string"},"pinned":{"title":"Pinned","type":"boolean"},"node":{"type":"string"},"seq":{"type":"string"}},"required":["node","seq"],"additionalProperties":false,"$defs":{}}, 'node_version_patch input') },
+  validateOutput(value): asserts value is NodeVersionPatchOutput { assertSchema(value, {"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"seq":{"title":"Seq","type":"integer"},"kind":{"title":"Kind","type":"string"},"label":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Label"},"pinned":{"title":"Pinned","type":"integer"},"actor":{"title":"Actor","type":"string"},"size":{"title":"Size","type":"integer"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"}},"required":["name","node","seq","kind","label","pinned","actor","size","creation"],"title":"VersionShape","type":"object"}, 'node_version_patch output') },
 }
 
 export type NodeVersionDeleteInput = { "node": string; "seq": string }
 
-export type NodeVersionDeleteOutput = {  }
+export type NodeVersionDeleteOutput = { "count": number }
 
-export type NodeVersionDeleteError = never
+export type NodeVersionDeleteError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodeVersionDelete: Operation<NodeVersionDeleteInput, NodeVersionDeleteOutput, NodeVersionDeleteError> = {
   id: "node_version_delete",
@@ -736,16 +837,16 @@ const operationNodeVersionDelete: Operation<NodeVersionDeleteInput, NodeVersionD
   pathParams: ["node","seq"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
   validateInput(value): asserts value is NodeVersionDeleteInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"seq":{"type":"string"}},"required":["node","seq"],"additionalProperties":false,"$defs":{}}, 'node_version_delete input') },
-  validateOutput(value): asserts value is NodeVersionDeleteOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_version_delete output') },
+  validateOutput(value): asserts value is NodeVersionDeleteOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'node_version_delete output') },
 }
 
 export type NodeVersionContentInput = { "node": string; "seq": string }
 
-export type NodeVersionContentOutput = unknown
+export type NodeVersionContentOutput = Blob
 
-export type NodeVersionContentError = never
+export type NodeVersionContentError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeVersionContent: Operation<NodeVersionContentInput, NodeVersionContentOutput, NodeVersionContentError> = {
   id: "node_version_content",
@@ -756,16 +857,16 @@ const operationNodeVersionContent: Operation<NodeVersionContentInput, NodeVersio
   pathParams: ["node","seq"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
   validateInput(value): asserts value is NodeVersionContentInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"seq":{"type":"string"}},"required":["node","seq"],"additionalProperties":false,"$defs":{}}, 'node_version_content input') },
-  validateOutput(value): asserts value is NodeVersionContentOutput { assertSchema(value, {}, 'node_version_content output') },
+  validateOutput(value): asserts value is NodeVersionContentOutput { void value },
 }
 
 export type NodeVersionRestoreInput = { "node": string; "seq": string }
 
-export type NodeVersionRestoreOutput = {  }
+export type NodeVersionRestoreOutput = ({ "name": string; "node": string; "seq": number; "kind": string; "label": (string) | (null); "pinned": number; "actor": string; "size": number; "creation": (string) | (null) }) | (null)
 
-export type NodeVersionRestoreError = never
+export type NodeVersionRestoreError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodeVersionRestore: Operation<NodeVersionRestoreInput, NodeVersionRestoreOutput, NodeVersionRestoreError> = {
   id: "node_version_restore",
@@ -776,16 +877,16 @@ const operationNodeVersionRestore: Operation<NodeVersionRestoreInput, NodeVersio
   pathParams: ["node","seq"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
   validateInput(value): asserts value is NodeVersionRestoreInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"seq":{"type":"string"}},"required":["node","seq"],"additionalProperties":false,"$defs":{}}, 'node_version_restore input') },
-  validateOutput(value): asserts value is NodeVersionRestoreOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_version_restore output') },
+  validateOutput(value): asserts value is NodeVersionRestoreOutput { assertSchema(value, {"$defs":{"VersionShape":{"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"seq":{"title":"Seq","type":"integer"},"kind":{"title":"Kind","type":"string"},"label":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Label"},"pinned":{"title":"Pinned","type":"integer"},"actor":{"title":"Actor","type":"string"},"size":{"title":"Size","type":"integer"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"}},"required":["name","node","seq","kind","label","pinned","actor","size","creation"],"title":"VersionShape","type":"object"}},"anyOf":[{"$ref":"#/$defs/VersionShape"},{"type":"null"}]}, 'node_version_restore output') },
 }
 
-export type NodeThreadsInput = { "node": string }
+export type NodeThreadsInput = { "resolved"?: boolean; "node": string }
 
-export type NodeThreadsOutput = {  }
+export type NodeThreadsOutput = { "threads": Array<{ "name": string; "node": string; "anchor": string; "resolved": boolean; "resolved_by": (string) | (null); "resolved_at": (string) | (null); "creation": (string) | (null); "comments": Array<{ "name": string; "thread": string; "node": string; "content": string; "author": string; "author_name": (string) | (null); "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "mentions": Array<string>; "creation": (string) | (null); "modified": (string) | (null) }> }> }
 
-export type NodeThreadsError = never
+export type NodeThreadsError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveConflict"
 
 const operationNodeThreads: Operation<NodeThreadsInput, NodeThreadsOutput, NodeThreadsError> = {
   id: "node_threads",
@@ -796,16 +897,16 @@ const operationNodeThreads: Operation<NodeThreadsInput, NodeThreadsOutput, NodeT
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeThreadsInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_threads input') },
-  validateOutput(value): asserts value is NodeThreadsOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_threads output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveConflict"],
+  validateInput(value): asserts value is NodeThreadsInput { assertSchema(value, {"type":"object","properties":{"resolved":{"title":"Resolved","type":"boolean"},"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_threads input') },
+  validateOutput(value): asserts value is NodeThreadsOutput { assertSchema(value, {"$defs":{"CommentShape":{"properties":{"name":{"title":"Name","type":"string"},"thread":{"title":"Thread","type":"string"},"node":{"title":"Node","type":"string"},"content":{"title":"Content","type":"string"},"author":{"title":"Author","type":"string"},"author_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Author Name"},"person":{"$ref":"#/$defs/Person"},"mentions":{"items":{"type":"string"},"title":"Mentions","type":"array"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"}},"required":["name","thread","node","content","author","author_name","mentions","creation","modified"],"title":"CommentShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"},"ThreadShape":{"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"anchor":{"title":"Anchor","type":"string"},"resolved":{"title":"Resolved","type":"boolean"},"resolved_by":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resolved By"},"resolved_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resolved At"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"comments":{"items":{"$ref":"#/$defs/CommentShape"},"title":"Comments","type":"array"}},"required":["name","node","anchor","resolved","resolved_by","resolved_at","creation","comments"],"title":"ThreadShape","type":"object"}},"properties":{"threads":{"items":{"$ref":"#/$defs/ThreadShape"},"title":"Threads","type":"array"}},"required":["threads"],"title":"ThreadList","type":"object"}, 'node_threads output') },
 }
 
-export type NodeThreadCreateInput = { "node": string }
+export type NodeThreadCreateInput = { "anchor": string; "text": string; "author_name"?: string; "node": string }
 
-export type NodeThreadCreateOutput = {  }
+export type NodeThreadCreateOutput = { "name": string; "node": string; "anchor": string; "resolved": boolean; "resolved_by": (string) | (null); "resolved_at": (string) | (null); "creation": (string) | (null); "comments": Array<{ "name": string; "thread": string; "node": string; "content": string; "author": string; "author_name": (string) | (null); "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "mentions": Array<string>; "creation": (string) | (null); "modified": (string) | (null) }> }
 
-export type NodeThreadCreateError = never
+export type NodeThreadCreateError = "DriveNotFound" | "DriveLocked" | "DriveLinkExpired" | "DriveForbidden" | "DriveConflict"
 
 const operationNodeThreadCreate: Operation<NodeThreadCreateInput, NodeThreadCreateOutput, NodeThreadCreateError> = {
   id: "node_thread_create",
@@ -816,16 +917,16 @@ const operationNodeThreadCreate: Operation<NodeThreadCreateInput, NodeThreadCrea
   pathParams: ["node"],
   nodeParams: ["node"],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is NodeThreadCreateInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'node_thread_create input') },
-  validateOutput(value): asserts value is NodeThreadCreateOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'node_thread_create output') },
+  errors: ["DriveNotFound","DriveLocked","DriveLinkExpired","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is NodeThreadCreateInput { assertSchema(value, {"type":"object","properties":{"anchor":{"title":"Anchor","type":"string"},"text":{"title":"Text","type":"string"},"author_name":{"title":"Author Name","type":"string"},"node":{"type":"string"}},"required":["anchor","text","node"],"additionalProperties":false,"$defs":{}}, 'node_thread_create input') },
+  validateOutput(value): asserts value is NodeThreadCreateOutput { assertSchema(value, {"$defs":{"CommentShape":{"properties":{"name":{"title":"Name","type":"string"},"thread":{"title":"Thread","type":"string"},"node":{"title":"Node","type":"string"},"content":{"title":"Content","type":"string"},"author":{"title":"Author","type":"string"},"author_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Author Name"},"person":{"$ref":"#/$defs/Person"},"mentions":{"items":{"type":"string"},"title":"Mentions","type":"array"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"}},"required":["name","thread","node","content","author","author_name","mentions","creation","modified"],"title":"CommentShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"anchor":{"title":"Anchor","type":"string"},"resolved":{"title":"Resolved","type":"boolean"},"resolved_by":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resolved By"},"resolved_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resolved At"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"comments":{"items":{"$ref":"#/$defs/CommentShape"},"title":"Comments","type":"array"}},"required":["name","node","anchor","resolved","resolved_by","resolved_at","creation","comments"],"title":"ThreadShape","type":"object"}, 'node_thread_create output') },
 }
 
-export type ThreadPatchInput = { "thread": string }
+export type ThreadPatchInput = { "resolved": boolean; "thread": string }
 
-export type ThreadPatchOutput = {  }
+export type ThreadPatchOutput = { "name": string; "node": string; "anchor": string; "resolved": boolean; "resolved_by": (string) | (null); "resolved_at": (string) | (null); "creation": (string) | (null); "comments": Array<{ "name": string; "thread": string; "node": string; "content": string; "author": string; "author_name": (string) | (null); "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "mentions": Array<string>; "creation": (string) | (null); "modified": (string) | (null) }> }
 
-export type ThreadPatchError = never
+export type ThreadPatchError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
 
 const operationThreadPatch: Operation<ThreadPatchInput, ThreadPatchOutput, ThreadPatchError> = {
   id: "thread_patch",
@@ -836,16 +937,16 @@ const operationThreadPatch: Operation<ThreadPatchInput, ThreadPatchOutput, Threa
   pathParams: ["thread"],
   nodeParams: [],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is ThreadPatchInput { assertSchema(value, {"type":"object","properties":{"thread":{"type":"string"}},"required":["thread"],"additionalProperties":false,"$defs":{}}, 'thread_patch input') },
-  validateOutput(value): asserts value is ThreadPatchOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'thread_patch output') },
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is ThreadPatchInput { assertSchema(value, {"type":"object","properties":{"resolved":{"title":"Resolved","type":"boolean"},"thread":{"type":"string"}},"required":["resolved","thread"],"additionalProperties":false,"$defs":{}}, 'thread_patch input') },
+  validateOutput(value): asserts value is ThreadPatchOutput { assertSchema(value, {"$defs":{"CommentShape":{"properties":{"name":{"title":"Name","type":"string"},"thread":{"title":"Thread","type":"string"},"node":{"title":"Node","type":"string"},"content":{"title":"Content","type":"string"},"author":{"title":"Author","type":"string"},"author_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Author Name"},"person":{"$ref":"#/$defs/Person"},"mentions":{"items":{"type":"string"},"title":"Mentions","type":"array"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"}},"required":["name","thread","node","content","author","author_name","mentions","creation","modified"],"title":"CommentShape","type":"object"},"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"anchor":{"title":"Anchor","type":"string"},"resolved":{"title":"Resolved","type":"boolean"},"resolved_by":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resolved By"},"resolved_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resolved At"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"comments":{"items":{"$ref":"#/$defs/CommentShape"},"title":"Comments","type":"array"}},"required":["name","node","anchor","resolved","resolved_by","resolved_at","creation","comments"],"title":"ThreadShape","type":"object"}, 'thread_patch output') },
 }
 
-export type ThreadCommentCreateInput = { "thread": string }
+export type ThreadCommentCreateInput = { "text": string; "author_name"?: string; "thread": string }
 
-export type ThreadCommentCreateOutput = {  }
+export type ThreadCommentCreateOutput = { "name": string; "thread": string; "node": string; "content": string; "author": string; "author_name": (string) | (null); "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "mentions": Array<string>; "creation": (string) | (null); "modified": (string) | (null) }
 
-export type ThreadCommentCreateError = never
+export type ThreadCommentCreateError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
 
 const operationThreadCommentCreate: Operation<ThreadCommentCreateInput, ThreadCommentCreateOutput, ThreadCommentCreateError> = {
   id: "thread_comment_create",
@@ -856,16 +957,16 @@ const operationThreadCommentCreate: Operation<ThreadCommentCreateInput, ThreadCo
   pathParams: ["thread"],
   nodeParams: [],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is ThreadCommentCreateInput { assertSchema(value, {"type":"object","properties":{"thread":{"type":"string"}},"required":["thread"],"additionalProperties":false,"$defs":{}}, 'thread_comment_create input') },
-  validateOutput(value): asserts value is ThreadCommentCreateOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'thread_comment_create output') },
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is ThreadCommentCreateInput { assertSchema(value, {"type":"object","properties":{"text":{"title":"Text","type":"string"},"author_name":{"title":"Author Name","type":"string"},"thread":{"type":"string"}},"required":["text","thread"],"additionalProperties":false,"$defs":{}}, 'thread_comment_create input') },
+  validateOutput(value): asserts value is ThreadCommentCreateOutput { assertSchema(value, {"$defs":{"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"thread":{"title":"Thread","type":"string"},"node":{"title":"Node","type":"string"},"content":{"title":"Content","type":"string"},"author":{"title":"Author","type":"string"},"author_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Author Name"},"person":{"$ref":"#/$defs/Person"},"mentions":{"items":{"type":"string"},"title":"Mentions","type":"array"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"}},"required":["name","thread","node","content","author","author_name","mentions","creation","modified"],"title":"CommentShape","type":"object"}, 'thread_comment_create output') },
 }
 
-export type CommentPatchInput = { "comment": string }
+export type CommentPatchInput = { "text": string; "comment": string }
 
-export type CommentPatchOutput = {  }
+export type CommentPatchOutput = { "name": string; "thread": string; "node": string; "content": string; "author": string; "author_name": (string) | (null); "person"?: { "id": string; "full_name": string; "user_image": (string) | (null) }; "mentions": Array<string>; "creation": (string) | (null); "modified": (string) | (null) }
 
-export type CommentPatchError = never
+export type CommentPatchError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
 
 const operationCommentPatch: Operation<CommentPatchInput, CommentPatchOutput, CommentPatchError> = {
   id: "comment_patch",
@@ -876,16 +977,16 @@ const operationCommentPatch: Operation<CommentPatchInput, CommentPatchOutput, Co
   pathParams: ["comment"],
   nodeParams: [],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is CommentPatchInput { assertSchema(value, {"type":"object","properties":{"comment":{"type":"string"}},"required":["comment"],"additionalProperties":false,"$defs":{}}, 'comment_patch input') },
-  validateOutput(value): asserts value is CommentPatchOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'comment_patch output') },
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is CommentPatchInput { assertSchema(value, {"type":"object","properties":{"text":{"title":"Text","type":"string"},"comment":{"type":"string"}},"required":["text","comment"],"additionalProperties":false,"$defs":{}}, 'comment_patch input') },
+  validateOutput(value): asserts value is CommentPatchOutput { assertSchema(value, {"$defs":{"Person":{"properties":{"id":{"title":"Id","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["id","full_name","user_image"],"title":"Person","type":"object"}},"properties":{"name":{"title":"Name","type":"string"},"thread":{"title":"Thread","type":"string"},"node":{"title":"Node","type":"string"},"content":{"title":"Content","type":"string"},"author":{"title":"Author","type":"string"},"author_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Author Name"},"person":{"$ref":"#/$defs/Person"},"mentions":{"items":{"type":"string"},"title":"Mentions","type":"array"},"creation":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Creation"},"modified":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Modified"}},"required":["name","thread","node","content","author","author_name","mentions","creation","modified"],"title":"CommentShape","type":"object"}, 'comment_patch output') },
 }
 
 export type CommentDeleteInput = { "comment": string }
 
-export type CommentDeleteOutput = {  }
+export type CommentDeleteOutput = { "count": number }
 
-export type CommentDeleteError = never
+export type CommentDeleteError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
 
 const operationCommentDelete: Operation<CommentDeleteInput, CommentDeleteOutput, CommentDeleteError> = {
   id: "comment_delete",
@@ -896,9 +997,9 @@ const operationCommentDelete: Operation<CommentDeleteInput, CommentDeleteOutput,
   pathParams: ["comment"],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
   validateInput(value): asserts value is CommentDeleteInput { assertSchema(value, {"type":"object","properties":{"comment":{"type":"string"}},"required":["comment"],"additionalProperties":false,"$defs":{}}, 'comment_delete input') },
-  validateOutput(value): asserts value is CommentDeleteOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'comment_delete output') },
+  validateOutput(value): asserts value is CommentDeleteOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'comment_delete output') },
 }
 
 export type NotificationsListInput = { "limit"?: number; "cursor"?: string; "unread"?: boolean }
@@ -943,7 +1044,7 @@ const operationNotificationsUnreadCount: Operation<NotificationsUnreadCountInput
 
 export type NotificationsReadNotificationNamesInput = { "notifications": Array<string> }
 
-export type NotificationsReadNotificationNamesOutput = { "read": number }
+export type NotificationsReadNotificationNamesOutput = { "count": number }
 
 export type NotificationsReadNotificationNamesError = never
 
@@ -958,12 +1059,12 @@ const operationNotificationsReadNotificationNames: Operation<NotificationsReadNo
   entity: null,
   errors: [],
   validateInput(value): asserts value is NotificationsReadNotificationNamesInput { assertSchema(value, {"type":"object","properties":{"notifications":{"items":{"type":"string"},"title":"Notifications","type":"array"}},"required":["notifications"],"additionalProperties":false,"$defs":{}}, 'notifications_read.notification_names input') },
-  validateOutput(value): asserts value is NotificationsReadNotificationNamesOutput { assertSchema(value, {"properties":{"read":{"title":"Read","type":"integer"}},"required":["read"],"title":"ReadResult","type":"object"}, 'notifications_read.notification_names output') },
+  validateOutput(value): asserts value is NotificationsReadNotificationNamesOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'notifications_read.notification_names output') },
 }
 
 export type NotificationsReadAllNotificationsInput = { "all": true }
 
-export type NotificationsReadAllNotificationsOutput = { "read": number }
+export type NotificationsReadAllNotificationsOutput = { "count": number }
 
 export type NotificationsReadAllNotificationsError = never
 
@@ -978,7 +1079,7 @@ const operationNotificationsReadAllNotifications: Operation<NotificationsReadAll
   entity: null,
   errors: [],
   validateInput(value): asserts value is NotificationsReadAllNotificationsInput { assertSchema(value, {"type":"object","properties":{"all":{"const":true,"title":"All","type":"boolean"}},"required":["all"],"additionalProperties":false,"$defs":{}}, 'notifications_read.all_notifications input') },
-  validateOutput(value): asserts value is NotificationsReadAllNotificationsOutput { assertSchema(value, {"properties":{"read":{"title":"Read","type":"integer"}},"required":["read"],"title":"ReadResult","type":"object"}, 'notifications_read.all_notifications output') },
+  validateOutput(value): asserts value is NotificationsReadAllNotificationsOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'notifications_read.all_notifications output') },
 }
 
 export type RootsDiscoverInput = Record<string, never>
@@ -1005,7 +1106,7 @@ export type RootUsageInput = { "expand"?: "breakdown"; "root": string }
 
 export type RootUsageOutput = { "used_bytes": number; "reserved_bytes": number; "quota_bytes": (number) | (null); "effective_quota": number; "by_type"?: Array<{ "type": string; "bytes": number }>; "largest"?: Array<{ "node": string; "title": string; "size": number; "mime": (string) | (null); "kind": "file" | "document"; "type": string }> }
 
-export type RootUsageError = never
+export type RootUsageError = "DriveNotFound" | "DriveForbidden"
 
 const operationRootUsage: Operation<RootUsageInput, RootUsageOutput, RootUsageError> = {
   id: "root_usage",
@@ -1016,19 +1117,19 @@ const operationRootUsage: Operation<RootUsageInput, RootUsageOutput, RootUsageEr
   pathParams: ["root"],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveForbidden"],
   validateInput(value): asserts value is RootUsageInput { assertSchema(value, {"type":"object","properties":{"expand":{"const":"breakdown","title":"Expand","type":"string"},"root":{"type":"string"}},"required":["root"],"additionalProperties":false,"$defs":{}}, 'root_usage input') },
   validateOutput(value): asserts value is RootUsageOutput { assertSchema(value, {"$defs":{"LargestNode":{"properties":{"node":{"title":"Node","type":"string"},"title":{"title":"Title","type":"string"},"size":{"title":"Size","type":"integer"},"mime":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Mime"},"kind":{"enum":["file","document"],"title":"Kind","type":"string"},"type":{"title":"Type","type":"string"}},"required":["node","title","size","mime","kind","type"],"title":"LargestNode","type":"object"},"TypeBytes":{"properties":{"type":{"title":"Type","type":"string"},"bytes":{"title":"Bytes","type":"integer"}},"required":["type","bytes"],"title":"TypeBytes","type":"object"}},"properties":{"used_bytes":{"title":"Used Bytes","type":"integer"},"reserved_bytes":{"title":"Reserved Bytes","type":"integer"},"quota_bytes":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Quota Bytes"},"effective_quota":{"title":"Effective Quota","type":"integer"},"by_type":{"items":{"$ref":"#/$defs/TypeBytes"},"title":"By Type","type":"array"},"largest":{"items":{"$ref":"#/$defs/LargestNode"},"title":"Largest","type":"array"}},"required":["used_bytes","reserved_bytes","quota_bytes","effective_quota"],"title":"RootUsage","type":"object"}, 'root_usage output') },
 }
 
-export type RootPatchInput = { "root": string }
+export type RootPatchRootQuotaInput = { "quota_bytes": number; "root": string }
 
-export type RootPatchOutput = {  }
+export type RootPatchRootQuotaOutput = { "name": string; "node": string; "kind": string; "user": (string) | (null); "state": string; "quota_bytes": number; "used_bytes": number; "title": string }
 
-export type RootPatchError = never
+export type RootPatchRootQuotaError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
 
-const operationRootPatch: Operation<RootPatchInput, RootPatchOutput, RootPatchError> = {
-  id: "root_patch",
+const operationRootPatchRootQuota: Operation<RootPatchRootQuotaInput, RootPatchRootQuotaOutput, RootPatchRootQuotaError> = {
+  id: "root_patch.root_quota",
   owner: "drive",
   method: "PATCH",
   path: "roots/{root}",
@@ -1036,16 +1137,36 @@ const operationRootPatch: Operation<RootPatchInput, RootPatchOutput, RootPatchEr
   pathParams: ["root"],
   nodeParams: [],
   entity: null,
-  errors: [],
-  validateInput(value): asserts value is RootPatchInput { assertSchema(value, {"type":"object","properties":{"root":{"type":"string"}},"required":["root"],"additionalProperties":false,"$defs":{}}, 'root_patch input') },
-  validateOutput(value): asserts value is RootPatchOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'root_patch output') },
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is RootPatchRootQuotaInput { assertSchema(value, {"type":"object","properties":{"quota_bytes":{"title":"Quota Bytes","type":"integer"},"root":{"type":"string"}},"required":["quota_bytes","root"],"additionalProperties":false,"$defs":{}}, 'root_patch.root_quota input') },
+  validateOutput(value): asserts value is RootPatchRootQuotaOutput { assertSchema(value, {"description":"One `Drive Root` with its node's title, as `PATCH /roots/<id>` answers it.","properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"kind":{"title":"Kind","type":"string"},"user":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User"},"state":{"title":"State","type":"string"},"quota_bytes":{"title":"Quota Bytes","type":"integer"},"used_bytes":{"title":"Used Bytes","type":"integer"},"title":{"title":"Title","type":"string"}},"required":["name","node","kind","user","state","quota_bytes","used_bytes","title"],"title":"RootShape","type":"object"}, 'root_patch.root_quota output') },
+}
+
+export type RootPatchRootArchiveInput = { "state": "Archived"; "root": string }
+
+export type RootPatchRootArchiveOutput = { "name": string; "node": string; "kind": string; "user": (string) | (null); "state": string; "quota_bytes": number; "used_bytes": number; "title": string }
+
+export type RootPatchRootArchiveError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
+
+const operationRootPatchRootArchive: Operation<RootPatchRootArchiveInput, RootPatchRootArchiveOutput, RootPatchRootArchiveError> = {
+  id: "root_patch.root_archive",
+  owner: "drive",
+  method: "PATCH",
+  path: "roots/{root}",
+  prefix: "/api/suite/drive/",
+  pathParams: ["root"],
+  nodeParams: [],
+  entity: null,
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
+  validateInput(value): asserts value is RootPatchRootArchiveInput { assertSchema(value, {"type":"object","properties":{"state":{"const":"Archived","title":"State","type":"string"},"root":{"type":"string"}},"required":["state","root"],"additionalProperties":false,"$defs":{}}, 'root_patch.root_archive input') },
+  validateOutput(value): asserts value is RootPatchRootArchiveOutput { assertSchema(value, {"description":"One `Drive Root` with its node's title, as `PATCH /roots/<id>` answers it.","properties":{"name":{"title":"Name","type":"string"},"node":{"title":"Node","type":"string"},"kind":{"title":"Kind","type":"string"},"user":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User"},"state":{"title":"State","type":"string"},"quota_bytes":{"title":"Quota Bytes","type":"integer"},"used_bytes":{"title":"Used Bytes","type":"integer"},"title":{"title":"Title","type":"string"}},"required":["name","node","kind","user","state","quota_bytes","used_bytes","title"],"title":"RootShape","type":"object"}, 'root_patch.root_archive output') },
 }
 
 export type RootPurgeInput = { "root": string }
 
-export type RootPurgeOutput = {  }
+export type RootPurgeOutput = { "count": number }
 
-export type RootPurgeError = never
+export type RootPurgeError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
 
 const operationRootPurge: Operation<RootPurgeInput, RootPurgeOutput, RootPurgeError> = {
   id: "root_purge",
@@ -1056,16 +1177,16 @@ const operationRootPurge: Operation<RootPurgeInput, RootPurgeOutput, RootPurgeEr
   pathParams: ["root"],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
   validateInput(value): asserts value is RootPurgeInput { assertSchema(value, {"type":"object","properties":{"root":{"type":"string"}},"required":["root"],"additionalProperties":false,"$defs":{}}, 'root_purge input') },
-  validateOutput(value): asserts value is RootPurgeOutput { assertSchema(value, {"additionalProperties":true,"type":"object"}, 'root_purge output') },
+  validateOutput(value): asserts value is RootPurgeOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'root_purge output') },
 }
 
 export type RootEmptyTrashInput = { "root": string }
 
-export type RootEmptyTrashOutput = { "purged": number }
+export type RootEmptyTrashOutput = { "count": number }
 
-export type RootEmptyTrashError = "DriveForbidden" | "DriveConflict"
+export type RootEmptyTrashError = "DriveNotFound" | "DriveForbidden" | "DriveConflict"
 
 const operationRootEmptyTrash: Operation<RootEmptyTrashInput, RootEmptyTrashOutput, RootEmptyTrashError> = {
   id: "root_empty_trash",
@@ -1076,9 +1197,9 @@ const operationRootEmptyTrash: Operation<RootEmptyTrashInput, RootEmptyTrashOutp
   pathParams: ["root"],
   nodeParams: [],
   entity: null,
-  errors: ["DriveForbidden","DriveConflict"],
+  errors: ["DriveNotFound","DriveForbidden","DriveConflict"],
   validateInput(value): asserts value is RootEmptyTrashInput { assertSchema(value, {"type":"object","properties":{"root":{"type":"string"}},"required":["root"],"additionalProperties":false,"$defs":{}}, 'root_empty_trash input') },
-  validateOutput(value): asserts value is RootEmptyTrashOutput { assertSchema(value, {"properties":{"purged":{"title":"Purged","type":"integer"}},"required":["purged"],"title":"Purged","type":"object"}, 'root_empty_trash output') },
+  validateOutput(value): asserts value is RootEmptyTrashOutput { assertSchema(value, {"description":"The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).","properties":{"count":{"title":"Count","type":"integer"}},"required":["count"],"title":"Count","type":"object"}, 'root_empty_trash output') },
 }
 
 export type SettingsGetInput = Record<string, never>
@@ -1182,7 +1303,12 @@ const operationWebdavGet: Operation<WebdavGetInput, WebdavGetOutput, WebdavGetEr
 }
 
 export const api = {
-  "node_create": operationNodeCreate,
+  "node_create": {
+    "create_folder": operationNodeCreateCreateFolder,
+    "create_file": operationNodeCreateCreateFile,
+    "create_link": operationNodeCreateCreateLink,
+    "create_document": operationNodeCreateCreateDocument
+  },
   "node_batch": operationNodeBatch,
   "node_batch_purge": operationNodeBatchPurge,
   "node_get": operationNodeGet,
@@ -1213,6 +1339,8 @@ export const api = {
   "node_grants": operationNodeGrants,
   "node_put_grant": operationNodePutGrant,
   "node_delete_grant": operationNodeDeleteGrant,
+  "grant_patch": operationGrantPatch,
+  "grant_delete": operationGrantDelete,
   "grant_rotate": operationGrantRotate,
   "link_unlock": operationLinkUnlock,
   "view_clear_recents": operationViewClearRecents,
@@ -1237,7 +1365,10 @@ export const api = {
   },
   "roots_discover": operationRootsDiscover,
   "root_usage": operationRootUsage,
-  "root_patch": operationRootPatch,
+  "root_patch": {
+    "root_quota": operationRootPatchRootQuota,
+    "root_archive": operationRootPatchRootArchive
+  },
   "root_purge": operationRootPurge,
   "root_empty_trash": operationRootEmptyTrash,
   "settings_get": operationSettingsGet,

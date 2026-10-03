@@ -1,9 +1,8 @@
-"""Old page URLs reach the flip-2 routes (unified frontend spec §14.3).
+"""Old page URLs reach their new routes (unified frontend spec §14.3).
 
 Every case is a whole request through Frappe's WSGI application, so the
-`before_request` entry in `hooks.py`, the flag read, the lookups, and the 302
-are all in the path. The request runs on its own thread and rebuilds
-`frappe.conf` there, so `files_flipped` switches the key at the config read.
+`before_request` entry in `hooks.py`, the lookups, and the 302 are all in the
+path.
 """
 
 import json
@@ -12,7 +11,6 @@ import frappe
 
 from suite.composition import redirects
 from suite.drive.http.tests.test_dispatch import OWNER, STRANGER, DriveHTTPCase
-from suite.drive.http.tests.test_drive_link import files_flipped
 from suite.drive.tests.fixtures import add_legacy_route, drop_legacy_route
 
 TEAM = "redirect-test-team"
@@ -50,7 +48,7 @@ class TestRedirectTable(DriveHTTPCase):
         frappe.db.commit()
 
     def cases(self) -> list[tuple[str, str, str]]:
-        """(row, old path, new path) with the key on, one or more per row."""
+        """(row, old path, new path), one or more per row."""
         folder, file, document = self.folder, self.file, self.document
         return [
             ("/drive/inbox", "/drive/inbox", "/drive"),
@@ -94,10 +92,9 @@ class TestRedirectTable(DriveHTTPCase):
 
     GUEST = "guest"
 
-    def open(self, path: str, *, flipped: bool, query: dict | None = None, sid: str | None = None):
+    def open(self, path: str, *, query: dict | None = None, sid: str | None = None):
         sid = None if sid == self.GUEST else (sid or self.owner_sid)
-        with files_flipped(flipped):
-            return self.drive("GET", path, query=query, sid=sid)
+        return self.drive("GET", path, query=query, sid=sid)
 
     def assertRedirect(self, response, location: str) -> None:
         self.assertEqual(response.status_code, 302, response.get_data(as_text=True)[:500])
@@ -107,32 +104,25 @@ class TestRedirectTable(DriveHTTPCase):
         self.assertNotIn(response.status_code, (301, 302, 303, 307, 308))
         self.assertNotIn("Location", response.headers)
 
-    def test_every_old_path_answers_302_to_its_new_path_with_the_key_on(self):
+    def test_every_old_path_answers_302_to_its_new_path(self):
         cases = self.cases()
         redirecting = {row.old for row in redirects.ROWS if row.new or row.lookup}
         self.assertEqual({row for row, _old, _new in cases}, redirecting)
         for _row, old, new in cases:
             with self.subTest(old=old):
-                self.assertRedirect(self.open(old, flipped=True), new)
-
-    def test_with_the_key_off_every_old_path_mounts_its_old_page(self):
-        for _row, old, _new in self.cases():
-            with self.subTest(old=old):
-                self.assertFallsThrough(self.open(old, flipped=False))
+                self.assertRedirect(self.open(old), new)
 
     def test_a_slug_and_a_trailing_slash_are_dropped_and_the_query_is_carried(self):
         self.assertRedirect(
-            self.open(f"/slides/presentation/{PRESENTATION}/q3-review", flipped=True, query={"slide": "3"}),
+            self.open(f"/slides/presentation/{PRESENTATION}/q3-review", query={"slide": "3"}),
             f"/d/{self.document}?slide=3",
         )
-        self.assertRedirect(
-            self.open(f"/drive/d/{self.folder}/reports/", flipped=True), f"/drive/f/{self.folder}"
-        )
-        self.assertRedirect(self.open("/sheets/new/", flipped=True), "/home")
+        self.assertRedirect(self.open(f"/drive/d/{self.folder}/reports/"), f"/drive/f/{self.folder}")
+        self.assertRedirect(self.open("/sheets/new/"), "/home")
 
     def test_a_row_with_its_own_query_keeps_it_and_carries_the_other_keys(self):
         self.assertRedirect(
-            self.open("/sheets", flipped=True, query={"x": "1", "type": "old"}),
+            self.open("/sheets", query={"x": "1", "type": "old"}),
             "/drive/recent?type=spreadsheet&x=1",
         )
 
@@ -143,9 +133,9 @@ class TestRedirectTable(DriveHTTPCase):
         for caller, sid in (("guest", self.GUEST), ("stranger", self.stranger_sid)):
             for _row, old in cases:
                 with self.subTest(caller=caller, old=old):
-                    self.assertFallsThrough(self.open(old, flipped=True, sid=sid))
+                    self.assertFallsThrough(self.open(old, sid=sid))
         # The rows that need no node still answer anybody.
-        self.assertRedirect(self.open("/sheets/new", flipped=True, sid=self.GUEST), "/home")
+        self.assertRedirect(self.open("/sheets/new", sid=self.GUEST), "/home")
 
     def test_an_encoded_separator_falls_through(self):
         for old in (
@@ -154,12 +144,12 @@ class TestRedirectTable(DriveHTTPCase):
             f"/drive/t/{TEAM}%5Cf%5C{self.file}",
         ):
             with self.subTest(old=old):
-                self.assertFallsThrough(self.open(old, flipped=True))
+                self.assertFallsThrough(self.open(old))
 
     def test_a_lookup_that_finds_no_node_falls_through(self):
         for old in ("/sheets/no-such-sheet", "/drive/g/no-such-node", "/drive/t/no-such-team/"):
             with self.subTest(old=old):
-                self.assertFallsThrough(self.open(old, flipped=True))
+                self.assertFallsThrough(self.open(old))
 
     def test_paths_with_no_row_stay_where_they_are(self):
         for old in (
@@ -171,7 +161,7 @@ class TestRedirectTable(DriveHTTPCase):
             "/mail",
         ):
             with self.subTest(old=old):
-                self.assertFallsThrough(self.open(old, flipped=True))
+                self.assertFallsThrough(self.open(old))
 
     def test_the_client_copy_matches_the_table(self):
         self.assertEqual(json.loads(redirects.CLIENT_TABLE.read_text()), redirects.client_table())

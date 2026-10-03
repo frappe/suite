@@ -6,6 +6,28 @@ import frappe
 from frappe.storage.tests import reset_file_controller
 
 from suite.drive._core.roots import personal_root_for
+from suite.tests.utils import ensure_user
+
+
+def ensure_rootless_user(*users: str) -> None:
+    """Ensure each test user exists and has no Personal root.
+
+    Call it in `setUp`, not `setUpClass`: a test that rolls back undoes
+    whatever the class inserted before the first commit, the user included.
+    """
+    for user in users:
+        ensure_user(user)
+        drop_personal_root(user)
+
+
+def skip_if_shared_root_exists(test) -> None:
+    """Skip a test that creates the site's one Shared root when it already has one.
+
+    A site holds at most one Active Shared root. A fresh site has none, so CI
+    runs these tests; a demo site keeps its real Shared root untouched.
+    """
+    if frappe.db.exists("Drive Root", {"kind": "Shared", "state": "Active"}):
+        test.skipTest("The site already has an Active Shared root")
 
 
 def drop_personal_root(user: str) -> None:
@@ -57,7 +79,9 @@ def add_legacy_route(old_id: str, node: str) -> None:
     killed run is replaced, and `drop_legacy_route` removes it.
     """
     drop_legacy_route(old_id)
-    frappe.get_doc({"doctype": "Drive Legacy Route", "name": old_id, "old_id": old_id, "entity": node}).db_insert()
+    frappe.get_doc(
+        {"doctype": "Drive Legacy Route", "name": old_id, "old_id": old_id, "entity": node}
+    ).db_insert()
 
 
 def drop_legacy_route(old_id: str) -> None:

@@ -1,6 +1,7 @@
 import io
 import json
 import sys
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,6 +11,7 @@ from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
 from frappe.storage.gc import blob_reference_columns
 from frappe.tests import IntegrationTestCase, UnitTestCase
+from frappe.utils import now_datetime
 from PIL import Image
 
 from suite.drive._core.errors import DriveForbidden
@@ -21,6 +23,7 @@ from suite.drive._core.previews import (
     RENDERABLE_MIMES,
     _publish_rendered,
     _render_webp,
+    _sweep_cursor_key,
     preview_expansions,
     push_preview,
     render,
@@ -30,8 +33,8 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 from suite.drive._core.roots import create_root
 from suite.drive._core.versions import restore_version, take_version
+from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.hooks import scheduler_events
-from suite.tests.utils import ensure_user
 
 USER = "drive-preview-user@example.com"
 OTHER = "drive-preview-other@example.com"
@@ -158,6 +161,27 @@ class _FakePyMuPdf:
         return self._pdf
 
 
+@contextmanager
+def _stub_module(name: str, module):
+    """Make `import name` return `module`, and restore only that one entry.
+
+    `patch.dict(sys.modules)` restores the whole dict, so it also drops every
+    module first imported inside the block. When that is a doctype controller,
+    such as `DocField` loaded for the first `get_meta`, the next import makes a
+    second class, and caching meta built from the first one fails to pickle.
+    """
+    missing = object()
+    previous = sys.modules.get(name, missing)
+    sys.modules[name] = module
+    try:
+        yield module
+    finally:
+        if previous is missing:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+
+
 def _webp(payload: bytes) -> Image.Image:
     image = Image.open(io.BytesIO(payload))
     image.load()
@@ -271,7 +295,7 @@ class TestPreviewContract(UnitTestCase):
         def run(target_blob_name):
             with (
                 patch("suite.drive._core.versions.frappe.db", new_callable=MagicMock) as db,
-                patch("suite.drive._core.versions._node", return_value=node),
+                patch("suite.drive._core.versions._lock_node", return_value=node),
                 patch("suite.drive._core.versions.require", return_value=None),
                 patch("suite.drive._core.versions._require_content_version_node"),
                 patch("suite.drive._core.versions._version", return_value=target),
@@ -339,7 +363,7 @@ class TestPreviewContract(UnitTestCase):
         module = _FakeAv(container)
         source = io.BytesIO(b"fake mp4 bytes")
 
-        with patch.dict(sys.modules, {"av": module}):
+        with _stub_module("av", module):
             payload = _render_webp(source, "video/mp4")
 
         self.assertEqual(module.opened, [source])
@@ -356,7 +380,7 @@ class TestPreviewContract(UnitTestCase):
         video = _FakeAvStream("video", duration=None)
         container = _FakeAvContainer([video], Image.new("RGB", (300, 1200), "blue"))
 
-        with patch.dict(sys.modules, {"av": _FakeAv(container)}):
+        with _stub_module("av", _FakeAv(container)):
             payload = _render_webp(io.BytesIO(b"fake webm bytes"), "video/webm")
 
         self.assertEqual(container.seeks, [])
@@ -369,7 +393,7 @@ class TestPreviewContract(UnitTestCase):
         pdf = _FakePdf(page)
         module = _FakePyMuPdf(pdf)
 
-        with patch.dict(sys.modules, {"pymupdf": module}):
+        with _stub_module("pymupdf", module):
             payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
 
         self.assertEqual(module.opened, [(b"%PDF-1.7 fake", "pdf")])
@@ -388,7 +412,7 @@ class TestPreviewContract(UnitTestCase):
     def test_a_portrait_pdf_takes_its_zoom_from_the_taller_side(self):
         page = _FakePdfPage(768, 1024)
 
-        with patch.dict(sys.modules, {"pymupdf": _FakePyMuPdf(_FakePdf(page))}):
+        with _stub_module("pymupdf", _FakePyMuPdf(_FakePdf(page))):
             payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
 
         self.assertEqual((page.pixmaps[0].matrix.a, page.pixmaps[0].matrix.d), (0.5, 0.5))
@@ -400,7 +424,7 @@ class TestPreviewContract(UnitTestCase):
         page = _FakePdfPage(1024, 768)
 
         with (
-            patch.dict(sys.modules, {"pymupdf": _FakePyMuPdf(_FakePdf(page))}),
+            _stub_module("pymupdf", _FakePyMuPdf(_FakePdf(page))),
             patch("suite.drive._core.previews.frappe.db.get_single_value", return_value=256),
         ):
             payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
@@ -415,7 +439,7 @@ class TestPreviewContract(UnitTestCase):
             with self.subTest(stub=stub):
                 page = _FakePdfPage(1024, 768)
                 with (
-                    patch.dict(sys.modules, {"pymupdf": _FakePyMuPdf(_FakePdf(page))}),
+                    _stub_module("pymupdf", _FakePyMuPdf(_FakePdf(page))),
                     patch("suite.drive._core.previews.frappe.db.get_single_value", return_value=stub),
                 ):
                     payload = _render_webp(io.BytesIO(b"%PDF-1.7 fake"), "application/pdf")
@@ -434,7 +458,7 @@ class TestPreviewContract(UnitTestCase):
             return frappe._dict(name="src", key="k", driver="local", is_private=1, status="Ready")
 
         with (
-            patch.dict(sys.modules, {module_name: module}),
+            _stub_module(module_name, module),
             patch("suite.drive._core.previews.frappe.db", new_callable=MagicMock) as db,
             patch("suite.drive._core.previews.get_driver") as driver,
             patch(
@@ -482,21 +506,22 @@ class TestPreviewContract(UnitTestCase):
 
 
 class TestPreviews(IntegrationTestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        ensure_user(USER)
-        ensure_user(OTHER)
-
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
+        ensure_rootless_user(USER, OTHER)
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
         self.root = create_root(kind="Personal", title="Preview Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Preview Other", user=OTHER)
         self.root_ids = (self.root.name, self.other_root.name)
         self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
-        frappe.cache().delete_value("drive:preview-sweep-cursor:slides.localhost")
+        # The sweep pages through every file on the site from a cursor. Start
+        # it where this test starts, so older files on the site that lack a
+        # preview stay out of the page, and put the site's own cursor back after.
+        self._sweep_cursor_before = frappe.cache().get_value(_sweep_cursor_key())
+        frappe.cache().set_value(
+            _sweep_cursor_key(), frappe.as_json({"creation": str(now_datetime()), "name": ""})
+        )
 
     def tearDown(self):
         frappe.set_user("Administrator")
@@ -516,7 +541,10 @@ class TestPreviews(IntegrationTestCase):
         frappe.db.delete("Drive Root", {"name": ["in", self.root_ids]})
         for blob in set(frappe.get_all("File Blob", pluck="name")) - self._blobs_before:
             frappe.delete_doc("File Blob", blob, force=1, ignore_permissions=True, ignore_missing=True)
-        frappe.cache().delete_value("drive:preview-sweep-cursor:slides.localhost")
+        if self._sweep_cursor_before is None:
+            frappe.cache().delete_value(_sweep_cursor_key())
+        else:
+            frappe.cache().set_value(_sweep_cursor_key(), self._sweep_cursor_before)
         frappe.db.commit()
         super().tearDown()
 
@@ -541,7 +569,7 @@ class TestPreviews(IntegrationTestCase):
                 {
                     "doctype": "Drive Node",
                     "title": title,
-                    "parent": self.root.name,
+                    "parent_node": self.root.name,
                     "root": self.root.name,
                     "path": "",
                     "kind": "document",

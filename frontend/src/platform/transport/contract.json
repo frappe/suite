@@ -80,7 +80,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "site_get",
@@ -119,7 +120,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "site_patch.complete_onboarding",
@@ -178,7 +180,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "site_patch.update_site_settings",
@@ -236,7 +239,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "users_get",
@@ -297,7 +301,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "invitations_get",
@@ -358,7 +363,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "invitations_post",
@@ -424,7 +430,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "people_get",
@@ -561,7 +568,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     }
   ]
 }

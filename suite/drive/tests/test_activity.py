@@ -324,7 +324,9 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
             with self.subTest(listing_types=listing_types):
                 first = recents(self.other, listing_types=listing_types, limit=2)
                 self.assertEqual([row.node.name for row in first["rows"]], readable[:2])
-                second = recents(self.other, listing_types=listing_types, cursor=first["next_cursor"], limit=2)
+                second = recents(
+                    self.other, listing_types=listing_types, cursor=first["next_cursor"], limit=2
+                )
                 self.assertEqual([row.node.name for row in second["rows"]], readable[2:])
                 self.assertIsNone(second["next_cursor"])
 
@@ -356,7 +358,7 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         for trashed in (self.node, inside):
             writes = {
                 "rename": lambda: update(self.owner, trashed, title="Renamed"),
-                "move": lambda: update(self.owner, trashed, parent=elsewhere),
+                "move": lambda: update(self.owner, trashed, parent_node=elsewhere),
                 "copy": lambda: copy(self.owner, trashed, elsewhere),
                 "share": lambda: grant(trashed, OUTSIDER, READ, self.owner),
                 "star": lambda: set_favourite(self.owner, trashed),
@@ -407,7 +409,7 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
                 {
                     "doctype": "Drive Node",
                     "title": title,
-                    "parent": self.root.name,
+                    "parent_node": self.root.name,
                     "root": self.root.name,
                     "path": "",
                     "kind": "document",

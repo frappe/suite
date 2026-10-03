@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from importlib import import_module
 
@@ -96,9 +97,7 @@ class HttpConformanceMixin:
         relative = path[len(self.HTTP.prefix) :]
         methods = {row.method for row in self.HTTP.routes if match_route(row, relative) is not None}
         method = next(
-            candidate
-            for candidate in ("GET", "POST", "PUT", "PATCH", "DELETE")
-            if candidate not in methods
+            candidate for candidate in ("GET", "POST", "PUT", "PATCH", "DELETE") if candidate not in methods
         )
         request, _form = translate(self.HTTP, path, method)
         self.assertEqual(handler_of(self.HTTP, request), self.HTTP.unknown)
@@ -112,6 +111,33 @@ class HttpConformanceMixin:
                 allowed = frappe.allowed_http_methods_for_whitelisted_func[handler]
                 self.assertIn(route.method, allowed)
                 self.assertEqual(handler in frappe.guest_methods, route.allow_guest)
+
+    def test_conformance_every_route_declares_what_travels(self):
+        # A POST, PUT or PATCH declares its body, and every route its answer,
+        # unless the bytes are raw: a `stream` row declares no body, and a GET
+        # stream no output. A GET or DELETE carries its arguments in the query.
+        # A route that names a resource in its path can refuse it, so it
+        # declares at least one refusal. The generated client is built from
+        # these, so an undeclared row is an untyped call.
+        for route in self.HTTP.routes:
+            with self.subTest(route=f"{route.method} {route.path}"):
+                if route.stream:
+                    self.assertIsNone(route.body)
+                    self.assertEqual(route.output is None, route.method == "GET")
+                else:
+                    self.assertIsNotNone(route.output)
+                    self.assertEqual(route.body is not None, route.method in ("POST", "PUT", "PATCH"))
+                if compile_template(route.path).names:
+                    self.assertTrue(route.errors)
+
+    def test_conformance_every_declared_shape_exports_a_schema(self):
+        for route in self.HTTP.routes:
+            for part in ("body", "query", "output"):
+                annotation = getattr(route, part)
+                if annotation is None:
+                    continue
+                with self.subTest(route=f"{route.method} {route.path}", part=part):
+                    self.assertIn("type", json.dumps(TypeAdapter(annotation).json_schema()))
 
     def test_conformance_declared_errors_have_shared_http_statuses(self):
         # 422 is a request that is well formed but refused on its content,

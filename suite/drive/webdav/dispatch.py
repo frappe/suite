@@ -18,6 +18,10 @@ from werkzeug.wrappers import Request, Response
 
 from suite.drive.webdav import ALLOWED_METHODS, DAV_PREFIX
 
+# The verbs that only read. Every other verb writes, and runs at READ
+# COMMITTED like a Drive HTTP write (`framework.begin_drive_write`).
+READ_METHODS = frozenset({"PROPFIND", "GET", "HEAD", "OPTIONS"})
+
 
 class DAVResponseException(HTTPException):
     """Carrier for a finished DAV response through frappe's exception handling."""
@@ -92,6 +96,10 @@ def _dispatch(request: Request) -> None:
                 headers={"Allow": ", ".join(allowed)},
             )
         handler = _handler_for(request.method, allowed)
+        if request.method not in READ_METHODS:
+            from suite.drive.framework import begin_drive_write
+
+            begin_drive_write()
         ctx = context.build(request, user)
         response = handler(ctx)
         # `_respond` commits. Inside the `try` so a commit that fails is still

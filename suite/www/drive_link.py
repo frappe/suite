@@ -7,15 +7,12 @@
 never appears in a shared URL: the server looks the token up, answers 302 to
 the node's address from `drive.node_url`, and seeds the token in the URL
 fragment so the client can present it in `X-Drive-Links` on every following
-request (§6.2). With `suite_flip_files` on, a folder opens at `/drive/f/<id>`
-and every other kind at `/d/<id>`; with it off, at `/drive/g/<id>`. No slug is
-sent: the router adds it. Rotating a link mints a new token, which changes this
-URL and leaves the old one resolving to nothing.
+request (§6.2). A folder opens at `/drive/f/<id>` and every other kind at
+`/d/<id>`. No slug is sent: the router adds it. Rotating a link mints a new
+token, which changes this URL and leaves the old one resolving to nothing.
 
-`GET /drive/l/<token>` is the old address of the same page. With
-`suite_flip_files` on, the composition redirect table sends it to `/l/<token>`
-(unified frontend spec §14.3); with the key off it answers here, through the
-same resolver.
+`GET /drive/l/<token>` is the old address of the same page. The composition
+redirect table sends it to `/l/<token>` (unified frontend spec §14.3).
 
 No role is checked here. Resolution answers *which* node, never *whether*: a
 password link's holder needs the node id in order to be told, by the ordinary

@@ -14,7 +14,9 @@ class TestFolderArchive(UnitTestCase):
     principals = Principals("reader@example.com", ("reader@example.com",), ("$PUBLIC",))
 
     def test_one_refused_descendant_refuses_the_whole_build(self):
-        folder = frappe._dict(name="folder", title="Folder", kind="folder", state="Active", root="root", path="")
+        folder = frappe._dict(
+            name="folder", title="Folder", kind="folder", state="Active", root="root", path=""
+        )
         children = [
             frappe._dict(name="readable", kind="file", root="root", path="/folder/"),
             frappe._dict(name="refused", kind="file", root="root", path="/folder/"),
@@ -29,7 +31,7 @@ class TestFolderArchive(UnitTestCase):
         folder = frappe._dict(name="folder", title="Folder", kind="folder", root="root", path="", size=0)
         file_row = frappe._dict(
             name="file",
-            parent="folder",
+            parent_node="folder",
             title="report.txt",
             kind="file",
             blob="blob-1",
@@ -37,7 +39,7 @@ class TestFolderArchive(UnitTestCase):
         )
         link = frappe._dict(
             name="link",
-            parent="folder",
+            parent_node="folder",
             title="Site",
             kind="link",
             url="https://example.com",

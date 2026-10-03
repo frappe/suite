@@ -28,11 +28,7 @@ class TestSchedulerEvents(unittest.TestCase):
             _scheduler_smoke_job_name()
 
     def test_exactly_five_drive_daily_jobs_are_wired(self):
-        """§2.2: `suite/drive/jobs.py` is the sole scheduler adapter.
-
-        The legacy File-status sweeps in `suite.drive.api.scripts` are
-        superseded by `jobs.purge_trashed_nodes` and must not be scheduled.
-        """
+        """§2.2: `suite/drive/jobs.py` is the sole scheduler adapter."""
         from suite.drive import jobs
 
         drive_package = jobs.__name__.rsplit(".", 1)[0] + "."
@@ -50,11 +46,15 @@ class TestSchedulerEvents(unittest.TestCase):
             with self.subTest(method=method):
                 self.assertEqual(module_name, jobs.__name__)
                 self.assertIn(attr, expected_targets)
-        # The one job outside `daily` stores the legacy-call counts (§11.7) on
-        # every tick. Every target in `jobs.py` is wired, and nothing else.
-        tick_drive_jobs = [
-            method for method in hooks.scheduler_events["all"] if method.startswith(drive_package)
+        # Every target in `jobs.py` is wired daily, and nothing else of Drive's
+        # runs on another schedule through the module.
+        other_drive_jobs = [
+            method
+            for event, entries in hooks.scheduler_events.items()
+            if event not in ("daily", "cron")
+            for method in entries
+            if method.startswith(jobs.__name__)
         ]
-        self.assertEqual(tick_drive_jobs, [f"{jobs.__name__}.flush_legacy_calls"])
-        wired = {method.rpartition(".")[2] for method in daily_drive_jobs + tick_drive_jobs}
+        self.assertEqual(other_drive_jobs, [])
+        wired = {method.rpartition(".")[2] for method in daily_drive_jobs}
         self.assertEqual(wired, expected_targets)

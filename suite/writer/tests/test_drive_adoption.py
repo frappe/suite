@@ -18,9 +18,8 @@ The three classes here:
                           permissions, and failure rollback.
 
 **A document with no node cannot exist any more.** `require_node` holds §5.13
-for a registered doctype, so `suite.writer.api.docs.create_document` and a bare
-`insert` both refuse one, and the legacy-row cases this module used to carry are
-gone with the state they described. `activated()` stays as a name so every
+for a registered doctype, so a bare `insert` refuses one, and the legacy-row
+cases this module used to carry are gone with the state they described. `activated()` stays as a name so every
 call site reads the same, and it is now only the registry cache drop.
 
 The integration classes reach `suite.drive._core` for the workflows the package
@@ -55,7 +54,6 @@ from suite.drive._core.versions import restore_version
 from suite.drive.framework import refuse_governed_share, validate_content_registry
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
-from suite.writer import overrides
 from suite.writer.doctype.writer_document.writer_document import WriterDocument
 
 USER = "writer-adoption-user@example.com"
@@ -548,7 +546,7 @@ class TestWriterInDrive(IntegrationTestCase):
 
         copied = drive.copy(node, self.root.node, title="Illustrated copy")
         copied_media = frappe.get_all(
-            "Drive Node", filters={"parent": copied, "state": "Active"}, pluck="name"
+            "Drive Node", filters={"parent_node": copied, "state": "Active"}, pluck="name"
         )
         self.assertEqual(len(copied_media), 1)
         self.assertNotEqual(copied_media[0], picture)
@@ -565,7 +563,7 @@ class TestWriterInDrive(IntegrationTestCase):
         before = self._used_bytes()
 
         copied = drive.copy(node, self.root.node, title="Twice copy")
-        copied_media = frappe.get_all("Drive Node", filters={"parent": copied}, pluck="name")
+        copied_media = frappe.get_all("Drive Node", filters={"parent_node": copied}, pluck="name")
 
         self.assertEqual(len(copied_media), 1, "one media node per blob inside one document")
         self.assertEqual(self._used_bytes(), before + len(b"logo-bytes"))
@@ -750,13 +748,10 @@ class TestWriterInDrive(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             writer.SPEC.export(self._docname(node), "pdf")
 
-    def test_a_purge_removes_the_document_its_media_and_its_legacy_versions(self):
+    def test_a_purge_removes_the_document_and_its_media(self):
         node = self._document(title="Purged")
         docname = self._docname(node)
         picture = self._media(node, "one.png", b"picture-one")
-        legacy = frappe.get_doc(
-            {"doctype": "Writer Version", "doc": docname, "snapshot": "<p>old</p>", "title": "old"}
-        ).insert(ignore_permissions=True)
 
         update(self.admin, node, state="Trashed")
         purge(self.admin, node)
@@ -764,7 +759,6 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Drive Node", node))
         self.assertFalse(frappe.db.exists("Drive Node", picture))
         self.assertFalse(frappe.db.exists(DOCTYPE, docname))
-        self.assertFalse(frappe.db.exists("Writer Version", legacy.name))
 
     def test_a_purge_keeps_no_recoverable_copy_of_the_body(self):
         # `delete_doc` keeps the whole row as JSON in `Deleted Document` unless
@@ -927,192 +921,6 @@ class TestWriterInDrive(IntegrationTestCase):
         self._as(OTHER)
         with self.assertRaises(DriveForbidden):
             frappe.has_permission(DOCTYPE, "read", docname)
-
-    def test_the_staged_legacy_guards_never_answer_for_a_linked_row(self):
-        """The dual path, from the other side. While the hooks are staged they
-        are `suite.writer.overrides`, and a linked row has no `File`, so the
-        legacy predicate's `owner = <user>` arm would have listed it and the
-        legacy row check would have granted its owner everything."""
-        node = self._document(title="Linked")
-        document = frappe.get_doc(DOCTYPE, self._docname(node))
-
-        self.assertFalse(overrides.document_has_permission(document, "read", USER))
-        self.assertFalse(overrides.document_has_permission(document, "write", USER))
-        for predicate in (
-            overrides.document_query_conditions(USER),
-            overrides.version_query_conditions(USER),
-        ):
-            with self.subTest(predicate=predicate):
-                self.assertIn("`tabWriter Document`.`node` IS NULL", predicate)
-
-    def test_a_docshare_cannot_open_a_linked_row_through_the_staged_guards(self):
-        """The staged guards run alone between Build and ticket 29, and
-        answering `False` is not a denial. Frappe reads `False` as "no role
-        permission" and then asks `false_if_not_shared`
-        (`frappe/permissions.py:214-216`); the list side ORs the shared names
-        around whatever predicate the hook returns
-        (`frappe/database/query.py:1739-1742`). Either one opens a linked
-        document that has no `Drive Grant` (§1).
-        """
-        docname = self._docname(self._document(title="Staged and shared"))
-        self._share_row(docname, user=OTHER, read=1)
-        document = frappe.get_doc(DOCTYPE, docname)
-
-        with self.assertRaises(DriveForbidden):
-            overrides.document_has_permission(document, "read", OTHER)
-        with self.assertRaises(DriveForbidden):
-            overrides.document_query_conditions(OTHER)
-
-        # The admin is the person who has to delete that row. Their predicate
-        # is empty, so the engine ORs the shared names around nothing.
-        self.assertEqual(overrides.document_query_conditions("Administrator"), "")
-
-    def test_an_everyone_docshare_reaches_a_linked_row_no_more_easily(self):
-        """`everyone` is the wide row: no `user` column at all, and
-        `frappe.share.get_shared` matches it for every signed-in user
-        (`frappe/share.py:188-190`). Guest is the exception those same lines
-        make, so the guard finds nothing to refuse for a Guest and the hook
-        denies for the ordinary reason.
-        """
-        docname = self._docname(self._document(title="Shared with everyone"))
-        self._share_row(docname, everyone=1, read=1)
-        document = frappe.get_doc(DOCTYPE, docname)
-
-        with self.assertRaises(DriveForbidden):
-            overrides.document_has_permission(document, "read", OTHER)
-        with self.assertRaises(DriveForbidden):
-            overrides.document_query_conditions(OTHER)
-        self.assertFalse(overrides.document_has_permission(document, "read", "Guest"))
-
-    def test_the_row_guard_refuses_exactly_the_rights_the_share_carries(self):
-        """`false_if_not_shared` reads one `DocShare` column per ptype
-        (`frappe/permissions.py:185-192`), so the guard reads the same one. A
-        write-only row must not refuse a read the framework would never have
-        granted, `email` and `print` are answered by the `read` column, and
-        `select` is not shareable at all: the framework retries it as `read`.
-        """
-        write_only = frappe.get_doc(DOCTYPE, self._docname(self._document(title="Write only")))
-        self._share_row(write_only.name, user=OTHER, write=1)
-
-        with self.assertRaises(DriveForbidden):
-            overrides.document_has_permission(write_only, "write", OTHER)
-        for unshared in ("read", "email", "print", "select", "delete"):
-            with self.subTest(ptype=unshared):
-                self.assertFalse(overrides.document_has_permission(write_only, unshared, OTHER))
-
-        read_only = frappe.get_doc(DOCTYPE, self._docname(self._document(title="Read only")))
-        self._share_row(read_only.name, user=OTHER, read=1)
-        for granted in ("read", "email", "print"):
-            with self.subTest(ptype=granted), self.assertRaises(DriveForbidden):
-                overrides.document_has_permission(read_only, granted, OTHER)
-
-    def test_a_share_on_a_linked_row_leaves_the_legacy_version_list_alone(self):
-        """The list refusal belongs to the doctype being listed. Frappe ORs the
-        shared names of `Writer Version` around the version predicate, never
-        those of `Writer Document`, so a share on a linked document cannot
-        widen it. Refusing there would take a legacy reader's own history away
-        for a row that could never have opened it.
-        """
-        docname = self._docname(self._document(title="Shared and versioned"))
-        self._share_row(docname, user=OTHER, read=1)
-
-        predicate = overrides.version_query_conditions(OTHER)
-        self.assertIn("`tabWriter Document`.`node` IS NULL", predicate)
-
-    def test_a_direct_version_share_cannot_reopen_linked_history(self):
-        """`DriveForbidden`, not `frappe.PermissionError`: the guard is
-        `drive.refuse_shared_child_rows`, and `frappe.desk.notifications` and
-        `frappe.desk.desktop` swallow a `PermissionError`.
-        """
-        docname = self._docname(self._document(title="Preserved history share"))
-        version = frappe.get_doc(
-            {"doctype": "Writer Version", "doc": docname, "snapshot": "<p>old</p>", "title": "old"}
-        ).insert(ignore_permissions=True)
-        self.addCleanup(
-            frappe.delete_doc,
-            "Writer Version",
-            version.name,
-            force=1,
-            ignore_permissions=True,
-            ignore_missing=True,
-        )
-        # Control: the preserved row alone refuses nothing, so the refusal
-        # below belongs to the share and not to the linked parent.
-        self._as(OTHER)
-        self.assertNotIn(version.name, frappe.get_list("Writer Version", pluck="name"))
-        frappe.set_user("Administrator")
-        share = frappe.get_doc(
-            {
-                "doctype": "DocShare",
-                "share_doctype": "Writer Version",
-                "share_name": version.name,
-                "user": OTHER,
-                "read": 1,
-            }
-        )
-        share.flags.ignore_validate = True
-        share.insert(ignore_permissions=True)
-        self.addCleanup(
-            frappe.delete_doc,
-            "DocShare",
-            share.name,
-            force=1,
-            ignore_permissions=True,
-            ignore_missing=True,
-        )
-        frappe.db.commit()
-
-        self._as(OTHER)
-        with self.assertRaises(DriveForbidden):
-            frappe.has_permission("Writer Version", doc=version.name, ptype="read")
-        with self.assertRaises(DriveForbidden):
-            frappe.get_list("Writer Version", pluck="name")
-        frappe.set_user("Administrator")
-        self.assertTrue(frappe.db.exists("Writer Version", version.name))
-        self.assertTrue(frappe.db.exists("DocShare", share.name))
-
-    def test_a_linked_row_refuses_every_legacy_method(self):
-        """§14.6 and §8.11 put history and comments on the node. A linked row
-        must not grow a second, private copy of either that Drive cannot see."""
-        node = self._document(title="No legacy writes")
-        document = frappe.get_doc(DOCTYPE, self._docname(node))
-
-        for legacy in (
-            lambda: document.new_version("<p>x</p>", title="sneaky"),
-            lambda: document.save_comments("AAA=", None),
-            lambda: document.update_file(file_size=1),
-        ):
-            with self.subTest(legacy=legacy), self.assertRaises(frappe.ValidationError):
-                legacy()
-        self.assertFalse(frappe.db.exists("Writer Version", {"doc": document.name}))
-        self.assertFalse(frappe.db.get_value(DOCTYPE, document.name, "ycomments"))
-
-    def test_the_legacy_columns_and_doctypes_survive_adoption(self):
-        # §14.6 and §14.7: Build copies these, Cleanup removes them. Nothing
-        # in this ticket may drop them early.
-        meta = frappe.get_meta(DOCTYPE)
-        for legacy in ("html", "ycomments", "versions", "updates", "collab", "content", "settings"):
-            self.assertIsNotNone(meta.get_field(legacy), legacy)
-        for doctype in ("Writer Version", "Writer Template", "Writer Doc Version"):
-            self.assertTrue(frappe.db.exists("DocType", doctype), doctype)
-
-    def test_a_legacy_version_row_survives_an_ordinary_save(self):
-        node = self._document(title="Historic")
-        docname = self._docname(node)
-        legacy = frappe.get_doc(
-            {"doctype": "Writer Version", "doc": docname, "snapshot": "<p>old</p>", "title": "old"}
-        ).insert(ignore_permissions=True)
-        self.addCleanup(
-            frappe.delete_doc,
-            "Writer Version",
-            legacy.name,
-            force=1,
-            ignore_permissions=True,
-            ignore_missing=True,
-        )
-
-        frappe.get_doc(DOCTYPE, docname).save_html("<p>new</p>")
-        self.assertTrue(frappe.db.exists("Writer Version", legacy.name))
 
 
 def _purge_fixture_roots() -> None:

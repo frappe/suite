@@ -17,7 +17,6 @@ from frappe import _
 from frappe.utils import add_to_date, cint, get_datetime, now_datetime
 
 from suite import drive
-from suite.drive.utils import get_user_folder
 from suite.meet.doctype.meet_recording.meet_recording import (
     ACTIVE_RECORDING_STATUSES,
     recording_storage_reservation_key,
@@ -97,10 +96,6 @@ def _get_room(meeting_id: str):
     if not room.is_host_or_cohost(frappe.session.user):
         frappe.throw(_("Only the meeting host or co-host can manage recording"), frappe.PermissionError)
     return room
-
-
-def _get_drive_destination(owner: str) -> str:
-    return get_user_folder(owner).name
 
 
 def _get_free_bytes(owner: str) -> int:
@@ -198,7 +193,6 @@ def get_preflight(meeting_id: str) -> dict:
     free_bytes = 0
     storage_available = True
     try:
-        _get_drive_destination(room.owner)
         free_bytes = _get_free_bytes(room.owner)
     except frappe.ValidationError:
         storage_available = False
@@ -510,7 +504,9 @@ def start(meeting_id: str, request_id: str) -> dict:
     if active:
         return active
     _lock_room_owner(room.owner)
-    destination = _get_drive_destination(room.owner)
+    # Recordings are filed below the owner's Personal root, the node every
+    # byte of this recording is charged to.
+    drive_root = _get_drive_root(room.owner)
     owner_limit = max(1, cint(frappe.conf.get("recorder_max_concurrent_per_owner") or 1))
     preflight = get_preflight(meeting_id)
     if not preflight["eligible"]:
@@ -537,11 +533,11 @@ def start(meeting_id: str, request_id: str) -> dict:
                 "recorder_job_id": frappe.generate_hash(length=32),
                 "request_id": request_id,
                 "pending_deadline": add_to_date(now, seconds=STARTUP_TIMEOUT_SECONDS),
-                "drive_home_folder": destination,
+                "drive_home_folder": drive_root,
             }
         ).insert(ignore_permissions=True)
         drive.create_storage_reservation(
-            _get_drive_root(room.owner),
+            drive_root,
             recording_storage_reservation_key(recording.name),
             cint(recording.budget_bytes),
         )
@@ -1295,7 +1291,7 @@ def recorder_stopped(
             end_reason=end_reason_code,
         )
     except frappe.ValidationError as error:
-        frappe.db.rollback(save_point=savepoint)
+        drive.rollback_savepoint(savepoint, error)
         result = reject_upload_metadata(recording_id, event_sequence=event_sequence, error=error)
     finally:
         frappe.db.release_savepoint(savepoint)

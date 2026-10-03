@@ -137,7 +137,7 @@ def _collect_resources(ctx: DavContext, depth: str) -> list[Resource]:
 def _one_row_per_name(children: list[frappe._dict]) -> list[frappe._dict]:
     """Publish each title once, keeping the row a path lookup would reach.
 
-    `Drive Node` indexes `(parent, state, title)` but does not make it unique,
+    `Drive Node` indexes `(parent_node, state, title)` but does not make it unique,
     so two Active siblings can carry the same title. `href_for` quotes the
     title, so those two share one URL: listing both puts two sizes and two
     ETags at one href, while every GET of it answers from the one row
@@ -167,7 +167,7 @@ def _read_page(principals, parent: str) -> tuple[frappe._dict, list[frappe._dict
     cursor = None
     while True:
         page = node_children(principals, parent, cursor=cursor, limit=MAX_PAGE_SIZE)
-        parent_row = page["parent"]
+        parent_row = page["container"]
         rows.extend(row for row in page["rows"] if pathmap.visible(row))
         cursor = page["next_cursor"]
         if cursor is None:

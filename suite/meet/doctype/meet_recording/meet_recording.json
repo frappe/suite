@@ -110,7 +110,7 @@
   {"default": "0", "fieldname": "budget_warning_10m_sent", "fieldtype": "Check", "label": "Ten Minute Budget Warning Sent", "read_only": 1},
   {"default": "0", "fieldname": "budget_warning_2m_sent", "fieldtype": "Check", "label": "Two Minute Budget Warning Sent", "read_only": 1},
   {"fieldname": "max_ends_at", "fieldtype": "Datetime", "label": "Maximum End Time"},
-  {"fieldname": "artifact", "fieldtype": "Link", "label": "Artifact", "options": "File"},
+  {"fieldname": "artifact", "fieldtype": "Link", "label": "Artifact", "options": "Drive Node"},
   {"fieldname": "artifact_size", "fieldtype": "Int", "length": 20, "label": "Artifact Size"},
   {"fieldname": "artifact_duration", "fieldtype": "Float", "label": "Artifact Duration"},
   {"fieldname": "artifact_sha256", "fieldtype": "Data", "label": "Artifact SHA-256"},
@@ -149,7 +149,7 @@
   {"fieldname": "grant_delivered_at", "fieldtype": "Datetime", "label": "Grant Delivered At", "read_only": 1},
   {"fieldname": "stop_operation_id", "fieldtype": "Data", "label": "Stop Operation ID"},
   {"fieldname": "pending_deadline", "fieldtype": "Datetime", "label": "Pending Deadline", "search_index": 1},
-  {"fieldname": "drive_home_folder", "fieldtype": "Link", "label": "Drive Home Folder", "options": "File", "reqd": 1}
+  {"fieldname": "drive_home_folder", "fieldtype": "Link", "label": "Drive Home Folder", "options": "Drive Node", "reqd": 1}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,

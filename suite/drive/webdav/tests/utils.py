@@ -282,7 +282,7 @@ def raw_child_node(parent: str, title: str, *, kind: str = "folder", **fields) -
     row = {
         "doctype": "Drive Node",
         "title": title,
-        "parent": parent_row.name,
+        "parent_node": parent_row.name,
         "root": parent_row.name if parent_row.kind == "root" else parent_row.root,
         "path": "" if parent_row.kind == "root" else f"{parent_row.path or '/'}{parent_row.name}/",
         "kind": kind,

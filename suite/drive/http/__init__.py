@@ -13,7 +13,7 @@ Three modules, one job each.
 - `shapes` turns a stored row into §11.3's node shape and coerces the strings
   a query string delivers into the types a workflow expects.
 
-Four rules hold across every route.
+Seven rules hold across every route.
 
 **The path wins.** The translator writes each path segment into `form_dict`
 after Frappe parsed the body, so `POST /nodes/a1/copy` acts on `a1` even when
@@ -36,4 +36,26 @@ class name and the message together, and maps a plain `frappe.ValidationError`
 whether a route is reachable without a session. Who may act is decided by
 `_core.access.require`, from the caller's principals and this request's
 `X-Drive-Links` header.
+
+**Times are UTC on the wire.** Every time a route publishes is RFC 3339 with
+a `Z` (`shapes.stamp`), and every time a route accepts must carry its offset
+(`shapes.moment`); a naive one is a 400, because the sender does not know the
+site's zone the columns are stored in. `_core/times.py` owns both conversions
+(§11.3).
+
+**A write answers the thing it changed, or a count.** A write that creates or
+changes one resource answers that resource's shape: a node, a grant, a
+version, a thread, a comment. A write that removes or touches rows answers
+`shapes.Count`: every DELETE, a purge, a visit, a star, a read receipt. No
+route answers an empty object or an ad hoc key.
+
+**Every row declares what travels.** A `Route` in `translator` names its
+`body` (every POST, PUT and PATCH; `shapes.Empty` when nothing is sent), its
+`query` (a GET or DELETE that takes arguments), its `output`, and the
+refusals it may answer; a row whose bytes are not JSON is `stream=True`. The
+common trio - `DriveNotFound`, `DriveLocked`, `DriveLinkExpired` - is put
+first on every `nodes/{node}` row by the translator, so a row lists only its
+extras. The frontend contract is generated from these declarations, so a
+handler parameter the row does not declare is a test failure, not a hidden
+argument (§11.2).
 """

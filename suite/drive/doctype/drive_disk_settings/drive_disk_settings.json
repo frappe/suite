@@ -8,22 +8,8 @@
   "general_section",
   "preview_size",
   "general_column_break",
-  "quota",
   "default_personal_quota",
   "shared_quota",
-  "storage_section",
-  "root_folder",
-  "thumbnail_prefix",
-  "storage_column_break",
-  "flat",
-  "s3_section",
-  "enabled",
-  "bucket",
-  "aws_key",
-  "aws_secret",
-  "s3_column_break",
-  "endpoint_url",
-  "signature_version",
   "webdav_section",
   "webdav_enabled",
   "webdav_column_break",
@@ -50,13 +36,6 @@
   },
   {
    "default": "0",
-   "description": "Default storage quota per user (in megabytes). 0 means unlimited.",
-   "fieldname": "quota",
-   "fieldtype": "Int",
-   "label": "Quota"
-  },
-  {
-   "default": "0",
    "description": "Default quota for Personal Drive roots, in bytes. 0 means unlimited.",
    "fieldname": "default_personal_quota",
    "fieldtype": "Int",
@@ -70,89 +49,6 @@
    "fieldtype": "Int",
    "length": 20,
    "label": "Shared Quota"
-  },
-  {
-   "description": "Where and how Drive lays out file contents \u2014 on the site's disk, or in the S3 bucket below.",
-   "fieldname": "storage_section",
-   "fieldtype": "Section Break",
-   "label": "Storage Layout"
-  },
-  {
-   "description": "Prefix under private/files (or inside the bucket) where Drive keeps its content. Leave empty to store at the top level.",
-   "fieldname": "root_folder",
-   "fieldtype": "Data",
-   "label": "Drive Folder"
-  },
-  {
-   "default": ".thumbnails",
-   "description": "Directory beside the file tree where generated thumbnails are kept.",
-   "fieldname": "thumbnail_prefix",
-   "fieldtype": "Data",
-   "label": "Thumbnail Prefix"
-  },
-  {
-   "fieldname": "storage_column_break",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Store files by id under one prefix instead of mirroring the folder tree.\nS3 has no rename, so mirroring makes moving a folder copy and delete every object beneath it. Flat keeps moves and renames database-only.\nRecommended for S3; leave off for local disk.",
-   "fieldname": "flat",
-   "fieldtype": "Check",
-   "label": "Flat Storage"
-  },
-  {
-   "description": "Keep file contents in an S3-compatible bucket instead of on the site's disk.",
-   "fieldname": "s3_section",
-   "fieldtype": "Section Break",
-   "label": "S3"
-  },
-  {
-   "default": "0",
-   "description": "Store file contents in the bucket configured below instead of on the site's disk. Turning this on forces flat storage.",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Use S3"
-  },
-  {
-   "depends_on": "enabled",
-   "description": "Bucket that holds Drive's file contents.",
-   "fieldname": "bucket",
-   "fieldtype": "Data",
-   "label": "S3 Bucket"
-  },
-  {
-   "depends_on": "enabled",
-   "description": "Access key ID of an identity with read/write access to the bucket.",
-   "fieldname": "aws_key",
-   "fieldtype": "Data",
-   "label": "AWS Key"
-  },
-  {
-   "depends_on": "enabled",
-   "description": "Secret access key for the identity above. Stored encrypted.",
-   "fieldname": "aws_secret",
-   "fieldtype": "Password",
-   "label": "AWS Secret"
-  },
-  {
-   "fieldname": "s3_column_break",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "enabled",
-   "description": "S3 endpoint; S3-compatible providers (e.g. MinIO) work too. Example: https://s3.ap-south-1.amazonaws.com",
-   "fieldname": "endpoint_url",
-   "fieldtype": "Data",
-   "label": "Endpoint URL"
-  },
-  {
-   "default": "s3v4",
-   "depends_on": "enabled",
-   "description": "Defaults to \"s3v4\". Some providers only support \"s3\".",
-   "fieldname": "signature_version",
-   "fieldtype": "Data",
-   "label": "Signature Version"
   },
   {
    "description": "Serve Drive over WebDAV at /dav so file managers and sync tools can connect. Each user must also allow access in their own Drive settings.",

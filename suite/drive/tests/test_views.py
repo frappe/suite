@@ -74,7 +74,7 @@ class TestListingContract(UnitTestCase):
         self.assertEqual(decode_cursor(page["next_cursor"]), 1)
         self.assertEqual(sql.call_count, 3)
         window_query = sql.call_args_list[0].args[0]
-        self.assertIn("parent = %(parent)s", window_query)
+        self.assertIn("parent_node = %(parent_node)s", window_query)
         self.assertIn("is_template = 0", window_query)
         self.assertIn("kind <> 'root'", window_query)
         self.assertEqual(sql.call_args_list[0].args[1]["limit"], 1)
@@ -107,7 +107,7 @@ class TestListingContract(UnitTestCase):
             {
                 "rows": [],
                 "next_cursor": None,
-                "parent": {"name": "root", "kind": "root", "root": None, "path": ""},
+                "container": {"name": "root", "kind": "root", "root": None, "path": ""},
             },
         )
         self.assertEqual(sql.call_args_list[0].args[1]["limit"], MAX_PAGE_SIZE)
@@ -216,7 +216,7 @@ class TestListingContract(UnitTestCase):
             {
                 "rows": [],
                 "next_cursor": None,
-                "parent": {"name": "root", "kind": "root", "root": None, "path": ""},
+                "container": {"name": "root", "kind": "root", "root": None, "path": ""},
             },
         )
 
@@ -228,18 +228,17 @@ class TestListingContract(UnitTestCase):
         self.assertLess(ancestor_filter, limit)
         self.assertIn("ancestor_grant.principal IN %(own)s", SHARED_SQL)
 
-    def test_folder_grouping_lives_inside_the_sql_window(self):
-        query = nodes_module._folder_page_query("title", "ASC", group_by="owner", listing_types=("folder",))
+    def test_folder_order_lives_inside_the_sql_window(self):
+        query = nodes_module._folder_page_query("title", "ASC", listing_types=("folder",))
         before_limit = query[: query.index("LIMIT")]
         order = before_limit[before_limit.rindex("ORDER BY") :]
-        self.assertLess(order.index("owner"), order.index("kind = 'folder'"))
         self.assertLess(order.index("kind = 'folder'"), order.index("title ASC"))
         self.assertTrue(order.rstrip().endswith("name ASC"))
 
-    def test_ungrouped_order_always_partitions_folders_first(self):
+    def test_every_order_partitions_folders_first(self):
         for direction in ("ASC", "DESC"):
             with self.subTest(direction=direction):
-                order = nodes_module._listing_order("modified", direction, group_by=None, prefix="")
+                order = nodes_module._listing_order("modified", direction, prefix="")
                 self.assertTrue(order.startswith("CASE WHEN kind = 'folder' THEN 0 ELSE 1 END ASC"))
                 self.assertTrue(order.endswith("name ASC"))
 
@@ -322,7 +321,7 @@ class TestDriveViews(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": title,
-                "parent": parent.name,
+                "parent_node": parent.name,
                 "root": root,
                 "path": path,
                 "kind": kind,
@@ -505,35 +504,22 @@ class TestDriveViews(IntegrationTestCase):
         expanded = next(row for row in rows if row.name == folder.name)
         self.assertGreaterEqual(expanded.access["role"], READ)
 
-    def test_grouping_is_contiguous_stable_and_folders_first_inside_owner(self):
+    def test_folders_lead_every_order_and_the_order_runs_inside_each_kind(self):
         made = []
-        for owner, kind, title in (
-            ("a@example.com", "file", "A file"),
-            ("a@example.com", "folder", "Z folder"),
-            ("b@example.com", "file", "B file"),
-            ("b@example.com", "folder", "Y folder"),
+        for kind, title in (
+            ("file", "A file"),
+            ("folder", "Z folder"),
+            ("file", "B file"),
+            ("folder", "Y folder"),
         ):
-            node = self._node(self.personal.name, title, kind=kind)
-            frappe.db.set_value("Drive Node", node.name, "owner", owner, update_modified=False)
-            made.append(node.name)
+            made.append(self._node(self.personal.name, title, kind=kind).name)
 
-        rows = children(
-            self.principals,
-            self.personal.name,
-            group_by="owner",
-            order_by="title",
-            ascending=False,
-        )["rows"]
-        relevant = [row for row in rows if row.name in made]
+        rows = children(self.principals, self.personal.name, order_by="title", ascending=False)["rows"]
+        relevant = [(row.kind, row.title) for row in rows if row.name in made]
 
         self.assertEqual(
-            [(row.owner, row.kind) for row in relevant],
-            [
-                ("a@example.com", "folder"),
-                ("a@example.com", "file"),
-                ("b@example.com", "folder"),
-                ("b@example.com", "file"),
-            ],
+            relevant,
+            [("folder", "Z folder"), ("folder", "Y folder"), ("file", "B file"), ("file", "A file")],
         )
 
     def test_children_sort_by_owner_and_by_type_with_ties_in_name_order(self):
@@ -547,7 +533,9 @@ class TestDriveViews(IntegrationTestCase):
             ("b@example.com", "folder", None, "D folder"),
         ):
             node = self._node(folder.name, title, kind=kind)
-            frappe.db.set_value("Drive Node", node.name, {"owner": owner, "mime": mime}, update_modified=False)
+            frappe.db.set_value(
+                "Drive Node", node.name, {"owner": owner, "mime": mime}, update_modified=False
+            )
             made[node.name] = title
 
         def titles(order_by, ascending=True):
@@ -555,7 +543,9 @@ class TestDriveViews(IntegrationTestCase):
             return [made[row.name] for row in rows]
 
         self.assertEqual(titles("owner"), ["D folder", "B paper", "A picture", "E picture", "C photo"])
-        self.assertEqual(titles("owner", ascending=False), ["D folder", "C photo", "A picture", "E picture", "B paper"])
+        self.assertEqual(
+            titles("owner", ascending=False), ["D folder", "C photo", "A picture", "E picture", "B paper"]
+        )
         self.assertEqual(titles("kind"), ["D folder", "B paper", "C photo", "A picture", "E picture"])
 
     def test_document_children_are_hidden_from_children_and_general_views(self):
@@ -705,9 +695,7 @@ class TestDriveViews(IntegrationTestCase):
         title_reads = [
             call
             for call in get_all.call_args_list
-            if call.args
-            and call.args[0] == "Drive Node"
-            and call.kwargs.get("fields") == ["name", "title"]
+            if call.args and call.args[0] == "Drive Node" and call.kwargs.get("fields") == ["name", "title"]
         ]
         self.assertEqual(len(title_reads), 1)
 

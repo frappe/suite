@@ -5,7 +5,6 @@ from frappe.core.api.file import get_max_file_size
 
 from suite import __version__
 from suite.api.account import get_onboarding_state, get_workspace
-from suite.suite_core.flips import flip_is_on
 
 no_cache = 1
 
@@ -74,12 +73,6 @@ def get_boot():
             # `bench set-config disable_slides_service_worker 1` unregisters the worker
             # on every slides visit, no deploy needed
             "disable_slides_service_worker": bool(frappe.conf.get("disable_slides_service_worker")),
-            # `bench set-config -p suite_flip_shell 1` puts Mail, Calendar and Meet in the
-            # shell; off, they keep their standalone chrome. Read on each page load.
-            "suite_flip_shell": flip_is_on("suite_flip_shell"),
-            # `bench set-config -p suite_flip_files 1` mounts the Drive area under /drive,
-            # lists Home and Drive on the rail, and sends / to /home. Read on each page load.
-            "suite_flip_files": flip_is_on("suite_flip_files"),
             # The largest file the site accepts, in bytes. Drive's upload queue
             # refuses a larger file before it opens a session; the server
             # still decides.

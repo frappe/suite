@@ -1,26 +1,19 @@
 """Save flow — the single chokepoint for advancing the head.
 
-The save model (Google Sheets-equivalent, no data loss):
+The save model (no data loss):
 
   1. Validate the incoming sheets_data (size + JSON).
   2. Append any client-batched ops to `Sheet Op Log`, allocating
      consecutive monotonic seqs.
   3. Write the implicit `save` op as the final entry of the batch.
   4. Update the live `Sheet` row: sheets_data, head_seq.
-  5. Run `snapshots.maybe_snapshot` INLINE — version history must work
-     even when no background worker is running (common in dev / small
-     deployments). The policy (`_should_snapshot`) clusters rapid saves
-     into one snapshot so the cost stays bounded, and the snapshot
-     itself is one row insert (~tens of ms for typical sheet sizes).
+  5. Take a `Drive Node Version` INLINE when the newest one is older than
+     `AUTO_VERSION_SECS`, so version history works with no background worker
+     and rapid saves cluster into one version. A failure there never fails
+     the save: the ops are already persisted.
 
-Why inline beats enqueue:
-  * No silent failure modes from a stuck/missing worker.
-  * Users see their version appear immediately after Save.
-  * Pruning (`tasks.rollup_snapshots`) still runs nightly to cap storage.
-
-Compared with Frappe's default `track_changes`-driven `tabVersion`
-inserts, this trades a single fixed cost (~one row insert per op) for
-a flat snapshot cap regardless of edit volume.
+A sheet is created through Drive (`drive.create_document`, behind
+`suite.sheets.api.create_sheet`), never here, and Drive owns its title.
 """
 
 from __future__ import annotations
@@ -28,122 +21,81 @@ from __future__ import annotations
 import json
 
 import frappe
+from frappe import _
+from frappe.utils import get_datetime, now_datetime
 
+from suite import drive
 from suite.sheets.doctype.sheet.storage import (
     MAX_SHEETS_DATA_BYTES,
     decode_sheets_data,
     encode_sheets_data,
 )
+from suite.sheets.drive import node_of, require_sheet
 
 from . import seq as seq_mod
-from . import snapshots as snapshots_mod
-from suite.sheets.drive import require_sheet
 
-MAX_TITLE_LEN = 280
 MAX_OPS_PER_SAVE = 500
+AUTO_VERSION_SECS = 30
 
 
 def save_sheet(
-    title: str,
+    name: str,
     sheets_data: str,
-    name: str | None = None,
     ops: list | str | None = None,
-    parent: str | None = None,
     request_id: str | None = None,
 ) -> dict:
-    """Create or update a sheet.
+    """Write one sheet's body and return ``{"name", "head_seq"}``.
 
-    Returns ``{"name": <sheet_id>, "head_seq": <int>}`` so the client
-    knows where its ops landed in the canonical order.
-
-    ``parent`` is only honoured on creation (``name`` is falsy): it is the
-    Drive folder the new sheet's backing File should land in, passed through
-    to ``Sheet.after_insert``.
+    ``head_seq`` tells the client where its ops landed in the canonical order.
+    A ``request_id`` the log already carries answers the seq it landed at
+    without writing anything again.
     """
-    if name and request_id:
-        require_sheet(name, write=True)
+    if not name:
+        frappe.throw(_("A sheet is created through Drive"), frappe.ValidationError)
+    require_sheet(name, write=True)
+    if request_id:
         completed_seq = frappe.db.get_value("Sheet Op Log", {"sheet": name, "request_id": request_id}, "seq")
         if completed_seq is not None:
             return {"name": name, "head_seq": int(completed_seq)}
 
     plain = _validate_payload(sheets_data)
-    clean_title = _clean_title(title)
     encoded = encode_sheets_data(plain)
     byte_size = len(plain.encode("utf-8"))
     ops_list = _coerce_ops(ops)
 
-    if name:
-        sheet_id, head_seq = _update_existing(
-            name, clean_title, encoded, byte_size, ops_list, request_id=request_id
-        )
-    else:
-        sheet_id, head_seq = _insert_new(clean_title, encoded, byte_size, ops_list, parent=parent)
-
-    # Snapshot inline — no worker dependency. A failure here must NOT fail
-    # the save; the ops are already persisted (no data loss) and the next
-    # save will get a chance to snapshot. We log the error for ops triage.
-    try:
-        snapshots_mod.maybe_snapshot(sheet_id, expected_head_seq=head_seq)
-    except Exception:
-        frappe.log_error(
-            title="sheets: inline maybe_snapshot failed",
-            message=frappe.get_traceback(),
-        )
-    return {"name": sheet_id, "head_seq": head_seq}
-
-
-def _insert_new(
-    title: str, encoded: str, byte_size: int, ops_list: list[dict], parent: str | None = None
-) -> tuple[str, int]:
-    doc = frappe.new_doc("Sheet")
-    doc.title = title
-    doc.sheets_data = encoded
-    doc.head_seq = 0
-    # Drive folder for the backing File, read in Sheet.after_insert. Set as a
-    # flag (not a field) so it never persists on the Sheet row itself.
-    if parent:
-        doc.flags.drive_parent = parent
-    doc.insert()
-    head_seq = _append_ops_and_save(doc.name, ops_list, byte_size, save_op_type="create")
-    frappe.db.set_value("Sheet", doc.name, "head_seq", head_seq, update_modified=False)
-    return doc.name, head_seq
-
-
-def _update_existing(
-    name: str,
-    title: str,
-    encoded: str,
-    byte_size: int,
-    ops_list: list[dict],
-    request_id: str | None = None,
-) -> tuple[str, int]:
-    require_sheet(name, write=True)
-    # Cheap PK read so the rare rename path (below) only runs on an actual title
-    # change, not on every autosave. Drive owns a linked sheet's title and the
-    # column is frozen there (§10.2), so a linked sheet never takes that path.
-    old_title, node = frappe.db.get_value("Sheet", name, ("title", "node"))
     head_seq = _append_ops_and_save(name, ops_list, byte_size, save_op_type="save", request_id=request_id)
-    if not node and title != old_title:
-        # The editor's inline rename rides the autosave. A title change is rare,
-        # so route the whole write through the ORM: on_update then fires and Drive
-        # renames the backing File via the standard doc-event — the same front
-        # door Writer/Slides use, no Sheets-specific Drive call.
-        doc = frappe.get_doc("Sheet", name)
-        doc.title = title
-        doc.sheets_data = encoded
-        doc.head_seq = head_seq
-        doc.save()
-    else:
-        # The common path: cell-data only. db.set_value keeps this off the full
-        # document lifecycle (validation, on_update, snapshotting) — the op log
-        # is the single chokepoint for advancing the head.
-        frappe.db.set_value(
-            "Sheet",
-            name,
-            {"sheets_data": encoded, "head_seq": head_seq},
-            update_modified=True,
-        )
-    return name, head_seq
+    # The op log is the single chokepoint for advancing the head, so the row is
+    # written directly rather than through the document lifecycle.
+    frappe.db.set_value(
+        "Sheet",
+        name,
+        {"sheets_data": encoded, "head_seq": head_seq},
+        update_modified=True,
+    )
+
+    try:
+        _maybe_take_version(name)
+    except Exception:
+        frappe.log_error(title="sheets: inline version failed", message=frappe.get_traceback())
+    return {"name": name, "head_seq": head_seq}
+
+
+def _maybe_take_version(name: str) -> None:
+    """Take an automatic version unless one was taken in the last `AUTO_VERSION_SECS`."""
+    node = node_of(name)
+    newest = drive.list_versions(node, limit=1)["rows"]
+    if newest:
+        age = (now_datetime() - get_datetime(newest[0]["creation"])).total_seconds()
+        if age < _conf_int("versioning_auto_snapshot_secs", AUTO_VERSION_SECS):
+            return
+    drive.take_version(node, kind="auto")
+
+
+def _conf_int(key: str, default: int) -> int:
+    try:
+        return int(frappe.conf.get(key) or default)
+    except (TypeError, ValueError):
+        return default
 
 
 def _append_ops_and_save(
@@ -182,7 +134,7 @@ def _append_ops_and_save(
 
 def append_op(sheet: str, op: dict) -> int:
     """Append a single ad-hoc op. Used outside the save path (e.g. realtime)."""
-    frappe.has_permission("Sheet", doc=sheet, ptype="write", throw=True)
+    require_sheet(sheet, write=True)
     new_seq = seq_mod.allocate(sheet)
     frappe.get_doc(_op_doc(sheet, new_seq, op, frappe.session.user)).insert(ignore_permissions=True)
     # Advance head_seq only forward — never regress.
@@ -244,11 +196,6 @@ def _validate_payload(sheets_data: str) -> str:
     except (ValueError, TypeError):
         frappe.throw("sheets_data is not valid JSON")
     return plain
-
-
-def _clean_title(title: str) -> str:
-    t = (title or "").strip() or "Untitled Spreadsheet"
-    return t[:MAX_TITLE_LEN]
 
 
 def _format_bytes(n: int) -> str:

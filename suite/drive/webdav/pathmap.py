@@ -6,10 +6,10 @@ and no admin mount of somebody else's root; content shared from elsewhere is
 not reachable over this protocol.
 
 Below the mount the tree is walked one query per segment against the frozen
-`node_parent_page (parent, state, title)` index: exact (BINARY) match first,
+`node_parent_page (parent_node, state, title)` index: exact (BINARY) match first,
 one case-insensitive fallback when it is unambiguous, oldest row winning an
 exact duplicate. The `BINARY` comparison is a binary-collation one against a
-`utf8mb4_unicode_ci` column, so only the `(parent, state)` prefix is certain to
+`utf8mb4_unicode_ci` column, so only the `(parent_node, state)` prefix is certain to
 be used; that already narrows the read to one folder's children, and the site
 gate carries an `EXPLAIN` to say whether `title` joins it.
 
@@ -224,8 +224,8 @@ def _child(parent_name: str, segment: str) -> frappe._dict | None:
     if key in memo:
         return memo[key]
 
-    base = f"SELECT {NODE_FIELDS} FROM `tabDrive Node` WHERE parent = %(parent)s AND {_VISIBLE}"
-    values = {"parent": parent_name, "segment": segment}
+    base = f"SELECT {NODE_FIELDS} FROM `tabDrive Node` WHERE parent_node = %(parent_node)s AND {_VISIBLE}"
+    values = {"parent_node": parent_name, "segment": segment}
 
     rows = frappe.db.sql(
         base + " AND title = BINARY %(segment)s ORDER BY creation ASC LIMIT 1",
