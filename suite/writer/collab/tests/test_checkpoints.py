@@ -21,7 +21,7 @@ from suite.writer.collab.tests.test_collab import answer, call, push_body, read_
 WRITER = "writer-collab-writer@example.com"
 
 
-class TestWriterCheckpoints(IntegrationTestCase):
+class CheckpointCase(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -107,6 +107,8 @@ class TestWriterCheckpoints(IntegrationTestCase):
     def compact(self, node: str):
         writer_collab.compact(self.doc_row(node).id)
 
+
+class TestWriterCheckpoints(CheckpointCase):
     def test_a_compaction_installs_a_checkpoint_of_every_row(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two ", "three"])
@@ -304,3 +306,114 @@ class TestWriterCheckpoints(IntegrationTestCase):
         self.assertEqual(self.doc_row(node).checkpoint_rev, 3)
         header, revs, text = self.opened(node)
         self.assertEqual((header["base"], revs, text), (3, [], typed))
+
+
+class TestWriterCompactionTriggers(CheckpointCase):
+    """When a compaction is asked for. Each check watches what is enqueued, not the job itself."""
+
+    def setUp(self):
+        super().setUp()
+        self.requested = []
+        enqueue = patch.object(
+            frappe, "enqueue", lambda method, **kwargs: self.requested.append(kwargs["doc_id"])
+        )
+        enqueue.start()
+        self.addCleanup(enqueue.stop)
+
+    def push_bytes(self, node: str, sizes: list[int], *, final: bool = False) -> None:
+        sid = uuid.uuid4().hex
+        cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
+            "client_id"
+        ]
+        lineage = self.doc_row(node).lineage
+        for seq, size in enumerate(sizes, start=1):
+            body = push_body(lineage, sid, cid, seq, 0, os.urandom(size))
+            if final and seq == len(sizes):
+                length = int.from_bytes(body[:4], "big")
+                header = json.loads(body[4 : 4 + length]) | {"final": True}
+                encoded = json.dumps(header).encode()
+                body = len(encoded).to_bytes(4, "big") + encoded + body[4 + length :]
+            self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
+
+    def set_doc(self, node: str, **values):
+        assignments = ", ".join(f"`{key}` = %({key})s" for key in values)
+        frappe.db.sql(
+            f"UPDATE `__writer_collab_doc` SET {assignments} WHERE `node` = %(node)s",
+            {**values, "node": node},
+        )
+        frappe.db.commit()
+
+    def test_a_small_tail_asks_for_nothing_and_a_large_one_asks_once_it_is_large(self):
+        node = self.new_document()
+        self.push_bytes(node, [1000] * 5)
+        self.assertEqual(self.requested, [])
+
+        self.push_bytes(node, [256 * 1024])
+
+        self.assertEqual(self.requested, [self.doc_row(node).id])
+
+    def test_a_document_near_the_cap_does_not_compact_after_every_push(self):
+        node = self.new_document()
+        self.push_bytes(node, [100])
+        self.set_doc(
+            node,
+            checkpoint_rev=1,
+            state_bytes=checkpoints.STATE_MAX - 300 * 1024,
+            tail_rows=0,
+            tail_bytes=0,
+            tail_bound=0,
+        )
+
+        self.push_bytes(node, [8 * 1024] * 20)
+        self.assertEqual(self.requested, [])
+
+        self.push_bytes(node, [128 * 1024])
+        self.assertEqual(self.requested, [self.doc_row(node).id])
+
+    def test_a_closing_tab_asks_for_a_compaction_unless_someone_else_is_typing(self):
+        node = self.new_document()
+        self.push_bytes(node, [100, 100], final=True)
+        self.assertEqual(self.requested, [self.doc_row(node).id])
+
+        self.requested.clear()
+        self.push_bytes(node, [100])
+        self.push_bytes(node, [100], final=True)
+        self.assertEqual(self.requested, [])
+
+    def test_a_tail_ten_minutes_old_asks_on_the_next_open(self):
+        node = self.new_document()
+        self.push_bytes(node, [100])
+        call(routes.collab_get, node)
+        self.assertEqual(self.requested, [])
+        frappe.db.sql(
+            "UPDATE `__writer_collab_update` SET `created` = %s WHERE `doc_id` = %s",
+            (frappe.utils.now_datetime() - checkpoints.AGE, self.doc_row(node).id),
+        )
+        frappe.db.commit()
+
+        call(routes.collab_get, node)
+
+        self.assertEqual(self.requested, [self.doc_row(node).id])
+
+    def test_a_backed_off_document_waits_for_its_retry_time(self):
+        node = self.new_document()
+        self.set_doc(node, next_compaction_at=frappe.utils.now_datetime() + checkpoints.QUIET)
+
+        self.push_bytes(node, [300 * 1024], final=True)
+
+        self.assertEqual(self.requested, [])
+
+    def test_the_sweeper_asks_for_documents_whose_tail_waited_half_an_hour(self):
+        waited, fresh = self.new_document(), self.new_document()
+        self.push_bytes(waited, [100])
+        self.push_bytes(fresh, [100])
+        frappe.db.sql(
+            "UPDATE `__writer_collab_update` SET `created` = %s WHERE `doc_id` = %s",
+            (frappe.utils.now_datetime() - checkpoints.SWEEP_AGE, self.doc_row(waited).id),
+        )
+        frappe.db.commit()
+
+        writer_collab.sweep()
+
+        self.assertIn(self.doc_row(waited).id, self.requested)
+        self.assertNotIn(self.doc_row(fresh).id, self.requested)

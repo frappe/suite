@@ -22,3 +22,11 @@ def start_log(node: str) -> None:
 
 def compact(doc_id: str) -> None:
     checkpoints.run(ADAPTER, doc_id, ROOTS)
+
+
+def consider_compaction(doc_id: str, *, final_from: str | None = None) -> None:
+    checkpoints.consider(ADAPTER, doc_id, "suite.writer.collab.compact", final_from=final_from)
+
+
+def sweep() -> None:
+    checkpoints.sweep(ADAPTER, "suite.writer.collab.compact")

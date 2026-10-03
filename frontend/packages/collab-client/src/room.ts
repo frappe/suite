@@ -329,6 +329,8 @@ export class Room implements CollabRoom {
       cid: box.cid,
       seen_rev: this.appliedThrough,
       shas: batch.map((entry) => entry.sha),
+      // The tab is hiding or closing, so the server may compact now
+      final: !!keepalive,
     }
     const body = encodePush(header, Y.mergeUpdates(batch.map((entry) => entry.bytes)))
     return { box, header, body }

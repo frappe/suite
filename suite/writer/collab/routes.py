@@ -16,7 +16,7 @@ from werkzeug.wrappers import Response
 from suite import drive
 from suite.composition.http import HttpOwner, Route
 from suite.suite_core import collab
-from suite.writer.collab import ADAPTER
+from suite.writer.collab import ADAPTER, consider_compaction
 
 ROUTES = (
     Route("GET", "documents/{node}/collab", "collab_get", allow_guest=True),
@@ -81,6 +81,7 @@ def _open(node: str) -> Response:
     except collab.ChainBroken:
         frappe.log_error(title="Collab open: chain_break", message=f"{ADAPTER} document {doc.id}")
         raise collab.Refusal(503, "chain_break") from None
+    consider_compaction(doc.id)
     return _frame(collab.open_header(snapshot, can_write=can_write), snapshot["rows"], snapshot["checkpoint"])
 
 
@@ -92,7 +93,9 @@ def _pull(node: str, since: str | None) -> Response:
         after = int(since or 0)
     except ValueError:
         raise collab.Refusal(400, "malformed") from None
-    return _frame({"state": "live", "proto": collab.PROTO}, collab.rows_after(ADAPTER, doc.id, max(after, 0)))
+    rows = collab.rows_after(ADAPTER, doc.id, max(after, 0))
+    consider_compaction(doc.id)
+    return _frame({"state": "live", "proto": collab.PROTO}, rows)
 
 
 def _push(node: str) -> Response:
@@ -100,7 +103,9 @@ def _push(node: str) -> Response:
     header, payload = collab.parse_push(frappe.request.get_data())
     _authorize(node, drive.EDIT, header.get("principal"))
     doc = _doc(node)
-    return _json(200, collab.push(ADAPTER, doc.id, header, payload, frappe.session.user))
+    answer = collab.push(ADAPTER, doc.id, header, payload, frappe.session.user)
+    consider_compaction(doc.id, final_from=header["sid"] if header.get("final") is True else None)
+    return _json(200, answer)
 
 
 def _session(node: str) -> Response:

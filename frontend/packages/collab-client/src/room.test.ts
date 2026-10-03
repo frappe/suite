@@ -41,6 +41,7 @@ function fakeServer(state = 'live') {
   const access = { refuse: null as Answer | null, canWrite: true, online: true }
   const calls: string[] = []
   const pulls: number[] = []
+  const finals: boolean[] = []
   // Rows through `base` folded into one state, as a compaction leaves them
   const checkpoint = { base: 0, bytes: new Uint8Array() }
   let nextClient = 1
@@ -80,6 +81,7 @@ function fakeServer(state = 'live') {
       const view = new DataView(body.buffer, body.byteOffset)
       const length = view.getUint32(0)
       const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
+      finals.push(header.final)
       const session = sessions.get(header.sid)
       if (length > 4096 || header.shas?.length !== header.to - header.from + 1) return reply(400, { collab: 'malformed' })
       if (!session || session.cid !== header.cid) return reply(409, { collab: 'client_conflict' })
@@ -100,7 +102,7 @@ function fakeServer(state = 'live') {
     checkpoint.bytes = Y.mergeUpdates(rows.map((row) => row.bytes))
     checkpoint.base = rows.length
   }
-  return { rows, sessions, endpoints, access, calls, pulls, compact }
+  return { rows, sessions, endpoints, access, calls, pulls, finals, compact }
 }
 
 const rooms: CollabRoom[] = []
@@ -138,6 +140,19 @@ async function device() {
 }
 
 describe('collab room', () => {
+  it('marks only the push of a closing tab as final', async () => {
+    const server = fakeServer()
+    const a = await join(server.endpoints())
+    a.doc.getText('t').insert(0, 'kept ')
+    await a.flush()
+    a.doc.getText('t').insert(5, 'on close')
+
+    await a.close()
+
+    expect(server.finals).toEqual([false, true])
+    expect(server.rows).toHaveLength(2)
+  })
+
   it('opens from the checkpoint plus the rows after it, and pulls on from there', async () => {
     const server = fakeServer()
     const a = await join(server.endpoints())

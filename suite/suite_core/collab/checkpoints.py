@@ -23,6 +23,12 @@ from suite.suite_core.collab import compaction
 from suite.suite_core.collab.log import ChainBroken, read
 from suite.suite_core.collab.tables import table
 
+STATE_MAX = 4 * 2**20
+TAIL_MIN = 256 * 2**10
+TAIL_ROWS = 2000
+AGE = timedelta(minutes=10)
+QUIET = timedelta(seconds=30)
+SWEEP_AGE = timedelta(minutes=30)
 TIMEOUT = 120
 PLACES = 2
 PER_COMPACTION = 240 * 2**20
@@ -74,6 +80,65 @@ def attempt(adapter: str, doc_id: str, roots: dict[str, type]) -> None:
             else type(error).__name__
         )
         failed(adapter, doc_id, through, reason, error)
+
+
+def consider(adapter: str, doc_id: str, method: str, *, final_from: str | None = None) -> None:
+    """Request a compaction if the document is due. `final_from` names a tab's session that is hiding or closing."""
+    doc = frappe.db.sql(
+        f"""SELECT `d`.`head_rev`, `d`.`checkpoint_rev`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`,
+        `d`.`tail_bound`, `d`.`next_compaction_at`, `u`.`created` AS `oldest`
+        FROM `{table(adapter, "doc")}` `d` LEFT JOIN `{table(adapter, "update")}` `u`
+        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
+        WHERE `d`.`id` = %s""",
+        doc_id,
+        as_dict=True,
+    )
+    if not doc:
+        return
+    others_quiet = False
+    if final_from:
+        others_quiet = not frappe.db.sql(
+            f"""SELECT 1 FROM `{table(adapter, "session")}` WHERE `doc_id` = %s AND `sid` != %s
+            AND `last_push_at` > %s LIMIT 1""",
+            (doc_id, final_from, now_datetime() - QUIET),
+        )
+    if due(doc[0], now_datetime(), final=others_quiet):
+        request(adapter, doc_id, method)
+
+
+def due(doc, now, *, final: bool = False) -> bool:
+    """Whether a document's tail calls for a compaction now.
+
+    The bound threshold is hysteresis: a compaction runs once the tail has used
+    half the room left under the cap, so a document near the cap waits for a
+    real tail instead of compacting after every push.
+    """
+    if int(doc.head_rev) == int(doc.checkpoint_rev):
+        return False
+    if doc.next_compaction_at and doc.next_compaction_at > now:
+        return False
+    state = int(doc.state_bytes)
+    return (
+        final
+        or int(doc.tail_bytes) >= max(TAIL_MIN, state // 4)
+        or int(doc.tail_rows) >= TAIL_ROWS
+        or int(doc.tail_bound) >= max(TAIL_MIN, (STATE_MAX - state) // 2)
+        or (doc.oldest is not None and doc.oldest <= now - AGE)
+    )
+
+
+def sweep(adapter: str, method: str, limit: int = 100) -> None:
+    """Request compactions for documents whose tail has waited too long, whatever their traffic."""
+    now = now_datetime()
+    for (doc_id,) in frappe.db.sql(
+        f"""SELECT `d`.`id` FROM `{table(adapter, "doc")}` `d` JOIN `{table(adapter, "update")}` `u`
+        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
+        WHERE `d`.`head_rev` > `d`.`checkpoint_rev` AND `u`.`created` <= %s
+        AND (`d`.`next_compaction_at` IS NULL OR `d`.`next_compaction_at` <= %s)
+        ORDER BY `u`.`created` LIMIT %s""",
+        (now - SWEEP_AGE, now, limit),
+    ):
+        request(adapter, doc_id, method)
 
 
 def request(adapter: str, doc_id: str, method: str) -> None:

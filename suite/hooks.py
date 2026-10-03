@@ -413,6 +413,10 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
     ],
+    "all": [
+        # writer
+        "suite.writer.collab.sweep",
+    ],
     "cron": {
         "* * * * *": [
             "suite.meet.api.recording.reconcile_pending_recordings",
