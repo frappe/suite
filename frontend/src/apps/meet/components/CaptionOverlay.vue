@@ -8,6 +8,7 @@
     leave-to-class="opacity-0 translate-y-2"
   >
     <div
+      data-testid="caption-overlay"
       v-show="isCaptionsEnabled && lines.length > 0"
       class="pointer-events-none z-[40] flex shrink-0 justify-center px-3 pb-2 pt-1 sm:px-6"
     >
@@ -26,6 +27,11 @@
           <div
             v-for="line in visibleLines"
             :key="line.id"
+            data-testid="caption-line"
+            :data-caption-id="line.id"
+            :data-participant-id="line.participantId"
+            :data-participant-name="line.participantName"
+            :data-is-final="String(!!line.isFinal)"
             :class="[
               'flex max-w-full items-start gap-2 rounded-5 px-3 py-1.5 text-left text-sm font-medium leading-snug text-white shadow-lg sm:text-base',
               { 'opacity-60 italic': line.text === '...' },
@@ -43,10 +49,13 @@
               class="mt-0.5 shrink-0 ring-1 ring-white/20"
             />
             <div class="min-w-0">
-              <div class="text-xs font-semibold leading-tight text-white/75">
+              <div
+                data-testid="caption-speaker"
+                class="text-xs font-semibold leading-tight text-white/75"
+              >
                 {{ line.participantName }}
               </div>
-              <div>{{ line.text }}</div>
+              <div data-testid="caption-text">{{ line.text }}</div>
             </div>
           </div>
         </div>

@@ -25,6 +25,9 @@ from frappe.utils import (
     now_datetime,
     time_diff_in_seconds,
 )
+from jmap import CreationRef, MethodError
+from jmap.capabilities.mail import check_attachment_size
+from jmap.core.errors import CapabilityFieldError
 
 from suite.mail.doctype.mail_queue.payload import (
     Address,
@@ -36,14 +39,17 @@ from suite.mail.doctype.mail_queue.payload import (
 )
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.jmap import (
-    get_email_service,
-    get_email_submission_service,
+    build_email_draft,
+    build_submission_envelope,
+    check_delayed_send,
+    get_account_client,
     get_identities,
-    get_jmap_connection,
+    get_identity_id_by_email,
+    get_mail_capability,
+    get_mailbox_id_by_role,
+    get_max_delayed_send,
+    never_applied,
 )
-from suite.mail.jmap.models import EmailCreateModel, EmailHeader
-from suite.mail.jmap.services.mail.email import EmailService
-from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import parsedate_to_datetime
 from suite.mail.utils.html_to_text import html_to_text, to_flowed
@@ -51,6 +57,11 @@ from suite.mail.utils.user import is_jmap_configured
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
 from suite.utils.validation import JSONList, parse
+
+# What a row records in place of the server's answer when the request carrying the mail got
+# none, and when it got one that could not be worked through here.
+_UNCONFIRMED = "unconfirmed"
+_UNPROCESSED = "unprocessed"
 
 
 class MailQueue(OwnerFromUser, Document):
@@ -319,19 +330,48 @@ class MailQueue(OwnerFromUser, Document):
     def error_message(self) -> str | None:
         """Returns the error message."""
 
-        if not self._response or self.status not in ["Failed to Draft", "Failed to Submit"]:
+        if not self._response or self.status not in ["Failed", "Failed to Draft", "Failed to Submit"]:
             return None
 
         response = json_loads(self._response)
 
         data = None
-        if self.status == "Failed to Draft":
-            data = response["methodResponses"][0][1].get("notCreated", {}).get(f"draft-{self.name}")
+        if "methodResponses" in response:
+            # Rows written before the jmaplib switch store the raw JMAP response.
+            if self.status == "Failed to Draft":
+                data = response["methodResponses"][0][1].get("notCreated", {}).get(f"draft-{self.name}")
+            elif self.status == "Failed to Submit":
+                data = response["methodResponses"][-1][1].get("notCreated", {}).get(f"submit-{self.name}")
+        elif self.status == "Failed to Draft":
+            data = _refusal(response.get("draft"), f"draft-{self.name}")
         elif self.status == "Failed to Submit":
-            data = response["methodResponses"][-1][1].get("notCreated", {}).get(f"submit-{self.name}")
+            data = _refusal(response.get("submit"), f"submit-{self.name}")
+        else:
+            # Failed, with an answer on record: a call that may have been applied (see _process).
+            data = (
+                response.get("error")
+                or (response.get("submit") or {}).get("error")
+                or (response.get("draft") or {}).get("error")
+            )
+
+        if data and data.get("type") == _UNCONFIRMED:
+            return _(
+                "The mail server did not confirm this mail. It may have been saved or sent: check "
+                "the mailbox before sending it again."
+            )
+
+        if data and data.get("type") == _UNPROCESSED:
+            return _(
+                "The mail server answered, but its answer could not be processed. The mail may "
+                "have been saved or sent: check the mailbox before sending it again."
+            )
 
         if data:
-            message = f"{data['type']}: {data['description']}"
+            # Only `type` is certain on a JMAP error; the rest is the server's to add.
+            message = data["type"]
+
+            if data.get("description"):
+                message += f": {data['description']}"
 
             if data.get("properties"):
                 message += f" ({', '.join(data['properties'])})"
@@ -473,12 +513,11 @@ class MailQueue(OwnerFromUser, Document):
 
         max_delay = 2_592_000
         try:
-            max_delay = get_email_submission_service(self.account).max_delayed_send
+            max_delay = get_max_delayed_send(get_account_client(self.account), self.account)
         except Exception:
             pass  # best-effort; the server enforces its own limit at submission
 
-        if time_diff_in_seconds(self.send_at, now()) > max_delay:
-            frappe.throw(_("Send At cannot be more than {0} days in the future.").format(max_delay // 86400))
+        check_delayed_send(time_diff_in_seconds(self.send_at, now()), max_delay)
 
     def validate_destroy_after_submit(self) -> None:
         """Validates the destroy after submit setting."""
@@ -535,9 +574,34 @@ class MailQueue(OwnerFromUser, Document):
         user = self.user if is_administrator(frappe.session.user) else frappe.session.user
 
         attachments = parse(Attachments, json_loads(self.attachments, default=[]), "attachments")
+        octets: int | None = 0
         for attachment in attachments:
-            if attachment.is_private_file:
-                MailQueue._get_file(file_url=attachment.file_url, user=user, check_permission=True)
+            if attachment.blob_id:
+                size = attachment.size
+            else:
+                file = MailQueue._get_file(
+                    file_url=attachment.file_url, user=user, check_permission=attachment.is_private_file
+                )
+                size = file.file_size
+            # An attachment of unknown size leaves the total unknown, not smaller.
+            octets = None if octets is None or size is None else octets + size
+
+        if octets:
+            # The server's own ceiling on what one email may carry, refused here rather than after
+            # every attachment has been uploaded and the draft sent. Best-effort: with the server
+            # out of reach the mail is still queued, and the server applies its limit on sending.
+            try:
+                check_attachment_size(
+                    octets, get_mail_capability(get_account_client(self.account), self.account)
+                )
+            except CapabilityFieldError as e:
+                frappe.throw(
+                    _("The attachments come to {0}, and this mail server allows {1} per email.").format(
+                        _megabytes(e.requested), _megabytes(e.advertised)
+                    )
+                )
+            except Exception:
+                pass
 
         self.attachments = to_json(attachments)
 
@@ -581,9 +645,15 @@ class MailQueue(OwnerFromUser, Document):
 
         if self.in_reply_to and not self.in_reply_to_id:
             try:
-                service = get_email_service(self.account)
-                result = service.query({"header": ["Message-ID", self.in_reply_to]})
-                if ids := result["ids"]:
+                client = get_account_client(self.account)
+                with client.batch() as b:
+                    h = b.mail.email.query(
+                        filter={"header": ["Message-ID", self.in_reply_to]},
+                        sort=[{"property": "receivedAt", "isAscending": False}],
+                        limit=50,
+                        calculate_total=True,
+                    )
+                if ids := h.result.ids:
                     self.in_reply_to_id = ids[0]
             except Exception:
                 self.in_reply_to_id = None
@@ -606,8 +676,10 @@ class MailQueue(OwnerFromUser, Document):
             return
 
         try:
-            service = get_email_service(self.account)
-            emails = service.get([self.forwarded_from_id], properties=["messageId"])
+            client = get_account_client(self.account)
+            with client.batch() as b:
+                h = b.mail.email.get(ids=[self.forwarded_from_id], properties=["messageId"])
+            emails = [e.to_wire() for e in h.result.items]
             # JMAP returns messageId as a list of Message-ID strings (RFC 5322 msg-id values).
             if emails and (message_ids := emails[0].get("messageId")):
                 self.in_reply_to = message_ids[0].strip("<>")
@@ -642,24 +714,35 @@ class MailQueue(OwnerFromUser, Document):
         """Create, Update or Submit the Email."""
 
         kwargs = {}
+        draft_ref = f"draft-{self.name}"
+        submit_ref = f"submit-{self.name}"
+        # Set once the request carrying the mail is on its way: from then on a failure no longer
+        # means the mail is not with the server. And once it is answered: a failure after that
+        # is one of working through the answer, not the server's.
+        dispatched = answered = False
+        submit_created = None
 
         try:
-            connection = get_jmap_connection(self.user)
-            email_service = EmailService(self.account, connection)
-            mailbox_service = MailboxService(self.account, connection)
+            client = get_account_client(self.account)
 
-            draft_mailbox_id = mailbox_service.get_mailbox_id_by_role(
-                "drafts", create_if_not_exists=True, raise_exception=True
+            draft_mailbox_id = get_mailbox_id_by_role(
+                self.account, "drafts", create_if_not_exists=True, raise_exception=True
             )
-            sent_mailbox_id = mailbox_service.get_mailbox_id_by_role(
-                "sent", create_if_not_exists=True, raise_exception=True
+            sent_mailbox_id = get_mailbox_id_by_role(
+                self.account, "sent", create_if_not_exists=True, raise_exception=True
             )
 
-            headers, reply_to, attachments = [], [], []
+            headers: list[dict] = []
+            reply_to: list[dict] = []
+            attachments: list[dict] = []
+            raw_blob_id = None
 
-            if not self.raw_message:
+            if self.raw_message:
+                blob = client.upload(self.raw_message.encode("utf-8"), content_type="message/rfc822")
+                raw_blob_id = str(blob.blob_id)
+            else:
                 headers = [
-                    EmailHeader(name=key, value=value)
+                    {"name": key, "value": value}
                     for key, value in parse(Headers, json_loads(self.headers, default={}), "headers").items()
                 ]
                 reply_to = [
@@ -671,54 +754,156 @@ class MailQueue(OwnerFromUser, Document):
                 for a in _attachments:
                     if not a.blob_id:
                         file = MailQueue._get_file(file_url=a.file_url, check_permission=False)
-                        blob = email_service.upload_blob(file.get_content(), guess_type(file.file_name)[0])
-                        a.type, a.size, a.blob_id = blob["type"], blob["size"], blob["blobId"]
+                        content = file.get_content()
+                        if isinstance(content, str):
+                            content = content.encode("utf-8")
+                        blob = client.upload(content, content_type=guess_type(file.file_name)[0])
+                        a.type, a.size, a.blob_id = blob.type, blob.size, str(blob.blob_id)
 
                 kwargs["attachments"] = to_json(_attachments)
                 attachments = [a.to_jmap() for a in _attachments]
 
             recipients = [r.to_jmap() for r in self._recipients]
 
-            email = EmailCreateModel(
-                creation_id=self.name,
-                from_email=self.from_email,
-                recipients=recipients,
-                from_name=self.from_name,
-                subject=self.subject,
-                sent_at=self.sent_at,
-                message_id=self.message_id,
-                reply_to=reply_to,
-                in_reply_to=self.in_reply_to,
-                headers=headers,
-                text_body=self.text_body,
-                html_body=self.html_body,
-                attachments=attachments,
-                raw_message=self.raw_message,
-                existing_id=self.id,
-                save_as_draft=(self.save_as_draft),
-                priority=self._priority,
-                destroy_after_submit=bool(self.destroy_after_submit),
-                forwarded_id=self.forwarded_from_id,
-                reply_to_id=self.in_reply_to_id,
-                hold_until=self._hold_until,
-            )
+            with client.batch() as b:
+                if self.raw_message:
+                    draft_h = b.mail.email.import_(
+                        emails={
+                            draft_ref: {
+                                "blobId": raw_blob_id,
+                                "mailboxIds": {draft_mailbox_id: True},
+                                "keywords": {"$draft": True, "$seen": True},
+                            }
+                        }
+                    )
+                    if self.id:
+                        b.mail.email.set(destroy=[self.id])
+                else:
+                    draft = build_email_draft(
+                        from_email=self.from_email,
+                        recipients=recipients,
+                        draft_mailbox_id=draft_mailbox_id,
+                        queue_name=self.name,
+                        from_name=self.from_name,
+                        subject=self.subject,
+                        sent_at=self.sent_at,
+                        message_id=self.message_id,
+                        reply_to=reply_to,
+                        in_reply_to=self.in_reply_to,
+                        headers=headers,
+                        text_body=self.text_body,
+                        html_body=self.html_body,
+                        attachments=attachments,
+                    )
+                    if self.id:
+                        draft_h = b.mail.email.set(create={draft_ref: draft}, destroy=[self.id])
+                    else:
+                        draft_h = b.mail.email.set(create={draft_ref: draft})
 
-            response = email_service.create([email])
+                submit_h = None
+                if not self.save_as_draft:
+                    identity_id = get_identity_id_by_email(
+                        self.account, self.from_email, raise_exception=True
+                    )
 
-            kwargs.update({"status": "Failed", "_response": json.dumps(response)})
-            if data := response["methodResponses"][0][1].get("created", {}).get(f"draft-{self.name}"):
+                    on_success = {}
+                    if self.destroy_after_submit:
+                        # No Mailbox updates, just destroy the draft email after submission.
+                        on_success["onSuccessDestroyEmail"] = [f"#{submit_ref}"]
+                    else:
+                        # Move the draft to the Sent mailbox and update keywords after submission.
+                        on_success["onSuccessUpdateEmail"] = {
+                            f"#{submit_ref}": {
+                                f"mailboxIds/{draft_mailbox_id}": None,
+                                f"mailboxIds/{sent_mailbox_id}": True,
+                                "keywords/$draft": None,
+                                "keywords/$seen": True,
+                            }
+                        }
+
+                    for target_id, keyword in [
+                        (self.forwarded_from_id, "$forwarded"),
+                        (self.in_reply_to_id, "$answered"),
+                    ]:
+                        if target_id:
+                            on_success.setdefault("onSuccessUpdateEmail", {}).setdefault(target_id, {})[
+                                f"keywords/{keyword}"
+                            ] = True
+
+                    submit_h = b.submission.email_submission.set(
+                        create={
+                            submit_ref: {
+                                "identityId": identity_id,
+                                "emailId": CreationRef(draft_ref),
+                                "envelope": build_submission_envelope(
+                                    from_email=self.from_email,
+                                    rcpt_emails={r["email"] for r in recipients},
+                                    envelope_id=self.name,
+                                    priority=self._priority,
+                                    hold_until=self._hold_until,
+                                ),
+                            }
+                        },
+                        **on_success,
+                    )
+
+                dispatched = True
+
+            answered = True
+            response_payload: dict[str, Any] = {}
+
+            # A call refused as a whole is a failure of that step like a refused object, and is
+            # retried the same way: left as it was, the row sat Drafted or Failed with no retry
+            # scheduled, and the mail was never sent. Not so a call that may have been applied
+            # all the same: sending that again could send the mail twice.
+            maybe_applied = False
+            draft_created = draft_error = None
+            try:
+                draft_result = draft_h.result
+            except MethodError as e:
+                draft_error = {"type": e.type, **e.arguments}
+                response_payload["draft"] = {"error": draft_error}
+                maybe_applied = not never_applied(e)
+            else:
+                created_map = {k: v.to_wire() for k, v in draft_result.created.items()}
+                not_created = draft_result.not_created
+
+                response_payload["draft"] = {"created": created_map, "notCreated": not_created}
+                draft_created = created_map.get(draft_ref)
+                draft_error = not_created.get(draft_ref)
+
+            submit_created = submit_error = None
+            if submit_h is not None:
+                try:
+                    submit_result = submit_h.result
+                except MethodError as e:
+                    submit_error = {"type": e.type, **e.arguments}
+                    response_payload["submit"] = {"error": submit_error}
+                    maybe_applied = maybe_applied or not never_applied(e)
+                else:
+                    created_map = {k: v.to_wire() for k, v in submit_result.created.items()}
+                    response_payload["submit"] = {
+                        "created": created_map,
+                        "notCreated": submit_result.not_created,
+                    }
+                    submit_created = created_map.get(submit_ref)
+                    submit_error = submit_result.not_created.get(submit_ref)
+
+            kwargs.update({"status": "Failed", "_response": json.dumps(response_payload)})
+            if draft_created:
                 kwargs.update(
                     {
                         "status": "Drafted",
-                        "id": data["id"],
-                        "blob_id": data["blobId"],
-                        "size": data["size"],
+                        "id": draft_created["id"],
+                        # Set by the server, and its to leave out.
+                        "blob_id": draft_created.get("blobId"),
+                        "size": draft_created.get("size"),
                         "drafted_at": now(),
-                        "thread_id": data["threadId"],
+                        "thread_id": draft_created.get("threadId"),
                         "mailbox_id": draft_mailbox_id,
                     }
                 )
-            elif response["methodResponses"][0][1].get("notCreated", {}).get(f"draft-{self.name}"):
+            elif draft_error:
                 retries = cint(self.retries) + 1
                 kwargs.update(
                     {
@@ -728,21 +913,26 @@ class MailQueue(OwnerFromUser, Document):
                     }
                 )
 
-            if not self.save_as_draft:
-                idx = 2 if self.raw_message and self.id else 1
-                if data := response["methodResponses"][idx][1].get("created", {}).get(f"submit-{self.name}"):
+            if submit_h is not None:
+                if submit_created:
                     # For a scheduled send the server holds delivery (FUTURERELEASE); the row
                     # is still Submitted — the EmailSubmission object is the source of truth
-                    # for the hold's state, and send_at merely logs it.
+                    # for the hold's state, and send_at merely logs it. Sent is sent: no retry
+                    # stays scheduled, be it an earlier attempt's or one the draft's answer
+                    # asked for above.
                     kwargs.update(
                         {
-                            "submission_id": data["id"],
+                            "submission_id": submit_created["id"],
                             "mailbox_id": sent_mailbox_id,
                             "status": "Submitted",
                             "submitted_at": now(),
+                            "retries": cint(self.retries),
+                            "next_retry_after": None,
                         }
                     )
-                elif response["methodResponses"][idx][1].get("notCreated", {}).get(f"submit-{self.name}"):
+                elif submit_error and not draft_error:
+                    # A refused draft takes its submission down with it; the draft's refusal
+                    # is the cause, and stays the row's status.
                     retries = cint(self.retries) + 1
                     kwargs.update(
                         {
@@ -751,16 +941,48 @@ class MailQueue(OwnerFromUser, Document):
                             "next_retry_after": get_next_retry_after(retries),
                         }
                     )
-        except Exception:
-            retries = cint(self.retries) + 1
-            kwargs.update(
-                {
-                    "status": "Failed",
-                    "retries": retries,
-                    "next_retry_after": get_next_retry_after(retries),
-                    "error_log": frappe.get_traceback(with_context=True),
-                }
-            )
+
+            if maybe_applied and not submit_created:
+                # Failed, for a person to look at: no retry of its own, nor one left over from
+                # an earlier attempt. A submission the server confirms is sent, whatever became
+                # of the draft's answer.
+                kwargs.update({"status": "Failed", "retries": cint(self.retries), "next_retry_after": None})
+        except Exception as e:
+            kwargs.update({"status": "Failed", "error_log": frappe.get_traceback(with_context=True)})
+            if answered:
+                # The server answered and working through the answer failed here. What the
+                # answer says stands: a submission it confirms is sent. Short of that the row is
+                # left for a person, without a retry that could send the mail twice.
+                log_mail_error("Mail Queue: failed to process the answer", kwargs["error_log"])
+                kwargs.update({"retries": cint(self.retries), "next_retry_after": None})
+                if submit_created:
+                    kwargs.update(
+                        {
+                            "status": "Submitted",
+                            "submission_id": submit_created["id"],
+                            "mailbox_id": sent_mailbox_id,
+                            "submitted_at": now(),
+                        }
+                    )
+                else:
+                    kwargs["_response"] = json.dumps({"error": {"type": _UNPROCESSED}})
+            elif dispatched and not never_applied(e):
+                # The request went out and nothing says it was not applied - no answer came, or a
+                # gateway answered for the server. Like a call that may have been applied: no
+                # retry, since that could send the mail twice.
+                kwargs.update(
+                    {
+                        "_response": json.dumps({"error": {"type": _UNCONFIRMED}}),
+                        "retries": cint(self.retries),
+                        "next_retry_after": None,
+                    }
+                )
+            else:
+                # Whatever an earlier attempt recorded is not this failure's answer.
+                retries = cint(self.retries) + 1
+                kwargs.update(
+                    {"_response": None, "retries": retries, "next_retry_after": get_next_retry_after(retries)}
+                )
 
         if frappe.flags.read_only:
             for key, value in kwargs.items():
@@ -812,6 +1034,18 @@ def json_loads(data: str | None, default: Any = None) -> list | dict | None:
         return json.loads(data)
 
     return default
+
+
+def _megabytes(octets: int) -> str:
+    return f"{octets / (1024 * 1024):.1f} MB"
+
+
+def _refusal(answer: dict | None, creation_id: str) -> dict | None:
+    """The error a stored draft or submit answer carries: the call's own when the server refused
+    the whole call, else the one against the object."""
+
+    answer = answer or {}
+    return answer.get("error") or (answer.get("notCreated") or {}).get(creation_id)
 
 
 def get_next_retry_after(retries: int) -> str:

@@ -11,7 +11,6 @@ from frappe.tests import UnitTestCase
 from suite.mail.api.outbound import format_recipients, format_reply_to
 from suite.mail.doctype.mail_queue.mail_queue import bulk_retry
 from suite.mail.doctype.mail_queue.payload import Address, Attachments, Headers, Recipients
-from suite.mail.jmap.models import EmailAddress, EmailRecipient
 from suite.utils.validation import parse
 
 
@@ -21,9 +20,7 @@ class TestAddresses(UnitTestCase):
         # API send that named a Reply-To failed when it was processed.
         reply_to = parse(list[Address], format_reply_to("Ann Lee <ann@example.com>"))
 
-        self.assertEqual(
-            [a.to_jmap() for a in reply_to], [EmailAddress(name="Ann Lee", email="ann@example.com")]
-        )
+        self.assertEqual([a.to_jmap() for a in reply_to], [{"name": "Ann Lee", "email": "ann@example.com"}])
 
     def test_send_api_recipients_keep_their_display_names(self):
         rows = format_recipients(to="Bob <Bob@Example.com>", cc="carol@example.com")
@@ -31,8 +28,8 @@ class TestAddresses(UnitTestCase):
         self.assertEqual(
             [r.to_jmap() for r in parse(Recipients, rows)],
             [
-                EmailRecipient(name="Bob", email="bob@example.com", type="to"),
-                EmailRecipient(name="", email="carol@example.com", type="cc"),
+                {"type": "to", "name": "Bob", "email": "bob@example.com"},
+                {"type": "cc", "name": "", "email": "carol@example.com"},
             ],
         )
 

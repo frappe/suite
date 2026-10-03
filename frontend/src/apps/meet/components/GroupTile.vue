@@ -1,6 +1,7 @@
 <template>
-  <Tooltip :text="tooltip" :disabled="!tooltip" class="contents">
+  <Tooltip :text="tooltip" :disabled="!tooltip">
     <div
+      v-bind="$attrs"
       class="relative bg-surface-gray-3 rounded-6 overflow-hidden min-h-0 flex flex-col gap-2 items-center justify-center cursor-pointer p-2"
       role="button"
       tabindex="0"
@@ -23,6 +24,8 @@ import { Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 
 import AvatarGroup from './AvatarGroup.vue'
+
+defineOptions({ inheritAttrs: false })
 
 const emit = defineEmits<{
   click: []

@@ -18,9 +18,9 @@ from suite.calendar.doctype.calendar_event.mailing_lists import (
     expand_mailing_list_participants,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import jscalendar_to_vevent
+from suite.calendar.jmap_events import participants_map
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
 from suite.mail.directory import get_mailing_list_index
-from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 MODULE = "suite.calendar.doctype.calendar_event.mailing_lists"
@@ -307,7 +307,7 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         # Members reset fields to None rather than leaving them out, which the serialiser must take.
         team, alice, _ = self.expand([participant("team@example.com", kind=None)])
 
-        serialised = CalendarEventService._get_participants_map([team, alice])
+        serialised = participants_map([team, alice])
 
         self.assertEqual(serialised[team["uid"]]["scheduleAgent"], "none")
         self.assertEqual(serialised[team["uid"]]["kind"], "group")

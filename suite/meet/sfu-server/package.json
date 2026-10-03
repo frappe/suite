@@ -14,7 +14,7 @@
 		"format": "biome format .",
 		"format:write": "biome format --write .",
 		"test": "vitest run",
-		"test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
+		"test:ci": "RUN_STT_FFMPEG_TESTS=1 vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
 		"test:watch": "vitest"
 	},
 	"keywords": [
@@ -32,6 +32,7 @@
 		"express": "^4.18.2",
 		"jsonwebtoken": "^9.0.2",
 		"mediasoup": "^3.19.19",
+		"onnxruntime-node": "1.30.0",
 		"prom-client": "^15.1.3",
 		"socket.io": "^4.7.5",
 		"socket.io-client": "^4.7.5",

@@ -3,24 +3,27 @@
 
 import unittest
 
-from suite.mail.jmap.models import EmailAddress, EmailAttachment, EmailCreateModel, EmailRecipient
-from suite.mail.jmap.services.mail.email import TEXT_PLAIN_FLOWED, EmailService
+from suite.mail.jmap import TEXT_PLAIN_FLOWED, build_email_draft
 
 
 def draft(**kwargs) -> dict:
-    email = EmailCreateModel(
-        creation_id="c1",
+    return build_email_draft(
         from_email="sender@example.com",
-        recipients=[EmailRecipient(type="to", name=None, email="rcpt@example.com")],
+        recipients=[{"type": "to", "name": None, "email": "rcpt@example.com"}],
+        draft_mailbox_id="mailbox-1",
+        queue_name="c1",
         **kwargs,
     )
-    return EmailService._get_draft(email, "mailbox-1")
 
 
-def attachment(disposition: str) -> EmailAttachment:
-    return EmailAttachment(
-        name="file.png", type="image/png", cid="cid-1", blob_id="blob-1", disposition=disposition
-    )
+def attachment(disposition: str) -> dict:
+    return {
+        "name": "file.png",
+        "type": "image/png",
+        "cid": "cid-1",
+        "blob_id": "blob-1",
+        "disposition": disposition,
+    }
 
 
 class TextPart(unittest.TestCase):
@@ -83,8 +86,8 @@ class ReplyTo(unittest.TestCase):
     def test_goes_out_as_addresses_with_their_names(self):
         payload = draft(
             reply_to=[
-                EmailAddress(name='Ann "Nan" Lee', email="ann@example.com"),
-                EmailAddress(name="Doe, John", email="john@example.com"),
+                {"name": 'Ann "Nan" Lee', "email": "ann@example.com"},
+                {"name": "Doe, John", "email": "john@example.com"},
             ]
         )
 
@@ -98,7 +101,7 @@ class ReplyTo(unittest.TestCase):
 
     def test_an_address_without_a_name_gets_no_name(self):
         # An identity's Reply-To may carry no name; it used to be written out as "None".
-        payload = draft(reply_to=[EmailAddress(name=None, email="team@example.com")])
+        payload = draft(reply_to=[{"name": None, "email": "team@example.com"}])
 
         self.assertEqual(payload["replyTo"], [{"name": None, "email": "team@example.com"}])
         self.assertNotIn("header:Reply-To", payload)

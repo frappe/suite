@@ -160,6 +160,7 @@ export class SFUServer {
 			loggers.server.info('Starting SFU Server');
 
 			await this.mediasoup.init();
+			await this.sttManager.prepareSpeechDetection();
 			await this.initializeRecordingAuthorization();
 			if (this.recordingGrantPersistence) {
 				this.recordingGrantRetry = setInterval(

@@ -28,13 +28,13 @@ def make_user(prefix: str) -> str:
 
 @contextmanager
 def jmap_server_reporting(accounts: dict[str, dict]):
-    """Stand in for the JMAP server: the user's connection lists ``accounts`` and the
+    """Stand in for the JMAP server: the user's client session lists ``accounts`` and the
     per-account mailbox setup that normally runs over JMAP is a no-op."""
 
     module = "suite.mail.doctype.jmap_account.jmap_account"
-    connection = SimpleNamespace(accounts=accounts)
+    client = SimpleNamespace(session=SimpleNamespace(raw={"accounts": accounts}))
     with (
-        patch.object(UserSettings, "connection", new_callable=PropertyMock, return_value=connection),
+        patch.object(UserSettings, "client", new_callable=PropertyMock, return_value=client),
         patch(f"{module}.create_archive_mailbox"),
         patch(f"{module}.rename_default_mailboxes"),
         patch(f"{module}.build_automation_sieve"),

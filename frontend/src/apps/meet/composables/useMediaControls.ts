@@ -42,8 +42,8 @@ function getCameraVideoConstraints(): MediaTrackConstraints {
   }
 
   return {
-    width: { ideal: 1280, min: 960 },
-    height: { ideal: 720, min: 540 },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
     frameRate: { ideal: 30, max: 30 },
   }
 }

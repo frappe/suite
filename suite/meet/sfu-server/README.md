@@ -30,8 +30,7 @@ final-silence padding, and Hugging Face token belong only there.
 | `STT_MIN_SPEECH_MS` | Minimum speech duration before normal silence final | `600` |
 | `STT_MIN_TAIL_MS` | Minimum speech duration for short utterance final | `200` |
 | `STT_SHORT_UTTERANCE_SILENCE_MS` | Silence duration before finalizing short utterances | `700` |
-| `STT_VAD_THRESHOLD` | Speech detection sensitivity (0.0–1.0) | `0.012` |
-| `STT_PRE_ROLL_MS` | Audio retained before speech detection to avoid clipped words | `300` |
+| `STT_PRE_ROLL_MS` | Real audio retained before speech detection; explicit override (0–14900 ms) | `2000` |
 
 The SFU finalizes continuous speech every 15 seconds. If a Realtime stream exceeds
 that utterance limit, queues more than 1 MiB of outbound WebSocket data, or leaves
@@ -43,6 +42,41 @@ When `METRICS_TOKEN` is configured, `/metrics` exports aggregate
 captioned rooms, subscribers, producer ingesters, and Realtime streams. These
 metrics have no room or participant labels and help compare browser-visible
 caption delay with SFU audio delivery and isolated STT load measurements.
+
+Captions use Silero VAD on the SFU CPU, with separate state per producer.
+Startup caches the model; audio is processed only for rooms with captions enabled.
+Only detector audio is resampled to 16 kHz; Nemotron receives the original
+24 kHz PCM. Two seconds of pre-roll preserve soft onsets. During Opus DTX,
+idle time finalizes buffered audio; fragments shorter than `STT_MIN_TAIL_MS`
+are discarded locally without restarting capture. Quiet gaps clear old detector context.
+
+The MIT model, license and pinned revision/checksum are in `assets/silero-vad/`.
+Startup verifies the checksum. The SFU `.npmrc` selects the bundled CPU
+runtime without optional GPU-provider downloads.
+Model or runtime failures surface through startup/recovery; there is no fallback.
+
+### Private caption diagnostics
+
+Capture is off by default. Set `STT_DIAGNOSTICS_DIR` to an absolute private
+path and `STT_DIAGNOSTICS_ROOM_ID` to the exact internal `<site>::<meetingId>`.
+`STT_DIAGNOSTICS_ROOM_IDS` accepts up to 20 comma-separated IDs and takes
+precedence when nonempty; wildcards and malformed IDs disable capture.
+
+For Compose, use `STT_DIAGNOSTICS_DIR=/data/stt-diagnostics` to retain captures
+in the existing private data volume. Copy them out with `docker cp`.
+
+Each capture directory (`0700`) contains files (`0600`): `metadata.json`,
+`before-vad.pcm`, `stt-sent.pcm`, and `events.jsonl`. PCM is mono s16le at 24 kHz.
+Events include timestamps, byte offsets, queued commits/session settings,
+transcripts and safe RTP counters. STT sends mean queued, not acknowledged.
+Artifacts include private audio, names and transcripts; keep them out of git.
+Authentication headers and server error messages are excluded.
+
+Captures are bounded to 60 seconds, 2.88 MB per PCM file, 1 MiB of events and
+256 KiB of pending writes. There are 10 attempts per process;
+`STT_DIAGNOSTICS_MAX_SESSIONS` may raise this to 20. Limits and I/O failures
+end capture without interrupting captions. Wait for closed files and
+`capture.end` before analysis; missing termination indicates an incomplete slice.
 
 ## Development Setup
 

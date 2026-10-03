@@ -3,13 +3,14 @@ from urllib.parse import unquote
 import frappe
 from frappe import _
 from frappe.utils import random_string
+from jmap.models.push import CalendarAlert, PushVerification
 
 from suite.calendar.doctype.calendar_event.calendar_event import enqueue_send_event_alert_notification
 from suite.mail.doctype.mail_message.mail_message import enqueue_fetch_changes
 from suite.mail.doctype.push_subscription.push_subscription import (
-    decrypt_jmap_push_payload,
     get_push_subscription_keys,
     is_jmap_push_notifications_frozen,
+    read_jmap_push,
     verify_push_subscription,
 )
 from suite.mail.jmap import invalidate_jmap_identities_cache, invalidate_jmap_mailboxes_cache
@@ -58,65 +59,52 @@ def push_notification() -> dict:
                 }
 
             logger.debug("decrypting-payload")
-            request_data = decrypt_jmap_push_payload(frappe.request.get_data())
         else:
             logger.debug("using-plain-json-payload")
-            request_data = frappe.request.get_json()
 
-        event_type = request_data.get("@type")
-        ctx["type"] = event_type
+        # Anything but the three push objects is refused here, as RFC 8620 §7 has it: discarded.
+        pushed = read_jmap_push(frappe.request.get_data(), encrypted=bool(keys))
+        ctx["type"] = pushed.TAG
         logger.debug("push-type-received")
 
-        if event_type == "PushVerification":
+        if isinstance(pushed, PushVerification):
             logger.info("verifying-subscription")
 
-            verify_push_subscription(
-                user,
-                request_data["pushSubscriptionId"],
-                request_data["verificationCode"],
-            )
+            verify_push_subscription(user, pushed.push_subscription_id, pushed.verification_code)
 
             logger.info("subscription-verified")
             return {"status": "verified"}
 
-        elif event_type == "StateChange":
-            logger.debug("state-change-received")
-
-            for account, changes in request_data.get("changed", {}).items():
-                ctx["account"] = account
-
-                for entity, state in changes.items():
-                    if entity == "Email":
-                        logger.debug("queueing-email-sync", entity=entity, state=state)
-                        enqueue_fetch_changes(user, account, state, ctx=ctx)
-
-                    elif entity == "Mailbox":
-                        logger.debug("invalidating-mailbox-cache", entity=entity, state=state)
-                        invalidate_jmap_mailboxes_cache(account)
-
-                    elif entity == "Identity":
-                        logger.debug("invalidating-identity-cache", entity=entity, state=state)
-                        invalidate_jmap_identities_cache(account)
-
-                    else:
-                        logger.warning("unhandled-state-change-entity", entity=entity)
-
-            return {"status": "processed"}
-
-        elif event_type == "CalendarAlert":
-            ctx["account"] = request_data.get("accountId")
+        if isinstance(pushed, CalendarAlert):
+            ctx["account"] = pushed.account_id
 
             logger.info("calendar-alert-received")
-            enqueue_send_event_alert_notification(user, request_data, ctx=ctx)
+            enqueue_send_event_alert_notification(user, pushed.to_wire(), ctx=ctx)
 
             return {"status": "processed"}
 
-        else:
-            logger.warning("unknown-push-type")
-            return {
-                "status": "error",
-                "message": _("Invalid Push Notification @type = {0}").format(event_type),
-            }
+        logger.debug("state-change-received")
+
+        for account, changes in pushed.changed.items():
+            ctx["account"] = account
+
+            for entity, state in changes.items():
+                if entity == "Email":
+                    logger.debug("queueing-email-sync", entity=entity, state=state)
+                    enqueue_fetch_changes(user, account, state, ctx=ctx)
+
+                elif entity == "Mailbox":
+                    logger.debug("invalidating-mailbox-cache", entity=entity, state=state)
+                    invalidate_jmap_mailboxes_cache(account)
+
+                elif entity == "Identity":
+                    logger.debug("invalidating-identity-cache", entity=entity, state=state)
+                    invalidate_jmap_identities_cache(account)
+
+                else:
+                    logger.warning("unhandled-state-change-entity", entity=entity)
+
+        return {"status": "processed"}
 
     except Exception:
         logger.exception("failed-to-process", traceback=frappe.get_traceback())

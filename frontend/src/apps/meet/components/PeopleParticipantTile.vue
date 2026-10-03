@@ -44,8 +44,8 @@
           class="flex items-center justify-center p-1.5 rounded-6"
           :aria-label="`${participant.user_name || participant.user_id} has raised their hand`"
         >
-          <div class="rounded-full bg-amber-500 p-0.5">
-            <lucide-hand class="w-3.5 h-3.5 text-ink-gray-9" />
+          <div class="rounded-full !bg-[#e54e17] px-1.5 py-1">
+            <lucide-hand class="w-3.5 h-3.5 text-white" />
           </div>
         </div>
       </Tooltip>

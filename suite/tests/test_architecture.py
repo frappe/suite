@@ -207,16 +207,12 @@ BASELINE_DEBT = {
             "suite/calendar/api/__init__.py|import|suite.mail.jmap",
             "suite/calendar/api/__init__.py|import|suite.mail.utils.dt",
             "suite/calendar/api/invites.py|import|suite.mail.jmap",
-            "suite/calendar/api/invites.py|import|suite.mail.jmap.services.calendars.calendar",
-            "suite/calendar/api/invites.py|import|suite.mail.jmap.services.calendars.calendar_event",
             "suite/calendar/api/rsvp.py|import|suite.mail.doctype.user_account.user_account",
             "suite/calendar/api/rsvp.py|import|suite.mail.jmap",
-            "suite/calendar/api/rsvp.py|import|suite.mail.jmap.services.calendars.calendar_event",
             "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.doctype.user_account.user_account",
             "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.jmap",
             "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.doctype.user_account.user_account",
             "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.jmap",
-            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.jmap.services.calendars.calendar_event",
             "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils",
             "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils.dt",
             "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils.logger",
@@ -227,8 +223,6 @@ BASELINE_DEBT = {
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.push_subscription.push_subscription",
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.user_account.user_account",
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.jmap",
-            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.jmap.services.calendars.calendar",
-            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.jmap.services.calendars.calendar_event",
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils",
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils.logger",
             "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils.user",
@@ -270,17 +264,24 @@ BASELINE_DEBT = {
     **_debt(
         "Mail, Calendar, and Suite core owners",
         "Remove when Mail declares a package-root interface and Suite settings reach Mail through composition.",
-        # Source: upstream `develop`, merged at a3dba155c. Mail has no
-        # package-root interface to import through, and `suite_core` reaching
-        # Mail needs a composition seam, so neither is a one-line fix.
+        # Source: upstream `develop`, merged at a3dba155c and again at
+        # 082e84001 (the move to jmaplib). Mail has no package-root interface
+        # to import through, and `suite_core` reaching Mail needs a
+        # composition seam, so neither is a one-line fix.
         (
             "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.utils",
             "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.directory",
             "suite/calendar/tests/test_calendar_calendars.py|import|suite.mail.jmap",
             "suite/calendar/tests/test_calendar_event_search.py|import|suite.mail.tests.base",
+            "suite/calendar/jmap_events.py|import|suite.mail.jmap",
+            "suite/calendar/jmap_events.py|import|suite.mail.utils.dt",
             "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.directory",
-            "suite/calendar/tests/test_calendar_mailing_list_participants.py"
-            "|import|suite.mail.jmap.services.calendars.calendar_event",
+            "suite/calendar/tests/test_calendar_refused_reads.py|import|suite.mail.doctype.participant_identity",
+            "suite/calendar/tests/test_calendar_refused_reads.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_invite_event_resolution.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_jmap_events.py|import|suite.mail.jmap",
+            "suite/mail/tests/test_jmap_calendar_event_notification.py"
+            "|import|suite.calendar.doctype.event_notification.event_notification#2",
             "suite/mail/tests/test_suite_cloud_gating.py"
             "|dotted-string|suite.calendar.doctype.calendar_event.mailing_lists.get_domains",
             "suite/mail/tests/test_suite_cloud_gating.py"

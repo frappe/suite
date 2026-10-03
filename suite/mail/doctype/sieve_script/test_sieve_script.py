@@ -290,15 +290,20 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         """A worker that doesn't fork per job keeps its mailbox cache from job to job, for up to an
         hour. A rebuild must read the folders as they are, or it files rules into renamed ones."""
 
-        from suite.mail.jmap.services.core import CoreService
+        from suite.mail import jmap
 
-        CoreService._cache["account"] = {"mailboxes": [{"id": "m1", "_name": "Old name"}]}
-        self.addCleanup(CoreService._cache.pop, "account", None)
+        jmap._lookup_cache[("mailboxes", "account")] = [{"id": "m1", "name": "Old name"}]
+        self.addCleanup(jmap._lookup_cache.pop, ("mailboxes", "account"), None)
 
         cached_at_build = []
-        run_rebuild_jobs(
-            ["account"], lambda account, **kwargs: cached_at_build.append(CoreService._cache.get(account))
-        )
+        # Invalidation also clears the account's LMDB store, which must not be opened for a made-up account.
+        with patch.object(jmap, "get_data_store"):
+            run_rebuild_jobs(
+                ["account"],
+                lambda account, **kwargs: cached_at_build.append(
+                    jmap._lookup_cache.get(("mailboxes", account))
+                ),
+            )
 
         self.assertEqual(cached_at_build, [None])
 
