@@ -1,13 +1,6 @@
 [
  {
-  "docstatus": 0,
-  "doctype": "Presentation",
-  "is_composite": 0,
-  "is_template": 1,
-  "modified": "2026-05-24 00:51:19.391381",
-  "name": "1mjgj61m8j",
-  "reference_presentations": [],
-  "thumbnail": "/assets/suite/slides/frontend/images/layouts/light/thumbnail-3.webp",
+  "title": "Light",
   "slides": [
    {
     "background": "#FFFFFFFF",
@@ -51,20 +44,10 @@
     "transition": "None",
     "transition_duration": "0"
    }
-  ],
-  "slug": "light",
-  "theme": "",
-  "title": "Light"
+  ]
  },
  {
-  "docstatus": 0,
-  "doctype": "Presentation",
-  "is_composite": 0,
-  "is_template": 1,
-  "modified": "2026-05-24 00:51:19.391381",
-  "name": "2700u8fcha",
-  "reference_presentations": [],
-  "thumbnail": "/assets/suite/slides/frontend/images/layouts/dark/thumbnail-3.webp",
+  "title": "Dark",
   "slides": [
    {
     "background": "#000000FF",
@@ -108,9 +91,6 @@
     "transition": "None",
     "transition_duration": "0"
    }
-  ],
-  "slug": "dark",
-  "theme": "",
-  "title": "Dark"
+  ]
  }
 ]

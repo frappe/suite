@@ -29,7 +29,7 @@ TEMPLATE_FIELDS = (
 NODE_FIELDS = (
     "name",
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "kind",
@@ -154,7 +154,7 @@ def _templates_folder(env) -> str:
         row = exact[0]
         expected = {
             "title": "Templates",
-            "parent": root,
+            "parent_node": root,
             "root": root,
             "path": "",
             "kind": "folder",
@@ -177,7 +177,7 @@ def _templates_folder(env) -> str:
     node = {
         "name": name,
         "title": "Templates",
-        "parent": root,
+        "parent_node": root,
         "root": root,
         "path": "",
         "kind": "folder",
@@ -219,7 +219,7 @@ def _writer_template(env, place, row, title) -> int:
     node = {
         "name": row.name,
         "title": title,
-        "parent": place.folder,
+        "parent_node": place.folder,
         "root": place.root,
         "path": place.path,
         "kind": "document",

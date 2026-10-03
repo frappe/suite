@@ -1,5 +1,7 @@
 """Build Writer and Sheet history without changing legacy rows."""
 
+import hashlib
+
 from suite.drive.patches.build.content_mapping import (
     MAX_VERSION_SEQ,
     InvalidLegacyContent,
@@ -245,7 +247,10 @@ def _version_row(env, row, *, node, seq, kind, label, pinned, actor, raw, filena
         blob = env.content_target.blob(stored.get("blob"))
         if not blob or blob.status != "Ready" or not blob.is_private or blob.file_size != len(raw):
             raise InvalidLegacyContent(f"version {row.name} has unavailable target bytes")
-        if env.content_target.read_blob(blob.name) != raw:
+        # Compare checksums, not bytes: reading every stored version back
+        # from the bucket would make a rerun over a finished site as slow as
+        # the first run, and the framework already hashed what it stored.
+        if blob.checksum != hashlib.sha256(raw).hexdigest():
             raise InvalidLegacyContent(f"version {row.name} target bytes differ from the source")
         blob_name = blob.name
     else:

@@ -24,6 +24,9 @@ and a `Sheet` id carries no `File` id. Nothing is written from those rows;
 `sheet_entity` is narrowed, so a row from outside the prefix is dropped.
 """
 
+import shutil
+from pathlib import Path
+
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
@@ -32,6 +35,7 @@ from suite.drive._core.roles import EDIT, MANAGE, READ
 from suite.drive.patches.build import grants as grants_module
 from suite.drive.patches.build import root_pairs
 from suite.drive.patches.build import tree as tree_module
+from suite.drive.patches.build.docshare_journal import DocSharePreimageJournal
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -41,16 +45,36 @@ from suite.drive.patches.build.ports import (
     TreeRow,
 )
 from suite.drive.patches.build.state import STATE_FILENAME, BuildState, GrantConversion, TreeConversion
+from suite.drive.patches.build.tests import legacy_schema
 
 
 class BuildTreeCase(IntegrationTestCase):
-    """One synthetic Personal root, and every row named with a run prefix."""
+    """One synthetic Personal root, and every row named with a run prefix.
+
+    The legacy tables and `File` columns Build reads are no longer in the
+    source tree; `legacy_schema` puts them back for the class and takes them
+    away after it (DDL commits, so the class transaction cannot).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.legacy = legacy_schema.install()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.legacy.remove()
+        super().tearDownClass()
 
     def setUp(self):
         super().setUp()
         self.prefix = "bldtr" + frappe.generate_hash(length=8)
         self.state = BuildState(frappe.get_site_path("private", f"{self.prefix}-{STATE_FILENAME}"))
         self.addCleanup(lambda: self.state.path.exists() and self.state.path.unlink())
+        self.docshare_journal = DocSharePreimageJournal(
+            Path(frappe.get_site_path("private", f"{self.prefix}-docshare-preimages"))
+        )
+        self.addCleanup(shutil.rmtree, self.docshare_journal.root, ignore_errors=True)
         self.root = self.name()
         self.owner = self.pick_user()
 
@@ -97,13 +121,8 @@ class BuildTreeCase(IntegrationTestCase):
         return doc.name
 
     def permission_row(self, entity, user, **flags):
-        doc = frappe.new_doc("Drive Permission")
-        doc.update({"entity": entity, "user": user, **flags})
-        doc.name = self.name()
-        doc.owner = doc.modified_by = "Administrator"
-        doc.creation = doc.modified = now_datetime()
-        doc.db_insert()
-        return doc.name
+        # Written with SQL: the doctype has no controller in the tree any more.
+        return legacy_schema.insert_row("Drive Permission", self.name(), entity=entity, user=user, **flags)
 
     def environment(self):
         """A `BuildEnvironment` on the real tables, narrowed to this run's rows."""
@@ -115,6 +134,7 @@ class BuildTreeCase(IntegrationTestCase):
             open_bucket=lambda: None,
             tree=SiteTree(self.prefix),
             drive=SiteDrive(),
+            docshare_journal=self.docshare_journal,
         )
 
     def write_root(self, *, user=None, kind=root_pairs.PERSONAL):
@@ -309,12 +329,12 @@ class TestTreeWiring(BuildTreeCase):
         before = frappe.db.get_value("File", source, ["creation", "owner"], as_dict=True)
         self.walk()
         stored = frappe.db.get_value(
-            "Drive Node", source, ["name", "creation", "owner", "parent", "path"], as_dict=True
+            "Drive Node", source, ["name", "creation", "owner", "parent_node", "path"], as_dict=True
         )
         self.assertEqual(stored.name, source)
         self.assertEqual(stored.creation, before.creation)
         self.assertEqual(stored.owner, before.owner)
-        self.assertEqual(stored.parent, self.root)
+        self.assertEqual(stored.parent_node, self.root)
         self.assertEqual(stored.path, "")
 
     def test_step_five_refuses_a_noncanonical_pair_before_one_descendant(self):

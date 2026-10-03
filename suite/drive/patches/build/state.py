@@ -36,6 +36,11 @@ CUMULATIVE_FIELDS = frozenset(
         # the number owners must be told about, so it may not reset to zero
         # on the rerun that finishes an interrupted migration.
         "links_minted",
+        # A creator grant is minted once, and an owner's deny is overridden
+        # once: the rerun finds the owner at EDIT and writes nothing, so
+        # either count would read zero after a resume.
+        "creator_grants_minted",
+        "creator_denies_overridden",
         # Governed DocShare rows and content documents whose every File is
         # Removed are deleted once. A later pass cannot derive the deleted or
         # dropped totals from source rows that no longer exist.
@@ -287,6 +292,15 @@ class GrantConversion:
     # The §3.2 floor: a Shared root node whose legacy row mapped to nothing
     # still has to carry a `$GENERAL` grant.
     shared_anchors_written: int = 0
+    # §4.2's creator rule applied to legacy owners (`grants._creator_grants`):
+    # EDIT for an owner whose effective role on their own node was lower.
+    # `creator_grants_minted` counts rows written or raised from a lower
+    # positive role; `creator_denies_overridden` counts the owner's own
+    # denies turned into EDIT. The two are disjoint.
+    owned_nodes_seen: int = 0
+    creator_grants_minted: int = 0
+    creator_denies_overridden: int = 0
+    creator_owners_dead: int = 0
     # Node ids only. The tokens live in `Drive Grant.principal`, and a
     # migration record on disk is not the place for a second copy of a
     # secret that authorises access.
@@ -821,7 +835,7 @@ class BuildState:
                 data = json.load(f)
         except FileNotFoundError:
             return {"version": STATE_VERSION}
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             # Unreadable content. A read error (EIO, EACCES) is not: losing
             # the cumulative totals to a transient fault would make the
             # report understate a migration that really did run, so it

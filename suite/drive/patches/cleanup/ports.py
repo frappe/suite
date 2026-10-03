@@ -1,21 +1,10 @@
 """What Cleanup is allowed to reach (§14.10). Every port is a narrow read
 or a narrow write; nothing here bundles more than one phase needs.
 
-The real `Site*` classes below are wired only by `CleanupEnvironment.for_site()`,
-and nothing in this package calls that classmethod: Cleanup ships unregistered
-(Ticket 35), so these classes exist for a later, separately authorized release
-(Ticket 36) to wire in. Several of them honestly raise `NotImplementedError`:
-deleting a Python function body out of `suite/drive/http/shims.py`, an entry
-out of `suite/hooks.py`, or a `Table` field out of a doctype's shipped JSON is
-a source change a maintainer makes, not a runtime database operation, so there
-is no honest "real" implementation to write here — and S3-backed thumbnail
-deletion has no working bucket client to call either (`Drive Disk Settings`
-has never defined `get_s3_connection()`; see `SiteThumbnailStore`). Fixture
-tests exercise every one of these contracts through fakes that model the
-outcome instead. `suite.drive.patches.cleanup.readiness` probes every one of
-these honestly-unfinished ports before Cleanup mutates anything, so an
-activation attempt against a still-incomplete environment fails before phase
-1, not partway through it.
+The real `Site*` classes below are wired by `CleanupEnvironment.for_site()`
+and run inside `bench migrate`, right after Build. Fixture tests exercise
+every contract through `tests.fakes`; `tests.test_site_ports` covers the
+real classes with `frappe.db` and the bucket client stubbed.
 """
 
 from __future__ import annotations
@@ -38,9 +27,6 @@ USERS_ROW = "Users"
 
 # §3.13's complete dropped-field list for `Drive Disk Settings` (Single):
 # `quota`, `root_folder`, `thumbnail_prefix`, `flat`, and the six S3 fields.
-# `phase_file_rows` reads this snapshot once, before step 5 drops every one
-# of these columns, so steps 7 and 8 never have to query a column that may
-# already be gone.
 DISK_SETTINGS_FIELDS = (
     "quota",
     "root_folder",
@@ -54,6 +40,13 @@ DISK_SETTINGS_FIELDS = (
     "signature_version",
 )
 
+# The subset step 7 and the manual `delete_legacy_objects` command still
+# need after step 5 has dropped every one of them. `phase_file_rows`
+# snapshots these into the state file once, before step 5 runs; the
+# credentials stay out of that file on purpose, because the framework S3
+# driver supplies the client.
+SNAPSHOT_FIELDS = ("enabled", "root_folder", "thumbnail_prefix", "bucket")
+
 
 @dataclass(frozen=True)
 class ChainRow:
@@ -62,6 +55,29 @@ class ChainRow:
     name: str
     folder: str | None
     status: str
+
+
+@dataclass(frozen=True)
+class SlidesMediaRow:
+    """A legacy `File` attached to a Presentation, whose blob a node of that
+    deck holds. `file_url` is what a slide body would still name it by."""
+
+    name: str
+    file_url: str | None
+
+
+@dataclass(frozen=True)
+class SlideBodyValues:
+    """Every string the site's slide bodies hold, for "is this URL still named".
+
+    `strings` are the complete values of every readable body. `unreadable`
+    are the raw `elements` of a body that is not a JSON array; a URL that
+    appears anywhere inside one counts as named, which over-reports and so
+    only keeps a row.
+    """
+
+    strings: frozenset[str]
+    unreadable: tuple[str, ...]
 
 
 class ReachabilityTree(Protocol):
@@ -91,30 +107,6 @@ class BlobColumnDiscovery(Protocol):
         """`frappe.storage.gc.blob_reference_columns()`, or a fake of it."""
 
 
-class ForwarderRegistry(Protocol):
-    def classification(self) -> dict[str, str]:
-        """`suite.drive.http.shims.CLASSIFICATION`, or a fixture of it."""
-
-    def remove(self, names: tuple[str, ...]) -> int:
-        """Delete these forwarders' bodies and their `CLASSIFICATION` rows."""
-
-    def remove_wildcard_prefix(self, prefix: str) -> bool:
-        """Drop one entry from `ALLOWED_WILDCARD_PATHS`. True if it was there."""
-
-
-class ClientCallerEvidence(Protocol):
-    """Gate 3's real evidence: has the SPA actually stopped calling these
-    names, independent of whether `ForwarderRegistry.classification()` still
-    spells any of them "forwarder". A registry label is something this
-    package's own phase 6 can act on; it is not evidence of what a client
-    somewhere else is doing, and gate 3 must not treat the two as the same
-    fact (§14.10's third gate: "the SPA has moved off the old method
-    names")."""
-
-    def still_referenced(self, names: tuple[str, ...]) -> frozenset[str]:
-        """The subset of `names` real evidence still shows a caller for."""
-
-
 class LegacyFileRows(Protocol):
     def delete(self, names: tuple[str, ...]) -> int:
         """Delete these legacy `File` rows. Returns the count actually removed."""
@@ -127,9 +119,9 @@ class SchemaGateway(Protocol):
     def drop_property_setters(self, keys: tuple[tuple[str, str, str], ...]) -> int:
         """Delete `Property Setter` rows by `(doc_type, field_name, property)`."""
 
-    def drop_doctypes(self, dotted_paths: tuple[str, ...]) -> int:
-        """Delete a DocType and its table. `dotted_paths` are module-relative,
-        e.g. `"drive/doctype/drive_permission"`."""
+    def drop_doctypes(self, doctypes: tuple[str, ...]) -> int:
+        """Delete these DocType rows and drop their tables. A doctype whose
+        row or table is already gone is skipped, not an error."""
 
     def drop_columns(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
         """Drop these columns (standard or custom) from one doctype's table.
@@ -144,17 +136,6 @@ class SchemaGateway(Protocol):
 
     def require_field(self, doctype: str, fieldname: str) -> None:
         """Make a field `reqd: 1` without touching the shipped doctype JSON."""
-
-    def drop_child_table_field(self, parent_doctype: str, fieldname: str) -> None:
-        """Remove a `Table`-type field from `parent_doctype`'s own shipped
-        JSON. A source change, not a runtime operation: a child-table field
-        has no column of its own to drop by DDL, so the only real
-        implementation edits the doctype file Ticket 36 ships."""
-
-    def remove_permission_hooks(self, doctypes: tuple[str, ...]) -> None:
-        """Remove `permission_query_conditions`/`has_permission` entries for
-        these doctypes out of `suite/hooks.py`. A source change made once the
-        doctypes themselves are gone, not a runtime operation."""
 
     def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
         """The subset of these `File` custom-field names that still exist,
@@ -175,9 +156,9 @@ class SchemaGateway(Protocol):
         """The subset of these `(doc_type, field_name, property)` keys that
         still have a `Property Setter` row, checked directly."""
 
-    def doctypes_present(self, dotted_paths: tuple[str, ...]) -> frozenset[str]:
-        """The subset of these dotted doctype paths whose `DocType` still
-        exists, checked directly against `DocType`."""
+    def doctypes_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
+        """The subset of these doctypes that still have a `DocType` row or a
+        table, checked directly."""
 
     def columns_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
         """The subset of these fieldnames that are still real columns on
@@ -187,52 +168,6 @@ class SchemaGateway(Protocol):
     def single_values_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
         """The subset of these fieldnames that still have a row in
         `tabSingles` for this Single `doctype`, checked directly."""
-
-
-class NotificationWriterReadiness(Protocol):
-    """Whether the two legacy `Drive Notification` writers Ticket 30's
-    addendum named have actually stopped building a row that names a
-    step-3-dropped column, or a row with no `activity` set at all.
-    `phase_legacy_doctypes` drops `NOTIFICATION_LEGACY_COLUMNS` and makes
-    `activity` required in the same phase (§14.10 step 3); if either writer
-    still builds one of those "pointerless" rows afterwards, the very next
-    call either resurrects a dropped column into a stray attribute no schema
-    declares, or fails outright on the new mandatory-field check — a defect
-    a doctype-JSON readiness check cannot see, because both writers build
-    their `Drive Notification` doc entirely at the Python call site
-    (`suite.drive.api.notifications.create_notification`, `Drive User
-    Invitation.after_insert`), never through a declared field
-    `SourceSchemaReadiness` could inspect. Ticket 35 does not touch either
-    writer; this port exists so activation honestly refuses until Ticket 36
-    does."""
-
-    def still_unready(self) -> frozenset[str]:
-        """The subset of the two known writers that still reference a
-        step-3-dropped column, or still build a `Drive Notification` insert
-        with no `activity` key. Non-empty means those call sites have not
-        been migrated yet, and phase 3 must not run."""
-
-
-class SourceSchemaReadiness(Protocol):
-    """Whether Ticket 36's source edits have actually landed, checked before
-    phase 1 runs at all (`readiness.run_preflight`). A `drop_columns` or
-    `drop_single_values` call can succeed as a runtime operation while the
-    shipped doctype JSON still declares the field: the next `bench migrate`
-    recreates a dropped column from that JSON, and any subsequent save of a
-    Single doctype rewrites all of its declared fields back into
-    `tabSingles` (`frappe.model.document.Document.update_single` always
-    replaces the whole row set). Neither failure mode is visible until well
-    after Cleanup reports success, so this is a readiness check, not an
-    afterthought."""
-
-    def fields_declared(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
-        """The subset of `fieldnames` doctype `doctype`'s shipped JSON still
-        declares as fields. Non-empty means Ticket 36 has not removed them
-        from source yet."""
-
-    def permission_hooks_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
-        """The subset of `doctypes` `suite/hooks.py` still names in
-        `permission_query_conditions` or `has_permission`."""
 
 
 class ContentRows(Protocol):
@@ -260,6 +195,22 @@ class ContentRows(Protocol):
         paged `batch_size` rows at a time. Leaves everything else in the
         workbook untouched: this is not a general-purpose key scrub."""
 
+    def converted_slides_media(self, after: str, limit: int) -> list[SlidesMediaRow]:
+        """The `File` rows attached to a Presentation whose own blob a `file`
+        node directly under that deck's node holds, by name after `after`.
+
+        That node is Build's record of the conversion (§14.7): Build makes
+        one per deck per blob and gives it the File's blob. A row whose blob
+        Build swapped for a same-content one is not returned, so deleting a
+        returned row never leaves a blob that only that row referenced."""
+
+    def slide_body_values(self, *, batch_size: int) -> SlideBodyValues:
+        """The strings in every Slide's `elements`, `background` and
+        `thumbnail`, read `batch_size` rows at a time."""
+
+    def site_host(self) -> str:
+        """The one netloc a stored URL may carry and still name this site."""
+
 
 class ThumbnailStore(Protocol):
     def delete_sidecars(self, names: tuple[str, ...], *, settings: dict) -> int:
@@ -275,17 +226,6 @@ class DiskSettingsSnapshot(Protocol):
         every one of them."""
 
 
-class S3LegacyPrefix(Protocol):
-    def list_prefix(self, prefix: str, after: str, limit: int) -> list[str]:
-        """Object keys under `prefix`, ordered, paged by `after`."""
-
-    def blob_references(self, keys: tuple[str, ...]) -> set[str]:
-        """The subset of `keys` some `File Blob` row still names."""
-
-    def enqueue_delete(self, keys: tuple[str, ...]) -> str:
-        """Queue the long deletion job for exactly these keys. Returns a job id."""
-
-
 class TransactionGateway(Protocol):
     def commit(self) -> None:
         """End the current phase's writes. Called after a phase's mutations
@@ -293,11 +233,7 @@ class TransactionGateway(Protocol):
         never claim durability the database does not actually have."""
 
 
-# --- real site implementations, wired only by CleanupEnvironment.for_site ---
-#
-# None of these run during this ticket: nothing calls `for_site()` from
-# production code, and no test exercises these classes against a live site.
-# They exist so Ticket 36 has somewhere to start, not so Ticket 35 can run.
+# --- real site implementations, wired by CleanupEnvironment.for_site -------
 
 
 class SiteReachabilityTree:
@@ -363,92 +299,16 @@ def site_blob_columns() -> list[dict]:
     return blob_reference_columns()
 
 
-class SiteForwarderRegistry:
-    """`ForwarderRegistry` over the shipped classification and hooks."""
-
-    def classification(self) -> dict[str, str]:
-        from suite.drive.http.shims import CLASSIFICATION
-
-        return dict(CLASSIFICATION)
-
-    def remove(self, names: tuple[str, ...]) -> int:
-        raise NotImplementedError(
-            "deleting a forwarder's body out of suite/drive/http/shims.py is a source "
-            "change made when Cleanup is activated (Ticket 36), not a runtime operation"
-        )
-
-    def remove_wildcard_prefix(self, prefix: str) -> bool:
-        raise NotImplementedError(
-            "editing ALLOWED_WILDCARD_PATHS out of suite/hooks.py is a source change "
-            "made when Cleanup is activated (Ticket 36), not a runtime operation"
-        )
-
-
-class SiteClientCallerEvidence:
-    """`ClientCallerEvidence` over a literal-string scan of the checked-in SPA
-    source tree. This is gate 3's actual evidence — "the SPA has moved off
-    the old method names" — kept deliberately separate from
-    `SiteForwarderRegistry.classification()`: that dict is a hand-maintained
-    label, edited by whoever writes the Python, and proves nothing about
-    what the frontend bundle actually calls.
-
-    `wayfinder/drive-layer-spec/implementation/legacy-caller-inventory.md`
-    built the same evidence by hand for all 69 names and recorded this scan's
-    two known blind spots: a caller can double the `/api/method/` prefix (a
-    plain substring match still finds `suite.drive.<name>` inside that), and
-    a dead call site can name a method that no longer exists anywhere else,
-    which reads as "still called" when it is really unreachable code. Both
-    make this scan over-cautious, never under-cautious: a real caller always
-    matches, and a false match only blocks Cleanup longer than strictly
-    necessary. That asymmetry is why a plain source scan is an honest gate
-    for a destructive operation, even though it is not a live-traffic
-    observation.
-    """
-
-    _EXTENSIONS = (".js", ".ts", ".vue")
-
-    def still_referenced(self, names: tuple[str, ...]) -> frozenset[str]:
-        from pathlib import Path
-
-        import frappe
-
-        root = Path(frappe.get_app_path("suite")).parent / "frontend" / "src"
-        if not root.is_dir():
-            raise RuntimeError(f"the SPA source tree is missing at {root}; cannot attest caller absence")
-        remaining = {name: f"suite.drive.{name}" for name in names}
-        found: set[str] = set()
-        for path in root.rglob("*"):
-            if not remaining or path.suffix not in self._EXTENSIONS or not path.is_file():
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            for name, needle in list(remaining.items()):
-                if needle in text:
-                    found.add(name)
-                    del remaining[name]
-        return frozenset(found)
-
-
 class SiteLegacyFileRows:
     """`LegacyFileRows` over the live `tabFile` table, by direct DB deletion.
 
-    Never `frappe.delete_doc`: `suite.drive.overrides.file.File.on_trash`
-    refuses outright to delete the row named `ROOT_FOLDER` (one of the two
-    rows §14.10 requires this phase to delete), and its `after_delete`
-    cascades into deleting the linked Writer/Presentation/Sheet content
-    document, the local blob, and half a dozen satellite tables (`Drive
-    Favourite`, `Drive Recent`, `Drive Permission`, `Drive Notification`,
-    `Drive Entity Activity Log`) — every one of them either a content body
-    §14.10 requires Cleanup to preserve, or bytes only step 8's own
-    re-checked S3 job may ever remove. Cleanup has already computed the safe
-    deletion order for what it is about to delete
-    (`removal._deepest_removed_first`); running each row through the
-    ordinary doc-event pipeline a second time would undo exactly the
-    preservation this ticket's acceptance criteria require. A plain `DELETE`
-    triggers no hook at all (`frappe.db.delete`'s own docstring), which is
-    what makes it the only safe way to remove these rows.
+    Never `frappe.delete_doc`: the framework `File.on_trash` deletes the
+    bytes a row points at, and the bytes these rows point at are the very
+    ones Build linked into `File Blob` in place (local) or copied and kept
+    for the backup restore (S3; only the manual `delete_legacy_objects`
+    command removes them). Cleanup has already computed the safe deletion
+    order (`removal._deepest_removed_first`); a plain `DELETE` fires no
+    hook at all (`frappe.db.delete`'s own docstring).
     """
 
     def delete(self, names: tuple[str, ...]) -> int:
@@ -467,17 +327,10 @@ class SiteSchemaGateway:
     """`SchemaGateway` over Custom Field, Property Setter, and raw DDL."""
 
     def drop_custom_fields(self, fieldnames: tuple[str, ...]) -> int:
-        """Deletes the `Custom Field` metadata row only, matching Frappe's
-        own removal semantics for a Custom Field: `CustomField.on_trash`
-        (frappe/custom/doctype/custom_field/custom_field.py) clears property
-        setters and doctype layouts but never calls `updatedb`/DDL, so the
-        physical column stays behind on `tabFile`, unused and undeclared,
-        exactly as it would after any other Custom Field deletion anywhere
-        in Frappe. §14.10 only asks Cleanup to "delete the seven File custom
-        fields," which this satisfies at the same level Frappe itself
-        considers a Custom Field deleted; leaving its orphaned column in
-        place is intentionally outside spec, not a gap, and this phase adds
-        no DDL of its own to go further than the framework already does."""
+        """Deletes the `Custom Field` metadata rows. `CustomField.on_trash`
+        clears property setters and layouts but never drops the column, so
+        the phase follows with `drop_columns("File", ...)` for the five
+        fields that have one."""
         import frappe
 
         names = frappe.get_all(
@@ -508,15 +361,22 @@ class SiteSchemaGateway:
             frappe.clear_cache(doctype=doctype)
         return removed
 
-    def drop_doctypes(self, dotted_paths: tuple[str, ...]) -> int:
+    def drop_doctypes(self, doctypes: tuple[str, ...]) -> int:
+        """`frappe.delete_doc` removes the `DocType` row and its fields but
+        leaves the table (orphan tables are only ever dropped by hand), so
+        the `DROP TABLE` here is what actually frees the legacy data. Both
+        halves are idempotent: a resumed call finds nothing and does nothing.
+        """
         import frappe
 
         removed = 0
-        for path in dotted_paths:
-            doctype = _doctype_name_from_path(path)
+        for doctype in doctypes:
             if frappe.db.exists("DocType", doctype):
                 frappe.delete_doc("DocType", doctype, ignore_permissions=True, force=True)
                 removed += 1
+            frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{doctype}`")
+        if removed:
+            frappe.clear_cache()
         return removed
 
     def drop_columns(self, doctype: str, fieldnames: tuple[str, ...]) -> int:
@@ -567,8 +427,16 @@ class SiteSchemaGateway:
         return len(existing)
 
     def require_field(self, doctype: str, fieldname: str) -> None:
+        """Idempotent: a resumed phase, or a rehearsal that already ran, finds
+        the setter in place and only makes sure of its value."""
         import frappe
 
+        key = {"doc_type": doctype, "field_name": fieldname, "property": "reqd"}
+        existing = frappe.db.get_value("Property Setter", key)
+        if existing:
+            frappe.db.set_value("Property Setter", existing, "value", "1")
+            frappe.clear_cache(doctype=doctype)
+            return
         frappe.make_property_setter(
             {
                 "doctype": doctype,
@@ -578,20 +446,6 @@ class SiteSchemaGateway:
                 "property_type": "Check",
             },
             ignore_validate=True,
-        )
-
-    def drop_child_table_field(self, parent_doctype: str, fieldname: str) -> None:
-        raise NotImplementedError(
-            f"removing {parent_doctype}.{fieldname} (a Table field) means editing that "
-            "doctype's shipped JSON, a source change Ticket 36 makes, not a runtime "
-            "operation; this port exists for fixture tests only"
-        )
-
-    def remove_permission_hooks(self, doctypes: tuple[str, ...]) -> None:
-        raise NotImplementedError(
-            f"removing {', '.join(doctypes)}'s permission_query_conditions/has_permission "
-            "entries out of suite/hooks.py is a source change Ticket 36 makes once these "
-            "doctypes are gone, not a runtime operation; this port exists for fixture tests only"
         )
 
     def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
@@ -617,11 +471,13 @@ class SiteSchemaGateway:
                 present.add((doc_type, field_name, prop))
         return frozenset(present)
 
-    def doctypes_present(self, dotted_paths: tuple[str, ...]) -> frozenset[str]:
+    def doctypes_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
         import frappe
 
         return frozenset(
-            path for path in dotted_paths if frappe.db.exists("DocType", _doctype_name_from_path(path))
+            doctype
+            for doctype in doctypes
+            if frappe.db.exists("DocType", doctype) or frappe.db.table_exists(doctype)
         )
 
     def columns_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
@@ -640,89 +496,6 @@ class SiteSchemaGateway:
             (doctype, *fieldnames),
         )
         return frozenset(row[0] for row in rows)
-
-
-class SiteSourceSchema:
-    """`SourceSchemaReadiness` over the shipped doctype JSON and `suite/hooks.py`.
-
-    Reads the checked-in source tree directly, the same way
-    `SiteClientCallerEvidence` does, rather than through `frappe.get_meta`:
-    that keeps this port callable with no live site underneath it, and a
-    file on disk is exactly what the next `bench migrate` would actually
-    read. Honestly reports "not ready" today: this ticket touches no doctype
-    JSON and no `suite/hooks.py` entry.
-    """
-
-    def fields_declared(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
-        import json
-        from pathlib import Path
-
-        import frappe
-
-        slug = doctype.lower().replace(" ", "_")
-        app_path = Path(frappe.get_app_path("suite"))
-        matches = list(app_path.rglob(f"doctype/{slug}/{slug}.json"))
-        if not matches:
-            raise RuntimeError(f"no shipped doctype JSON found for {doctype!r} under {app_path}")
-        data = json.loads(matches[0].read_text(encoding="utf-8"))
-        declared = {field.get("fieldname") for field in data.get("fields", [])}
-        return frozenset(name for name in fieldnames if name in declared)
-
-    def permission_hooks_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
-        from suite import hooks
-
-        wanted = set(doctypes)
-        present = set(hooks.permission_query_conditions) | set(hooks.has_permission)
-        return frozenset(wanted & present)
-
-
-class SiteNotificationWriterReadiness:
-    """`NotificationWriterReadiness` over a literal-string scan of the two
-    checked-in writers Ticket 30's addendum named, the same static-source-
-    scan style `SiteClientCallerEvidence` and `SiteSourceSchema` already use
-    for a question no live query can answer: whether a particular Python
-    call site, not a declared schema, still builds the row phase 3 is about
-    to make invalid. Over-cautious by construction, like its siblings: a
-    field-name literal anywhere in a writer's file counts against it, even
-    outside the actual `Drive Notification` construction, and the absence of
-    the literal string `"activity"` anywhere in the file counts as "no
-    writer here ever sets it." Both read as "still unready" more often than
-    a byte-perfect AST check would, never less — the safe direction for a
-    probe that gates six irreversible column drops.
-
-    Honestly reports "not ready" today for both writers: Ticket 35 changes
-    neither `suite/drive/api/notifications.py`'s `create_notification` nor
-    `suite/drive/doctype/drive_user_invitation/drive_user_invitation.py`'s
-    `DriveUserInvitation.after_insert`, which is why `readiness.run_preflight`
-    must refuse activation on every site until Ticket 36 migrates them.
-    """
-
-    _WRITERS = (
-        ("drive/api/notifications.py", "notifications.create_notification"),
-        (
-            "drive/doctype/drive_user_invitation/drive_user_invitation.py",
-            "DriveUserInvitation.after_insert",
-        ),
-    )
-
-    def still_unready(self) -> frozenset[str]:
-        from pathlib import Path
-
-        from suite.drive.patches.cleanup.removal import NOTIFICATION_LEGACY_COLUMNS
-
-        app_path = Path(frappe.get_app_path("suite"))
-        unready = set()
-        for relpath, label in self._WRITERS:
-            path = app_path / relpath
-            try:
-                text = path.read_text(encoding="utf-8")
-            except OSError as e:
-                raise RuntimeError(f"cannot read {path} to attest notification-writer readiness: {e}") from e
-            still_names_a_column = any(f'"{field}"' in text for field in NOTIFICATION_LEGACY_COLUMNS)
-            never_sets_activity = '"activity"' not in text
-            if still_names_a_column or never_sets_activity:
-                unready.add(label)
-        return frozenset(unready)
 
 
 # Mirrors `suite.drive.patches.build.content_mapping.decode_sheets_data` and
@@ -750,7 +523,7 @@ def _decode_sheets_data(stored: str | None) -> tuple[str, bool]:
         return "{}", False
     try:
         envelope = json.loads(stored)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return stored, False
     if not (
         isinstance(envelope, dict)
@@ -776,7 +549,7 @@ def _encode_sheets_data(plain: str, *, gzip_encoded: bool) -> str:
 
 
 class SiteContentRows:
-    """`ContentRows` over Sheet, Writer, and their side tables."""
+    """`ContentRows` over Sheet, Writer, Slides, and their side tables."""
 
     def governed_docshares_remaining(self) -> frozenset[str]:
         import frappe
@@ -846,6 +619,74 @@ class SiteContentRows:
             if len(rows) < batch_size:
                 return stripped
 
+    def converted_slides_media(self, after: str, limit: int) -> list[SlidesMediaRow]:
+        import frappe
+
+        rows = frappe.db.sql(
+            """
+            select f.name as name, f.file_url as file_url
+            from `tabFile` f
+            join `tabPresentation` p on p.name = f.attached_to_name
+            where f.attached_to_doctype = 'Presentation'
+              and f.name > %(after)s
+              and ifnull(f.`blob`, '') != ''
+              and exists (
+                select 1 from `tabDrive Node` n
+                where n.parent_node = p.node and n.kind = 'file' and n.`blob` = f.`blob`
+              )
+            order by f.name
+            limit %(limit)s
+            """,
+            {"after": after, "limit": limit},
+            as_dict=True,
+        )
+        return [SlidesMediaRow(row.name, row.file_url) for row in rows]
+
+    def slide_body_values(self, *, batch_size: int) -> SlideBodyValues:
+        import json
+
+        import frappe
+
+        from suite.drive.patches.build.slides import _strings
+
+        strings: set[str] = set()
+        unreadable: list[str] = []
+        after = ""
+        while True:
+            rows = frappe.db.sql(
+                """
+                select name, elements, background, thumbnail
+                from `tabSlide`
+                where name > %(after)s
+                order by name
+                limit %(limit)s
+                """,
+                {"after": after, "limit": batch_size},
+                as_dict=True,
+            )
+            for row in rows:
+                strings |= {value for value in (row.background, row.thumbnail) if value}
+                if not row.elements:
+                    continue
+                try:
+                    elements = json.loads(row.elements)
+                except ValueError:
+                    elements = None
+                if isinstance(elements, list):
+                    strings |= _strings(elements)
+                else:
+                    unreadable.append(row.elements)
+            if len(rows) < batch_size:
+                return SlideBodyValues(frozenset(strings), tuple(unreadable))
+            after = rows[-1].name
+
+    def site_host(self) -> str:
+        from urllib.parse import urlsplit
+
+        from frappe.utils import get_url
+
+        return urlsplit(get_url()).netloc
+
 
 class ThumbnailPathError(frappe.ValidationError):
     """A `thumbnail_prefix` would build a delete path outside `root_folder`."""
@@ -859,13 +700,10 @@ class SiteThumbnailStore:
     such a live read would need, so the caller passes the snapshot
     `phase_file_rows` took before step 5 ran.
 
-    S3-backed sidecar deletion has no working implementation to fall back
-    on: `Drive Disk Settings` has never defined `get_s3_connection()` (there
-    is no such method anywhere in this app), so calling it would raise
-    `AttributeError`. This fails closed and says so, instead of the
-    try/except this method used to wrap around that call, which caught the
-    `AttributeError` too and reported a quiet "not deleted" — indistinguishable
-    from an ordinary missing file.
+    On an S3 site the sidecars are bucket objects, and Cleanup deletes no
+    bucket object (§14.11: the backup restore stays a complete rollback
+    until the manual `delete_legacy_objects` command runs), so an S3
+    snapshot deletes nothing and answers 0.
     """
 
     def delete_sidecars(self, names: tuple[str, ...], *, settings: dict) -> int:
@@ -891,11 +729,7 @@ class SiteThumbnailStore:
         from pathlib import Path
 
         if settings.get("enabled"):
-            raise NotImplementedError(
-                "deleting S3 thumbnail sidecars needs a real bucket client Ticket 36 must "
-                "wire in (Drive Disk Settings has no working get_s3_connection() today); "
-                "this port exists for fixture tests only"
-            )
+            return 0
         root_folder = settings.get("root_folder") or ""
         thumbnail_prefix = settings.get("thumbnail_prefix") or ""
         if not root_folder or not thumbnail_prefix:
@@ -923,55 +757,77 @@ class SiteThumbnailStore:
         return deleted
 
 
+class LegacyBucket:
+    """The framework S3 driver's bucket and client, as the manual
+    `delete_legacy_objects` command uses them. No Cleanup phase deletes a
+    bucket object.
+
+    Build already refused any site whose legacy `Drive Disk Settings.bucket`
+    differs from the framework driver's (`suite.drive.patches.build.gate`),
+    so "the legacy bucket" and "the driver's bucket" are one bucket
+    reachable through one client.
+    """
+
+    # `DeleteObjects` takes at most this many keys per call.
+    DELETE_BATCH = 1000
+
+    def __init__(self, bucket: str, client):
+        self.bucket = bucket
+        self.client = client
+
+    def delete_keys(self, keys: tuple[str, ...]) -> int:
+        """Delete these keys, exactly as given, 1000 per call. Returns how
+        many S3 reports deleted. A key that is already gone is reported
+        deleted, not an error: `DeleteObjects` is idempotent."""
+        deleted = 0
+        for start in range(0, len(keys), self.DELETE_BATCH):
+            batch = keys[start : start + self.DELETE_BATCH]
+            response = self.client.delete_objects(
+                Bucket=self.bucket,
+                Delete={"Objects": [{"Key": key} for key in batch], "Quiet": False},
+            )
+            errors = response.get("Errors") or []
+            if errors:
+                first = errors[0]
+                raise RuntimeError(
+                    f"S3 refused to delete {len(errors)} of {len(batch)} legacy keys (for example "
+                    f"{first.get('Key')!r}: {first.get('Code')} {first.get('Message')})"
+                )
+            deleted += len(response.get("Deleted") or [])
+        return deleted
+
+
+def legacy_bucket() -> LegacyBucket:
+    from frappe.storage.driver import get_driver
+
+    driver = get_driver("s3")
+    return LegacyBucket(driver.bucket, driver.client)
+
+
 class SiteDiskSettingsSnapshot:
     """`DiskSettingsSnapshot` over the live `Drive Disk Settings` singleton.
 
     Read exactly once, by `phase_file_rows`, before `phase_content_fields`
-    (step 5) drops all ten `DISK_SETTINGS_FIELDS`. Steps 7 and 8 read the
-    persisted copy this makes; neither ever queries `Drive Disk Settings`
-    live again.
+    (step 5) drops all ten `DISK_SETTINGS_FIELDS`. Step 7 and the manual
+    `delete_legacy_objects` command read the persisted copy this makes;
+    neither ever queries `Drive Disk Settings` live again. Plain
+    `tabSingles` reads: the Single's meta no longer declares these fields
+    by the time Cleanup runs.
     """
 
     def read(self) -> dict:
         import frappe
+        from frappe.utils import cint
 
-        settings = frappe.get_single("Drive Disk Settings")
-        return {field: settings.get(field) for field in DISK_SETTINGS_FIELDS}
-
-
-class SiteS3LegacyPrefix:
-    """`S3LegacyPrefix` over the live bucket and `File Blob` references.
-
-    Carries no `enabled()`/`legacy_prefix()` of its own: step 8 runs after
-    step 5 has dropped `Drive Disk Settings.enabled`/`root_folder`, so
-    `phase_s3_prefix` reads both off the settings snapshot `phase_file_rows`
-    persisted, never off a live query this class would otherwise have to
-    make against columns already gone by the time step 8 runs.
-    """
-
-    def list_prefix(self, prefix: str, after: str, limit: int) -> list[str]:
-        raise NotImplementedError(
-            "listing the live bucket is Ticket 36's job; this port exists for fixture tests only"
+        rows = frappe.db.sql(
+            """SELECT `field`, `value` FROM `tabSingles`
+               WHERE `doctype` = 'Drive Disk Settings' AND `field` IN %(fields)s""",
+            {"fields": SNAPSHOT_FIELDS},
         )
-
-    def blob_references(self, keys: tuple[str, ...]) -> set[str]:
-        import frappe
-
-        if not keys:
-            return set()
-        rows = frappe.get_all("File Blob", filters={"key": ["in", list(keys)]}, pluck="key")
-        return set(rows)
-
-    def enqueue_delete(self, keys: tuple[str, ...]) -> str:
-        raise NotImplementedError(
-            "enqueuing the live deletion job is Ticket 36's job; this port exists for "
-            "fixture tests only. Contract for whoever writes that job: re-read "
-            "blob_references(keys) again immediately before each object's bucket delete "
-            "call, at execution time — not only at enqueue time. phase_s3_prefix's own "
-            "re-check closes the race between listing and enqueueing; it says nothing "
-            "about the race between enqueueing and the job actually running, which can be "
-            "arbitrarily far apart."
-        )
+        values = dict(rows)
+        snapshot = {field: values.get(field) for field in SNAPSHOT_FIELDS}
+        snapshot["enabled"] = bool(cint(snapshot["enabled"]))
+        return snapshot
 
 
 class SiteTransactionGateway:
@@ -982,9 +838,3 @@ class SiteTransactionGateway:
 
         if not frappe.flags.in_test:
             frappe.db.commit()  # each phase's own unit of durability  # nosemgrep
-
-
-def _doctype_name_from_path(path: str) -> str:
-    """`"drive/doctype/drive_permission"` -> `"Drive Permission"`."""
-    slug = path.rsplit("/", 1)[-1]
-    return " ".join(word.capitalize() for word in slug.split("_"))

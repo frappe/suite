@@ -71,11 +71,13 @@ def role_for_flags(flags: dict) -> int | None:
 
 
 def collapse(rows: list[dict]) -> dict:
-    """Collapse duplicate `(entity, user)` rows the way the shipped patch does.
+    """Collapse duplicate `(entity, user)` rows the way the legacy backend's
+    dedupe patch did, since a site that ran it and one that did not must
+    reach the same grant.
 
-    `dedupe_drive_permissions.py` orders by `deny desc, creation`, keeps the
-    first row, and then ORs in the set bits of every *same-polarity* row.
-    A grant row therefore contributes nothing to a keeper that denies.
+    That rule: order by `deny desc, creation`, keep the first row, then OR
+    in the set bits of every *same-polarity* row. A grant row therefore
+    contributes nothing to a keeper that denies.
 
     Order matters and mapping order is not the same as flag order: a row
     with `read + share` maps to READ and a row with `write` maps to EDIT,

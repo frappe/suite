@@ -255,7 +255,7 @@ def _node_row(row: TreeRow, kind: str) -> dict:
     return {
         "name": row.name,
         "title": (row.file_name or "").strip() or row.name,
-        "parent": None,
+        "parent_node": None,
         "root": None,
         "path": "",
         "kind": "root",
@@ -296,7 +296,6 @@ def _metadata_row(row: TreeRow, kind: str, user: str | None, state: str) -> dict
         # §14.2 step 12 recomputes this after every node exists. Seeding it
         # with anything else would be a number nobody measured.
         "used_bytes": 0,
-        "acl_generation": 0,
         "owner": owner,
         "creation": row.creation,
         "modified": row.modified,
@@ -366,7 +365,7 @@ def _refuse_mismatch(node_id: str, existing_node, existing_metadata, intended: d
             )
         canonical = {
             "kind": "root",
-            "parent": None,
+            "parent_node": None,
             "root": None,
             "path": "",
             "state": ACTIVE,

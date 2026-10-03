@@ -109,7 +109,7 @@ class SlidesTest(unittest.TestCase):
         target.node_rows[node] = {
             "name": node,
             "title": title,
-            "parent": "root",
+            "parent_node": "root",
             "root": "root",
             "path": "",
             "kind": "document",
@@ -122,7 +122,7 @@ class SlidesTest(unittest.TestCase):
         row = {
             "name": name,
             "title": f"{name}.png",
-            "parent": parent,
+            "parent_node": parent,
             "root": parent,
             "path": "",
             "kind": "file",
@@ -204,6 +204,40 @@ class SlidesTest(unittest.TestCase):
         convert_slides_and_templates(env)
         self.assertEqual(len(env.slide_journal.records), 1)
 
+    def test_a_rewritten_reference_is_the_media_node_the_slides_runtime_reads(self):
+        """§14.7 and §10.6 meet on one value: the media node's own id.
+
+        The renderer resolves an element `src` through `GET /nodes/<deck>/media`,
+        whose rows are keyed by node, and the unused-media sweep keeps what the
+        Slides spec reads back from the body. Both see the value Build wrote
+        only if it is exactly the name of the media node under the deck;
+        `test_migration` checks the real sweep keeps it.
+        """
+        source = FakeContent(
+            documents=[deck()],
+            slides=[
+                SlideRow(
+                    "slide-1",
+                    "deck-1",
+                    1,
+                    json.dumps([{"src": "/private/files/media-a.png", "poster": "/files/media-a.png"}]),
+                    "/files/media-a.png",
+                )
+            ],
+            media=[media("media-a", blob="blob-1", url="/files/media-a.png")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-1", b"media", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        (node,) = self.media_children(target, "deck-node")
+        self.assertEqual((node["kind"], node["state"], node["blob"]), ("file", "Active", "blob-1"))
+        body = json.loads(source.slide_rows["slide-1"].elements)
+        for value in (body[0]["src"], body[0]["poster"], source.slide_rows["slide-1"].background):
+            self.assertEqual(value, node["name"])
+
     def test_media_nodes_carry_the_deck_child_path(self):
         source = FakeContent(
             documents=[deck()],
@@ -221,7 +255,7 @@ class SlidesTest(unittest.TestCase):
         # every later save, move, restore, or copy.
         for name in ("media-a", "media-b"):
             self.assertEqual(target.node_rows[name]["path"], "/deck-node/")
-            self.assertEqual(target.node_rows[name]["parent"], "deck-node")
+            self.assertEqual(target.node_rows[name]["parent_node"], "deck-node")
             self.assertEqual(target.node_rows[name]["root"], "root")
 
     def test_a_deck_too_deep_to_hold_media_is_refused_before_it_writes(self):
@@ -272,7 +306,7 @@ class SlidesTest(unittest.TestCase):
         original = target.insert_nodes
 
         def record(nodes):
-            media_rows = [row for row in nodes if row["parent"] == "deck-node"]
+            media_rows = [row for row in nodes if row["parent_node"] == "deck-node"]
             if media_rows:
                 sizes.append(len(media_rows))
             original(nodes)
@@ -1282,7 +1316,7 @@ class SlidesTest(unittest.TestCase):
         for name, blob in (("stray-file", "stray-blob"), ("stray-empty", None)):
             target.node_rows[name] = {
                 "name": name,
-                "parent": "deck-node",
+                "parent_node": "deck-node",
                 "root": "root",
                 "path": "/deck-node/",
                 "kind": "file",
@@ -1308,7 +1342,7 @@ class SlidesTest(unittest.TestCase):
         insert_nodes = target.insert_nodes
 
         def record(planned):
-            media_rows = [row for row in planned if row.get("parent") == "deck-node"]
+            media_rows = [row for row in planned if row.get("parent_node") == "deck-node"]
             if media_rows:
                 sizes.append(len(media_rows))
             insert_nodes(planned)
@@ -1747,7 +1781,7 @@ class SlidesTest(unittest.TestCase):
 
         stored = target.node_rows["media-a"]
         self.assertEqual(
-            (stored["parent"], stored["root"], stored["path"]), ("deck-node", "root", "/deck-node/")
+            (stored["parent_node"], stored["root"], stored["path"]), ("deck-node", "root", "/deck-node/")
         )
         self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["media-a"])
         self.assertEqual(result.media_nodes_created, 1)
@@ -1839,7 +1873,7 @@ class SlidesTest(unittest.TestCase):
         stored = target.node_rows["media-a"]
         self.assertEqual(stored["state"], "Active")
         self.assertEqual((stored["trashed_at"], stored["trash_root"]), (None, None))
-        self.assertEqual(stored["parent"], "deck-node")
+        self.assertEqual(stored["parent_node"], "deck-node")
 
     def test_a_second_run_moves_nothing_and_refuses_nothing(self):
         row = media("media-a", blob="blob-a")
@@ -1889,7 +1923,7 @@ class SlidesTest(unittest.TestCase):
 
         result = convert_slides_and_templates(env)
 
-        self.assertEqual(target.node_rows["media-a"]["parent"], "root")
+        self.assertEqual(target.node_rows["media-a"]["parent_node"], "root")
         self.assertEqual(result.media_nodes_relocated, 0)
         self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["earlier"])
 
@@ -1912,7 +1946,7 @@ class SlidesTest(unittest.TestCase):
 
         # [012] §4: the deck the File belongs to keeps the node, and the deck
         # that pasted it gets a copy under a new id, the same blob.
-        template_node = target.node_rows["template-file"]["parent"]
+        template_node = target.node_rows["template-file"]["parent_node"]
         self.assertEqual(target.node_rows[template_node]["content_docname"], "template")
         copies = self.media_children(target, consumer.node)
         self.assertEqual([row["blob"] for row in copies], ["blob-a"])

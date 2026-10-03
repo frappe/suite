@@ -18,11 +18,13 @@ import hashlib
 from copy import deepcopy
 from dataclasses import replace
 
+from suite.drive.patches.build.copy_ledger import CopyLedger
 from suite.drive.patches.build.docshare_journal import DOCSHARE_COLUMNS, row_values
 from suite.drive.patches.build.docshare_journal import (
     JournalConflictError as DocShareJournalConflictError,
 )
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
+from suite.drive.patches.build.legacy import S3_URL_PREFIX, get_s3_url
 from suite.drive.patches.build.ports import (
     ACTIVE,
     PERSONAL,
@@ -47,7 +49,6 @@ from suite.drive.patches.build.slide_journal import (
     UnknownBodyState,
 )
 from suite.drive.patches.build.state import BuildState
-from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
 # S3's own `CopyObject` source ceiling, an inclusive maximum
 # (`s3transfer.utils.MAX_SINGLE_UPLOAD_SIZE`). Spelled out rather than
@@ -325,8 +326,9 @@ def build_environment(
     clock=None,
     make_id=None,
     make_token=None,
+    accept_skips=False,
 ):
-    """A `BuildEnvironment` wired to fakes, with its state file in `tmp_path`."""
+    """A `BuildEnvironment` wired to fakes, with its state file and copy ledger in `tmp_path`."""
     bucket = bucket if bucket is not None else FakeBucket()
     if legacy_s3 is None:
         legacy_s3 = LegacyS3Config(enabled=True, bucket=bucket.bucket)
@@ -374,6 +376,8 @@ def build_environment(
         state=BuildState(tmp_path / "drive-build-state.json"),
         legacy_s3=legacy_s3,
         open_bucket=lambda: bucket,
+        copy_ledger=CopyLedger(tmp_path / "drive-build-copied-objects.jsonl"),
+        accept_skips=accept_skips,
         tree=tree,
         drive=drive,
         content=content,
@@ -530,6 +534,9 @@ class FakeDrive:
     def node_ids(self):
         return set(self.node_rows)
 
+    def root_count(self):
+        return len(self.root_rows)
+
     def nodes(self, names):
         return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
 
@@ -573,6 +580,38 @@ class FakeDrive:
             row["node"] == node and row["principal"].startswith("$LINK:") and row["role"] > 0
             for row in self.grant_rows.values()
         )
+
+    def owned_nodes(self, after, limit):
+        rows = sorted(
+            (
+                row
+                for row in self.node_rows.values()
+                if row.get("kind") != "root"
+                and row.get("owner") not in (None, "", "Administrator", "Guest")
+                and row["name"] > after
+            ),
+            key=lambda row: row["name"],
+        )
+        return [dict(row) for row in rows[:limit]]
+
+    def effective_role(self, node, user):
+        """Nearest grant wins, the user's own row before `$GENERAL`.
+
+        Enough of §4 for the creator rule: a deny is NONE, nothing is 0,
+        and links and groups do not come up in these fixtures."""
+        chain = [node["name"]] if node.get("kind") == "root" else [node.get("root")]
+        if node.get("kind") != "root":
+            chain.extend(part for part in (node.get("path") or "").strip("/").split("/") if part)
+            chain.append(node["name"])
+        for node_id in reversed(chain):
+            roles = {
+                row["principal"]: row["role"] for row in self.grant_rows.values() if row["node"] == node_id
+            }
+            if user in roles:
+                return roles[user]
+            if "$GENERAL" in roles:
+                return roles["$GENERAL"]
+        return 0
 
     # -- writes
 
@@ -715,9 +754,10 @@ class FakeContent:
     def sheet_snapshots(self, sheet, after, limit):
         rows = sorted(
             (row for row in self.sheet_snapshot_rows if row.sheet == sheet),
-            key=lambda row: (int(row.seq), row.name),
+            # `ORDER BY seq` puts a NULL first; the rule under test refuses it.
+            key=lambda row: (row.seq is not None, int(row.seq or 0), row.name),
         )
-        return [row for row in rows if (int(row.seq), row.name) > after][:limit]
+        return [row for row in rows if (int(row.seq or 0), row.name) > after][:limit]
 
     def residual_writer_versions(self, limit):
         return sorted(self.residual_versions)[:limit]
@@ -747,6 +787,9 @@ class FakeContent:
     def media_files_by_urls(self, urls):
         wanted = set(urls)
         return [row for row in self.media_rows if row.file_url in wanted]
+
+    def writer_document_is_template(self, name):
+        return any(row.name == name for row in self.writer_template_rows)
 
     def presentation_is_template(self, deck):
         row = self.document_rows.get(("Presentation", deck))
@@ -835,7 +878,7 @@ class FakeContentTarget:
         ]
 
     def child_nodes(self, parent):
-        return [dict(row) for row in self.node_rows.values() if row.get("parent") == parent]
+        return [dict(row) for row in self.node_rows.values() if row.get("parent_node") == parent]
 
     def root_metadata(self, node):
         return self.drive.root_metadata(node)

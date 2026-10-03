@@ -3,12 +3,13 @@
 Build converts legacy Drive `File` rows into `Drive Node` trees. It deletes
 one kind of legacy row and only one: the `DocShare` rows it rewrites as
 grants, which §5.13's read guards and `validate_content_registry` do not
-let it leave behind. Cleanup removes the rest one release later (§14.10).
+let it leave behind. Cleanup removes the rest in the same migrate (§14.10).
 
-**Build is live; Cleanup is not.** `suite/patches.txt` names this package,
-so `bench migrate` runs the whole additive migration. `cleanup` stays
-unregistered and unwritten: it is the destructive half, and §14.10 puts it
-one release later.
+**Build and Cleanup run in the same migrate.** `suite/patches.txt` names
+this package and then `suite.drive.patches.cleanup`, both after model sync:
+sync never drops a column and orphan doctypes go only after the patches, so
+the legacy tables Build reads are still there when it runs, and Cleanup
+drops them in the same `bench migrate` once Build has finished.
 
 The phases cover §14.2 steps 1 to 13:
 
@@ -37,8 +38,20 @@ The phases cover §14.2 steps 1 to 13:
   versions, and reservations, then reconciled a second way.
 - `report.produce_report` — step 13: §14.9's keys, printed to the
   migration log and saved under the site's private directory.
+- `skips.report_skips` — after the report: every row Build read and did
+  not convert, with its reason, written to `drive-build-skipped.json`
+  beside the record; refuses while a reachable row has no node and site
+  config does not carry `drive_build_accept_skips`.
+- `copy_ledger.CopyLedger` — every legacy S3 object the copy step placed,
+  by key, for the manual `cleanup.delete_legacy_objects` command. Build
+  and Cleanup delete no bucket object.
 - `patch.execute` — the order, and the two `completed` flags the phases
   read but do not set.
+
+Two read-only entry points for operators, run before the migrate:
+`preflight.check` (GO / NO-GO on storage config, bucket reach, the upgrade
+floor and a sample of objects per legacy key layout) and `dry_run.run`
+(the census of what Build would write and skip, without writing).
 
 The three content phases run in that order, 7 then 8 then 10, and no
 phase runs another. Step 10 adopts orphans and then reruns step 7 for the

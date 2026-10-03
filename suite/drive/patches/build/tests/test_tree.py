@@ -59,7 +59,7 @@ class TreeCase(unittest.TestCase):
         self.drive.node_rows[ROOT] = {
             "name": ROOT,
             "kind": "root",
-            "parent": None,
+            "parent_node": None,
             "root": None,
             "path": "",
             "state": ACTIVE,
@@ -153,7 +153,7 @@ class PlaceTest(TreeCase):
         """A direct child of a root names the root node and holds no path."""
         self.add(row("child00001", ROOT))
         self.run_walk()
-        self.assertEqual(self.node("child00001")["parent"], ROOT)
+        self.assertEqual(self.node("child00001")["parent_node"], ROOT)
         self.assertEqual(self.node("child00001")["root"], ROOT)
         # §3.1: the root id stays outside `path`. An empty string, not "/".
         self.assertEqual(self.node("child00001")["path"], "")
@@ -193,7 +193,7 @@ class PlaceTest(TreeCase):
         )
         self.run_walk()
         self.assertEqual(self.node("deck000001")["kind"], "document")
-        self.assertEqual(self.node("media00001")["parent"], "deck000001")
+        self.assertEqual(self.node("media00001")["parent_node"], "deck000001")
 
 
 class CapacityTest(TreeCase):

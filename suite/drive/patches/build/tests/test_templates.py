@@ -70,7 +70,7 @@ class TemplateTest(unittest.TestCase):
         target.node_rows[name] = {
             "name": name,
             "title": "Administrator",
-            "parent": None,
+            "parent_node": None,
             "root": None,
             "path": "",
             "kind": "root",
@@ -89,7 +89,7 @@ class TemplateTest(unittest.TestCase):
         row = {
             "name": name,
             "title": "Templates",
-            "parent": root,
+            "parent_node": root,
             "root": root,
             "path": "",
             "kind": "folder",
@@ -121,7 +121,7 @@ class TemplateTest(unittest.TestCase):
         row = {
             "name": name,
             "title": "Deck",
-            "parent": "old-folder",
+            "parent_node": "old-folder",
             "root": "old-root",
             "path": "/old-folder/",
             "kind": "document",
@@ -158,7 +158,7 @@ class TemplateTest(unittest.TestCase):
         source = FakeContent(writer_templates=[source_row], users={"Administrator": True, OWNER: True})
         env, target = self.environment(source)
 
-        folder = convert_templates(env, env.state.content())
+        folder = convert_templates(env, result=env.state.content())
 
         self.assertEqual(target.node_rows[folder]["title"], "Templates")
         document = target.writer_rows[source_row.name]
@@ -167,14 +167,14 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(document["settings"], '{"keymap":"vim"}')
         self.assertEqual(document["collab"], 0)
         node = target.node_rows[source_row.name]
-        self.assertEqual(node["parent"], folder)
+        self.assertEqual(node["parent_node"], folder)
         self.assertEqual(node["mime"], "frappe/writer")
         self.assertEqual(node["is_template"], 1)
         self.assertEqual(target.grant_roles(source_row.name, (GENERAL,))[GENERAL], READ)
         self.assertEqual(target.grant_roles(source_row.name, (OWNER,))[OWNER], MANAGE)
         self.assertEqual(source.writer_template_rows, [source_row])
 
-        convert_templates(env, env.state.content())
+        convert_templates(env, result=env.state.content())
         self.assertEqual(len(target.writer_rows), 1)
 
     def test_administrator_owned_template_has_no_redundant_owner_grant(self):
@@ -182,7 +182,7 @@ class TemplateTest(unittest.TestCase):
         source = FakeContent(writer_templates=[row], users={"Administrator": True})
         env, target = self.environment(source)
 
-        convert_templates(env, env.state.content())
+        convert_templates(env, result=env.state.content())
 
         self.assertEqual(target.grant_roles(row.name, (GENERAL,))[GENERAL], READ)
         self.assertNotIn("Administrator", target.grant_roles(row.name, ("Administrator",)))
@@ -192,10 +192,10 @@ class TemplateTest(unittest.TestCase):
         source = FakeContent(documents=[row], users={"Administrator": True, OWNER: True})
         env, target = self.environment(source)
 
-        folder = convert_templates(env, env.state.content())
+        folder = convert_templates(env, result=env.state.content())
 
         node = target.node_rows[row.name]
-        self.assertEqual(node["parent"], folder)
+        self.assertEqual(node["parent_node"], folder)
         self.assertEqual(node["mime"], "frappe/slides")
         self.assertEqual(node["content_docname"], row.name)
         self.assertEqual(source.document_rows[(row.doctype, row.name)].node, row.name)
@@ -209,11 +209,13 @@ class TemplateTest(unittest.TestCase):
         )
         env, target = self.environment(source)
 
-        convert_templates(env, env.state.content())
+        # A caller-owned record is the caller's to save (see `convert_templates`).
+        result = env.state.content()
+        convert_templates(env, result=result)
 
         self.assertEqual(target.node_rows["writer-a"]["title"], "Common")
         self.assertEqual(target.node_rows["writer-b"]["title"], "Common (2)")
-        self.assertEqual(env.state.content().template_title_renames, 1)
+        self.assertEqual(result.template_title_renames, 1)
 
     def test_template_nodes_carry_the_folder_child_path(self):
         writer = writer_template("writer-template")
@@ -225,7 +227,7 @@ class TemplateTest(unittest.TestCase):
         )
         env, target = self.environment(source)
 
-        folder = convert_templates(env, env.state.content())
+        folder = convert_templates(env, result=env.state.content())
 
         # `_core/nodes.child_path` is `f"{path or '/'}{name}/"`. Without the
         # leading slash `_check_tree_position` refuses the node on every
@@ -253,12 +255,12 @@ class TemplateTest(unittest.TestCase):
         target.node_rows["collision"] = {
             "name": "collision",
             "title": "templates",
-            "parent": "id1",
+            "parent_node": "id1",
             "state": "Active",
         }
 
         with self.assertRaisesRegex(InvalidLegacyContent, "ambiguous Templates"):
-            convert_templates(env, env.state.content())
+            convert_templates(env, result=env.state.content())
 
     def test_template_logical_unit_rolls_back_after_interruption(self):
         row = writer_template("writer-template")
@@ -267,7 +269,7 @@ class TemplateTest(unittest.TestCase):
         target.fail_unit = row.name
 
         with self.assertRaises(InterruptedRun):
-            convert_templates(env, env.state.content())
+            convert_templates(env, result=env.state.content())
         self.assertNotIn(row.name, target.writer_rows)
         self.assertNotIn(row.name, target.node_rows)
         self.assertFalse(target.grant_roles(row.name, (GENERAL, OWNER)))
@@ -278,7 +280,7 @@ class TemplateTest(unittest.TestCase):
         env, _ = self.environment(source)
 
         with self.assertRaisesRegex(InvalidLegacyContent, "has no User row"):
-            convert_templates(env, env.state.content())
+            convert_templates(env, result=env.state.content())
 
     # -- canonical position
 
@@ -319,7 +321,7 @@ class TemplateTest(unittest.TestCase):
         folder = convert_templates(env)
 
         self.assertEqual(folder, existing)
-        self.assertEqual(target.node_rows["writer-template"]["parent"], existing)
+        self.assertEqual(target.node_rows["writer-template"]["parent_node"], existing)
 
     def test_a_trashed_templates_folder_does_not_block_a_new_active_one(self):
         """Plan §10: active sibling uniqueness ignores Trashed nodes."""
@@ -527,7 +529,7 @@ class TemplateTest(unittest.TestCase):
 
         for row in (light, dark):
             node = target.node_rows[row.name]
-            self.assertEqual(node["parent"], folder)
+            self.assertEqual(node["parent_node"], folder)
             self.assertEqual(node["title"], row.title)
             self.assertEqual(node["is_template"], 1)
             self.assertEqual(source.document_rows[(row.doctype, row.name)].node, row.name)
@@ -591,7 +593,7 @@ class TemplateTest(unittest.TestCase):
         env, target = self.environment(source)
 
         convert_slides_and_templates(env)
-        folder = target.node_rows["writer-template"]["parent"]
+        folder = target.node_rows["writer-template"]["parent_node"]
         before = dict(target.node_rows["writer-template"])
         self.assertEqual(target.node_rows[folder]["title"], "Templates")
 
@@ -766,7 +768,7 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(result.template_nodes_created, 1)
         self.assertEqual(result.template_nodes_adopted, 0)
         self.assertEqual(result.issues, [])
-        self.assertEqual(target.node_rows[deck.name]["parent"], folder)
+        self.assertEqual(target.node_rows[deck.name]["parent_node"], folder)
         self.assertEqual(target.node_rows[deck.name]["is_template"], 1)
         self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, deck.name)
 

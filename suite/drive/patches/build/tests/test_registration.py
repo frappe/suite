@@ -1,11 +1,15 @@
-"""How Build is registered, and how Cleanup is not.
+"""How Build is registered, and what the repository no longer carries.
 
-Build is additive: it writes new rows and drops no legacy column, so
-`suite/patches.txt` runs it on an ordinary migrate. Cleanup is the
-destructive half and §14.10 puts it one release later, so nothing may
-register it early. §14.11's rollback ("truncate the new tables and ship the
-old code") holds only while that stays true, and while everything the old
-code reads is still here, so §14.10's deletion list is checked item by item.
+One `bench migrate` runs Build and then Cleanup, both after model sync:
+`suite/patches.txt` names this package and then `suite.drive.patches.cleanup`
+directly after it. Frappe's model sync never drops a column and only drops
+orphan doctypes after the patches have run, so the legacy tables and columns
+Build reads are still there when it runs, and Cleanup drops them in the same
+migrate. That ordering is what these checks hold.
+
+The legacy code those tables belonged to is gone from the source tree. The
+list below is §14.10's deletion list as this repository spelled it; every
+name on it must now be absent, so Build cannot quietly depend on one again.
 
 The rest of these checks are the ones the package has always had: Build is
 a patch and nothing else. No doctype, no fixture, no endpoint, no scheduled
@@ -27,8 +31,7 @@ SUITE_ROOT = REPOSITORY_ROOT / "suite"
 PATCH_NAME = "suite.drive.patches.build"
 CLEANUP_NAME = "suite.drive.patches.cleanup"
 
-# SQL that removes data, as this codebase spells it. Prose about §14.11's
-# "truncate the new tables" rollback is lowercase and is not this.
+# SQL that removes data, as this codebase spells it.
 DESTRUCTIVE_SQL = re.compile(r"\b(DROP\s+(TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)\b")
 
 # The ORM spellings of the same thing.
@@ -43,60 +46,42 @@ def patch_lines():
     ]
 
 
-class TestBuildIsRegistered(unittest.TestCase):
-    def test_patches_txt_names_it_once(self):
-        self.assertEqual(patch_lines().count(PATCH_NAME), 1)
+def build_modules():
+    return sorted(p for p in Path(build.__file__).parent.glob("*.py"))
 
-    def test_it_runs_after_model_sync(self):
+
+class TestBuildThenCleanupAreRegistered(unittest.TestCase):
+    def test_patches_txt_names_each_once(self):
+        lines = patch_lines()
+        self.assertEqual(lines.count(PATCH_NAME), 1)
+        self.assertEqual(lines.count(CLEANUP_NAME), 1)
+
+    def test_both_run_after_model_sync(self):
         lines = patch_lines()
         self.assertGreater(lines.index(PATCH_NAME), lines.index("[post_model_sync]"))
+        self.assertGreater(lines.index(CLEANUP_NAME), lines.index("[post_model_sync]"))
 
-    def test_it_runs_after_every_other_drive_patch(self):
-        # Build reads the legacy tables. Every patch that reshapes them has
-        # to have finished first, and the simplest way to hold that is to
-        # keep Build last in the file.
-        self.assertEqual(patch_lines()[-1], PATCH_NAME)
+    def test_cleanup_runs_directly_after_build_and_nothing_runs_after_cleanup(self):
+        # Build reads the legacy tables and Cleanup drops them. Every patch
+        # that reshapes those tables has to have finished before Build, and
+        # nothing may expect them after Cleanup, so the two close the file.
+        lines = patch_lines()
+        self.assertEqual(lines[-2:], [PATCH_NAME, CLEANUP_NAME])
 
-    def test_the_package_exports_the_entry_point(self):
+    def test_both_packages_export_an_entry_point(self):
         self.assertTrue(callable(build.execute))
+        self.assertTrue(callable(importlib.import_module(CLEANUP_NAME).execute))
 
-    def test_only_the_patch_module_defines_it(self):
+    def test_only_the_patch_module_defines_build_s_entry_point(self):
         # One entry point, so a half-written phase cannot be run on its own
         # by a hand-added patches.txt line.
         defining = [
             path.stem
-            for path in self.modules()
+            for path in build_modules()
             if hasattr(importlib.import_module(f"{build.__name__}.{path.stem}"), "execute")
         ]
         # `__init__` re-exports it, which is what `patches.txt` imports.
         self.assertEqual(defining, ["__init__", "patch"])
-
-    def modules(self):
-        return sorted(p for p in Path(build.__file__).parent.glob("*.py"))
-
-
-class TestCleanupIsNotRegistered(unittest.TestCase):
-    """§14.10: the destructive half ships one release later."""
-
-    def test_nothing_names_it(self):
-        self.assertNotIn(CLEANUP_NAME, patch_lines())
-        self.assertNotIn(CLEANUP_NAME, (SUITE_ROOT / "hooks.py").read_text())
-
-    def test_the_package_exists_but_stays_unwired(self):
-        # Ticket 35 ships Cleanup as real, tested code (its own dormancy
-        # suite lives at `suite.drive.patches.cleanup.tests.test_dormancy`
-        # and covers the same package in more depth). What this repository's
-        # dormancy guarantee actually rests on is patches.txt/hooks silence
-        # and the absence of `execute`, both checked here directly, so this
-        # suite does not just take the sibling package's word for it.
-        cleanup_dir = Path(build.__file__).parent.parent / "cleanup"
-        self.assertTrue((cleanup_dir / "__init__.py").is_file())
-        cleanup = importlib.import_module(CLEANUP_NAME)
-        self.assertFalse(hasattr(cleanup, "execute"))
-        for path in sorted(cleanup_dir.glob("*.py")):
-            module = importlib.import_module(f"{CLEANUP_NAME}.{path.stem}")
-            with self.subTest(module=path.stem):
-                self.assertFalse(hasattr(module, "execute"))
 
     def test_build_removes_nothing_but_the_docshares_it_rewrote(self):
         """Build is additive but for one row. Everything else runs in Cleanup.
@@ -108,7 +93,7 @@ class TestCleanupIsNotRegistered(unittest.TestCase):
         the exact call: `frappe.db.delete("DocShare", ...)`.
         """
         found = []
-        for path in TestBuildIsRegistered().modules():
+        for path in build_modules():
             tree = ast.parse(path.read_text())
             for node in ast.walk(tree):
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -129,40 +114,37 @@ class TestCleanupIsNotRegistered(unittest.TestCase):
         self.assertEqual(found, ["ports.py", "ports.py"])
 
 
-# §14.10's deletion list, as this repository spells it today. Every name here
-# is something Cleanup removes, so finding all of them is what proves Cleanup
-# has not started. The list is written out rather than derived: a gate that
-# read the same files it guards would pass on an empty repository.
-RETAINED_DOCTYPES = (
+# §14.10's deletion list, as this repository spelled it. Cleanup drops every
+# runtime trace of these on a site; the source tree must carry none of them.
+# The list is written out rather than derived: a check that read the same
+# files it guards would pass on an empty repository.
+REMOVED_DOCTYPES = (
     "drive/doctype/drive_permission",
     "drive/doctype/drive_entity_activity_log",
+    "drive/doctype/drive_entity_log",
     "drive/doctype/drive_token",
+    "drive/doctype/drive_team",
+    "drive/doctype/drive_team_member",
+    "drive/doctype/drive_user_invitation",
+    "drive/doctype/drive_legacy_call",
+    "drive/doctype/account_request",
     "writer/doctype/writer_version",
     "writer/doctype/writer_doc_version",
     "writer/doctype/writer_template",
     "sheets/doctype/sheet_snapshot",
 )
 
-RETAINED_FILE_CUSTOM_FIELDS = (
-    "section_break_nfot8",
-    "mime_type",
-    "status",
-    "file_modified",
-    "column_break_tapww",
-    "content_doctype",
-    "content_docname",
-)
-
-RETAINED_PROPERTY_SETTERS = (
-    ("File", "file_url", "depends_on"),
-    ("File", "folder", "hidden"),
-    ("File", "folder", "depends_on"),
+REMOVED_PACKAGES = (
+    "drive/api",
+    "drive/utils",
+    "drive/overrides",
+    "drive/http/shims.py",
+    "drive/http/legacy_calls.py",
 )
 
 # Doctype JSON, and the fields on it Cleanup drops. §3.13's ten `Drive Disk
-# Settings` fields and all three of Sheet's trash columns, in full: a
-# partial list here would let one of them go missing early and still pass.
-RETAINED_FIELDS = (
+# Settings` fields and all three of Sheet's trash columns, in full.
+REMOVED_FIELDS = (
     ("drive/doctype/drive_settings", ("user_folder", "quota")),
     (
         "drive/doctype/drive_disk_settings",
@@ -180,16 +162,23 @@ RETAINED_FIELDS = (
         ),
     ),
     ("drive/doctype/drive_storage_reservation", ("storage_owner",)),
+    ("drive/doctype/drive_favourite", ("entity",)),
+    ("drive/doctype/drive_root", ("acl_generation",)),
+    (
+        "drive/doctype/drive_notification",
+        ("from_user", "type", "message", "notif_doctype", "notif_doctype_name", "entity_type"),
+    ),
     ("slides/doctype/presentation", ("title",)),
-    ("sheets/doctype/sheet", ("title", "trashed", "trashed_on", "trashed_by", "sheets_data")),
-    ("writer/doctype/writer_document", ("ycomments", "versions")),
+    ("sheets/doctype/sheet", ("title", "trashed", "trashed_on", "trashed_by")),
+    ("writer/doctype/writer_document", ("versions",)),
 )
 
 LEGACY_METHOD_PREFIX = "/api/method/suite.drive.api."
 
 
-def fixture(name):
-    return json.loads((SUITE_ROOT / "fixtures" / f"{name}.json").read_text())
+def fixture_rows(name):
+    path = SUITE_ROOT / "fixtures" / f"{name}.json"
+    return json.loads(path.read_text()) if path.is_file() else []
 
 
 def doctype_fields(path):
@@ -199,49 +188,48 @@ def doctype_fields(path):
     }
 
 
-class TestCleanupHasRemovedNothingYet(unittest.TestCase):
-    """§14.10's list, still whole, one release before it may be cut.
+class TestTheLegacyBackendIsGoneFromTheSource(unittest.TestCase):
+    """Cleanup drops these on the site; nothing in the tree may still ship
+    them, or the next model sync would recreate what Cleanup removed."""
 
-    Build is the expand half. §14.11's rollback is "truncate the new tables
-    and ship the old code", and the old code reads every name below. A
-    Ticket 29 change that removed one of them early would leave the branch
-    with no way back, and would do it quietly: the new tables would answer
-    every read, so nothing would look broken until someone rolled back.
-    """
-
-    def test_the_source_doctypes_are_all_still_shipped(self):
-        for path in RETAINED_DOCTYPES:
+    def test_the_legacy_doctypes_are_no_longer_shipped(self):
+        for path in REMOVED_DOCTYPES:
             with self.subTest(doctype=path):
-                folder = SUITE_ROOT / path
-                self.assertTrue((folder / f"{folder.name}.json").is_file())
+                self.assertFalse((SUITE_ROOT / path).exists())
 
-    def test_the_seven_file_custom_fields_are_still_in_the_fixture(self):
-        held = {row["fieldname"] for row in fixture("custom_field") if row.get("dt") == "File"}
-        self.assertEqual(held, set(RETAINED_FILE_CUSTOM_FIELDS))
+    def test_the_legacy_packages_are_no_longer_shipped(self):
+        for path in REMOVED_PACKAGES:
+            with self.subTest(path=path):
+                self.assertFalse((SUITE_ROOT / path).exists())
 
-    def test_the_three_property_setters_are_still_in_the_fixture(self):
-        held = {
-            (row["doc_type"], row.get("field_name"), row["property"]) for row in fixture("property_setter")
-        }
-        self.assertEqual(held, set(RETAINED_PROPERTY_SETTERS))
+    def test_no_fixture_adds_a_file_custom_field_or_property_setter(self):
+        self.assertEqual([row for row in fixture_rows("custom_field") if row.get("dt") == "File"], [])
+        self.assertEqual(
+            [row for row in fixture_rows("property_setter") if row.get("doc_type") == "File"], []
+        )
 
-    def test_every_legacy_column_cleanup_drops_is_still_declared(self):
-        for path, fieldnames in RETAINED_FIELDS:
+    def test_every_legacy_column_cleanup_drops_is_undeclared(self):
+        for path, fieldnames in REMOVED_FIELDS:
             held = doctype_fields(path)
             for fieldname in fieldnames:
                 with self.subTest(doctype=path, fieldname=fieldname):
-                    self.assertIn(fieldname, held)
+                    self.assertNotIn(fieldname, held)
 
-    def test_the_legacy_method_prefix_is_still_reachable(self):
-        # Additive: §11.2's route namespace was added beside the old prefix,
-        # not in place of it, and Cleanup removes the old one.
+    def test_the_legacy_method_prefix_is_no_longer_reachable(self):
         hooks = importlib.import_module("suite.hooks")
-        self.assertIn(LEGACY_METHOD_PREFIX, hooks.ALLOWED_WILDCARD_PATHS)
+        self.assertNotIn(LEGACY_METHOD_PREFIX, hooks.ALLOWED_WILDCARD_PATHS)
         self.assertIn("/api/suite/drive/", hooks.ALLOWED_WILDCARD_PATHS)
 
-    def test_all_sixty_nine_forwarders_are_still_classified(self):
-        shims = importlib.import_module("suite.drive.http.shims")
-        self.assertEqual(len(shims.CLASSIFICATION), 69)
+    def test_build_imports_nothing_from_the_removed_packages(self):
+        for path in build_modules():
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    with self.subTest(module=path.name, line=node.lineno, imported=node.module):
+                        self.assertFalse(
+                            node.module.startswith(
+                                ("suite.drive.api", "suite.drive.utils", "suite.drive.overrides")
+                            )
+                        )
 
 
 class TestBuildIsOnlyAPatch(unittest.TestCase):
@@ -249,8 +237,8 @@ class TestBuildIsOnlyAPatch(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in Path(build.__file__).parent.glob("*.json")), [])
 
     def test_hooks_do_not_reference_it(self):
-        # Code, not prose: `hooks.py` explains where Build runs in the note
-        # above `drive_content_types`, and naming it there wires nothing.
+        # Code, not prose: `hooks.py` may explain where Build runs in a
+        # comment, and naming it there wires nothing.
         hooks = ast.parse((SUITE_ROOT / "hooks.py").read_text())
         for node in ast.walk(hooks):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -263,7 +251,7 @@ class TestBuildIsOnlyAPatch(unittest.TestCase):
                 self.assertNotIn("patches.build", json.dumps(json.loads(fixture.read_text())))
 
     def test_it_exposes_no_endpoint_and_no_scheduled_work(self):
-        for path in TestBuildIsRegistered().modules():
+        for path in build_modules():
             with self.subTest(module=path.name):
                 source = path.read_text()
                 self.assertNotIn("frappe.whitelist", source)
@@ -280,7 +268,7 @@ class TestBuildIsOnlyAPatch(unittest.TestCase):
             ast.Assign,
             ast.AnnAssign,
         )
-        for path in TestBuildIsRegistered().modules():
+        for path in build_modules():
             for node in ast.parse(path.read_text()).body:
                 with self.subTest(module=path.name, line=node.lineno):
                     if isinstance(node, ast.Expr):

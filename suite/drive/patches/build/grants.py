@@ -8,11 +8,12 @@ the two can meet on one row and the higher of them wins (§14.5).
 The order of the two things Build does per pair matters:
 
 1. **Collapse, then map.** A `(entity, user)` pair can hold several rows.
-   `dedupe_drive_permissions.py` unions their flags and Build reproduces
-   that. Mapping first and taking the highest answer is a different result:
-   a `read + share` row maps to READ and a `write` row maps to EDIT, so
-   mapping first gives EDIT, while the union is `share + write`, which is
-   MANAGE. The site's own patch would have produced MANAGE.
+   The legacy backend's own dedupe patch unioned their flags, and Build
+   reproduces that rule (`mapping.collapse`). Mapping first and taking the
+   highest answer is a different result: a `read + share` row maps to READ
+   and a `write` row maps to EDIT, so mapping first gives EDIT, while the
+   union is `share + write`, which is MANAGE. The site's own patch would
+   have produced MANAGE.
 2. **Map, then hold to the guardrails.** Build writes with SQL, so no
    refusal in §5.9 fires by itself. Refusals 7, 8, and 11 bind a Suite
    Admin, which means a migration may not write past them either. Every row
@@ -35,7 +36,7 @@ the same commit as the grant it produced. `LegacyTree` is still reads only;
 the delete goes through `DriveTarget`.
 """
 
-from suite.drive._core.roles import NONE, READ
+from suite.drive._core.roles import EDIT, NONE, READ
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.mapping import (
     GENERAL,
@@ -69,7 +70,7 @@ def convert_grants(env, grants: GrantConversion, plans, *, batch_size: int = BUI
     """Map every legacy permission row, then hold the §3.2 Shared floor."""
     _recover_link_intents(env, grants)
     nodes = _NodeFacts(env)
-    batch = _Batch(env, grants, batch_size)
+    batch = _Batch(env, grants, batch_size, nodes)
     _convert_permissions(env, grants, nodes, batch, batch_size)
     _convert_docshares(env, grants, nodes, batch, batch_size)
     batch.flush()
@@ -79,6 +80,7 @@ def convert_grants(env, grants: GrantConversion, plans, *, batch_size: int = BUI
             + ", ".join(sorted(grants.pending_link_nodes))
         )
     _shared_floor(env, grants, plans)
+    _creator_grants(env, grants, nodes, batch, batch_size)
 
 
 def _recover_link_intents(env, grants: GrantConversion) -> None:
@@ -371,6 +373,62 @@ def _shared_floor(env, grants: GrantConversion, plans) -> None:
         env.state.put_grants(grants)
 
 
+# ------------------------------------------------------------- creator grants
+
+
+def _creator_grants(env, grants: GrantConversion, nodes, batch, batch_size: int) -> None:
+    """§4.2's creator rule, applied once to what legacy owners had already made.
+
+    Legacy gave an entity's `owner` every right without a permission row
+    ("Owners hold everything, bypassing any deny on the path"). The new
+    model gives `owner` nothing (§3.1) and instead writes an EDIT grant for
+    a creator whose parent gives them less (`access.add_creator_grant`). A
+    migrated node never went through that path, so without this pass a user
+    who uploaded four hundred files into a folder they held UPLOAD on could
+    only download them afterwards, and could not restore the ones they had
+    trashed. Build applies the rule the engine applies at creation, after
+    every legacy row has become a grant: the owner, when their effective
+    role on the node is below EDIT, ends with EDIT on it.
+
+    The engine answers the role, so a Personal root's anchor, a group row,
+    `$GENERAL` and an inherited deny all count the way they count at
+    request time. An owner never ends below EDIT on their own node, so an
+    explicit deny on the owner is overridden too: legacy ignored it for
+    the owner, and the §14.9 report counts it under
+    `creator_denies_overridden` so the operator sees each one. That is the
+    one place a stored deny moves up, which is why it bypasses
+    `merged_role`. A dead owner has nobody to grant to and is counted. A
+    rerun finds the owner at EDIT and writes nothing, which is why both
+    counts are cumulative.
+    """
+    # Every legacy row is stored before the owners are read, so a deny on
+    # the owner is a stored row this pass can see and override.
+    batch.flush()
+    after = ""
+    while True:
+        rows = env.drive.owned_nodes(after, batch_size)
+        if not rows:
+            break
+        for row in rows:
+            grants.owned_nodes_seen += 1
+            owner = row["owner"]
+            if nodes.user_enabled(owner) is None:
+                grants.creator_owners_dead += 1
+                continue
+            if env.drive.effective_role(row, owner) >= EDIT:
+                continue
+            if env.drive.grant_roles(row["name"], (owner,)).get(owner) == NONE:
+                batch.override(row["name"], owner, EDIT)
+                grants.creator_denies_overridden += 1
+                continue
+            batch.add(row["name"], owner, EDIT)
+            grants.creator_grants_minted += 1
+        after = rows[-1]["name"]
+        if len(rows) < batch_size:
+            break
+    batch.flush()
+
+
 # ---------------------------------------------------------------- node facts
 
 
@@ -479,11 +537,13 @@ class _Batch:
     or the second one is a duplicate-key error instead of a merge.
     """
 
-    def __init__(self, env, grants: GrantConversion, size: int):
+    def __init__(self, env, grants: GrantConversion, size: int, facts: _NodeFacts):
         self.env = env
         self.grants = grants
         self.size = size
+        self.facts = facts
         self.pending: dict[tuple[str, str], int] = {}
+        self.overrides: dict[tuple[str, str], int] = {}
         self.links: set[str] = set()
         self.docshares: list[dict] = []
 
@@ -499,6 +559,15 @@ class _Batch:
         if len(self.pending) >= self.size:
             self.flush()
 
+    def override(self, node: str, principal: str, role: int) -> None:
+        """Stage a stored row's move to `role` past `merged_role`.
+
+        Only the creator pass uses it, to raise an owner's deny on their
+        own node to EDIT (§14.5). Every other write merges."""
+        self.overrides[(node, principal)] = role
+        if len(self.overrides) >= self.size:
+            self.flush()
+
     def remove_docshare(self, row) -> None:
         """Stage one legacy row's removal. Never flushes by itself.
 
@@ -512,7 +581,7 @@ class _Batch:
             self.flush()
 
     def flush(self) -> None:
-        if not self.pending and not self.docshares:
+        if not self.pending and not self.overrides and not self.docshares:
             return
         link_nodes = sorted(self.links)
         if link_nodes:
@@ -535,24 +604,39 @@ class _Batch:
                     continue
                 self.grants.grants_already_present += 1
                 merged = merged_role(stored[principal], role)
-                if merged != stored[principal]:
-                    # Usually a rerun finishing a row an earlier run wrote
-                    # low. A stored deny never moves, because `merged_role`
-                    # answers NONE for it; a deny arriving from a second
-                    # source does move a stored grant down to NONE, which
-                    # is §14.5's "deny wins" and the only case that lowers.
-                    self.env.drive.raise_grant(node, principal, merged)
+                if merged == stored[principal]:
+                    continue
+                if merged == NONE and self._owns(node, principal):
+                    # The owner's EDIT on their own node, written by the
+                    # creator pass of an earlier run, is what a rerun's
+                    # legacy deny row meets here. It stays: the owner never
+                    # ends below EDIT (§14.5), and lowering it would make
+                    # the creator pass override and count the deny again.
+                    continue
+                # Usually a rerun finishing a row an earlier run wrote
+                # low. A stored deny never moves, because `merged_role`
+                # answers NONE for it; a deny arriving from a second
+                # source does move a stored grant down to NONE, which
+                # is §14.5's "deny wins" and the only case that lowers.
+                self.env.drive.raise_grant(node, principal, merged)
 
         self.env.drive.insert_grants(fresh)
         self.grants.grants_written += len(fresh)
+        for (node, principal), role in self.overrides.items():
+            self.env.drive.raise_grant(node, principal, role)
         self._delete_docshares()
         self.env.drive.commit()
         if link_nodes:
             self.grants.finish_links(link_nodes)
         self.env.state.put_grants(self.grants)
         self.pending = {}
+        self.overrides = {}
         self.links = set()
         self.docshares = []
+
+    def _owns(self, node: str, principal: str) -> bool:
+        row = self.facts.get(node)
+        return bool(row) and row.get("kind") != "root" and row.get("owner") == principal
 
     def _delete_docshares(self) -> None:
         """Journal each row durably, then delete it, inside this commit.

@@ -16,18 +16,14 @@ from suite.drive.patches.cleanup.removal import (
     phase_content_history,
     phase_custom_fields,
     phase_file_rows,
-    phase_legacy_api,
     phase_legacy_doctypes,
-    phase_s3_prefix,
+    phase_slides_media_rows,
     phase_thumbnails,
-    refuse_dangerous_prefix,
 )
 from suite.drive.patches.cleanup.tests.fakes import (
     CrashingSchema,
     FakeContent,
     FakeFileTable,
-    FakeForwarders,
-    FakeS3,
     FakeSchema,
     FakeThumbnails,
     RaisingPresenceSchema,
@@ -147,6 +143,77 @@ class TestPhaseFileRows(unittest.TestCase):
         self.assertEqual(resumed, ["trash", "Drive"])
 
 
+class TestPhaseSlidesMediaRows(unittest.TestCase):
+    """Deck pictures Build made nodes: the `File` row goes unless a body still names it."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+
+    def _env(self, content, files=None):
+        files = files if files is not None else FakeFileTable()
+        return cleanup_environment(self.path, files=files, content=content), files
+
+    def test_a_picture_no_body_names_loses_its_row_and_nothing_else_does(self):
+        content = FakeContent(
+            slides_media={"pic": "/private/files/pic.png"},
+            # Build names the picture's node after its `File`, so the body holds "pic".
+            slide_strings={"pic", "Title text"},
+        )
+        env, files = self._env(
+            content, FakeFileTable().add("Home").add("note.txt", folder="Home", has_node=False)
+        )
+
+        result = phase_slides_media_rows(env)
+
+        self.assertEqual(set(files.rows), {"Home", "note.txt"})
+        self.assertEqual((result.rows_deleted, result.media_rows_kept), (1, 0))
+        self.assertTrue(result.completed)
+
+    def test_a_url_a_body_still_names_keeps_its_row_in_any_spelling_build_resolves(self):
+        content = FakeContent(
+            slides_media={
+                "private": "/private/files/a.png",
+                "public": "/files/b%20c.png",
+                "absolute": "/private/files/d.png",
+                "unnamed": "/private/files/e.png",
+            },
+            slide_strings={"/files/a.png", "/files/b c.png", "https://suite.test/private/files/d.png"},
+        )
+        env, files = self._env(content)
+
+        result = phase_slides_media_rows(env)
+
+        self.assertEqual(set(files.rows), {"Home", "private", "public", "absolute"})
+        self.assertEqual((result.rows_deleted, result.media_rows_kept), (1, 3))
+
+    def test_a_url_inside_an_unreadable_body_keeps_its_row(self):
+        content = FakeContent(
+            slides_media={"named": "/private/files/a.png", "unnamed": "/private/files/b.png"},
+            unreadable_bodies=('[{"src": "/private/files/a.png"',),
+        )
+        env, files = self._env(content)
+
+        phase_slides_media_rows(env)
+
+        self.assertEqual(set(files.rows), {"Home", "named"})
+
+    def test_a_rerun_deletes_nothing_more(self):
+        content = FakeContent(
+            slides_media={name: f"/private/files/{name}.png" for name in ("a", "b", "c")},
+            slide_strings={"/private/files/b.png"},
+        )
+        env, files = self._env(content)
+
+        first = phase_slides_media_rows(env, batch_size=1)
+        second = phase_slides_media_rows(env, batch_size=1)
+
+        self.assertEqual(set(files.rows), {"Home", "b"})
+        self.assertEqual((first.rows_deleted, first.media_rows_kept), (2, 1))
+        self.assertEqual((second.rows_deleted, second.media_rows_kept), (0, 1))
+
+
 class TestPhaseCustomFields(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
@@ -165,6 +232,16 @@ class TestPhaseCustomFields(unittest.TestCase):
                 "content_docname",
                 "unrelated_field",
             },
+            columns={
+                "File": {
+                    "mime_type",
+                    "status",
+                    "file_modified",
+                    "content_doctype",
+                    "content_docname",
+                    "file_url",
+                }
+            },
             property_setters={
                 ("File", "file_url", "depends_on"),
                 ("File", "folder", "hidden"),
@@ -174,8 +251,10 @@ class TestPhaseCustomFields(unittest.TestCase):
         )
         result = phase_custom_fields(cleanup_environment(self.path, schema=schema))
         self.assertEqual(result.fields_dropped, 7)
+        self.assertEqual(result.columns_dropped, 5)
         self.assertEqual(result.property_setters_dropped, 3)
         self.assertEqual(schema.custom_fields, {"unrelated_field"})
+        self.assertEqual(schema.columns["File"], {"file_url"})
         self.assertEqual(schema.property_setters, {("File", "is_folder", "hidden")})
 
     def test_a_partial_pre_state_from_an_earlier_interrupted_attempt_completes_cleanly(self):
@@ -210,13 +289,15 @@ class TestPhaseLegacyDoctypes(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
 
-    def test_drops_the_three_doctypes_and_notification_columns_then_requires_activity(self):
+    def test_drops_the_legacy_doctypes_and_notification_columns_then_requires_activity(self):
+        # A site that never had the optional legacy doctypes (invitations,
+        # the old entity log) only drops the ones it has.
         schema = FakeSchema(
             doctypes={
-                "drive/doctype/drive_permission",
-                "drive/doctype/drive_entity_activity_log",
-                "drive/doctype/drive_token",
-                "drive/doctype/drive_node",
+                "Drive Permission",
+                "Drive Entity Activity Log",
+                "Drive Token",
+                "Drive Node",
             },
             columns={
                 "Drive Notification": {
@@ -235,7 +316,7 @@ class TestPhaseLegacyDoctypes(unittest.TestCase):
         result = phase_legacy_doctypes(cleanup_environment(self.path, schema=schema))
         self.assertEqual(result.doctypes_dropped, 3)
         self.assertEqual(result.columns_dropped, 6)
-        self.assertIn("drive/doctype/drive_node", schema.doctypes)
+        self.assertEqual(schema.doctypes, {"Drive Node"})
         self.assertEqual(schema.columns["Drive Notification"], {"activity", "to_user", "read"})
         self.assertIn(("Drive Notification", "activity"), schema.required_fields)
 
@@ -247,13 +328,13 @@ class TestPhaseLegacyDoctypes(unittest.TestCase):
         # corruption. The old all-or-nothing count check would refuse this
         # resume outright; verifying presence directly must not.
         schema = FakeSchema(
-            doctypes={"drive/doctype/drive_token"},
+            doctypes={"Drive Token"},
             columns={"Drive Notification": {"activity", "to_user", "read", "from_user", "type"}},
         )
         result = phase_legacy_doctypes(cleanup_environment(self.path, schema=schema))
         self.assertEqual(result.doctypes_dropped, 1)
         self.assertEqual(result.columns_dropped, 2)
-        self.assertNotIn("drive/doctype/drive_token", schema.doctypes)
+        self.assertNotIn("Drive Token", schema.doctypes)
         self.assertEqual(schema.columns["Drive Notification"], {"activity", "to_user", "read"})
 
     def test_a_crash_between_doctypes_and_columns_resumes_to_completion(self):
@@ -294,14 +375,7 @@ class TestPhaseContentHistory(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def _step_four_schema(self):
-        return FakeSchema(
-            doctypes={
-                "writer/doctype/writer_version",
-                "writer/doctype/writer_doc_version",
-                "writer/doctype/writer_template",
-                "sheets/doctype/sheet_snapshot",
-            }
-        )
+        return FakeSchema(doctypes=set(RETAINED_DOCTYPES_STEP_4))
 
     def test_ycomments_and_sheet_comments_are_cleared(self):
         content = FakeContent(ycomments=2, sheets_with_comments=5)
@@ -330,16 +404,9 @@ class TestPhaseContentHistory(unittest.TestCase):
         self.assertIn("Sheet Op Log", str(caught.exception))
         self.assertEqual(content.strip_calls, 0)
 
-    def test_writer_document_versions_drops_before_writer_doc_version(self):
-        schema = FakeSchema(doctypes=set(RETAINED_DOCTYPES_STEP_4))
-        phase_content_history(cleanup_environment(self.path, schema=schema))
-        self.assertEqual(schema.dropped_child_table_fields, [("Writer Document", "versions")])
-        # `drop_doctypes` (including `writer_doc_version`) runs after, per
-        # the same `FakeSchema` — the ordering the docstring requires.
-
     def test_a_partial_pre_state_from_an_earlier_interrupted_attempt_completes_cleanly(self):
         # An earlier attempt already dropped 3 of the 4 step-4 doctypes.
-        schema = FakeSchema(doctypes={"sheets/doctype/sheet_snapshot"})
+        schema = FakeSchema(doctypes={"Sheet Snapshot"})
         result = phase_content_history(cleanup_environment(self.path, schema=schema))
         self.assertEqual(result.doctypes_dropped, 1)
         self.assertEqual(schema.doctypes, set())
@@ -355,9 +422,11 @@ class TestPhaseContentFields(unittest.TestCase):
         schema = FakeSchema(
             columns={
                 "Presentation": {"title", "body"},
-                "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "sheets_data"},
+                "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "head_snapshot", "sheets_data"},
                 "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
                 "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
+                "Drive Favourite": {"user", "node", "entity"},
+                "Drive Root": {"node", "used_bytes", "acl_generation"},
             },
             singles={
                 "Drive Disk Settings": {
@@ -380,12 +449,14 @@ class TestPhaseContentFields(unittest.TestCase):
         self.assertEqual(schema.columns["Sheet"], {"sheets_data"})
         self.assertEqual(schema.columns["Drive Settings"], {"webdav_enabled"})
         self.assertEqual(schema.columns["Drive Storage Reservation"], {"reserved_bytes"})
+        self.assertEqual(schema.columns["Drive Favourite"], {"user", "node"})
+        self.assertEqual(schema.columns["Drive Root"], {"node", "used_bytes"})
         # All ten §3.13 fields drop as tabSingles rows, never as DDL; nothing
         # outside that list, and no `columns["Drive Disk Settings"]` entry at
         # all, is touched.
         self.assertEqual(schema.singles["Drive Disk Settings"], {"unrelated_field"})
         self.assertNotIn("Drive Disk Settings", schema.columns)
-        self.assertEqual(result.columns_dropped, 1 + 4 + 2 + 1)
+        self.assertEqual(result.columns_dropped, 1 + 5 + 2 + 1 + 1 + 1)
         self.assertEqual(result.single_values_dropped, 10)
 
     def test_a_partial_pre_state_across_columns_and_singles_completes_cleanly(self):
@@ -397,6 +468,8 @@ class TestPhaseContentFields(unittest.TestCase):
                 "Sheet": {"trashed", "trashed_on", "sheets_data"},
                 "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
                 "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
+                "Drive Favourite": {"user", "node", "entity"},
+                "Drive Root": {"node", "used_bytes", "acl_generation"},
             },
             singles={"Drive Disk Settings": {"quota", "root_folder", "thumbnail_prefix", "flat"}},
         )
@@ -411,9 +484,11 @@ class TestPhaseContentFields(unittest.TestCase):
             crash_after="drop_columns:Drive Storage Reservation",
             columns={
                 "Presentation": {"title", "body"},
-                "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "sheets_data"},
+                "Sheet": {"title", "trashed", "trashed_on", "trashed_by", "head_snapshot", "sheets_data"},
                 "Drive Settings": {"user_folder", "quota", "webdav_enabled"},
                 "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
+                "Drive Favourite": {"user", "node", "entity"},
+                "Drive Root": {"node", "used_bytes", "acl_generation"},
             },
             singles={
                 "Drive Disk Settings": {
@@ -446,40 +521,6 @@ class TestPhaseContentFields(unittest.TestCase):
         schema = RaisingPresenceSchema(columns={"Presentation": {"title", "body"}})
         with self.assertRaises(RuntimeError):
             phase_content_fields(cleanup_environment(self.path, schema=schema))
-
-
-class TestPhaseLegacyApi(unittest.TestCase):
-    def setUp(self):
-        self.tmp = TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.path = Path(self.tmp.name)
-
-    def test_only_forwarder_names_are_removed(self):
-        forwarders = FakeForwarders(
-            {
-                "api.files.upload_file": "forwarder",
-                "api.files.create_folder": "forwarder",
-                "api.s3.fetch": "permanent",
-                "overrides.file.get_file_for_doc": "permanent",
-                "api.files.download_folder": "retained",
-                "api.files.create_auth_token": "retired",
-            }
-        )
-        result = phase_legacy_api(cleanup_environment(self.path, forwarders=forwarders))
-        self.assertEqual(result.forwarders_removed, 2)
-        self.assertEqual(set(forwarders.removed), {"api.files.upload_file", "api.files.create_folder"})
-        self.assertEqual(
-            set(forwarders.classification()),
-            {
-                "api.s3.fetch",
-                "overrides.file.get_file_for_doc",
-                "api.files.download_folder",
-                "api.files.create_auth_token",
-            },
-        )
-        self.assertTrue(result.wildcard_prefix_removed)
-        self.assertNotIn("/api/method/suite.drive.api.", forwarders._wildcard_paths)
-        self.assertIn("/dav/", forwarders._wildcard_paths)
 
 
 class TestPhaseThumbnails(unittest.TestCase):
@@ -519,150 +560,18 @@ class TestPhaseThumbnails(unittest.TestCase):
         with self.assertRaises(CleanupPatchError):
             phase_thumbnails(env)
 
-    def test_s3_backed_sidecars_are_deferred_to_ticket_36(self):
+    def test_an_s3_site_deletes_no_sidecar_and_records_zero(self):
+        # Cleanup deletes no bucket object (§14.11); the store is still
+        # handed the snapshot so it can tell an S3 site from a local one.
         thumbnails = FakeThumbnails(existing={"a"})
         env = cleanup_environment(self.path, thumbnails=thumbnails)
-        seed_snapshot(env, names=("a",), enabled=True)
-        with self.assertRaises(NotImplementedError):
-            phase_thumbnails(env)
-
-
-class TestPhaseS3Prefix(unittest.TestCase):
-    def setUp(self):
-        self.tmp = TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.path = Path(self.tmp.name)
-
-    def test_disabled_s3_completes_with_nothing_enqueued(self):
-        s3 = FakeS3()
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env)  # DEFAULT_DISK_SETTINGS: enabled=False
-        result = phase_s3_prefix(env)
+        seed_snapshot(env, names=("a",), enabled=True, root_folder="team")
+        result = phase_thumbnails(env)
         self.assertTrue(result.completed)
-        self.assertEqual(s3.enqueued, [])
-
-    def test_no_persisted_settings_snapshot_refuses(self):
-        with self.assertRaises(CleanupPatchError):
-            phase_s3_prefix(cleanup_environment(self.path))
-
-    def test_never_reads_the_live_disk_settings_port(self):
-        env = cleanup_environment(self.path)
-        seed_snapshot(env, enabled=True, root_folder="team")
-        phase_s3_prefix(env)
-        self.assertEqual(env.disk_settings.read_calls, 0)
-
-    def test_referenced_keys_are_excluded_from_the_job(self):
-        s3 = FakeS3(keys=["team/a", "team/b", "team/c"], referenced_keys={"team/b"})
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env, enabled=True, root_folder="team")
-        result = phase_s3_prefix(env)
-        self.assertEqual(result.candidates_found, 3)
-        self.assertEqual(result.referenced_excluded, 1)
-        self.assertEqual(s3.enqueued, [("team/a", "team/c")])
-
-    def test_every_candidate_referenced_enqueues_nothing(self):
-        s3 = FakeS3(keys=["team/a"], referenced_keys={"team/a"})
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env, enabled=True, root_folder="team")
-        result = phase_s3_prefix(env)
-        self.assertEqual(s3.enqueued, [])
-        self.assertEqual(result.job_ids, [])
-
-    def test_a_reference_created_between_listing_and_the_recheck_survives(self):
-        """The re-reference race: a new blob claims a legacy key right as
-        the enumeration finishes. `blob_references` is read once, right
-        before `enqueue_delete`, so it must see the race's outcome."""
-
-        class RacingS3(FakeS3):
-            def blob_references(self, keys):
-                # The race: something references `team/b` between the
-                # listing above and this recheck.
-                self.referenced_keys.add("team/b")
-                return super().blob_references(keys)
-
-        s3 = RacingS3(keys=["team/a", "team/b"])
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env, enabled=True, root_folder="team")
-        result = phase_s3_prefix(env)
-        self.assertEqual(s3.enqueued, [("team/a",)])
-        self.assertEqual(result.referenced_excluded, 1)
-
-    def test_empty_prefix_is_refused(self):
-        with self.assertRaises(CleanupPatchError):
-            refuse_dangerous_prefix("")
-        with self.assertRaises(CleanupPatchError):
-            refuse_dangerous_prefix("/")
-
-    def test_private_or_public_root_is_refused(self):
-        with self.assertRaises(CleanupPatchError):
-            refuse_dangerous_prefix("private")
-        with self.assertRaises(CleanupPatchError):
-            refuse_dangerous_prefix("/public/")
-
-    def test_a_dangerous_prefix_stops_the_phase_before_any_listing(self):
-        class ExplodingS3(FakeS3):
-            def list_prefix(self, prefix, after, limit):
-                raise AssertionError("must not enumerate a dangerous prefix")
-
-        s3 = ExplodingS3()
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env, enabled=True, root_folder="private")
-        with self.assertRaises(CleanupPatchError):
-            phase_s3_prefix(env)
-
-    def test_every_call_stays_within_batch_size_across_multiple_pages(self):
-        # Finding: the old phase accumulated every key from every listing
-        # page into one list, then made one `blob_references` call and one
-        # `enqueue_delete` call sized by however many legacy keys the whole
-        # prefix held. 7 keys with `batch_size=2` forces 4 listing pages;
-        # every `blob_references`/`enqueue_delete` call must stay bounded by
-        # that same page, never by the total across all of them.
-        keys = [f"team/{i:02d}" for i in range(7)]
-        s3 = FakeS3(keys=keys, referenced_keys={"team/02", "team/05"})
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env, enabled=True, root_folder="team")
-        result = phase_s3_prefix(env, batch_size=2)
-
-        self.assertEqual(len(s3.list_prefix_calls), 4)  # 2+2+2+1
-        for call in s3.blob_reference_calls:
-            self.assertLessEqual(len(call), 2)
-        for enqueued in s3.enqueued:
-            self.assertLessEqual(len(enqueued), 2)
-        # Never one call spanning every key: at least as many calls as pages
-        # that actually held an unreferenced candidate.
-        self.assertGreater(len(s3.enqueued), 1)
-
-        # Totals across the bounded calls still add up correctly.
-        self.assertEqual(result.candidates_found, 7)
-        self.assertEqual(result.referenced_excluded, 2)
-        self.assertEqual(sum(len(batch) for batch in s3.enqueued), 5)
-        self.assertEqual(len(result.job_ids), len(s3.enqueued))
-        self.assertEqual(len(set(result.job_ids)), len(result.job_ids))  # every job id distinct
-
-    def test_a_page_wholly_referenced_is_recorded_but_enqueues_nothing_and_pagination_continues(self):
-        keys = ["team/a", "team/b", "team/c", "team/d"]
-        s3 = FakeS3(keys=keys, referenced_keys={"team/a", "team/b"})
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env, enabled=True, root_folder="team")
-        result = phase_s3_prefix(env, batch_size=2)
-
-        self.assertEqual(result.candidates_found, 4)
-        self.assertEqual(result.referenced_excluded, 2)
-        self.assertEqual(s3.enqueued, [("team/c", "team/d")])  # only the second page enqueued
-        self.assertEqual(len(result.job_ids), 1)
-
-    def test_a_duplicate_key_within_one_page_is_not_double_counted_or_double_enqueued(self):
-        class DuplicatingS3(FakeS3):
-            def list_prefix(self, prefix, after, limit):
-                page = super().list_prefix(prefix, after, limit)
-                return list(page) + list(page[-1:]) if page else page
-
-        s3 = DuplicatingS3(keys=["team/a", "team/b"])
-        env = cleanup_environment(self.path, s3=s3)
-        seed_snapshot(env, enabled=True, root_folder="team")
-        result = phase_s3_prefix(env, batch_size=10)
-        self.assertEqual(result.candidates_found, 2)
-        self.assertEqual(s3.enqueued, [("team/a", "team/b")])
+        self.assertEqual(result.sidecars_deleted, 0)
+        self.assertEqual(thumbnails.existing, {"a"})
+        (call,) = thumbnails.delete_calls
+        self.assertTrue(call[1]["enabled"])
 
 
 if __name__ == "__main__":

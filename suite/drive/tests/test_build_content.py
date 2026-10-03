@@ -49,6 +49,7 @@ from suite.drive.patches.build.ports import (
 from suite.drive.patches.build.slide_journal import SlideBody, SlidePreimageJournal
 from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.patches.build.state import BuildState, GrantConversion, TreeConversion
+from suite.drive.patches.build.tests import legacy_schema
 
 # One fixed stamp for every source row and for `env.now()`. A fixture with a
 # clock has no exact expected value for the rows Build authors itself.
@@ -119,7 +120,22 @@ def png_bytes(size: tuple[int, int], seed: str) -> bytes:
 
 
 class BuildContentCase(IntegrationTestCase):
-    """Synthetic linked documents, isolated by a unique name prefix."""
+    """Synthetic linked documents, isolated by a unique name prefix.
+
+    The legacy doctypes and columns these fixtures write (`Writer Version`,
+    `Sheet Snapshot`, `Sheet.title`, ...) are gone from the source tree;
+    `legacy_schema` recreates them for the class and drops them after it.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.legacy = legacy_schema.install()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.legacy.remove()
+        super().tearDownClass()
 
     def setUp(self):
         super().setUp()
@@ -231,6 +247,20 @@ class BuildContentCase(IntegrationTestCase):
         return user.name
 
     def insert(self, doctype, name, **values):
+        if doctype in legacy_schema.LEGACY_DOCTYPES:
+            # No controller is left in the tree for these, so no `new_doc`.
+            owner = values.pop("owner", None) or self.owner
+            creation = values.pop("creation", None) or STAMP
+            legacy_schema.insert_row(
+                doctype,
+                name,
+                owner=owner,
+                modified_by=values.pop("modified_by", None) or owner,
+                creation=creation,
+                modified=values.pop("modified", None) or creation,
+                **values,
+            )
+            return None
         doc = frappe.new_doc(doctype)
         doc.update(values)
         doc.name = name
@@ -240,6 +270,10 @@ class BuildContentCase(IntegrationTestCase):
         doc.modified = values.get("modified") or doc.creation
         doc.flags.ignore_validate = True
         doc.db_insert()
+        # `db_insert` writes declared fields only; a legacy column such as
+        # `Sheet.title` is on the table but no longer in the meta.
+        declared = set(doc.meta.get_valid_columns())
+        legacy_schema.update_row(doctype, name, **{k: v for k, v in values.items() if k not in declared})
         return doc
 
     def write_root(self, user: str) -> str:
@@ -248,7 +282,7 @@ class BuildContentCase(IntegrationTestCase):
         node = {
             "name": name,
             "title": user,
-            "parent": None,
+            "parent_node": None,
             "root": None,
             "path": "",
             "kind": "root",
@@ -278,7 +312,6 @@ class BuildContentCase(IntegrationTestCase):
             "state": ACTIVE,
             "quota_bytes": 0,
             "used_bytes": 0,
-            "acl_generation": 0,
             "owner": user,
             "creation": STAMP,
             "modified": STAMP,
@@ -313,7 +346,7 @@ class BuildContentCase(IntegrationTestCase):
                 {
                     "name": node,
                     "title": title,
-                    "parent": self.root,
+                    "parent_node": self.root,
                     "root": self.root,
                     "path": "",
                     "kind": "document",
@@ -963,7 +996,7 @@ class TestContentLinksAndSources(BuildContentCase):
         # The orphan node takes the document id, and the Personal Root is
         # the owner's, not Administrator's.
         node = self.node_row(docname)
-        self.assertEqual(node["parent"], self.root)
+        self.assertEqual(node["parent_node"], self.root)
         self.assertEqual(node["root"], self.root)
         self.assertEqual(node["kind"], "document")
         self.assertEqual(node["mime"], MIMES["Writer Document"])
@@ -1058,7 +1091,7 @@ class TestSlideMedia(BuildContentCase):
         children = self.media_children(deck["node"])
         self.assertEqual([row["name"] for row in children], [deck["keeper"]])
         self.assertEqual(children[0]["blob"], deck["media_blob"])
-        self.assertEqual(children[0]["parent"], deck["node"])
+        self.assertEqual(children[0]["parent_node"], deck["node"])
         self.assertEqual(children[0]["path"], f"/{deck['node']}/")
         self.assertEqual(children[0]["mime"], "image/png")
         self.assertEqual(report.media_nodes_created, 1)
@@ -1235,7 +1268,7 @@ class TestTemplates(BuildContentCase):
         self.assertEqual(node["title"], f"{self.prefix} Deck Template")
         # The shared folder is Administrator's, so its id is the site's, not
         # this run's. What the unit owes is that the node lands inside it.
-        self.assertEqual(frappe.db.get_value("Drive Node", node["parent"], "title"), "Templates")
+        self.assertEqual(frappe.db.get_value("Drive Node", node["parent_node"], "title"), "Templates")
         # A deck template creates no Writer Document, and it is not a Writer
         # template, so only the node counter moves.
         self.assertEqual(report.template_nodes_created, 1)
@@ -1278,7 +1311,7 @@ class TestTemplates(BuildContentCase):
 
         convert_slides_and_templates(self.environment())
         before = {name: self.node_row(name) for name in (writer, deck)}
-        folders = {name: before[name]["parent"] for name in (writer, deck)}
+        folders = {name: before[name]["parent_node"] for name in (writer, deck)}
         for parent in folders.values():
             self.assertEqual(frappe.db.get_value("Drive Node", parent, "title"), "Templates")
 

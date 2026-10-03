@@ -107,7 +107,7 @@ def decode_sheets_data(stored: str | None) -> str:
         return "{}"
     try:
         envelope = json.loads(stored)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return stored
     if not (
         isinstance(envelope, dict) and envelope.get("_z") == "gzip" and isinstance(envelope.get("data"), str)
@@ -233,7 +233,7 @@ def expected_node(
     return {
         "name": name,
         "title": title,
-        "parent": parent,
+        "parent_node": parent,
         "root": root,
         "path": path,
         "kind": "document",

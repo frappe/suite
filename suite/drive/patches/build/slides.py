@@ -3,11 +3,13 @@
 import io
 import json
 from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from urllib.parse import unquote, urlsplit
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFile, ImageOps
 
 from suite.drive._core.nodes import child_path
 from suite.drive.patches.build.content_mapping import (
@@ -19,18 +21,18 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.history import _document_node
+from suite.drive.patches.build.legacy import S3_URL_PREFIX
 from suite.drive.patches.build.slide_journal import SlideBody, SlideJournalError
 from suite.drive.patches.build.state import RelocatedMediaNode
 from suite.drive.patches.build.templates import convert_templates
 from suite.drive.patches.build.titles import SiblingTitles
-from suite.drive.utils.files import S3_URL_PREFIX
 
 MAX_IMAGE_PIXELS = 25_000_000
 MEDIA_KEYS = ("src", "poster")
 NODE_FIELDS = (
     "name",
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "kind",
@@ -64,7 +66,7 @@ NODE_FIELDS = (
 #   it.
 ADOPTED_FIELDS = (
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "size",
@@ -449,9 +451,11 @@ def _adopt_tree_node(writer, result, deck, stored, planned):
     the node this one repaired (§13 exact rerun validation). Returns the node
     as it now reads, so the caller validates what is stored.
     """
-    if not stored or stored.get("parent") == writer.parent["name"]:
+    if not stored or stored.get("parent_node") == writer.parent["name"]:
         return stored
-    result.record_relocated_media(RelocatedMediaNode(deck.name, stored["name"], stored.get("parent") or ""))
+    result.record_relocated_media(
+        RelocatedMediaNode(deck.name, stored["name"], stored.get("parent_node") or "")
+    )
     return writer.adopt(stored, planned)
 
 
@@ -610,7 +614,7 @@ def _media_node(row, parent, name, blob, title):
     return {
         "name": name,
         "title": title,
-        "parent": parent["name"],
+        "parent_node": parent["name"],
         "root": parent["root"],
         # The controller rule, not a local spelling of it: a deck directly under
         # a root has `path == ""`, and its children still need `/<deck>/`.
@@ -702,7 +706,8 @@ def _preview(env, deck, source):
         raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is oversized")
     try:
         with Image.open(io.BytesIO(raw)) as image:
-            image.load()
+            with _refusing_truncated_images():
+                image.load()
             image = ImageOps.exif_transpose(image)
             reusable = bool(blob.is_private and blob.mime_type == "image/webp" and max(image.size) <= 512)
             if reusable:
@@ -730,6 +735,22 @@ def _preview(env, deck, source):
     }
     target.insert_previews([planned])
     return 1
+
+
+@contextmanager
+def _refusing_truncated_images() -> Iterator[None]:
+    """Make a decode of a cut-off image raise instead of padding it.
+
+    `frappe.utils.image` turns Pillow's process-wide `LOAD_TRUNCATED_IMAGES`
+    on when it is imported, which would let a half-written thumbnail through
+    as a gray-bottomed preview.
+    """
+    previous = ImageFile.LOAD_TRUNCATED_IMAGES
+    ImageFile.LOAD_TRUNCATED_IMAGES = False
+    try:
+        yield
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = previous
 
 
 def _validate_preview(target, deck, source, found):

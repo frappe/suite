@@ -9,9 +9,9 @@ the framework's alike, so 27 must intersect it with its own walk.
 
 A third pass follows the two the spec names. It copies nothing: it reads
 the blobless rows neither step could reach and puts them in the record.
-Without it the report is silent about them, and §14.10 Cleanup deletes
-Drive's legacy prefix from the bucket with nothing having said their bytes
-were never carried across.
+Without it the report is silent about them, and the legacy-object delete
+that follows Cleanup would remove bytes nothing had said were never carried
+across.
 
 What it never does: move or delete local bytes, delete a legacy S3 object,
 or write any `File` column except `blob`.
@@ -21,9 +21,9 @@ from frappe.storage.backfill import PRIVATE_PREFIX, PUBLIC_PREFIX
 
 from suite.drive.patches.build.environment import BACKFILL_BATCH_SIZE, BUILD_BATCH_SIZE
 from suite.drive.patches.build.gate import check_gate
+from suite.drive.patches.build.legacy import S3_URL_PREFIX
 from suite.drive.patches.build.s3_copy import copy_legacy_s3_objects
 from suite.drive.patches.build.state import MissingBytes, StoragePreparation
-from suite.drive.utils.files import S3_URL_PREFIX
 
 LOCAL_PREFIXES = (PUBLIC_PREFIX, PRIVATE_PREFIX)
 

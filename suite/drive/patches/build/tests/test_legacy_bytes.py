@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from suite.drive.patches.build import prepare_legacy_bytes
 from suite.drive.patches.build.environment import BACKFILL_BATCH_SIZE, LegacyS3Config
+from suite.drive.patches.build.legacy import get_s3_url
 from suite.drive.patches.build.state import (
     MISSING_BYTES_KEPT,
     STATE_FILENAME,
@@ -25,7 +26,6 @@ from suite.drive.patches.build.tests.fakes import (
     InterruptedRun,
     build_environment,
 )
-from suite.drive.utils.files import get_s3_url
 
 BYTES = b"drive bytes" * 40
 SHA = hashlib.sha256(BYTES).hexdigest()

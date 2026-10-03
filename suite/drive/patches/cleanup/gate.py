@@ -1,7 +1,9 @@
-"""The three refusals §14.10 names, plus the authorization check layered
-on top of them.
+"""The two §14.10 gates Cleanup still has, plus the backup check layered
+on top of them. (§14.10's third gate, "the SPA has moved off the old
+method names", is moot: the legacy API and its callers were removed from
+source in the same release, so there is nothing left to attest.)
 
-All four read before they raise. None of them mutates anything, and none
+All three read before they raise. None of them mutates anything, and none
 of them trusts a persisted number: gate 1 recomputes reachability live,
 against whatever `env.tree`/`env.drive` answer right now, never against
 `suite.drive.patches.build.state.BuildState` (Build's own report is a
@@ -15,7 +17,7 @@ from __future__ import annotations
 
 import frappe
 
-from suite.drive.patches.cleanup.environment import CLEANUP_BATCH_SIZE
+from suite.drive.patches.cleanup.environment import BACKUP_CONFIG_KEY, CLEANUP_BATCH_SIZE
 from suite.drive.patches.cleanup.ports import DRIVE_ROOT_ROW, REMOVED, USERS_ROW
 
 # §3.17: the four Link columns naming `File Blob`, all `search_index: 1`.
@@ -39,19 +41,14 @@ class GCDiscoveryGateError(frappe.ValidationError):
     """Cleanup refused: the framework GC cannot be trusted to keep Drive's blobs alive."""
 
 
-class LegacyCallerGateError(frappe.ValidationError):
-    """Cleanup refused: a legacy SPA forwarder is still classified as callable."""
-
-
 class CleanupAuthorizationError(frappe.ValidationError):
-    """Cleanup refused: no operator authorized this run, or named no backup."""
+    """Cleanup refused: no operator named a backup in site config."""
 
 
 def check_gates(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> None:
-    """§14.10: all three gates must hold before Cleanup mutates anything."""
+    """§14.10: both gates must hold before Cleanup mutates anything."""
     check_gate_reachable_nodes(env, batch_size=batch_size)
     check_gate_gc_discovery(env)
-    check_gate_legacy_callers_removed(env)
 
 
 def check_gate_reachable_nodes(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> None:
@@ -88,60 +85,22 @@ def check_gate_gc_discovery(env) -> None:
         )
 
 
-def check_gate_legacy_callers_removed(env) -> None:
-    """§14.10, §11.7: "the SPA has moved off the old method names."
+def require_backup(env) -> None:
+    """Not a gate: a third refusal that holds even after both gates pass.
 
-    Deliberately two separate reads, not one: `env.forwarders.classification()`
-    only names the *candidates* — whichever entries a maintainer still spells
-    "forwarder" in `suite.drive.http.shims.CLASSIFICATION` — and
-    `env.callers.still_referenced(...)` is the actual evidence of whether the
-    SPA still calls any of them. Gating on the classification label alone
-    would be circular: `phase_legacy_api` reads that same label to decide
-    what to remove, so a gate that only re-reads it would always find
-    nothing left to refuse on by the time it had "passed." A caller can be
-    gone from the SPA for months before anyone gets around to relabeling its
-    entry in `shims.py`; this gate must not wait on that source edit, and
-    phase 6 must still remove a still-"forwarder"-labeled name once this
-    gate's own evidence clears it.
+    Past phase 1, §14.11's only rollback is a database restore, so Cleanup
+    runs only once an operator has named the backup they took. The value
+    is recorded in the state file and the report, so the restore point is
+    on record next to what was removed.
     """
-    try:
-        classification = env.forwarders.classification()
-    except Exception as e:
-        raise LegacyCallerGateError(
-            f"could not read the legacy caller classification: {type(e).__name__}: {e}. Cleanup fails closed."
-        ) from e
-    forwarders = tuple(sorted(name for name, category in classification.items() if category == "forwarder"))
-    if not forwarders:
-        return
-    try:
-        still_called = env.callers.still_referenced(forwarders)
-    except Exception as e:
-        raise LegacyCallerGateError(
-            f"could not attest legacy-caller absence: {type(e).__name__}: {e}. Cleanup fails closed."
-        ) from e
-    if still_called:
-        shown = ", ".join(sorted(still_called)[:5])
-        raise LegacyCallerGateError(
-            f"{len(still_called)} FORWARDER-classified name(s) still show a caller in the SPA "
-            f"source (for example: {shown}). Relabeling an entry in shims.py never clears this "
-            "gate by itself; only real evidence that nothing calls it does. PERMANENT and "
-            "RETAINED names are never candidates and do not block this gate."
-        )
-
-
-def require_authorization(env) -> None:
-    """Not one of the three gates: a fourth refusal that holds even after they pass."""
-    if not env.authorized:
+    if not (env.backup or "").strip():
+        site = getattr(frappe.local, "site", None) or "<site>"
         raise CleanupAuthorizationError(
-            "Cleanup needs explicit authorization even after every gate passes (§14.11: "
-            "the only rollback past this point is a database restore). Set "
-            "CleanupEnvironment.authorized."
-        )
-    if not env.backup_ref:
-        raise CleanupAuthorizationError(
-            "Cleanup needs a recorded backup reference before it mutates anything (§14.11: "
-            "recovery after Cleanup is a database restore, and nothing smaller). Set "
-            "CleanupEnvironment.backup_ref."
+            "Drive Cleanup drops the legacy Drive tables and columns, and the only way back "
+            "afterwards is a database restore (§14.11). Take a backup of this site, then "
+            "name it in site config and run migrate again:\n"
+            f'    bench --site {site} set-config {BACKUP_CONFIG_KEY} "<backup>"\n'
+            "where <backup> is whatever identifies the backup (a path, an S3 URL, an id)."
         )
 
 

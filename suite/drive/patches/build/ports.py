@@ -12,7 +12,7 @@ and `DriveTarget` for everything it writes into Drive's own.
 """
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import IO, Protocol
 
 import frappe
@@ -142,7 +142,7 @@ class SiteStorage:
             "File Blob",
             # `status` matters: a Pending row is an upload still in flight, so
             # its object may not be there. Linking to one would leave the File
-            # pointing at nothing once Cleanup deletes Drive's legacy prefix.
+            # pointing at nothing once the legacy objects are deleted.
             {"checksum": checksum, "is_private": 1, "driver": "s3", "status": "Ready"},
             ["name", "key"],
             as_dict=True,
@@ -211,10 +211,13 @@ class SiteFiles:
         self.filters = list(filters or [])
 
     def _page(self, filters: list, after: str, limit: int) -> list[LegacyRow]:
+        # The read-only preflight runs before model sync adds File.blob (§14.1).
+        # Before that column exists every legacy row is necessarily blobless.
+        blobless = [["blob", "is", "not set"]] if frappe.db.has_column("File", "blob") else []
         rows = frappe.get_all(
             "File",
             filters=[
-                ["blob", "is", "not set"],
+                *blobless,
                 ["is_folder", "=", 0],
                 ["name", ">", after],
                 *filters,
@@ -347,6 +350,13 @@ TREE_COLUMNS = (
 )
 
 
+def _tree_read_columns() -> tuple[str, ...]:
+    """Read old File schemas before model sync adds the blob column (§14.1)."""
+    if frappe.db.has_column("File", "blob"):
+        return TREE_COLUMNS
+    return tuple(column for column in TREE_COLUMNS if column != "blob")
+
+
 @dataclass(frozen=True)
 class TreeRow:
     """One legacy Drive `File` row, as §14.4's column map reads it."""
@@ -372,6 +382,19 @@ class TreeRow:
     @classmethod
     def of(cls, row) -> TreeRow:
         return cls(**{column: row.get(column) for column in TREE_COLUMNS if row.get(column) is not None})
+
+
+def _tree_rows(rows) -> list[TreeRow]:
+    """Use the stored byte count after backfill, leaving legacy metadata intact."""
+    source = [TreeRow.of(row) for row in rows]
+    blobs = sorted({row.blob for row in source if row.blob})
+    if not blobs:
+        return source
+    sizes = {
+        row.name: int(row.file_size or 0)
+        for row in frappe.get_all("File Blob", filters={"name": ["in", blobs]}, fields=["name", "file_size"])
+    }
+    return [replace(row, file_size=sizes[row.blob]) if row.blob else row for row in source]
 
 
 @dataclass(frozen=True)
@@ -511,6 +534,9 @@ class DriveTarget(Protocol):
     def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
         """Existing `Drive Node` rows by id, for the resume check."""
 
+    def root_count(self) -> int:
+        """How many `Drive Root` rows the target holds, for the record check."""
+
     def root_metadata(self, node: str) -> dict | None:
         """The `Drive Root` row named this id, or the one whose `node` is it."""
 
@@ -549,6 +575,17 @@ class DriveTarget(Protocol):
         Usually upward, to finish a row a killed run wrote low. A deny
         arriving from a second source moves it to NONE instead, because
         §14.5 makes a deny win over whatever else names the pair."""
+
+    def owned_nodes(self, after: str, limit: int) -> list[dict]:
+        """A page of non-root nodes whose `owner` is a person, ordered by id.
+
+        Administrator and Guest are left out: the first reads through
+        `is_drive_admin`, the second through `$PUBLIC`, and neither gets a
+        creator grant from the engine either."""
+
+    def effective_role(self, node: dict, user: str) -> int:
+        """The role the engine answers for `user` on `node` from the grants
+        written so far. Build asks the engine rather than re-deriving §4."""
 
     def has_link_grant(self, node: str) -> bool:
         """Whether any `$LINK:` grant already names this node.
@@ -884,7 +921,7 @@ class ContentTarget(Protocol):
 NODE_COLUMNS = (
     "name",
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "kind",
@@ -915,7 +952,6 @@ ROOT_COLUMNS = (
     "state",
     "quota_bytes",
     "used_bytes",
-    "acl_generation",
     "owner",
     "creation",
     "modified",
@@ -964,7 +1000,7 @@ ACTIVITY_COLUMNS = (
 NODE_READ_COLUMNS = (
     "name",
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "kind",
@@ -1006,9 +1042,12 @@ class SiteTree:
 
     def row(self, name: str) -> TreeRow | None:
         rows = frappe.get_all(
-            "File", filters=[["name", "=", name], *self._clauses()], fields=list(TREE_COLUMNS), limit=1
+            "File",
+            filters=[["name", "=", name], *self._clauses()],
+            fields=list(_tree_read_columns()),
+            limit=1,
         )
-        return TreeRow.of(rows[0]) if rows else None
+        return _tree_rows(rows)[0] if rows else None
 
     def children(self, parents: tuple[str, ...], after: tuple[str, str], limit: int) -> list[TreeRow]:
         if not parents:
@@ -1026,7 +1065,7 @@ class SiteTree:
         # "(folder, name) > (?, ?)", and OFFSET on a table this size is what
         # turns a migration into an afternoon.
         rows = frappe.db.sql(
-            f"""SELECT {", ".join(f"`{c}`" for c in TREE_COLUMNS)} FROM `tabFile`
+            f"""SELECT {", ".join(f"`{c}`" for c in _tree_read_columns())} FROM `tabFile`
                 WHERE `folder` IN ({placeholders})
                   AND (`folder` > %(folder)s OR (`folder` = %(folder)s AND `name` > %(name)s))
                 {self._extra_sql()}
@@ -1040,13 +1079,17 @@ class SiteTree:
             },
             as_dict=True,
         )
-        return [TreeRow.of(row) for row in rows]
+        return _tree_rows(rows)
 
     def unreached(self, after: str, limit: int) -> list[ChainRow]:
+        # A dry run before model sync has no target tree to exclude (§14.1).
+        has_nodes = frappe.db.table_exists("Drive Node")
+        join = "LEFT JOIN `tabDrive Node` n ON n.`name` = f.`name`" if has_nodes else ""
+        missing = "n.`name` IS NULL AND" if has_nodes else ""
         rows = frappe.db.sql(
             f"""SELECT f.`name`, f.`folder`, f.`status` FROM `tabFile` f
-                LEFT JOIN `tabDrive Node` n ON n.`name` = f.`name`
-                WHERE n.`name` IS NULL AND f.`name` > %(after)s
+                {join}
+                WHERE {missing} f.`name` > %(after)s
                 {self._extra_sql("f")}
                 ORDER BY f.`name` LIMIT %(limit)s""",
             {"after": after, "limit": limit, **self._extra_values()},
@@ -1187,8 +1230,12 @@ class SiteTree:
 class SiteDrive:
     """`DriveTarget` over the real `Drive Node`, `Drive Root`, and `Drive Grant`."""
 
+    def root_count(self) -> int:
+        return frappe.db.count("Drive Root")
+
     def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
-        if not names:
+        # Before model sync the dry-run census has no migrated parents (§14.1).
+        if not names or not frappe.db.table_exists("Drive Node"):
             return {}
         rows = frappe.get_all(
             "Drive Node", filters=[["name", "in", list(names)]], fields=list(NODE_READ_COLUMNS)
@@ -1275,6 +1322,26 @@ class SiteDrive:
             "Drive Grant", fields=list(GRANT_COLUMNS), values=[_values(GRANT_COLUMNS, row) for row in rows]
         )
 
+    def owned_nodes(self, after: str, limit: int) -> list[dict]:
+        rows = frappe.get_all(
+            "Drive Node",
+            filters=[
+                ["name", ">", after],
+                ["kind", "!=", "root"],
+                ["owner", "not in", ["Administrator", "Guest", ""]],
+            ],
+            fields=["name", "owner", "kind", "root", "path"],
+            order_by="name asc",
+            limit=limit,
+        )
+        return [dict(row) for row in rows]
+
+    def effective_role(self, node: dict, user: str) -> int:
+        from suite.drive._core.access import effective_role
+        from suite.drive.framework import principals_for
+
+        return effective_role(node, principals_for(user))
+
     def grant_roles(self, node: str, principals: tuple[str, ...]) -> dict[str, int]:
         if not principals:
             return {}
@@ -1310,6 +1377,26 @@ def _values(columns: tuple[str, ...], row: dict) -> tuple:
     return tuple(row.get(column) for column in columns)
 
 
+def _legacy_page(table: str, columns: tuple[str, ...], after: str, limit: int, prefix: str | None) -> list:
+    """One keyset page of a legacy table, by `name`, as plain SQL.
+
+    Build runs after model sync has already dropped the legacy columns and
+    doctypes from the site's metadata, while the tables still carry them
+    (sync never drops a column, and orphan doctypes go only after the
+    patches). `frappe.get_all` refuses a column the meta no longer declares,
+    so every read of a legacy table or a legacy column goes through here.
+    """
+    selected = ", ".join(f"`{column}`" for column in columns)
+    like = "AND `name` LIKE %(like)s" if prefix else ""
+    return frappe.db.sql(
+        f"""SELECT {selected} FROM `tab{table}`
+            WHERE `name` > %(after)s {like}
+            ORDER BY `name` LIMIT %(limit)s""",
+        {"after": after, "like": f"{prefix}%", "limit": limit},
+        as_dict=True,
+    )
+
+
 class SiteContentSource:
     """`LegacyContent` over Writer, Sheets, Slides, File, and DocShare."""
 
@@ -1322,13 +1409,11 @@ class SiteContentSource:
             "Sheet": ["node", "title", "sheets_data", "head_seq", "head_snapshot", "trashed", "trashed_on"],
             "Presentation": ["node", "title", "thumbnail", "is_template", "is_composite"],
         }[doctype]
-        rows = frappe.get_all(
-            doctype,
-            filters=self._name_filters(after),
-            fields=["name", *fields, "owner", "creation", "modified", "modified_by"],
-            order_by="name asc",
-            limit=limit,
-        )
+        # Content node links arrive at model sync too; preflight only reads.
+        if not frappe.db.has_column(doctype, "node"):
+            fields.remove("node")
+        columns = ("name", *fields, "owner", "creation", "modified", "modified_by")
+        rows = _legacy_page(doctype, columns, after, limit, self.name_prefix)
         return [ContentRow(doctype=doctype, **dict(row)) for row in rows]
 
     def files_for_content(self, doctype: str, docname: str) -> list[TreeRow]:
@@ -1339,10 +1424,10 @@ class SiteContentSource:
                 ["content_docname", "=", docname],
                 *self._prefix_filters(),
             ],
-            fields=list(TREE_COLUMNS),
+            fields=list(_tree_read_columns()),
             order_by="creation asc, name asc",
         )
-        return [TreeRow.of(row) for row in rows]
+        return _tree_rows(rows)
 
     def writer_versions(self, document: str, after: tuple[str, str], limit: int) -> list[WriterVersionRow]:
         # Plan §13 keyset: `(doc, creation, name)`. A `snapshot` is the whole
@@ -1378,11 +1463,13 @@ class SiteContentSource:
         return [SheetSnapshotRow(**dict(row)) for row in rows]
 
     def residual_writer_versions(self, limit: int) -> list[str]:
-        filters = [["parent", "like", self.name_prefix + "%"]] if self.name_prefix else []
         # Ordered, because these ids are the sample §14.9 prints and a
         # refusal a run cannot reproduce is a refusal nobody can chase.
-        return frappe.get_all(
-            "Writer Doc Version", filters=filters, pluck="name", limit=limit, order_by="name asc"
+        like = "WHERE `parent` LIKE %(like)s" if self.name_prefix else ""
+        return frappe.db.sql(
+            f"SELECT `name` FROM `tabWriter Doc Version` {like} ORDER BY `name` LIMIT %(limit)s",
+            {"like": f"{self.name_prefix}%", "limit": limit},
+            pluck=True,
         )
 
     def sheet_op_stamp(self, sheet: str, seq: int) -> tuple[str, str] | None:
@@ -1392,13 +1479,8 @@ class SiteContentSource:
         return (row.actor, str(row.creation)) if row and row.actor and row.creation else None
 
     def writer_templates(self, after: str, limit: int) -> list[WriterTemplateRow]:
-        rows = frappe.get_all(
-            "Writer Template",
-            filters=self._name_filters(after),
-            fields=["name", "title", "content", "keymap", "owner", "creation", "modified", "modified_by"],
-            order_by="name asc",
-            limit=limit,
-        )
+        columns = ("name", "title", "content", "keymap", "owner", "creation", "modified", "modified_by")
+        rows = _legacy_page("Writer Template", columns, after, limit, self.name_prefix)
         return [WriterTemplateRow(**dict(row)) for row in rows]
 
     def slides(self, deck: str, after: tuple[int, str], limit: int) -> list[SlideRow]:
@@ -1471,7 +1553,9 @@ class SiteContentSource:
         the node. The source row keeps the same id, and the doctype is dropped
         in Cleanup, not in Build, so it still answers here.
         """
-        return bool(frappe.db.exists("Writer Template", name))
+        return bool(
+            frappe.db.sql("SELECT 1 FROM `tabWriter Template` WHERE `name` = %(name)s", {"name": name})
+        )
 
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]:
         doctypes = (
@@ -1481,6 +1565,7 @@ class SiteContentSource:
             "Sheet Snapshot",
             "Slide",
             "Sheet Op Log",
+            "Sheet Collab State",
         )
         # `share_name` names a content document, not a `File`, so `name_prefix`
         # cannot narrow this read. A row from outside the fixture is read and
@@ -1529,9 +1614,6 @@ class SiteContentSource:
         from frappe.utils import get_url
 
         return urlsplit(get_url()).netloc
-
-    def _name_filters(self, after: str) -> list:
-        return [["name", ">", after], *self._prefix_filters()]
 
     def _prefix_filters(self) -> list:
         return [["name", "like", self.name_prefix + "%"]] if self.name_prefix else []
@@ -1638,7 +1720,7 @@ class SiteContentTarget:
             dict(row)
             for row in frappe.get_all(
                 "Drive Node",
-                filters={"parent": parent},
+                filters={"parent_node": parent},
                 fields=list(NODE_COLUMNS),
                 order_by="creation asc, name asc",
             )
@@ -2227,9 +2309,8 @@ class SiteRecords:
             "modified",
             "modified_by",
         )
-        return [
-            ActivityLogRow(**row) for row in self._page("Drive Entity Activity Log", columns, after, limit)
-        ]
+        rows = _legacy_page("Drive Entity Activity Log", columns, after, limit, self.name_prefix)
+        return [ActivityLogRow(**dict(row)) for row in rows]
 
     def notifications(self) -> tuple[int, int]:
         # §14.6 drops these rows rather than mapping them, so the report says
@@ -2320,6 +2401,15 @@ class SiteRecordsTarget:
             frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep
 
 
+def legacy_single_value(doctype: str, field: str):
+    """One `tabSingles` value the Single's meta no longer declares (see `_legacy_page`)."""
+    rows = frappe.db.sql(
+        "SELECT `value` FROM `tabSingles` WHERE `doctype` = %(doctype)s AND `field` = %(field)s",
+        {"doctype": doctype, "field": field},
+    )
+    return rows[0][0] if rows else None
+
+
 class SiteSettings:
     """`LegacySettings` over `Drive Disk Settings`, `Drive Settings`, reservations."""
 
@@ -2327,12 +2417,14 @@ class SiteSettings:
         self.name_prefix = name_prefix
 
     def disk_quota_mb(self) -> int:
-        return cint(frappe.db.get_single_value("Drive Disk Settings", "quota"))
+        return cint(legacy_single_value("Drive Disk Settings", "quota"))
 
     def user_quotas(self, after: str, limit: int) -> list[UserQuotaRow]:
         return [
             UserQuotaRow(name=row.name, user=row.user, quota=cint(row.quota))
-            for row in self._page("Drive Settings", ("name", "user", "quota"), after, limit)
+            for row in _legacy_page(
+                "Drive Settings", ("name", "user", "quota"), after, limit, self.name_prefix
+            )
         ]
 
     def reservations(self, after: str, limit: int) -> list[ReservationRow]:
@@ -2343,18 +2435,14 @@ class SiteSettings:
                 storage_owner=row.storage_owner,
                 reserved_bytes=cint(row.reserved_bytes),
             )
-            for row in self._page(
-                "Drive Storage Reservation", ("name", "root", "storage_owner", "reserved_bytes"), after, limit
+            for row in _legacy_page(
+                "Drive Storage Reservation",
+                ("name", "root", "storage_owner", "reserved_bytes"),
+                after,
+                limit,
+                self.name_prefix,
             )
         ]
-
-    def _page(self, doctype: str, columns: tuple[str, ...], after: str, limit: int):
-        filters = [[doctype, "name", ">", after]]
-        if self.name_prefix:
-            filters.append([doctype, "name", "like", f"{self.name_prefix}%"])
-        return frappe.get_all(
-            doctype, filters=filters, fields=list(columns), order_by="name asc", limit=limit
-        )
 
 
 class SiteSettingsTarget:
@@ -2388,11 +2476,10 @@ class SiteSettingsTarget:
         # owner. The legacy column is emptied on the row it moves, which is
         # what `_core.quota.bind_legacy_storage_reservation` does at runtime;
         # the column itself stays until Cleanup drops it (§14.10).
-        frappe.db.set_value(
-            "Drive Storage Reservation",
-            name,
-            {"root": root, "storage_owner": None},
-            update_modified=False,
+        frappe.db.sql(
+            """UPDATE `tabDrive Storage Reservation` SET `root` = %(root)s, `storage_owner` = NULL
+               WHERE `name` = %(name)s""",
+            {"root": root, "name": name},
         )
 
     def commit(self) -> None:

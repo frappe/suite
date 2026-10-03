@@ -57,7 +57,7 @@ def add_document_node(target, name, row, **values):
     target.node_rows[name] = {
         "name": name,
         "title": values.pop("title", row.title or row.name),
-        "parent": values.pop("parent", "root"),
+        "parent_node": values.pop("parent_node", "root"),
         "root": values.pop("root", "root"),
         "path": values.pop("path", ""),
         "kind": values.pop("kind", "document"),
@@ -70,7 +70,7 @@ def add_document_node(target, name, row, **values):
 
 def add_node(target, name, **values):
     """A target row that is not a content node: a collision or a share target."""
-    target.node_rows[name] = {"name": name, "parent": "root", "root": "root", "state": ACTIVE, **values}
+    target.node_rows[name] = {"name": name, "parent_node": "root", "root": "root", "state": ACTIVE, **values}
 
 
 class CountingTarget(FakeContentTarget):
@@ -145,7 +145,7 @@ class ContentTest(unittest.TestCase):
         target.node_rows[name] = {
             "name": name,
             "title": user,
-            "parent": None,
+            "parent_node": None,
             "root": None,
             "path": "",
             "kind": "root",
@@ -431,7 +431,12 @@ class ContentTest(unittest.TestCase):
         row = document("Sheet", "sheet-1", title="Budget")
         source = FakeContent(documents=[row], users={OWNER: True})
         env, target = self.environment(source)
-        target.node_rows["sibling"] = {"name": "sibling", "parent": "id1", "title": "Budget", "state": ACTIVE}
+        target.node_rows["sibling"] = {
+            "name": "sibling",
+            "parent_node": "id1",
+            "title": "Budget",
+            "state": ACTIVE,
+        }
 
         result = link_content_documents(env)
 
@@ -441,7 +446,7 @@ class ContentTest(unittest.TestCase):
             {
                 "name": "sheet-1",
                 "title": "Budget (2)",
-                "parent": "id1",
+                "parent_node": "id1",
                 "root": "id1",
                 "path": "",
                 "kind": "document",
@@ -477,12 +482,17 @@ class ContentTest(unittest.TestCase):
         row = document("Sheet", "sheet-1", title="Budget", trashed=1, trashed_on="2024-02-01")
         source = FakeContent(documents=[row], users={OWNER: True})
         env, target = self.environment(source)
-        target.node_rows["sibling"] = {"name": "sibling", "parent": "id1", "title": "Budget", "state": ACTIVE}
+        target.node_rows["sibling"] = {
+            "name": "sibling",
+            "parent_node": "id1",
+            "title": "Budget",
+            "state": ACTIVE,
+        }
 
         result = link_content_documents(env)
 
         node = target.node_rows["sheet-1"]
-        self.assertEqual(node["parent"], "id1")
+        self.assertEqual(node["parent_node"], "id1")
         self.assertEqual(node["title"], "Budget")
         self.assertEqual(node["state"], TRASHED)
         self.assertEqual(node["trash_root"], "sheet-1")
@@ -537,7 +547,7 @@ class ContentTest(unittest.TestCase):
         }
         target.node_rows["sibling"] = {
             "name": "sibling",
-            "parent": "personal",
+            "parent_node": "personal",
             "title": "Budget",
             "state": ACTIVE,
         }
@@ -629,7 +639,12 @@ class ContentTest(unittest.TestCase):
         row = document("Sheet", "sheet-1", title="Budget")
         source = FakeContent(documents=[row], users={OWNER: True})
         env, target = self.environment(source)
-        target.node_rows["sibling"] = {"name": "sibling", "parent": "id1", "title": "Budget", "state": ACTIVE}
+        target.node_rows["sibling"] = {
+            "name": "sibling",
+            "parent_node": "id1",
+            "title": "Budget",
+            "state": ACTIVE,
+        }
 
         first = link_content_documents(env)
         rows = dict(target.node_rows)
@@ -678,7 +693,7 @@ class ContentTest(unittest.TestCase):
 
         link_content_documents(env)
 
-        self.assertEqual(target.node_rows["sheet-1"]["parent"], "root-1")
+        self.assertEqual(target.node_rows["sheet-1"]["parent_node"], "root-1")
         self.assertEqual(target.root_rows["root-1"]["state"], "Archived")
 
     def test_a_personal_root_whose_metadata_names_another_node_is_refused(self):
@@ -845,7 +860,7 @@ class ContentTest(unittest.TestCase):
             def grant_pairs(self, *args, **kwargs):
                 raise RuntimeError("killed inside the share mapper")
 
-        env, target = self.environment(source, target=Exploding(content=source))
+        env, _target = self.environment(source, target=Exploding(content=source))
 
         with self.assertRaises(RuntimeError):
             link_content_documents(env)
@@ -1055,7 +1070,7 @@ class ContentTest(unittest.TestCase):
         bad = document("Presentation", "deck-1", node="gone")
         good = document("Presentation", "deck-2", title="Deck")
         source = FakeContent(documents=[bad, good], users={OWNER: True})
-        env, target = self.environment(source)
+        env, _target = self.environment(source)
         recorded = []
 
         def record(environment, result, source_id, reason):

@@ -7,8 +7,8 @@ from suite.drive.patches.migrate_preview_size_unit import execute
 class MigratePreviewSizeUnit(IntegrationTestCase):
     """§9.2 redefined `preview_size` from a megabyte cutoff to pixels.
 
-    A site upgraded before this ticket can still carry the old
-    `remove_personal` patch's sentinel value of 100. This patch must move
+    A site upgraded before this ticket can still carry the sentinel value
+    of 100 the since-deleted `remove_personal` patch wrote. This patch must move
     that one known legacy value forward to the new pixel default without
     touching a genuine post-transition choice, including one that happens
     to already read 512 or one nobody has ever changed from the doctype's

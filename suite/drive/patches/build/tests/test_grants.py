@@ -130,8 +130,8 @@ class CollapseTest(GrantCase):
         """A `read + share` row and a `write` row make MANAGE, not EDIT.
 
         Mapping first would give EDIT, because neither row maps above it.
-        `dedupe_drive_permissions.py` unions the flags, and the union has
-        `share` and `write` in it.
+        The legacy dedupe rule Build reproduces unions the flags, and the
+        union has `share` and `write` in it.
         """
         self.legacy.permissions_rows = [
             permission("p1", "doc0000001", FRIEND, read=1, share=1),
@@ -580,6 +580,119 @@ class SharedFloorTest(GrantCase):
         report = self.run_grants(plans=[RootPlan(PERSONAL_ROOT, PERSONAL, OWNER, "Personal", ACTIVE)])
         self.assertEqual(self.roles(PERSONAL_ROOT), {})
         self.assertEqual(report.shared_anchors_written, 0)
+
+
+class CreatorGrantTest(GrantCase):
+    """§4.2's creator rule, applied to legacy owners after every row is mapped.
+
+    Legacy owners held everything without a row. The engine gives a creator
+    EDIT when the parent gives less; Build does the same for what they had
+    already made, asking the engine for the role rather than re-deriving it.
+    """
+
+    def owned(self, name, root, owner, path="", **columns):
+        self.drive.node_rows[name] = {
+            "name": name,
+            "kind": "file",
+            "root": root,
+            "path": path,
+            "state": ACTIVE,
+            "owner": owner,
+            **columns,
+        }
+        return name
+
+    def test_an_owner_below_edit_on_their_own_node_gets_edit(self):
+        """`$GENERAL` READ on the Shared root leaves the uploader a reader of their own file."""
+        self.owned("shared00001", SHARED_ROOT, FRIEND)
+        self.legacy.permissions_rows = [permission("p1", SHARED_ROOT, "$GENERAL", read=1)]
+        report = self.run_grants(plans=[RootPlan(SHARED_ROOT, SHARED, None, "Shared", ACTIVE)])
+        self.assertEqual(self.roles("shared00001"), {FRIEND: EDIT})
+        self.assertEqual((report.owned_nodes_seen, report.creator_grants_minted), (1, 1))
+
+    def test_an_owner_already_at_edit_through_an_ancestor_gets_nothing(self):
+        """A `write` row on the folder already answers EDIT below it."""
+        self.owned("shared0fold", SHARED_ROOT, FRIEND, kind="folder")
+        self.owned("shared00001", SHARED_ROOT, FRIEND, path="/shared0fold")
+        self.legacy.permissions_rows = [permission("p1", "shared0fold", FRIEND, read=1, write=1)]
+        report = self.run_grants(plans=[RootPlan(SHARED_ROOT, SHARED, None, "Shared", ACTIVE)])
+        self.assertEqual(self.roles("shared00001"), {})
+        self.assertEqual(self.roles("shared0fold"), {FRIEND: EDIT})
+        self.assertEqual(report.creator_grants_minted, 0)
+
+    def test_the_personal_root_owner_needs_no_grant_below_their_anchor(self):
+        """The anchor is MANAGE, so nothing in the owner's own root is below EDIT."""
+        self.drive.grant_rows["anchor"] = {
+            "name": "anchor",
+            "node": PERSONAL_ROOT,
+            "principal": OWNER,
+            "role": MANAGE,
+        }
+        self.owned("person00001", PERSONAL_ROOT, OWNER)
+        report = self.run_grants()
+        self.assertEqual(self.roles("person00001"), {})
+        self.assertEqual(report.creator_grants_minted, 0)
+
+    def test_an_owners_own_read_row_is_raised_to_edit(self):
+        """Legacy let owners past their own row; the row moves up rather than doubling."""
+        self.owned("shared00001", SHARED_ROOT, FRIEND)
+        self.legacy.permissions_rows = [permission("p1", "shared00001", FRIEND, read=1)]
+        self.run_grants()
+        self.assertEqual(self.roles("shared00001"), {FRIEND: EDIT})
+        self.assertEqual(len(self.drive.grant_rows), 1)
+
+    def test_a_deny_on_the_owner_is_overridden_and_counted(self):
+        """An owner never ends below EDIT on their own node, so their deny moves up and is reported."""
+        self.owned("shared00001", SHARED_ROOT, FRIEND)
+        self.legacy.permissions_rows = [permission("p1", "shared00001", FRIEND, deny=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("shared00001"), {FRIEND: EDIT})
+        self.assertEqual(len(self.drive.grant_rows), 1)
+        self.assertEqual((report.creator_grants_minted, report.creator_denies_overridden), (0, 1))
+
+        self.report.begin_run()
+        second = self.run_grants()
+        self.assertEqual(second.creator_denies_overridden, 1)
+        self.assertEqual(self.roles("shared00001"), {FRIEND: EDIT})
+
+    def test_a_deny_on_someone_other_than_the_owner_stays_a_deny(self):
+        """§14.5's "deny wins" still holds for everyone but the owner."""
+        self.owned("shared00001", SHARED_ROOT, FRIEND)
+        self.legacy.permissions_rows = [permission("p1", "shared00001", OWNER, deny=1)]
+        self.run_grants()
+        self.assertEqual(self.roles("shared00001"), {OWNER: NONE, FRIEND: EDIT})
+
+    def test_administrator_guest_and_root_nodes_are_left_alone(self):
+        self.owned("shared00001", SHARED_ROOT, "Administrator")
+        self.owned("shared00002", SHARED_ROOT, "Guest")
+        self.drive.node_rows[SHARED_ROOT]["owner"] = FRIEND
+        report = self.run_grants()
+        self.assertEqual(self.drive.grant_rows, {})
+        self.assertEqual((report.owned_nodes_seen, report.creator_grants_minted), (0, 0))
+
+    def test_a_dead_owner_is_counted_not_granted(self):
+        self.owned("shared00001", SHARED_ROOT, "gone@example.com")
+        report = self.run_grants()
+        self.assertEqual(self.drive.grant_rows, {})
+        self.assertEqual((report.creator_owners_dead, report.creator_grants_minted), (1, 0))
+
+    def test_a_rerun_keeps_the_count_and_writes_nothing_twice(self):
+        self.owned("shared00001", SHARED_ROOT, FRIEND)
+        first = self.run_grants()
+        self.assertEqual(first.creator_grants_minted, 1)
+
+        self.report.begin_run()
+        second = self.run_grants()
+        self.assertEqual(second.creator_grants_minted, 1)
+        self.assertEqual(second.grants_written, 0)
+        self.assertEqual(len(self.drive.grant_rows), 1)
+
+    def test_owners_are_paged_in_batches(self):
+        for index in range(5):
+            self.owned(f"shared0000{index}", SHARED_ROOT, FRIEND)
+        report = self.run_grants(batch_size=2)
+        self.assertEqual(report.creator_grants_minted, 5)
+        self.assertEqual(len(self.drive.grant_rows), 5)
 
 
 class RowShapeTest(GrantCase):
