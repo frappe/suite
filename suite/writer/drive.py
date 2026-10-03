@@ -469,10 +469,11 @@ def _readable_body():
     alone it passes straight through every `except Exception` between here and
     the request, including the rollback that closes Drive's copy savepoint.
 
-    `apply_update` is not the only call that panics. A body whose root
-    fragment was written as a `Text` or an `Array` applies cleanly and panics
-    on the first child read instead, so the traversal and the rewrite are
-    guarded too. Every pycrdt call this module makes runs inside this block.
+    `apply_update` is not the only call that can panic, so the traversal and
+    the rewrite are guarded too. Every pycrdt call this module makes runs
+    inside this block. A body whose root fragment was written as a `Text` or
+    an `Array` applies cleanly and reads as a fragment with no children; it is
+    refused here rather than read as empty.
     """
     try:
         yield
@@ -488,6 +489,9 @@ def _loaded_body(raw: bytes):
     document[BODY_FRAGMENT] = fragment
     with _readable_body():
         document.apply_update(raw)
+        # A root written as another type reads as a fragment whose length counts what it can't show
+        if len(fragment.children) != sum(1 for _child in fragment.children):
+            raise UnreadableBody(_("This Writer document body cannot be read"))
     return document, fragment
 
 
