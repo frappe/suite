@@ -16,6 +16,7 @@ import {
   randomId,
   countCols,
   computeColumnWidths,
+  imageType,
 } from './docxexporter.js'
 
 // Tiny duck-typed stand-ins for the DOM elements these helpers read from —
@@ -418,5 +419,19 @@ describe('computeColumnWidths — resized colwidth attrs → proportional dxa wi
       fakeRow([fakeEl({ colspan: '2', colwidth: '300,abc' }), fakeEl({ colwidth: '100' })]),
     ]
     expect(computeColumnWidths(trs, 3, 7500)).toEqual([3214, 3214, 1071])
+  })
+})
+
+describe('imageType — the format Word is told, read from the file itself', () => {
+  it('names the formats Word embeds by their leading bytes', () => {
+    expect(imageType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe('png')
+    expect(imageType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('jpg')
+    expect(imageType(new TextEncoder().encode('GIF89a'))).toBe('gif')
+    expect(imageType(new TextEncoder().encode('BM6'))).toBe('bmp')
+  })
+
+  it('names nothing for a format Word cannot embed', () => {
+    expect(imageType(new TextEncoder().encode('RIFF\0\0\0\0WEBP'))).toBeNull()
+    expect(imageType(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeNull()
   })
 })

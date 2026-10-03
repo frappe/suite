@@ -1,4 +1,4 @@
-import { Node } from '@tiptap/core'
+import { Node, type Editor } from '@tiptap/core'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import TabView from './components/TabView.vue'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
@@ -7,6 +7,12 @@ import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { v4 } from 'uuid'
 
 type TabMatch = { node: PMNode; pos: number }
+
+declare module '@tiptap/core' {
+  interface Storage {
+    tab: { activeTabId: string | null; hasInitialized: boolean }
+  }
+}
 
 // Tabs are always direct children of the doc
 export const tabsIn = (doc: PMNode): TabMatch[] => {
@@ -41,6 +47,18 @@ const orderedHTML = (doc: PMNode): string => {
   const serializer = DOMSerializer.fromSchema(doc.type.schema)
   const wrapper = document.createElement('div')
   wrapper.appendChild(serializer.serializeFragment(Fragment.fromArray(children)))
+  return wrapper.innerHTML
+}
+
+/** The HTML of the open tab, or of the whole document when no tab is open. */
+export const currentTabHTML = (editor: Editor): string => {
+  const activeTabId = editor.storage.tab?.activeTabId
+  const tab = activeTabId ? findTab(editor.state.doc, activeTabId) : null
+  if (!tab) return editor.getHTML()
+
+  const serializer = DOMSerializer.fromSchema(editor.state.schema)
+  const wrapper = document.createElement('div')
+  wrapper.appendChild(serializer.serializeNode(tab.node))
   return wrapper.innerHTML
 }
 
@@ -280,15 +298,8 @@ export const TabsExtension = Node.create({
         },
       getCurrentTabHTML:
         () =>
-        ({ state }) => {
-          const tab = findTab(state.doc, this.storage.activeTabId)
-          if (!tab) return this.editor.getHTML()
-
-          const serializer = DOMSerializer.fromSchema(state.schema)
-          const wrapper = document.createElement('div')
-          wrapper.appendChild(serializer.serializeNode(tab.node))
-          return wrapper.innerHTML
-        },
+        () =>
+          currentTabHTML(this.editor),
     }
   },
 

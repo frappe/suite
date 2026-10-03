@@ -180,10 +180,32 @@ export function resolveHref(href) {
   }
 }
 
-async function dataFromUrl(url) {
-  const res = await fetch(url)
-  const buf = await res.arrayBuffer()
-  return new Uint8Array(buf)
+// The formats Word embeds, by their leading bytes. docx needs the format named.
+const IMAGE_SIGNATURES = [
+  ['png', [0x89, 0x50, 0x4e, 0x47]],
+  ['jpg', [0xff, 0xd8, 0xff]],
+  ['gif', [0x47, 0x49, 0x46, 0x38]],
+  ['bmp', [0x42, 0x4d]],
+]
+
+export function imageType(data) {
+  const match = IMAGE_SIGNATURES.find(([, signature]) => signature.every((byte, i) => data[i] === byte))
+  return match ? match[0] : null
+}
+
+/**
+ * The picture `img` shows as ImageRun options, fetched through the caller's
+ * `fetchPicture` so a share link's credentials reach Drive. Throws for a
+ * refused fetch or a format Word cannot embed.
+ */
+async function imageFromElement(img, ctx) {
+  const res = await ctx.fetchPicture(img)
+  // A refused picture answers an error page, which is not image data.
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  const data = new Uint8Array(await res.arrayBuffer())
+  const type = imageType(data)
+  if (!type) throw new Error('Unsupported image format')
+  return { data, type }
 }
 
 /** Natural size from the img's width/height attrs, scaled down to fit maxWidthPx. */
@@ -219,9 +241,9 @@ async function inlineToRuns(node, inherited = {}, ctx) {
     const src = node.getAttribute('src')
     if (!src) return []
     try {
-      const bytes = await dataFromUrl(src)
+      const image = await imageFromElement(node, ctx)
       const { width, height } = fitImageSize(node, ctx.contentWidthPx)
-      return [new ImageRun({ data: bytes, transformation: { width, height } })]
+      return [new ImageRun({ ...image, transformation: { width, height } })]
     } catch (e) {
       console.warn('Image fetch failed:', src, e)
       return []
@@ -566,7 +588,7 @@ async function paragraphsFromBlockquote(el, ctx) {
 }
 
 /** <pre><code> content is one text blob with literal newlines — Word needs an explicit break per line. */
-function paragraphFromCodeBlock(el, ctx) {
+function paragraphFromCodeBlock(el, _ctx) {
   const codeEl = el.querySelector(':scope > code') || el
   const lines = (codeEl.textContent || '').split('\n')
   const runStyle = { font: CODE_FONT, size: 20, color: 'D4D4D4' }
@@ -641,9 +663,9 @@ function blockForIframe(el, ctx) {
 async function imageParagraph(el, ctx) {
   const src = el.getAttribute('src')
   if (!src) return null
-  let bytes
+  let image
   try {
-    bytes = await dataFromUrl(src)
+    image = await imageFromElement(el, ctx)
   } catch (e) {
     console.warn('Image fetch failed:', src, e)
     return null
@@ -664,7 +686,7 @@ async function imageParagraph(el, ctx) {
       spacing: { before: IMG_SPACE_BEFORE, after: IMG_SPACE_AFTER },
       children: [
         new ImageRun({
-          data: bytes,
+          ...image,
           transformation: { width, height },
           floating: {
             horizontalPosition: {
@@ -693,7 +715,7 @@ async function imageParagraph(el, ctx) {
   return new Paragraph({
     alignment,
     spacing: { before: IMG_SPACE_BEFORE, after: IMG_SPACE_AFTER },
-    children: [new ImageRun({ data: bytes, transformation: { width, height } })],
+    children: [new ImageRun({ ...image, transformation: { width, height } })],
   })
 }
 
@@ -721,12 +743,12 @@ async function blocksForImageGroup(el, ctx) {
       let children = [emptyParagraph(ctx)]
       if (src) {
         try {
-          const bytes = await dataFromUrl(src)
+          const image = await imageFromElement(img, ctx)
           const { width, height } = fitImageSize(img, cellWidthPx)
           children = [
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              children: [new ImageRun({ data: bytes, transformation: { width, height } })],
+              children: [new ImageRun({ ...image, transformation: { width, height } })],
             }),
           ]
         } catch (e) {
@@ -956,7 +978,10 @@ async function blocksFromNodes(nodeList, ctx) {
   return { blocks: out, numberingConfigs }
 }
 
-export async function downloadDocxFromHtml(html, filename, settings = {}) {
+/** Without a caller's fetch, a picture is taken from its `src` as the browser would. */
+const fetchBySrc = (img) => fetch(img.getAttribute('src'))
+
+export async function downloadDocxFromHtml(html, filename, settings = {}, fetchPicture = fetchBySrc) {
   const fontSetting = settings?.font_family || settings?.fontFamily
 
   const fontMap = {
@@ -997,6 +1022,7 @@ export async function downloadDocxFromHtml(html, filename, settings = {}) {
     defaultSpacing,
     tableWidthDxa: CONTENT_WIDTH_TWIPS,
     contentWidthPx: CONTENT_WIDTH_PX,
+    fetchPicture,
   }
 
   // Exporting every tab: build each tab's heading + content as one unit, in

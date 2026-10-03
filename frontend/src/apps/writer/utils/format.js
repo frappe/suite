@@ -1,15 +1,4 @@
 import { format } from 'date-fns'
-export function formatSize(size, nDigits = 1) {
-  if (size === 0) return 'empty'
-  var i = -1
-  var byteUnits = ['KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
-  do {
-    size /= 1000
-    i++
-  } while (size > 1000)
-  return Math.max(size, 0.1).toFixed(nDigits) + ' ' + byteUnits[i]
-}
-
 export function formatDate(date) {
   if (!date) return ''
   const dateObj = new Date(date)

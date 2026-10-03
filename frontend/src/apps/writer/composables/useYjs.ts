@@ -2,15 +2,15 @@ import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebrtcProvider } from 'y-webrtc'
 import { toUint8Array, fromUint8Array } from 'js-base64'
-import { debounce, toast, FrappeNetworkError } from 'frappe-ui'
+import { debounce, toast } from 'frappe-ui'
 import {
   absolutePositionToRelativePosition,
   ySyncPluginKey,
 } from '@tiptap/y-tiptap'
 import { rebuild } from '@/apps/writer/extensions/comments'
 import { inject, ref } from 'vue'
-import { updateComments } from '@/apps/writer/resources'
 import { useCollaborationUsers } from './useCollaborationUsers'
+import { SERVER_ORIGIN, trackUnsaved } from './unsaved'
 
 import { useSessionStore } from '@/boot/session'
 
@@ -80,7 +80,11 @@ export const useComments = (document, editor) => {
   }
   const saveComments = async () => {
     const data = fromUint8Array(Y.encodeStateAsUpdate(commentsDoc))
-    updateComments.submit({ doc: document.doc.name, data })
+    try {
+      await document.saveComments.submit({ doc: document.doc.name, data })
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : 'Could not save the comment.')
+    }
   }
   const cleanup = () => {
     providerComments.destroy()
@@ -93,56 +97,42 @@ export function useYjs(id, document, editor, edited) {
   const isOffline = inject('isOffline')
   const doc = new Y.Doc({ gc: true })
   if (document.doc.content)
-    Y.applyUpdate(doc, toUint8Array(document.doc.content), 'server')
+    Y.applyUpdate(doc, toUint8Array(document.doc.content), SERVER_ORIGIN)
   const roomName = 'fdoc-' + id
   const db = new IndexeddbPersistence(roomName, doc)
   const loaded = ref(false)
   db.on('synced', () => (loaded.value = true))
 
-  new Promise((resolve) => {
-    if (document.isFinished) resolve(document.doc)
-    else {
-      const stop = document.onSuccess((freshDoc) => {
-        const diff = Y.diffUpdate(
-          toUint8Array(freshDoc.content),
-          Y.encodeStateVector(doc),
-        )
-        Y.applyUpdate(doc, diff, 'server')
-        stop()
-      })
-    }
-  })
-
-  // Saving to server
+  // Saving to server. `edited` is the header's unsaved flag: the tracker sets
+  // it on every change to store and clears it once a save has landed.
   const save = async (manual = false, oldHtml) => {
     if (!manual && !edited.value) return
-    // Compute a diff relative to server’s last known state
-    const html = editor.value ? editor.value.getHTML() : oldHtml || ''
-    const yjsState = Y.encodeStateAsUpdate(doc)
-    const data = await document.saveDoc.submit({
-      data: fromUint8Array(yjsState),
-      html,
-    })
-    if (data?.skipped) {
-      console.log(
-        'Server skipped update - probably because other people are collaborating',
-      )
-    } else if (document.saveDoc.error) {
-      if (isOffline.value) {
-        console.warn('Skipping save as client is offline.')
-      } else {
-        toast.error('Could not save the document.')
-        // ideally store in indexeddb
-        localStorage.setItem('errored-save-out-' + id + '-' + Date.now(), html)
+    await unsavedTracking.storeThrough(async () => {
+      const html = editor.value ? editor.value.getHTML() : oldHtml || ''
+      const yjsState = Y.encodeStateAsUpdate(doc)
+      const data = await document.saveDoc.submit({
+        data: fromUint8Array(yjsState),
+        html,
+      })
+      if (data?.skipped) {
+        console.log(
+          'Server skipped update - probably because other people are collaborating',
+        )
+      } else if (document.saveDoc.error) {
+        if (isOffline.value) {
+          console.warn('Skipping save as client is offline.')
+        } else {
+          toast.error('Could not save the document.')
+          // ideally store in indexeddb
+          localStorage.setItem('errored-save-out-' + id + '-' + Date.now(), html)
+        }
+        throw new Error(`Server error during save: ${document.saveDoc.error}`)
       }
-      throw new Error(`Server error during save: ${document.saveDoc.error}`)
-    }
+    })
   }
 
   const autosave = debounce(save, 5000)
-  doc.on('update', (_, origin) => {
-    if (origin && origin !== 'server') autosave()
-  })
+  const unsavedTracking = trackUnsaved(doc, edited, () => autosave())
 
   // WebRTC for real-time P2P collaboration
   const provider = new WebrtcProvider(roomName, doc, REALTIME_CONFIG)

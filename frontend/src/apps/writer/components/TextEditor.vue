@@ -45,9 +45,11 @@ const editor = computed(() => {
 })
 provide('editor', editor)
 
+// `useYjs` owns the unsaved flag: it sets `edited` on each change to store
+// and clears it when a save lands (`composables/unsaved.ts`).
 const {
   doc,
-  save: saveDocument,
+  save,
   cleanup,
   provider,
   permanentUserData,
@@ -55,15 +57,6 @@ const {
   peers,
   ...commentsDetail
 } = useYjs(props.file.doc.name, props.document, editor, edited)
-let saveRevision = 0
-doc.on('update', (_, origin) => {
-  if (origin && origin !== 'server') saveRevision += 1
-})
-const save = async (...args) => {
-  const revision = saveRevision
-  await saveDocument(...args)
-  if (saveRevision === revision) edited.value = false
-}
 defineExpose({ editor, peers })
 watch(loaded, () => rebuild(editor.value))
 

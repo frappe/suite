@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton, TextInput, toast, useDoc } from "frappe-ui";
+import { Avatar, Button, Skeleton, TextInput, toast } from "frappe-ui";
 import {
   computed,
   onBeforeUnmount,
@@ -31,31 +31,30 @@ import { DOCUMENT_MEDIA } from "@/apps/writer/extensions/drive-media";
 import { RENAME_DOCUMENT } from "@/apps/writer/renameDocument";
 import { useDocumentLeaveGuard, type DocumentSaveState } from "./navigation";
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from "./recovery";
+import WriterDocumentMenu from "./WriterDocumentMenu.vue";
+import { createWriterDocument, type WriterDocument } from "./writerDocument";
 import { createWriteGate, type DocumentWrite } from "./writes";
 
 const COMMENT = 20;
 
-type WriterSettings = Record<string, unknown>;
-
-interface WriterDocumentRow {
-  name: string;
-  collab?: number;
-  settings?: string | WriterSettings | null;
-}
-
-interface WriterDocumentResource {
-  doc: (Omit<WriterDocumentRow, "settings"> & { settings: WriterSettings }) | null;
+interface WriterDocumentResource extends WriterDocument {
   newVersion: DocumentWrite;
-  saveDoc: DocumentWrite;
-  saveHtml: DocumentWrite;
-  updateSettings: DocumentWrite;
 }
 
 /** `GET nodes/<id>/threads` */
 interface CommentThread {
   name: string;
   resolved: boolean;
-  comments: { name: string; content: string; author: string | null; author_name: string | null; creation: string | null }[];
+  comments: {
+    name: string;
+    content: string;
+    author: string | null;
+    /** The name a guest typed. */
+    author_name: string | null;
+    /** The signed-in author; absent for a guest. */
+    person?: { id: string; full_name: string; user_image: string | null };
+    creation: string | null;
+  }[];
 }
 
 /** One row of `GET nodes/<id>/versions` */
@@ -108,27 +107,14 @@ const writes = createWriteGate(props.session, () => {
     action: { label: "Download my changes", onClick: downloadChanges },
   });
 });
-const writerDocument = useDoc<WriterDocumentRow>({
-  doctype: "Writer Document",
-  name: props.session.contentDocname,
-  transform(doc) {
-    if (typeof doc.settings === "string") doc.settings = JSON.parse(doc.settings || "{}") as WriterSettings;
-    else if (!doc.settings) doc.settings = {};
-    return doc;
-  },
-  methods: {
-    saveDoc: "save_doc",
-    saveHtml: "save_html",
-    updateSettings: "update_settings",
-  },
-}) as unknown as Omit<WriterDocumentResource, "newVersion">;
+const writerDocument = createWriterDocument(props.session);
 // Drive owns this document's history, and `new_version` refuses a Drive
 // document. The editor's automatic version is skipped until Writer takes
 // versions through Drive.
 const noAutomaticVersion: DocumentWrite = { loading: false, error: null, submit: async () => null };
 const documentResource = writes.guard(
   reactive({ ...toRefs(writerDocument), newVersion: noAutomaticVersion }) as WriterDocumentResource,
-  ["saveDoc", "saveHtml", "updateSettings"],
+  ["saveDoc", "saveHtml"],
 );
 
 const readable = computed(() => props.session.state.value !== "Refused" && writes.role.value >= 10);
@@ -261,6 +247,13 @@ onBeforeUnmount(() => {
     >
       <template #actions>
         <UsersBar v-if="peers.length" :users="peers" />
+        <WriterDocumentMenu
+          v-if="readable"
+          :session="session"
+          :editor="editorSurface?.editor ?? null"
+          :settings="settings"
+          :editable="editable"
+        />
       </template>
     </DriveDocumentHeader>
 
@@ -322,8 +315,15 @@ onBeforeUnmount(() => {
             :class="thread.resolved && 'opacity-60'"
           >
             <div v-for="comment in thread.comments" :key="comment.name">
-              <p class="text-sm-medium text-ink-gray-8">
-                <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{ comment.author_name || "Someone" }}</DriveCommentAuthor>
+              <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
+                <Avatar
+                  v-if="comment.person"
+                  :image="comment.person.user_image ?? undefined"
+                  :label="comment.person.full_name"
+                  size="sm"
+                  shape="circle"
+                />
+                <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{ comment.person?.full_name || comment.author || "Someone" }}</DriveCommentAuthor>
               </p>
               <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
             </div>

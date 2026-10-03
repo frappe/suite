@@ -7,7 +7,7 @@ const EDIT = 40;
 const BELOW_EDIT = 30;
 const REFUSALS = new Set(["PermissionError", "DriveForbidden", "DriveNotFound"]);
 
-/** One `useDoc` document method, as the editor calls it. */
+/** One document write, as the editor calls it. */
 export interface DocumentWrite {
   readonly loading: boolean;
   readonly error: unknown;

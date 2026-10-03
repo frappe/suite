@@ -48,7 +48,6 @@
 import {
   computed,
   inject,
-  nextTick,
   onBeforeUnmount,
   provide,
   ref,
@@ -324,12 +323,11 @@ const onBackgroundClick = (e) => {
   }
 }
 
-const handleEditorChange = async (value) => {
+// The owner of `edited` decides what counts as a change: `useYjs` reads the
+// Yjs document, `NonCollabEditor` compares the HTML. This event also fires
+// when the stored body is first put into the editor, so it marks nothing.
+const handleEditorChange = (value) => {
   emit('editor-change', value)
-  if (!props.editable || edited.value) return
-  edited.value = true
-  await nextTick()
-  autoversion()
 }
 
 const autoversion = async () => {

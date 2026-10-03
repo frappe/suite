@@ -3,7 +3,10 @@ import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import Collaboration from '@tiptap/extension-collaboration'
+import * as Y from 'yjs'
 import { TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
+import { trackUnsaved } from '@/apps/writer/composables/unsaved'
 
 const uploadMock = vi.fn()
 // Every Drive request the importer makes, as `METHOD path`.
@@ -220,6 +223,32 @@ describe('importDocx', () => {
     expect(editor.getText()).toContain('Imported text')
     expect(tabsIn(editor.state.doc)).toHaveLength(0)
     expect(toastMock.success).toHaveBeenCalled()
+  })
+
+  it('writes into the collaborative body, so the import is there to save', async () => {
+    convertToHtmlMock.mockResolvedValue({ value: '<p>Imported text</p>', messages: [] })
+    // The open document: a body shared through Yjs, with a line typed before.
+    const body = new Y.Doc()
+    const editor = new Editor({
+      extensions: [Document, Paragraph, Text, TabsExtension, Collaboration.configure({ document: body, field: 'default' })],
+    })
+    editor.commands.setContent('<p>Existing line before any import.</p>')
+    const unsaved = { value: false }
+    const changes = vi.fn()
+    trackUnsaved(body, unsaved, changes)
+
+    await importDocx(fakeFile('launch brief.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+
+    // A second editor on the same body sees the new tab and the untouched line.
+    const peer = new Editor({
+      extensions: [Document, Paragraph, Text, TabsExtension, Collaboration.configure({ document: body, field: 'default' })],
+    })
+    expect(tabsIn(peer.state.doc).map((tab) => tab.node.attrs.label)).toEqual(['Untitled', 'launch brief'])
+    expect(peer.getText()).toContain('Existing line before any import.')
+    expect(peer.getText()).toContain('Imported text')
+    expect(unsaved.value).toBe(true)
+    expect(changes).toHaveBeenCalled()
+    expect(toastMock.success).toHaveBeenCalledWith('Document imported successfully.')
   })
 
   it('creates a new tab for a non-empty document, preserving existing content', async () => {

@@ -36,7 +36,7 @@ import LucideAlignLeft from '~icons/lucide/align-left'
 
 // frappe-ui's editor commands carry Title Case labels; Writer uses sentence case.
 const relabel = (item, label) => ({ ...item, label })
-export const FontColorItem = relabel(FontColor, 'Font color')
+const FontColorItem = relabel(FontColor, 'Font color')
 export const BulletListItem = relabel(BulletList, 'Bullet list')
 export const OrderedListItem = relabel(OrderedList, 'Numbered list')
 const InsertImageItem = relabel(InsertImage, 'Image')

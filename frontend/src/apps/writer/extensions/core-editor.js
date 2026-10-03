@@ -2,22 +2,10 @@ import { Extension } from '@tiptap/vue-3'
 import { Plugin } from '@tiptap/pm/state'
 import { Slice } from '@tiptap/pm/model'
 
-import { getTemplates } from '@/apps/writer/resources'
-import { insertTemplate } from '@/apps/writer/utils'
-
-// Custom extension bundling: template keyboard shortcuts, an override of
-// removeEmptyTextStyle (tabs strip all marks otherwise), and a copy
-// transformer that unwraps single-tab selections.
+// Custom extension bundling an override of removeEmptyTextStyle (tabs strip
+// all marks otherwise) and a copy transformer that unwraps single-tab
+// selections.
 export const CoreEditorExtension = Extension.create({
-  addKeyboardShortcuts() {
-    if (!getTemplates.data) return {}
-    return Object.fromEntries(
-      getTemplates.data
-        .filter((t) => t.keymap)
-        .map((t) => [t.keymap, () => insertTemplate(t, this.editor)]),
-    )
-  },
-
   addCommands() {
     return {
       removeEmptyTextStyle:
