@@ -143,7 +143,10 @@ Scope, decided 2026-09-11:
   the rollback plan: bugs are fixed forward. The rail lists an area only when its flip is
   on. Between the flips a temporary Apps submenu in the avatar menu lists
   the old Drive, Writer, Sheets and Slides pages (Faris moved it from the
-  rail on 2026-09-29).
+  rail on 2026-09-29). On 2026-10-03 Faris ruled that rollback is a full
+  backup restore: both flip keys, the standalone chrome and the legacy Drive
+  UI are deleted, the rail lists every area, and Mail, Calendar and Meet
+  render inside the shell on every route.
 
 - [Draft the spec and plan](tickets/015-draft-the-spec-and-plan.md) —
   Both documents are drafted and audited against every resolution: the

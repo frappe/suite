@@ -83,3 +83,40 @@ typing-modules = ["frappe.types.DF"]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+
+# mypy checks the packages written to STANDARDS.md. Run `mypy` from this
+# directory inside a bench; `python_executable` points at the bench env so
+# frappe and the app's dependencies resolve. Tests and patches are excluded as
+# frappe does. Every module not listed under `ignore_errors` must stay clean.
+[tool.mypy]
+files = ["suite/drive", "suite/composition"]
+python_executable = "../../env/bin/python"
+exclude = ['/tests/', '/patches/', '/test_[^/]+\.py$', 'benchmark_']
+ignore_missing_imports = true
+pretty = true
+
+# Target: an empty list. Remove a module when `mypy` reports nothing for it;
+# a module gains no entry here. Owner: Drive.
+[[tool.mypy.overrides]]
+module = [
+    "suite.composition.redirects",
+    "suite.drive._core.access",
+    "suite.drive._core.activity",
+    "suite.drive._core.content",
+    "suite.drive._core.nodes",
+    "suite.drive._core.quota",
+    "suite.drive._core.roots",
+    "suite.drive._core.upload",
+    "suite.drive._core.versions",
+    "suite.drive.doctype.drive_node.drive_node",
+    "suite.drive.http.routes",
+    "suite.drive.http.shapes",
+    "suite.drive.webdav.copy",
+    "suite.drive.webdav.get",
+    "suite.drive.webdav.lock",
+    "suite.drive.webdav.propfind",
+    "suite.drive.webdav.proppatch",
+    "suite.drive.webdav.put",
+    "suite.drive.webdav.structure",
+]
+ignore_errors = true
