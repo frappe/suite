@@ -30,6 +30,18 @@ const session = (sid: string) => ({ doc: 'D', sid, lineage: 'L', cid: 5, bound: 
 const entry = (sid: string, seq: number, bytes: Uint8Array) => ({ doc: 'D', sid, seq, bytes, sha: String(seq) })
 
 describe('device store', () => {
+  it('releases a session only once it holds no entries', async () => {
+    const store = await fresh()
+    const one = typed('one')
+    await store.capture(session('s'), [entry('s', 1, one.update)])
+    expect(await store.release('D', 's')).toBe(false)
+    expect(await store.sessions('D')).toHaveLength(1)
+
+    await store.ack('D', 's', 1, one.update, 'L')
+    expect(await store.release('D', 's')).toBe(true)
+    expect(await store.sessions('D')).toHaveLength(0)
+  })
+
   it('keeps captured entries until acknowledged, then keeps their text in the device copy', async () => {
     const store = await fresh()
     const one = typed('one ')

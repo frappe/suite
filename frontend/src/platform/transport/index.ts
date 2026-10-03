@@ -210,6 +210,14 @@ function requestHeaders(requestOptions: TransportOptions, accept: string): Heade
   return headers
 }
 
+// What to tell a person when a request failed before the server could answer it properly; null for any other status
+export function describeFailure(status: number | null): string | null {
+  if (status === 0) return "Couldn't reach the server. Check your connection and try again."
+  if (status === 408 || status === 429) return 'The server is busy. Try again in a moment.'
+  if (status !== null && status >= 500) return 'The server had a problem opening this document. Try again in a moment.'
+  return null
+}
+
 export const transport = createTransport()
 
 function validateOperation(operation: Operation): void {

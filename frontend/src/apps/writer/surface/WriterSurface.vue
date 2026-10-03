@@ -85,6 +85,10 @@ const saveLabel = computed(() =>
     ? "Saving paused"
     : ({ saving: "Saving…", failed: "Not saved", unsaved: "Unsaved", clean: "Saved" })[saveState.value],
 );
+const readOnlyLabel = computed(() => {
+  if (props.session.state.value === "Trashed") return "Trashed";
+  return editingPaused.value && role.value >= 40 ? "Editing paused" : "View only";
+});
 const settings = computed(() => documentResource.doc?.settings ?? {});
 const fakeFileResource = computed(() => ({
   doc: {
@@ -231,7 +235,7 @@ onBeforeUnmount(() => {
         {{ saveLabel }}<template v-if="roomUnsent"> · {{ roomUnsent }} unsent</template>
       </span>
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" />
-      <Badge v-if="!editable" :label="props.session.state.value === 'Trashed' ? 'Trashed' : editingPaused && role >= 40 ? 'Editing paused' : 'View only'" theme="gray" variant="subtle" />
+      <Badge v-if="!editable" :label="readOnlyLabel" theme="gray" variant="subtle" />
       <div v-if="collaborators.length" class="text-sm text-ink-gray-5">{{ collaborators.length }} present</div>
       <Button icon="lucide-message-square" tooltip="Comments" variant="ghost" @click="openPanel('comments')" />
       <Button icon="lucide-history" tooltip="Versions" variant="ghost" @click="openPanel('versions')" />
@@ -239,7 +243,7 @@ onBeforeUnmount(() => {
     </header>
 
     <div v-if="banner" class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-2 text-sm text-ink-amber-7" role="status">
-      {{ banner.text }}<template v-if="banner.signInUrl">{{ " " }}<a :href="banner.signInUrl" target="_blank" class="underline">Sign in</a></template>{{ banner.note }}
+      {{ banner.text }}<a v-if="banner.link" :href="banner.link.href" target="_blank" class="underline">{{ banner.link.label }}</a>{{ banner.after }}
     </div>
 
     <div v-if="!readable" class="m-auto text-center">

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { bannerFor, openFailureFor, type Banner } from "./collabMessages";
 
 // What the banner reads on the page, with the link standing for its words
-const read = (banner: Banner) => `${banner.text}${banner.signInUrl ? " [Sign in]" : ""}${banner.note ?? ""}`;
+const read = (banner: Banner) => `${banner.text}${banner.link ? `[${banner.link.label}]` : ""}${banner.after ?? ""}`;
 const standing = { blocked: null, onDevice: true, kept: false, unsent: 1 } as const;
 
 describe("collab banner copy", () => {

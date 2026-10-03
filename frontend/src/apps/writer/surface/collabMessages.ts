@@ -1,11 +1,12 @@
 import type { Blocked } from '@suite/collab-client'
+import { describeFailure } from '@/platform/transport'
 
 // What the page tells the person when the room stops saving, or never opens
 export interface Banner {
   text: string
-  // Said after the text, and after the sign-in link when there is one
-  note?: string
-  signInUrl?: string
+  // Read in the middle of the sentence: `text`, then the link, then `after`
+  link?: { label: string; href: string }
+  after?: string
 }
 
 interface Standing {
@@ -18,16 +19,17 @@ interface Standing {
 
 export function bannerFor({ blocked, onDevice, kept, unsent }: Standing): Banner {
   const copy = kept ? " Unsent changes were kept as a recovery copy." : ""
-  const note = onDevice ? "" : " Keep this tab open."
+  // Without a device store the unsent changes live only in this tab
+  const keepOpen = onDevice ? "" : " Keep this tab open."
   switch (blocked) {
     case "signed_out":
       return {
-        text: unsent ? "You're signed out, so changes aren't saved." : "You're signed out.",
-        signInUrl: `/login?redirect-to=${encodeURIComponent(location.pathname)}`,
-        note: unsent ? ` to save them.${note}` : " to keep editing.",
+        text: unsent ? "You're signed out, so changes aren't saved. " : "You're signed out. ",
+        link: { label: "Sign in", href: `/login?redirect-to=${encodeURIComponent(location.pathname)}` },
+        after: unsent ? ` to save them.${keepOpen}` : " to keep editing.",
       }
     case "locked":
-      return { text: "This document was locked, so changes aren't saved. Unlock it to save them.", note }
+      return { text: "This document was locked, so changes aren't saved. Unlock it to save them.", after: keepOpen }
     case "offline":
       return { text: "You're offline and this browser can't keep changes, so editing is paused." }
     case "stale_session":
@@ -54,12 +56,5 @@ const OPEN_FAILURES: Record<string, string> = {
   principal_changed: "Someone else is now signed in here. Reload to open this document.",
 }
 
-function failureForStatus(status: number | null) {
-  if (status === 0) return "Couldn't reach the server. Check your connection and try again."
-  if (status === 408 || status === 429) return "The server is busy. Try again in a moment."
-  if (status !== null && status >= 500) return "The server had a problem opening this document. Try again in a moment."
-  return "This document couldn't be opened."
-}
-
 export const openFailureFor = (reason: string | null, status: number | null = null) =>
-  OPEN_FAILURES[reason ?? ""] ?? failureForStatus(status)
+  OPEN_FAILURES[reason ?? ""] ?? describeFailure(status) ?? "This document couldn't be opened."

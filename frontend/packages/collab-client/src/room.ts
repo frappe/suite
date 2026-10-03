@@ -149,7 +149,7 @@ export class Room implements CollabRoom {
     this.listeners.clear()
     for (const box of this.boxes) box.release()
     if (this.device && !this.own.pending.length && !this.dead) {
-      void this.device.store.forget(this.device.doc, this.own.sid).catch(() => {})
+      void this.device.store.release(this.device.doc, this.own.sid).catch(() => {})
     }
   }
 
@@ -222,7 +222,7 @@ export class Room implements CollabRoom {
       if (this.closed) return release()
       const entries = await store.entries(key, session.sid).catch(() => [])
       if (!entries.length) {
-        await store.forget(key, session.sid).catch(() => {})
+        await store.release(key, session.sid).catch(() => {})
         release()
         continue
       }
@@ -477,7 +477,7 @@ export class Room implements CollabRoom {
     if (this.device) {
       void this.device.store.ack(this.device.doc, box.sid, box.acked, committed, this.lineage).catch(() => {})
       if (box.adopted && !box.pending.length) {
-        void this.device.store.forget(this.device.doc, box.sid).catch(() => {})
+        void this.device.store.release(this.device.doc, box.sid).catch(() => {})
         box.release()
         this.boxes = this.boxes.filter((other) => other !== box)
       }

@@ -37,7 +37,7 @@ import {
 } from "@/apps/drive";
 import { documentTypes } from "@/composition/documentRegistry";
 import { usePageTitle } from "@/platform/page-meta";
-import { TransportError } from "@/platform/transport";
+import { describeFailure, TransportError } from "@/platform/transport";
 
 const route = useRoute();
 const router = useRouter();
@@ -99,11 +99,8 @@ async function open(node: string) {
 }
 
 function failureMessage(reason: unknown) {
-  const status = reason instanceof TransportError ? reason.status : null;
-  if (status === 0) return "Couldn't reach the server. Check your connection and try again.";
-  if (status === 408 || status === 429) return "The server is busy. Try again in a moment.";
-  if (status !== null && status >= 500) return "The server had a problem opening this document. Try again in a moment.";
-  return reason instanceof Error ? reason.message : "This document could not be opened.";
+  const described = describeFailure(reason instanceof TransportError ? reason.status : null);
+  return described ?? (reason instanceof Error ? reason.message : "This document could not be opened.");
 }
 
 watch(

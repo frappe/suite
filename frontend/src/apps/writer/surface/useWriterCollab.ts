@@ -76,18 +76,18 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   }
 
   const live = computed(() => mode.value === "live");
-  // Whether the room lets the person type; true while there is no room to ask
-  const allowsEditing = computed(() => {
+  // Whether the person can type: "paused" for a reason that clears, "closed" when they can't (or lost the right to).
+  // "editing" while there is no room to ask
+  const standing = computed<"editing" | "paused" | "closed">(() => {
     const now = status.value;
-    return !live.value || !now || (now.canWrite && now.saveState !== "failed" && now.blocked !== "offline");
+    if (!live.value || !now) return "editing";
+    if (now.blocked === "lost_edit" || now.blocked === "lost_read") return "closed";
+    const stopped = now.saveState === "failed" || now.blocked === "offline";
+    if (now.canWrite) return stopped ? "paused" : "editing";
+    return stopped || now.blocked ? "paused" : "closed";
   });
-  // The room stopped this tab for a reason that clears, not because the person lost the right to edit
-  const editingPaused = computed(() => {
-    const now = status.value;
-    if (!live.value || !now || allowsEditing.value) return false;
-    if (now.blocked === "lost_edit" || now.blocked === "lost_read") return false;
-    return !!now.blocked || now.saveState === "failed";
-  });
+  const allowsEditing = computed(() => standing.value === "editing");
+  const editingPaused = computed(() => standing.value === "paused");
   const saveState = computed(() => (live.value ? (status.value?.saveState ?? "clean") : null));
   const unsent = computed(() => (live.value ? (status.value?.unsent ?? 0) : 0));
   const paused = computed(() => (live.value ? status.value?.paused ?? null : null));
