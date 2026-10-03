@@ -467,22 +467,25 @@ def node_put_content(
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
-def node_get_content(node: Given = None, format: Given = None) -> Response:
+def node_get_content(node: Given = None, format: Given = None, download: Given = None) -> Response:
     """Send one readable node's bytes: a signed redirect, or a streamed export.
 
     A file redirects to a short-lived signed `/f/` URL, which the framework
     serves against the signature alone - so the READ check has to happen here,
-    before the URL exists. A content document has no stored bytes: only its app
-    can produce them, and it does so through the guarded stream §10.1 declares.
+    before the URL exists. The file shows in the browser where it safely can;
+    `download` makes the URL save it instead. A content document has no stored
+    bytes: only its app can produce them, and it does so through the guarded
+    stream §10.1 declares.
     """
     principals = _principals()
     wanted = shapes.required_text(node, "node")
+    as_attachment = shapes.flag(download, "download", False)
     row = node_core.get(principals, wanted)
 
     if row.kind == "file":
         # §2.3 budgets this path at one point check. `get` spent it, so the URL
         # is minted from that row rather than reading and checking again.
-        minted = node_core.signed_content_url(row)
+        minted = node_core.signed_content_url(row, as_attachment=as_attachment)
         answer = Response(status=302)
         answer.headers["Location"] = minted["url"]
         answer.headers["Cache-Control"] = "private, no-store"

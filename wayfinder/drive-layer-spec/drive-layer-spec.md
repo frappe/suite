@@ -3074,7 +3074,7 @@ page (§11.4).
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
 | POST | `/nodes/batch/purge` | MANAGE on each node | `{nodes: [...]}` | batch shape | none |
 | PUT | `/nodes/<id>/content` | EDIT on node | `{upload_id, checksum?, content_modified?}` | node shape | 403, 413 |
-| GET | `/nodes/<id>/content` | READ on node | `?format=` for documents | 302 to a signed `/f/` URL, or the streamed export | 403 |
+| GET | `/nodes/<id>/content` | READ on node | `?format=` for documents; `?download=1` saves a file instead of showing it | 302 to a signed `/f/` URL, or the streamed export | 403 |
 | GET | `/nodes/<id>/media` | READ on node | none | `{media: [{node, title, mime, size, url, expires}]}` | 403 |
 | POST | `/nodes/<id>/preview` | EDIT on node | `{image: <base64>, mime}` | `{preview: {...}}` | 403 |
 | GET | `/nodes/<id>/activity` | READ on node | `?limit=&cursor=` | cursor page of activity rows | none |
@@ -3985,13 +3985,21 @@ def signed_url_for_blob(
 	blob: "str | FileBlob",
 	filename: str,
 	expires_in: int = 3600,
+	*,
+	as_attachment: bool = False,
 ) -> str:
-	"""Expiring download URL for a blob, with a caller-chosen filename.
+	"""Expiring URL for a blob, with a caller-chosen filename.
 
 	Prefers the driver's native signed URL, as signed_url does. Falls back to
 	/f/<blob>/<filename>?e=<epoch>&s=<sig>, signed with
 	make_signature(blob.name, filename, expires)."""
 ```
+
+The file shows inline unless it is active content (html, svg, xml, js),
+on every driver: the S3 presigned URL carries the blob's type and an
+`inline` disposition. `as_attachment` makes it download instead; on `/f/`
+it adds `&download=1`, outside the signature, because a download is never
+less safe than inline.
 
 `signed_url(file, expires_in)` becomes
 `signed_url_for_blob(file.blob, file.file_name or file.blob, expires_in)`.

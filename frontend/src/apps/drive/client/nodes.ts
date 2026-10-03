@@ -271,3 +271,19 @@ function defaultDocumentTitle(contentDoctype: string): string {
 export function hasDefaultDocumentTitle(title: string): boolean {
   return title.startsWith(DEFAULT_DOCUMENT_TITLE)
 }
+
+/**
+ * The route that sends a node's bytes (spec §11.2). A file shows in place
+ * unless `download` asks the browser to save it. `revision` changes the URL
+ * after a new version, so the browser fetches the new bytes.
+ */
+export function nodeContentUrl(
+  node: string,
+  { download = false, revision = 0 }: { download?: boolean; revision?: number } = {},
+): string {
+  const query = new URLSearchParams()
+  if (download) query.set('download', '1')
+  if (revision) query.set('v', String(revision))
+  const search = query.size ? `?${query}` : ''
+  return `/api/suite/drive/nodes/${encodeURIComponent(node)}/content${search}`
+}

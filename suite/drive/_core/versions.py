@@ -168,10 +168,11 @@ def version_content_url(
     that are missing, public, or a different size than the row claims, so a
     signature is only ever minted over the exact blob the history recorded.
 
-    LIMITATION: `Drive Node Version` has no MIME column (§3.4) and the version
-    blob was written without one, so on a driver that presigns the object
-    directly the download arrives as `application/octet-stream`. `versions.py`
-    records the same handoff where the blob is written.
+    LIMITATION: `Drive Node Version` has no MIME column (§3.4) and a version
+    blob the sniffer cannot type is stored as `application/octet-stream`. Every
+    driver then serves it with the type the download filename suggests, so a
+    title with no extension downloads as `application/octet-stream`.
+    `versions.py` records the same handoff where the blob is written.
     """
     _validate_seq(seq)
     current = _node(node)
@@ -506,12 +507,9 @@ def _version_bytes(node: frappe._dict, *, spec=None) -> tuple[str, int]:
     # JSON or plain text body lands as `application/octet-stream`. §10.1
     # states the return type only and names no consumer, and §11.2 requires
     # only a 302 to a signed URL, so dropping it conforms.
-    # LIMITATION: the served type is then driver-dependent. On the local
-    # driver `frappe/storage/serve.py` recovers the type from the download
-    # filename. On S3 it does not: `signed_url_for_blob` returns the driver
-    # presigned URL, which sets `ResponseContentDisposition` and no
-    # `ResponseContentType`, and the object was written with no `ContentType`.
-    # A Writer version therefore downloads as octet-stream on S3.
+    # LIMITATION: the served type then comes from the download filename, on
+    # the local driver and on S3 alike (`frappe.storage.blob.served_type`). A
+    # Writer version whose title has no extension downloads as octet-stream.
     # HANDOFF, ticket 16 (§10.1) and ticket 22 (§11.2 version content
     # route). Fixing it needs a §3.4 MIME column or a framework
     # `put_blob(content_type=)`, so neither belongs to this ticket.

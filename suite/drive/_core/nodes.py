@@ -561,8 +561,13 @@ def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_
     return signed_content_url(row, expires_in=expires_in)
 
 
-def signed_content_url(row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECONDS) -> dict:
+def signed_content_url(
+    row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECONDS, as_attachment: bool = False
+) -> dict:
     """Mint the signed URL for a file node the caller is already READ on.
+
+    The file shows in the browser where it safely can. `as_attachment` makes
+    the URL save it instead, on every storage driver.
 
     §2.3 budgets the byte path at one point check. A caller that read the row
     through `get` has spent it, so it mints from that row instead of reading
@@ -582,7 +587,9 @@ def signed_content_url(row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECON
     if not blob or blob.status != "Ready" or not blob.is_private:
         raise DriveConflict(_("The Drive file bytes are unavailable"))
     return {
-        "url": signed_url_for_blob(row.blob, content.download_filename(row.title), expires_in),
+        "url": signed_url_for_blob(
+            row.blob, content.download_filename(row.title), expires_in, as_attachment=as_attachment
+        ),
         "expires": int(time.time()) + expires_in,
     }
 

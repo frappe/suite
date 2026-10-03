@@ -18,6 +18,7 @@ import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
+from urllib.parse import parse_qsl, urlsplit
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -1372,6 +1373,21 @@ class TestByteEgress(DriveHTTPCase):
         self.assertIn("e=", location)
         self.assertIn("s=", location)
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+
+    def test_a_file_opens_in_place_unless_the_caller_asks_to_save_it(self):
+        def served(query):
+            response = self.as_owner("GET", f"{PREFIX}/nodes/{self.file}/content", query=query)
+            self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+            location = urlsplit(response.headers["Location"])
+            return self.drive("GET", location.path, query=dict(parse_qsl(location.query)))
+
+        shown = served({})
+        saved = served({"download": "1"})
+        self.assertEqual(shown.status_code, 200, shown.get_data(as_text=True))
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertTrue(shown.headers["Content-Disposition"].startswith("inline;"), shown.headers)
+        self.assertTrue(saved.headers["Content-Disposition"].startswith("attachment;"), saved.headers)
+        self.assertEqual(saved.get_data(), b"drive bytes")
 
     def test_the_signed_url_expires_within_the_declared_window(self):
         response = self.as_owner("GET", f"{PREFIX}/nodes/{self.file}/content")

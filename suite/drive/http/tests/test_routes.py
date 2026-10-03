@@ -443,7 +443,7 @@ class TestContentAnswer(BoundaryCase):
                 routes.node_core, "signed_content_url", return_value={"url": "/f/b/report.bin?e=1&s=x"}
             ) as minted:
                 answer = routes.node_get_content(node="n1")
-        minted.assert_called_once_with(row)
+        minted.assert_called_once_with(row, as_attachment=False)
         self.assertEqual(answer.status_code, 302)
         self.assertEqual(answer.headers["Location"], "/f/b/report.bin?e=1&s=x")
         self.assertEqual(answer.headers["Cache-Control"], "private, no-store")

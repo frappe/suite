@@ -4999,6 +4999,10 @@
           "format": {
             "title": "Format",
             "type": "string"
+          },
+          "download": {
+            "title": "Download",
+            "type": "boolean"
           }
         },
         "title": "ContentQuery",

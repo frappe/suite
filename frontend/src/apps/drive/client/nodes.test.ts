@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerState } from '@/platform/server-state'
 
-import { children, createDocument, hasDefaultDocumentTitle } from './nodes'
+import { children, createDocument, hasDefaultDocumentTitle, nodeContentUrl } from './nodes'
 
 describe('children descriptors', () => {
   it('resets the cursor when server presentation changes', () => {
@@ -70,5 +70,14 @@ describe('default document title', () => {
     expect(titles).toHaveLength(1)
     expect(hasDefaultDocumentTitle(titles[0] as string)).toBe(true)
     expect(hasDefaultDocumentTitle('Quarterly plan')).toBe(false)
+  })
+})
+
+describe('content URL', () => {
+  it('opens a file in place by default and asks for a save only when told to', () => {
+    expect(nodeContentUrl('a/b')).toBe('/api/suite/drive/nodes/a%2Fb/content')
+    expect(nodeContentUrl('n1', { download: true, revision: 2 })).toBe(
+      '/api/suite/drive/nodes/n1/content?download=1&v=2',
+    )
   })
 })

@@ -5,7 +5,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
-import { children, starNode, unstarNode } from '@/apps/drive/client/nodes'
+import { children, nodeContentUrl, starNode, unstarNode } from '@/apps/drive/client/nodes'
 import { roots } from '@/apps/drive/client/roots'
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { useMutation, useQuery } from '@/platform/server-state'
@@ -34,10 +34,12 @@ const mime = computed(() => file.value.mime ?? '')
 const previewUrl = computed(() => file.value.preview.value?.url ?? '')
 /** Bumped after a new version, so the browser fetches the new bytes. */
 const revision = ref(0)
-const contentUrl = computed(
-  () =>
-    `/api/suite/drive/nodes/${encodeURIComponent(props.session.nodeId)}/content` +
-    (revision.value ? `?v=${revision.value}` : ''),
+const contentUrl = computed(() =>
+  nodeContentUrl(props.session.nodeId, { revision: revision.value }),
+)
+/** Saves the file, where `contentUrl` would open a PDF or a picture in the tab. */
+const downloadUrl = computed(() =>
+  nodeContentUrl(props.session.nodeId, { download: true, revision: revision.value }),
 )
 /** An empty file has no bytes on the server, so there is nothing to download or show. */
 const empty = computed(() => file.value.size.value === 0)
@@ -300,7 +302,7 @@ const source = computed(() =>
           icon="lucide-download"
           tooltip="Download"
           aria-label="Download"
-          :href="contentUrl"
+          :href="downloadUrl"
         />
         <Dropdown :options="menu" align="end">
           <Button
@@ -315,6 +317,7 @@ const source = computed(() =>
     <TextPreview
       v-if="preview.kind === 'text'"
       :src="contentUrl"
+      :download="downloadUrl"
       :size="file.size.value"
       :language="preview.language"
       :title="session.title.value"
@@ -349,7 +352,7 @@ const source = computed(() =>
       v-else
       title="No preview"
       message="Download this file to open it."
-      :download="contentUrl"
+      :download="downloadUrl"
     />
   </div>
 </template>

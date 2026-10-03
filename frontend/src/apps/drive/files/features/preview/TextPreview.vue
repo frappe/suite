@@ -9,8 +9,10 @@ import PreviewFallback from './PreviewFallback.vue'
 import { loadTextContent, TEXT_PREVIEW_LIMIT, type TextContent } from './textContent'
 
 const props = defineProps<{
-  /** Where the file's bytes are. Also the download link. */
+  /** Where the file's bytes are. */
   src: string
+  /** The link that saves the file, offered when the text cannot be shown. */
+  download: string
   size: number
   language: TextLanguage
   title: string
@@ -134,18 +136,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     v-else-if="content?.status === 'too-large'"
     title="Too large to preview"
     :message="`This file is over ${LIMIT_MB} MB. Download it to open it.`"
-    :download="src"
+    :download="download"
   />
   <PreviewFallback
     v-else-if="content?.status === 'unreadable'"
     title="No preview"
     message="This file is not plain text. Download it to open it."
-    :download="src"
+    :download="download"
   />
   <PreviewFallback
     v-else-if="content?.status === 'failed'"
     title="Could not load the preview"
     message="Download this file to open it."
-    :download="src"
+    :download="download"
   />
 </template>

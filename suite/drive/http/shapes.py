@@ -233,6 +233,8 @@ class ReplaceContent(TypedDict):
 class ContentQuery(TypedDict, total=False):
     # An export format a content app offers; a file ignores it.
     format: str
+    # Save a file instead of showing it. A document export always downloads.
+    download: bool
 
 
 class MediaItem(TypedDict):

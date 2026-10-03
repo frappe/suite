@@ -262,6 +262,7 @@ import {
   copyNode,
   moveNode,
   node,
+  nodeContentUrl,
   children as nodesChildren,
   starNode,
   trashNode,
@@ -1440,7 +1441,7 @@ async function download(row: DriveNode) {
     else toast.info('The folder archive is being prepared. Try Download again shortly.')
     return
   }
-  window.location.assign(`/api/suite/drive/nodes/${encodeURIComponent(row.name)}/content`)
+  window.location.assign(nodeContentUrl(row.name, { download: true }))
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return

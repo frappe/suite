@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Component } from 'vue'
 
-import { filePreviewSurface, type DocumentSession } from '@/apps/drive'
+import { filePreviewSurface, nodeContentUrl, type DocumentSession } from '@/apps/drive'
 import type { DocumentTypeDefinition } from '@/platform/contracts'
 
 export const FILE_CONTENT_DOCTYPE = 'File'
@@ -57,9 +57,7 @@ const openingTitle = computed(() =>
   nodeId.value ? historyOpeningTitle(router.options.history.state) : null,
 )
 usePageTitle(() => session.value?.title.value ?? '')
-const downloadUrl = computed(
-  () => `/api/suite/drive/nodes/${encodeURIComponent(nodeId.value)}/content`,
-)
+const downloadUrl = computed(() => nodeContentUrl(nodeId.value, { download: true }))
 const refused = computed(
   () => session.value?.state.value === 'Refused' || (session.value?.access.value.role ?? 0) < 10,
 )

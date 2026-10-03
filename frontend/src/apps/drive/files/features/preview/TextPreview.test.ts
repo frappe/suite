@@ -6,6 +6,7 @@ import { TEXT_PREVIEW_LIMIT } from './textContent'
 import TextPreview from './TextPreview.vue'
 
 const SRC = '/api/suite/drive/nodes/n1/content'
+const DOWNLOAD = '/api/suite/drive/nodes/n1/content?download=1'
 // The editor loads its language on first use, which takes longer than
 // waitFor's 1 s default on a cold module cache.
 const EDITOR = { timeout: 5000 }
@@ -28,7 +29,8 @@ async function mount(props: { size: number; language?: TextLanguage; rendered?: 
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
-    render: () => h(TextPreview, { src: SRC, title: 'file', language: 'plain', ...props }),
+    render: () =>
+      h(TextPreview, { src: SRC, download: DOWNLOAD, title: 'file', language: 'plain', ...props }),
   })
   app.mount(root)
   unmount = () => app.unmount()
@@ -46,7 +48,7 @@ describe('text preview', () => {
     const root = await mount({ size: TEXT_PREVIEW_LIMIT + 1 })
 
     expect(root.textContent).toContain('Too large to preview')
-    expect(root.querySelector('[label="Download"]')?.getAttribute('href')).toBe(SRC)
+    expect(root.querySelector('[label="Download"]')?.getAttribute('href')).toBe(DOWNLOAD)
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -193,7 +195,7 @@ describe('text preview', () => {
     const root = await mount({ size: 4 })
 
     expect(root.textContent).toContain('No preview')
-    expect(root.querySelector('[label="Download"]')?.getAttribute('href')).toBe(SRC)
+    expect(root.querySelector('[label="Download"]')?.getAttribute('href')).toBe(DOWNLOAD)
   })
 
   it('shows the fallback when the file cannot be fetched', async () => {
@@ -201,6 +203,6 @@ describe('text preview', () => {
     const root = await mount({ size: 10 })
 
     expect(root.textContent).toContain('Could not load the preview')
-    expect(root.querySelector('[label="Download"]')?.getAttribute('href')).toBe(SRC)
+    expect(root.querySelector('[label="Download"]')?.getAttribute('href')).toBe(DOWNLOAD)
   })
 })
