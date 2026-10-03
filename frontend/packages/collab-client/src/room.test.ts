@@ -153,6 +153,23 @@ describe('collab room', () => {
     expect(server.rows).toHaveLength(2)
   })
 
+  it('keeps a checkpoint it opened from on the device, so the document reopens offline', async () => {
+    const server = fakeServer()
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'one ')
+    await writer.flush()
+    server.compact()
+    writer.doc.getText('t').insert(4, 'two')
+    await writer.flush()
+    const kept = await device()
+    await (await join(server.endpoints(), { device: kept })).close()
+    server.access.online = false
+
+    const offline = await join(server.endpoints(), { device: kept })
+
+    expect(text(offline)).toBe('one two')
+  })
+
   it('opens from the checkpoint plus the rows after it, and pulls on from there', async () => {
     const server = fakeServer()
     const a = await join(server.endpoints())
