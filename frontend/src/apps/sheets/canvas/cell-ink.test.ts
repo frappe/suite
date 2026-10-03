@@ -6,9 +6,10 @@
 //
 // Dark mode here is the real thing: the tokens the canvas reads are set on
 // <html> to their dark-theme values, exactly as frappe-ui does at runtime.
-import { describe, it, expect, beforeEach } from 'vitest'
-import { createMockCtx, createMockGeo } from './painters/test-utils.js'
+import { beforeEach, describe, expect, it } from 'vitest'
+
 import { createCellPainter } from './painters/cell-painter.js'
+import { createMockCtx, createMockGeo } from './painters/test-utils.js'
 
 const DARK_TOKENS = {
   '--ink-gray-9': '#f5f5f5', // near-white: dark mode's default cell ink
@@ -34,14 +35,22 @@ function setTheme(tokens: Record<string, string>) {
 function inkPaintedFor({ value = '42', fmt = {}, condFmt = null as null | object }) {
   const ctx = createMockCtx()
   const painted: string[] = []
-  ctx.fillText = (text: string) => { painted.push(String(ctx.fillStyle)) }
+  ctx.fillText = (text: string) => {
+    painted.push(String(ctx.fillStyle))
+  }
   const painter = createCellPainter(ctx, createMockGeo())
   painter.drawRegionCells(
-    0, 0, 0, 0,
-    () => value,               // getVal
-    () => fmt,                 // getFormat
-    null, null, null, null,    // merge, slave, comment, validation
-    () => condFmt,             // getCondFormat
+    0,
+    0,
+    0,
+    0,
+    () => value, // getVal
+    () => fmt, // getFormat
+    null,
+    null,
+    null,
+    null, // merge, slave, comment, validation
+    () => condFmt, // getCondFormat
   )
   expect(painted).toHaveLength(1)
   return painted[0]

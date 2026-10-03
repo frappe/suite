@@ -55,14 +55,19 @@ export async function packSheetChunked(snap, { yieldEvery = 50000 } = {}) {
     const ids = Object.keys(cells)
     for (let k = 0; k < ids.length; k++) {
       _packCellInto(rows, ids[k], cells[ids[k]])
-      if (++since >= yieldEvery) { since = 0; await _tick() }
+      if (++since >= yieldEvery) {
+        since = 0
+        await _tick()
+      }
     }
     out[name] = { rows }
   }
   return { v: PACK_VERSION, current: (snap && snap.current) || 'Sheet1', sheets: out }
 }
 
-function _tick() { return new Promise(r => setTimeout(r, 0)) }
+function _tick() {
+  return new Promise((r) => setTimeout(r, 0))
+}
 
 // Unpack the compact wire shape back to `{ sheets, current }`. Anything that
 // isn't a version-2 envelope (legacy snapshots, the empty-default fallback) is
@@ -71,7 +76,8 @@ export function unpackSheet(data) {
   if (!data || typeof data !== 'object' || data.v !== PACK_VERSION) return data
   const sheets = {}
   const packed = data.sheets || {}
-  for (const name of Object.keys(packed)) sheets[name] = _unpackRows(packed[name] && packed[name].rows)
+  for (const name of Object.keys(packed))
+    sheets[name] = _unpackRows(packed[name] && packed[name].rows)
   return { sheets, current: data.current || 'Sheet1' }
 }
 
@@ -86,8 +92,9 @@ export function boundsOf(data) {
   const packed = data.sheets || {}
   for (const name of Object.keys(packed)) {
     const rows = packed[name] && packed[name].rows
-    let maxRow = 0, maxCol = 0
-    for (const r in (rows || {})) {
+    let maxRow = 0,
+      maxCol = 0
+    for (const r in rows || {}) {
       const arr = rows[r]
       if (!arr) continue
       const row = +r
@@ -140,7 +147,8 @@ function _unpackRows(rows) {
 // cell sheets, where `parseCellId`'s regex + split is ~3x slower. Returns
 // 0-based { row, col }; row/col are NaN for malformed ids and skipped above.
 function _parseId(id) {
-  let i = 0, col = 0
+  let i = 0,
+    col = 0
   for (; i < id.length; i++) {
     const cc = id.charCodeAt(i)
     if (cc < 65 || cc > 90) break // first non-A-Z char starts the row digits

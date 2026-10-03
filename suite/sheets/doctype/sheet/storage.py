@@ -1,7 +1,7 @@
 """Gzip + base64 storage encoding for the Sheet ``sheets_data`` field.
 
 Spreadsheet JSON is highly compressible (repeated format keys, sheet names,
-empty-cell padding), so compressing at rest gives roughly 5-10× more effective
+empty-cell padding), so compressing at rest gives roughly 5-10x more effective
 headroom for the same row footprint without changing the schema or the client
 contract — the API still speaks plain JSON in both directions.
 
@@ -87,8 +87,8 @@ def _bounded_decompress(b64_payload: str) -> bytes:
     decompressed output exceeds ``MAX_SHEETS_DATA_BYTES``. Imported lazily
     to avoid pulling `frappe` into pure-storage callers (tests, patches).
     """
-    # Reject oversized base64 input up front — len(b64) ≈ 4/3 × len(decoded),
-    # so a string longer than 4/3 × _MAX_COMPRESSED_BYTES can't fit.
+    # Reject oversized base64 input up front — len(b64) ≈ 4/3 * len(decoded),
+    # so a string longer than 4/3 * _MAX_COMPRESSED_BYTES can't fit.
     if not isinstance(b64_payload, str) or len(b64_payload) > _MAX_COMPRESSED_BYTES * 2:
         _throw_bomb()
     try:

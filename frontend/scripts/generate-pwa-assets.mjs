@@ -9,7 +9,7 @@
  * iOS draws nothing of its own for an installed PWA's launch — it only blits
  * an apple-touch-startup-image whose media query matches the device exactly
  * (see setPwaTags in src/router/index.ts), so every device in
- * src/router/pwa-splash-devices.json needs one file per orientation.
+ * src/platform/pwa/splash-devices.json needs one file per orientation.
  *
  * Renders with headless Chrome, which is what pwa-asset-generator does via
  * puppeteer — done here directly so regenerating does not pull a ~200MB
@@ -34,7 +34,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SCALE = Number(argValue('--scale') ?? 0.3)
 const BACKGROUND = argValue('--background') ?? '#ffffff'
 
-const LOGO = path.join(root, 'src/assets/app-logos/suite.svg')
+const LOGO = path.join(root, 'src/platform/brand/suite.svg')
 const OUT_DIR = path.join(root, 'public/pwa/suite')
 const SPLASH_DIR = path.join(OUT_DIR, 'splash')
 
@@ -46,7 +46,7 @@ const ICONS = [
   { name: 'icon-192.maskable.png', size: 192 },
   { name: 'apple-icon-180.png', size: 180 },
 ]
-const DEVICES = JSON.parse(fs.readFileSync(path.join(root, 'src/router/pwa-splash-devices.json')))
+const DEVICES = JSON.parse(fs.readFileSync(path.join(root, 'src/platform/pwa/splash-devices.json')))
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 function argValue(flag) {
@@ -63,7 +63,11 @@ function splashCanvases() {
     const [w, h] = [width * dpr, height * dpr]
     const logo = Math.round(Math.min(w, h) * SCALE)
     const canvas = (file, width, height, orientation) => ({
-      file: path.join(SPLASH_DIR, file), width, height, logo, background: BACKGROUND,
+      file: path.join(SPLASH_DIR, file),
+      width,
+      height,
+      logo,
+      background: BACKGROUND,
       label: `${device} (${orientation})`,
     })
     return [
@@ -75,8 +79,12 @@ function splashCanvases() {
 
 function iconCanvases(brandColor) {
   return ICONS.map(({ name, size }) => ({
-    file: path.join(OUT_DIR, name), width: size, height: size, logo: size,
-    background: brandColor, label: 'icon',
+    file: path.join(OUT_DIR, name),
+    width: size,
+    height: size,
+    logo: size,
+    background: brandColor,
+    label: 'icon',
   }))
 }
 
@@ -167,7 +175,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pwa-assets-'))
 fs.mkdirSync(SPLASH_DIR, { recursive: true })
 
 const all = [...iconCanvases(brandColorOf(svg)), ...splashCanvases()]
-console.log(`Rendering ${ICONS.length} icons and ${all.length - ICONS.length} launch screens at scale ${SCALE}...`)
+console.log(
+  `Rendering ${ICONS.length} icons and ${all.length - ICONS.length} launch screens at scale ${SCALE}...`,
+)
 try {
   for (const canvas of all) {
     await render(canvas, svg, tmp)

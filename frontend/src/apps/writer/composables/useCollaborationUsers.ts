@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-type CollaborationUser = Record<string, unknown> & {
+export type CollaborationUser = Record<string, unknown> & {
   clientId: number
   id?: string
   name?: string
@@ -9,30 +9,41 @@ type CollaborationUser = Record<string, unknown> & {
 }
 
 type CollaborationAwareness = {
-  getStates: () => Map<
-    number,
-    { user?: Record<string, unknown> } | null | undefined
-  >
+  /** This connection's own client, left out of `peers`. */
+  clientID: number
+  getStates: () => Map<number, { user?: Record<string, unknown> } | null | undefined>
   on: (event: 'update', listener: () => void) => void
   off: (event: 'update', listener: () => void) => void
 }
 
+/**
+ * The other people editing this document. This connection is left out, and a
+ * person connected from several tabs is listed once.
+ */
 export function useCollaborationUsers(awareness: CollaborationAwareness) {
-  const users = ref<CollaborationUser[]>([])
+  const peers = ref<CollaborationUser[]>([])
 
-  const syncUsers = () => {
-    users.value = Array.from(awareness.getStates(), ([clientId, state]) =>
-      state?.user ? { clientId, ...state.user } : null,
-    ).filter((user): user is CollaborationUser => user !== null)
+  const syncPeers = () => {
+    const seen = new Set<unknown>()
+    const next: CollaborationUser[] = []
+    for (const [clientId, state] of awareness.getStates()) {
+      if (clientId === awareness.clientID || !state?.user) continue
+      const user: CollaborationUser = { clientId, ...state.user }
+      const key = user.id ?? clientId
+      if (seen.has(key)) continue
+      seen.add(key)
+      next.push(user)
+    }
+    peers.value = next
   }
 
-  awareness.on('update', syncUsers)
-  syncUsers()
+  awareness.on('update', syncPeers)
+  syncPeers()
 
   const cleanup = () => {
-    awareness.off('update', syncUsers)
-    users.value = []
+    awareness.off('update', syncPeers)
+    peers.value = []
   }
 
-  return { users, cleanup }
+  return { peers, cleanup }
 }

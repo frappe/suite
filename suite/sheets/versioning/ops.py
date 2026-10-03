@@ -1,25 +1,22 @@
 """Op-log reads.
 
-Two access patterns:
+`for_cell(sheet, cell_id)` answers every change to one cell, newest first, for
+the cell-history popover.
 
-  * `between(sheet, from_seq, to_seq)` — what happened between two snapshots.
-    Powers the snapshot-expansion view in the history panel.
-
-  * `for_cell(sheet, cell_id)` — every change to a specific cell, newest first.
-    Powers the cell-history popover.
-
-The op log is canonical: deleting ops loses information that snapshots
-cannot recover. The truncation job in `tasks.py` is the only writer
-that ever removes rows, and it preserves the invariant
-``oldest_op.seq >= oldest_snapshot.seq``.
+The op log is canonical: deleting ops loses information that versions cannot
+recover. The truncation job in `tasks.py` is the only writer that ever removes
+rows.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import frappe
+from frappe.utils import get_system_timezone
 
 # Cell ids are spreadsheet-style refs (``A1`` … ``AB123``). Bounding the format
 # stops a caller from passing wildcards / quote-escapes into the SQL `LIKE`
@@ -27,22 +24,6 @@ import frappe
 # unconstrained pattern would still let a probe like ``%`` match every row
 # and scan the table.
 _CELL_ID_RE = re.compile(r"^[A-Z]{1,3}\d{1,7}$")
-
-
-def between(sheet: str, from_seq: int, to_seq: int, limit: int = 200) -> list[dict]:
-    """Return ops in the half-open interval (from_seq, to_seq] ordered ascending."""
-    frappe.has_permission("Sheet", doc=sheet, throw=True)
-    if from_seq >= to_seq:
-        return []
-    rows = frappe.db.sql(
-        "SELECT name, seq, sub_sheet, op_type, summary, actor, creation "
-        "FROM `tabSheet Op Log` "
-        "WHERE sheet = %(sheet)s AND seq > %(from_seq)s AND seq <= %(to_seq)s "
-        "ORDER BY seq ASC LIMIT %(limit)s",
-        {"sheet": sheet, "from_seq": from_seq, "to_seq": to_seq, "limit": limit},
-        as_dict=True,
-    )
-    return [_serialise(r) for r in rows]
 
 
 def for_cell(sheet: str, cell_id: str, sub_sheet: str | None = None, limit: int = 50) -> list[dict]:
@@ -81,18 +62,6 @@ def for_cell(sheet: str, cell_id: str, sub_sheet: str | None = None, limit: int 
     return out
 
 
-def _serialise(row: dict) -> dict:
-    return {
-        "id": row["name"],
-        "seq": int(row.get("seq") or 0),
-        "sub_sheet": row.get("sub_sheet"),
-        "op_type": row.get("op_type"),
-        "summary": row.get("summary"),
-        "actor": row.get("actor"),
-        "creation": row.get("creation").isoformat() if row.get("creation") else None,
-    }
-
-
 def _serialise_cell_op(row: dict, cell_id: str) -> dict:
     before = _safe_json(row.get("before_json")) or {}
     after = _safe_json(row.get("after_json")) or {}
@@ -103,10 +72,25 @@ def _serialise_cell_op(row: dict, cell_id: str) -> dict:
         "op_type": row.get("op_type"),
         "summary": row.get("summary"),
         "actor": row.get("actor"),
-        "creation": row.get("creation").isoformat() if row.get("creation") else None,
+        "creation": _wire_time(row.get("creation")),
         "before": before.get(cell_id) if isinstance(before, dict) else None,
         "after": after.get(cell_id) if isinstance(after, dict) else None,
     }
+
+
+def _wire_time(value: datetime | None) -> str | None:
+    """A stored stamp as RFC 3339 in UTC (`2026-10-03T06:30:00Z`).
+
+    The column is naive in the site's zone. Published that way, a browser in
+    another zone reads it as its own local time and shows the edit hours off.
+    This is the same rule Drive's wire follows (`suite/drive/_core/times.py`),
+    so the popover parses both with one `new Date()`.
+    """
+    if value is None:
+        return None
+    return (
+        value.replace(tzinfo=ZoneInfo(get_system_timezone())).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
 
 
 def _safe_json(value):
@@ -114,5 +98,5 @@ def _safe_json(value):
         return None
     try:
         return json.loads(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

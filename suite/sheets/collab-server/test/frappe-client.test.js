@@ -33,7 +33,7 @@ describe('checkAccess', () => {
 
 	it('forwards sid as a Cookie header and returns the unwrapped message', async () => {
 		const calls = stubFetch(() => jsonOk({ message: { canRead: true, canWrite: true } }))
-		const out = await checkAccess('SID-XYZ', 'SH-1')
+		const out = await checkAccess({ sid: 'SID-XYZ', links: [] }, 'SH-1')
 
 		assert.equal(out.canRead, true)
 		assert.equal(out.canWrite, true)
@@ -43,18 +43,40 @@ describe('checkAccess', () => {
 			'http://localhost:8000/api/method/suite.sheets.collab.check_collab_access',
 		)
 		assert.equal(calls[0].init.headers.Cookie, 'sid=SID-XYZ')
-		// No shared secret on the user-auth call.
+		// No shared secret on the user-auth call: it must carry the caller's
+		// own authority and nothing of the server's.
 		assert.equal(calls[0].init.headers['X-Collab-Secret'], undefined)
+		// No link header when the caller presented no link.
+		assert.equal(calls[0].init.headers['X-Drive-Links'], undefined)
 		assert.deepEqual(JSON.parse(calls[0].init.body), { name: 'SH-1' })
 	})
 
-	it('refuses to call without a sid (would silently turn into a guest hit)', async () => {
-		await assert.rejects(() => checkAccess('', 'SH-1'), /missing sid/)
+	it('forwards link credentials as one comma-separated X-Drive-Links header', async () => {
+		const calls = stubFetch(() => jsonOk({ message: { canRead: true, canWrite: false } }))
+		await checkAccess({ sid: 'SID', links: ['aaa', 'bbb.9.cc'] }, 'SH-1')
+
+		assert.equal(calls[0].init.headers['X-Drive-Links'], 'aaa,bbb.9.cc')
 	})
 
-	it('throws a helpful error on non-2xx', async () => {
-		stubFetch(() => new Response('Internal Server Error', { status: 500 }))
-		await assert.rejects(() => checkAccess('SID', 'SH-1'), /500/)
+	it('sends the link header with no cookie for a Guest holding only a link', async () => {
+		const calls = stubFetch(() => jsonOk({ message: { canRead: true, canWrite: false } }))
+		await checkAccess({ sid: '', links: ['aaa'] }, 'SH-1')
+
+		assert.equal(calls[0].init.headers.Cookie, undefined)
+		assert.equal(calls[0].init.headers['X-Drive-Links'], 'aaa')
+	})
+
+	it('refuses to call with no credentials at all (a silent guest hit)', async () => {
+		await assert.rejects(() => checkAccess({ sid: '', links: [] }, 'SH-1'), /no credentials/)
+		await assert.rejects(() => checkAccess(undefined, 'SH-1'), /no credentials/)
+	})
+
+	it('throws a helpful error on non-2xx, which is how the 20-link refusal arrives', async () => {
+		stubFetch(() => new Response('X-Drive-Links accepts at most 20 items', { status: 417 }))
+		await assert.rejects(
+			() => checkAccess({ sid: 'SID', links: [] }, 'SH-1'),
+			/417 X-Drive-Links accepts at most 20 items/,
+		)
 	})
 })
 

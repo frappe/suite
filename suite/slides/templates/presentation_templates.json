@@ -1,0 +1,96 @@
+[
+ {
+  "title": "Light",
+  "slides": [
+   {
+    "background": "#FFFFFFFF",
+    "elements": "[]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#FFFFFFFF",
+    "elements": "[\n  {\n    \"id\": \"h3r34dybv\",\n    \"left\": 480.16796875,\n    \"top\": 270,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: center;\\\"><span style=\\\"color: #000000FF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#FFFFFFFF",
+    "elements": "[\n  {\n    \"id\": \"nllnho6h3\",\n    \"left\": 480.16796875,\n    \"top\": 237,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: center;\\\"><span style=\\\"color: #000000FF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"xydpcmj98\",\n    \"left\": 480.16796875,\n    \"top\": 329,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: center;\\\"><span style=\\\"color: #7C7C7CFF; font-size: 25px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Subtitle</span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"subtitle\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#FFFFFFFF",
+    "elements": "[\n  {\n    \"id\": \"srul7p13r\",\n    \"left\": 480.16796875,\n    \"top\": 270,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #000000FF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#FFFFFFFF",
+    "elements": "[\n  {\n    \"id\": \"rw0xb4gg5\",\n    \"left\": 480.16796875,\n    \"top\": 237,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #000000FF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"7vfysifiq\",\n    \"left\": 480.16796875,\n    \"top\": 329,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #7C7C7CFF; font-size: 25px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Subtitle</span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"subtitle\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#FFFFFFFF",
+    "elements": "[\n  {\n    \"id\": \"2tiuz9smg\",\n    \"left\": 480.16796875,\n    \"top\": 128.003,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #000000FF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"kejhn15hz\",\n    \"left\": 480.16796875,\n    \"top\": 276.63552352412535,\n    \"type\": \"text\",\n    \"content\": \"<ul><li style=\\\"font-size: 24px; font-family: Inter; color: #000000FF; opacity: 1;\\\"><p style=\\\"text-align: left;\\\"><span style=\\\"color: #000000FF; font-size: 24px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Insert first point here</span></p></li><li style=\\\"font-size: 24px; font-family: Inter; color: #000000FF; opacity: 1;\\\"><p style=\\\"text-align: left;\\\"><span style=\\\"color: #000000FF; font-size: 24px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Insert second point here</span></p></li><li style=\\\"font-size: 24px; font-family: Inter; color: #000000FF; opacity: 1;\\\"><p style=\\\"text-align: left;\\\"><span style=\\\"color: #000000FF; font-size: 24px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Insert third point here</span></p></li></ul>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#FFFFFFFF",
+    "elements": "[\n  {\n    \"id\": \"ovrz4irjx\",\n    \"left\": 240.14609432305653,\n    \"top\": 270,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #000000FF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 314.29218864611306,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"fw89mlzl4\",\n    \"width\": 480,\n    \"height\": 542,\n    \"left\": 480,\n    \"top\": 0,\n    \"opacity\": 100,\n    \"type\": \"image\",\n    \"src\": \"/assets/suite/slides/frontend/images/layouts/placeholder.webp\",\n    \"attachmentName\": \"8b16800f3a\",\n    \"borderStyle\": \"none\",\n    \"borderWidth\": 0,\n    \"borderRadius\": 0,\n    \"borderColor\": \"#000000FF\",\n    \"shadowColor\": \"#7C7C7CFF\",\n    \"shadowOpacity\": 100,\n    \"shadowBlur\": 0,\n    \"shadowOffset\": 0,\n    \"shadowAngle\": 45,\n    \"useTemplateDimensions\": true\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   }
+  ]
+ },
+ {
+  "title": "Dark",
+  "slides": [
+   {
+    "background": "#000000FF",
+    "elements": "[]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#000000FF",
+    "elements": "[\n  {\n    \"id\": \"h3r34dybv\",\n    \"left\": 480.16796875,\n    \"top\": 270,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: center;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#000000FF",
+    "elements": "[\n  {\n    \"id\": \"nllnho6h3\",\n    \"left\": 480.16796875,\n    \"top\": 237,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: center;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"xydpcmj98\",\n    \"left\": 480.16796875,\n    \"top\": 329,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: center;\\\"><span style=\\\"color: #808080FF; font-size: 25px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Subtitle</span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"subtitle\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#000000FF",
+    "elements": "[\n  {\n    \"id\": \"srul7p13r\",\n    \"left\": 480.16796875,\n    \"top\": 270,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#000000FF",
+    "elements": "[\n  {\n    \"id\": \"rw0xb4gg5\",\n    \"left\": 480.16796875,\n    \"top\": 237,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"7vfysifiq\",\n    \"left\": 480.16796875,\n    \"top\": 329,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #808080FF; font-size: 25px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Subtitle</span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"subtitle\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#000000FF",
+    "elements": "[\n  {\n    \"id\": \"2tiuz9smg\",\n    \"left\": 480.16796875,\n    \"top\": 128.003,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"kejhn15hz\",\n    \"left\": 480.16796875,\n    \"top\": 276.63552352412535,\n    \"type\": \"text\",\n    \"content\": \"<ul><li style=\\\"font-size: 24px; font-family: Inter; color: #FFFFFFFF; opacity: 1;\\\"><p style=\\\"text-align: left;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 24px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Insert first point here</span></p></li><li style=\\\"font-size: 24px; font-family: Inter; color: #FFFFFFFF; opacity: 1;\\\"><p style=\\\"text-align: left;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 24px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Insert second point here</span></p></li><li style=\\\"font-size: 24px; font-family: Inter; color: #FFFFFFFF; opacity: 1;\\\"><p style=\\\"text-align: left;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 24px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\">Insert third point here</span></p></li></ul>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"width\": 794.3359375,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   },
+   {
+    "background": "#000000FF",
+    "elements": "[\n  {\n    \"id\": \"ovrz4irjx\",\n    \"left\": 240.14609432305653,\n    \"top\": 270,\n    \"type\": \"text\",\n    \"content\": \"<p style=\\\"text-align: left;\\\"><span style=\\\"color: #FFFFFFFF; font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\\\"><strong>Title</strong></span></p>\",\n    \"editorMetadata\": {\n      \"lineHeight\": 1.5\n    },\n    \"defaultStyle\": \"title\",\n    \"width\": 314.29218864611306,\n    \"transform\": \"translate(-50%, -50%)\",\n\t\"transformOrigin\": \"center center\"\n  },\n  {\n    \"id\": \"fw89mlzl4\",\n    \"width\": 480,\n    \"height\": 542,\n    \"left\": 480,\n    \"top\": 0,\n    \"opacity\": 100,\n    \"type\": \"image\",\n    \"src\": \"/assets/suite/slides/frontend/images/layouts/placeholder.webp\",\n    \"attachmentName\": \"8b16800f3a\",\n    \"borderStyle\": \"none\",\n    \"borderWidth\": 0,\n    \"borderRadius\": 0,\n    \"borderColor\": \"#000000FF\",\n    \"shadowColor\": \"#7C7C7CFF\",\n    \"shadowOpacity\": 100,\n    \"shadowBlur\": 0,\n    \"shadowOffset\": 0,\n    \"shadowAngle\": 45,\n    \"useTemplateDimensions\": true\n  }\n]",
+    "transition": "None",
+    "transition_duration": "0"
+   }
+  ]
+ }
+]

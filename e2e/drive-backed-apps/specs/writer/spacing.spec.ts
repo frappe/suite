@@ -18,12 +18,12 @@ const NATURAL_LINE_HEIGHT = 1.2;
 function spacingInputs(page: Page) {
 	return page
 		.locator('[data-slot="content"]')
-		.filter({ has: page.getByText("Paragraph Spacing") })
+		.filter({ has: page.getByText("Paragraph spacing") })
 		.getByRole("spinbutton");
 }
 
 async function openSpacingPopover(page: Page) {
-	await page.getByRole("button", { name: "Custom Spacing" }).click();
+	await page.getByRole("button", { name: "Custom spacing" }).click();
 	await expect(spacingInputs(page)).toHaveCount(3);
 }
 
@@ -61,12 +61,12 @@ test("the Custom Spacing button has a tooltip and still opens the popover", asyn
 	);
 	await openWriterDocument(page, file.name);
 
-	const button = page.getByRole("button", { name: "Custom Spacing" });
+	const button = page.getByRole("button", { name: "Custom spacing" });
 	await button.hover();
 	// reka's role="tooltip" node is an sr-only, aria-hidden span, so assert on the
 	// visible bubble the popper renders instead.
 	await expect(
-		page.locator("[data-reka-popper-content-wrapper]", { hasText: "Custom Spacing" }),
+		page.locator("[data-reka-popper-content-wrapper]", { hasText: "Custom spacing" }),
 	).toBeVisible();
 
 	await button.click();

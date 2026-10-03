@@ -1,9 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import {
-  parseFrappeDatetime,
-  recencyBucket,
-  groupSheetsByRecency,
-} from './recency-groups.js'
+import { describe, expect, it } from 'vitest'
+
+import { groupSheetsByRecency, parseFrappeDatetime, recencyBucket } from './recency-groups.js'
 
 // Fixed reference point: a Wednesday mid-afternoon.
 const NOW = new Date('2026-07-22T15:00:00')
@@ -49,14 +46,11 @@ describe('groupSheetsByRecency', () => {
       row('c', '2026-07-20 09:00:00'), // Previous 7 days
     ]
     const groups = groupSheetsByRecency(rows, NOW)
-    expect(groups.map(g => g.group)).toEqual(['Today', 'Previous 7 days', 'Earlier'])
+    expect(groups.map((g) => g.group)).toEqual(['Today', 'Previous 7 days', 'Earlier'])
   })
 
   it('preserves row order within a bucket and matches the ListView shape', () => {
-    const rows = [
-      row('a', '2026-07-22 12:00:00'),
-      row('b', '2026-07-22 09:00:00'),
-    ]
+    const rows = [row('a', '2026-07-22 12:00:00'), row('b', '2026-07-22 09:00:00')]
     const groups = groupSheetsByRecency(rows, NOW)
     expect(groups).toHaveLength(1)
     for (const g of groups) {
@@ -64,7 +58,7 @@ describe('groupSheetsByRecency', () => {
       expect(typeof g.group).toBe('string')
       expect(Array.isArray(g.rows)).toBe(true)
     }
-    expect(groups[0].rows.map(r => r.name)).toEqual(['a', 'b'])
+    expect(groups[0].rows.map((r) => r.name)).toEqual(['a', 'b'])
   })
 
   it('carries collapsed state forward from prevGroups by label', () => {
@@ -74,8 +68,8 @@ describe('groupSheetsByRecency', () => {
     ]
     const prev = [{ group: 'Previous 7 days', collapsed: true, rows: [] }]
     const groups = groupSheetsByRecency(rows, NOW, prev)
-    expect(groups.find(g => g.group === 'Today').collapsed).toBe(false)
-    expect(groups.find(g => g.group === 'Previous 7 days').collapsed).toBe(true)
+    expect(groups.find((g) => g.group === 'Today').collapsed).toBe(false)
+    expect(groups.find((g) => g.group === 'Previous 7 days').collapsed).toBe(true)
   })
 
   it('returns an empty array for no rows', () => {

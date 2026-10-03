@@ -1,8 +1,7 @@
-import { computed, inject, provide, type ComputedRef, type InjectionKey } from 'vue'
 import { createResource } from 'frappe-ui'
+import { computed, inject, provide, type ComputedRef, type InjectionKey } from 'vue'
 
 import { deriveMailboxIds, userStore, type MailboxRole } from '@/apps/mail/stores/user'
-
 import type { UserAccount } from '@/apps/mail/types'
 
 /**
@@ -18,77 +17,75 @@ import type { UserAccount } from '@/apps/mail/types'
  * and identities don't need the poll-fresh counts the active list does.
  */
 interface AccountScope {
-	accountId: ComputedRef<string>
-	/** The account's record off the user resource (default_outgoing_email, block_remote_images, …). */
-	account: ComputedRef<UserAccount | undefined>
-	mailboxes: ComputedRef<ReturnType<typeof createResource>>
-	mailboxIds: ComputedRef<Record<MailboxRole | 'screener', string>>
-	identities: ComputedRef<ReturnType<typeof createResource>>
-	screenedAddresses: ComputedRef<ReturnType<typeof createResource>>
+  accountId: ComputedRef<string>
+  /** The account's record off the user resource (default_outgoing_email, block_remote_images, …). */
+  account: ComputedRef<UserAccount | undefined>
+  mailboxes: ComputedRef<ReturnType<typeof createResource>>
+  mailboxIds: ComputedRef<Record<MailboxRole | 'screener', string>>
+  identities: ComputedRef<ReturnType<typeof createResource>>
+  screenedAddresses: ComputedRef<ReturnType<typeof createResource>>
 }
 
 const scopedResources = new Map<
-	string,
-	Record<'mailboxes' | 'identities' | 'screenedAddresses', ReturnType<typeof createResource>>
+  string,
+  Record<'mailboxes' | 'identities' | 'screenedAddresses', ReturnType<typeof createResource>>
 >()
 
 const resourcesFor = (account: string) => {
-	if (!scopedResources.has(account)) {
-		scopedResources.set(account, {
-			mailboxes: createResource({
-				url: 'suite.mail.api.mail.get_mailboxes',
-				params: { account },
-				cache: ['mailboxes', account],
-				auto: true,
-			}),
-			identities: createResource({
-				url: 'suite.mail.api.account.get_identities',
-				params: { account },
-				cache: ['identities', account],
-				auto: true,
-			}),
-			screenedAddresses: createResource({
-				url: 'suite.mail.api.mail.get_screened_addresses',
-				params: { account },
-				cache: ['screenedAddresses', account],
-				auto: true,
-			}),
-		})
-	}
-	return scopedResources.get(account)!
+  if (!scopedResources.has(account)) {
+    scopedResources.set(account, {
+      mailboxes: createResource({
+        url: 'suite.mail.api.mail.get_mailboxes',
+        params: { account },
+        cache: ['mailboxes', account],
+        auto: true,
+      }),
+      identities: createResource({
+        url: 'suite.mail.api.account.get_identities',
+        params: { account },
+        cache: ['identities', account],
+        auto: true,
+      }),
+      screenedAddresses: createResource({
+        url: 'suite.mail.api.mail.get_screened_addresses',
+        params: { account },
+        cache: ['screenedAddresses', account],
+        auto: true,
+      }),
+    })
+  }
+  return scopedResources.get(account)!
 }
 
 export const useAccountScope = (owner?: () => string | undefined): AccountScope => {
-	const store = userStore()
-	const accountId = computed(() => owner?.() || store.accountId)
-	const scoped = computed(() =>
-		accountId.value && accountId.value !== store.accountId
-			? resourcesFor(accountId.value)
-			: null,
-	)
-	return {
-		accountId,
-		account: computed(() =>
-			store.userResource?.data?.accounts?.find((a: UserAccount) => a.id === accountId.value),
-		),
-		mailboxes: computed(() => scoped.value?.mailboxes ?? store.mailboxes),
-		identities: computed(() => scoped.value?.identities ?? store.identities),
-		screenedAddresses: computed(() => scoped.value?.screenedAddresses ?? store.screenedAddresses),
-		mailboxIds: computed(() =>
-			scoped.value ? deriveMailboxIds(scoped.value.mailboxes.data) : store.mailboxIds,
-		),
-	}
+  const store = userStore()
+  const accountId = computed(() => owner?.() || store.accountId)
+  const scoped = computed(() =>
+    accountId.value && accountId.value !== store.accountId ? resourcesFor(accountId.value) : null,
+  )
+  return {
+    accountId,
+    account: computed(() =>
+      store.userResource?.data?.accounts?.find((a: UserAccount) => a.id === accountId.value),
+    ),
+    mailboxes: computed(() => scoped.value?.mailboxes ?? store.mailboxes),
+    identities: computed(() => scoped.value?.identities ?? store.identities),
+    screenedAddresses: computed(() => scoped.value?.screenedAddresses ?? store.screenedAddresses),
+    mailboxIds: computed(() =>
+      scoped.value ? deriveMailboxIds(scoped.value.mailboxes.data) : store.mailboxIds,
+    ),
+  }
 }
 
 const ACCOUNT_SCOPE: InjectionKey<AccountScope> = Symbol('mail-account-scope')
 
 /** Called by the pane root (MailThread); everything below it resolves this scope. */
 export const provideAccountScope = (owner: () => string | undefined): AccountScope => {
-	const scope = useAccountScope(owner)
-	provide(ACCOUNT_SCOPE, scope)
-	return scope
+  const scope = useAccountScope(owner)
+  provide(ACCOUNT_SCOPE, scope)
+  return scope
 }
 
 /** The enclosing pane's scope, or the active account for components outside one. */
 export const injectAccountScope = (): AccountScope =>
-	inject(ACCOUNT_SCOPE, () => useAccountScope(), true)
+  inject(ACCOUNT_SCOPE, () => useAccountScope(), true)

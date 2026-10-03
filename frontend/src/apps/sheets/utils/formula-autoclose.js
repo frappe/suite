@@ -11,8 +11,8 @@ export function autoCloseKey(key, value, selStart, selEnd) {
   if (!value.startsWith('=')) return null
 
   if (key === '(') {
-    const inner = value.slice(selStart, selEnd)   // wrap any selection
-    const next  = value.slice(0, selStart) + '(' + inner + ')' + value.slice(selEnd)
+    const inner = value.slice(selStart, selEnd) // wrap any selection
+    const next = value.slice(0, selStart) + '(' + inner + ')' + value.slice(selEnd)
     // With a selection, drop the caret past the wrapped text (after the new
     // `)`) so typing continues the call — matching Google Sheets. With no
     // selection, leave it inside the fresh pair to type the first argument.

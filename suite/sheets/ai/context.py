@@ -67,7 +67,7 @@ def _infer_type(values: list) -> str:
         seen = True
         if isinstance(v, str) and v.startswith("="):
             return "formula"
-        if isinstance(v, (int, float)):
+        if isinstance(v, int | float):
             continue
         if isinstance(v, str):
             if re.match(r"^-?\d+(\.\d+)?$", v.strip()):

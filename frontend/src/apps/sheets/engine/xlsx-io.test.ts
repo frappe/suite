@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
+
 import {
-  numFmtToZ, zToNumFmt, toXlsxCell, fromXlsxCell, mergesToXlsx, mergesFromXlsx,
+  fromXlsxCell,
+  mergesFromXlsx,
+  mergesToXlsx,
+  numFmtToZ,
+  toXlsxCell,
+  zToNumFmt,
 } from './xlsx-io.js'
 
 describe('numFmtToZ — our format → Excel z', () => {
@@ -41,9 +47,23 @@ describe('zToNumFmt — Excel z → our format', () => {
 })
 
 describe('format round-trips (our → z → our) are lossless', () => {
-  const cases = ['text', 'number', 'number:3', 'percentage', 'percentage:0',
-    'currency:USD:2', 'currency:INR:0', 'currency:CAD:2', 'currency:AUD:0', 'currency:JPY:0',
-    'date:dmy', 'date:ymd', 'time:hms', 'datetime:ymd_hms', 'custom:#,##0.00 "kg"']
+  const cases = [
+    'text',
+    'number',
+    'number:3',
+    'percentage',
+    'percentage:0',
+    'currency:USD:2',
+    'currency:INR:0',
+    'currency:CAD:2',
+    'currency:AUD:0',
+    'currency:JPY:0',
+    'date:dmy',
+    'date:ymd',
+    'time:hms',
+    'datetime:ymd_hms',
+    'custom:#,##0.00 "kg"',
+  ]
   for (const f of cases) {
     it(f, () => expect(zToNumFmt(numFmtToZ(f))).toBe(f))
   }
@@ -81,7 +101,11 @@ describe('toXlsxCell — engine → SheetJS', () => {
     expect(toXlsxCell('=SUM(A1:A2)', 7, '')).toEqual({ t: 'n', v: 7, f: 'SUM(A1:A2)' })
   })
   it('carries the number format as z', () => {
-    expect(toXlsxCell('1234.5', null, 'currency:USD:2')).toEqual({ t: 'n', v: 1234.5, z: '"$"#,##0.00' })
+    expect(toXlsxCell('1234.5', null, 'currency:USD:2')).toEqual({
+      t: 'n',
+      v: 1234.5,
+      z: '"$"#,##0.00',
+    })
   })
   it('date-formatted value becomes a date cell', () => {
     const c = toXlsxCell('2026-03-15', null, 'date:ymd')
@@ -98,16 +122,26 @@ describe('toXlsxCell — engine → SheetJS', () => {
 describe('fromXlsxCell — SheetJS → engine', () => {
   it('number', () => expect(fromXlsxCell({ t: 'n', v: 42 })).toEqual({ value: '42', fmt: '' }))
   it('string', () => expect(fromXlsxCell({ t: 's', v: 'hi' })).toEqual({ value: 'hi', fmt: '' }))
-  it('boolean', () => expect(fromXlsxCell({ t: 'b', v: false })).toEqual({ value: 'FALSE', fmt: '' }))
+  it('boolean', () =>
+    expect(fromXlsxCell({ t: 'b', v: false })).toEqual({ value: 'FALSE', fmt: '' }))
   it('formula regains its =', () => {
-    expect(fromXlsxCell({ t: 'n', v: 7, f: 'SUM(A1:A2)' })).toEqual({ value: '=SUM(A1:A2)', fmt: '' })
+    expect(fromXlsxCell({ t: 'n', v: 7, f: 'SUM(A1:A2)' })).toEqual({
+      value: '=SUM(A1:A2)',
+      fmt: '',
+    })
   })
   it('z-code maps back to our format', () => {
-    expect(fromXlsxCell({ t: 'n', v: 1234.5, z: '"$"#,##0.00' })).toEqual({ value: '1234.5', fmt: 'currency:USD:2' })
+    expect(fromXlsxCell({ t: 'n', v: 1234.5, z: '"$"#,##0.00' })).toEqual({
+      value: '1234.5',
+      fmt: 'currency:USD:2',
+    })
   })
   it('date cell → iso string + date format (UTC-anchored)', () => {
     const d = new Date(Date.UTC(2026, 2, 15))
-    expect(fromXlsxCell({ t: 'd', v: d, z: 'yyyy-mm-dd' })).toEqual({ value: '2026-03-15', fmt: 'date:ymd' })
+    expect(fromXlsxCell({ t: 'd', v: d, z: 'yyyy-mm-dd' })).toEqual({
+      value: '2026-03-15',
+      fmt: 'date:ymd',
+    })
   })
   it('null cell is inert', () => expect(fromXlsxCell(null)).toEqual({ value: '', fmt: '' }))
 })
@@ -116,23 +150,29 @@ describe('date round-trip is timezone-independent', () => {
   // The whole point of UTC anchoring: export→import yields the same date string
   // regardless of the runner's local zone.
   it('bare date', () => {
-    expect(fromXlsxCell(toXlsxCell('2026-03-15', null, 'date:ymd')))
-      .toEqual({ value: '2026-03-15', fmt: 'date:ymd' })
+    expect(fromXlsxCell(toXlsxCell('2026-03-15', null, 'date:ymd'))).toEqual({
+      value: '2026-03-15',
+      fmt: 'date:ymd',
+    })
   })
   it('datetime', () => {
-    expect(fromXlsxCell(toXlsxCell('2026-03-15 14:30:00', null, 'datetime:ymd_hms')))
-      .toEqual({ value: '2026-03-15 14:30:00', fmt: 'datetime:ymd_hms' })
+    expect(fromXlsxCell(toXlsxCell('2026-03-15 14:30:00', null, 'datetime:ymd_hms'))).toEqual({
+      value: '2026-03-15 14:30:00',
+      fmt: 'datetime:ymd_hms',
+    })
   })
 })
 
 describe('merge mapping', () => {
   it('engine masterMap → SheetJS !merges', () => {
-    expect(mergesToXlsx({ A1: { r: 0, c: 0, rowSpan: 2, colSpan: 3 } }))
-      .toEqual([{ s: { r: 0, c: 0 }, e: { r: 1, c: 2 } }])
+    expect(mergesToXlsx({ A1: { r: 0, c: 0, rowSpan: 2, colSpan: 3 } })).toEqual([
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 2 } },
+    ])
   })
   it('!merges → engine rects', () => {
-    expect(mergesFromXlsx([{ s: { r: 0, c: 0 }, e: { r: 1, c: 2 } }]))
-      .toEqual([{ r0: 0, c0: 0, r1: 1, c1: 2 }])
+    expect(mergesFromXlsx([{ s: { r: 0, c: 0 }, e: { r: 1, c: 2 } }])).toEqual([
+      { r0: 0, c0: 0, r1: 1, c1: 2 },
+    ])
   })
   it('round-trips', () => {
     const master = { B2: { r: 1, c: 1, rowSpan: 3, colSpan: 2 } }

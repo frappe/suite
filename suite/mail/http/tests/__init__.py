@@ -1,0 +1,1 @@
+"""Mail HTTP adapter tests."""

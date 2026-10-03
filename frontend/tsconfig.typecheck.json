@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "useDefineForClassFields": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "lib": ["esnext", "dom", "dom.iterable", "webworker"],
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": ["unplugin-icons/types/vue", "vite/client"],
+    "allowJs": true,
+    "noEmit": true
+  },
+  "include": [
+    "src/env.d.ts",
+    "src/platform/**/*.ts",
+    "src/platform/**/*.vue",
+    "src/shell/**/*.ts",
+    "src/shell/**/*.vue",
+    "src/composition/**/*.ts",
+    "src/composition/**/*.vue",
+    "src/apps/drive/files/**/*.ts",
+    "src/apps/drive/files/**/*.vue",
+    "src/apps/drive/client/**/*.ts",
+    "src/apps/drive/client/**/*.vue",
+    "src/apps/*/surface/**/*.ts",
+    "src/apps/*/surface/**/*.vue"
+  ]
+}

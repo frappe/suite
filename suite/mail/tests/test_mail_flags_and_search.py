@@ -145,7 +145,7 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
 
         def search(filter, **kwargs):
             with self.set_user(self.receiver.email):
-                mails, total = search_mails(self.account, filter=filter, limit=10, **kwargs)
+                mails, _total = search_mails(self.account, filter=filter, limit=10, **kwargs)
                 return mails if any(m["subject"] == subject for m in mails) else None
 
         found = self.wait_until(

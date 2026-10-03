@@ -4,171 +4,155 @@
  * One adapter = hypothetical seam. Two adapters = real seam.
  */
 
-import { io, type Socket } from "socket.io-client";
+import { io, type Socket } from 'socket.io-client'
 
 interface SignalChannelConfig {
-	origin: string;
-	path: string;
-	auth: { token: string };
-	reconnection?: boolean;
-	reconnectionAttempts?: number;
-	reconnectionDelay?: number;
-	reconnectionDelayMax?: number;
-	transports?: string[];
-	timeout?: number;
+  origin: string
+  path: string
+  auth: { token: string }
+  reconnection?: boolean
+  reconnectionAttempts?: number
+  reconnectionDelay?: number
+  reconnectionDelayMax?: number
+  transports?: string[]
+  timeout?: number
 }
 
 export interface SignalChannel {
-	connect(config: SignalChannelConfig): Promise<void>;
-	disconnect(): void;
-	emit(
-		event: string,
-		data: unknown,
-		callback?: (response: unknown) => void,
-	): void;
-	on(event: string, handler: (...args: unknown[]) => void): void;
-	off(event: string, handler?: (...args: unknown[]) => void): void;
-	isConnected(): boolean;
-	id(): string | null;
-	updateAuth(token: string): void;
+  connect(config: SignalChannelConfig): Promise<void>
+  disconnect(): void
+  emit(event: string, data: unknown, callback?: (response: unknown) => void): void
+  on(event: string, handler: (...args: unknown[]) => void): void
+  off(event: string, handler?: (...args: unknown[]) => void): void
+  isConnected(): boolean
+  id(): string | null
+  updateAuth(token: string): void
 }
 
 export class SocketIOSignalChannel implements SignalChannel {
-	private socket: Socket | null = null;
-	private pendingListeners = new Map<string, Set<(...args: unknown[]) => void>>();
-	private static readonly MANAGER_EVENTS = new Set([
-		"reconnect_attempt",
-		"reconnect_error",
-		"reconnect_failed",
-		"reconnect",
-	]);
+  private socket: Socket | null = null
+  private pendingListeners = new Map<string, Set<(...args: unknown[]) => void>>()
+  private static readonly MANAGER_EVENTS = new Set([
+    'reconnect_attempt',
+    'reconnect_error',
+    'reconnect_failed',
+    'reconnect',
+  ])
 
-	async connect(config: SignalChannelConfig): Promise<void> {
-		this.socket = io(config.origin, {
-			path: config.path,
-			auth: config.auth,
-			reconnection:
-				config.reconnection === undefined ? true : config.reconnection,
-			reconnectionAttempts:
-				config.reconnectionAttempts === undefined
-					? 5
-					: config.reconnectionAttempts,
-			reconnectionDelay:
-				config.reconnectionDelay === undefined
-					? 1000
-					: config.reconnectionDelay,
-			reconnectionDelayMax:
-				config.reconnectionDelayMax === undefined
-					? 5000
-					: config.reconnectionDelayMax,
-			upgrade: true,
-			transports: config.transports || ["websocket", "polling"],
-			timeout: config.timeout || 20000,
-			forceNew: true,
-			withCredentials: false,
-			autoConnect: false,
-		});
-		for (const [event, handlers] of this.pendingListeners) {
-			for (const handler of handlers) this.addListener(event, handler);
-		}
+  async connect(config: SignalChannelConfig): Promise<void> {
+    this.socket = io(config.origin, {
+      path: config.path,
+      auth: config.auth,
+      reconnection: config.reconnection === undefined ? true : config.reconnection,
+      reconnectionAttempts:
+        config.reconnectionAttempts === undefined ? 5 : config.reconnectionAttempts,
+      reconnectionDelay: config.reconnectionDelay === undefined ? 1000 : config.reconnectionDelay,
+      reconnectionDelayMax:
+        config.reconnectionDelayMax === undefined ? 5000 : config.reconnectionDelayMax,
+      upgrade: true,
+      transports: config.transports || ['websocket', 'polling'],
+      timeout: config.timeout || 20000,
+      forceNew: true,
+      withCredentials: false,
+      autoConnect: false,
+    })
+    for (const [event, handlers] of this.pendingListeners) {
+      for (const handler of handlers) this.addListener(event, handler)
+    }
 
-		return new Promise<void>((resolve, reject) => {
-			const onConnect = () => resolve();
-			const onConnectError = (error: Error) => {
-				this.socket?.off("connect", onConnect);
-				reject(error);
-			};
-			this.socket?.once("connect", onConnect);
-			this.socket?.once("connect_error", onConnectError);
-			this.socket?.connect();
+    return new Promise<void>((resolve, reject) => {
+      const onConnect = () => resolve()
+      const onConnectError = (error: Error) => {
+        this.socket?.off('connect', onConnect)
+        reject(error)
+      }
+      this.socket?.once('connect', onConnect)
+      this.socket?.once('connect_error', onConnectError)
+      this.socket?.connect()
 
-			// Safety timeout
-			setTimeout(() => {
-				if (!this.isConnected()) {
-					this.socket?.off("connect", onConnect);
-					this.socket?.off("connect_error", onConnectError);
-					reject(new Error("SignalChannel connection timeout"));
-				}
-			}, 10000);
-		});
-	}
+      // Safety timeout
+      setTimeout(() => {
+        if (!this.isConnected()) {
+          this.socket?.off('connect', onConnect)
+          this.socket?.off('connect_error', onConnectError)
+          reject(new Error('SignalChannel connection timeout'))
+        }
+      }, 10000)
+    })
+  }
 
-	disconnect(): void {
-		if (this.socket) {
-			this.socket.disconnect();
-			this.socket = null;
-		}
-	}
+  disconnect(): void {
+    if (this.socket) {
+      this.socket.disconnect()
+      this.socket = null
+    }
+  }
 
-	emit(
-		event: string,
-		data: unknown,
-		callback?: (response: unknown) => void,
-	): void {
-		if (!this.socket) {
-			throw new Error("SignalChannel not connected");
-		}
-		if (callback) {
-			this.socket.emit(event, data, callback);
-		} else {
-			this.socket.emit(event, data);
-		}
-	}
+  emit(event: string, data: unknown, callback?: (response: unknown) => void): void {
+    if (!this.socket) {
+      throw new Error('SignalChannel not connected')
+    }
+    if (callback) {
+      this.socket.emit(event, data, callback)
+    } else {
+      this.socket.emit(event, data)
+    }
+  }
 
-	on(event: string, handler: (...args: unknown[]) => void): void {
-		if (!this.socket) {
-			const handlers = this.pendingListeners.get(event) ?? new Set();
-			handlers.add(handler);
-			this.pendingListeners.set(event, handlers);
-			return;
-		}
-		this.addListener(event, handler);
-	}
+  on(event: string, handler: (...args: unknown[]) => void): void {
+    if (!this.socket) {
+      const handlers = this.pendingListeners.get(event) ?? new Set()
+      handlers.add(handler)
+      this.pendingListeners.set(event, handlers)
+      return
+    }
+    this.addListener(event, handler)
+  }
 
-	private addListener(event: string, handler: (...args: unknown[]) => void): void {
-		if (!this.socket) return;
-		if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
-			this.socket.io.on(event, handler);
-			return;
-		}
-		this.socket.on(event, handler);
-	}
+  private addListener(event: string, handler: (...args: unknown[]) => void): void {
+    if (!this.socket) return
+    if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
+      this.socket.io.on(event, handler)
+      return
+    }
+    this.socket.on(event, handler)
+  }
 
-	off(event: string, handler?: (...args: unknown[]) => void): void {
-		const pending = this.pendingListeners.get(event);
-		if (handler) pending?.delete(handler);
-		else this.pendingListeners.delete(event);
-		if (pending?.size === 0) this.pendingListeners.delete(event);
-		if (!this.socket) return;
-		if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
-			if (handler) {
-				this.socket.io.off(event, handler);
-			} else {
-				this.socket.io.off(event);
-			}
-			return;
-		}
-		if (handler) {
-			this.socket.off(event, handler);
-		} else {
-			this.socket.off(event);
-		}
-	}
+  off(event: string, handler?: (...args: unknown[]) => void): void {
+    const pending = this.pendingListeners.get(event)
+    if (handler) pending?.delete(handler)
+    else this.pendingListeners.delete(event)
+    if (pending?.size === 0) this.pendingListeners.delete(event)
+    if (!this.socket) return
+    if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
+      if (handler) {
+        this.socket.io.off(event, handler)
+      } else {
+        this.socket.io.off(event)
+      }
+      return
+    }
+    if (handler) {
+      this.socket.off(event, handler)
+    } else {
+      this.socket.off(event)
+    }
+  }
 
-	isConnected(): boolean {
-		return this.socket?.connected || false;
-	}
+  isConnected(): boolean {
+    return this.socket?.connected || false
+  }
 
-	id(): string | null {
-		return this.socket?.id || null;
-	}
+  id(): string | null {
+    return this.socket?.id || null
+  }
 
-	updateAuth(token: string): void {
-		if (!this.socket) return;
-		this.socket.auth = { token };
-		const managerOptions = this.socket.io.opts as typeof this.socket.io.opts & {
-			auth?: { token?: string };
-		};
-		managerOptions.auth = { token };
-	}
+  updateAuth(token: string): void {
+    if (!this.socket) return
+    this.socket.auth = { token }
+    const managerOptions = this.socket.io.opts as typeof this.socket.io.opts & {
+      auth?: { token?: string }
+    }
+    managerOptions.auth = { token }
+  }
 }

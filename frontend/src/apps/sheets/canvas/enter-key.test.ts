@@ -4,9 +4,10 @@
 // text; a second Enter commits and moves down. The grid used to skip the edit
 // step and move down straight away, so the value was unreachable from the
 // keyboard without F2.
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createMockCtx } from './painters/test-utils.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { createGrid } from './index.js'
+import { createMockCtx } from './painters/test-utils.js'
 
 function mount(opts = {}) {
   const parent = document.createElement('div')
@@ -26,7 +27,10 @@ function mount(opts = {}) {
 
 describe('Enter on the selected cell', () => {
   let h: ReturnType<typeof mount>
-  beforeEach(() => { document.body.innerHTML = ''; h = mount() })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    h = mount()
+  })
 
   it('opens the in-cell editor on the cell, seeded with its value', () => {
     h.grid.setCell('A1', 'hello')

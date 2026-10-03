@@ -22,7 +22,7 @@ import '@/utils/readableStreamValues'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL('./pdfWorker.ts', import.meta.url), {
-	type: 'module',
+  type: 'module',
 })
 
 export { pdfjs }

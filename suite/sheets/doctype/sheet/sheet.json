@@ -5,21 +5,19 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "title",
+  "node",
   "sheets_data",
-  "head_seq",
-  "head_snapshot",
-  "trashed",
-  "trashed_on",
-  "trashed_by"
+  "head_seq"
  ],
  "fields": [
   {
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Title",
-   "reqd": 1
+   "description": "The Drive node that owns this sheet's title, place, grants, lifecycle, and versions.",
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "sheets_data",
@@ -28,44 +26,16 @@
   },
   {
    "fieldname": "head_seq",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Head op-log seq",
    "default": "0",
    "description": "Highest op-log seq applied to the live sheets_data blob."
-  },
-  {
-   "fieldname": "head_snapshot",
-   "fieldtype": "Link",
-   "options": "Sheet Snapshot",
-   "label": "Latest snapshot"
-  },
-  {
-   "fieldname": "trashed",
-   "fieldtype": "Check",
-   "label": "Trashed",
-   "default": "0",
-   "in_standard_filter": 1,
-   "description": "Soft-delete flag. Trashed sheets are hidden from the app and purged after the retention window."
-  },
-  {
-   "fieldname": "trashed_on",
-   "fieldtype": "Datetime",
-   "label": "Trashed On",
-   "read_only": 1,
-   "depends_on": "trashed"
-  },
-  {
-   "fieldname": "trashed_by",
-   "fieldtype": "Link",
-   "options": "User",
-   "label": "Trashed By",
-   "read_only": 1,
-   "depends_on": "trashed"
   }
  ],
  "links": [],
- "modified": "2026-05-19 14:39:41.599820",
- "modified_by": "asif@frappe.io",
+ "modified": "2026-10-03 12:00:00.000000",
+ "modified_by": "Administrator",
  "module": "Sheets",
  "name": "Sheet",
  "naming_rule": "Random",
@@ -88,19 +58,22 @@
    "delete": 1,
    "email": 1,
    "export": 1,
-   "if_owner": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "All",
+   "select": 1,
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Guest"
   }
  ],
  "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title",
  "track_changes": 0
 }

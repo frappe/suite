@@ -63,7 +63,7 @@ def _migrate_one(name: str) -> bool:
     # Each Sheet Cell row corresponds to one populated cell. Empty cells are
     # not stored — same as the old blob.
     rows = []
-    for sheet_name, cells in suite.sheets.items():
+    for sheet_name, cells in sheets.items():
         for cell_id, raw in cells.items():
             if raw is None or raw == "":
                 continue
@@ -92,7 +92,7 @@ def _migrate_one(name: str) -> bool:
     # - which sheet was current
     # - col widths / row heights / freeze / hidden / merge / zoom from grid
     combined_view = {
-        "sheet_order": list(suite.sheets.keys()),
+        "sheet_order": list(sheets.keys()),
         "current": current,
         "merge": merge,
         "grid": view,

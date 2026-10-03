@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+
 import { createSlicerEngine } from './slicers.js'
 
 describe('SlicerEngine', () => {
   let s
-  beforeEach(() => { s = createSlicerEngine() })
+  beforeEach(() => {
+    s = createSlicerEngine()
+  })
 
   it('adds a slicer for a column and lists it', () => {
     const id = s.add(2, 100, 50, 'S')
@@ -40,7 +43,7 @@ describe('SlicerEngine', () => {
       const a = s.add(1, 0, 0, 'S')
       s.add(3, 0, 0, 'S')
       s.setCol(a, 3, 'S')
-      expect(s.get(a, 'S').col).toBe(1)   // unchanged — col 3 is taken
+      expect(s.get(a, 'S').col).toBe(1) // unchanged — col 3 is taken
     })
   })
 
@@ -59,7 +62,7 @@ describe('SlicerEngine', () => {
       s.add(2, 0, 0, 'S')
       s.add(5, 0, 0, 'S')
       s.deleteCol(2, 'S')
-      expect(s.list('S').map(sl => sl.col)).toEqual([4])   // col-2 slicer gone, col-5 → 4
+      expect(s.list('S').map((sl) => sl.col)).toEqual([4]) // col-2 slicer gone, col-5 → 4
     })
   })
 
@@ -74,7 +77,7 @@ describe('SlicerEngine', () => {
       s.add(0, 0, 0, 'S1')
       s.duplicateSheet('S1', 'S1 copy')
       s.remove(s.list('S1')[0].id, 'S1')
-      expect(s.list('S1 copy')).toHaveLength(1)   // copy survives source removal
+      expect(s.list('S1 copy')).toHaveLength(1) // copy survives source removal
     })
     it('deleteSheet drops slicers', () => {
       s.add(0, 0, 0, 'S1')
@@ -97,7 +100,7 @@ describe('SlicerEngine', () => {
       const newId = fresh.add(1, 0, 0, 'S')
       expect(newId).not.toBe(savedId)
       fresh.remove(newId, 'S')
-      expect(fresh.list('S')).toHaveLength(1)   // the restored slicer survives
+      expect(fresh.list('S')).toHaveLength(1) // the restored slicer survives
     })
   })
 })

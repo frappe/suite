@@ -1,0 +1,726 @@
+import itertools
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+import frappe
+from frappe.tests import IntegrationTestCase, UnitTestCase
+
+from suite.drive._core import activity
+from suite.drive._core import nodes as nodes_module
+from suite.drive._core.access import effective_roles
+from suite.drive._core.errors import DriveConflict, DriveLinkExpired, DriveLocked
+from suite.drive._core.nodes import (
+    MAX_PAGE_SIZE,
+    SHARED_SQL,
+    children,
+    decode_cursor,
+    encode_cursor,
+    views,
+)
+from suite.drive._core.principals import Principals
+from suite.drive._core.roles import EDIT, NONE, READ
+from suite.drive._core.roots import create_root
+from suite.drive.doctype.drive_node.drive_node import on_doctype_update
+from suite.drive.tests.fixtures import drop_personal_root
+from suite.tests.utils import ensure_user
+
+VIEWER = "drive-views-viewer@example.com"
+OTHER = "drive-views-other@example.com"
+
+
+class TestListingContract(UnitTestCase):
+    principals = Principals(
+        VIEWER,
+        (VIEWER, "$GROUP:viewers", "$GENERAL"),
+        ("$PUBLIC",),
+    )
+
+    def test_cursor_is_an_opaque_base64_offset(self):
+        cursor = encode_cursor(50)
+        self.assertEqual(cursor, "b2Zmc2V0OjUw")
+        self.assertEqual(decode_cursor(cursor), 50)
+        for invalid in ("", "not-base64", "b2Zmc2V0Oisx"):
+            with self.subTest(cursor=invalid), self.assertRaises(frappe.ValidationError):
+                decode_cursor(invalid)
+
+    @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.frappe.db.sql")
+    def test_folder_window_uses_exactly_three_queries_and_advances_past_hidden_rows(self, sql, _now):
+        parent = frappe._dict(
+            _drive_parent=0,
+            name="root",
+            kind="root",
+            root=None,
+            path="",
+        )
+        child = frappe._dict(
+            _drive_parent=1,
+            name="hidden",
+            kind="file",
+            root="root",
+            path="",
+            mime="text/plain",
+        )
+        sql.side_effect = [
+            [parent, child],
+            [frappe._dict(node="root", principal=VIEWER, role=READ, password_hash=None)],
+            [frappe._dict(node="hidden", principal=VIEWER, role=NONE, password_hash=None)],
+        ]
+
+        page = children(self.principals, "root", limit=1)
+
+        self.assertEqual(page["rows"], [])
+        self.assertEqual(decode_cursor(page["next_cursor"]), 1)
+        self.assertEqual(sql.call_count, 3)
+        window_query = sql.call_args_list[0].args[0]
+        self.assertIn("parent_node = %(parent_node)s", window_query)
+        self.assertIn("is_template = 0", window_query)
+        self.assertIn("kind <> 'root'", window_query)
+        self.assertEqual(sql.call_args_list[0].args[1]["limit"], 1)
+
+    @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.frappe.db.sql")
+    def test_limit_is_capped_and_short_raw_window_ends_paging(self, sql, _now):
+        sql.side_effect = [
+            [
+                frappe._dict(
+                    _drive_parent=0,
+                    name="root",
+                    kind="root",
+                    root=None,
+                    path="",
+                )
+            ],
+            [],
+            [],
+        ]
+        principals = Principals("Administrator", ("Administrator",), (), is_admin=True)
+
+        page = children(principals, "root", limit=500)
+
+        # The third key is the listed folder itself, already read and
+        # authorized here. The breadcrumbs expansion takes its trail from this
+        # row instead of reading the folder a second time.
+        self.assertEqual(
+            page,
+            {
+                "rows": [],
+                "next_cursor": None,
+                "container": {"name": "root", "kind": "root", "root": None, "path": ""},
+            },
+        )
+        self.assertEqual(sql.call_args_list[0].args[1]["limit"], MAX_PAGE_SIZE)
+
+    @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.frappe.db.sql")
+    def test_default_limit_and_cursor_offset_are_applied_to_the_raw_window(self, sql, _now):
+        sql.side_effect = [
+            [frappe._dict(_drive_parent=0, name="root", kind="root", root=None, path="")],
+            [],
+            [],
+        ]
+        principals = Principals("Administrator", ("Administrator",), (), is_admin=True)
+
+        children(principals, "root", cursor=encode_cursor(7))
+
+        values = sql.call_args_list[0].args[1]
+        self.assertEqual(values["limit"], 60)
+        self.assertEqual(values["offset"], 7)
+
+    def _parent_window(self):
+        return [frappe._dict(_drive_parent=0, name="root", kind="root", root=None, path="")]
+
+    @patch("suite.drive._core.access.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.frappe.db.sql")
+    def test_locked_parent_preserves_the_ticket08_error_on_denial(self, sql, _node_now, _access_now):
+        token = "A" * 22
+        principals = Principals(VIEWER, (VIEWER,), (f"$LINK:{token}",))
+        sql.side_effect = [
+            self._parent_window(),
+            [
+                frappe._dict(
+                    node="root",
+                    principal=f"$LINK:{token}",
+                    role=READ,
+                    password_hash="protected",
+                )
+            ],
+            [],
+            [],
+        ]
+
+        with self.assertRaises(DriveLocked):
+            children(principals, "root")
+
+    @patch("suite.drive._core.access.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.frappe.db.sql")
+    def test_expired_parent_preserves_the_ticket08_error_on_denial(self, sql, _node_now, _access_now):
+        token = "B" * 22
+        principals = Principals(VIEWER, (VIEWER,), (f"$LINK:{token}",))
+        sql.side_effect = [
+            self._parent_window(),
+            [],
+            [],
+            [
+                frappe._dict(
+                    node="root",
+                    principal=f"$LINK:{token}",
+                    role=READ,
+                    expires_on="2026-09-04 12:00:00",
+                    password_hash=None,
+                )
+            ],
+        ]
+
+        with self.assertRaises(DriveLinkExpired):
+            children(principals, "root")
+
+    def test_batch_resolution_keeps_direct_deny_and_group_tier_rules(self):
+        offers = [
+            frappe._dict(node="child", principal="$GROUP:viewers", role=EDIT, password_hash=None),
+            frappe._dict(node="child", principal=VIEWER, role=NONE, password_hash=None),
+        ]
+        for ordering in itertools.permutations(offers):
+            with self.subTest(ordering=ordering):
+                self.assertEqual(
+                    effective_roles(["root"], {"child": list(ordering)}, [], self.principals),
+                    {"child": NONE},
+                )
+
+    @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
+    @patch("suite.drive._core.nodes.frappe.db.sql")
+    def test_a_short_fully_hidden_window_has_no_next_cursor(self, sql, _now):
+        sql.side_effect = [
+            [
+                frappe._dict(_drive_parent=0, name="root", kind="root", root=None, path=""),
+                frappe._dict(
+                    _drive_parent=1,
+                    name="hidden",
+                    kind="file",
+                    root="root",
+                    path="",
+                    mime="text/plain",
+                ),
+            ],
+            [frappe._dict(node="root", principal=VIEWER, role=READ, password_hash=None)],
+            [frappe._dict(node="hidden", principal=VIEWER, role=NONE, password_hash=None)],
+        ]
+
+        page = children(self.principals, "root", limit=2)
+
+        self.assertEqual(
+            page,
+            {
+                "rows": [],
+                "next_cursor": None,
+                "container": {"name": "root", "kind": "root", "root": None, "path": ""},
+            },
+        )
+
+    def test_shared_query_deduplicates_overlapping_grants_before_limit(self):
+        distinct = SHARED_SQL.index("SELECT DISTINCT")
+        ancestor_filter = SHARED_SQL.index("NOT EXISTS")
+        limit = SHARED_SQL.index("LIMIT")
+        self.assertLess(distinct, ancestor_filter)
+        self.assertLess(ancestor_filter, limit)
+        self.assertIn("ancestor_grant.principal IN %(own)s", SHARED_SQL)
+
+    def test_folder_order_lives_inside_the_sql_window(self):
+        query = nodes_module._folder_page_query("title", "ASC", listing_types=("folder",))
+        before_limit = query[: query.index("LIMIT")]
+        order = before_limit[before_limit.rindex("ORDER BY") :]
+        self.assertLess(order.index("kind = 'folder'"), order.index("title ASC"))
+        self.assertTrue(order.rstrip().endswith("name ASC"))
+
+    def test_every_order_partitions_folders_first(self):
+        for direction in ("ASC", "DESC"):
+            with self.subTest(direction=direction):
+                order = nodes_module._listing_order("modified", direction, prefix="")
+                self.assertTrue(order.startswith("CASE WHEN kind = 'folder' THEN 0 ELSE 1 END ASC"))
+                self.assertTrue(order.endswith("name ASC"))
+
+    def test_path_schema_is_data_500_with_a_full_composite_index(self):
+        schema_path = Path(__file__).parents[1] / "doctype" / "drive_node" / "drive_node.json"
+        fields = {field["fieldname"]: field for field in json.loads(schema_path.read_text())["fields"]}
+        self.assertEqual(fields["path"]["fieldtype"], "Data")
+        self.assertEqual(fields["path"]["length"], 500)
+
+        with patch("suite.drive.doctype.drive_node.drive_node.frappe.db.add_index") as add_index:
+            on_doctype_update()
+        add_index.assert_any_call("Drive Node", ["root", "path"], "node_subtree")
+        self.assertFalse(any(call.args[-1] == "node_root_page" for call in add_index.call_args_list))
+
+
+class TestDriveViews(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(VIEWER)
+        ensure_user(OTHER)
+        drop_personal_root(VIEWER)
+        drop_personal_root(OTHER)
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        self._root_nodes_before = set(frappe.get_all("Drive Node", filters={"kind": "root"}, pluck="name"))
+        self._root_metadata_before = set(frappe.get_all("Drive Root", pluck="name"))
+        self.personal = create_root(kind="Personal", title="Viewer", user=VIEWER)
+        self.other = create_root(kind="Personal", title="Other", user=OTHER)
+        self.principals = Principals(
+            VIEWER,
+            (VIEWER, "$GROUP:viewers", "$GENERAL"),
+            ("$PUBLIC",),
+        )
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        root_nodes = (
+            set(frappe.get_all("Drive Node", filters={"kind": "root"}, pluck="name"))
+            - self._root_nodes_before
+        )
+        root_metadata = set(frappe.get_all("Drive Root", pluck="name")) - self._root_metadata_before
+        node_names = set(root_nodes)
+        if root_nodes:
+            node_names.update(
+                frappe.get_all(
+                    "Drive Node",
+                    filters={"root": ["in", tuple(root_nodes)]},
+                    pluck="name",
+                )
+            )
+        if node_names:
+            frappe.db.delete("Drive Grant", {"node": ["in", tuple(node_names)]})
+            frappe.db.delete("Drive Activity", {"node": ["in", tuple(node_names)]})
+            frappe.db.delete("Drive Node", {"name": ["in", tuple(node_names)]})
+        if root_metadata:
+            frappe.db.delete("Drive Root", {"name": ["in", tuple(root_metadata)]})
+        super().tearDown()
+
+    def _node(
+        self,
+        parent_id: str,
+        title: str,
+        *,
+        kind: str = "folder",
+        state: str = "Active",
+        is_template: int = 0,
+        trashed_at=None,
+        trash_root: str | None = None,
+        content_doctype: str | None = None,
+    ):
+        parent = frappe.db.get_value("Drive Node", parent_id, ["name", "kind", "root", "path"], as_dict=True)
+        root = parent.name if parent.kind == "root" else parent.root
+        path = "" if parent.kind == "root" else f"{parent.path or '/'}{parent.name}/"
+        self_trashed = trash_root == "self"
+        stored_trash_root = None if self_trashed else trash_root
+        node = frappe.get_doc(
+            {
+                "doctype": "Drive Node",
+                "title": title,
+                "parent_node": parent.name,
+                "root": root,
+                "path": path,
+                "kind": kind,
+                "state": "Active" if self_trashed else state,
+                "size": 0,
+                "is_template": is_template,
+                "trashed_at": None if self_trashed else trashed_at,
+                "trash_root": stored_trash_root,
+                "content_doctype": content_doctype,
+            }
+        ).insert(ignore_permissions=True)
+        if self_trashed:
+            frappe.db.set_value(
+                "Drive Node",
+                node.name,
+                {"state": "Trashed", "trashed_at": trashed_at, "trash_root": node.name},
+            )
+            node.state = "Trashed"
+            node.trashed_at = trashed_at
+            node.trash_root = node.name
+        return node
+
+    def _grant(self, node: str, principal: str, role: int):
+        return frappe.get_doc(
+            {
+                "doctype": "Drive Grant",
+                "node": node,
+                "principal": principal,
+                "role": role,
+            }
+        ).insert(ignore_permissions=True)
+
+    def test_a_personal_list_obeys_the_three_exclusions_every_view_carries(self):
+        # §11.2: "Every view excludes `is_template` nodes except `templates`.
+        # Root nodes appear only through explicit root entry points... No view
+        # returns the children of a document node." `Drive Recent` and `Drive
+        # Favourite` are written under a plain READ check, so the exclusions
+        # have to be applied where the view answers.
+        from suite.drive._core.activity import set_favourite, visit
+
+        ordinary = self._node(self.personal.name, "Ordinary")
+        template = self._node(self.personal.name, "Template", kind="document", is_template=1)
+        deck = self._node(self.personal.name, "Deck", kind="document")
+        media = self._node(deck.name, "Slide picture", kind="file")
+        for node in (self.personal.name, ordinary.name, template.name, media.name):
+            visit(self.principals, node)
+            set_favourite(self.principals, node, True)
+
+        for name in ("recents", "favourites"):
+            with self.subTest(view=name):
+                listed = [row.name for row in views(self.principals, name)["rows"]]
+                self.assertEqual(listed, [ordinary.name])
+
+    def test_every_node_view_answers_the_whole_base_shape(self):
+        # §11.3: a list row and a detail fetch publish the same base fields.
+        listed = self._node(self.personal.name, "Listed")
+        self._grant(listed.name, OTHER, READ)
+        others = Principals(OTHER, (OTHER,), ("$PUBLIC",))
+        trashed = self._node(
+            self.personal.name, "Trashed", trashed_at="2026-01-01 00:00:00", trash_root="self"
+        )
+        self._node(self.personal.name, "Template", kind="document", is_template=1)
+
+        pages = {
+            "shared": views(others, "shared"),
+            "trash": views(self.principals, "trash", root=self.personal.name),
+            "templates": views(self.principals, "templates"),
+            "search": views(self.principals, "search", term="e"),
+        }
+        self.assertTrue(pages["trash"]["rows"] and pages["trash"]["rows"][0].name == trashed.name)
+        for name, page in pages.items():
+            self.assertTrue(page["rows"], name)
+            for row in page["rows"]:
+                for field in nodes_module.NODE_FIELD_NAMES:
+                    with self.subTest(view=name, field=field):
+                        self.assertIn(field, row)
+
+    def test_folder_page_is_three_queries_and_never_lists_templates(self):
+        visible = self._node(self.personal.name, "A visible")
+        folder = self._node(self.personal.name, "A folder")
+        nested = self._node(folder.name, "Nested visible")
+        self._node(self.personal.name, "B template", kind="document", is_template=1)
+        hidden = self._node(self.personal.name, "C hidden")
+        self._grant(hidden.name, VIEWER, NONE)
+
+        original_sql = frappe.db.sql
+        with patch("suite.drive._core.nodes.frappe.db.sql", wraps=original_sql) as sql:
+            page = children(self.principals, self.personal.name)
+
+        self.assertEqual({row.name for row in page["rows"]}, {visible.name, folder.name})
+        self.assertEqual(sql.call_count, 3)
+
+        with patch("suite.drive._core.nodes.frappe.db.sql", wraps=original_sql) as sql:
+            nested_page = children(self.principals, folder.name)
+        self.assertEqual([row.name for row in nested_page["rows"]], [nested.name])
+        self.assertEqual(sql.call_count, 3)
+
+    def test_folder_type_filter_is_applied_before_the_short_window(self):
+        self._node(self.personal.name, "A file", kind="file")
+        folder = self._node(self.personal.name, "Z folder")
+
+        page = children(self.principals, self.personal.name, listing_types=("folder",), limit=1)
+
+        self.assertEqual([row.name for row in page["rows"]], [folder.name])
+        self.assertIsNotNone(page["next_cursor"])
+
+        empty_root = self._node(self.personal.name, "Empty picker")
+        self._node(empty_root.name, "Only file", kind="file")
+        empty = children(self.principals, empty_root.name, listing_types=("folder",), limit=1)
+        self.assertEqual(empty["rows"], [])
+        self.assertIsNone(empty["next_cursor"])
+
+    def test_type_filters_keep_exactly_the_nodes_of_the_chosen_types(self):
+        holder = self._node(self.personal.name, "Holder")
+        expected = {
+            "folder": {"Budget plans"},
+            "document": {"Budget letter", "Budget letter.docx"},
+            "spreadsheet": {"Budget sheet", "Budget figures.xlsx", "Budget export.csv"},
+            "presentation": {"Budget deck", "Budget slides.odp"},
+            "pdf": {"Budget scan"},
+            "image": {"Budget photo"},
+            "video": {"Budget clip"},
+            "audio": {"Budget memo"},
+        }
+        self._node(holder.name, "Budget plans")
+        self._node(holder.name, "Budget letter", kind="document", content_doctype="Writer Document")
+        self._node(holder.name, "Budget sheet", kind="document", content_doctype="Sheet")
+        self._node(holder.name, "Budget deck", kind="document", content_doctype="Presentation")
+        # A file with a mime needs a blob to insert. Only the mime matters here.
+        # An uploaded office file is the document type it holds.
+        for title, mime in (
+            ("Budget scan", "application/pdf"),
+            ("Budget photo", "image/png"),
+            ("Budget clip", "video/mp4"),
+            ("Budget memo", "audio/mpeg"),
+            ("Budget notes", "text/plain"),
+            ("Budget letter.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            ("Budget figures.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("Budget export.csv", "text/csv"),
+            ("Budget slides.odp", "application/vnd.oasis.opendocument.presentation"),
+        ):
+            frappe.db.set_value("Drive Node", self._node(holder.name, title, kind="file").name, "mime", mime)
+        # No type names a plain text file, or a document no content app declares.
+        self._node(holder.name, "Budget task", kind="document", content_doctype="ToDo")
+        everything = {*set().union(*expected.values()), "Budget notes", "Budget task"}
+        for row in children(self.principals, holder.name)["rows"]:
+            activity.set_favourite(self.principals, row.name)
+
+        listings = {
+            "children": lambda types: children(self.principals, holder.name, listing_types=types),
+            "search": lambda types: views(self.principals, "search", term="Budget", listing_types=types),
+            "favourites": lambda types: views(self.principals, "favourites", listing_types=types),
+        }
+        for listing, read in listings.items():
+            with self.subTest(listing=listing, types=()):
+                self.assertEqual({row.title for row in read(())["rows"]}, everything)
+            for listing_type, titles in expected.items():
+                with self.subTest(listing=listing, types=(listing_type,)):
+                    self.assertEqual({row.title for row in read((listing_type,))["rows"]}, titles)
+            # Several types keep a node of any of them.
+            with self.subTest(listing=listing, types=("pdf", "image", "spreadsheet")):
+                self.assertEqual(
+                    {row.title for row in read(("pdf", "image", "spreadsheet"))["rows"]},
+                    {"Budget scan", "Budget photo", *expected["spreadsheet"]},
+                )
+            for unknown in (("spreadsheets",), ("pdf", "zip")):
+                with self.subTest(listing=listing, types=unknown), self.assertRaises(frappe.ValidationError):
+                    read(unknown)
+
+    def test_folder_access_expansion_keeps_the_three_query_page_cost(self):
+        folder = self._node(self.personal.name, "Access-batched folder")
+
+        with self.assertQueryCount(3):
+            rows = children(
+                self.principals,
+                self.personal.name,
+                with_access=True,
+            )["rows"]
+
+        expanded = next(row for row in rows if row.name == folder.name)
+        self.assertGreaterEqual(expanded.access["role"], READ)
+
+    def test_folders_lead_every_order_and_the_order_runs_inside_each_kind(self):
+        made = []
+        for kind, title in (
+            ("file", "A file"),
+            ("folder", "Z folder"),
+            ("file", "B file"),
+            ("folder", "Y folder"),
+        ):
+            made.append(self._node(self.personal.name, title, kind=kind).name)
+
+        rows = children(self.principals, self.personal.name, order_by="title", ascending=False)["rows"]
+        relevant = [(row.kind, row.title) for row in rows if row.name in made]
+
+        self.assertEqual(
+            relevant,
+            [("folder", "Z folder"), ("folder", "Y folder"), ("file", "B file"), ("file", "A file")],
+        )
+
+    def test_children_sort_by_owner_and_by_type_with_ties_in_name_order(self):
+        folder = self._node(self.personal.name, "Sort folder")
+        made = {}
+        for owner, kind, mime, title in (
+            ("b@example.com", "file", "image/png", "E picture"),
+            ("a@example.com", "file", "application/pdf", "B paper"),
+            ("c@example.com", "file", "image/jpeg", "C photo"),
+            ("b@example.com", "file", "image/png", "A picture"),
+            ("b@example.com", "folder", None, "D folder"),
+        ):
+            node = self._node(folder.name, title, kind=kind)
+            frappe.db.set_value(
+                "Drive Node", node.name, {"owner": owner, "mime": mime}, update_modified=False
+            )
+            made[node.name] = title
+
+        def titles(order_by, ascending=True):
+            rows = children(self.principals, folder.name, order_by=order_by, ascending=ascending)["rows"]
+            return [made[row.name] for row in rows]
+
+        self.assertEqual(titles("owner"), ["D folder", "B paper", "A picture", "E picture", "C photo"])
+        self.assertEqual(
+            titles("owner", ascending=False), ["D folder", "C photo", "A picture", "E picture", "B paper"]
+        )
+        self.assertEqual(titles("kind"), ["D folder", "B paper", "C photo", "A picture", "E picture"])
+
+    def test_document_children_are_hidden_from_children_and_general_views(self):
+        document = self._node(self.other.name, "Deck", kind="document")
+        media = self._node(document.name, "unique-media-token", kind="file")
+        self._grant(document.name, VIEWER, READ)
+
+        with self.assertRaises(DriveConflict):
+            children(self.principals, document.name)
+        self.assertNotIn(
+            media.name,
+            [row.name for row in views(self.principals, "search", term="unique-media-token")["rows"]],
+        )
+
+    def test_shared_view_deduplicates_identity_and_ancestor_overlaps(self):
+        folder = self._node(self.other.name, "Shared folder")
+        descendant = self._node(folder.name, "Nested share")
+        self._grant(folder.name, VIEWER, READ)
+        self._grant(folder.name, "$GROUP:viewers", EDIT)
+        self._grant(descendant.name, VIEWER, READ)
+
+        rows = views(self.principals, "shared")["rows"]
+
+        self.assertEqual([row.name for row in rows], [folder.name])
+
+    def test_shared_overlap_is_removed_before_cursor_windows(self):
+        ancestor = self._node(self.other.name, "A ancestor")
+        unrelated = self._node(self.other.name, "B unrelated")
+        descendant = self._node(ancestor.name, "Z descendant")
+        for node in (ancestor, unrelated, descendant):
+            self._grant(node.name, VIEWER, READ)
+
+        first = views(self.principals, "shared", limit=1)
+        second = views(self.principals, "shared", limit=1, cursor=first["next_cursor"])
+
+        self.assertEqual([row.name for row in first["rows"]], [ancestor.name])
+        self.assertEqual([row.name for row in second["rows"]], [unrelated.name])
+
+    def test_archived_root_discovery_uses_existing_descendant_grants(self):
+        folder = self._node(self.other.name, "Archived share")
+        self._grant(folder.name, VIEWER, READ)
+        frappe.db.set_value("Drive Root", self.other.name, "state", "Archived")
+
+        rows = views(self.principals, "archived-roots")["rows"]
+
+        self.assertIn(self.other.name, [row.root for row in rows])
+        self.assertNotIn(self.other.name, [row.name for row in views(self.principals, "shared")["rows"]])
+
+    def test_archived_root_metadata_is_hidden_when_direct_deny_beats_group_allow(self):
+        folder = self._node(self.other.name, "Denied archive")
+        self._grant(folder.name, "$GROUP:viewers", READ)
+        self._grant(folder.name, VIEWER, NONE)
+        frappe.db.set_value("Drive Root", self.other.name, "state", "Archived")
+
+        rows = views(self.principals, "archived-roots")["rows"]
+
+        self.assertNotIn(self.other.name, [row.root for row in rows])
+
+    def test_trash_and_template_views_are_separate_and_permission_filtered(self):
+        template = self._node(
+            self.other.name,
+            "Template",
+            kind="document",
+            is_template=1,
+            content_doctype="User",
+        )
+        other_template = self._node(
+            self.other.name,
+            "Other template",
+            kind="document",
+            is_template=1,
+            content_doctype="Role",
+        )
+        trashed = self._node(
+            self.other.name,
+            "Trashed",
+            state="Trashed",
+            trashed_at="2026-09-05 12:00:00",
+            trash_root="self",
+        )
+        self._grant(self.other.name, VIEWER, READ)
+
+        self.assertTrue(
+            {template.name, other_template.name}.issubset(
+                {row.name for row in views(self.principals, "templates")["rows"]}
+            )
+        )
+        self.assertIn(
+            template.name,
+            [row.name for row in views(self.principals, "templates", content_doctype="User")["rows"]],
+        )
+        self.assertEqual(
+            [row.name for row in views(self.principals, "trash", root=self.other.name)["rows"]],
+            [trashed.name],
+        )
+        self.assertNotIn(
+            template.name,
+            [row.name for row in children(self.principals, self.other.name)["rows"]],
+        )
+
+    def test_document_descendants_are_hidden_from_shared_and_trash(self):
+        document = self._node(self.other.name, "Hidden document", kind="document")
+        media = self._node(document.name, "Hidden media", kind="file")
+        self._grant(media.name, VIEWER, READ)
+        self.assertNotIn(media.name, [row.name for row in views(self.principals, "shared")["rows"]])
+
+        frappe.db.set_value(
+            "Drive Node",
+            media.name,
+            {"state": "Trashed", "trash_root": media.name, "trashed_at": "2026-09-05 12:00:00"},
+        )
+        self.assertNotIn(
+            media.name,
+            [row.name for row in views(self.principals, "trash", root=self.other.name)["rows"]],
+        )
+
+    def test_search_access_uses_one_ancestor_union_grant_query_for_the_window(self):
+        first = self._node(self.other.name, "needle one")
+        second = self._node(self.other.name, "needle two")
+        self._grant(self.other.name, VIEWER, READ)
+
+        with patch("suite.drive._core.nodes._grant_rows", wraps=nodes_module._grant_rows) as grant_rows:
+            rows = views(self.principals, "search", term="needle", with_access=True)["rows"]
+
+        self.assertEqual({row.name for row in rows}, {first.name, second.name})
+        self.assertTrue(all(row.access["role"] >= READ for row in rows))
+        grant_rows.assert_called_once()
+
+    def test_search_breadcrumbs_fetch_ancestor_titles_as_one_union(self):
+        folder = self._node(self.personal.name, "Finance")
+        match = self._node(folder.name, "breadcrumb-needle")
+        original_get_all = frappe.get_all
+        with patch("suite.drive._core.nodes.frappe.get_all", wraps=original_get_all) as get_all:
+            with self.assertQueryCount(4):
+                rows = views(
+                    self.principals,
+                    "search",
+                    term="breadcrumb-needle",
+                    with_breadcrumbs=True,
+                )["rows"]
+
+        self.assertEqual([row.name for row in rows], [match.name])
+        self.assertEqual(
+            [(crumb["name"], crumb["kind"]) for crumb in rows[0].breadcrumbs],
+            [(self.personal.name, "root"), (folder.name, "folder")],
+        )
+        title_reads = [
+            call
+            for call in get_all.call_args_list
+            if call.args
+            and call.args[0] == "Drive Node"
+            and call.kwargs.get("fields") == ["name", "title", "kind"]
+        ]
+        self.assertEqual(len(title_reads), 1)
+
+    def test_recent_access_is_batched_and_keeps_opened_at(self):
+        from suite.drive._core.activity import visit
+
+        recent = [self._node(self.personal.name, f"Recent {index}") for index in range(8)]
+        for row in recent:
+            visit(self.principals, row.name)
+
+        with self.assertQueryCount(3):
+            rows = views(self.principals, "recents", with_access=True)["rows"]
+
+        self.assertEqual({row.name for row in rows}, {row.name for row in recent})
+        self.assertTrue(all(row.opened_at for row in rows))
+        self.assertTrue(all(row.access["role"] >= READ for row in rows))
+
+    def test_fully_hidden_search_window_advances_by_the_sql_window(self):
+        hidden = self._node(self.other.name, "hidden-window-token")
+        self._grant(self.other.name, VIEWER, READ)
+        self._grant(hidden.name, VIEWER, NONE)
+
+        page = views(self.principals, "search", term="hidden-window-token", limit=1)
+
+        self.assertEqual(page["rows"], [])
+        self.assertEqual(decode_cursor(page["next_cursor"]), 1)

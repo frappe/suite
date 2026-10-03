@@ -6,7 +6,7 @@ from frappe import _
 from frappe.utils import cint, get_datetime, get_system_timezone, get_url, now_datetime
 from frappe.utils.data import sha256_hash
 
-from suite.mail.api.mail import normalize_filter
+from suite.mail.api.mail import MAX_ATTACHMENT_SIZE, normalize_filter
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.directory import get_domains
 from suite.mail.doctype.identity.identity import fetch_identities
@@ -230,6 +230,8 @@ def get_user_info() -> dict | None:
     data.is_suite_admin = is_suite_admin(user)
     data.is_system_manager = is_system_manager(user)
     data.is_jmap_configured = can_use_mail(user)
+    # The compose UI refuses a larger attachment before it uploads it.
+    data.max_attachment_size = MAX_ATTACHMENT_SIZE
     # The Admin Dashboard is offered only on a site connected to a Suite Cloud, and only admins
     # are told whether it is.
     data.is_suite_cloud_configured = (

@@ -4,8 +4,8 @@
 const elementDivs = new Map()
 
 const registerElementDiv = (id, el) => {
-	if (el) elementDivs.set(id, el)
-	else elementDivs.delete(id)
+  if (el) elementDivs.set(id, el)
+  else elementDivs.delete(id)
 }
 
 const getElementDiv = (id) => elementDivs.get(id) || null

@@ -1,14 +1,20 @@
-import { ref, watch, onUnmounted } from 'vue'
-import { call }                        from '../../utils/api.js'
-import { getSessionUser, fullName as sessionFullName, imageURL as sessionImageURL } from '@/boot/session'
-import { userInitials }                from '../../utils/session.js'
-import { createYDoc, hydrateYDoc }     from '../../collab/ydoc.js'
-import { bindCells }                   from '../../collab/cells-binding.js'
-import { createFrappeProvider }        from '../../collab/frappe-provider.js'
-import { createRealtimeAdapter }       from '../../collab/realtime-adapter.js'
-import { createAwareness }             from '../../collab/awareness.js'
-import { createHocuspocusClient }      from '../../collab/hocuspocus-client.js'
-import { ensureFrappeRealtime }        from '../../collab/frappe-realtime-init.js'
+import { onUnmounted, ref, watch } from 'vue'
+
+import {
+  getSessionUser,
+  fullName as sessionFullName,
+  imageURL as sessionImageURL,
+} from '@/boot/session'
+
+import { createAwareness } from '../../collab/awareness.js'
+import { bindCells } from '../../collab/cells-binding.js'
+import { createFrappeProvider } from '../../collab/frappe-provider.js'
+import { ensureFrappeRealtime } from '../../collab/frappe-realtime-init.js'
+import { createHocuspocusClient } from '../../collab/hocuspocus-client.js'
+import { createRealtimeAdapter } from '../../collab/realtime-adapter.js'
+import { createYDoc, hydrateYDoc } from '../../collab/ydoc.js'
+import { call, isRefusal } from '../../utils/api.js'
+import { userInitials } from '../../utils/session.js'
 
 // Feature flag for the Hocuspocus-backed collab path. When false (default),
 // the legacy `frappe.realtime` relay path runs unchanged so a deploy of this
@@ -27,7 +33,7 @@ function _collabV2Enabled() {
 
 function _collabWsUrl() {
   if (typeof window === 'undefined') return null
-  const fromBoot   = window.frappe?.boot?.collab_ws_url
+  const fromBoot = window.frappe?.boot?.collab_ws_url
   const fromGlobal = window.__COLLAB_WS_URL__
   return fromBoot || fromGlobal || _defaultCollabUrl()
 }
@@ -40,11 +46,20 @@ function _defaultCollabUrl() {
 }
 
 // Collaboration cursor palette — 8 distinct colours not covered by Espresso tokens.
-const CURSOR_PALETTE = ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#AB47BC', '#00ACC1', '#FF7043', '#8D6E63']
+const CURSOR_PALETTE = [
+  '#4285F4',
+  '#EA4335',
+  '#34A853',
+  '#FBBC05',
+  '#AB47BC',
+  '#00ACC1',
+  '#FF7043',
+  '#8D6E63',
+]
 
 function hashUserColor(user) {
   let hash = 0
-  for (const char of (user || '')) hash = (hash * 31 + char.charCodeAt(0)) & 0xFFFFFFFF
+  for (const char of user || '') hash = (hash * 31 + char.charCodeAt(0)) & 0xffffffff
   return CURSOR_PALETTE[Math.abs(hash) % CURSOR_PALETTE.length]
 }
 
@@ -52,7 +67,9 @@ function hashUserColor(user) {
 // Google Sheets paints as the cursor label. We prefer first names because
 // they read at a glance and aren't redundant with the avatar's initials.
 function _firstName(fullName, initials) {
-  const first = String(fullName || '').trim().split(/\s+/)[0]
+  const first = String(fullName || '')
+    .trim()
+    .split(/\s+/)[0]
   return first || initials || '?'
 }
 
@@ -69,14 +86,20 @@ function _throttle(fn, wait) {
   function flush() {
     last = Date.now()
     timer = null
-    if (pending) { fn(...pending); pending = null }
+    if (pending) {
+      fn(...pending)
+      pending = null
+    }
   }
   return function (...args) {
     const now = Date.now()
     const remaining = wait - (now - last)
     pending = args
     if (remaining <= 0) {
-      if (timer) { clearTimeout(timer); timer = null }
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       flush()
     } else if (!timer) {
       timer = setTimeout(flush, remaining)
@@ -117,20 +140,36 @@ export function useCollaboration({
   currentSheet,
   getSheet,
   repopulateGrid,
-  _self        = getSessionUser(),
-  _realtime    = window.frappe?.realtime,
-  _callFn      = (method, args) => call(method, args),
-  _watch       = watch,
+  // A collaboration verdict: the relay refused this client's write, or the
+  // collaboration server refused the connection. The editor narrows access.
+  onRefused = () => {},
+  // Send relay calls through this fetch. The `/d/` surface passes the Drive
+  // session's, which adds its link credentials.
+  credentialFetch,
+  _self = getSessionUser(),
+  _realtime = window.frappe?.realtime,
+  _callFn = (method, args) => call(method, args, { fetch: credentialFetch }),
+  _watch = watch,
   _onUnmounted = onUnmounted,
 }) {
-  const presentUsers  = ref([])           // other users currently viewing
-  const remoteCursors = ref(new Map())    // userId → { row, col, subSheet, color, ... }
+  const _relay = async (method, args) => {
+    try {
+      return await _callFn(method, args)
+    } catch (err) {
+      if (isRefusal(err)) onRefused()
+      throw err
+    }
+  }
 
-  let _doc       = null
-  let _provider  = null
+  const presentUsers = ref([]) // other users currently viewing
+  const remoteCursors = ref(new Map()) // userId → { row, col, subSheet, color, ... }
+
+  let _doc = null
+  let _provider = null
   let _awareness = null
-  let _binding   = null
-  let _sheetId   = null
+  let _binding = null
+  let _adapter = null // legacy relay only: holds the sheet-room subscription
+  let _sheetId = null
 
   // ── Outbound API (kept for backwards-compatibility with index.vue) ──────────
 
@@ -172,10 +211,10 @@ export function useCollaboration({
 
   function _syncFromAwareness() {
     if (!_awareness) return
-    const peers   = _awareness.getStates()    // already excludes our clientId
-    const users   = []
+    const peers = _awareness.getStates() // already excludes our clientId
+    const users = []
     const cursors = new Map()
-    const seen    = new Set()                  // dedupe presence by user id
+    const seen = new Set() // dedupe presence by user id
 
     for (const state of peers.values()) {
       const user = state?.user
@@ -185,16 +224,16 @@ export function useCollaboration({
       if (!seen.has(user.id)) {
         seen.add(user.id)
         users.push({
-          user:        user.id,
-          full_name:   user.fullName,
-          first_name:  _firstName(user.fullName, user.initials),
-          initials:    user.initials,
-          user_image:  user.image,
+          user: user.id,
+          full_name: user.fullName,
+          first_name: _firstName(user.fullName, user.initials),
+          initials: user.initials,
+          user_image: user.image,
           color,
           // Sub-sheet the peer is currently looking at. Lets the topbar
           // avatar pile show a small "on Sheet2" badge and powers the
           // per-tab dot indicators.
-          sub_sheet:   subSheet,
+          sub_sheet: subSheet,
         })
       }
       if (state.cursor) {
@@ -203,18 +242,18 @@ export function useCollaboration({
         const c = state.cursor
         const range = c.range || { r0: c.row, c0: c.col, r1: c.row, c1: c.col }
         cursors.set(user.id, {
-          row:        c.row,
-          col:        c.col,
+          row: c.row,
+          col: c.col,
           range,
-          subSheet:   c.subSheet,
+          subSheet: c.subSheet,
           color,
-          fullName:   user.fullName,
-          firstName:  _firstName(user.fullName, user.initials),
-          initials:   user.initials,
+          fullName: user.fullName,
+          firstName: _firstName(user.fullName, user.initials),
+          initials: user.initials,
         })
       }
     }
-    presentUsers.value  = users
+    presentUsers.value = users
     remoteCursors.value = cursors
   }
 
@@ -224,7 +263,7 @@ export function useCollaboration({
     if (_doc) _stop()
     _sheetId = docId
 
-    const sheet  = getSheet()
+    const sheet = getSheet()
     const identity = _readUserIdentity()
 
     // 1. Fresh Y.Doc. For v2 we leave hydration to the Hocuspocus client
@@ -251,7 +290,7 @@ export function useCollaboration({
       // WebSocket, syncs against the authoritative server-side Y.Doc, and
       // exposes a y-protocols Awareness on the same socket.
       const session = _createHocuspocus({ sheet, identity })
-      _provider  = session
+      _provider = session
       _awareness = session.awareness
       // Y-awareness has no `initial:` arg — set our user slot post-create.
       _awareness.setLocalStateField('user', identity)
@@ -269,17 +308,17 @@ export function useCollaboration({
       if (!_realtime || typeof _realtime.on !== 'function') {
         _realtime = ensureFrappeRealtime() || _realtime
       }
-      const adapter = createRealtimeAdapter({
-        sheetId:  _sheetId,
+      const adapter = (_adapter = createRealtimeAdapter({
+        sheetId: _sheetId,
         realtime: _realtime,
-        callFn:   _callFn,
-      })
+        callFn: _relay,
+      }))
       _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
       _awareness = createAwareness({
-        sheetId:  _sheetId,
+        sheetId: _sheetId,
         realtime: adapter,
         clientId: _provider.tag,
-        initial:  { user: identity, cursor: null },
+        initial: { user: identity, cursor: null },
       })
       _awareness.on('change', _syncFromAwareness)
       _syncFromAwareness()
@@ -287,18 +326,21 @@ export function useCollaboration({
   }
 
   function _createHocuspocus({ sheet, identity }) {
-    void identity  // identity is plumbed via setLocalStateField in _start
-    const url   = _collabWsUrl()
+    void identity // identity is plumbed via setLocalStateField in _start
+    const url = _collabWsUrl()
     const token = _readSessionId()
     return createHocuspocusClient({
-      doc:      _doc,
-      sheetId:  _sheetId,
+      doc: _doc,
+      sheetId: _sheetId,
       url,
       token,
       // Used only on first-ever open of this sheet — see leader election
       // in hocuspocus-client.js. Subsequent opens see a populated server
       // state and skip this entirely.
       getSnapshot: () => sheet?.snapshot?.(),
+      onStatusChange: (status) => {
+        if (status === 'authentication-failed') onRefused()
+      },
     })
   }
 
@@ -317,10 +359,11 @@ export function useCollaboration({
     _binding?.dispose()
     _awareness?.destroy()
     _provider?.destroy()
+    _adapter?.close()
     _doc?.destroy()
-    _binding = _awareness = _provider = _doc = null
+    _binding = _awareness = _provider = _adapter = _doc = null
     _sheetId = null
-    presentUsers.value  = []
+    presentUsers.value = []
     remoteCursors.value = new Map()
   }
 
@@ -340,10 +383,14 @@ export function useCollaboration({
     }
   }
 
-  _watch(sheetId, docId => {
-    if (docId && docId !== 'new') _start(docId)
-    else                          _stop()
-  }, { immediate: true })
+  _watch(
+    sheetId,
+    (docId) => {
+      if (docId && docId !== 'new') _start(docId)
+      else _stop()
+    },
+    { immediate: true },
+  )
 
   _onUnmounted(_stop)
 

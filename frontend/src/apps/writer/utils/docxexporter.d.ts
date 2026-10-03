@@ -10,7 +10,10 @@ interface ListLevel {
   text: string
   alignment: string
   style: {
-    paragraph: { indent: { left: number; hanging: number }; spacing: { before: number; after: number } }
+    paragraph: {
+      indent: { left: number; hanging: number }
+      spacing: { before: number; after: number }
+    }
     run: { font: string; size: number }
   }
 }
@@ -31,12 +34,14 @@ export function resolveAlignment(
 ): string | undefined
 export function clampSpan(v: string | number | null | undefined): number
 export function resolveHref(href: string | null | undefined): string | null
-export function fitImageSize(
-  el: AttrElement,
-  maxWidthPx: number,
-): { width: number; height: number }
+/** The format Word embeds that `data` is, read from its leading bytes. */
+export function imageType(data: Uint8Array): 'png' | 'jpg' | 'gif' | 'bmp' | null
+export function fitImageSize(el: AttrElement, maxWidthPx: number): { width: number; height: number }
 export function paragraphSpacing(
-  el: { style?: { marginTop?: string; marginBottom?: string; lineHeight?: string } } | null | undefined,
+  el:
+    | { style?: { marginTop?: string; marginBottom?: string; lineHeight?: string } }
+    | null
+    | undefined,
   defaults: Spacing,
 ): Spacing & { lineRule: string }
 export function buildListLevels(
@@ -52,8 +57,12 @@ export function computeColumnWidths(
   tableWidthDxa: number,
 ): number[]
 
+/** Answers the bytes of the picture an `<img>` shows; the default fetches its `src`. */
+export type PictureFetch = (image: Element) => Promise<Response>
+
 export function downloadDocxFromHtml(
   html: string,
   filename: string,
   settings?: Record<string, unknown>,
+  fetchPicture?: PictureFetch,
 ): Promise<void>

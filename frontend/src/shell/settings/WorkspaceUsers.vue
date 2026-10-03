@@ -1,11 +1,10 @@
 <template>
   <section>
     <div class="flex flex-col gap-4">
-      <h2 class="text-md-semibold text-ink-gray-8">{{ __('Users') }}</h2>
       <div class="flex items-center justify-between gap-3">
         <TextInput
           v-model="search"
-          class="w-72"
+          class="min-w-0 flex-1 sm:max-w-72"
           :placeholder="__('Search by name or email')"
           :debounce="300"
         >
@@ -13,7 +12,7 @@
             <span class="lucide-search size-4 text-ink-gray-4" />
           </template>
         </TextInput>
-        <Button icon-left="lucide-plus" @click="showInviteDialog = true">
+        <Button class="shrink-0" icon-left="lucide-plus" @click="showInviteDialog = true">
           {{ __('Invite') }}
         </Button>
       </div>
@@ -25,7 +24,11 @@
         class="flex items-center justify-between gap-3 py-2.5"
       >
         <div class="flex min-w-0 items-center gap-3">
-          <Avatar size="lg" :image="user.user_image" :label="user.full_name || user.email" />
+          <Avatar
+            size="lg"
+            :image="user.user_image ?? undefined"
+            :label="user.full_name || user.email"
+          />
           <div class="min-w-0">
             <div class="truncate text-p-base text-ink-gray-8">
               {{ user.full_name || user.email }}
@@ -66,14 +69,36 @@
 </template>
 
 <script setup lang="ts">
+import { Avatar, Badge, Button, createResource, Dialog, TextInput, toast } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { Avatar, Badge, Button, Dialog, TextInput, createResource, toast } from 'frappe-ui'
 
 import InviteStep from '@/shell/InviteStep.vue'
 
-const users = createResource({ url: 'suite.api.account.get_users', auto: true, initialData: [] })
+/** A row from `suite.api.account.get_users`. */
+interface WorkspaceUser {
+  name: string
+  email: string
+  full_name: string | null
+  user_image: string | null
+  is_admin: boolean
+}
 
-const pendingInvites = createResource({
+/** A row from `suite.api.account.get_pending_invites`. */
+interface PendingInvite {
+  name: string
+  email: string
+  creation: string
+  invited_by: string
+  invited_by_name: string | null
+}
+
+const users = createResource<WorkspaceUser[]>({
+  url: 'suite.api.account.get_users',
+  auto: true,
+  initialData: [],
+})
+
+const pendingInvites = createResource<PendingInvite[]>({
   url: 'suite.api.account.get_pending_invites',
   auto: true,
   initialData: [],
@@ -81,17 +106,17 @@ const pendingInvites = createResource({
 
 const search = ref('')
 
-function matchesSearch(...values: (string | undefined)[]) {
+function matchesSearch(...values: (string | null | undefined)[]) {
   const term = search.value.trim().toLowerCase()
   return !term || values.some((value) => (value || '').toLowerCase().includes(term))
 }
 
 const filteredUsers = computed(() =>
-  users.data.filter((user) => matchesSearch(user.full_name, user.email)),
+  (users.data ?? []).filter((user) => matchesSearch(user.full_name, user.email)),
 )
 
 const filteredInvites = computed(() =>
-  pendingInvites.data.filter((invite) => matchesSearch(invite.email)),
+  (pendingInvites.data ?? []).filter((invite) => matchesSearch(invite.email)),
 )
 
 const showInviteDialog = ref(false)

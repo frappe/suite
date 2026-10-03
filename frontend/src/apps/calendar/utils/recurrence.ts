@@ -1,6 +1,6 @@
-import dayjs from '@/apps/calendar/utils/dayjs'
-
 import type { Dayjs } from 'dayjs'
+
+import dayjs from '@/apps/calendar/utils/dayjs'
 import type { RecurrenceRule } from '@/apps/calendar/utils/format'
 
 /**
@@ -41,71 +41,62 @@ const isLastDayOfMonth = (date: Dayjs) => date.date() === date.daysInMonth()
  * Daily and yearly rules carry no selectors here: the server reads their day
  * off the start, so they follow it without help.
  */
-export const reanchoredRule = (
-	rule: RecurrenceRule,
-	from: Dayjs,
-	to: Dayjs,
-): RecurrenceRule => {
-	if (!rule || from.isSame(to, 'day')) return rule
+export const reanchoredRule = (rule: RecurrenceRule, from: Dayjs, to: Dayjs): RecurrenceRule => {
+  if (!rule || from.isSame(to, 'day')) return rule
 
-	if (rule.frequency === 'weekly') return reanchoredWeekly(rule, from, to)
-	if (rule.frequency === 'monthly') return reanchoredMonthly(rule, from, to)
+  if (rule.frequency === 'weekly') return reanchoredWeekly(rule, from, to)
+  if (rule.frequency === 'monthly') return reanchoredMonthly(rule, from, to)
 
-	return rule
+  return rule
 }
 
 const reanchoredWeekly = (rule: RecurrenceRule, from: Dayjs, to: Dayjs): RecurrenceRule => {
-	// No byDay at all means the day was never pinned; the start already says it.
-	if (!rule.byDay?.length) return rule
+  // No byDay at all means the day was never pinned; the start already says it.
+  if (!rule.byDay?.length) return rule
 
-	const wasAnchor = dayCode(from)
-	if (!rule.byDay.some((entry) => entry.day === wasAnchor)) return rule
+  const wasAnchor = dayCode(from)
+  if (!rule.byDay.some((entry) => entry.day === wasAnchor)) return rule
 
-	const nowAnchor = dayCode(to)
-	const moved = rule.byDay.map((entry) =>
-		entry.day === wasAnchor ? { ...entry, day: nowAnchor } : entry,
-	)
+  const nowAnchor = dayCode(to)
+  const moved = rule.byDay.map((entry) =>
+    entry.day === wasAnchor ? { ...entry, day: nowAnchor } : entry,
+  )
 
-	// Moving onto a day already ticked collapses two entries into one.
-	return {
-		...rule,
-		byDay: moved.filter(
-			(entry, i) => moved.findIndex((other) => other.day === entry.day) === i,
-		),
-	}
+  // Moving onto a day already ticked collapses two entries into one.
+  return {
+    ...rule,
+    byDay: moved.filter((entry, i) => moved.findIndex((other) => other.day === entry.day) === i),
+  }
 }
 
 const reanchoredMonthly = (rule: RecurrenceRule, from: Dayjs, to: Dayjs): RecurrenceRule => {
-	// "The last Tuesday", "the second Friday" — the weekday and which one it is
-	// both come off the anchor.
-	if (rule.byDay?.length) {
-		const entry = rule.byDay[0]
-		if (entry.day !== dayCode(from)) return rule
-		return {
-			...rule,
-			byDay: [
-				{
-					day: dayCode(to),
-					// A rule set to the last such weekday stays "last" as long as the new
-					// anchor is one; otherwise it becomes the week it actually falls in.
-					nthOfPeriod:
-						entry.nthOfPeriod === -1 && isLastWeekdayOfMonth(to)
-							? -1
-							: weekOfMonth(to),
-				},
-			],
-		}
-	}
+  // "The last Tuesday", "the second Friday" — the weekday and which one it is
+  // both come off the anchor.
+  if (rule.byDay?.length) {
+    const entry = rule.byDay[0]
+    if (entry.day !== dayCode(from)) return rule
+    return {
+      ...rule,
+      byDay: [
+        {
+          day: dayCode(to),
+          // A rule set to the last such weekday stays "last" as long as the new
+          // anchor is one; otherwise it becomes the week it actually falls in.
+          nthOfPeriod: entry.nthOfPeriod === -1 && isLastWeekdayOfMonth(to) ? -1 : weekOfMonth(to),
+        },
+      ],
+    }
+  }
 
-	if (!rule.byMonthDay?.length) return rule
+  if (!rule.byMonthDay?.length) return rule
 
-	const [day] = rule.byMonthDay
-	// "The last day of the month" survives a move to another month's last day;
-	// anywhere else it is the date the anchor now falls on.
-	if (day === -1) return isLastDayOfMonth(to) ? rule : { ...rule, byMonthDay: [to.date()] }
-	// A day-of-month that named the old anchor names the new one. It is not
-	// turned into "the last day" just because the date happens to be a 31st —
-	// that is a different rule, and the reader did not ask for it.
-	if (day !== from.date()) return rule
-	return { ...rule, byMonthDay: [to.date()] }
+  const [day] = rule.byMonthDay
+  // "The last day of the month" survives a move to another month's last day;
+  // anywhere else it is the date the anchor now falls on.
+  if (day === -1) return isLastDayOfMonth(to) ? rule : { ...rule, byMonthDay: [to.date()] }
+  // A day-of-month that named the old anchor names the new one. It is not
+  // turned into "the last day" just because the date happens to be a 31st —
+  // that is a different rule, and the reader did not ask for it.
+  if (day !== from.date()) return rule
+  return { ...rule, byMonthDay: [to.date()] }
 }

@@ -1773,6 +1773,27 @@ def undo_screening_verdict(account: str, from_emails: list[str], ids: list[str])
     move_mails(account, ids, screening_id, clear_junk=True)
 
 
+# B25: Mail compose attaches files through `upload_file` below. Frappe reads the
+# whole form into memory before any Suite hook runs, and the site-wide
+# `max_file_size` is 1 GB so Drive can take large files (`suite_core/file_size.py`;
+# Drive uploads stream instead). A mail attachment has no reason to be that big:
+# 25 MB is the common provider limit. `account.get_user_info` sends this value to
+# the compose UI, which refuses a larger file before it uploads; this route
+# refuses it again.
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024
+
+
+def _refuse_oversized_attachment(filename: str) -> None:
+    from frappe.core.doctype.file.exceptions import MaxFileSizeReachedError
+
+    frappe.throw(
+        _("{0} is larger than {1} MB, the largest file Mail can attach.").format(
+            filename, MAX_ATTACHMENT_SIZE // (1024 * 1024)
+        ),
+        MaxFileSizeReachedError,
+    )
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @dynamic_rate_limit()
 def upload_file():
@@ -1847,11 +1868,15 @@ def upload_file():
             total_chunks = 1
 
         temp_path = Path(get_files_path(".temp-" + get_safe_file_name(filename), is_private=is_private))
+        total_file_size = cint(frappe.form_dict.total_file_size)
+        chunk = file.stream.read()
+        if max(total_file_size, offset + len(chunk)) > MAX_ATTACHMENT_SIZE:
+            temp_path.unlink(missing_ok=True)
+            _refuse_oversized_attachment(filename)
         with temp_path.open("ab" if current_chunk > 0 else "wb") as f:
-            total_file_size = frappe.form_dict.total_file_size or 0
             f.seek(offset)
-            f.write(file.stream.read())
-            if not f.tell() >= int(total_file_size) or current_chunk != total_chunks - 1:
+            f.write(chunk)
+            if not f.tell() >= total_file_size or current_chunk != total_chunks - 1:
                 return
 
         content = temp_path.read_bytes()

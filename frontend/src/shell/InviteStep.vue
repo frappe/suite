@@ -17,8 +17,8 @@
 </template>
 
 <script setup lang="ts">
+import { createResource, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 const props = defineProps<{ prefill?: string; autofocus?: boolean; description?: string }>()
 const emit = defineEmits<{ sent: [summary: string] }>()

@@ -9,7 +9,5 @@
 // While the editor is open, clipboard ops belong to the textarea.
 export function isCanvasClipboardTarget({ activeEl, canvasEl, formulaEl, gridWrap, editing }) {
   if (editing) return false
-  return activeEl === canvasEl
-    || activeEl === formulaEl
-    || !!gridWrap?.contains(activeEl)
+  return activeEl === canvasEl || activeEl === formulaEl || !!gridWrap?.contains(activeEl)
 }

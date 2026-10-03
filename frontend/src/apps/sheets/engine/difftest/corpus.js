@@ -7,7 +7,8 @@
 export function rng(seed) {
   let a = seed >>> 0
   return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
     let t = Math.imul(a ^ (a >>> 15), 1 | a)
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
@@ -17,50 +18,52 @@ export function rng(seed) {
 // ── Curated cases from findings.md (pure single-cell evaluation only) ─────────
 // `excel` = the answer Excel/Google Sheets give. Omitted where not a clean scalar.
 export const CURATED = [
-  { f: '=2^3^2',          excel: 64 },    // ^ is left-assoc in Excel/Sheets: (2^3)^2 = 64
-  { f: '=--1',            excel: 1 },
-  { f: '=-5%',            excel: -0.05 },
-  { f: '=-2%*3',          excel: -0.06 },
-  { f: '=SUM("abc",4)',   excel: '#VALUE!' },
+  { f: '=2^3^2', excel: 64 }, // ^ is left-assoc in Excel/Sheets: (2^3)^2 = 64
+  { f: '=--1', excel: 1 },
+  { f: '=-5%', excel: -0.05 },
+  { f: '=-2%*3', excel: -0.06 },
+  { f: '=SUM("abc",4)', excel: '#VALUE!' },
   { f: '=AVERAGE(10,"x",30)', excel: 20 },
-  { f: '=MOD(-3,2)',      excel: 1 },
-  { f: '=ROUND(-2.5,0)',  excel: -3 },
+  { f: '=MOD(-3,2)', excel: 1 },
+  { f: '=ROUND(-2.5,0)', excel: -3 },
   { f: '=TRUNC(3.14159,2)', excel: 3.14 },
-  { f: '=EVEN(-1)',       excel: -2 },
-  { f: '=GCD(8,12,10)',   excel: 2 },
+  { f: '=EVEN(-1)', excel: -2 },
+  { f: '=GCD(8,12,10)', excel: 2 },
   { f: '=SUM($A$1:$A$3)', excel: 6 },
-  { f: '=MAX(C1:C3)',     excel: -1 },
-  { f: '=AVERAGE(B1:B5)', excel: 30 },    // B: 10,blank,30,blank,50 -> avg of 3 = 30
-  { f: '=COUNT(B1:B5)',   excel: 3 },
+  { f: '=MAX(C1:C3)', excel: -1 },
+  { f: '=AVERAGE(B1:B5)', excel: 30 }, // B: 10,blank,30,blank,50 -> avg of 3 = 30
+  { f: '=COUNT(B1:B5)', excel: 3 },
   { f: '=SUMIF(A1:A5,">2")', excel: 12 }, // A1..A5 = 1,2,3,4,5 -> 3+4+5
-  { f: '=INDEX(A1:B2,0,1)', excel: null },// spills a column; skip scalar-compare
+  { f: '=INDEX(A1:B2,0,1)', excel: null }, // spills a column; skip scalar-compare
 ]
 
 // ── Random generator ──────────────────────────────────────────────────────────
 const NUM_FUNCS = [
-  { n: 'SUM',     arity: [1, 4], kind: 'anyNum' },
+  { n: 'SUM', arity: [1, 4], kind: 'anyNum' },
   { n: 'AVERAGE', arity: [1, 4], kind: 'anyNum' },
-  { n: 'MIN',     arity: [1, 4], kind: 'anyNum' },
-  { n: 'MAX',     arity: [1, 4], kind: 'anyNum' },
+  { n: 'MIN', arity: [1, 4], kind: 'anyNum' },
+  { n: 'MAX', arity: [1, 4], kind: 'anyNum' },
   { n: 'PRODUCT', arity: [1, 3], kind: 'anyNum' },
-  { n: 'COUNT',   arity: [1, 3], kind: 'anyNum' },
-  { n: 'ABS',     arity: [1, 1], kind: 'scalar' },
-  { n: 'SQRT',    arity: [1, 1], kind: 'posScalar' },
-  { n: 'INT',     arity: [1, 1], kind: 'scalar' },
-  { n: 'SIGN',    arity: [1, 1], kind: 'scalar' },
-  { n: 'ROUND',   arity: [2, 2], kind: 'roundish' },
+  { n: 'COUNT', arity: [1, 3], kind: 'anyNum' },
+  { n: 'ABS', arity: [1, 1], kind: 'scalar' },
+  { n: 'SQRT', arity: [1, 1], kind: 'posScalar' },
+  { n: 'INT', arity: [1, 1], kind: 'scalar' },
+  { n: 'SIGN', arity: [1, 1], kind: 'scalar' },
+  { n: 'ROUND', arity: [2, 2], kind: 'roundish' },
   { n: 'ROUNDUP', arity: [2, 2], kind: 'roundish' },
-  { n: 'ROUNDDOWN',arity: [2, 2], kind: 'roundish' },
-  { n: 'TRUNC',   arity: [1, 2], kind: 'roundish' },
-  { n: 'MOD',     arity: [2, 2], kind: 'modish' },
-  { n: 'POWER',   arity: [2, 2], kind: 'powish' },
+  { n: 'ROUNDDOWN', arity: [2, 2], kind: 'roundish' },
+  { n: 'TRUNC', arity: [1, 2], kind: 'roundish' },
+  { n: 'MOD', arity: [2, 2], kind: 'modish' },
+  { n: 'POWER', arity: [2, 2], kind: 'powish' },
   { n: 'CEILING', arity: [2, 2], kind: 'ceilish' },
-  { n: 'FLOOR',   arity: [2, 2], kind: 'ceilish' },
+  { n: 'FLOOR', arity: [2, 2], kind: 'ceilish' },
 ]
-const CELLS = ['A1','A2','A3','A4','A5','B1','B3','B5','C1','C3','C4','D1','D3','D5']
-const RANGES = ['A1:A5','A1:A10','B1:B5','C1:C5','A1:C3','D1:D5','A1:B10']
+const CELLS = ['A1', 'A2', 'A3', 'A4', 'A5', 'B1', 'B3', 'B5', 'C1', 'C3', 'C4', 'D1', 'D3', 'D5']
+const RANGES = ['A1:A5', 'A1:A10', 'B1:B5', 'C1:C5', 'A1:C3', 'D1:D5', 'A1:B10']
 
-function pick(r, arr) { return arr[Math.floor(r() * arr.length)] }
+function pick(r, arr) {
+  return arr[Math.floor(r() * arr.length)]
+}
 function litNum(r) {
   const pool = [0, 1, 2, 3, 5, 10, -1, -2, -5, 0.5, 2.5, -2.5, 100, 0.001]
   return pool[Math.floor(r() * pool.length)]
@@ -80,13 +83,27 @@ function genFuncCall(r) {
   const n = fn.arity[0] + Math.floor(r() * (fn.arity[1] - fn.arity[0] + 1))
   let args = []
   switch (fn.kind) {
-    case 'anyNum':    args = Array.from({ length: n }, () => numArg(r)); break
-    case 'scalar':    args = [scalarArg(r)]; break
-    case 'posScalar': args = [String(Math.abs(litNum(r)) + 1)]; break
-    case 'roundish':  args = [scalarArg(r), String(Math.floor(r() * 5) - 1)].slice(0, n); break
-    case 'modish':    args = [scalarArg(r), String((litNum(r) || 3))]; break
-    case 'powish':    args = [String(1 + Math.floor(r() * 4)), String(Math.floor(r() * 4))]; break
-    case 'ceilish':   args = [scalarArg(r), String([1, 2, 5, 10][Math.floor(r() * 4)])]; break
+    case 'anyNum':
+      args = Array.from({ length: n }, () => numArg(r))
+      break
+    case 'scalar':
+      args = [scalarArg(r)]
+      break
+    case 'posScalar':
+      args = [String(Math.abs(litNum(r)) + 1)]
+      break
+    case 'roundish':
+      args = [scalarArg(r), String(Math.floor(r() * 5) - 1)].slice(0, n)
+      break
+    case 'modish':
+      args = [scalarArg(r), String(litNum(r) || 3)]
+      break
+    case 'powish':
+      args = [String(1 + Math.floor(r() * 4)), String(Math.floor(r() * 4))]
+      break
+    case 'ceilish':
+      args = [scalarArg(r), String([1, 2, 5, 10][Math.floor(r() * 4)])]
+      break
   }
   return `${fn.n}(${args.join(',')})`
 }
@@ -101,9 +118,10 @@ function genArith(r, depth = 0) {
   }
   const ops = ['+', '-', '*', '/', '^']
   const op = pick(r, ops)
-  let l = genArith(r, depth + 1), rt = genArith(r, depth + 1)
-  if (r() < 0.25) l = '-' + l          // unary minus
-  if (r() < 0.15) rt = '(' + rt + ')'  // parens
+  let l = genArith(r, depth + 1),
+    rt = genArith(r, depth + 1)
+  if (r() < 0.25) l = '-' + l // unary minus
+  if (r() < 0.15) rt = '(' + rt + ')' // parens
   return `${l}${op}${rt}`
 }
 

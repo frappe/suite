@@ -4,8 +4,8 @@
 
 These pin the contracts the Hocuspocus process relies on:
 
-  * ``check_collab_access`` is cookie-authenticated and never accepts Guest.
-    Read vs write split must match Sheet doctype perms.
+  * ``check_collab_access`` is covered in ``suite.sheets.tests.test_collab_access``:
+    Drive answers it, and a name no sheet carries is refused like a hidden node.
   * The persistence endpoints reject any call missing the shared secret —
     they're ``allow_guest=True`` so the secret check is the only gate.
 """
@@ -38,46 +38,6 @@ def _patched_frappe():
     frappe.DoesNotExistError = type("DoesNotExistError", (Exception,), {})
     frappe.throw.side_effect = lambda msg, exc=Exception: (_ for _ in ()).throw(exc(msg))
     return frappe, patcher
-
-
-class CheckCollabAccess(unittest.TestCase):
-    def setUp(self):
-        self.frappe, patcher = _patched_frappe()
-        self.addCleanup(patcher.stop)
-
-    def test_rejects_guest(self):
-        from suite.sheets import collab
-
-        self.frappe.session.user = "Guest"
-        with self.assertRaises(self.frappe.AuthenticationError):
-            collab.check_collab_access("SH-1")
-
-    def test_no_read_returns_false_flags(self):
-        from suite.sheets import collab
-
-        self.frappe.has_permission.return_value = False
-        out = collab.check_collab_access("SH-1")
-        self.assertEqual(out, {"canRead": False, "canWrite": False})
-        # Only the read probe should have run — no point asking about write
-        # once read is denied.
-        self.frappe.has_permission.assert_called_once_with("Sheet", doc="SH-1", ptype="read", throw=False)
-
-    def test_read_only_user_gets_view_grant(self):
-        from suite.sheets import collab
-
-        # True for read, False for write.
-        self.frappe.has_permission.side_effect = [True, False]
-        out = collab.check_collab_access("SH-1")
-        self.assertTrue(out["canRead"])
-        self.assertFalse(out["canWrite"])
-        self.assertEqual(out["user"], "alice@example.com")
-
-    def test_writer_gets_write_grant(self):
-        from suite.sheets import collab
-
-        self.frappe.has_permission.side_effect = [True, True]
-        out = collab.check_collab_access("SH-1")
-        self.assertTrue(out["canWrite"])
 
 
 class CollabSecretGate(unittest.TestCase):

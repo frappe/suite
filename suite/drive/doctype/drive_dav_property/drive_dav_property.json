@@ -21,11 +21,11 @@
    "label": "Property"
   },
   {
-   "description": "The File this property is attached to.",
+   "description": "The Drive Node this property is attached to.",
    "fieldname": "entity",
    "fieldtype": "Link",
    "label": "Entity",
-   "options": "File",
+   "options": "Drive Node",
    "reqd": 1,
    "search_index": 1
   },

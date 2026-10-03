@@ -5,16 +5,17 @@
 suite.meet.patches.rename_sae_meeting_to_meet_room
 suite.meet.patches.rename_sae_settings_to_meet_settings
 # --- drive ---
-# Upgraded sites still point the Drive module at the old standalone app, so its
-# doctypes resolve there. Must precede model sync or the new columns never land.
-execute:frappe.db.set_value("Module Def", "Drive", "app_name", "suite", update_modified=False)
-suite.drive.patches.team_restructure #8
-suite.drive.patches.update_roles
-suite.drive.patches.remove_personal #3
-suite.drive.patches.integrate_with_framework
+# Only sites that have run `drop_team_doctypes #2` below are supported. Every
+# older Drive patch was deleted; Build refuses a site whose Patch Log stops
+# before it (`suite.drive.patches.build.gate.UPGRADE_FLOOR_PATCH`).
+# §3.9 and §14.6: `Drive Entity Log` is `Drive Recent` under its real name.
+# Must precede model sync: sync applies the new columns and then adds
+# `UNIQUE recent_user_node`, and both need the rename to have happened.
+suite.drive.patches.rename_entity_log_to_recent
 # --- mail ---
 # --- writer ---
 suite.writer.patches.remove_frappe_writer_module
+suite.writer.patches.delete_search_index
 
 suite.mail.patches.delete_server_module
 suite.mail.patches.delete_client_module
@@ -24,46 +25,24 @@ suite.mail.patches.rename_account_settings_to_jmap_account
 # --- suite_core ---
 suite.suite_core.patches.move_rate_limit_to_suite_core
 [post_model_sync]
-# --- drive ---
-suite.drive.patches.folder_size #3
-suite.drive.patches.settings
-suite.drive.patches.new_writer #3
-suite.drive.patches.turn_on_flat_disk
-suite.drive.patches.add_modified_field
-suite.drive.patches.add_search_index
-suite.drive.patches.migrate_s3_url_prefix
-suite.drive.patches.switch_drive_roles_to_suite_roles
-suite.drive.patches.normalize_attachment_file_types
 # --- slides ---
 suite.slides.doctype.presentation.patches.sanitize_attachment_urls
 suite.slides.doctype.presentation.patches.move_attachments_to_private_folder
 suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation
 suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files
 suite.slides.doctype.presentation.patches.clear_missing_presentation_thumbnails
-# --- writer ---
-suite.writer.patches.change_versioning_schema
-suite.writer.patches.autopopulate_html
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
-# --- drive (remove teams) ---
-# Indexes first: the collapse does thousands of exists() checks on Drive Permission
-# and one File lookup per team, and core indexes neither. Unindexed it is quadratic.
-# S3 has no rename, so a mirrored tree makes a folder move copy and delete every
-# object beneath it. Sites on S3 belong on flat storage.
-execute:frappe.db.set_single_value("Drive Disk Settings", "flat", 1) if frappe.db.get_single_value("Drive Disk Settings", "enabled") else None
+# --- drive (legacy tree, before Build) ---
+# Build walks the legacy `File` tree by `folder`, which core leaves unindexed.
 suite.drive.patches.index_file_folder
-suite.drive.patches.dedupe_drive_permissions
-suite.drive.patches.remove_teams #2
 suite.drive.patches.drop_team_doctypes #2
-# content-app backfills, rewritten for the single-root world so they must
-# run after remove_teams
-suite.slides.doctype.presentation.patches.integrate_with_drive
-suite.sheets.patches.integrate_with_drive
 # --- meet ---
 suite.meet.patches.migrate_meeting_fields_to_table_multiselect
 suite.meet.patches.switch_meet_user_to_suite_user
 suite.meet.patches.migrate_pending_recording_startups
 suite.meet.patches.backfill_recording_storage_reservations
+suite.meet.patches.backfill_recording_storage_reservations #2
 suite.meet.patches.add_meet_rate_limits
 suite.meet.patches.remove_guest_session_validation_rate_limit
 suite.meet.patches.backfill_recording_finalization
@@ -105,4 +84,21 @@ suite.mail.patches.rebuild_screening_gates
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user
+# Frappe's 25 MB per-file default is too small for Drive. Leaves a site's own value alone.
+suite.suite_core.patches.set_default_max_file_size
 suite.drive.patches.webdav_property_index
+# §9.2 redefined `preview_size` from a megabyte cutoff to pixels; translates
+# only the known legacy sentinel a site could still be carrying, additive
+# and idempotent, ahead of Build so its report reads the corrected value.
+suite.drive.patches.migrate_preview_size_unit
+# --- drive (the Drive migration, spec §14) ---
+# Last in the file, in this order. Build reads the legacy Drive tables after
+# every patch above has finished reshaping them and writes only new rows.
+# Cleanup then drops the legacy tables, columns and files in the same
+# `bench migrate`: model sync never drops a column and orphan doctypes are
+# removed only after the patches, so everything Build read is still there
+# when Cleanup starts. Cleanup refuses until the operator has recorded the
+# backup taken before this migrate (`drive_cleanup_backup` in site config);
+# restoring that backup is the only rollback (§14.11).
+suite.drive.patches.build
+suite.drive.patches.cleanup

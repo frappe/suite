@@ -16,7 +16,7 @@
  */
 
 const QUOTE_CLASS =
-	/^(?:x_)?(?:gmail_quote|frappe_mail_quote|yahoo_quoted|protonmail_quote|zmail_extra)$/
+  /^(?:x_)?(?:gmail_quote|frappe_mail_quote|yahoo_quoted|protonmail_quote|zmail_extra)$/
 // Thunderbird's "On … wrote:" line, a sibling just before its <blockquote type="cite">.
 const CITE_PREFIX_CLASS = /^(?:x_)?moz-cite-prefix$/
 // Outlook on the web: an empty marker, then the header the original message follows.
@@ -24,60 +24,60 @@ const OUTLOOK_MARKER_ID = /^(?:x_)?appendonsend$/
 const OUTLOOK_WEB_HEADER_ID = /^(?:x_)?divRplyFwdMsg$/
 
 const hasClass = (el: Element, pattern: RegExp) =>
-	Array.from(el.classList).some((c) => pattern.test(c))
+  Array.from(el.classList).some((c) => pattern.test(c))
 
 // Wrap `first` and every sibling after it in one <div>, returning the wrapper.
 const wrapTrail = (first: Node) => {
-	const wrapper = first.ownerDocument!.createElement('div')
-	first.parentNode!.insertBefore(wrapper, first)
-	while (wrapper.nextSibling) wrapper.appendChild(wrapper.nextSibling)
-	return wrapper
+  const wrapper = first.ownerDocument!.createElement('div')
+  first.parentNode!.insertBefore(wrapper, first)
+  while (wrapper.nextSibling) wrapper.appendChild(wrapper.nextSibling)
+  return wrapper
 }
 
 // Wrap `nodes` (contiguous siblings, in order) in one <div>, returning the wrapper.
 const wrapRun = (nodes: Node[]) => {
-	const wrapper = nodes[0].ownerDocument!.createElement('div')
-	nodes[0].parentNode!.insertBefore(wrapper, nodes[0])
-	nodes.forEach((n) => wrapper.appendChild(n))
-	return wrapper
+  const wrapper = nodes[0].ownerDocument!.createElement('div')
+  nodes[0].parentNode!.insertBefore(wrapper, nodes[0])
+  nodes.forEach((n) => wrapper.appendChild(n))
+  return wrapper
 }
 
 // Outlook's trail starts at the marker/rule just before its header when they're present.
 const outlookTrailStart = (header: Element) => {
-	let start: Element = header
-	for (let prev = start.previousElementSibling; prev; prev = prev.previousElementSibling) {
-		if (prev.tagName !== 'HR' && !OUTLOOK_MARKER_ID.test(prev.id)) break
-		start = prev
-	}
-	return start
+  let start: Element = header
+  for (let prev = start.previousElementSibling; prev; prev = prev.previousElementSibling) {
+    if (prev.tagName !== 'HR' && !OUTLOOK_MARKER_ID.test(prev.id)) break
+    start = prev
+  }
+  return start
 }
 
 // Thunderbird's attribution line before a cite blockquote, when there is one.
 const attributionBefore = (quote: Element) => {
-	const prev = quote.previousElementSibling
-	return prev && hasClass(prev, CITE_PREFIX_CLASS) ? prev : null
+  const prev = quote.previousElementSibling
+  return prev && hasClass(prev, CITE_PREFIX_CLASS) ? prev : null
 }
 
 export const findQuoteRoots = (root: ParentNode): Element[] => {
-	const candidates = new Set<Element>()
+  const candidates = new Set<Element>()
 
-	root.querySelectorAll('[class]').forEach((el) => {
-		if (hasClass(el, QUOTE_CLASS)) candidates.add(el)
-	})
+  root.querySelectorAll('[class]').forEach((el) => {
+    if (hasClass(el, QUOTE_CLASS)) candidates.add(el)
+  })
 
-	root.querySelectorAll('[id]').forEach((el) => {
-		if (OUTLOOK_WEB_HEADER_ID.test(el.id)) candidates.add(wrapTrail(outlookTrailStart(el)))
-	})
+  root.querySelectorAll('[id]').forEach((el) => {
+    if (OUTLOOK_WEB_HEADER_ID.test(el.id)) candidates.add(wrapTrail(outlookTrailStart(el)))
+  })
 
-	root.querySelectorAll('blockquote[type]').forEach((el) => {
-		if (el.getAttribute('type')?.toLowerCase() !== 'cite') return
-		const attribution = attributionBefore(el)
-		candidates.add(attribution ? wrapRun([attribution, el]) : el)
-	})
+  root.querySelectorAll('blockquote[type]').forEach((el) => {
+    if (el.getAttribute('type')?.toLowerCase() !== 'cite') return
+    const attribution = attributionBefore(el)
+    candidates.add(attribution ? wrapRun([attribution, el]) : el)
+  })
 
-	// Only the outermost of each trail: hiding it hides whatever is quoted inside it.
-	return Array.from(candidates).filter((el) => {
-		for (let p = el.parentElement; p; p = p.parentElement) if (candidates.has(p)) return false
-		return true
-	})
+  // Only the outermost of each trail: hiding it hides whatever is quoted inside it.
+  return Array.from(candidates).filter((el) => {
+    for (let p = el.parentElement; p; p = p.parentElement) if (candidates.has(p)) return false
+    return true
+  })
 }

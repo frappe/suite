@@ -1,4 +1,4 @@
-import { COLORS, COL_HEADER_H, ROW_HEADER_W } from '../constants.js'
+import { COL_HEADER_H, COLORS, ROW_HEADER_W } from '../constants.js'
 
 export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
   const _isFilterHidden = isFilterHidden || (() => false)
@@ -14,11 +14,13 @@ export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
     ctx.beginPath()
     for (let r = r0; r <= r1 + 1; r++) {
       const y = rowY(r) + 0.5
-      ctx.moveTo(ROW_HEADER_W, y); ctx.lineTo(cssW, y)
+      ctx.moveTo(ROW_HEADER_W, y)
+      ctx.lineTo(cssW, y)
     }
     for (let c = c0; c <= c1 + 1; c++) {
       const x = colX(c) + 0.5
-      ctx.moveTo(x, COL_HEADER_H); ctx.lineTo(x, cssH)
+      ctx.moveTo(x, COL_HEADER_H)
+      ctx.lineTo(x, cssH)
     }
     ctx.stroke()
   }
@@ -30,7 +32,8 @@ export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
     for (let c = c0; c <= c1; c++) {
       if (cw(c) > 0 && cw(c + 1) === 0) {
         const x = colX(c) + cw(c) + 0.5
-        ctx.moveTo(x, COL_HEADER_H); ctx.lineTo(x, cssH)
+        ctx.moveTo(x, COL_HEADER_H)
+        ctx.lineTo(x, cssH)
       }
     }
     for (let r = r0; r <= r1; r++) {
@@ -40,7 +43,8 @@ export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
       // at this y is still drawn by _drawMainGridLines.
       if (rh(r) > 0 && rh(r + 1) === 0 && !_isFilterHidden(r + 1)) {
         const y = rowY(r) + rh(r) + 0.5
-        ctx.moveTo(ROW_HEADER_W, y); ctx.lineTo(cssW, y)
+        ctx.moveTo(ROW_HEADER_W, y)
+        ctx.lineTo(cssW, y)
       }
     }
     ctx.stroke()
@@ -52,11 +56,13 @@ export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
     ctx.beginPath()
     if (frozW > 0) {
       const x = ROW_HEADER_W + frozW + 0.5
-      ctx.moveTo(x, COL_HEADER_H); ctx.lineTo(x, cssH)
+      ctx.moveTo(x, COL_HEADER_H)
+      ctx.lineTo(x, cssH)
     }
     if (frozH > 0) {
       const y = COL_HEADER_H + frozH + 0.5
-      ctx.moveTo(ROW_HEADER_W, y); ctx.lineTo(cssW, y)
+      ctx.moveTo(ROW_HEADER_W, y)
+      ctx.lineTo(cssW, y)
     }
     ctx.stroke()
   }

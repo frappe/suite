@@ -26,8 +26,8 @@ import { HocuspocusProvider } from '@hocuspocus/provider'
 
 import { hydrateYDoc } from './ydoc.js'
 
-const META_MAP   = '__collab_meta'
-const META_BOOT  = 'bootstrapped'
+const META_MAP = '__collab_meta'
+const META_BOOT = 'bootstrapped'
 
 /**
  * @param {object}   opts
@@ -44,77 +44,77 @@ const META_BOOT  = 'bootstrapped'
  * @param {typeof HocuspocusProvider} [opts._Provider] - test seam
  */
 export function createHocuspocusClient({
-	doc,
-	sheetId,
-	url,
-	token,
-	getSnapshot,
-	onStatusChange,
-	_Provider = HocuspocusProvider,
+  doc,
+  sheetId,
+  url,
+  token,
+  getSnapshot,
+  onStatusChange,
+  _Provider = HocuspocusProvider,
 } = {}) {
-	if (!doc || !sheetId || !url) {
-		throw new Error('createHocuspocusClient: doc, sheetId and url are required')
-	}
+  if (!doc || !sheetId || !url) {
+    throw new Error('createHocuspocusClient: doc, sheetId and url are required')
+  }
 
-	const provider = new _Provider({
-		url,
-		name: sheetId,
-		document: doc,
-		token,
-		onAuthenticationFailed({ reason }) {
-			// eslint-disable-next-line no-console
-			console.warn(`[collab] auth failed for ${sheetId}: ${reason}`)
-			onStatusChange?.('authentication-failed')
-		},
-		onStatus({ status }) {
-			// 'connected' | 'disconnected' | 'connecting'
-			onStatusChange?.(status)
-		},
-		onSynced() {
-			// Initial server state has been applied to `doc`. Now safe to
-			// decide whether we need to seed the doc for the first time.
-			_maybeBootstrap()
-		},
-	})
+  const provider = new _Provider({
+    url,
+    name: sheetId,
+    document: doc,
+    token,
+    onAuthenticationFailed({ reason }) {
+      // eslint-disable-next-line no-console
+      console.warn(`[collab] auth failed for ${sheetId}: ${reason}`)
+      onStatusChange?.('authentication-failed')
+    },
+    onStatus({ status }) {
+      // 'connected' | 'disconnected' | 'connecting'
+      onStatusChange?.(status)
+    },
+    onSynced() {
+      // Initial server state has been applied to `doc`. Now safe to
+      // decide whether we need to seed the doc for the first time.
+      _maybeBootstrap()
+    },
+  })
 
-	function _maybeBootstrap() {
-		const meta = doc.getMap(META_MAP)
-		if (meta.get(META_BOOT)) return
-		if (!getSnapshot) return  // caller opted out
+  function _maybeBootstrap() {
+    const meta = doc.getMap(META_MAP)
+    if (meta.get(META_BOOT)) return
+    if (!getSnapshot) return // caller opted out
 
-		// Leader election: the live client with the lowest Yjs clientID
-		// among the currently-known awareness states (including self)
-		// performs the seed. Everyone else waits and converges.
-		//
-		// Why this is enough: the only race is "two new clients open a
-		// brand-new sheet within a few milliseconds of each other, before
-		// any persisted state existed." The picked leader writes the
-		// `bootstrapped` flag in the same transaction as the seed, so
-		// the loser sees a non-empty doc + flag on its next change tick
-		// and skips. In the degenerate case where awareness hasn't
-		// converged yet, both sides may think they're the leader — they
-		// then both seed into an empty doc with the same content,
-		// producing exactly the same end state because the seed is
-		// deterministic. Duplicated work, not duplicated data.
-		const myId   = doc.clientID
-		const peers  = Array.from(provider.awareness.getStates().keys())
-		const allIds = peers.includes(myId) ? peers : peers.concat([myId])
-		const leader = Math.min(...allIds)
-		if (leader !== myId) return
+    // Leader election: the live client with the lowest Yjs clientID
+    // among the currently-known awareness states (including self)
+    // performs the seed. Everyone else waits and converges.
+    //
+    // Why this is enough: the only race is "two new clients open a
+    // brand-new sheet within a few milliseconds of each other, before
+    // any persisted state existed." The picked leader writes the
+    // `bootstrapped` flag in the same transaction as the seed, so
+    // the loser sees a non-empty doc + flag on its next change tick
+    // and skips. In the degenerate case where awareness hasn't
+    // converged yet, both sides may think they're the leader — they
+    // then both seed into an empty doc with the same content,
+    // producing exactly the same end state because the seed is
+    // deterministic. Duplicated work, not duplicated data.
+    const myId = doc.clientID
+    const peers = Array.from(provider.awareness.getStates().keys())
+    const allIds = peers.includes(myId) ? peers : peers.concat([myId])
+    const leader = Math.min(...allIds)
+    if (leader !== myId) return
 
-		doc.transact(() => {
-			if (meta.get(META_BOOT)) return
-			meta.set(META_BOOT, true)
-			const snap = getSnapshot()
-			if (snap) hydrateYDoc(doc, { sheet: snap })
-		}, 'bootstrap')
-	}
+    doc.transact(() => {
+      if (meta.get(META_BOOT)) return
+      meta.set(META_BOOT, true)
+      const snap = getSnapshot()
+      if (snap) hydrateYDoc(doc, { sheet: snap })
+    }, 'bootstrap')
+  }
 
-	return {
-		provider,
-		awareness: provider.awareness,
-		destroy() {
-			provider.destroy()
-		},
-	}
+  return {
+    provider,
+    awareness: provider.awareness,
+    destroy() {
+      provider.destroy()
+    },
+  }
 }

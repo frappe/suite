@@ -6,42 +6,42 @@ import json
 import random
 import re
 import string
-import uuid
 
 import frappe
 from frappe import _
-from frappe.core.doctype.file.file import get_local_image
 from frappe.model.document import Document
 from frappe.query_builder.functions import Count
 from frappe.utils import cstr, flt
 
-from suite.drive.api.permissions import user_has_permission
-from suite.drive.overrides.file import File as DriveFile
-from suite.drive.overrides.file import content_has_permission, content_query_conditions
+from suite import drive
+from suite.slides import drive as slides_drive
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
+NODE_FIELD = slides_drive.NODE_FIELD
 
-class Presentation(Document):
-    def before_save(self):
-        self.slug = slug(self.title)
+
+class Presentation(drive.DriveContent, Document):
+    """One deck.
+
+    Drive owns the deck's title, place, grants, lifecycle, versions, comments,
+    preview, and byte charge; the `DriveContent` mixin supplies `node`,
+    `node_title`, `drive_check`, `drive_touch`, and `drive_take_version`
+    (§10.2). What is here is the body: slides, theme, and the references of a
+    composite.
+    """
 
     def validate(self):
         self.validate_advance_after()
 
-        if self.is_composite:
-            if not self.reference_presentations:
-                frappe.throw(
-                    "Please add at least one reference presentation to create a composite presentation."
-                )
-
-            for ref in self.reference_presentations:
-                ref_doc = frappe.get_cached_doc("Presentation", ref.presentation)
-                if not is_public_presentation(ref_doc.name):
-                    frappe.throw(
-                        f"Reference presentation '{ref_doc.title}' must be public to create a composite presentation."
-                    )
+        if not self.is_composite:
+            return
+        if not self.reference_presentations:
+            frappe.throw("Please add at least one reference presentation to create a composite presentation.")
+        # §6.6: you may reference what you can read. Nothing is copied and
+        # nothing is forced public.
+        slides_drive.refuse_unreadable_references(self)
 
     def validate_advance_after(self):
         for row in self.slides:
@@ -57,71 +57,17 @@ class Presentation(Document):
                     )
                 )
 
-    def after_insert(self):
-        if self.is_template:
-            return
-        self.create_drive_file()
-
     def on_update(self):
-        # composite decks are always public — a system invariant, enforced directly
-        # since File.share() would require the saver to hold a share grant
-        if self.is_composite and not is_public_presentation(self.name):
-            file = DriveFile.get_for_doc("Presentation", self.name)
-            if not file:
-                return
-            existing = frappe.db.get_value("Drive Permission", {"entity": file, "user": "", "deny": 0})
-            perm = (
-                frappe.get_doc("Drive Permission", existing)
-                if existing
-                else frappe.new_doc("Drive Permission").update({"entity": file, "user": ""})
-            )
-            perm.read = 1
-            perm.save(ignore_permissions=True)
-
-    def create_drive_file(self, parent: str | None = None):
-        return DriveFile.create_for_doc(
-            self,
-            parent=parent or self.flags.get("drive_parent"),
-            mime_type="frappe/slides",
-            file_type="Presentation",
-        )
-
-
-ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
-
-
-@frappe.whitelist()
-def save_base64_image(base64_data: str, presentation_name: str, prefix: str) -> str:
-    presentation = frappe.get_doc("Presentation", presentation_name)
-    presentation.check_permission("write")
-
-    match = re.match(r"^data:image/([a-zA-Z0-9.+-]+);base64,(.+)$", base64_data or "", re.DOTALL)
-    if not match:
-        frappe.throw("Invalid image data")
-
-    ext = match.group(1).lower()
-    if ext not in ALLOWED_IMAGE_EXTENSIONS:
-        frappe.throw("Unsupported image type")
-
-    try:
-        content = base64.b64decode(match.group(2), validate=True)
-    except Exception:
-        frappe.throw("Malformed base64 image content")
-
-    filename = f"{prefix}-{uuid.uuid4().hex[:6]}.{ext}"
-
-    file_doc = frappe.get_doc(
-        {
-            "doctype": "File",
-            "file_name": filename,
-            "content": content,
-            "is_private": 1,
-            "attached_to_doctype": "Presentation",
-            "attached_to_name": presentation_name,
-        }
-    ).insert()
-
-    return file_doc.file_url
+        if self.flags.in_insert:
+            # `create_document` stamps the new node itself. Touching here
+            # would only add the row to the mixin's per-request debounce
+            # set, and the first real save of the same request would then
+            # be swallowed.
+            return
+        # The body changed, so the node's `content_modified` moves with it
+        # (§8.11). It is the deck's only stamp and the daily media sweep's
+        # cursor. Debounced to one write per request by the mixin.
+        self.drive_touch()
 
 
 def get_thumbnail_content(base64_data: str) -> tuple[bytes, str]:
@@ -144,98 +90,75 @@ def get_thumbnail_content(base64_data: str) -> tuple[bytes, str]:
     return content, "webp"
 
 
-def replace_thumbnail_file(presentation: Document, base64_data: str) -> str:
-    content, ext = get_thumbnail_content(base64_data)
-    presentation_name = presentation.name
-    file_name = f"presentation-thumbnail-{presentation_name}.{ext}"
-
-    delete_existing_thumbnail_files(presentation, file_name)
-
-    return create_thumbnail_file(presentation_name, file_name, content)
-
-
-def delete_existing_thumbnail_files(presentation: Document, file_name: str) -> None:
-    file_doc_names = set()
-
-    file_doc_names.update(
-        frappe.get_all(
-            "File",
-            filters={
-                "attached_to_doctype": "Presentation",
-                "attached_to_name": presentation.name,
-                "file_name": file_name,
-                "is_private": 1,
-            },
-            pluck="name",
-        )
-    )
-
-    for file_doc_name in file_doc_names:
-        frappe.delete_doc("File", file_doc_name)
-
-
-def create_thumbnail_file(presentation_name: str, file_name: str, content: bytes) -> str:
-    file = frappe.get_doc(
-        {
-            "doctype": "File",
-            "attached_to_doctype": "Presentation",
-            "attached_to_name": presentation_name,
-            # thumbnail is an Attach Image field, so the framework's attach hook looks
-            # for a File carrying the fieldname; without it every save of the deck is
-            # treated as an unattached URL and re-creates the File from disk
-            "attached_to_field": "thumbnail",
-            "file_name": file_name,
-            "is_private": 1,
-            "content": content,
-        }
-    ).insert()
-
-    return file.file_url
-
-
 @frappe.whitelist()
 def save_presentation_thumbnail(presentation_name: str, base64_data: str) -> str:
-    presentation = frappe.get_doc("Presentation", presentation_name)
-    presentation.check_permission("write")
+    """Store the browser's deck capture.
 
-    file_url = replace_thumbnail_file(presentation, base64_data)
-
-    if presentation.thumbnail != file_url:
-        # the thumbnail is derived, not an edit: bumping modified would make the
-        # editor discard local changes it had not synced yet
-        presentation.db_set("thumbnail", file_url, update_modified=False)
-    return file_url
+    Drive checks EDIT at the node and replaces the `Drive Node Preview` row
+    without stamping the deck ([012 §8]). Conversion to webp already happened
+    in the browser [012 §9]. Nothing is minted on the deck itself, so the
+    answer is empty.
+    """
+    content, _ext = get_thumbnail_content(base64_data)
+    slides_drive.push_deck_preview(presentation_name, content)
+    return ""
 
 
 def slug(text: str) -> str:
     return text.lower().replace(" ", "-")
 
 
-# whitelist needed for drive integration
-@frappe.whitelist()
-def get_presentation_thumbnail(presentation_name: str, index: int | None = 1) -> str:
-    """Returns the thumbnail of a presentation."""
-    return frappe.get_value("Presentation", presentation_name, "thumbnail") or ""
-
-
 @frappe.whitelist()
 def get_presentations() -> list[dict]:
-    """
-    Returns a list of presentation details
-    - info and presentation thumbnail
+    """The caller's own decks, newest change first, with their slide counts.
+
+    Drive owns a deck's title, its template flag, and its lifecycle, so the
+    node is read for those three answers: a trashed deck and a template are
+    left out, and the title is the node's.
+
+    LIMITATION: `thumbnail` is empty. A deck's preview is a `Drive Node
+    Preview` served over §6.8's signed byte path, which this payload has no
+    field for.
     """
     presentations = frappe.get_list(
         "Presentation",
-        fields=["name", "title", "owner", "creation", "modified_by", "modified", "thumbnail"],
+        fields=["name", NODE_FIELD, "owner", "creation", "modified_by", "modified"],
         order_by="modified desc",
-        filters=[["owner", "=", frappe.session.user], ["is_template", "=", 0]],
+        filters=[["owner", "=", frappe.session.user]],
     )
+    presentations = _published_decks(presentations)
 
     counts = get_slide_counts([p["name"] for p in presentations])
     for presentation in presentations:
         presentation["slide_count"] = counts.get(presentation["name"], 0)
 
     return presentations
+
+
+def _published_decks(rows: list[dict]) -> list[dict]:
+    """Name each deck from its node, and drop what Drive hides from this list."""
+    nodes = [row[NODE_FIELD] for row in rows]
+    published = {}
+    if nodes:
+        published = {
+            row["name"]: row
+            for row in frappe.get_all(
+                "Drive Node",
+                filters={"name": ["in", nodes], "state": "Active", "is_template": 0},
+                fields=["name", "title"],
+                ignore_permissions=True,
+            )
+        }
+    kept = []
+    for row in rows:
+        listed = published.get(row.pop(NODE_FIELD))
+        if not listed:
+            # Trashed, or a template. Either way Drive hides it here.
+            continue
+        row["title"] = listed["title"]
+        row["thumbnail"] = ""
+        kept.append(row)
+    return kept
 
 
 def get_slide_counts(presentation_names: list[str]) -> dict[str, int]:
@@ -257,21 +180,20 @@ def get_slide_counts(presentation_names: list[str]) -> dict[str, int]:
 
 @frappe.whitelist()
 def update_slide_attachments(parent: str, slide: dict | str):
-    frappe.get_doc("Presentation", parent).check_permission("write")
+    """Adopt a pasted slide's pictures under this deck and give its elements fresh ids.
 
+    Drive shares the blob and reuses a node the deck already holds for the
+    same picture (§8.9). The gate is UPLOAD at the deck node, and it is taken
+    here rather than left to `adopt_media`: `adopt_media` answers an empty map
+    before any check when the slide names no media, which would let a
+    stranger learn the deck exists.
+    """
     slide = json.loads(slide) if isinstance(slide, str) else slide
-
-    elements_data = slide.get("elements") or "[]"
-    elements = elements_data if isinstance(elements_data, list) else json.loads(elements_data)
+    drive.check(slides_drive.node_of(parent), drive.UPLOAD)
+    elements = slides_drive.elements_of(slide)
     remap_element_ids(elements)
-    for element in elements:
-        if element.get("src") and element["src"].startswith("/private"):
-            element["attachmentName"] = get_attachment(parent, element["src"])
-        attach_poster(parent, element)
-
-    slide["elements"] = json.dumps(elements)
-
-    return slide
+    slide["elements"] = elements
+    return slides_drive.adopt_slide_media(parent, slide)
 
 
 def remap_element_ids(elements):
@@ -291,52 +213,6 @@ def remap_element_ids(elements):
             connector[end] = {**bound, "elementId": target_id} if target_id else None
 
 
-def apply_slide_layout(slide, ref_id, parent):
-    layout_slide = frappe.get_doc("Slide", ref_id)
-
-    slide_dict = layout_slide.as_dict()
-    slide_dict = update_slide_attachments(parent, slide_dict)
-
-    for key, value in slide_dict.items():
-        setattr(slide, key, value)
-
-
-def create_new_slide(parent, ref_id):
-    """
-    Creates a new slide with the given reference slide id.
-    """
-    slide = frappe.new_doc("Slide")
-
-    apply_slide_layout(slide, ref_id, parent)
-
-    slide.parent = parent
-    slide.parentfield = "slides"
-    slide.parenttype = "Presentation"
-    slide.save()
-
-    return slide
-
-
-def get_slides_from_ref(parent, theme, duplicate_from):
-    ref_name = duplicate_from or theme or "Light"
-    ref_presentation = frappe.get_doc("Presentation", ref_name)
-
-    slides = []
-
-    if duplicate_from:
-        for slide in ref_presentation.slides:
-            new_slide = create_new_slide(parent, slide.name)
-            new_slide.idx = slide.idx
-            slides.append(new_slide)
-    else:
-        first_index = 2 if ref_presentation.title in ("Light", "Dark") else 0
-        first_slide = create_new_slide(parent, ref_presentation.slides[first_index].name)
-        first_slide.idx = 1
-        slides.append(first_slide)
-
-    return slides
-
-
 def is_system_template(template_title: str) -> bool:
     return template_title in SYSTEM_TEMPLATE_TITLES
 
@@ -346,118 +222,91 @@ def get_template_thumbnail(template_title: str, index: int) -> str:
     return f"/assets/suite/slides/frontend/images/layouts/{template_title}/thumbnail-{index}.webp"
 
 
-def get_template_cover_thumbnail(template):
-    template_title, template_thumbnail = frappe.get_value(
-        "Presentation",
-        template,
-        ["title", "thumbnail"],
-    )
-    return (
-        get_template_thumbnail(template_title, 3)
-        if is_system_template(template_title)
-        else template_thumbnail
-    )
-
-
-def set_duplicate_metadata(presentation, duplicate_from) -> str:
-    src_title, src_theme, src_thumbnail = frappe.get_value(
-        "Presentation",
-        duplicate_from,
-        ["title", "theme", "thumbnail"],
-    )
-    presentation.title = f"Copy of {src_title}"
-    presentation.theme = src_theme
-    return src_thumbnail
-
-
-def set_template_metadata(presentation, template) -> str:
-    presentation.title = "Untitled"
-    presentation.theme = template
-    return get_template_cover_thumbnail(template)
-
-
-def copy_thumbnail_file(presentation_name: str, source_url: str) -> str:
-    source = frappe.db.get_value("File", {"file_url": source_url}, ["name", "file_name"], as_dict=True)
-    if not source:
-        return ""
-
-    try:
-        content = frappe.get_doc("File", source.name).get_content()
-    except FileNotFoundError:
-        # blob is already gone; the editor captures a fresh thumbnail on the next edit
-        return ""
-
-    _, _, ext = source.file_name.rpartition(".")
-    file_name = f"presentation-thumbnail-{presentation_name}.{ext or 'webp'}"
-
-    return create_thumbnail_file(presentation_name, file_name, content)
-
-
-def adopt_thumbnail(presentation: Document, source_url: str) -> None:
-    """Give a new deck its own copy of the thumbnail it started from.
-
-    Sharing the source's URL leaves the field pointing at a File this deck does not
-    own: once the source regenerates or deletes its thumbnail the blob can go with it,
-    and every later save of this deck retries the missing file through frappe's attach
-    hook. System template covers ship with the app, so they have no File to copy.
-    """
-    if not source_url:
-        return
-
-    thumbnail = (
-        copy_thumbnail_file(presentation.name, source_url)
-        if source_url.startswith(("/files/", "/private/files/"))
-        else source_url
-    )
-    presentation.db_set("thumbnail", thumbnail)
-
-
 @frappe.whitelist()
 def create_presentation(
     template: str | None = None, duplicate_from: str | None = None, parent: str | None = None
 ):
-    if parent and not user_has_permission(parent, "upload"):
-        frappe.throw(
-            "Cannot access folder due to insufficient permissions",
-            frappe.PermissionError,
-        )
+    """Create a new deck and return it, so the editor can jump straight in.
 
-    presentation = frappe.new_doc("Presentation")
+    An atomic adapter over `drive.create_document`: the node and the deck are
+    written together, in Drive's own savepoint, so `content.require_node`
+    never sees a fresh deck with no node. Duplicate-from and
+    new-from-template are both a `from_node` copy: Drive runs the deck's
+    `duplicate` factory, copies every slide and its media node for node, and
+    charges the destination root (§8.9). There is no template verb (§8.10) —
+    the two differ only in the title `create_document` is given and which
+    source it names. Drive also runs the UPLOAD check on `parent` itself.
+
+    `parent` is the Drive folder the caller is looking at. Empty means "my
+    Drive": the caller's own root, provisioned on first use.
+    """
     if duplicate_from:
         if not frappe.has_permission("Presentation", "read", duplicate_from):
             frappe.throw("You cannot duplicate this presentation", frappe.PermissionError)
-        source_thumbnail = set_duplicate_metadata(presentation, duplicate_from)
+        source_node = slides_drive.node_of(duplicate_from)
+        title = f"Copy of {slides_drive.node_title_of(source_node)}"
     else:
-        if not template or not frappe.db.get_value("Presentation", template, "is_template"):
+        # A template carries `is_template` on its node (§8.10).
+        template_node = template and frappe.db.get_value("Presentation", template, NODE_FIELD)
+        if not template_node or not slides_drive.node_is_template(template_node):
             frappe.throw(f"Template {template!r} does not exist", frappe.DoesNotExistError)
         if not frappe.has_permission("Presentation", "read", template):
             frappe.throw("You cannot create a presentation from this template", frappe.PermissionError)
-        source_thumbnail = set_template_metadata(presentation, template)
-    presentation.flags.drive_parent = parent
-    presentation.insert()
+        source_node = template_node
+        title = "Untitled"
 
-    # only now does the deck have a name to attach its own thumbnail File to
-    adopt_thumbnail(presentation, source_thumbnail)
+    # Resolved after the source, so a deck named by a caller who has no Drive
+    # root yet is still refused by name ("that template does not exist")
+    # rather than by the root the request would have provisioned for it.
+    parent_node = parent or _home_folder()
 
-    presentation.slides = get_slides_from_ref(presentation.name, template, duplicate_from)
+    # `create_document` closes its own savepoint before returning, so the
+    # `theme` write below is outside it. This one holds both: a new deck must
+    # never exist without the theme its layouts are resolved through.
+    savepoint = f"slides_create_presentation_{frappe.generate_hash(12)}"
+    frappe.db.savepoint(savepoint)
+    try:
+        node = drive.create_document(
+            parent_node, title, content_doctype=slides_drive.DOCTYPE, from_node=source_node
+        )
+        docname = slides_drive.docname_for_node(node)
+        if not docname:
+            frappe.throw(_("The new presentation could not be found"), frappe.ValidationError)
+        if not duplicate_from:
+            # `theme` names the template the editor resolves layouts through
+            # (`LayoutDialog.vue`, `slide.js:addEmptySlide`). Drive's copy
+            # carries the source's own `theme`, and a template's is empty, so
+            # new-from-template has to name the template it started from. It
+            # is Slides' own body column, not a Drive mirror.
+            frappe.db.set_value(slides_drive.DOCTYPE, docname, "theme", template, update_modified=False)
+    except Exception as failure:
+        # `create_document` takes row locks, so this request can be an InnoDB
+        # deadlock victim, and a victim's savepoints are gone before this arm
+        # runs. Drive's shared helper reports the deadlock the caller has to
+        # retry on instead of the savepoint that went with it.
+        drive.rollback_savepoint(savepoint, failure)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
 
-    presentation.save()
-    return presentation
+    presentation = frappe.get_doc("Presentation", docname)
+    # Drive owns the title (§10.2); it rides along for the response only.
+    answer = presentation.as_dict()
+    answer["title"] = presentation.node_title
+    return answer
 
 
-@frappe.whitelist()
-def delete_presentation(name: str):
-    return frappe.delete_doc("Presentation", name)
+def _home_folder() -> str:
+    """The caller's own Drive root, provisioned on first use.
 
-
-@frappe.whitelist(methods=["POST"])
-def update_title(name: str, title: str):
-    presentation = frappe.get_doc("Presentation", name)
-    presentation.check_permission("write")
-    base_modified = presentation.modified
-    presentation.title = title
-    presentation.save()
-    return {"slug": slug(title), "modified": presentation.modified, "base_modified": base_modified}
+    Mirrors `suite.sheets.api._home_folder`: a fresh user has no Personal root
+    until something asks for one, and Guest and Administrator never get one.
+    """
+    user = frappe.session.user
+    home = drive.personal_root_for(user) or drive.ensure_personal_root(user)
+    if not home:
+        frappe.throw(_("A Drive folder is required"), frappe.ValidationError)
+    return home
 
 
 @frappe.whitelist(methods=["POST"])
@@ -470,69 +319,16 @@ def update_theme(name: str, theme: str):
     return {"modified": presentation.modified, "base_modified": base_modified}
 
 
-def get_attachment(presentation, file_url):
-    """
-    Returns the attachment name for a file URL in a presentation.
-    """
-    # if file is already attached to the presentation, return its name
-    attachment = frappe.get_value("File", {"file_url": file_url, "attached_to_name": presentation}, "name")
-
-    # if not, create a File doc from the source presentation's attachment from where this element was copied
-    if not attachment:
-        source_doc = frappe.get_all("File", filters={"file_url": file_url}, limit=1)
-        if source_doc:
-            source_file = frappe.get_doc("File", source_doc[0].name)
-            source_file.check_permission("read")
-            new_attachment_doc = frappe.copy_doc(source_file)
-            new_attachment_doc.attached_to_name = presentation
-            new_attachment_doc.insert()
-            attachment = new_attachment_doc.name
-
-    return attachment
-
-
-def attach_poster(presentation, element):
-    """Best-effort: a broken poster must not fail the paste."""
-    poster = element.get("poster")
-    if not isinstance(poster, str) or not poster.startswith("/private"):
-        return
-    try:
-        get_attachment(presentation, poster)
-    except Exception:
-        frappe.log_error(f"could not attach poster {poster} to {presentation}")
-
-
 @frappe.whitelist()
 def get_updated_json(presentation: str, elements: list[dict]):
-    frappe.get_doc("Presentation", presentation).check_permission("write")
+    """Adopt pasted elements' pictures under this deck (§8.9).
 
-    for element in elements:
-        if element.get("type") in ["image", "video"] and element.get("src"):
-            file_url = element["src"].replace(frappe.local.site_name, "")
-            name = get_attachment(presentation, file_url)
-            element["attachmentName"] = name
-        attach_poster(presentation, element)
-
-    return elements
-
-
-def get_permission_query_conditions(user):
-    return content_query_conditions("Presentation", user, extra="`tabPresentation`.is_template = 1")
-
-
-def has_permission(doc, ptype="read", user=None):
-    user = user or frappe.session.user
-    if doc.is_template and user != "Administrator":
-        return ptype == "read" or doc.owner == user
-    return content_has_permission(doc, ptype, user)
-
-
-@frappe.whitelist(allow_guest=True)
-def is_public_presentation(name: str):
-    file = DriveFile.get_for_doc("Presentation", name)
-    if not file:
-        return False
-    return frappe.get_doc("File", file).is_public()
+    UPLOAD at the deck node, taken before the element list is read: an
+    element list naming no media would otherwise reach `adopt_media`'s
+    empty-map early return and answer a caller with no grant at all.
+    """
+    drive.check(slides_drive.node_of(presentation), drive.UPLOAD)
+    return slides_drive.adopt_element_media(presentation, elements)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -550,12 +346,12 @@ def get_public_presentation(name: str):
 
 @frappe.whitelist()
 def get_templates():
-    templates = frappe.get_all(
-        "Presentation",
-        filters={"is_template": 1},
-        fields=["name", "title", "slug", "creation", "is_template"],
-        order_by="creation",
-    )
+    """The template picker: every template the caller may read, with its layouts.
+
+    A template is a deck whose node carries `is_template` (§8.10), and who
+    may use it is the grant on that node, so the list is scoped by READ.
+    """
+    templates = _readable_templates()
 
     slides = frappe.get_all(
         "Slide",
@@ -585,111 +381,80 @@ def get_templates():
     return templates
 
 
+def _readable_templates() -> list[dict]:
+    """The readable template nodes, oldest first, under the keys the picker reads."""
+    nodes = frappe.get_all(
+        "Drive Node",
+        filters={"content_doctype": slides_drive.DOCTYPE, "is_template": 1, "state": "Active"},
+        fields=["name", "title", "content_docname", "creation"],
+        order_by="creation asc",
+        ignore_permissions=True,
+    )
+    if not nodes:
+        return []
+    readable = set(
+        frappe.get_list(
+            "Presentation",
+            filters={NODE_FIELD: ["in", [node["name"] for node in nodes]]},
+            pluck="name",
+        )
+    )
+    return [
+        {
+            "name": node["content_docname"],
+            "title": node["title"],
+            "slug": slug(node["title"] or ""),
+            "creation": node["creation"],
+            "is_template": 1,
+        }
+        for node in nodes
+        if node["content_docname"] in readable
+    ]
+
+
 @frappe.whitelist(allow_guest=True)
 def get_composite_presentation(name: str):
-    if not (is_public_presentation(name) and is_composite_presentation(name)):
+    """Render one composite deck for this caller.
+
+    One READ point check on the composite, then one per referenced deck
+    against the same principals (§6.6). Being named grants nothing and nothing
+    is copied, so the composite stays a live view. A reference the caller
+    cannot read is marked in `references`, never dropped silently, and the
+    client decides whether to draw a placeholder.
+    """
+    if not is_composite_presentation(name) or not slides_drive.deck_is_readable(name):
+        # One answer for "not a composite", "no such deck", and "a composite
+        # you cannot read". This route is guest-reachable, so two different
+        # errors would tell a stranger which names are composites.
         frappe.throw("Presentation is not public", frappe.PermissionError)
-
     doc = frappe.get_doc("Presentation", name)
-
+    references = slides_drive.composite_references(name)
     composite_slides = []
-
-    for reference in doc.reference_presentations:
-        # references are public when the composite is saved, but can be made private later
-        if not is_public_presentation(reference.presentation):
+    for reference in references:
+        if not reference["readable"]:
             continue
-        ref_doc = frappe.get_cached_doc("Presentation", reference.presentation)
-        for slide in ref_doc.slides:
-            composite_slides.append(slide)
-
+        composite_slides.extend(frappe.get_cached_doc("Presentation", reference["presentation"]).slides)
     doc.slides = composite_slides
-
-    return doc.as_dict()
-
-
-def can_convert_image(extn):
-    return extn.lower() in ["png", "jpeg", "jpg"]
-
-
-def convert_and_save_image(image, path):
-    image.save(path, "WEBP")
-    return path
-
-
-def create_new_webp_file_doc(presentation_name, file_url, image, extn):
-    files = frappe.get_all(
-        "File",
-        filters={
-            "attached_to_name": presentation_name,
-            "file_url": file_url,
-        },
-        fields=["name"],
-        limit=1,
-    )
-    if files:
-        _file = frappe.get_doc("File", files[0].name)
-        webp_path = _file.get_full_path().replace(extn, "webp")
-        convert_and_save_image(image, webp_path)
-        new_file = frappe.copy_doc(_file)
-        new_file.file_name = f"{_file.file_name.replace(extn, 'webp')}"
-        new_file.file_url = f"{_file.file_url.replace(extn, 'webp')}"
-        new_file.mime_type = "image/webp"
-        new_file.save()
-        _file.delete()
-        return new_file
-    return file_url
-
-
-@frappe.whitelist()
-def get_webp_doc(presentation_name: str, file_doc: dict):
-    file_url = file_doc.get("file_url", "")
-    if file_url.endswith((".webp", ".svg")):
-        return file_doc
-
-    image, filename, extn = get_local_image(file_url)
-
-    if can_convert_image(extn):
-        return create_new_webp_file_doc(presentation_name, file_url, image, extn)
-
-    return file_doc
-
-
-def update_element_urls(presentation, element):
-    attribute = "poster" if element.get("type") == "video" else "src"
-    image_url = element.get(attribute, "")
-
-    webp_doc = get_webp_doc(presentation, image_url)
-
-    if webp_doc.file_url:
-        element["attachmentName"] = webp_doc.name
-        element[attribute] = webp_doc.file_url
-
-
-@frappe.whitelist()
-def optimize_images(name: str):
-    doc = frappe.get_doc("Presentation", name)
-
-    for slide in doc.slides:
-        elements = json.loads(slide.elements or "[]")
-
-        for element in elements:
-            if element.get("type") in ["image", "video"]:
-                update_element_urls(doc.name, element)
-
-        slide.elements = json.dumps(elements, indent=2)
-
-    return doc.save()
+    answer = doc.as_dict()
+    answer["references"] = references
+    return answer
 
 
 @frappe.whitelist(allow_guest=True)
 def get_editor_access(presentation_id: str) -> str:
+    """Answer one deck's access level for this caller: "edit", "view", or "none".
+
+    One node, one role ladder. `Drive Grant` is the only authority (§1), and
+    a refusal below Read is a 404 rather than a disclosure (§5.4). A composite
+    is a live view over other decks: its own body is not editable however
+    high the caller's role is, so Edit reads as view.
+    """
     is_composite = frappe.db.get_value("Presentation", presentation_id, "is_composite")
-    if is_composite:
-        return "view"
-
-    if frappe.has_permission("Presentation", "write", presentation_id):
-        return "edit"
-    if frappe.has_permission("Presentation", "read", presentation_id):
-        return "view"
-
+    node = slides_drive.node_of(presentation_id)
+    for role, answer in ((drive.EDIT, "edit"), (drive.READ, "view")):
+        try:
+            drive.check(node, role)
+        except frappe.ValidationError:
+            continue
+        return "view" if is_composite else answer
     return "none"

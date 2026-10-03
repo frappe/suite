@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from './format-number.js'
+import { describe, expect, it } from 'vitest'
+
+import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from './format-number.js'
 
 describe('parseNumberFmt', () => {
   it('returns empty fields for falsy input', () => {
@@ -19,17 +20,29 @@ describe('parseNumberFmt', () => {
   })
 
   it('parses two-part `type:variant` as variant-only', () => {
-    expect(parseNumberFmt('currency:INR')).toEqual({ type: 'currency', variant: 'INR', decimals: null })
+    expect(parseNumberFmt('currency:INR')).toEqual({
+      type: 'currency',
+      variant: 'INR',
+      decimals: null,
+    })
     expect(parseNumberFmt('date:dmy')).toEqual({ type: 'date', variant: 'dmy', decimals: null })
   })
 
   it('parses three-part `type:variant:N`', () => {
-    expect(parseNumberFmt('currency:INR:2')).toEqual({ type: 'currency', variant: 'INR', decimals: 2 })
+    expect(parseNumberFmt('currency:INR:2')).toEqual({
+      type: 'currency',
+      variant: 'INR',
+      decimals: 2,
+    })
     expect(parseNumberFmt('number:in:0')).toEqual({ type: 'number', variant: 'in', decimals: 0 })
   })
 
   it('handles empty decimals slot in three-part form', () => {
-    expect(parseNumberFmt('currency:INR:')).toEqual({ type: 'currency', variant: 'INR', decimals: null })
+    expect(parseNumberFmt('currency:INR:')).toEqual({
+      type: 'currency',
+      variant: 'INR',
+      decimals: null,
+    })
   })
 })
 
@@ -59,7 +72,14 @@ describe('buildNumberFmt', () => {
   })
 
   it('round-trips through parseNumberFmt', () => {
-    for (const fmt of ['number', 'number:3', 'currency:USD:2', 'currency:INR', 'date:dmy', 'number:in:0']) {
+    for (const fmt of [
+      'number',
+      'number:3',
+      'currency:USD:2',
+      'currency:INR',
+      'date:dmy',
+      'number:in:0',
+    ]) {
       const { type, variant, decimals } = parseNumberFmt(fmt)
       expect(buildNumberFmt(type, variant, decimals)).toBe(fmt)
     }
@@ -81,7 +101,9 @@ describe('applyNumberFmt — backwards-compat baseline', () => {
   })
 
   it('number applies decimals', () => {
-    expect(applyNumberFmt(1234.5, 'number:2')).toBe((1234.5).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+    expect(applyNumberFmt(1234.5, 'number:2')).toBe(
+      (1234.5).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    )
   })
 
   it('currency defaults to USD with 2 decimals', () => {
@@ -97,7 +119,7 @@ describe('applyNumberFmt — backwards-compat baseline', () => {
 
   it('percentage scales x100 and appends %', () => {
     expect(applyNumberFmt(0.25, 'percentage')).toBe('25.00%')
-    expect(applyNumberFmt(0.5,  'percentage:0')).toBe('50%')
+    expect(applyNumberFmt(0.5, 'percentage:0')).toBe('50%')
   })
 
   it('non-numeric value with numeric format passes through', () => {
@@ -205,7 +227,9 @@ describe('applyNumberFmt — date variants', () => {
 
   it('time/datetime read the same string', () => {
     expect(applyNumberFmt('2026-03-15 14:50:30.789345', 'time:hm')).toBe('14:50')
-    expect(applyNumberFmt('2026-03-15 14:50:30.789345', 'datetime:ymd_hm')).toBe('2026-03-15, 14:50')
+    expect(applyNumberFmt('2026-03-15 14:50:30.789345', 'datetime:ymd_hm')).toBe(
+      '2026-03-15, 14:50',
+    )
   })
 })
 
@@ -303,7 +327,7 @@ describe('applyCustomFmt — Excel-style patterns', () => {
     expect(f(12, '#,##0 "kg"')).toBe('12 kg')
   })
   it('escaped literal char', () => {
-    expect(f(5, '0\\%')).toBe('5%')   // backslash-escaped % is literal, no scaling
+    expect(f(5, '0\\%')).toBe('5%') // backslash-escaped % is literal, no scaling
   })
   it('negative gets a leading minus', () => {
     expect(f(-1234.5, '#,##0.00')).toBe('-1,234.50')
@@ -320,6 +344,11 @@ describe('applyCustomFmt — Excel-style patterns', () => {
     expect(f('hello', '0.00')).toBe('hello')
   })
   it('parseNumberFmt recognises custom and keeps the raw pattern', () => {
-    expect(parseNumberFmt('custom:0.00%')).toEqual({ type: 'custom', pattern: '0.00%', variant: '', decimals: null })
+    expect(parseNumberFmt('custom:0.00%')).toEqual({
+      type: 'custom',
+      pattern: '0.00%',
+      variant: '',
+      decimals: null,
+    })
   })
 })

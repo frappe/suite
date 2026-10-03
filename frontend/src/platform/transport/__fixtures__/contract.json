@@ -1,0 +1,55 @@
+{
+  "owner": "drive",
+  "prefix": "/api/suite/drive/",
+  "operations": [
+    {
+      "id": "node_get",
+      "method": "GET",
+      "path": "nodes/{node}",
+      "pathParams": ["node"],
+      "nodeParams": ["node"],
+      "query": {
+        "type": "object",
+        "properties": {
+          "expand": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "body": null,
+      "output": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "title": { "type": "string" },
+          "modified": { "type": ["string", "null"] }
+        },
+        "required": ["name", "title"]
+      },
+      "errors": ["DriveNotFound", "DriveForbidden"],
+      "entity": { "tag": "Drive Node", "id": "name", "version": "modified" }
+    },
+    {
+      "id": "node_patch.rename",
+      "method": "PATCH",
+      "path": "nodes/{node}",
+      "pathParams": ["node"],
+      "nodeParams": ["node"],
+      "query": null,
+      "body": {
+        "type": "object",
+        "properties": { "title": { "type": "string" } },
+        "required": ["title"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "title": { "type": "string" },
+          "modified": { "type": ["string", "null"] }
+        },
+        "required": ["name", "title"]
+      },
+      "errors": ["DriveForbidden", "DriveConflict"],
+      "entity": { "tag": "Drive Node", "id": "name", "version": "modified" }
+    }
+  ]
+}

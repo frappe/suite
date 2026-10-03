@@ -9,7 +9,9 @@ export function userInitials(fullName, email) {
   const fn = (fullName || '').trim()
   if (fn) {
     const parts = fn.split(/\s+/)
-    return ((parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
+    return (
+      (parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')
+    ).toUpperCase()
   }
   return (email ? email[0] : 'U').toUpperCase()
 }

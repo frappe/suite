@@ -43,7 +43,12 @@ function _parseRgb(color) {
   if (typeof color !== 'string') return null
   const s = color.trim()
   const h3 = HEX3.exec(s)
-  if (h3) return { r: parseInt(h3[1] + h3[1], 16), g: parseInt(h3[2] + h3[2], 16), b: parseInt(h3[3] + h3[3], 16) }
+  if (h3)
+    return {
+      r: parseInt(h3[1] + h3[1], 16),
+      g: parseInt(h3[2] + h3[2], 16),
+      b: parseInt(h3[3] + h3[3], 16),
+    }
   const h6 = HEX6.exec(s)
   if (h6) return { r: parseInt(h6[1], 16), g: parseInt(h6[2], 16), b: parseInt(h6[3], 16) }
   const rgb = RGB.exec(s)

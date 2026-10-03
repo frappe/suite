@@ -19,20 +19,20 @@ const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase(
  * would leave those fields bound to lists nothing else reads.
  */
 export const moveRecipient = (
-	draft: ComposeMailData,
-	email: string,
-	from: RecipientField,
-	to: RecipientField,
+  draft: ComposeMailData,
+  email: string,
+  from: RecipientField,
+  to: RecipientField,
 ) => {
-	if (from === to) return
+  if (from === to) return
 
-	const source = draft[from] ?? []
-	const index = source.findIndex((recipient) => sameAddress(recipient.email, email))
-	if (index === -1) return
+  const source = draft[from] ?? []
+  const index = source.findIndex((recipient) => sameAddress(recipient.email, email))
+  if (index === -1) return
 
-	const [moved] = source.splice(index, 1)
-	const target: DraftRecipient[] = (draft[to] ??= [])
-	// Already addressed there, spelled differently or not: moving them is then only a matter of
-	// taking them out of the field they came from.
-	if (!target.some((recipient) => sameAddress(recipient.email, moved.email))) target.push(moved)
+  const [moved] = source.splice(index, 1)
+  const target: DraftRecipient[] = (draft[to] ??= [])
+  // Already addressed there, spelled differently or not: moving them is then only a matter of
+  // taking them out of the field they came from.
+  if (!target.some((recipient) => sameAddress(recipient.email, moved.email))) target.push(moved)
 }

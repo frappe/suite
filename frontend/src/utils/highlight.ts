@@ -11,23 +11,23 @@ export type HighlightSegment = { text: string; hit: boolean }
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export function highlightSegments(text: string, term: string): HighlightSegment[] {
-	const words = term.split(/\s+/).filter(Boolean)
-	if (!text || !words.length) return text ? [{ text, hit: false }] : []
-	// Longest first, so "meet" inside "meeting" is taken by the longer word where both were asked.
-	const pattern = new RegExp(
-		words
-			.sort((a, b) => b.length - a.length)
-			.map(escapeRegExp)
-			.join('|'),
-		'gi',
-	)
-	const segments: HighlightSegment[] = []
-	let last = 0
-	for (const match of text.matchAll(pattern)) {
-		if (match.index > last) segments.push({ text: text.slice(last, match.index), hit: false })
-		segments.push({ text: match[0], hit: true })
-		last = match.index + match[0].length
-	}
-	if (last < text.length) segments.push({ text: text.slice(last), hit: false })
-	return segments
+  const words = term.split(/\s+/).filter(Boolean)
+  if (!text || !words.length) return text ? [{ text, hit: false }] : []
+  // Longest first, so "meet" inside "meeting" is taken by the longer word where both were asked.
+  const pattern = new RegExp(
+    words
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRegExp)
+      .join('|'),
+    'gi',
+  )
+  const segments: HighlightSegment[] = []
+  let last = 0
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > last) segments.push({ text: text.slice(last, match.index), hit: false })
+    segments.push({ text: match[0], hit: true })
+    last = match.index + match[0].length
+  }
+  if (last < text.length) segments.push({ text: text.slice(last), hit: false })
+  return segments
 }

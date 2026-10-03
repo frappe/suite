@@ -5,21 +5,17 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "from_user",
+  "activity",
   "to_user",
-  "read",
-  "type",
-  "message",
-  "notif_doctype",
-  "notif_doctype_name",
-  "entity_type"
+  "read"
  ],
  "fields": [
   {
-   "fieldname": "from_user",
+   "fieldname": "activity",
    "fieldtype": "Link",
-   "label": "From User",
-   "options": "User"
+   "label": "Activity",
+   "options": "Drive Activity",
+   "reqd": 1
   },
   {
    "fieldname": "to_user",
@@ -34,34 +30,6 @@
    "fieldname": "read",
    "fieldtype": "Check",
    "label": "Read"
-  },
-  {
-   "fieldname": "type",
-   "fieldtype": "Select",
-   "label": "Type",
-   "options": "Share\nMention\nSite\nComment"
-  },
-  {
-   "fieldname": "message",
-   "fieldtype": "Text",
-   "label": "Message"
-  },
-  {
-   "fieldname": "notif_doctype",
-   "fieldtype": "Link",
-   "label": "Document Type",
-   "options": "DocType"
-  },
-  {
-   "fieldname": "notif_doctype_name",
-   "fieldtype": "Dynamic Link",
-   "label": "DocType Name",
-   "options": "notif_doctype"
-  },
-  {
-   "fieldname": "entity_type",
-   "fieldtype": "Data",
-   "label": "Entity Type"
   }
  ],
  "links": [],
@@ -81,18 +49,6 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "Suite User",
    "share": 1,
    "write": 1
   }

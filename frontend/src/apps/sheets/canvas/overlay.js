@@ -5,9 +5,9 @@ export function createOverlay(parent) {
   // inside a cell, like Google Sheets. wrap=off keeps lines breaking only at
   // explicit \n, matching the old single-line horizontal-scroll behavior.
   const el = document.createElement('textarea')
-  el.rows         = 1
-  el.wrap         = 'off'
-  el.spellcheck   = false
+  el.rows = 1
+  el.wrap = 'off'
+  el.spellcheck = false
   el.autocomplete = 'off'
   el.style.cssText = [
     'position:absolute',
@@ -29,26 +29,28 @@ export function createOverlay(parent) {
   ].join(';')
   parent.appendChild(el)
 
-  let baseH = 0   // cell height; autosize never shrinks below it
+  let baseH = 0 // cell height; autosize never shrinks below it
 
   function position(x, y, w, h, fmt = {}, zoom = 1) {
-    el.style.left           = x + 'px'
-    el.style.top            = y + 'px'
-    el.style.width          = w + 'px'
-    el.style.height         = h + 'px'
-    el.style.fontWeight     = fmt.bold      ? 'bold'      : 'normal'
-    el.style.fontStyle      = fmt.italic    ? 'italic'    : 'normal'
-    el.style.fontSize       = ((fmt.fontSize || 13) * zoom) + 'px'
-    el.style.fontFamily     = fmt.fontFamily || 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
-    el.style.textAlign      = fmt.align     || 'left'
-    const deco = [fmt.underline && 'underline', fmt.strikethrough && 'line-through'].filter(Boolean).join(' ')
+    el.style.left = x + 'px'
+    el.style.top = y + 'px'
+    el.style.width = w + 'px'
+    el.style.height = h + 'px'
+    el.style.fontWeight = fmt.bold ? 'bold' : 'normal'
+    el.style.fontStyle = fmt.italic ? 'italic' : 'normal'
+    el.style.fontSize = (fmt.fontSize || 13) * zoom + 'px'
+    el.style.fontFamily = fmt.fontFamily || 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
+    el.style.textAlign = fmt.align || 'left'
+    const deco = [fmt.underline && 'underline', fmt.strikethrough && 'line-through']
+      .filter(Boolean)
+      .join(' ')
     el.style.textDecoration = deco || 'none'
-    el.style.color          = fmt.color     || COLORS.cellText
+    el.style.color = fmt.color || COLORS.cellText
     el.style.backgroundColor = fmt.backgroundColor || fmt.bg || COLORS.white
-    el.style.borderColor     = COLORS.selBorder
+    el.style.borderColor = COLORS.selBorder
     // Textareas top-align text; pad so a single line sits centered like the
     // old <input> did. 4px = the 2px borders (box-sizing:border-box).
-    const lineH = Math.round(((fmt.fontSize || 13) * zoom) * 1.3)
+    const lineH = Math.round((fmt.fontSize || 13) * zoom * 1.3)
     el.style.lineHeight = lineH + 'px'
     el.style.paddingTop = Math.max(0, (h - 4 - lineH) / 2) + 'px'
     baseH = h
@@ -57,7 +59,7 @@ export function createOverlay(parent) {
   // Grow the editor downward to fit newline-separated lines.
   function autosize() {
     el.style.height = baseH + 'px'
-    if (el.scrollHeight > el.clientHeight) el.style.height = (el.scrollHeight + 4) + 'px'
+    if (el.scrollHeight > el.clientHeight) el.style.height = el.scrollHeight + 4 + 'px'
   }
   el.addEventListener('input', autosize)
 
@@ -74,9 +76,13 @@ export function createOverlay(parent) {
     el.value = ''
   }
 
-  function getValue() { return el.value }
+  function getValue() {
+    return el.value
+  }
 
-  function remove() { el.remove() }
+  function remove() {
+    el.remove()
+  }
 
   return { el, position, show, hide, getValue, remove }
 }

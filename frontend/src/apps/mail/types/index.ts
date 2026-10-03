@@ -10,145 +10,147 @@ type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
 export type ScreeningAction = 'Reject' | 'Spam' | 'Accepted'
 
 export interface ScreenedAddress {
-	email: string
-	action: ScreeningAction
-	creation: string
-	modified: string
+  email: string
+  action: ScreeningAction
+  creation: string
+  modified: string
 }
 
 // A JMAP push subscription (virtual doctype: Push Subscription). Each one registers a device/client
 // with the JMAP server so it receives StateChange notifications. `name` is `user|id` and is the row
 // key used by bulk_delete. `types` is a JSON string of the data types the client subscribes to.
 export interface PushSubscription {
-	user: string
-	id: string
-	name: string
-	device_client_id: string
-	expires: string | null
-	types: string
-	creation: string
-	modified: string
+  user: string
+  id: string
+  name: string
+  device_client_id: string
+  expires: string | null
+  types: string
+  creation: string
+  modified: string
 }
 
 // A row in the Screener: one unique sender in the Screening folder, summarised by their latest mail.
 export interface ScreeningSender {
-	from_email: string
-	from_name: string
-	subject: string
-	preview: string
-	// UTC "...Z" wire timestamp, not an epoch.
-	received_at: string
-	count: number
-	unread: number
+  from_email: string
+  from_name: string
+  subject: string
+  preview: string
+  // UTC "...Z" wire timestamp, not an epoch.
+  received_at: string
+  count: number
+  unread: number
 }
 
 export interface User {
-	name: string
-	email: string
-	full_name: string
-	user_type: string
+  name: string
+  email: string
+  full_name: string
+  user_type: string
 
-	username: string | null
-	user_image: string | null
-	api_key: string | null
-	// The zone every timestamp is shown in and typed in; see utils/datetime.ts.
-	time_zone: string
-	// The site's zone — what plain DB datetime fields are stored in; see formatSystemDateTime.
-	system_time_zone: string
-	user_settings?: string
-	group_messages_by?: 'None' | 'Day' | 'Month'
-	show_reading_pane?: 0 | 1
-	// Seconds a plain Send is held so it can be undone; see utils/undoSend.ts.
-	undo_send_period?: '5' | '10' | '20' | '30'
+  username: string | null
+  user_image: string | null
+  api_key: string | null
+  // The zone every timestamp is shown in and typed in; see utils/datetime.ts.
+  time_zone: string
+  // The site's zone — what plain DB datetime fields are stored in; see formatSystemDateTime.
+  system_time_zone: string
+  user_settings?: string
+  group_messages_by?: 'None' | 'Day' | 'Month'
+  show_reading_pane?: 0 | 1
+  // Seconds a plain Send is held so it can be undone; see utils/undoSend.ts.
+  undo_send_period?: '5' | '10' | '20' | '30'
 
-	enabled: boolean
-	is_suite_admin: boolean
-	is_system_manager: boolean
-	is_jmap_configured: boolean
-	// Admins only: whether the site is connected to a Suite Cloud, which the Admin Dashboard needs.
-	is_suite_cloud_configured: boolean
+  enabled: boolean
+  is_suite_admin: boolean
+  is_system_manager: boolean
+  is_jmap_configured: boolean
+  // Bytes; the largest file compose may attach. `upload_file` refuses a larger one.
+  max_attachment_size: number
+  // Admins only: whether the site is connected to a Suite Cloud, which the Admin Dashboard needs.
+  is_suite_cloud_configured: boolean
 
-	mailboxes: { id: string; name: string; role: string }[]
-	// `get_user_info` enriches each account with its per-account outgoing default and
-	// JMAP Account doc name (the fields moved off User Settings).
-	accounts: (UserAccount & {
-		default_outgoing_email?: string
-		jmap_account?: string
-		on_mark_as_junk?: OnMarkAsJunk
-		enable_screening?: boolean
-		block_remote_images?: boolean
-		/** Whether the account has anything for the user in mail, and in calendar. */
-		in_mail?: boolean
-		in_calendar?: boolean
-	})[]
+  mailboxes: { id: string; name: string; role: string }[]
+  // `get_user_info` enriches each account with its per-account outgoing default and
+  // JMAP Account doc name (the fields moved off User Settings).
+  accounts: (UserAccount & {
+    default_outgoing_email?: string
+    jmap_account?: string
+    on_mark_as_junk?: OnMarkAsJunk
+    enable_screening?: boolean
+    block_remote_images?: boolean
+    /** Whether the account has anything for the user in mail, and in calendar. */
+    in_mail?: boolean
+    in_calendar?: boolean
+  })[]
 }
 
 export interface UserResource {
-	data: User
-	promise: Promise<User>
-	reload: () => void
+  data: User
+  promise: Promise<User>
+  reload: () => void
 }
 
 export interface Recipient {
-	type: 'To' | 'Cc' | 'Bcc'
-	email: string
-	display_name: string | null
+  type: 'To' | 'Cc' | 'Bcc'
+  email: string
+  display_name: string | null
 }
 
 // Everyone who has written in a thread, in the order they first wrote. Derived from the thread's own
 // messages rather than served with it (see utils/participants), `is_self` included.
 export interface ThreadParticipant {
-	name: string
-	email: string
-	is_self: boolean
+  name: string
+  email: string
+  is_self: boolean
 }
 
 export interface Mailbox {
-	mailbox: string
-	mailbox_id: string
-	mailbox_name: string
+  mailbox: string
+  mailbox_id: string
+  mailbox_name: string
 }
 export interface Attachment {
-	filename: string
-	blob_id: string
-	type: string
-	size: string
-	file_url: string | null
-	disposition: string
-	cid?: string
+  filename: string
+  blob_id: string
+  type: string
+  size: string
+  file_url: string | null
+  disposition: string
+  cid?: string
 }
 
 export interface Mail {
-	name: string
-	message_id: string
-	id: string
-	thread_id: string
-	from_name: string
-	from_email: string
-	subject: string
-	preview: string
-	html_body: string
-	text_body: string
-	received_at: string
-	draft: 0 | 1
-	flagged: 0 | 1
-	seen: 0 | 1
-	junk: 0 | 1
-	mailboxes: Mailbox[]
-	recipients: Recipient[]
-	groupedRecipients: {
-		to: Recipient[]
-		cc: Recipient[]
-		bcc: Recipient[]
-	}
-	reply_to: { display_name: string; email: string }[]
-	attachments: Attachment[]
-	// Blob id of a bounce message's message/delivery-status part (see DeliveryStatusBanner).
-	dsn_blob_id?: string | null
-	// The other copies of this same message the account holds — see MailCopy.
-	duplicates?: MailCopy[]
-	user_image?: string
-	collapsed?: boolean
+  name: string
+  message_id: string
+  id: string
+  thread_id: string
+  from_name: string
+  from_email: string
+  subject: string
+  preview: string
+  html_body: string
+  text_body: string
+  received_at: string
+  draft: 0 | 1
+  flagged: 0 | 1
+  seen: 0 | 1
+  junk: 0 | 1
+  mailboxes: Mailbox[]
+  recipients: Recipient[]
+  groupedRecipients: {
+    to: Recipient[]
+    cc: Recipient[]
+    bcc: Recipient[]
+  }
+  reply_to: { display_name: string; email: string }[]
+  attachments: Attachment[]
+  // Blob id of a bounce message's message/delivery-status part (see DeliveryStatusBanner).
+  dsn_blob_id?: string | null
+  // The other copies of this same message the account holds — see MailCopy.
+  duplicates?: MailCopy[]
+  user_image?: string
+  collapsed?: boolean
 }
 
 /**
@@ -160,111 +162,102 @@ export interface Mail {
  * copied here; it is the same message.
  */
 export type MailCopy = Pick<
-	Mail,
-	| 'name'
-	| 'id'
-	| 'thread_id'
-	| 'from_name'
-	| 'from_email'
-	| 'received_at'
-	| 'mailboxes'
-	| 'seen'
-	| 'junk'
-	| 'flagged'
-	| 'draft'
+  Mail,
+  | 'name'
+  | 'id'
+  | 'thread_id'
+  | 'from_name'
+  | 'from_email'
+  | 'received_at'
+  | 'mailboxes'
+  | 'seen'
+  | 'junk'
+  | 'flagged'
+  | 'draft'
 >
 
 export interface DraftRecipient {
-	email: string
-	display_name?: string
-	image?: string
+  email: string
+  display_name?: string
+  image?: string
 }
 
 export interface ComposeMailData {
-	name?: string
-	id?: string
-	from_email?: string
-	to?: DraftRecipient[]
-	cc?: DraftRecipient[]
-	bcc?: DraftRecipient[]
-	subject?: string
-	quoted_content?: string
-	html_body?: string
-	attachments?: Attachment[]
-	in_reply_to?: string
-	in_reply_to_id?: string
-	forwarded_from_id?: string
-	type?: 'reply' | 'replyAll' | 'forward'
+  name?: string
+  id?: string
+  from_email?: string
+  to?: DraftRecipient[]
+  cc?: DraftRecipient[]
+  bcc?: DraftRecipient[]
+  subject?: string
+  quoted_content?: string
+  html_body?: string
+  attachments?: Attachment[]
+  in_reply_to?: string
+  in_reply_to_id?: string
+  forwarded_from_id?: string
+  type?: 'reply' | 'replyAll' | 'forward'
 }
 
 export interface Thread {
-	name: string
-	account: string
-	// Populated by the cross-account views (All Inboxes' get_all_inbox_threads and search's
-	// search_mails): the owning account's display name and its Inbox/Archive/Trash mailbox ids, so a
-	// merged row can be opened in / acted on within the correct JMAP account.
-	account_name?: string
-	inbox?: string
-	archive?: string
-	trash?: string
-	id: string
-	thread_id: string
-	from_name: string
-	from_email: string
-	subject: string | null
-	preview: string | null
-	has_attachment: 0 | 1
-	received_at: string
-	mailboxes: Mailbox[]
-	recipients: Recipient[]
-	seen: 0 | 1
-	draft: 0 | 1
-	junk: 0 | 1
-	flagged: 0 | 1
-	answered: 0 | 1
-	forwarded: 0 | 1
-	attachments: Attachment[]
-	user_image?: string
-	messages: Mail[]
+  name: string
+  account: string
+  // Populated by the cross-account views (All Inboxes' get_all_inbox_threads and search's
+  // search_mails): the owning account's display name and its Inbox/Archive/Trash mailbox ids, so a
+  // merged row can be opened in / acted on within the correct JMAP account.
+  account_name?: string
+  inbox?: string
+  archive?: string
+  trash?: string
+  id: string
+  thread_id: string
+  from_name: string
+  from_email: string
+  subject: string | null
+  preview: string | null
+  has_attachment: 0 | 1
+  received_at: string
+  mailboxes: Mailbox[]
+  recipients: Recipient[]
+  seen: 0 | 1
+  draft: 0 | 1
+  junk: 0 | 1
+  flagged: 0 | 1
+  answered: 0 | 1
+  forwarded: 0 | 1
+  attachments: Attachment[]
+  user_image?: string
+  messages: Mail[]
 }
 
 export interface MailboxData {
-	name: string
-	id: string
-	role: string | null
-	total_emails: number
-	total_threads: number
-	unread_threads: number
-	_name: string
-	subscribed: 0 | 1
-	icon?: string
-	color?: 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple'
-	disable_push_notification?: 0 | 1
-	automation_rules?: AutomationRules | null
+  name: string
+  id: string
+  role: string | null
+  total_emails: number
+  total_threads: number
+  unread_threads: number
+  _name: string
+  subscribed: 0 | 1
+  icon?: string
+  color?: 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple'
+  disable_push_notification?: 0 | 1
+  automation_rules?: AutomationRules | null
 }
 
 interface AutomationRules {
-	emails_from: string
-	subject_contains: string
-	match_if: 'any' | 'all'
-	mark_as_read: boolean
-	add_star: boolean
-}
-
-export interface NotificationPayload {
-	data?: {
-		title?: string
-		body?: string
-		notification_icon?: string
-		click_action?: string
-	}
+  emails_from: string
+  subject_contains: string
+  match_if: 'any' | 'all'
+  mark_as_read: boolean
+  add_star: boolean
 }
 
 export interface QuotaUsage {
-	total: number
-	used: number
-	available: number
-	used_percentage: number
-	available_percentage: number
-	unlimited: boolean
+  total: number
+  used: number
+  available: number
+  used_percentage: number
+  available_percentage: number
+  unlimited: boolean
 }

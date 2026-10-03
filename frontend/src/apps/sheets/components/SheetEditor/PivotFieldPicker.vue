@@ -21,64 +21,61 @@
            container; `trapped=false` is fine — we only want the *pause*
            side-effect, not our own trap. -->
       <FocusScope v-if="open" as-child :trapped="false">
-      <div
-        ref="popRef"
-        class="pfp-pop"
-        :class="{ 'pfp-pop--up': openUpward }"
-        :style="popStyle"
-      >
-        <div class="pfp-search-row">
-          <FeatherIcon name="search" class="pfp-search-icon" />
-          <input
-            ref="searchRef"
-            name="pivot-field-search"
-            v-model="query"
-            class="pfp-search"
-            placeholder="Search fields…"
-            spellcheck="false"
-            autocomplete="off"
-            @keydown.escape.stop="close"
-            @keydown.enter.prevent="selectFirst"
-            @keydown.down.prevent="moveHighlight(1)"
-            @keydown.up.prevent="moveHighlight(-1)"
-          />
+        <div ref="popRef" class="pfp-pop" :class="{ 'pfp-pop--up': openUpward }" :style="popStyle">
+          <div class="pfp-search-row">
+            <FeatherIcon name="search" class="pfp-search-icon" />
+            <input
+              ref="searchRef"
+              name="pivot-field-search"
+              v-model="query"
+              class="pfp-search"
+              placeholder="Search fields…"
+              spellcheck="false"
+              autocomplete="off"
+              @keydown.escape.stop="close"
+              @keydown.enter.prevent="selectFirst"
+              @keydown.down.prevent="moveHighlight(1)"
+              @keydown.up.prevent="moveHighlight(-1)"
+            />
+          </div>
+          <div class="pfp-list" ref="listRef">
+            <button
+              v-for="(f, i) in filtered"
+              :key="f"
+              class="pfp-item"
+              :class="{ 'pfp-item--active': i === highlight }"
+              @click="onSelect(f)"
+              @mouseenter="highlight = i"
+            >
+              {{ f }}
+            </button>
+            <div v-if="!filtered.length" class="pfp-empty">No matching fields</div>
+          </div>
         </div>
-        <div class="pfp-list" ref="listRef">
-          <button
-            v-for="(f, i) in filtered"
-            :key="f"
-            class="pfp-item"
-            :class="{ 'pfp-item--active': i === highlight }"
-            @click="onSelect(f)"
-            @mouseenter="highlight = i"
-          >{{ f }}</button>
-          <div v-if="!filtered.length" class="pfp-empty">No matching fields</div>
-        </div>
-      </div>
       </FocusScope>
     </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { FocusScope } from 'reka-ui'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps({
   fields: { type: Array, required: true },
 })
 const emit = defineEmits(['select', 'opened', 'closed'])
 
-const open           = ref(false)
-const query          = ref('')
-const highlight      = ref(0)
-const openUpward     = ref(false)
-const triggerRef     = ref(null)
-const popRef         = ref(null)
-const searchRef      = ref(null)
-const listRef        = ref(null)
-const popStyle       = ref({})
+const open = ref(false)
+const query = ref('')
+const highlight = ref(0)
+const openUpward = ref(false)
+const triggerRef = ref(null)
+const popRef = ref(null)
+const searchRef = ref(null)
+const listRef = ref(null)
+const popStyle = ref({})
 // Resolved at open time so the popover lands inside the host dialog's
 // outer overlay (HeadlessUI interactive zone) rather than naked <body>.
 const teleportTarget = ref('body')
@@ -91,15 +88,19 @@ const POP_H = 195
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return props.fields
-  return props.fields.filter(f => f.toLowerCase().includes(q))
+  return props.fields.filter((f) => f.toLowerCase().includes(q))
 })
 
-watch(filtered, () => { highlight.value = 0 })
+watch(filtered, () => {
+  highlight.value = 0
+})
 
-function toggle() { open.value ? close() : openPopover() }
+function toggle() {
+  open.value ? close() : openPopover()
+}
 
 async function openPopover() {
-  query.value     = ''
+  query.value = ''
   highlight.value = 0
   // Resolve the teleport target before opening — walk up from the trigger to
   // find any host that's a Frappe UI Dialog overlay (no transform, no clip
@@ -112,9 +113,11 @@ async function openPopover() {
   _position()
   // preventScroll: true keeps the dialog from autoscrolling and shifting
   // the trigger's viewport coordinates under us.
-  requestAnimationFrame(() => { searchRef.value?.focus({ preventScroll: true }) })
+  requestAnimationFrame(() => {
+    searchRef.value?.focus({ preventScroll: true })
+  })
   document.addEventListener('mousedown', _onOutsideClick, true)
-  document.addEventListener('keydown',   _onGlobalKey,    true)
+  document.addEventListener('keydown', _onGlobalKey, true)
   window.addEventListener('resize', _position)
   window.addEventListener('scroll', _onScroll, true)
 }
@@ -124,7 +127,7 @@ function close() {
   open.value = false
   emit('closed')
   document.removeEventListener('mousedown', _onOutsideClick, true)
-  document.removeEventListener('keydown',   _onGlobalKey,    true)
+  document.removeEventListener('keydown', _onGlobalKey, true)
   window.removeEventListener('resize', _position)
   window.removeEventListener('scroll', _onScroll, true)
 }
@@ -132,7 +135,10 @@ function close() {
 let _scrollRafId = 0
 function _onScroll() {
   if (_scrollRafId) return
-  _scrollRafId = requestAnimationFrame(() => { _scrollRafId = 0; _position() })
+  _scrollRafId = requestAnimationFrame(() => {
+    _scrollRafId = 0
+    _position()
+  })
 }
 
 function onSelect(f) {
@@ -173,8 +179,13 @@ function _position() {
   const maxH = Math.max(140, Math.min(POP_H, (up ? spaceAbove : spaceBelow) - pad))
   const left = Math.min(Math.max(pad, t.left), vw - width - pad)
   popStyle.value = up
-    ? { left: `${left}px`, bottom: `${vh - t.top + 6}px`, width: `${width}px`, maxHeight: `${maxH}px` }
-    : { left: `${left}px`, top:    `${t.bottom + 6}px`,    width: `${width}px`, maxHeight: `${maxH}px` }
+    ? {
+        left: `${left}px`,
+        bottom: `${vh - t.top + 6}px`,
+        width: `${width}px`,
+        maxHeight: `${maxH}px`,
+      }
+    : { left: `${left}px`, top: `${t.bottom + 6}px`, width: `${width}px`, maxHeight: `${maxH}px` }
 }
 
 // Walk up from the trigger to find a Frappe UI Dialog overlay container.
@@ -193,13 +204,16 @@ function _findOverlayHost() {
 }
 
 function _onOutsideClick(e) {
-  if (popRef.value?.contains(e.target))     return
+  if (popRef.value?.contains(e.target)) return
   if (triggerRef.value?.contains(e.target)) return
   close()
 }
 
 function _onGlobalKey(e) {
-  if (e.key === 'Escape') { e.stopPropagation(); close() }
+  if (e.key === 'Escape') {
+    e.stopPropagation()
+    close()
+  }
 }
 
 onBeforeUnmount(close)
@@ -221,21 +235,27 @@ onBeforeUnmount(close)
   border: 1px solid var(--outline-gray-2, #e5e5e5);
   border-radius: 8px;
   box-shadow:
-    0 0 0 1px rgba(0,0,0,.03),
-    0 8px 24px -6px rgba(0,0,0,.12),
-    0 4px 8px -4px rgba(0,0,0,.08);
+    0 0 0 1px rgba(0, 0, 0, 0.03),
+    0 8px 24px -6px rgba(0, 0, 0, 0.12),
+    0 4px 8px -4px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: pfp-rise 140ms cubic-bezier(.2,.8,.25,1);
+  animation: pfp-rise 140ms cubic-bezier(0.2, 0.8, 0.25, 1);
   transform-origin: top left;
 }
 .pfp-pop--up {
   transform-origin: bottom left;
 }
 @keyframes pfp-rise {
-  from { transform: translateY(-4px) scale(.98); opacity: 0; }
-  to   { transform: translateY(0)    scale(1);   opacity: 1; }
+  from {
+    transform: translateY(-4px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 
 .pfp-search-row {
@@ -247,11 +267,20 @@ onBeforeUnmount(close)
   flex-shrink: 0;
   background: var(--surface-base, #ffffff);
 }
-.pfp-search-icon { width: 13px; height: 13px; color: var(--ink-gray-4, #a3a3a3); flex-shrink: 0; }
+.pfp-search-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--ink-gray-4, #a3a3a3);
+  flex-shrink: 0;
+}
 .pfp-search {
-  flex: 1; min-width: 0;
-  font: inherit; font-size: 13px; line-height: 18px;
-  border: 0; background: transparent;
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  border: 0;
+  background: transparent;
   color: var(--ink-gray-9, #171717);
   padding: 0;
   /* !important + multi-state selectors are necessary because Frappe UI's
@@ -260,7 +289,9 @@ onBeforeUnmount(close)
   outline: none !important;
   box-shadow: none !important;
 }
-.pfp-search::placeholder { color: var(--ink-gray-4, #a3a3a3); }
+.pfp-search::placeholder {
+  color: var(--ink-gray-4, #a3a3a3);
+}
 .pfp-search:focus,
 .pfp-search:focus-visible,
 .pfp-search:active {
@@ -283,13 +314,22 @@ onBeforeUnmount(close)
 }
 
 .pfp-item {
-  display: block; width: 100%; text-align: left;
-  padding: 5px 8px; border: 0; border-radius: 4px;
-  background: transparent; color: var(--ink-gray-8, #262626);
-  font: inherit; font-size: 12.5px; line-height: 18px;
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-gray-8, #262626);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 18px;
   cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  transition: background-color .08s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.08s ease;
 }
 .pfp-item:hover,
 .pfp-item--active {
@@ -306,10 +346,14 @@ onBeforeUnmount(close)
 
 /* Thin, themed scrollbar — the system default is jarring against the
    popover's tight padding. */
-.pfp-list::-webkit-scrollbar { width: 6px; }
+.pfp-list::-webkit-scrollbar {
+  width: 6px;
+}
 .pfp-list::-webkit-scrollbar-thumb {
   background: var(--outline-gray-3, #d4d4d4);
   border-radius: 3px;
 }
-.pfp-list::-webkit-scrollbar-thumb:hover { background: var(--outline-gray-4, #a3a3a3); }
+.pfp-list::-webkit-scrollbar-thumb:hover {
+  background: var(--outline-gray-4, #a3a3a3);
+}
 </style>

@@ -1,293 +1,279 @@
-import { debounce } from "frappe-ui";
-import type { Ref } from "vue";
-import { inject, onBeforeUnmount, watch } from "vue";
+import { debounce } from 'frappe-ui'
+import { inject, onBeforeUnmount, watch, type Ref } from 'vue'
 
 type SFUMeetingManagerLike = {
-	getVideoConsumerId: (participantId: string) => string | null;
-	updateConsumerStreamPreferences: (
-		consumerId: string,
-		preferences: { visible: boolean; width: number; height: number },
-	) => Promise<unknown> | unknown;
-	onRemoteConsumerReady: (listener: (event: Event) => void) => () => void;
-};
+  getVideoConsumerId: (participantId: string) => string | null
+  updateConsumerStreamPreferences: (
+    consumerId: string,
+    preferences: { visible: boolean; width: number; height: number },
+  ) => Promise<unknown> | unknown
+  onRemoteConsumerReady: (listener: (event: Event) => void) => () => void
+}
 
 interface TileMetrics {
-	width: number;
-	height: number;
-	visible: boolean;
+  width: number
+  height: number
+  visible: boolean
 }
 
 interface TileController {
-	active: boolean;
-	participantId: string;
-	element: HTMLVideoElement;
-	resizeObserver: ResizeObserver | null;
-	intersectionObserver: IntersectionObserver | null;
-	width: number;
-	height: number;
-	visible: boolean;
-	forceNext: boolean;
-	lastSent: TileMetrics | null;
-	debouncedUpdate: (() => void) | null;
-	stopListeningForConsumer: (() => void) | null;
+  active: boolean
+  participantId: string
+  element: HTMLVideoElement
+  resizeObserver: ResizeObserver | null
+  intersectionObserver: IntersectionObserver | null
+  width: number
+  height: number
+  visible: boolean
+  forceNext: boolean
+  lastSent: TileMetrics | null
+  debouncedUpdate: (() => void) | null
+  stopListeningForConsumer: (() => void) | null
 }
 
-const VISIBILITY_THRESHOLD = 0.1;
-const SIZE_DELTA_THRESHOLD = 50;
-const DEBOUNCE_MS = 300;
+const VISIBILITY_THRESHOLD = 0.1
+const SIZE_DELTA_THRESHOLD = 50
+const DEBOUNCE_MS = 300
 
 function isElementInViewport(element: HTMLElement): boolean {
-	const rect = element.getBoundingClientRect();
-	if (!rect || (rect.width === 0 && rect.height === 0)) return false;
-	return (
-		rect.bottom > 0 &&
-		rect.right > 0 &&
-		rect.top < window.innerHeight &&
-		rect.left < window.innerWidth
-	);
+  const rect = element.getBoundingClientRect()
+  if (!rect || (rect.width === 0 && rect.height === 0)) return false
+  return (
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < window.innerHeight &&
+    rect.left < window.innerWidth
+  )
 }
 
 export function useTileAdaptiveStreaming() {
-	const injectedManager = inject<Ref<SFUMeetingManagerLike | null>>("sfuManager");
-	const controllers = new Map<string, TileController>();
+  const injectedManager = inject<Ref<SFUMeetingManagerLike | null>>('sfuManager')
+  const controllers = new Map<string, TileController>()
 
-	function getManager(): SFUMeetingManagerLike | null {
-		if (!injectedManager) return null;
+  function getManager(): SFUMeetingManagerLike | null {
+    if (!injectedManager) return null
 
-		return injectedManager.value;
-	}
+    return injectedManager.value
+  }
 
-	function measureTile(
-		element: HTMLVideoElement,
-		target: Pick<TileController, "width" | "height" | "visible">,
-	) {
-		const width = Math.max(element.clientWidth || 0, 0);
-		const height = Math.max(element.clientHeight || 0, 0);
-		target.width = width;
-		target.height = height;
-		target.visible =
-			width > 0 && height > 0 && isElementInViewport(element);
-	}
+  function measureTile(
+    element: HTMLVideoElement,
+    target: Pick<TileController, 'width' | 'height' | 'visible'>,
+  ) {
+    const width = Math.max(element.clientWidth || 0, 0)
+    const height = Math.max(element.clientHeight || 0, 0)
+    target.width = width
+    target.height = height
+    target.visible = width > 0 && height > 0 && isElementInViewport(element)
+  }
 
-	async function updateConsumerPreferences(controller: TileController) {
-		if (!controller.active) return;
-		const manager = getManager();
-		if (!manager) return;
+  async function updateConsumerPreferences(controller: TileController) {
+    if (!controller.active) return
+    const manager = getManager()
+    if (!manager) return
 
-		const consumerId = manager.getVideoConsumerId(controller.participantId);
-		if (!consumerId) return;
+    const consumerId = manager.getVideoConsumerId(controller.participantId)
+    if (!consumerId) return
 
-		const visible =
-			controller.visible && controller.width > 0 && controller.height > 0;
-		const width = visible ? Math.round(controller.width) : 0;
-		const height = visible ? Math.round(controller.height) : 0;
+    const visible = controller.visible && controller.width > 0 && controller.height > 0
+    const width = visible ? Math.round(controller.width) : 0
+    const height = visible ? Math.round(controller.height) : 0
 
-		const last = controller.lastSent;
-		const widthChanged =
-			!last || Math.abs(last.width - width) >= SIZE_DELTA_THRESHOLD;
-		const visibilityChanged = !last || last.visible !== visible;
+    const last = controller.lastSent
+    const widthChanged = !last || Math.abs(last.width - width) >= SIZE_DELTA_THRESHOLD
+    const visibilityChanged = !last || last.visible !== visible
 
-		// Skip if no meaningful change
-		if (!controller.forceNext) {
-			if (!visibilityChanged && visible && !widthChanged) return;
-			if (!visibilityChanged && !visible) return;
-		}
+    // Skip if no meaningful change
+    if (!controller.forceNext) {
+      if (!visibilityChanged && visible && !widthChanged) return
+      if (!visibilityChanged && !visible) return
+    }
 
-		controller.forceNext = false;
+    controller.forceNext = false
 
-		try {
-			await manager.updateConsumerStreamPreferences(consumerId, {
-				visible,
-				width,
-				height,
-			});
-			if (!controller.active || getManager() !== manager) return;
-			controller.lastSent = { visible, width, height };
-		} catch (error) {
-			console.warn(
-				"Failed to update consumer preferences for",
-				controller.participantId,
-				error,
-			);
-		}
-	}
+    try {
+      await manager.updateConsumerStreamPreferences(consumerId, {
+        visible,
+        width,
+        height,
+      })
+      if (!controller.active || getManager() !== manager) return
+      controller.lastSent = { visible, width, height }
+    } catch (error) {
+      console.warn('Failed to update consumer preferences for', controller.participantId, error)
+    }
+  }
 
-	function scheduleUpdate(controller: TileController, immediate = false) {
-		if (!controller.active) return;
-		if (immediate) {
-			controller.forceNext = true;
-			void updateConsumerPreferences(controller);
-		} else if (controller.debouncedUpdate) {
-			controller.debouncedUpdate();
-		}
-	}
+  function scheduleUpdate(controller: TileController, immediate = false) {
+    if (!controller.active) return
+    if (immediate) {
+      controller.forceNext = true
+      void updateConsumerPreferences(controller)
+    } else if (controller.debouncedUpdate) {
+      controller.debouncedUpdate()
+    }
+  }
 
-	function scheduleRefresh(controller: TileController) {
-		scheduleUpdate(controller, controller.lastSent == null);
-	}
+  function scheduleRefresh(controller: TileController) {
+    scheduleUpdate(controller, controller.lastSent == null)
+  }
 
-	function cleanupController(controller: TileController) {
-		controller.active = false;
-		if (controller.resizeObserver) {
-			controller.resizeObserver.disconnect();
-		}
-		if (controller.intersectionObserver) {
-			controller.intersectionObserver.disconnect();
-		}
-		controller.stopListeningForConsumer?.();
-		controller.stopListeningForConsumer = null;
-	}
+  function cleanupController(controller: TileController) {
+    controller.active = false
+    if (controller.resizeObserver) {
+      controller.resizeObserver.disconnect()
+    }
+    if (controller.intersectionObserver) {
+      controller.intersectionObserver.disconnect()
+    }
+    controller.stopListeningForConsumer?.()
+    controller.stopListeningForConsumer = null
+  }
 
-	function bindControllerToManager(controller: TileController) {
-		controller.stopListeningForConsumer?.();
-		controller.stopListeningForConsumer = null;
-		const manager = getManager();
-		if (!manager) return;
-		controller.stopListeningForConsumer = manager.onRemoteConsumerReady(
-			(event: Event) => {
-				const customEvent = event as CustomEvent;
-				if (customEvent.detail?.participantId === controller.participantId) {
-					scheduleRefresh(controller);
-				}
-			},
-		);
-	}
+  function bindControllerToManager(controller: TileController) {
+    controller.stopListeningForConsumer?.()
+    controller.stopListeningForConsumer = null
+    const manager = getManager()
+    if (!manager) return
+    controller.stopListeningForConsumer = manager.onRemoteConsumerReady((event: Event) => {
+      const customEvent = event as CustomEvent
+      if (customEvent.detail?.participantId === controller.participantId) {
+        scheduleRefresh(controller)
+      }
+    })
+  }
 
-	function createController(participantId: string, element: HTMLVideoElement) {
-		const controller: TileController = {
-			active: true,
-			participantId,
-			element,
-			resizeObserver: null,
-			intersectionObserver: null,
-			width: 0,
-			height: 0,
-			visible: false,
-			forceNext: true,
-			lastSent: null,
-			debouncedUpdate: null,
-			stopListeningForConsumer: null,
-		};
+  function createController(participantId: string, element: HTMLVideoElement) {
+    const controller: TileController = {
+      active: true,
+      participantId,
+      element,
+      resizeObserver: null,
+      intersectionObserver: null,
+      width: 0,
+      height: 0,
+      visible: false,
+      forceNext: true,
+      lastSent: null,
+      debouncedUpdate: null,
+      stopListeningForConsumer: null,
+    }
 
-		measureTile(element, controller);
+    measureTile(element, controller)
 
-		controller.debouncedUpdate = debounce(() => {
-			void updateConsumerPreferences(controller);
-		}, DEBOUNCE_MS);
+    controller.debouncedUpdate = debounce(() => {
+      void updateConsumerPreferences(controller)
+    }, DEBOUNCE_MS)
 
-		bindControllerToManager(controller);
+    bindControllerToManager(controller)
 
-		// to check size of the tile
-		controller.resizeObserver = new ResizeObserver((entries) => {
-			const entry = entries[0];
-			if (!entry) return;
-			const newWidth = Math.max(entry.contentRect.width, 0);
-			const newHeight = Math.max(entry.contentRect.height, 0);
+    // to check size of the tile
+    controller.resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const newWidth = Math.max(entry.contentRect.width, 0)
+      const newHeight = Math.max(entry.contentRect.height, 0)
 
-			controller.width = newWidth;
-			controller.height = newHeight;
-			// Update visibility check when dimensions become valid
-			if (newWidth > 0 && newHeight > 0) {
-				controller.visible = isElementInViewport(element);
-			} else {
-				controller.visible = false;
-			}
-			scheduleRefresh(controller);
-		});
-		controller.resizeObserver.observe(element);
+      controller.width = newWidth
+      controller.height = newHeight
+      // Update visibility check when dimensions become valid
+      if (newWidth > 0 && newHeight > 0) {
+        controller.visible = isElementInViewport(element)
+      } else {
+        controller.visible = false
+      }
+      scheduleRefresh(controller)
+    })
+    controller.resizeObserver.observe(element)
 
-		// to check visibility
-		controller.intersectionObserver = new IntersectionObserver((entries) => {
-			const entry = entries[0];
-			if (!entry) return;
-			const isVisible =
-				entry.isIntersecting && entry.intersectionRatio >= VISIBILITY_THRESHOLD;
-			if (controller.visible !== isVisible) {
-				controller.visible = isVisible;
-				scheduleUpdate(
-					controller,
-					controller.lastSent == null || isVisible,
-				);
-			} else if (isVisible) {
-				scheduleRefresh(controller);
-			}
-		}, { threshold: VISIBILITY_THRESHOLD });
-		controller.intersectionObserver.observe(element);
+    // to check visibility
+    controller.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (!entry) return
+        const isVisible = entry.isIntersecting && entry.intersectionRatio >= VISIBILITY_THRESHOLD
+        if (controller.visible !== isVisible) {
+          controller.visible = isVisible
+          scheduleUpdate(controller, controller.lastSent == null || isVisible)
+        } else if (isVisible) {
+          scheduleRefresh(controller)
+        }
+      },
+      { threshold: VISIBILITY_THRESHOLD },
+    )
+    controller.intersectionObserver.observe(element)
 
-		const onLoadedMetadata = () => {
-			measureTile(element, controller);
-			scheduleRefresh(controller);
-		};
+    const onLoadedMetadata = () => {
+      measureTile(element, controller)
+      scheduleRefresh(controller)
+    }
 
-		if (element.readyState >= 1) {
-			onLoadedMetadata();
-		} else {
-			element.addEventListener("loadedmetadata", onLoadedMetadata, {
-				once: true,
-			});
-		}
+    if (element.readyState >= 1) {
+      onLoadedMetadata()
+    } else {
+      element.addEventListener('loadedmetadata', onLoadedMetadata, {
+        once: true,
+      })
+    }
 
-		const sendInitialState = () => {
-			if (!controller.active || controller.lastSent != null) return;
-			measureTile(element, controller);
-			controller.forceNext = true;
-			void updateConsumerPreferences(controller);
-		};
-		if (typeof requestAnimationFrame === "function") {
-			requestAnimationFrame(sendInitialState);
-		} else {
-			setTimeout(sendInitialState, 0);
-		}
+    const sendInitialState = () => {
+      if (!controller.active || controller.lastSent != null) return
+      measureTile(element, controller)
+      controller.forceNext = true
+      void updateConsumerPreferences(controller)
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(sendInitialState)
+    } else {
+      setTimeout(sendInitialState, 0)
+    }
 
-		return controller;
-	}
+    return controller
+  }
 
-	function registerTile(
-		participantId: string,
-		element: HTMLVideoElement | null,
-	) {
-		const existing = controllers.get(participantId);
+  function registerTile(participantId: string, element: HTMLVideoElement | null) {
+    const existing = controllers.get(participantId)
 
-		if (!element) {
-			if (existing) {
-				cleanupController(existing);
-				controllers.delete(participantId);
-			}
-			return;
-		}
+    if (!element) {
+      if (existing) {
+        cleanupController(existing)
+        controllers.delete(participantId)
+      }
+      return
+    }
 
-		if (existing?.element === element) {
-			return;
-		}
+    if (existing?.element === element) {
+      return
+    }
 
-		if (existing) {
-			cleanupController(existing);
-			controllers.delete(participantId);
-		}
+    if (existing) {
+      cleanupController(existing)
+      controllers.delete(participantId)
+    }
 
-		const controller = createController(participantId, element);
-		controllers.set(participantId, controller);
-	}
+    const controller = createController(participantId, element)
+    controllers.set(participantId, controller)
+  }
 
-	const stopWatchingManager = injectedManager
-		? watch(injectedManager, () => {
-				for (const controller of controllers.values()) {
-					bindControllerToManager(controller);
-					controller.lastSent = null;
-					scheduleUpdate(controller, true);
-				}
-			})
-		: () => {};
+  const stopWatchingManager = injectedManager
+    ? watch(injectedManager, () => {
+        for (const controller of controllers.values()) {
+          bindControllerToManager(controller)
+          controller.lastSent = null
+          scheduleUpdate(controller, true)
+        }
+      })
+    : () => {}
 
-	onBeforeUnmount(() => {
-		stopWatchingManager();
-		for (const controller of controllers.values()) {
-			cleanupController(controller);
-		}
-		controllers.clear();
-	});
+  onBeforeUnmount(() => {
+    stopWatchingManager()
+    for (const controller of controllers.values()) {
+      cleanupController(controller)
+    }
+    controllers.clear()
+  })
 
-	return {
-		registerTile,
-	};
+  return {
+    registerTile,
+  }
 }

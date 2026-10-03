@@ -1,21 +1,9 @@
-import io
-from pathlib import Path
-
 import frappe
-import markdown
 import mimemapper
-from markdown.extensions.wikilinks import WikiLinkExtension
 
-from suite.drive.api.files import get_new_title
-from suite.drive.api.permissions import (
-    get_entity_with_permissions,
-    user_has_permission,
-)
-from suite.drive.utils import (
-    create_drive_file,
-    get_user_folder,
-)
-from suite.drive.utils.files import FileManager, storage_key
+from suite import drive
+from suite.writer import comments
+from suite.writer.drive import DOCTYPE
 
 # To be moved to mimemapper
 QUICK_MAP = {
@@ -24,126 +12,52 @@ QUICK_MAP = {
 }
 
 
-@frappe.whitelist()
-def create_document(title: str | None = None, parent: str | None = None, template: str | None = None):
-    parent = parent or get_user_folder().name
-    parent_doc = frappe.get_doc("File", parent)
-
-    if not user_has_permission(parent, "upload"):
-        frappe.throw(
-            "Cannot access folder due to insufficient permissions",
-            frappe.PermissionError,
-        )
-
-    if not title:
-        title = get_new_title("Untitled Document", parent)
-
-    writer_doc = frappe.new_doc("Writer Document")
-    writer_doc.settings = (
-        '{"collab": true}' if not template else '{"collab": true, "template": "' + template + '"}'
-    )
-    writer_doc.save()
-
-    manager = FileManager()
-    path = manager.create_folder(
-        frappe._dict(
-            {
-                "file_name": title,
-                "parent_path": Path(storage_key(parent_doc.file_url)),
-            }
-        )
-    )
-    manager.create_folder(
-        frappe._dict(
-            {
-                "file_name": ".embeds",
-                "parent_path": Path(path) if path else None,
-            }
-        )
-    )
-
-    entity = create_drive_file(
-        title,
-        parent,
-        "Document",
-        path,
-        mime_type="frappe_doc",
-        content_doctype="Writer Document",
-        content_docname=writer_doc.name,
-    )
-    return entity
-
-
-@frappe.whitelist(allow_guest=True)
-def get_document(file_id: str):
-    return_obj = get_entity_with_permissions(file_id)
-    entity = frappe._dict(return_obj)
-
-    # Non-Writer-backed files (e.g. markdown) are read straight off disk.
-    if entity.content_doctype != "Writer Document":
-        return get_markdown_file(entity, return_obj)
-
-    writer_doc = frappe.get_doc("Writer Document", entity.content_docname).as_dict()
-    writer_doc.pop("name")
-    writer_doc.pop("owner")
-    writer_doc.pop("versions", None)
-
-    return_obj |= writer_doc | {"modified": entity.modified}
-    frappe.response["data"] = return_obj
-
-
-def get_markdown_file(entity, return_obj):
-    manager = FileManager()
-    wrapper = io.TextIOWrapper(manager.get_file(entity))
-    url_builder = lambda label, base, end: f"/api/method/suite.writer.api.docs.get_wiki_link?title={label}"
-    with wrapper as r:
-        content = r.read()
-        md = markdown.Markdown(
-            extensions=["extra", "meta", WikiLinkExtension(build_url=url_builder)],
-        )
-        content = clean_content_for_obsidian(content)
-        md.set_output_format("html")
-        return_obj["file_content"] = md.convert(content)
-        return_obj["properties"] = md.Meta
-
-    frappe.response["data"] = return_obj
-
-
-def clean_content_for_obsidian(content):
-    property_end = content[3:].find("---")
-    if content.startswith("---") and property_end != -1:
-        content = content[:property_end].replace("\n  ", " " * 4) + content[property_end:]
-    content = content[:property_end] + content[property_end:].replace("\n", "\n\n")
-    content = content[:property_end] + content[property_end:].replace("\n\n\n", "\n<p></p>")
-    return content
-
-
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def save_comments(doc: str, data: str):
-    file = frappe.get_doc("File", {"content_docname": doc, "content_doctype": "Writer Document"})
-    if not user_has_permission(file, "comment"):
-        frappe.throw("You cannot comment on this file.")
+    """Store the inline comment threads of one Writer document.
 
-    frappe.get_doc("Writer Document", doc).save_comments(data, file)
+    Inline comments are a Yjs document of their own, anchored to positions in
+    the body that only Writer can read, so they are body data Writer keeps in
+    `ycomments`, not Drive comments. Adding a comment or resolving a thread
+    needs COMMENT on the node (`suite/drive/CONTEXT.md`, Rules), and a trashed
+    node refuses it like any other write above READ.
+
+    A comment that gained a mention is reported to Drive, which records the
+    activity and notifies the people it names, as a Drive comment's mention
+    does. `drive.record_comment` carries the COMMENT check for that path, so
+    the save and its report are refused together, before the blob is written.
+
+    `allow_guest` lets a link holder with Comment reach the route; Drive's
+    check decides whether they may act.
+    """
+    document = frappe.get_doc(DOCTYPE, doc)
+    document.drive_check(drive.COMMENT)
+    for mentioned in comments.new_mentions(document.ycomments, data):
+        drive.record_comment(
+            document.node,
+            thread=mentioned.thread,
+            comment=mentioned.comment,
+            resolved=mentioned.resolved,
+            mentions=mentioned.users,
+        )
+    frappe.db.set_value(DOCTYPE, document.name, "ycomments", data, update_modified=False)
 
 
 @frappe.whitelist()
 def get_extension(entity_name: str):
-    mime_type = frappe.get_value("File", entity_name, "mime_type")
+    """The file extension of one readable media node, for an export's file names."""
+    drive.check(entity_name, drive.READ)
+    mime_type = frappe.db.get_value("Drive Node", entity_name, "mime")
     try:
         return mimemapper.get_extension(mime_type)
-    except:
+    except Exception:
         return QUICK_MAP.get(mime_type, "")
 
 
 @frappe.whitelist()
 def create_blog(entity_name: str, html: str, attachments: str | None = None):
-    """
-    If the blog app is installed, creates a blog
-    """
-    file = frappe.get_doc("File", entity_name)
-    if not user_has_permission(file, "read"):
-        frappe.throw("You don't have access to this file.", frappe.PermissionError)
+    """Publish one readable document's rendered body as a Blog Post, if the blog app is installed."""
+    drive.check(entity_name, drive.READ)
     blogger = frappe.db.exists("Blogger", {"user": frappe.session.user})
     if not blogger:
         frappe.throw("Please create a Blogger for your user first.")
@@ -151,14 +65,13 @@ def create_blog(entity_name: str, html: str, attachments: str | None = None):
     if not frappe.db.exists("Blog Category", {"name": "writer-export"}):
         category = frappe.get_doc({"doctype": "Blog Category", "title": "Writer Export"})
         category.insert()
-        print("insrted", category, category.name)
     else:
         category = frappe.get_doc("Blog Category", "writer-export")
 
     blog = frappe.get_doc(
         {
             "doctype": "Blog Post",
-            "title": file.file_name,
+            "title": frappe.db.get_value("Drive Node", entity_name, "title"),
             "content_type": "HTML",
             "blog_category": category.name,
             "blogger": blogger,
@@ -167,18 +80,3 @@ def create_blog(entity_name: str, html: str, attachments: str | None = None):
     )
     blog.insert()
     return blog.name
-
-
-@frappe.whitelist(allow_guest=True)
-def get_wiki_link(title: str):
-    title = title.strip("/")
-    possible_titles = [title, title + ".md", title + ".txt"]
-    names = (frappe.get_value("File", {"file_name": k, "is_folder": 0}, "name") for k in possible_titles)
-    try:
-        name = next(k for k in names if k and user_has_permission(k, "read"))
-    except StopIteration:
-        frappe.throw("Cannot get this wikilink.", frappe.NotFound)
-
-    frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = "/drive/f/" + name
-    return title

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
 // @ts-expect-error — plain JS config factory, no type declarations.
 import { buildMoreToolbarOptions } from './toolbar.config.js'
 

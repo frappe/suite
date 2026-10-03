@@ -1,44 +1,45 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { createPinia, setActivePinia } from "pinia";
-import { useParticipantConnectionState } from "../useParticipantConnectionState";
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-describe("useParticipantConnectionState", () => {
-	beforeEach(() => {
-		setActivePinia(createPinia());
-	});
+import { useParticipantConnectionState } from '../useParticipantConnectionState'
 
-	it("reports UI setup complete only after lifecycle startup settles", () => {
-		const state = useParticipantConnectionState();
+describe('useParticipantConnectionState', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
 
-		state.setLifecycleState("starting");
-		expect(state.isConnecting).toBe(true);
-		expect(state.isSetupComplete).toBe(false);
+  it('reports UI setup complete only after lifecycle startup settles', () => {
+    const state = useParticipantConnectionState()
 
-		state.setLifecycleState("syncing");
-		expect(state.isConnecting).toBe(true);
-		expect(state.isSetupComplete).toBe(false);
+    state.setLifecycleState('starting')
+    expect(state.isConnecting).toBe(true)
+    expect(state.isSetupComplete).toBe(false)
 
-		state.setLifecycleState("ready");
-		expect(state.isConnecting).toBe(false);
-		expect(state.isSetupComplete).toBe(true);
-	});
+    state.setLifecycleState('syncing')
+    expect(state.isConnecting).toBe(true)
+    expect(state.isSetupComplete).toBe(false)
 
-	it("treats degraded as operational", () => {
-		const state = useParticipantConnectionState();
-		state.setLifecycleState("degraded");
+    state.setLifecycleState('ready')
+    expect(state.isConnecting).toBe(false)
+    expect(state.isSetupComplete).toBe(true)
+  })
 
-		expect(state.isSetupComplete).toBe(true);
-	});
+  it('treats degraded as operational', () => {
+    const state = useParticipantConnectionState()
+    state.setLifecycleState('degraded')
 
-	it("resets lifecycle state and recovery diagnostics", () => {
-		const state = useParticipantConnectionState();
-		state.setLifecycleState("ready");
-		state.recordRecovery("reconnecting", "socket closed");
+    expect(state.isSetupComplete).toBe(true)
+  })
 
-		state.$reset();
+  it('resets lifecycle state and recovery diagnostics', () => {
+    const state = useParticipantConnectionState()
+    state.setLifecycleState('ready')
+    state.recordRecovery('reconnecting', 'socket closed')
 
-		expect(state.lifecycleState).toBe("stopped");
-		expect(state.isSetupComplete).toBe(false);
-		expect(state.recoveryTimeline).toEqual([]);
-	});
-});
+    state.$reset()
+
+    expect(state.lifecycleState).toBe('stopped')
+    expect(state.isSetupComplete).toBe(false)
+    expect(state.recoveryTimeline).toEqual([])
+  })
+})

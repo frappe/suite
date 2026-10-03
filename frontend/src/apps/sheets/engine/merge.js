@@ -1,6 +1,6 @@
 import { cellId } from '../utils/cells.js'
-import { remapRect } from './ref-remap.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { remapRect } from './ref-remap.js'
 
 // Per-sheet merge state.
 //
@@ -20,7 +20,7 @@ import { deepClone } from '../utils/deep-clone.js'
 // sheet name behave the same way they used to in a single-sheet doc.
 
 export function createMergeEngine() {
-  const store = {}   // { sheetName: { masterMap, slaveMap } }
+  const store = {} // { sheetName: { masterMap, slaveMap } }
 
   function _slice(sheet) {
     if (!store[sheet]) store[sheet] = { masterMap: {}, slaveMap: {} }
@@ -30,12 +30,11 @@ export function createMergeEngine() {
   function merge(r0, c0, r1, c1, sheet = 'Sheet1') {
     _unmergeRect(r0, c0, r1, c1, sheet)
     if (r0 === r1 && c0 === c1) return
-    const s   = _slice(sheet)
+    const s = _slice(sheet)
     const mid = cellId(r0, c0)
     s.masterMap[mid] = { rowSpan: r1 - r0 + 1, colSpan: c1 - c0 + 1, r: r0, c: c0 }
     for (let r = r0; r <= r1; r++)
-      for (let c = c0; c <= c1; c++)
-        if (!(r === r0 && c === c0)) s.slaveMap[cellId(r, c)] = mid
+      for (let c = c0; c <= c1; c++) if (!(r === r0 && c === c0)) s.slaveMap[cellId(r, c)] = mid
   }
 
   function unmerge(r0, c0, r1, c1, sheet = 'Sheet1') {
@@ -47,11 +46,11 @@ export function createMergeEngine() {
     if (!s) return
     for (const mid of Object.keys(s.masterMap)) {
       const { r: mr, c: mc, rowSpan, colSpan } = s.masterMap[mid]
-      const mr1 = mr + rowSpan - 1, mc1 = mc + colSpan - 1
+      const mr1 = mr + rowSpan - 1,
+        mc1 = mc + colSpan - 1
       if (mr1 < r0 || mr > r1 || mc1 < c0 || mc > c1) continue
       for (let r = mr; r <= mr1; r++)
-        for (let c = mc; c <= mc1; c++)
-          if (!(r === mr && c === mc)) delete s.slaveMap[cellId(r, c)]
+        for (let c = mc; c <= mc1; c++) if (!(r === mr && c === mc)) delete s.slaveMap[cellId(r, c)]
       delete s.masterMap[mid]
     }
   }
@@ -66,10 +65,15 @@ export function createMergeEngine() {
     s.masterMap = {}
     s.slaveMap = {}
     for (const m of masters) {
-      const box = remapRect({ r0: m.r, c0: m.c, r1: m.r + m.rowSpan - 1, c1: m.c + m.colSpan - 1 }, mapCol, mapRow)
+      const box = remapRect(
+        { r0: m.r, c0: m.c, r1: m.r + m.rowSpan - 1, c1: m.c + m.colSpan - 1 },
+        mapCol,
+        mapRow,
+      )
       if (!box) continue
-      const rowSpan = box.r1 - box.r0 + 1, colSpan = box.c1 - box.c0 + 1
-      if (rowSpan === 1 && colSpan === 1) continue   // collapsed → no longer a merge
+      const rowSpan = box.r1 - box.r0 + 1,
+        colSpan = box.c1 - box.c0 + 1
+      if (rowSpan === 1 && colSpan === 1) continue // collapsed → no longer a merge
       const mid = cellId(box.r0, box.c0)
       s.masterMap[mid] = { r: box.r0, c: box.c0, rowSpan, colSpan }
       for (let r = box.r0; r <= box.r1; r++)
@@ -77,14 +81,28 @@ export function createMergeEngine() {
           if (!(r === box.r0 && c === box.c0)) s.slaveMap[cellId(r, c)] = mid
     }
   }
-  function remapCols(mapCol, sheet = 'Sheet1') { _remap(sheet, mapCol, null) }
-  function remapRows(mapRow, sheet = 'Sheet1') { _remap(sheet, null, mapRow) }
+  function remapCols(mapCol, sheet = 'Sheet1') {
+    _remap(sheet, mapCol, null)
+  }
+  function remapRows(mapRow, sheet = 'Sheet1') {
+    _remap(sheet, null, mapRow)
+  }
 
-  function isMaster(id, sheet = 'Sheet1')      { return !!store[sheet]?.masterMap[id] }
-  function isSlave(id, sheet = 'Sheet1')       { return !!store[sheet]?.slaveMap[id] }
-  function getMasterInfo(id, sheet = 'Sheet1') { return store[sheet]?.masterMap[id] || null }
-  function getMasterId(id, sheet = 'Sheet1')   { return store[sheet]?.slaveMap[id] || null }
-  function resolveId(id, sheet = 'Sheet1')     { return store[sheet]?.slaveMap[id] || id }
+  function isMaster(id, sheet = 'Sheet1') {
+    return !!store[sheet]?.masterMap[id]
+  }
+  function isSlave(id, sheet = 'Sheet1') {
+    return !!store[sheet]?.slaveMap[id]
+  }
+  function getMasterInfo(id, sheet = 'Sheet1') {
+    return store[sheet]?.masterMap[id] || null
+  }
+  function getMasterId(id, sheet = 'Sheet1') {
+    return store[sheet]?.slaveMap[id] || null
+  }
+  function resolveId(id, sheet = 'Sheet1') {
+    return store[sheet]?.slaveMap[id] || id
+  }
 
   function snapshot() {
     return deepClone(store)
@@ -102,14 +120,14 @@ export function createMergeEngine() {
       // legacy
       store['Sheet1'] = {
         masterMap: deepClone(snap.masterMap),
-        slaveMap:  deepClone(snap.slaveMap),
+        slaveMap: deepClone(snap.slaveMap),
       }
       return
     }
     for (const [name, slice] of Object.entries(snap)) {
       store[name] = {
         masterMap: deepClone(slice.masterMap || {}),
-        slaveMap:  deepClone(slice.slaveMap  || {}),
+        slaveMap: deepClone(slice.slaveMap || {}),
       }
     }
   }
@@ -142,9 +160,20 @@ export function createMergeEngine() {
   }
 
   return {
-    merge, unmerge, remapCols, remapRows,
-    isMaster, isSlave, getMasterInfo, getMasterId, resolveId,
-    snapshot, restore,
-    renameSheet, duplicateSheet, deleteSheet, reorderSheets,
+    merge,
+    unmerge,
+    remapCols,
+    remapRows,
+    isMaster,
+    isSlave,
+    getMasterInfo,
+    getMasterId,
+    resolveId,
+    snapshot,
+    restore,
+    renameSheet,
+    duplicateSheet,
+    deleteSheet,
+    reorderSheets,
   }
 }
