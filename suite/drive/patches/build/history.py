@@ -53,6 +53,10 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
     """Implement §14.2 step 7 and return the durable outcome."""
     _require_ticket27(env)
     source, target = _ports(env)
+    # Steps 7 to 10 read legacy rows one document at a time, and this is the
+    # first of them. The index DDL commits, which is safe here: steps 1 to 6
+    # are durable and this step has written nothing yet.
+    source.index_document_reads()
     content = env.state.content()
     # The census the last complete pass froze its `report_at` against. New
     # source history has to invalidate that timestamp (plan §8), and the source

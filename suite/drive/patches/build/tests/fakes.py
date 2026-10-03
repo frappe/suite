@@ -731,6 +731,10 @@ class FakeContent:
         self.op_stamps = {}
         self.residual_versions = []
 
+    def index_document_reads(self):
+        # An index changes how fast a read is, not what it answers.
+        pass
+
     def documents(self, doctype, after, limit):
         rows = [
             row

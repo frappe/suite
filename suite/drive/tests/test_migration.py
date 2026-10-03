@@ -23,6 +23,7 @@ undo any of this; the class drops what it created on the way out instead.
 import json
 import os
 import unittest
+from collections import defaultdict
 
 import frappe
 from frappe.storage.tests import reset_file_controller
@@ -35,6 +36,7 @@ from suite.drive._core import content
 from suite.drive._core.roles import EDIT, READ
 from suite.drive.framework import principals_for
 from suite.drive.patches import build, cleanup
+from suite.drive.patches.build.ports import SiteContentSource
 from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.cleanup.environment import BACKUP_CONFIG_KEY
 from suite.drive.patches.cleanup.state import CleanupState
@@ -43,6 +45,20 @@ REHEARSAL_FLAG = "drive_migration_rehearsal"
 BACKUP = "rehearsal: no backup, throwaway site"
 
 LINK_PREFIX = "$LINK:"
+
+# The legacy columns Build reads once per document, by the keyset it pages in.
+INDEXED_READS = {
+    "Writer Version": ("doc", "creation", "name"),
+    "File": ("content_doctype", "content_docname"),
+}
+
+
+def index_columns(doctype: str) -> list[tuple[str, ...]]:
+    """Every index on the table, as its ordered column names."""
+    parts = defaultdict(list)
+    for row in frappe.db.sql(f"SHOW INDEX FROM `tab{doctype}`", as_dict=True):
+        parts[row.Key_name].append((int(row.Seq_in_index), row.Column_name))
+    return sorted(tuple(column for _, column in sorted(columns)) for columns in parts.values())
 
 
 @unittest.skipUnless(
@@ -67,6 +83,16 @@ class TestBuildThenCleanup(IntegrationTestCase):
             frappe.conf["storage_v2"] = 1
             reset_file_controller()
             build.execute()
+            # Cleanup drops the legacy tables, so Build's indexes are read now.
+            # A resumed Build indexes again, and must find its first index.
+            SiteContentSource().index_document_reads()
+            cls.indexes_after_build = {doctype: index_columns(doctype) for doctype in INDEXED_READS}
+            cls.history_read_key = frappe.db.sql(
+                """EXPLAIN SELECT `name` FROM `tabWriter Version` WHERE `doc` = %(doc)s
+                   ORDER BY `creation`, `name` LIMIT 10""",
+                {"doc": cls.docname},
+                as_dict=True,
+            )[0].key
             frappe.conf[BACKUP_CONFIG_KEY] = BACKUP
             cleanup.execute()
         except BaseException:
@@ -413,6 +439,13 @@ class TestBuildThenCleanup(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Writer Document", self.docname, "node"), self.document)
         self.assertGreaterEqual(frappe.db.count("Drive Node Version", {"node": self.document}), 1)
 
+    def test_build_indexes_the_legacy_columns_it_reads_per_document(self):
+        """B108: without the index, each history lookup read the whole table."""
+        for doctype, columns in INDEXED_READS.items():
+            with self.subTest(doctype=doctype):
+                self.assertEqual(self.indexes_after_build[doctype].count(columns), 1)
+        self.assertIsNotNone(self.history_read_key)
+
     def test_the_grants_say_who_may_do_what(self):
         grants = {
             row.principal: row.role
@@ -492,6 +525,30 @@ class TestBuildThenCleanup(IntegrationTestCase):
         for name, _phase in cleanup.PHASES:
             with self.subTest(phase=name):
                 self.assertTrue(state.get(name).completed)
+
+
+@unittest.skipUnless(
+    frappe.conf.get(REHEARSAL_FLAG),
+    f"changes the site's schema; set `{REHEARSAL_FLAG}` in a throwaway site's config",
+)
+class TestLegacyReadIndexes(IntegrationTestCase):
+    """B108 on a site where an operator indexed the history before Build ran."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.schema = legacy_schema.install()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.schema.remove()
+        super().tearDownClass()
+
+    def test_an_index_added_by_hand_is_kept_and_not_duplicated(self):
+        frappe.db.sql_ddl("ALTER TABLE `tabWriter Version` ADD INDEX `by_hand` (`doc`, `creation`, `name`)")
+        SiteContentSource().index_document_reads()
+        self.assertEqual(index_columns("Writer Version").count(INDEXED_READS["Writer Version"]), 1)
+        self.assertEqual(index_columns("File").count(INDEXED_READS["File"]), 1)
 
 
 if __name__ == "__main__":

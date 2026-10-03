@@ -4378,6 +4378,17 @@ replacement version and leaves the source head untouched until Cleanup
 drops that legacy column. An existing source snapshot with missing or
 changed target bytes, fields, or ownership still refuses migration.
 
+**Indexes for per-document reads.** Steps 7 and 10 read legacy rows once
+per content document. `Writer Version` has no index on `doc`, and the
+legacy `File` columns `content_doctype` and `content_docname` have none, so
+each of those reads would scan the whole table. Before step 7 reads any
+history, Build adds an index on `Writer Version (doc, creation, name)` and
+one on `File (content_doctype, content_docname)`. It skips a table that is
+missing a listed column and an index whose leading columns already match.
+It asks MariaDB for `ALGORITHM=INPLACE, LOCK=NONE` and falls back to a
+plain `ALTER TABLE` when MariaDB refuses that. The DDL commits, so it runs
+between batches. Cleanup drops both indexes with their tables and columns.
+
 **The old `delete` verb** (§3.8, §9.4). `Drive Entity Activity Log` has one
 `delete` verb for three acts. Build maps each row by the `File.status` of
 the entity it names, read at map time:

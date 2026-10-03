@@ -786,6 +786,13 @@ class ContentShareRow:
 class LegacyContent(Protocol):
     """Read-only access to legacy content application rows."""
 
+    def index_document_reads(self) -> None:
+        """Index the legacy columns the per-document reads filter on.
+
+        Idempotent, and it changes no row. On MariaDB the DDL commits the
+        open transaction, so call it only between batches.
+        """
+
     def documents(self, doctype: str, after: str, limit: int) -> list[ContentRow]: ...
 
     def files_for_content(self, doctype: str, docname: str) -> list[TreeRow]: ...
@@ -1409,11 +1416,54 @@ def _legacy_page(table: str, columns: tuple[str, ...], after: str, limit: int, p
     )
 
 
+def _index_prefixes(doctype: str, width: int) -> set[tuple[str, ...]]:
+    """The first `width` columns of every index on this table.
+
+    An index that starts with a keyset serves it whatever its name, such as
+    one an operator added by hand before Build ran.
+    """
+    columns: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for row in frappe.db.sql(f"SHOW INDEX FROM `tab{doctype}`", as_dict=True):
+        columns[row.Key_name].append((int(row.Seq_in_index), row.Column_name))
+    return {tuple(column for _, column in sorted(parts))[:width] for parts in columns.values()}
+
+
+# Steps 7 to 10 read these legacy columns once per document, and the legacy
+# schema never indexed them, so each `Writer Version` lookup by `doc` read the
+# whole history table. Each tuple is the keyset that read pages in.
+# `Sheet Snapshot.sheet` and `Slide.parent` were always indexed. Cleanup
+# drops these tables and columns, and their indexes with them (§14.10).
+DOCUMENT_READ_INDEXES = (
+    ("Writer Version", ("doc", "creation", "name")),
+    ("File", ("content_doctype", "content_docname")),
+)
+# MariaDB's "this ALTER cannot run with this ALGORITHM or LOCK" refusals.
+ONLINE_DDL_REFUSED = (1845, 1846)
+
+
 class SiteContentSource:
     """`LegacyContent` over Writer, Sheets, Slides, File, and DocShare."""
 
     def __init__(self, name_prefix: str | None = None):
         self.name_prefix = name_prefix or ""
+
+    def index_document_reads(self) -> None:
+        for doctype, columns in DOCUMENT_READ_INDEXES:
+            if not frappe.db.table_exists(doctype) or not all(
+                frappe.db.has_column(doctype, column) for column in columns
+            ):
+                continue
+            if columns in _index_prefixes(doctype, len(columns)):
+                continue
+            listed = ", ".join(f"`{column}`" for column in columns)
+            add = f"ALTER TABLE `tab{doctype}` ADD INDEX `{'_'.join(columns)}_index` ({listed})"
+            try:
+                # Online, so live writes to the table do not wait for the build.
+                frappe.db.sql_ddl(f"{add}, ALGORITHM=INPLACE, LOCK=NONE")
+            except Exception as error:
+                if not error.args or error.args[0] not in ONLINE_DDL_REFUSED:
+                    raise
+                frappe.db.sql_ddl(add)
 
     def documents(self, doctype: str, after: str, limit: int) -> list[ContentRow]:
         fields = {
