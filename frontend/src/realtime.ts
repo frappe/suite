@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client'
 
+import { resolveSiteName } from '@/platform/realtime'
 import { showCalendarAlert } from '@/utils/calendarAlert'
 
 declare global {
@@ -11,10 +12,7 @@ declare global {
 
 const socketUrl = () => {
   const host = window.location.hostname
-  // The build-time site name, not the hostname: in development Vite may be
-  // reached on a hostname that is not the Frappe site, and the hostname would
-  // name a socket.io namespace that does not exist.
-  const siteName = window.site_name || __SITE_NAME__
+  const siteName = resolveSiteName(window)
   const socketio_port = window.socketio_port || __SOCKETIO_PORT__
   const port = window.location.port ? `:${socketio_port}` : ''
   const protocol = port ? 'http' : 'https'

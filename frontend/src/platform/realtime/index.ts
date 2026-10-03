@@ -40,9 +40,7 @@ export function createRealtime(options: CreateRealtimeOptions = {}): Realtime {
   function socket(): SocketLike {
     if (instance) return instance
     const targetWindow = options.window ?? window
-    const definedSite =
-      typeof __SITE_NAME__ === 'undefined' ? targetWindow.location.hostname : __SITE_NAME__
-    const siteName = options.siteName ?? targetWindow.site_name ?? definedSite
+    const siteName = options.siteName ?? resolveSiteName(targetWindow)
     const factory = options.io ?? (io as unknown as CreateRealtimeOptions['io'])!
     instance = factory(resolveSocketUrl(targetWindow, siteName, options.socketioPort), {
       withCredentials: true,
@@ -108,6 +106,18 @@ export function createRealtime(options: CreateRealtimeOptions = {}): Realtime {
     socket,
     close,
   }
+}
+
+export function resolveSiteName(
+  targetWindow: Pick<Window, 'location'> & Partial<Window>,
+  buildSite: string = typeof __SITE_NAME__ === 'undefined'
+    ? targetWindow.location.hostname
+    : __SITE_NAME__,
+): string {
+  if (targetWindow.site_name) return targetWindow.site_name
+  const host = targetWindow.location.hostname
+  if (host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]') return host
+  return buildSite
 }
 
 export function resolveSocketUrl(
