@@ -4217,6 +4217,41 @@ Precondition outside this spec: Frappe Cloud must allowlist
 `storage_driver` and `storage_driver_config` before `suite.frappe.io`
 migrates.
 
+**Precondition on S3 sites: bucket CORS.** After Build, the browser
+reads from and writes to the bucket directly in two places:
+
+- **Text previews.** `TextPreview` fetches `GET /nodes/<id>/content`,
+  which answers 302 to a signed S3 URL. The browser follows the redirect
+  and reads the body from the bucket.
+- **Direct uploads.** `upload_target` in `frappe/storage/s3_driver.py`
+  returns a presigned POST, and the browser posts the file to the bucket.
+
+Both requests go to another origin, so the browser blocks them unless the
+bucket's CORS rules allow the site's origin for `GET`, `HEAD` and `POST`.
+On the rehearsal, a bucket with no CORS rule broke both. Set the rule
+before the migrate, and list every origin the site is served from, a
+custom domain included:
+
+```json
+{"CORSRules": [
+  {"AllowedOrigins": ["https://<site>"],
+   "AllowedMethods": ["GET", "HEAD", "POST"],
+   "AllowedHeaders": ["*"],
+   "MaxAgeSeconds": 3000}
+]}
+```
+
+`aws s3api put-bucket-cors --bucket <bucket> --cors-configuration
+file://cors.json` sets it, with `--endpoint-url` for a store that is not
+AWS. `aws s3api get-bucket-cors --bucket <bucket>` shows what is set.
+
+A possible follow-up, not built: the preflight below already reaches the
+bucket, so it could also read the rules with one `GetBucketCors` call and
+report NO-GO when no rule allows the site's origin for these three
+methods. The call is read-only. Some S3-compatible stores do not support
+it and some keys may not read it, so that case would have to report the
+rules as unknown, not as missing.
+
 **Upgrade floor.** Only a site whose `Patch Log` holds
 `suite.drive.patches.drop_team_doctypes #2` is supported
 (`build.gate.UPGRADE_FLOOR_PATCH`). Every older Drive patch was deleted from
