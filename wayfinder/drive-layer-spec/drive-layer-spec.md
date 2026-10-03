@@ -4447,7 +4447,7 @@ role) and `creator_denies_overridden`; the two are disjoint.
 | `Drive Notification` | none | dropped; they carry no activity link, so the inbox starts empty |
 | `Drive Legacy Route`, `Drive DAV Lock`, `Drive DAV Property` | same | retargeted by the node identity map |
 | `Drive Token` | none | dropped; it is not a link [008] |
-| `Writer Version` | `Drive Node Version` | ids kept; `manual` maps to kind `named`, else `auto`; `label` from `title`; `seq` by creation order; bytes are the snapshot HTML through `put_blob` |
+| `Writer Version` | `Drive Node Version` | ids kept; `manual` maps to kind `named`, else `auto`; `label` from `title`; `seq` by creation order; bytes are the snapshot HTML through `put_blob`, with each borrowed picture pointed at the document's copy (§14.7); `blob` and `size` describe those bytes |
 | `Sheet Snapshot` | `Drive Node Version` | field for field; bytes are the snapshot JSON; an existing `Sheet.head_snapshot` must name that Sheet's migrated version |
 | Writer `ycomments` | `Drive Comment Thread` and `Drive Comment` | anchor = the comment id; mentions go into `detail` |
 | Sheets cell threads in `sheets_data` | same | anchor = sheet plus cell id |
@@ -4529,9 +4529,24 @@ From the [012] amendment to [011]:
   document that already holds a node for the same blob reuses it, so a
   rerun copies nothing and rewrites nothing. Writer bodies are rewritten in
   `content` (the live Yjs attributes, in all three media id spellings) and
-  in `html`. Writer versions and Writer templates are not rewritten: §14.6
-  copies version bytes exactly, and step 8 validates a template against its
-  source. A Writer body pycrdt cannot read is left as it is and reported.
+  in `html`. A Writer body pycrdt cannot read is left as it is and reported.
+- **Borrowed pictures in Writer versions.** Restoring a version puts its
+  HTML back into the live body, so a version must name the same copies.
+  Step 7 maps each version's HTML onto the document's copies before it
+  stores the bytes. A picture that only an old version shows is copied
+  too, and a blob still gets one copy for the body and every version. Only
+  the id inside each picture reference changes; every other byte stays as
+  the source has it. The version's `blob` and `size` are those of the
+  rewritten bytes, so a rerun derives the same bytes and passes the
+  checksum check.
+- **Borrowed pictures in Writer templates.** Every document made from a
+  template copies its body, so step 8 gives the template node its own
+  copies and rewrites the template body the same way, before it writes the
+  template's `Writer Document`. A legacy template has only HTML, so its
+  Yjs `content` is the empty body and only `html` changes. Step 8 validates
+  a stored template document against the source body with this rewrite
+  applied, so a rerun that finds the copies passes, and a stored document
+  that still names the other document's node is refused.
 - **Pictures directly inside a list item.** The Writer image node is inline,
   and a list item, a task item, a blockquote, a table cell, and the
   document root accept only blocks, so the editor drops an image that sits
@@ -4541,8 +4556,8 @@ From the [012] amendment to [011]:
   `content` in its own paragraph, with every attribute kept. An image inside
   a paragraph, a heading, an image group, or a code block is left alone, so
   valid content is not rewritten and a rerun changes nothing. The `html`
-  copy and Writer versions are not rewritten: they are HTML, and the
-  editor's HTML parser wraps loose inline content itself.
+  copy, Writer versions, and Writer templates get no wrap: they are HTML,
+  and the editor's HTML parser wraps loose inline content itself.
 - `Presentation.thumbnail` Files become `Drive Node Preview` rows on the
   deck node. The field and its `attached_to_field` handling go.
 - Template decks (`is_template = 1`) gain nodes in Administrator's Personal

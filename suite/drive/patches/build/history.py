@@ -12,7 +12,11 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.ports import REMOVED
-from suite.drive.patches.build.writer_bodies import convert_writer_body
+from suite.drive.patches.build.writer_bodies import (
+    DocumentPictures,
+    convert_writer_body,
+    writer_version_html,
+)
 
 
 class BuildHistoryError(RuntimeError):
@@ -34,6 +38,7 @@ HISTORY_FIELDS = (
     "writer_media_copied",
     "writer_bodies_rewritten",
     "writer_images_wrapped",
+    "writer_versions_rewritten",
     "writer_media_references_missing",
     "writer_bodies_unreadable",
 )
@@ -103,8 +108,8 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
                         first_pending = first_pending or document.name
                     else:
                         if doctype == "Writer Document":
-                            convert_writer_body(env, content, document, node)
-                            _writer_versions(env, content, document, node, batch_size)
+                            pictures = convert_writer_body(env, content, document, node)
+                            _writer_versions(env, content, document, node, batch_size, pictures)
                         else:
                             _sheet_versions(env, content, document, node, batch_size)
                         from suite.drive.patches.build.comments import convert_document_comments
@@ -151,9 +156,11 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
     return content
 
 
-def _writer_versions(env, content, document, node: str, batch_size: int) -> None:
+def _writer_versions(env, content, document, node: str, batch_size: int, pictures: DocumentPictures) -> None:
     # The source page is the keyset the port orders by, so the running index is
-    # the target `seq`: position 1 is the oldest `(creation, name)`.
+    # the target `seq`: position 1 is the oldest `(creation, name)`. The bytes
+    # are the source HTML with each borrowed picture pointed at the
+    # document's copy (§14.6), so a rerun derives the same bytes and checksum.
     expected = []
     target_batch = max(1, batch_size // 2)
     by_seq = env.content_target.version_seqs(node)
@@ -163,11 +170,12 @@ def _writer_versions(env, content, document, node: str, batch_size: int) -> None
         rows = env.content.writer_versions(document.name, after, target_batch)
         if not rows:
             break
-        for row in rows:
+        htmls = writer_version_html(env, content, pictures, [row.snapshot or "" for row in rows])
+        for row, html in zip(rows, htmls, strict=True):
             seq += 1
             if seq > MAX_VERSION_SEQ:
                 raise InvalidLegacyContent("Writer Version count does not fit the target positive Int")
-            raw = (row.snapshot or "").encode("utf-8")
+            raw = html.encode("utf-8")
             expected.append(
                 _version_row(
                     env,

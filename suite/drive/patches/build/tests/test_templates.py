@@ -772,6 +772,84 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(target.node_rows[deck.name]["is_template"], 1)
         self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, deck.name)
 
+    def test_a_template_picture_another_document_owns_points_at_a_copy_under_the_template(self):
+        # Every document made from a template copies its body, so a template
+        # naming another document's node would hand a blank picture to all
+        # of them.
+        logo = "/api/method/suite.writer.api.embed.get?id=pic-1"
+        row = WriterTemplateRow(
+            name="writer-template",
+            title="Letter",
+            content=f'<p>Dear id=pic-1,</p><p><img src="{logo}" alt="logo"></p>',
+            keymap="vim",
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        target.node_rows["doc-a"] = {"name": "doc-a", "kind": "document", "parent_node": "elsewhere"}
+        target.add_blob("blob-1", b"png bytes", mime_type="image/png")
+        target.node_rows["pic-1"] = {
+            "name": "pic-1",
+            "title": "logo.png",
+            "parent_node": "doc-a",
+            "kind": "file",
+            "blob": "blob-1",
+            "size": 9,
+            "mime": "image/png",
+            "state": ACTIVE,
+            "owner": "author@example.com",
+            "creation": STAMP,
+            "modified": STAMP,
+        }
+
+        folder = convert_templates(env)
+        rows = (dict(target.node_rows), dict(target.writer_rows))
+        first = env.state.content()
+        convert_templates(env)
+        second = env.state.content()
+
+        (copy,) = [node for node in target.node_rows.values() if node.get("parent_node") == row.name]
+        self.assertEqual(
+            {key: copy[key] for key in ("blob", "kind", "title", "state", "path", "owner")},
+            {
+                "blob": "blob-1",
+                "kind": "file",
+                "title": "logo.png",
+                "state": ACTIVE,
+                "path": f"/{folder}/{row.name}/",
+                "owner": OWNER,
+            },
+        )
+        self.assertEqual(target.node_rows["pic-1"]["parent_node"], "doc-a")
+        # Only the id inside the picture reference changes.
+        document = target.writer_rows[row.name]
+        self.assertEqual(
+            (document["content"], document["html"]),
+            (
+                "AAA=",
+                f'<p>Dear id=pic-1,</p><p><img src="/api/method/suite.writer.api.embed.get?id={copy["name"]}"'
+                ' alt="logo"></p>',
+            ),
+        )
+        # A rerun validates the stored document against the rewritten body
+        # and writes nothing.
+        self.assertEqual((dict(target.node_rows), dict(target.writer_rows)), rows)
+        for result in (first, second):
+            self.assertEqual(result.template_media_copied, 1)
+            self.assertEqual(result.template_bodies_rewritten, 1)
+            self.assertEqual(result.template_media_references_missing, 0)
+
+        # A stored document still naming the other document's node is not
+        # what step 8 would write, so it is refused.
+        target.writer_rows[row.name] = {**document, "html": row.content}
+        with self.assertRaisesRegex(
+            InvalidLegacyContent, "Writer template document writer-template field html"
+        ):
+            convert_templates(env)
+
     def test_a_second_run_changes_no_row_and_no_counter(self):
         writer = writer_template("writer-template")
         deck = presentation_template("deck-template")

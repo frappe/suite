@@ -74,6 +74,9 @@ CUMULATIVE_FIELDS = frozenset(
         "writer_media_copied",
         "writer_bodies_rewritten",
         "writer_images_wrapped",
+        # The template copies, for the same reason: the next templates pass
+        # finds them under the template node and plans none.
+        "template_media_copied",
     }
 )
 
@@ -441,12 +444,14 @@ class ContentConversion:
     # (`writer_bodies`): pictures another document owned that now have a node
     # of their own under the document showing them, the bodies rewritten to
     # name them or to wrap a loose image, and the images wrapped. The first
-    # three are cumulative. The last two are recounted every pass: a
-    # reference that names no copyable picture stays in the body, and a body
-    # pycrdt cannot read stays as it is.
+    # three are cumulative. The rest are recounted every pass: a version's
+    # bytes are derived from its source on every pass, a reference that names
+    # no copyable picture stays in the body or version, and a body pycrdt
+    # cannot read stays as it is.
     writer_media_copied: int = 0
     writer_bodies_rewritten: int = 0
     writer_images_wrapped: int = 0
+    writer_versions_rewritten: int = 0
     writer_media_references_missing: int = 0
     writer_bodies_unreadable: int = 0
     trash_disagreements: int = 0
@@ -482,6 +487,13 @@ class ContentConversion:
     # written, so it counts none.
     template_nodes_adopted: int = 0
     writer_templates_converted: int = 0
+    # Not in §14.9, and owned by the templates phase. The same picture pass
+    # as the `writer_*` counters above, for a Writer template's body: copies
+    # under the template node (cumulative), bodies that name a copy, and
+    # references left as they are (both recounted every pass).
+    template_media_copied: int = 0
+    template_bodies_rewritten: int = 0
+    template_media_references_missing: int = 0
     blobless_nodes: int = 0
     title_renames: int = 0
     template_title_renames: int = 0

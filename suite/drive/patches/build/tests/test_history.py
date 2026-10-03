@@ -1,6 +1,7 @@
 """Writer and Sheet history conversion without a site."""
 
 import base64
+import hashlib
 import json
 import tempfile
 import unittest
@@ -1014,6 +1015,78 @@ class WriterBodyTest(unittest.TestCase):
             self.assertEqual(content.writer_media_copied, 1)
             self.assertEqual(content.writer_bodies_rewritten, 1)
             self.assertEqual(content.writer_media_references_missing, 1)
+
+    def test_an_old_version_points_at_the_documents_copy_of_a_borrowed_picture(self):
+        # Restoring a version puts its HTML back into the live body, so a
+        # version naming another document's node would bring back a blank
+        # picture. `pic-2` is in the old versions only, never in the body.
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        self.add_picture("pic-2", "node-a", "blob-2", "chart.png", owner="author@example.com")
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=embed("pic-1")))),
+                html=f'<p><img src="{embed("pic-1")}"></p>',
+            ),
+        )
+        older = (
+            '<h1 class="title">Draft</h1>'
+            f'<p><img src="{embed("pic-1")}" alt="same"></p>'
+            f'<p><img data-node="pic-2" src="{embed("pic-2")}"> see id=pic-2 below</p>'
+        )
+        old = (
+            '<p><img src="/api/method/drive.api.embed.get_file_content'
+            '?embed_name=pic-2&parent_entity_name=node-a"></p>'
+        )
+        for name, snapshot, creation in (
+            ("version-1", older, "2024-01-01"),
+            ("version-2", old, "2024-01-02"),
+        ):
+            self.source.writer_version_rows.append(
+                WriterVersionRow(name, "reader-doc", snapshot, owner=OWNER, creation=creation, modified=STAMP)
+            )
+
+        # One version per page, so the second page meets a picture the
+        # first page already copied.
+        first = convert_history_and_comments(self.env, batch_size=2)
+        rows = (dict(self.target.node_rows), dict(self.target.version_rows), dict(self.target.blob_rows))
+        second = convert_history_and_comments(self.env, batch_size=2)
+
+        # One copy per blob, shared by the body and both versions.
+        copies = self.children("node-b")
+        self.assertEqual(
+            {name: row["blob"] for name, row in copies.items()}, {"copy-1": "blob-1", "copy-2": "blob-2"}
+        )
+        self.assertEqual(self.target.node_rows["pic-2"]["parent_node"], "node-a")
+        # Only the ids inside the picture references change.
+        expected = {
+            "version-1": (
+                '<h1 class="title">Draft</h1>'
+                f'<p><img src="{embed("copy-1")}" alt="same"></p>'
+                f'<p><img data-node="copy-2" src="{embed("copy-2")}"> see id=pic-2 below</p>'
+            ),
+            "version-2": (
+                '<p><img src="/api/method/drive.api.embed.get_file_content'
+                '?embed_name=copy-2&parent_entity_name=node-a"></p>'
+            ),
+        }
+        for name, html in expected.items():
+            version = self.target.version_rows[name]
+            data = html.encode("utf-8")
+            self.assertEqual(self.target.read_blob(version["blob"]), data)
+            self.assertEqual(version["size"], len(data))
+            self.assertEqual(self.target.blob(version["blob"]).checksum, hashlib.sha256(data).hexdigest())
+
+        # A rerun copies nothing, rewrites no version, and stores no new bytes.
+        self.assertEqual(
+            (dict(self.target.node_rows), dict(self.target.version_rows), dict(self.target.blob_rows)), rows
+        )
+        for content in (first, second):
+            self.assertEqual(content.writer_media_copied, 2)
+            self.assertEqual(content.writer_versions_rewritten, 2)
+            self.assertEqual(content.writer_media_references_missing, 0)
 
     def test_a_picture_directly_inside_a_list_item_is_wrapped_in_a_paragraph(self):
         # B113: the editor's image is inline and a list item holds only

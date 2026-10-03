@@ -1,7 +1,6 @@
-"""§14.6: make one legacy Writer body readable by the new Writer.
+"""§14.6 and §14.7: make legacy Writer bodies readable by the new Writer.
 
-Step 7 calls `convert_writer_body` once per Writer document, before its
-history. It changes the live body in two ways and touches nothing else:
+Build changes a Writer body in two ways and touches nothing else:
 
 - **Pictures another document owns** (B112). A legacy body can show a
   picture stored under a different document: the legacy embed URL served
@@ -17,12 +16,21 @@ history. It changes the live body in two ways and touches nothing else:
   content in one content expression, so the schema cannot accept it.
   Build wraps each such image in its own paragraph instead.
 
-Version snapshots are not rewritten. §14.6 copies each `Writer Version`
-byte for byte, and Build rewrites no version anywhere else, so an old
-version that showed a borrowed picture still names the other document's
-node. Version bytes are HTML, which the editor parses with ProseMirror's
-`DOMParser`; that wraps loose inline content itself, so B113 needs no
-rewrite there.
+Three callers, one `DocumentPictures` per document:
+
+- Step 7 calls `convert_writer_body` once per Writer document, before its
+  history, and rewrites the live body (the Yjs `content` and the `html`).
+- Step 7 then passes each page of that document's `Writer Version` rows to
+  `writer_version_html`. A version can show a picture the live body no
+  longer shows, so its ids are mapped too, with the same copies: a version
+  shown or restored after Build names the document's own node. Only the id
+  inside each picture reference changes. Version bytes are HTML, which the
+  editor parses with ProseMirror's `DOMParser`; that wraps loose inline
+  content itself, so B113 needs no rewrite there.
+- Step 8 calls `convert_template_body` for each `Writer Template` before it
+  writes the template's document, so the template node gets its own copies
+  and every document made from the template names pictures it can read.
+  Step 8 validates a stored template document against this rewritten body.
 
 ## Why this module reads Writer bodies itself
 
@@ -40,6 +48,7 @@ back to a raw scan for such a body, and Build has no better reading of it.
 import base64
 import binascii
 import re
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -70,6 +79,9 @@ PARAGRAPH = "paragraph"
 # blocks.
 IMAGE_PARENTS = frozenset({"paragraph", "heading", "imageGroup", "codeBlock"})
 
+# Called once per id that stays as it is, with the reason.
+ReportMissing = Callable[[str, str], None]
+
 
 class UnreadableBody(Exception):
     """One Writer body pycrdt refused to read."""
@@ -81,39 +93,107 @@ class _Rewrite:
     images_wrapped: int
 
 
-def convert_writer_body(env, content, document, node: str) -> None:
-    """Copy borrowed pictures under `node` and rewrite the body to use them.
+class DocumentPictures:
+    """Which node each picture one Writer document names becomes after Build.
 
-    Rerunnable at any point. A rewritten body names only the document's own
-    children and holds no loose image, so the next pass finds nothing to
-    copy and nothing to wrap. A document that already holds a node for the
-    same blob reuses it instead of gaining a second one.
+    A picture the document holds keeps its id. A borrowed one maps to the
+    document's copy: the oldest child with the same blob, whoever made it,
+    or a new node `claim` plans. The same object sees the live body and then
+    every version page, so a blob gets one copy however many texts name it,
+    and a rerun meets the copies it made and plans none.
+    """
+
+    def __init__(self, env, document, node: str, report: ReportMissing, *, node_row: dict | None = None):
+        children = env.content_target.child_nodes(node)
+        self.mapping: dict[str, str] = {}
+        self._env = env
+        self._document = document
+        self._node = node
+        # Step 8 passes the template node it is about to write. Step 7 reads
+        # the stored node only when it first needs a copy.
+        self._node_row = node_row
+        self._report = report
+        self._own = {child["name"] for child in children}
+        self._settled: set[str] = set()
+        self._by_blob: dict[str, str] = {}
+        for child in sorted(children, key=lambda row: (str(row.get("creation") or ""), row["name"])):
+            if child.get("kind") == "file" and child.get("blob"):
+                self._by_blob.setdefault(child["blob"], child["name"])
+        self._titles = SiblingTitles({child["title"] for child in children if child.get("state") == ACTIVE})
+
+    def claim(self, named: set[str]) -> list[dict]:
+        """Map every borrowed id in `named` this object has not met yet.
+
+        Answers the copies to insert. The caller inserts them before it
+        commits any text that names them. Copies only a picture whose node is
+        a stored file below another document, with Ready bytes. Anything else
+        stays as it is and is reported once, the way a missing picture of the
+        document's own is.
+        """
+        foreign = sorted(named - self._own - self._settled)
+        if not foreign:
+            return []
+        self._settled.update(foreign)
+        target = self._env.content_target
+        found = target.nodes(tuple(foreign))
+        parents = target.nodes(
+            tuple(sorted({row["parent_node"] for row in found.values() if row.get("parent_node")}))
+        )
+        copies: list[dict] = []
+        for name in foreign:
+            picture = found.get(name)
+            reason = _uncopyable(target, picture, parents)
+            if reason:
+                self._report(name, reason)
+                continue
+            blob = picture["blob"]
+            if blob not in self._by_blob:
+                copy = _copy_node(
+                    self._env, self._document, self._parent(), picture, self._titles.claim(picture["title"])
+                )
+                copies.append(copy)
+                self._by_blob[blob] = copy["name"]
+            self.mapping[name] = self._by_blob[blob]
+        return copies
+
+    def _parent(self) -> dict:
+        if self._node_row is None:
+            self._node_row = self._env.content_target.nodes((self._node,))[self._node]
+        return self._node_row
+
+
+def convert_writer_body(env, content, document, node: str) -> DocumentPictures:
+    """Copy borrowed pictures under `node` and rewrite the live body to use them.
+
+    Answers the document's pictures, for `writer_version_html`. Rerunnable at
+    any point. A rewritten body names only the document's own children and
+    holds no loose image, so the next pass finds nothing to copy and nothing
+    to wrap.
     """
     source, target = env.content, env.content_target
-    # §14.7 converts templates and validates their body against the source
-    # field by field, so a template body stays exactly as the source has it.
+    label = f"Writer Document:{document.name}"
+    pictures = DocumentPictures(env, document, node, _history_report(content, label))
+    # Step 8 writes a template's document from its `Writer Template` row,
+    # pictures included (`convert_template_body`), and validates it field by
+    # field against that row, so step 7 leaves its body alone.
     if source.writer_document_is_template(document.name):
-        return
+        return pictures
     body = source.writer_body(document.name)
     if body is None:
-        return
-    label = f"Writer Document:{document.name}"
+        return pictures
+    copies: list[dict] = []
+    rewrite = None
     try:
-        named = _html_ids(body.html or "") | _body_ids(body.content)
-        children = target.child_nodes(node)
-        foreign = sorted(named - {child["name"] for child in children})
-        mapping: dict[str, str] = {}
-        copies: list[dict] = []
-        if foreign:
-            mapping, copies = _borrowed_pictures(env, content, document, node, children, foreign, label)
-        rewrite = _rewritten(body, mapping)
+        copies = pictures.claim(_html_ids(body.html or "") | _body_ids(body.content))
+        rewrite = _rewritten(body, pictures.mapping)
     except UnreadableBody:
+        # The body stays as it is. A copy already claimed is still inserted
+        # below: the mapping names it, and a version may use it.
         content.writer_bodies_unreadable += 1
         content.record_issue(label, "body cannot be read; it was left as it is", phase="history")
-        return
 
     if not copies and rewrite is None:
-        return
+        return pictures
     target.insert_nodes(copies)
     if rewrite is not None:
         target.update_writer_body(document.name, rewrite.body.content, rewrite.body.html)
@@ -124,48 +204,65 @@ def convert_writer_body(env, content, document, node: str) -> None:
     if rewrite is not None:
         content.writer_bodies_rewritten += 1
         content.writer_images_wrapped += rewrite.images_wrapped
+    return pictures
 
 
-def _borrowed_pictures(env, content, document, node, children, foreign, label):
-    """Map each borrowed id to a media node of this document.
+def writer_version_html(env, content, pictures: DocumentPictures, snapshots: list[str]) -> list[str]:
+    """One page of version HTML, each pointing at the document's own pictures.
 
-    Copies only a picture whose node is a stored file below another
-    document, with Ready bytes. Anything else stays in the body as it is and
-    is reported as a missing reference, the way a missing same-document
-    picture is.
+    Copies a picture the first time any version names it, and commits the
+    copies before the caller writes a version that names them. Only the id
+    inside each picture reference changes; every other byte is the source's.
     """
-    target = env.content_target
-    found = target.nodes(tuple(foreign))
-    parents = target.nodes(
-        tuple(sorted({row["parent_node"] for row in found.values() if row.get("parent_node")}))
+    copies = pictures.claim(set().union(*(_html_ids(text) for text in snapshots)))
+    if copies:
+        target = env.content_target
+        target.insert_nodes(copies)
+        target.commit()
+        content.writer_media_copied += len(copies)
+    if not pictures.mapping:
+        return list(snapshots)
+    rewritten = [_remap_text(text, pictures.mapping) for text in snapshots]
+    content.writer_versions_rewritten += sum(
+        new != old for new, old in zip(rewritten, snapshots, strict=True)
     )
-    document_node = target.nodes((node,))[node]
-    # The oldest same-blob child is the copy, whoever made it: the bytes are
-    # the same either way, and a rerun picks the same one.
-    by_blob: dict[str, str] = {}
-    for child in sorted(children, key=lambda row: (str(row.get("creation") or ""), row["name"])):
-        if child.get("kind") == "file" and child.get("blob"):
-            by_blob.setdefault(child["blob"], child["name"])
-    titles = SiblingTitles({child["title"] for child in children if child.get("state") == ACTIVE})
+    return rewritten
 
-    mapping: dict[str, str] = {}
-    copies: list[dict] = []
-    for name in foreign:
-        picture = found.get(name)
-        reason = _uncopyable(target, picture, parents)
-        if reason:
-            content.writer_media_references_missing += 1
-            content.record_issue(
-                label, f"media reference {name!r} {reason}; it was left as it is", phase="history"
-            )
-            continue
-        blob = picture["blob"]
-        if blob not in by_blob:
-            copy = _copy_node(env, document, document_node, picture, titles.claim(picture["title"]))
-            copies.append(copy)
-            by_blob[blob] = copy["name"]
-        mapping[name] = by_blob[blob]
-    return mapping, copies
+
+def convert_template_body(
+    env, result, template, node: dict, body: WriterBody
+) -> tuple[WriterBody, list[dict]]:
+    """A Writer template's body as its document gets it, and the copies it needs.
+
+    `node` is the template node as step 8 plans it; on a first run it is not
+    stored yet, so this only plans. Step 8 inserts the copies with the
+    document. The template node gets its own copies, the same way a Writer
+    document does, so a document made from the template names pictures it
+    can read. Answers the same body for the same source on every run: a
+    rerun finds the copies under the node and maps onto them.
+    """
+    label = f"Writer Template:{template.name}"
+
+    def report(name: str, reason: str) -> None:
+        result.template_media_references_missing += 1
+        result.record_issue(
+            label, f"media reference {name!r} {reason}; it was left as it is", phase="templates"
+        )
+
+    pictures = DocumentPictures(env, template, node["name"], report, node_row=node)
+    copies = pictures.claim(_html_ids(body.html or "") | _body_ids(body.content))
+    rewrite = _rewritten(body, pictures.mapping)
+    return (rewrite.body if rewrite else body), copies
+
+
+def _history_report(content, label: str) -> ReportMissing:
+    def report(name: str, reason: str) -> None:
+        content.writer_media_references_missing += 1
+        content.record_issue(
+            label, f"media reference {name!r} {reason}; it was left as it is", phase="history"
+        )
+
+    return report
 
 
 def _uncopyable(target, picture, parents) -> str:
