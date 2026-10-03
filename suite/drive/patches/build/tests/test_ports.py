@@ -158,7 +158,10 @@ class TestSiteFiles(StubbedDatabase):
             ],
         )
         self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
-        self.assertEqual(get_all.call_args.kwargs["fields"], ["name", "file_url", "file_name", "file_type"])
+        self.assertEqual(
+            get_all.call_args.kwargs["fields"],
+            ["name", "file_url", "file_name", "file_type", "file_size", "status"],
+        )
 
     def test_a_row_with_no_file_url_reads_as_an_empty_string(self):
         rows = [frappe._dict(name="f1", file_url=None, file_name=None, file_type=None)]

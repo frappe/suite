@@ -152,13 +152,15 @@ class FakeFiles:
             ]
         )
 
-    def add(self, name, file_url, file_name=None, blob=None, file_type=None):
+    def add(self, name, file_url, file_name=None, blob=None, file_type=None, *, status=None, file_size=None):
         self.rows[name] = {
             "name": name,
             "file_url": file_url,
             "file_name": file_name,
             "blob": blob,
             "file_type": file_type,
+            "status": status,
+            "file_size": file_size,
         }
         self.committed[name] = dict(self.rows[name])
         return self
@@ -171,7 +173,14 @@ class FakeFiles:
 
     def _page(self, after, limit, matches):
         found = [
-            LegacyRow(row["name"], row["file_url"], row["file_name"], row.get("file_type"))
+            LegacyRow(
+                row["name"],
+                row["file_url"],
+                row["file_name"],
+                row.get("file_type"),
+                status=row.get("status"),
+                file_size=row.get("file_size"),
+            )
             for name, row in sorted(self.rows.items())
             if name > after and not row["blob"] and matches(row)
         ]

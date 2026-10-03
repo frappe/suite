@@ -30,6 +30,11 @@ class LegacyRow:
     file_url: str
     file_name: str | None = None
     file_type: str | None = None
+    # Read for the preflight (§14.1), which sorts an object defect by the
+    # row's fate: a Removed row is not migrated, and `file_size` is what a
+    # truncated object is measured against. Build's writing steps ignore them.
+    status: str | None = None
+    file_size: int | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +219,9 @@ class SiteFiles:
         # The read-only preflight runs before model sync adds File.blob (§14.1).
         # Before that column exists every legacy row is necessarily blobless.
         blobless = [["blob", "is", "not set"]] if frappe.db.has_column("File", "blob") else []
+        # `File.status` is the legacy Drive column; a site that never carried
+        # Drive has none, and every row on it is live.
+        status = ["status"] if frappe.db.has_column("File", "status") else []
         rows = frappe.get_all(
             "File",
             filters=[
@@ -223,11 +231,21 @@ class SiteFiles:
                 *filters,
                 *self.filters,
             ],
-            fields=["name", "file_url", "file_name", "file_type"],
+            fields=["name", "file_url", "file_name", "file_type", "file_size", *status],
             order_by="name asc",
             limit=limit,
         )
-        return [LegacyRow(r.name, r.file_url or "", r.file_name, r.file_type) for r in rows]
+        return [
+            LegacyRow(
+                r.name,
+                r.file_url or "",
+                r.file_name,
+                r.file_type,
+                status=r.get("status"),
+                file_size=r.file_size,
+            )
+            for r in rows
+        ]
 
     def s3_rows_without_blob(self, after: str, limit: int) -> list[LegacyRow]:
         # The prefix carries no LIKE wildcard of its own; `test_ports` fails

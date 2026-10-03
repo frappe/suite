@@ -4187,10 +4187,53 @@ Drive patch at all is a fresh install and passes.
 
 Two read-only checks run before the migrate, by hand:
 `bench --site X execute suite.drive.patches.build.preflight.check` (GO /
-NO-GO on storage config, bucket reach, the floor and a sample object per
-legacy key layout) and
-`bench --site X execute suite.drive.patches.build.dry_run.run` (the census
-of rows Build would write and skip). Neither writes.
+NO-GO on storage config, bucket reach, the floor and the legacy objects)
+and `bench --site X execute suite.drive.patches.build.dry_run.run` (the
+census of rows Build would write and skip). Neither writes.
+
+**Preflight: legacy objects.** The preflight groups every blobless S3
+`File` row by key layout and heads 25 objects per layout, chosen the same
+way on every run. `--kwargs "{'every_object': True}"` heads all of them. An
+object is defective in one of three ways:
+
+| Defect | Meaning |
+|---|---|
+| `missing` | the bucket has no object at the row's key |
+| `size_differs` | the object's size is not `File.file_size` (a truncated upload) |
+| `no_object_path` | the fetch URL names no key at all |
+
+Build copies past every defect and records the row as missing bytes
+(§14.9), so the preflight is where a defect stops the migration. Some
+objects were lost long before the migration, and no run brings them back,
+so a defect blocks only until an operator has looked at it:
+
+- A defect on a **Removed** row never blocks. §14.4 does not migrate the
+  row, so its bytes are not needed. The report lists it as not migrated.
+- A defect on an **Active** or **Trashed** row (§14.4 migrates both) is
+  NO-GO, unless it is on the site's list of accepted known defects.
+
+The list is site data, kept with the site and never in the repository,
+because it names real files. Site config `drive_preflight_accepted_defects`
+holds its path, absolute or relative to the site directory; keep it under
+`private/`:
+
+```json
+{"defects": [
+  {"file": "<File name>", "key": "<object key>",
+   "defect": "missing", "note": "<why it is accepted, and who checked>"}
+]}
+```
+
+An entry accepts one defect, on one row, at one key. The same row with a
+different defect or key blocks again. Every listed row is headed on every
+run, whether or not the sample includes it. An entry that no longer matches
+a defect, for example because the object came back, is reported as stale
+so the operator can remove it. A list that cannot be read, or has an
+unknown field or defect kind, is NO-GO.
+
+The report has separate sections for blocking defects, accepted defects
+(with their notes), defects on Removed rows, and stale entries. The verdict
+is GO when every check passes and no defect blocks.
 
 ### 14.2 Build order
 
