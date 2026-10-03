@@ -4,13 +4,16 @@ pycrdt's bytes differ from run to run, so every check compares decoded
 content, state vector and delete set, never bytes. A result whose state vector
 falls short of the inputs is re-compacted once with the merge workaround; still
 short, the merge of the inputs is kept as a base for opening only. Inputs
-that wait on a change no row holds are left uncompacted.
+that wait on a change no row holds, or that split a surrogate pair, are left
+uncompacted.
 """
 
 import json
 from dataclasses import dataclass, field
 
 import pycrdt
+
+from suite.suite_core.collab import updates
 
 PYCRDT = "0.14.8"
 KERNEL = f"pycrdt {PYCRDT}"
@@ -34,6 +37,11 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type])
     if pycrdt.__version__ != PYCRDT:
         raise CompactionFailed("kernel_version")
     parts = ([checkpoint] if checkpoint else []) + list(rows)
+    try:
+        if cuts_a_pair(parts):
+            raise CompactionFailed("cut_surrogate")
+    except ValueError:
+        raise CompactionFailed("malformed_row") from None
     try:
         merged = pycrdt.merge_updates(*parts)
         wanted = pycrdt.get_state(merged)
@@ -70,6 +78,21 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type])
         raise CompactionFailed("unreadable") from error
     report["clients"] = len(expected[1])
     return Compacted(state, integrated=True, report=report)
+
+
+def cuts_a_pair(parts: list[bytes]) -> bool:
+    """Whether a row splits an emoji, or any surrogate pair, between its two halves.
+
+    Yjs turns both halves into replacement characters and yrs does not, so the
+    compaction would no longer match what browsers hold.
+    """
+    pairs = set()
+    for part in parts:
+        update = updates.parse(part)
+        pairs.update((struct.client, clock) for struct in update.structs for clock in struct.pairs)
+        if update.split_points() & pairs:
+            return True
+    return False
 
 
 def same(left: bytes, right: bytes, roots: dict[str, type]) -> bool:

@@ -27,6 +27,30 @@ def typing(seed: int, edits: int = 12, client_id: int = 7):
     return str(text), updates
 
 
+def number(value: int) -> bytes:
+    out = bytearray()
+    while value >= 0x80:
+        out.append(value & 0x7F | 0x80)
+        value >>= 7
+    return bytes(out + bytes([value]))
+
+
+def crafted(*, insert=None, delete=None) -> bytes:
+    """A v1 row no editor would send. `insert` is (client, clock, origin, right_origin, text), `delete` is (client, clock, length)."""
+    out = number(0)
+    if insert:
+        client, clock, origin, right, text = insert
+        encoded = text.encode()
+        out = number(1) + number(1) + number(client) + number(clock) + bytes([0x84 | (0x40 if right else 0)])
+        for found in (origin, right) if right else (origin,):
+            out += number(found[0]) + number(found[1])
+        out += number(len(encoded)) + encoded
+    if delete:
+        client, clock, length = delete
+        return out + number(1) + number(client) + number(1) + number(clock) + number(length)
+    return out + number(0)
+
+
 def text_of(state: bytes) -> str:
     fragment = load([state]).get("default", type=pycrdt.XmlFragment)
     return "".join(str(text) for paragraph in fragment.children for text in paragraph.children)
@@ -78,11 +102,17 @@ class TestCompaction(UnitTestCase):
             compact(None, rows, ROOTS)
         self.assertEqual(failed.exception.reason, "kernel_version")
 
-    def test_a_row_pycrdt_cannot_read_fails_the_compaction(self):
+    def test_a_row_pycrdt_panics_on_fails_the_compaction(self):
         _typed, rows = typing(seed=3)
 
-        with self.assertRaises(CompactionFailed) as failed:
-            compact(None, [*rows, b"\x01\x02\x03"], ROOTS)
+        class Panic(BaseException):
+            """pyo3's PanicException derives from BaseException, not Exception."""
+
+        def panics(self, update):
+            raise Panic
+
+        with patch.object(pycrdt.Doc, "apply_update", panics), self.assertRaises(CompactionFailed) as failed:
+            compact(None, rows, ROOTS)
         self.assertEqual(failed.exception.reason, "unreadable")
 
     def test_a_root_the_product_does_not_write_is_refused(self):
@@ -112,3 +142,36 @@ class TestCompaction(UnitTestCase):
 
         self.assertFalse(compacted.integrated)
         self.assertEqual(text_of(compacted.state), typed)
+
+    def test_a_row_that_splits_an_emoji_leaves_the_log_uncompacted(self):
+        # "a😀b": the text node is clock 0, "a" clock 1, the emoji clocks 2 and 3, "b" clock 4
+        doc = pycrdt.Doc(client_id=1)
+        doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText()).insert(0, "a😀b")
+        typed = doc.get_update()
+
+        for name, row in (
+            ("typing between its halves", crafted(insert=(2, 0, (1, 2), (1, 3), "x"))),
+            ("deleting one half", crafted(delete=(1, 2, 1))),
+        ):
+            with self.subTest(name), self.assertRaises(CompactionFailed) as failed:
+                compact(None, [typed, row], ROOTS)
+            self.assertEqual(failed.exception.reason, "cut_surrogate")
+
+    def test_edits_beside_an_emoji_compact(self):
+        doc = pycrdt.Doc(client_id=1)
+        doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText()).insert(0, "a😀b")
+        typed = doc.get_update()
+
+        after = compact(None, [typed, crafted(insert=(2, 0, (1, 3), (1, 4), "x"))], ROOTS)
+        removed = compact(None, [typed, crafted(delete=(1, 2, 2))], ROOTS)
+
+        read = lambda state: str(load([state]).get("default", type=pycrdt.XmlFragment))  # noqa: E731
+        self.assertEqual(read(after.state), "a😀xb")
+        self.assertEqual(read(removed.state), "ab")
+
+    def test_a_row_the_strict_reader_refuses_leaves_the_log_uncompacted(self):
+        _typed, rows = typing(seed=3)
+
+        with self.assertRaises(CompactionFailed) as failed:
+            compact(None, [*rows, rows[-1] + b"\x00"], ROOTS)
+        self.assertEqual(failed.exception.reason, "malformed_row")
