@@ -1087,6 +1087,19 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Writer Version", {"doc": document.name}))
         self.assertFalse(frappe.db.get_value(DOCTYPE, document.name, "ycomments"))
 
+    def test_a_legacy_row_stores_a_malformed_comment_blob_as_is(self):
+        """Build links every row, so this state should not exist. If one ever
+        does, its comment blob is stored without being read."""
+        node = self._document(title="Legacy comments")
+        docname = self._docname(node)
+        frappe.db.set_value(DOCTYPE, docname, writer.SPEC.node_field, None)
+        self.addCleanup(frappe.db.set_value, DOCTYPE, docname, writer.SPEC.node_field, node)
+        blob = base64.b64encode(b"not a comment update").decode()
+
+        frappe.get_doc(DOCTYPE, docname).save_comments(blob, None)
+
+        self.assertEqual(frappe.db.get_value(DOCTYPE, docname, "ycomments"), blob)
+
     def test_the_legacy_columns_and_doctypes_survive_adoption(self):
         # §14.6 and §14.7: Build copies these, Cleanup removes them. Nothing
         # in this ticket may drop them early.
