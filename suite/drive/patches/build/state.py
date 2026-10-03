@@ -398,6 +398,14 @@ class RelocatedMediaNode:
 
 
 @dataclass
+class MissingSheetSnapshot:
+    """A Sheet's stored head id with no snapshot in that Sheet's source history."""
+
+    sheet: str
+    snapshot: str
+
+
+@dataclass
 class ContentConversion:
     """The durable outcome of §14.2 steps 7, 8, and 10."""
 
@@ -410,6 +418,8 @@ class ContentConversion:
     links_completed: bool = False
     documents_seen: int = 0
     versions_seen: int = 0
+    sheet_snapshots_missing: int = 0
+    missing_sheet_snapshots: list[MissingSheetSnapshot] = field(default_factory=list)
     comments_seen: int = 0
     # Not in §14.9, and owned by the history phase like `comments_seen` above.
     # §14.6 makes the Yjs comment id the thread `anchor`; §3.6 keeps that
@@ -511,6 +521,12 @@ class ContentConversion:
         if len(self.removed_file_docs) < SAMPLE_KEPT:
             self.removed_file_docs.append(entry)
 
+    def record_missing_sheet_snapshot(self, sheet: str, snapshot: str) -> None:
+        """Count unavailable source heads without inventing version bytes (§14.6)."""
+        self.sheet_snapshots_missing += 1
+        if len(self.missing_sheet_snapshots) < SAMPLE_KEPT:
+            self.missing_sheet_snapshots.append(MissingSheetSnapshot(sheet, snapshot))
+
     def record_legacy_comment(self, entry: LegacyComment) -> None:
         """Keep a bounded list; the counter above stays exact."""
         self.legacy_comments_unported += 1
@@ -562,13 +578,20 @@ class ContentConversion:
 
     @classmethod
     def from_dict(cls, data: dict) -> ContentConversion:
-        samples = {"issues", "removed_file_docs", "legacy_comment_rows", "relocated_media_nodes"}
+        samples = {
+            "issues",
+            "removed_file_docs",
+            "legacy_comment_rows",
+            "relocated_media_nodes",
+            "missing_sheet_snapshots",
+        }
         known = {f for f in cls.__dataclass_fields__ if f not in samples}
         content = cls(**{k: v for k, v in data.items() if k in known})
         content.issues = _rebuild(ContentIssue, data.get("issues"))
         content.removed_file_docs = _rebuild(RemovedFileDocument, data.get("removed_file_docs"))
         content.legacy_comment_rows = _rebuild(LegacyComment, data.get("legacy_comment_rows"))
         content.relocated_media_nodes = _rebuild(RelocatedMediaNode, data.get("relocated_media_nodes"))
+        content.missing_sheet_snapshots = _rebuild(MissingSheetSnapshot, data.get("missing_sheet_snapshots"))
         content.issues_by_phase = {
             str(key): int(value)
             for key, value in (data.get("issues_by_phase") or {}).items()

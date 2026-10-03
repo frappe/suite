@@ -14,6 +14,7 @@ from suite.drive.patches.build.ports import (
     TreeRow,
     WriterVersionRow,
 )
+from suite.drive.patches.build.report import build_report
 from suite.drive.patches.build.tests.fakes import FakeContent, FakeContentTarget, build_environment
 
 STAMP = "2024-01-02 03:04:05.000000"
@@ -631,29 +632,55 @@ class HistoryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "node/seq"):
             target.insert_versions([{"name": "b", "node": "node-1", "seq": 1}])
 
-    def test_a_head_snapshot_outside_the_source_refuses_the_document(self):
-        document = ContentRow(
-            **{**content_row("Sheet", "sheet-1", "node-1").__dict__, "head_snapshot": "snapshot-gone"}
-        )
-        snapshots = [
-            SheetSnapshotRow(
-                "snapshot-1",
-                "sheet-1",
-                1,
-                "auto",
-                "{}",
-                actor=OWNER,
-                owner=OWNER,
-                creation=STAMP,
-                modified=STAMP,
-            )
-        ]
-        source = FakeContent(documents=[document], sheet_snapshots=snapshots)
-        env, target = self.environment(source)
-        add_document_node(target, "node-1", "Sheet", "sheet-1")
+    def test_missing_source_heads_are_reported_without_changing_live_sheets_or_existing_history(self):
+        for has_history in (False, True):
+            with self.subTest(has_history=has_history), tempfile.TemporaryDirectory() as directory:
+                document = ContentRow(
+                    **{
+                        **content_row("Sheet", "sheet-1", "node-1").__dict__,
+                        "head_snapshot": "snapshot-gone",
+                        "head_seq": 7,
+                        "sheets_data": '{"sheets":[{"name":"Budget","cells":{"A1":42}}]}',
+                    }
+                )
+                snapshots = (
+                    [
+                        SheetSnapshotRow(
+                            "snapshot-1",
+                            "sheet-1",
+                            1,
+                            "auto",
+                            "{}",
+                            actor=OWNER,
+                            owner=OWNER,
+                            creation=STAMP,
+                            modified=STAMP,
+                        )
+                    ]
+                    if has_history
+                    else []
+                )
+                source = FakeContent(documents=[document], sheet_snapshots=snapshots)
+                target = FakeContentTarget(content=source)
+                env = build_environment(
+                    Path(directory), content=source, content_target=target, content_ready=True
+                )
+                add_document_node(target, "node-1", "Sheet", "sheet-1")
 
-        with self.assertRaisesRegex(BuildHistoryError, "head_snapshot"):
-            convert_history_and_comments(env)
+                for _ in range(2):
+                    result = convert_history_and_comments(env)
+                    self.assertTrue(result.history_completed)
+                    self.assertEqual(result.issues_total, 0)
+                    self.assertEqual(result.sheet_snapshots_missing, 1)
+                    evidence = build_report(env)["evidence"]["content"]
+                    self.assertEqual(
+                        evidence["missing_sheet_snapshots"],
+                        [{"sheet": "sheet-1", "snapshot": "snapshot-gone"}],
+                    )
+                    self.assertEqual(set(target.version_rows), {"snapshot-1"} if has_history else set())
+                    self.assertEqual(document.head_seq, 7)
+                    self.assertEqual(document.head_snapshot, "snapshot-gone")
+                    self.assertEqual(document.sheets_data, '{"sheets":[{"name":"Budget","cells":{"A1":42}}]}')
 
     def test_a_head_snapshot_pointing_at_another_node_refuses_the_document(self):
         document = ContentRow(
@@ -682,6 +709,34 @@ class HistoryTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BuildHistoryError, "field node"):
             convert_history_and_comments(env)
+
+    def test_an_existing_head_with_an_invalid_sequence_is_not_reported_as_missing(self):
+        for seq in (-1, 0):
+            with self.subTest(seq=seq), tempfile.TemporaryDirectory() as directory:
+                document = ContentRow(
+                    **{**content_row("Sheet", "sheet-1", "node-1").__dict__, "head_snapshot": "bad-head"}
+                )
+                snapshot = SheetSnapshotRow(
+                    "bad-head",
+                    "sheet-1",
+                    seq,
+                    "auto",
+                    "{}",
+                    actor=OWNER,
+                    owner=OWNER,
+                    creation=STAMP,
+                    modified=STAMP,
+                )
+                source = FakeContent(documents=[document], sheet_snapshots=[snapshot])
+                target = FakeContentTarget(content=source)
+                env = build_environment(
+                    Path(directory), content=source, content_target=target, content_ready=True
+                )
+                add_document_node(target, "node-1", "Sheet", "sheet-1")
+
+                with self.assertRaises(BuildHistoryError):
+                    convert_history_and_comments(env)
+                self.assertEqual(env.state.content().sheet_snapshots_missing, 0)
 
     def test_the_source_is_read_in_bounded_pages_with_a_keyset_cursor(self):
         # Plan §13: `(doc, creation, name)` and `(sheet, seq, name)`. One

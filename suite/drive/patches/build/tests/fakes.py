@@ -762,6 +762,9 @@ class FakeContent:
     def residual_writer_versions(self, limit):
         return sorted(self.residual_versions)[:limit]
 
+    def sheet_snapshot_exists(self, sheet, snapshot):
+        return any(row.sheet == sheet and row.name == snapshot for row in self.sheet_snapshot_rows)
+
     def sheet_op_stamp(self, sheet, seq):
         return self.op_stamps.get((sheet, seq))
 

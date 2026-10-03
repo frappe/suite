@@ -4360,9 +4360,19 @@ role) and `creator_denies_overridden`; the two are disjoint.
 | `Drive Legacy Route`, `Drive DAV Lock`, `Drive DAV Property` | same | retargeted by the node identity map |
 | `Drive Token` | none | dropped; it is not a link [008] |
 | `Writer Version` | `Drive Node Version` | ids kept; `manual` maps to kind `named`, else `auto`; `label` from `title`; `seq` by creation order; bytes are the snapshot HTML through `put_blob` |
-| `Sheet Snapshot` | `Drive Node Version` | field for field; bytes are the snapshot JSON; `Sheet.head_snapshot` retargets to the version row |
+| `Sheet Snapshot` | `Drive Node Version` | field for field; bytes are the snapshot JSON; an existing `Sheet.head_snapshot` must name that Sheet's migrated version |
 | Writer `ycomments` | `Drive Comment Thread` and `Drive Comment` | anchor = the comment id; mentions go into `detail` |
 | Sheets cell threads in `sheets_data` | same | anchor = sheet plus cell id |
+
+**Unavailable Sheet history.** A migrated Sheet may name a `head_snapshot`
+absent from its source history. Build preserves its live `sheets_data` and
+`head_seq`, migrates every existing snapshot, and records the unavailable
+head in the report's content evidence. `sheet_snapshots_missing` is the
+exact count. `missing_sheet_snapshots` lists the first 10,000 Sheet and
+snapshot ids. A rerun recomputes both from the source. Build creates no
+replacement version and leaves the source head untouched until Cleanup
+drops that legacy column. An existing source snapshot with missing or
+changed target bytes, fields, or ownership still refuses migration.
 
 **The old `delete` verb** (§3.8, §9.4). `Drive Entity Activity Log` has one
 `delete` verb for three acts. Build maps each row by the `File.status` of

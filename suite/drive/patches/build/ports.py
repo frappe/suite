@@ -789,6 +789,8 @@ class LegacyContent(Protocol):
 
     def sheet_snapshots(self, sheet: str, after: tuple[int, str], limit: int) -> list[SheetSnapshotRow]: ...
 
+    def sheet_snapshot_exists(self, sheet: str, snapshot: str) -> bool: ...
+
     def residual_writer_versions(self, limit: int) -> list[str]: ...
 
     def sheet_op_stamp(self, sheet: str, seq: int) -> tuple[str, str] | None: ...
@@ -1461,6 +1463,16 @@ class SiteContentSource:
             as_dict=True,
         )
         return [SheetSnapshotRow(**dict(row)) for row in rows]
+
+    def sheet_snapshot_exists(self, sheet: str, snapshot: str) -> bool:
+        # Include malformed sequences that the keyset page cannot reach.
+        return bool(
+            frappe.db.sql(
+                """SELECT `name` FROM `tabSheet Snapshot`
+                   WHERE `sheet` = %(sheet)s AND `name` = %(snapshot)s LIMIT 1""",
+                {"sheet": sheet, "snapshot": snapshot},
+            )
+        )
 
     def residual_writer_versions(self, limit: int) -> list[str]:
         # Ordered, because these ids are the sample §14.9 prints and a

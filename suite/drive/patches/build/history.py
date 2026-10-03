@@ -25,6 +25,8 @@ HISTORY_FIELDS = (
     "history_existing_complete",
     "history_deferred",
     "versions_seen",
+    "sheet_snapshots_missing",
+    "missing_sheet_snapshots",
     "comments_seen",
     "comment_threads_renamed",
     "comments_renamed",
@@ -228,10 +230,11 @@ def _sheet_versions(env, content, document, node: str, batch_size: int) -> None:
     _write_versions(env, content, node, expected, by_seq, batch_size)
 
     if head:
-        # §8 keeps the stored head id and repoints it at the migrated row, so
-        # the head must name a snapshot this sheet really had. Every column of
-        # that row is already proved by `_write_versions`; what is not implied
-        # is that the id exists in the source at all.
+        # §14.6 records absent source heads and keeps the live workbook. A
+        # source snapshot that exists still owes an exact migrated version.
+        if not head_plan and not env.content.sheet_snapshot_exists(document.name, head):
+            content.record_missing_sheet_snapshot(document.name, head)
+            return
         stored = env.content_target.version_names((head,)).get(head)
         if not head_plan or not stored:
             raise InvalidLegacyContent("Sheet head_snapshot does not name a migrated source snapshot")
