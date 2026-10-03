@@ -1,8 +1,5 @@
 <template>
-  <!-- Host for a per-app route group. Renders the app's nested <router-view>.
-       A per-app port may replace this
-       container with its own app-level layout (sidebar/toolbar) by pointing the
-       group's component at its own shell in src/apps/<id>/routes.ts. -->
+  <!-- Host for an area's route group. Renders the area's nested <router-view>. -->
   <router-view />
 </template>
 
@@ -17,17 +14,17 @@ import { useRootStore } from '@/stores/root'
 
 const route = useRoute()
 const session = useSessionStore()
-const appsUsingCommonSettings = ['slides', 'sheets', 'writer']
+// Calendar and Meet register the Settings command here. Mail and Drive
+// register their own.
 const showCommonSettings = computed(
   () =>
     session.isLoggedIn &&
-    (appsUsingCommonSettings.includes(String(route.meta.appId || '')) ||
-      route.meta.appId === 'calendar' ||
-      (route.meta.appId === 'meet' && route.name !== 'meet-meeting')),
+    (route.meta.area === 'calendar' ||
+      (route.meta.area === 'meet' && route.name !== 'meet-meeting')),
 )
-// Calendar opens Settings on its own first tab, as its sidebar menu does.
+// Calendar opens Settings on its own first tab.
 const settingsTab = computed<SettingsTabId | undefined>(() =>
-  route.meta.appId === 'calendar' ? 'calendar.calendars' : undefined,
+  route.meta.area === 'calendar' ? 'calendar.calendars' : undefined,
 )
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
@@ -38,7 +35,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
           {
             commands: [
               {
-                id: `${String(route.meta.appId)}-settings`,
+                id: `${String(route.meta.area)}-settings`,
                 label: 'Settings',
                 shortcut: 'Mod+Shift+Comma',
                 enterHint: 'open settings',

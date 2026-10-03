@@ -118,7 +118,7 @@ async function create() {
   const template = selected.value
   const name = title.value.trim()
   if (!template || !name || copy.isPending) return
-  const created = await copy.run({ node: template.name, parent: props.parent, title: name })
+  const created = await copy.run({ node: template.name, parent_node: props.parent, title: name })
   // The platform reports a failed copy; the picker stays open for another try.
   if (!created) return
   open.value = false

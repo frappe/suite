@@ -76,6 +76,19 @@ onBeforeUnmount(() => {
   view?.destroy();
 });
 
+/**
+ * A link to a place in the file scrolls to its heading. The browser's own jump
+ * would put the heading's id in the address, which the app's router reads.
+ */
+async function openPlace(event: MouseEvent) {
+  const link = event.target instanceof Element ? event.target.closest("a[href^='#']") : null;
+  const article = event.currentTarget;
+  if (!link || !(article instanceof HTMLElement)) return;
+  event.preventDefault();
+  const { placeFor } = await import("./markdown");
+  placeFor(article, link.getAttribute("href") ?? "")?.scrollIntoView({ block: "start" });
+}
+
 // The browser's find sees only the lines on screen, so Cmd+F opens the
 // editor's own find bar, which searches the whole file. It leaves the key
 // alone when something else, such as the title field, has focus.
@@ -99,6 +112,7 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
       v-if="html !== null"
       class="prose prose-v3 mx-auto max-w-3xl px-5 py-6 sm:px-8 sm:py-10 [&_p+p]:mt-[0.75em]"
       v-html="html"
+      @click="openPlace"
     />
   </div>
   <div v-else-if="content?.status === 'ready'" ref="host" class="min-h-0 flex-1 overflow-hidden" />

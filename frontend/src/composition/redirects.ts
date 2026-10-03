@@ -4,12 +4,10 @@ import {
   type RouteLocationRaw,
 } from 'vue-router'
 
-import { readBootFlag } from '@/platform/boot'
-
 import table from './redirects.json'
 
 /**
- * Sends old page URLs clicked inside the app to the flip-2 routes (spec §14.3).
+ * Sends old page URLs clicked inside the app to their new routes (spec §14.3).
  *
  * The server owns the table (`suite/composition/redirects.py`) and answers
  * every cold load. `redirects.json` is its client copy, for old links that
@@ -82,7 +80,6 @@ export function redirectOldPath(
   from: RouteLocationNormalized,
   load: (url: string) => void = (url) => window.location.assign(url),
 ): RouteLocationRaw | false | null {
-  if (!readBootFlag(table.flag as 'suite_flip_files')) return null
   const found = resolveOldPath(to.path, rawQuery(to.fullPath))
   if (!found) return null
   if (found.serverLoad && from !== START_LOCATION) {

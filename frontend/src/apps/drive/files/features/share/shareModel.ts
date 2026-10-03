@@ -10,6 +10,7 @@ import {
   type InheritedGrant,
   type PrincipalKind,
 } from '@/apps/drive/client/grants'
+import type { DrivePerson } from '@/apps/drive/client/types'
 
 /**
  * What the share dialog shows, derived from one grants read (unified spec §7.3).
@@ -63,7 +64,7 @@ export interface ShareSections {
    * no actions: they cannot be denied. Their own grant rows are left out of
    * People and the folded parts. `null` in the Shared root.
    */
-  owner: string | null
+  owner: DrivePerson | null
   people: LocalRow[]
   organization: GeneralAccess
   /** `null` on a root: a root cannot be public (Drive spec §6.5). */
@@ -75,7 +76,7 @@ export interface ShareSections {
 
 export function shareSections(list: GrantList, nodeKind: string, now = new Date()): ShareSections {
   const isRoot = nodeKind === 'root'
-  const owner = list.owner?.user ?? null
+  const owner = list.owner?.id ?? null
   const local = list.grants.map((grant): LocalRow => ({
     grant,
     kind: principalKind(grant.principal),
@@ -101,7 +102,7 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
   }
 
   return {
-    owner,
+    owner: list.owner,
     people: local.filter((row) => (row.kind === 'user' || row.kind === 'group') && row.grant.principal !== owner),
     organization: generalAccess(GENERAL, local, list.inherited),
     public: isRoot ? null : generalAccess(PUBLIC, local, list.inherited),

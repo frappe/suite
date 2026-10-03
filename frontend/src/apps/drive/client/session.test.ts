@@ -4,9 +4,9 @@ import { MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
 import { createTransport, type Transport } from '@/platform/transport'
 
 const documentNode = (name: string) => ({
-  name, title: name, kind: 'document', parent: 'p', root: 'r', state: 'Active', trash_root: null, size: 0, mime: null,
+  name, title: name, kind: 'document', parent_node: 'p', root: 'r', state: 'Active', trash_root: null, size: 0, mime: null,
   url: null, content_doctype: 'Presentation', content_docname: `doc-${name}`, is_template: 0,
-  owner: 'Administrator', creation: null, modified: '2026-09-15', content_modified: null,
+  owner: { id: 'Administrator', full_name: 'Administrator', user_image: null }, creation: null, modified: '2026-09-15', content_modified: null,
   access: { role: 40, via_link: null },
 })
 const code = (index: number) => `S${String(index).padStart(21, '0')}`

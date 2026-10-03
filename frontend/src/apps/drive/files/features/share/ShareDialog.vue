@@ -33,7 +33,9 @@ import { BottomSheet, Button, Dialog } from 'frappe-ui'
 import { useMediaQuery } from '@vueuse/core'
 
 import { confirm } from '@/platform/feedback'
+import { query, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
+import { api as suiteApi } from '@/platform/transport/generated'
 
 import { useLocationTitle } from '../../internal/locations'
 import { slugify } from '../../internal/slugify'
@@ -49,6 +51,8 @@ const isPhone = useMediaQuery('(max-width: 767px)')
 // While people wait to be added, Share is the one solid action.
 const picking = ref(false)
 const session = useSession()
+// The server page boots the workspace name. The Vite dev page does not, so the dialog asks the site.
+const site = useQuery(() => (window.suite_workspace_name === undefined ? query(suiteApi.site_get, {}) : false))
 const state = useShare(props.node, {
   me: session.user.value?.id,
   confirmLoss: () =>
@@ -58,8 +62,7 @@ const state = useShare(props.node, {
       confirmLabel: 'Change',
       destructive: true,
     }),
-  // The server page sets it; the Vite dev page does not, and the dialog falls back to "your organization".
-  workspace: window.suite_workspace_name,
+  workspace: () => window.suite_workspace_name ?? site.data?.workspace_name,
   placeTitle: useLocationTitle(),
 })
 const heading = computed(() => (state.node.value ? `Share “${state.node.value.title}”` : 'Share'))

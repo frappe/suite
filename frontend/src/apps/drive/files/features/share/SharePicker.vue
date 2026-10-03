@@ -160,7 +160,12 @@ function pick(value: string | number | null | undefined) {
       : { principal: groupPrincipal(id), kind: 'group', label: id, name: null }
   if (!staged.value.some((entry) => entry.principal === picked.principal)) staged.value = [...staged.value, picked]
   // The input shows the picked label first; clear it once the pick settles.
-  void nextTick(() => (query.value = ''))
+  // A click on a row moves focus into the closing list, so focus comes back
+  // to the input and the next person can be typed straight away.
+  void nextTick(() => {
+    query.value = ''
+    combobox.value?.focus()
+  })
 }
 
 function unstage(principal: string) {

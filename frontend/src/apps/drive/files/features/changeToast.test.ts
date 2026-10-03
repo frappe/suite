@@ -13,22 +13,27 @@ const net = vi.hoisted(() => {
     refuseRestore: null as { node: string; message: string } | null,
   }
   const node = (name: string) => ({
-    name, title: name, kind: 'file', parent: state.parents.get(name) ?? null, root: 'root', state: 'Active', trash_root: null,
+    name, title: name, kind: 'file', parent_node: state.parents.get(name) ?? null, root: 'root', state: 'Active', trash_root: null,
     size: 1, mime: 'text/plain', url: null, content_doctype: null, content_docname: null, is_template: 0,
-    owner: 'Administrator', creation: null, modified: `m-${state.requests.length}`, content_modified: null,
+    owner: { id: 'Administrator', full_name: 'Administrator', user_image: null }, creation: null, modified: `m-${state.requests.length}`, content_modified: null,
   })
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
   globalThis.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const path = new URL(String(url), 'http://drive.test').pathname.replace('/api/suite/drive/', '')
     const body = init.body ? JSON.parse(String(init.body)) : null
     state.requests.push({ method: init.method ?? 'GET', path, body })
+    // A move that names the folder it expects the node in is refused once the node moved on (Drive spec §8.2).
+    const movedOn = (name: string, expected: string | undefined) => expected !== undefined && state.parents.get(name) !== expected
     if (init.method === 'PATCH' && path.startsWith('nodes/')) {
       const name = decodeURIComponent(path.slice('nodes/'.length))
       const refuse = state.refuse
-      if (refuse && refuse.parent === body.parent) {
+      if (refuse && refuse.parent === body.parent_node) {
         return json({ errors: [{ type: 'DriveConflict', message: refuse.message }] }, 409)
       }
-      state.parents.set(name, body.parent)
+      if (movedOn(name, body.expect_parent_node)) {
+        return json({ errors: [{ type: 'DriveMoved', message: `${name} has moved since you last saw it` }] }, 409)
+      }
+      state.parents.set(name, body.parent_node)
       return json({ data: node(name) })
     }
     if (init.method === 'POST' && path === 'nodes/batch' && body.patch.state) {
@@ -42,13 +47,17 @@ const net = vi.hoisted(() => {
       } })
     }
     if (init.method === 'POST' && path === 'nodes/batch') {
-      const { nodes, patch } = body as { nodes: string[]; patch: { parent: string } }
+      const { nodes, patch } = body as { nodes: string[]; patch: { parent_node: string; expect_parent_node?: string } }
       const refuse = state.refuse
-      if (refuse && refuse.parent === patch.parent) {
+      if (refuse && refuse.parent === patch.parent_node) {
         return json({ data: { ok: [], failed: nodes.map((name) => ({ node: name, type: 'DriveConflict', message: refuse.message })) } })
       }
-      for (const name of nodes) state.parents.set(name, patch.parent)
-      return json({ data: { ok: nodes, failed: [] } })
+      const failed = nodes.filter((name) => movedOn(name, patch.expect_parent_node))
+      for (const name of nodes) if (!failed.includes(name)) state.parents.set(name, patch.parent_node)
+      return json({ data: {
+        ok: nodes.filter((name) => !failed.includes(name)),
+        failed: failed.map((name) => ({ node: name, type: 'DriveMoved', message: `${name} has moved since you last saw it` })),
+      } })
     }
     return json({ errors: [{ type: 'NotFound', message: path }] }, 404)
   }
@@ -85,11 +94,11 @@ afterEach(() => {
 /** The items as a move left them: in `marketing`, each having come from its own folder. */
 function moved(from: Record<string, string>) {
   for (const name of Object.keys(from)) net.parents.set(name, 'marketing')
-  return Object.entries(from).map(([node, folder]) => ({ node, title: node, from: folder }))
+  return Object.entries(from).map(([node, folder]) => ({ node, title: node, from: folder, to: 'marketing' }))
 }
 
-function undo() {
-  const shown = feedback.toasts[0]!
+function undo(index = 0) {
+  const shown = feedback.toasts[index]!
   expect(shown.action?.label).toBe('Undo')
   shown.action!.onClick()
 }
@@ -129,6 +138,54 @@ describe('Move toast with Undo', () => {
       kind: 'error',
       message: 'Could not move “Report.pdf” back',
       description: 'A file named “Report.pdf” is already in Projects.',
+    })
+  })
+
+  it('leaves an item a later move took elsewhere, and puts back the rest', async () => {
+    announceMove(moved({ a: 'projects', b: 'projects' }), 'Marketing')
+    net.parents.set('b', 'archive')
+    announceMove([{ node: 'b', title: 'b', from: 'marketing', to: 'archive' }], 'Archive')
+
+    undo(0)
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(3))
+    expect(Object.fromEntries(net.parents)).toEqual({ a: 'projects', b: 'archive' })
+    expect(feedback.toasts[2]).toMatchObject({
+      kind: 'error',
+      message: 'Could not move “b” back',
+      description: 'It changed again after that.',
+    })
+  })
+
+  it('takes back moves of one item in either order, each from where the other left it', async () => {
+    announceMove(moved({ a: 'projects' }), 'Marketing')
+    net.parents.set('a', 'archive')
+    announceMove([{ node: 'a', title: 'a', from: 'marketing', to: 'archive' }], 'Archive')
+
+    // Undo of the later move first, then the earlier one finds the item where it put it.
+    undo(1)
+    await vi.waitFor(() => expect(net.parents.get('a')).toBe('marketing'))
+    undo(0)
+    await vi.waitFor(() => expect(net.parents.get('a')).toBe('projects'))
+    expect(feedback.toasts.slice(2)).toMatchObject([
+      { kind: 'success', message: 'Moved “a” back' },
+      { kind: 'success', message: 'Moved “a” back' },
+    ])
+  })
+
+  it('leaves an item someone else moved on since, and says so from the server', async () => {
+    // Undo names the folder it expects each item in. The server refuses the
+    // one that another tab moved on, and moves the rest back.
+    announceMove(moved({ a: 'projects', b: 'projects' }), 'Marketing')
+    net.parents.set('b', 'archive')
+
+    undo()
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
+    expect(net.requests.at(-1)?.body).toEqual({ nodes: ['a', 'b'], patch: { parent_node: 'projects', expect_parent_node: 'marketing' } })
+    expect(Object.fromEntries(net.parents)).toEqual({ a: 'projects', b: 'archive' })
+    expect(feedback.toasts[1]).toMatchObject({
+      kind: 'error',
+      message: 'Could not move “b” back',
+      description: 'b has moved since you last saw it',
     })
   })
 

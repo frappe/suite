@@ -1,11 +1,19 @@
 <template>
   <li>
     <div class="flex min-h-12 items-center gap-3" :class="{ 'opacity-60': row.expired }">
+      <Avatar
+        v-if="row.kind === 'user'"
+        size="md"
+        :image="row.grant.person?.user_image ?? undefined"
+        :label="state.label(row.grant.principal)"
+        class="shrink-0"
+      />
       <span
+        v-else
         class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
         aria-hidden="true"
       >
-        <span :class="[row.kind === 'group' ? 'lucide-users' : 'lucide-user', 'size-4']" />
+        <span class="lucide-users size-4" />
       </span>
       <div class="min-w-0 flex-1">
         <p class="truncate">{{ state.label(row.grant.principal) }}</p>
@@ -36,7 +44,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Button, DatePicker, Dropdown, ErrorMessage, type DropdownItem, type DropdownOption } from 'frappe-ui'
+import { Avatar, Button, DatePicker, Dropdown, ErrorMessage, type DropdownItem, type DropdownOption } from 'frappe-ui'
 
 import { roleLabel, rolesFor } from '@/apps/drive/client/grants'
 
@@ -60,7 +68,9 @@ const meta = computed(() => {
   const { row } = props
   if (row.expired && row.grant.expires_on) return `Expired ${formatDay(row.grant.expires_on)}`
   if (row.denied) return 'Denied here'
-  const parts = [row.kind === 'group' ? 'Group' : '']
+  // A named person shows their id under the name; a group says it is one.
+  const named = row.kind === 'user' && props.state.label(row.grant.principal) !== row.grant.principal
+  const parts = [row.kind === 'group' ? 'Group' : named ? row.grant.principal : '']
   if (row.grant.expires_on) parts.push(`Until ${formatDay(row.grant.expires_on)}`)
   return parts.filter(Boolean).join(' · ')
 })

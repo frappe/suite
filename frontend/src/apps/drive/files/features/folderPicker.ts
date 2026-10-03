@@ -3,7 +3,7 @@ import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/clien
 export type PickerMode = 'move' | 'copy' | 'restore'
 
 /** An item the picker places: which node it is, and the folder and root it is in now. */
-export type PickedItem = Pick<DriveNode, 'name' | 'parent' | 'root'>
+export type PickedItem = Pick<DriveNode, 'name' | 'parent_node' | 'root'>
 
 /** Whether the folder the picker shows can take the items. */
 export type Destination =
@@ -23,6 +23,16 @@ export function itemsRoot(items: readonly PickedItem[], roots: DriveRoots): keyo
   if (roots.personal.node === root) return 'personal'
   if (roots.organization?.node === root) return 'organization'
   return null
+}
+
+/**
+ * The folder the picker opens in: the one the items are all in, or else
+ * `current`, the folder the user is looking at. `null` opens the top of the root.
+ */
+export function startingFolder(items: readonly PickedItem[], current?: string): string | null {
+  const parent = items[0]?.parent_node
+  if (parent && items.every((item) => item.parent_node === parent)) return parent
+  return current ?? null
 }
 
 /**
@@ -47,7 +57,7 @@ export function destination(
 ): Destination {
   if (role === undefined) return { status: 'unknown' }
   if (role < DRIVE_ROLES.upload) return { status: 'refused', reason: 'You cannot add files to this folder.' }
-  if (mode === 'move' && items.length && items.every((item) => item.parent === folder)) {
+  if (mode === 'move' && items.length && items.every((item) => item.parent_node === folder)) {
     const reason = items.length === 1 ? 'The item is already in this folder.' : 'The items are already in this folder.'
     return { status: 'refused', reason }
   }

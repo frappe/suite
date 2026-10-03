@@ -30,8 +30,8 @@ type Reply = { status: number; body: unknown }
 const ok = (data: unknown): Reply => ({ status: 200, body: { data } })
 const refused = (status: number, type: string): Reply => ({ status, body: { errors: [{ type, message: type }] } })
 const row = (name: string) => ({
-  name, title: name, kind: 'folder', parent: 'p', root: 'r', state: 'Active', trash_root: null, size: 0, mime: null, url: null,
-  content_doctype: null, content_docname: null, is_template: 0, owner: 'owner@example.com',
+  name, title: name, kind: 'folder', parent_node: 'p', root: 'r', state: 'Active', trash_root: null, size: 0, mime: null, url: null,
+  content_doctype: null, content_docname: null, is_template: 0, owner: { id: 'owner@example.com', full_name: 'Owner', user_image: null },
   creation: null, modified: null, content_modified: null,
 })
 const nodeIn = (path: string) => path.split('/')[5] ?? ''
@@ -86,7 +86,7 @@ describe('Drive link codes on requests', () => {
     driveLinks.seed(code(1), 'item')
     driveLinks.seed(code(2), 'destination')
 
-    await transport.request(moveNode().operation, { node: 'item', parent: 'destination' })
+    await transport.request(moveNode().operation, { node: 'item', parent_node: 'destination' })
 
     expect(lastLinks(sent)?.split(',').sort()).toEqual([code(1), code(2)])
   })
@@ -171,7 +171,7 @@ describe('forgetting Drive link codes', () => {
     const { transport, sent } = server((path) => (path.endsWith('/shared') ? ok(row('shared')) : refused(404, 'DriveNotFound')))
     driveLinks.seed(code(1), 'shared')
 
-    await transport.request(moveNode().operation, { node: 'shared', parent: 'missing' }).catch(() => null)
+    await transport.request(moveNode().operation, { node: 'shared', parent_node: 'missing' }).catch(() => null)
     await transport.request(children({ node: 'shared' }).operation, { node: 'shared' }).catch(() => null)
     await read(transport, 'shared')
 

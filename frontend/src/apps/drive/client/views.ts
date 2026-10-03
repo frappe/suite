@@ -21,9 +21,7 @@ export interface ViewInput {
 type ViewRequest = Omit<ViewInput, 'types'> & { type?: string }
 
 const viewOperation = driveOperation<ViewRequest, DrivePage>(api.view_list, { entity: true })
-const clearOperation = driveOperation<{ nodes?: string[] }, { cleared: number }>(api.view_clear_recents, {
-  looseInput: true,
-})
+const clearOperation = driveOperation<{ nodes?: string[] }, { count: number }>(api.view_clear_recents)
 
 export function view({ types, ...input }: ViewInput) {
   return infinite(viewOperation, { limit: 60, ...input, type: listingTypesParam(types) }, {

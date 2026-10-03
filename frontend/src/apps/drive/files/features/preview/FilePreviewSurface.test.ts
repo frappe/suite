@@ -28,9 +28,9 @@ vi.mock('../document/DocumentHeader.vue', () => ({
 }))
 
 // A folder of mixed files, and a server that keeps the types `?type=` names, as Drive does.
-type Row = Pick<DriveNode, 'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent' | 'modified'>
+type Row = Pick<DriveNode, 'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent_node' | 'modified'>
 const file = (name: string, title: string, mime: string): Row => ({
-  name, title, kind: 'file', mime, state: 'Active', parent: 'folder-1', modified: '2026-10-01 10:00:00',
+  name, title, kind: 'file', mime, state: 'Active', parent_node: 'folder-1', modified: '2026-10-01 10:00:00',
 })
 const FOLDER: Row[] = [
   file('a', 'a.png', 'image/png'),
@@ -155,21 +155,21 @@ describe('file preview', () => {
     await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('d'))
   })
 
-  it('opens a Markdown file as its source, and every next one too', async () => {
+  it('opens a Markdown file rendered, and every next one too', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('# Plan\n\nSome text')))
     const opened = shallowRef(session('m1', 'plan.md', 'application/octet-stream'))
     const { root } = await mount(opened, '/d/m1/plan-md')
 
-    await vi.waitFor(() => expect(root.querySelector('.cm-content')?.textContent).toContain('# Plan'))
-    expect(root.querySelector('article h1')).toBeNull()
-    const preview = [...root.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Preview')
-    preview?.click()
     await vi.waitFor(() => expect(root.querySelector('article h1')?.textContent).toBe('Plan'))
     expect(root.querySelector('.cm-content')).toBeNull()
+    const source = [...root.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Source')
+    source?.click()
+    await vi.waitFor(() => expect(root.querySelector('.cm-content')?.textContent).toContain('# Plan'))
+    expect(root.querySelector('article h1')).toBeNull()
 
     // The next file, as stepping shows it in the same preview.
     opened.value = session('m2', 'notes.markdown', 'application/octet-stream')
-    await vi.waitFor(() => expect(root.querySelector('.cm-content')?.textContent).toContain('# Plan'))
-    expect(root.querySelector('article h1')).toBeNull()
+    await vi.waitFor(() => expect(root.querySelector('article h1')?.textContent).toBe('Plan'))
+    expect(root.querySelector('.cm-content')).toBeNull()
   })
 })

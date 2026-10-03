@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, h } from 'vue'
 
@@ -22,13 +22,7 @@ async function openPath(path: string, { firstLoad = false } = {}) {
   return { at: router.currentRoute.value.fullPath, loads }
 }
 
-function setFilesFlip(on: boolean) {
-  Object.assign(window, { suite_flip_files: on })
-}
-
-describe('old links clicked inside the app, with the files flip on', () => {
-  beforeEach(() => setFilesFlip(true))
-  afterEach(() => setFilesFlip(false))
+describe('old links clicked inside the app', () => {
 
   it.each([
     ['/drive/recents', '/drive/recent'],
@@ -101,12 +95,4 @@ describe('old links clicked inside the app, with the files flip on', () => {
       expect(await openPath(path)).toEqual({ at: path, loads: [] })
     },
   )
-})
-
-describe('old links with the files flip off', () => {
-  beforeEach(() => setFilesFlip(false))
-
-  it.each(['/drive/recents', '/drive/g/node-1', '/sheets/new', '/suite', '/writer'])('%s stays', async (path) => {
-    expect(await openPath(path)).toEqual({ at: path, loads: [] })
-  })
 })

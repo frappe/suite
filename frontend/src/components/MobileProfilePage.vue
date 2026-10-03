@@ -1,6 +1,6 @@
 <template>
 	<!--
-	  Profile as a page — one of the tab bar's destinations rather than a sheet or a
+	  Profile as a page — a destination of the sidebar sheet rather than a sheet or a
 	  dialog over whatever was behind it — with the app's settings list as its contents,
 	  so the tab lands somewhere instead of covering something. Mail and the calendar
 	  draw the same page; what differs between them is handed in.

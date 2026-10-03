@@ -1,4 +1,4 @@
-import type { DriveNotification } from "@/composition/notifications/client";
+import type { DriveNotification } from "@/apps/drive";
 
 export function notificationTitle(notification: DriveNotification): string {
   const detail = notification.activity.detail;

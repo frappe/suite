@@ -22,10 +22,6 @@ declare global {
     suite_workspace_logo?: string
     /** Kill switch for the slides service worker (site config, served by www/suite.py). */
     disable_slides_service_worker?: boolean
-    /** Shell flip for Mail, Calendar and Meet (site config, served by www/suite.py). Read through `@/platform/boot`. */
-    suite_flip_shell?: boolean
-    /** Files flip for Home, Drive and documents (site config, served by www/suite.py). Read through `@/platform/boot`. */
-    suite_flip_files?: boolean
     /** The largest file the site accepts, in bytes (served by www/suite.py). Read through `@/platform/boot`. */
     max_file_size?: number
     /** Frappe translation map (message -> translated); populated per-app. */

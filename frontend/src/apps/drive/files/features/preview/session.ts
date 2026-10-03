@@ -16,7 +16,7 @@ import { presentShareDialog } from "../share/present";
 
 const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, { entity: true });
 const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(api.node_patch.rename, { entity: true });
-const copyNode = driveOperation<{ node: string; parent: string; title?: string }, DriveNode>(api.node_copy, { entity: true });
+const copyNode = driveOperation<{ node: string; parent_node: string; title?: string }, DriveNode>(api.node_copy, { entity: true });
 const EXPAND = "access,preview,breadcrumbs";
 
 export interface FilePreviewSession extends DocumentSession {
@@ -43,9 +43,13 @@ export interface FilePreviewSession extends DocumentSession {
   refreshPreview(): Promise<void>;
 }
 
-export async function openFilePreviewSession(nodeId: string): Promise<FilePreviewSession> {
+/**
+ * Opens a file for preview. `node` is the file when the caller has read it with
+ * `access,preview,breadcrumbs` expanded, so the session opens without reading it again.
+ */
+export async function openFilePreviewSession(nodeId: string, node?: DriveNode): Promise<FilePreviewSession> {
   const controller = new AbortController();
-  const initial = await transport.request(nodeGet, { node: nodeId, expand: EXPAND }, { signal: controller.signal });
+  const initial = node ?? (await transport.request(nodeGet, { node: nodeId, expand: EXPAND }, { signal: controller.signal }));
   if (initial.kind !== "file" || initial.content_doctype || initial.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a previewable file`);
   }
@@ -54,7 +58,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
   const state = ref<"Active" | "Trashed" | "Refused">(sessionState(initial));
   const access = ref(initial.access ?? {});
   const preview = ref<DrivePreview | null>(initial.preview ?? null);
-  const parent = ref(initial.parent);
+  const parent = ref(initial.parent_node);
   const folder = ref<DriveBreadcrumb | null>(folderOf(initial));
   const trashRoot = ref(initial.trash_root);
   const favourite = ref(initial.favourite ?? false);
@@ -74,7 +78,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       const node = await transport.request(nodeGet, { node: nodeId, expand: EXPAND }, { signal: controller.signal });
       if (read !== reads) return;
       title.value = node.title;
-      parent.value = node.parent;
+      parent.value = node.parent_node;
       folder.value = folderOf(node);
       trashRoot.value = node.trash_root;
       access.value = node.access ?? {};
@@ -92,7 +96,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
 
   function request<Output>(operation: any, input: Record<string, unknown>) {
     return transport.request(
-      driveOperation<Record<string, unknown>, Output>(operation, { looseInput: true, covers: [nodeId] }),
+      driveOperation<Record<string, unknown>, Output>(operation, { covers: [nodeId] }),
       input,
       { signal: controller.signal },
     );
@@ -140,7 +144,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
       await presentShareDialog(nodeId);
       await refresh();
     },
-    copy: (parent, nextTitle) => transport.request(copyNode, { node: nodeId, parent, title: nextTitle }, { signal: controller.signal }),
+    copy: (parent, nextTitle) => transport.request(copyNode, { node: nodeId, parent_node: parent, title: nextTitle }, { signal: controller.signal }),
     comments: {
       list: (resolved) => request(api.node_threads, { node: nodeId, resolved }),
       create: (anchor, text, authorName) => request(api.node_thread_create, { node: nodeId, anchor, text, author_name: authorName }),
@@ -177,7 +181,7 @@ export async function openFilePreviewSession(nodeId: string): Promise<FilePrevie
 /** The breadcrumbs end at the file's own folder, when the caller can read it. */
 function folderOf(node: DriveNode): DriveBreadcrumb | null {
   const parent = node.breadcrumbs?.at(-1);
-  return parent && parent.name === node.parent ? parent : null;
+  return parent && parent.name === node.parent_node ? parent : null;
 }
 
 function sessionState(node: DriveNode): "Active" | "Trashed" | "Refused" {

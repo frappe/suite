@@ -104,6 +104,8 @@ const openShareDialog: ShareOpener = async (node) => {
 }
 
 interface SessionDependencies {
+  /** The node, when the caller has read it with `access` expanded. The session then opens without reading it again. */
+  node?: DriveNode
   transport?: Transport
   share?: ShareOpener
   window?: Window
@@ -115,7 +117,7 @@ type MediaRow = { node: string; url: string; expires: number; blob?: string }
 
 const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, { entity: true })
 const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(api.node_patch.rename, { entity: true })
-const copyNode = driveOperation<{ node: string; parent: string; title?: string }, DriveNode>(api.node_copy, {
+const copyNode = driveOperation<{ node: string; parent_node: string; title?: string }, DriveNode>(api.node_copy, {
   entity: true,
 })
 const mediaList = driveOperation<{ node: string }, { media: MediaRow[] }>(api.node_media)
@@ -126,7 +128,8 @@ export async function openDriveDocumentSession(
 ): Promise<DocumentSession> {
   const requester = dependencies.transport ?? defaultTransport
   const controller = new AbortController()
-  const node = await requester.request(nodeGet, { node: nodeId, expand: 'access' }, { signal: controller.signal })
+  const node =
+    dependencies.node ?? (await requester.request(nodeGet, { node: nodeId, expand: 'access' }, { signal: controller.signal }))
   if (!node.content_doctype || !node.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a content document`)
   }
@@ -223,7 +226,7 @@ export async function openDriveDocumentSession(
 
   const request = <Input, Output>(operation: any, input: Input) =>
     requester.request(
-      driveOperation<Input, Output>(operation, { looseInput: true, covers: [nodeId] }),
+      driveOperation<Input, Output>(operation, { covers: [nodeId] }),
       input,
       { signal: controller.signal },
     )
@@ -264,7 +267,7 @@ export async function openDriveDocumentSession(
     },
     copy: (parent, nextTitle) => requester.request(
       copyNode,
-      { node: nodeId, parent, title: nextTitle },
+      { node: nodeId, parent_node: parent, title: nextTitle },
       { signal: controller.signal },
     ),
     comments: {

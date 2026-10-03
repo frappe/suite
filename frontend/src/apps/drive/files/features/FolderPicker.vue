@@ -97,7 +97,7 @@ import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
 import { useQuery } from '@/platform/server-state'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { locationTitle } from '../internal/locations'
-import { canOpenFolder, destination, itemsRoot, type PickedItem, type PickerMode } from './folderPicker'
+import { canOpenFolder, destination, itemsRoot, startingFolder, type PickedItem, type PickerMode } from './folderPicker'
 
 const props = withDefaults(defineProps<{
   mode: PickerMode
@@ -105,6 +105,8 @@ const props = withDefaults(defineProps<{
   items?: readonly PickedItem[]
   /** Keeps the picker inside one root: its node. A restore must stay in its root. */
   root?: string
+  /** The folder the user is looking at. The picker opens there when the items are in different folders. */
+  folder?: string
   description?: string
   /** The chosen action is running. */
   busy?: boolean
@@ -137,11 +139,34 @@ watch([open, startingRoot], () => {
 }, { immediate: true })
 const root = computed(() => discovered.data?.[rootKind.value] ?? null)
 
+// It opens in the folder the items are in, with the path down to it. A
+// restore picks from the top of its root.
+const start = useQuery(() => {
+  const folder = open.value && !props.root ? startingFolder(props.items, props.folder) : null
+  return folder ? node(folder) : false
+})
+const startTrail = computed(() => {
+  const folder = start.data
+  if (!folder || folder.state !== 'Active' || folder.root !== root.value?.node) return null
+  const path = [
+    ...(folder.breadcrumbs ?? []).map((crumb) => ({ node: crumb.name, title: crumb.title })),
+    { node: folder.name, title: folder.title, access: folder.access },
+  ]
+  // A moved folder cannot be opened, so neither can a folder inside it.
+  return path.every((crumb) => canOpenFolder(props.mode, props.items, crumb.node)) ? path : null
+})
+
 // Keyed on the root's node: a refetch of the roots returns a new object, and
 // must not send the user back to the top while they browse.
 watch([() => root.value?.node, open], () => {
-  if (open.value && root.value) trail.value = [{ ...root.value }]
+  if (open.value && root.value) trail.value = startTrail.value ?? [{ ...root.value }]
 }, { immediate: true })
+// The starting folder can load after the picker opens. It replaces the top of
+// the root only while the user is still there.
+watch(() => startTrail.value?.map((crumb) => crumb.node).join('/'), () => {
+  const path = startTrail.value
+  if (open.value && path && trail.value.length === 1 && trail.value[0]?.node === root.value?.node) trail.value = path
+})
 
 const current = computed(() => trail.value.at(-1) ?? null)
 const crumbs = computed(() => trail.value.map((crumb, index) => ({

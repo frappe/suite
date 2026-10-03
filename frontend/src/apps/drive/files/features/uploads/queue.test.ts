@@ -32,9 +32,9 @@ const drive = vi.hoisted(() => {
   const ok = (data: unknown, status = 200) => new Response(JSON.stringify({ data }), { status })
   const refuse = (status: number, error: Record<string, unknown>) =>
     new Response(JSON.stringify({ errors: [error] }), { status })
-  const row = (node: Node) => ({
-    ...node, root: 'root', state: 'Active', trash_root: null, mime: null, url: null, content_doctype: null, content_docname: null,
-    is_template: 0, owner: 'owner@example.com', creation: null, modified: `m${state.nextId++}`, content_modified: null,
+  const row = ({ parent, ...node }: Node) => ({
+    ...node, parent_node: parent, root: 'root', state: 'Active', trash_root: null, mime: null, url: null, content_doctype: null, content_docname: null,
+    is_template: 0, owner: { id: 'owner@example.com', full_name: 'Owner', user_image: null }, creation: null, modified: `m${state.nextId++}`, content_modified: null,
     access: { role: 40, via_link: null },
   })
   const taken = (parent: string, title: string) =>
@@ -71,12 +71,12 @@ const drive = vi.hoisted(() => {
     }
     if (method === 'POST' && path === 'nodes') {
       const body = json()
-      if (taken(body.parent, body.title)) return conflict(body.parent, body.title)
-      return ok(row(add({ title: body.title, kind: body.kind, parent: body.parent, size: 0 })))
+      if (taken(body.parent_node, body.title)) return conflict(body.parent_node, body.title)
+      return ok(row(add({ title: body.title, kind: body.kind, parent: body.parent_node, size: 0 })))
     }
     if (method === 'POST' && path === 'uploads') {
       const body = json()
-      if (!body.replaces && taken(body.parent, body.filename)) return conflict(body.parent, body.filename)
+      if (!body.replaces && taken(body.parent_node, body.filename)) return conflict(body.parent_node, body.filename)
       if (body.size > state.fileLimit) {
         return refuse(422, { type: 'DriveFileTooLarge', message: `Files can be up to ${state.fileLimit} B. This one is ${body.size} B.` })
       }
@@ -87,7 +87,7 @@ const drive = vi.hoisted(() => {
       const id = `u${state.nextId++}`
       state.creates += 1
       state.sessions.set(id, {
-        parent: body.parent, filename: body.filename, size: body.size, replaces: body.replaces, received: 0, direct: state.direct,
+        parent: body.parent_node, filename: body.filename, size: body.size, replaces: body.replaces, received: 0, direct: state.direct,
       })
       if (state.direct) {
         return ok({ mode: 'direct', upload_id: id, url: 'https://bucket.test/', fields: { key: `uploads/${id}`, policy: 'p' } })
@@ -119,11 +119,11 @@ const drive = vi.hoisted(() => {
         state.sessions.delete(match[1]!)
         return ok(row(node))
       }
-      if (taken(body.parent, body.title)) return conflict(body.parent, body.title)
+      if (taken(body.parent_node, body.title)) return conflict(body.parent_node, body.title)
       state.finished.push({ ...body, session: match[1] })
       state.sessions.delete(match[1]!)
       state.usage.used += session.size
-      return ok(row(add({ title: body.title, kind: 'file', parent: body.parent, size: session.size })))
+      return ok(row(add({ title: body.title, kind: 'file', parent: body.parent_node, size: session.size })))
     }
     return refuse(404, { type: 'NotFound', message: `${method} ${path}` })
   }
@@ -511,7 +511,7 @@ describe('Drive upload queue', () => {
 
     expect(drive.state.posts).toEqual([{ url: 'https://bucket.test/', fields: ['key', 'policy', 'file'], size: 40 }])
     expect(drive.state.chunkOffsets).toEqual([])
-    expect(drive.state.finished).toEqual([expect.objectContaining({ parent: 'folder', title: 'photo.jpg' })])
+    expect(drive.state.finished).toEqual([expect.objectContaining({ parent_node: 'folder', title: 'photo.jpg' })])
     expect(drive.titlesIn('folder')).toEqual(['photo.jpg'])
     expect(queue.entries.value[0]!.state).toBe('done')
     expect(records.all.size).toBe(0)

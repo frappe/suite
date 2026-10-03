@@ -192,25 +192,6 @@
 				</CommandPaletteGroup>
 			</template>
 			<CommandPaletteGroup
-				v-if="!navigationMode && !normalizedQuery && paletteRecents.length"
-				label="Recent"
-			>
-				<CommandPaletteItem
-					v-for="recent in paletteRecents"
-					:key="recent.name"
-					:value="recent"
-				>
-					<template #prefix>
-						<DriveSearchResultIcon :entity="recent" />
-					</template>
-					{{ recent.file_name }}
-					<template #suffix>
-						<DriveSearchResultModified :modified="recent.modified" />
-					</template>
-				</CommandPaletteItem>
-			</CommandPaletteGroup>
-
-			<CommandPaletteGroup
 				v-if="navigationMode && exactApps.length"
 				label="Navigate"
 			>
@@ -264,67 +245,6 @@
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
-			<CommandPaletteGroup v-if="driveResults.length" label="Drive">
-				<CommandPaletteItem
-					v-for="entity in driveResults"
-					:key="entity.name"
-					:value="entity"
-				>
-					<template #prefix>
-						<DriveSearchResultIcon :entity="entity" />
-					</template>
-					<HighlightedText :text="entity.file_name" :term="searchWords" />
-					<template #suffix>
-						<DriveSearchResultModified :modified="entity.modified" />
-					</template>
-				</CommandPaletteItem>
-			</CommandPaletteGroup>
-
-			<CommandPaletteGroup v-if="sheetResults.length" label="Sheets">
-				<CommandPaletteItem
-					v-for="sheet in sheetResults"
-					:key="sheet.name"
-					:value="sheet"
-				>
-					<template #prefix>
-						<DriveSearchResultIcon :entity="sheet" />
-					</template>
-					<HighlightedText :text="sheet.title || 'Untitled Sheet'" :term="searchWords" />
-					<template #suffix>
-						<DriveSearchResultModified :modified="sheet.modified" />
-					</template>
-				</CommandPaletteItem>
-			</CommandPaletteGroup>
-
-			<CommandPaletteGroup v-if="slideResults.length" label="Slides">
-				<CommandPaletteItem
-					v-for="presentation in slideResults"
-					:key="presentation.name"
-					:value="presentation"
-				>
-					<template #prefix>
-						<DriveSearchResultIcon :entity="presentation" />
-					</template>
-					<HighlightedText :text="presentation.file_name" :term="searchWords" />
-					<template #suffix>
-						<DriveSearchResultModified :modified="presentation.modified" />
-					</template>
-				</CommandPaletteItem>
-			</CommandPaletteGroup>
-
-			<CommandPaletteGroup v-if="writerResults.length" label="Writer">
-				<CommandPaletteItem
-					v-for="document in writerResults"
-					:key="document.name"
-					:value="document"
-				>
-					<template #prefix>
-						<DriveSearchResultIcon :entity="document" />
-					</template>
-					<HighlightedText :text="document.title || 'Untitled Document'" :term="searchWords" />
-				</CommandPaletteItem>
-			</CommandPaletteGroup>
-
 			<CommandPaletteGroup v-if="meetResults.length" label="Meet">
 				<CommandPaletteItem
 					v-for="meeting in meetResults"
@@ -339,8 +259,8 @@
 						</span>
 					</template>
 					<HighlightedText :text="meeting.title || meeting.name" :term="searchWords" />
-					<template #suffix>
-						<DriveSearchResultModified :modified="meeting.modified" />
+					<template v-if="meeting.modified" #suffix>
+						<span class="text-p-xs text-ink-gray-5">{{ formatModified(meeting.modified) }}</span>
 					</template>
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
@@ -480,7 +400,6 @@
 <script setup lang="ts">
 import {
 	computed,
-	defineAsyncComponent,
 	nextTick,
 	onScopeDispose,
 	ref,
@@ -534,7 +453,6 @@ import type {
 	MailRecentSearch,
 	MailSearchResult as MailResult,
 } from '@/apps/mail/components/CommandPalette/types'
-import { getRecents } from '@/apps/drive/legacy/resources/files'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
@@ -542,43 +460,23 @@ import type { CalendarSearchResult as CalendarSearchResultItem } from '@/apps/ca
 import { eventStartLocal } from '@/apps/calendar/utils/eventTime'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
-type DriveResult = {
-	name: string
-	file_name: string
-	file_type?: string
-	is_folder: boolean
-	content_doctype?: string | null
-	modified?: string
-	user_name?: string
-	full_name?: string
-}
-
-type SheetResult = {
-	resultType: 'sheet'
-	name: string
-	title?: string
-	modified?: string
-	content_doctype: 'Sheet'
-	file_type: 'Spreadsheet'
-}
-
-type SlideResult = {
-	resultType: 'slide'
-	name: string
-	file_name: string
-	content_docname: string
-	modified?: string
-	thumbnail?: string
-	owner?: string
-	content_doctype: 'Presentation'
-}
-
-type WriterResult = {
-	resultType: 'writer'
-	name: string
-	title?: string
-	content_doctype: 'Writer Document'
-	file_type: 'Document'
+/** When a meeting was last changed: "Just now", "5 min ago", "Yesterday", or its date. */
+function formatModified(value: string | undefined): string {
+	if (!value) return ''
+	const date = new Date(value.includes('T') ? value : value.replace(' ', 'T'))
+	if (Number.isNaN(date.getTime())) return value
+	const now = new Date()
+	const minutes = Math.floor((now.getTime() - date.getTime()) / 60_000)
+	const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+	const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000)
+	if (days === 0 && minutes >= 0) {
+		if (minutes < 1) return __('Just now')
+		if (minutes < 60) return __('{0} min ago', [minutes])
+		return __('{0} hr ago', [Math.floor(minutes / 60)])
+	}
+	if (days === 1) return __('Yesterday')
+	const sameYear = date.getFullYear() === now.getFullYear()
+	return new Intl.DateTimeFormat(undefined, sameYear ? { month: 'short', day: 'numeric' } : { dateStyle: 'medium' }).format(date)
 }
 
 interface MeetResult {
@@ -594,10 +492,6 @@ interface MailSearchPageItem {
 
 type PaletteItem =
 	| MailSearchPageItem
-	| DriveResult
-	| SheetResult
-	| SlideResult
-	| WriterResult
 	| MeetResult
 	| CalendarSearchResultItem
 	| MailResult
@@ -636,12 +530,6 @@ const calendarMinimumQueryLength = 1
 // Events, not rows — a recurring one comes back as its next few occurrences, and the server
 // counts the cap before it expands them, so the rows are not sliced again here.
 const CALENDAR_RESULT_LIMIT = 10
-const DriveSearchResultIcon = defineAsyncComponent(
-	() => import('@/apps/drive/legacy/components/DriveSearchResultIcon.vue')
-)
-const DriveSearchResultModified = defineAsyncComponent(
-	() => import('@/apps/drive/legacy/components/DriveSearchResultModified.vue')
-)
 const root = useRootStore()
 const route = useRoute()
 const router = useRouter()
@@ -673,20 +561,10 @@ const mailSearchOnly = computed(
 const navigationMode = computed(
 	() => !mailSearchOnly.value && query.value.trimStart().startsWith('>')
 )
-const activeApp = computed(() => String(route.meta.appId ?? ''))
-const paletteRecents = computed<DriveResult[]>(() => {
-	if (!Array.isArray(getRecents.data)) return []
-	const recents = getRecents.data.filter((entity: DriveResult) => {
-		if (activeApp.value === 'drive') return true
-		if (activeApp.value === 'slides')
-			return entity.content_doctype === 'Presentation'
-		if (activeApp.value === 'sheets') return entity.content_doctype === 'Sheet'
-		if (activeApp.value === 'writer')
-			return entity.content_doctype === 'Writer Document'
-		return false
-	})
-	return recents.slice(0, 5)
-})
+// The area in view decides which search the query line runs. Mail, Calendar
+// and Meet search here; Home and Drive have their own search pages, so the
+// palette only filters commands there.
+const activeApp = computed(() => String(route.meta.area ?? ''))
 const isMailSearchRoute = computed(
 	() => mailSearchActive.value && route.params.mailbox === 'search'
 )
@@ -922,10 +800,6 @@ const appSearch = (method: 'GET' | 'POST', url: string) =>
 		onError: settleSearch,
 	})
 
-const driveSearch = appSearch('POST', 'suite.drive.api.files.search')
-const sheetSearch = appSearch('POST', 'suite.sheets.api.list_sheets')
-const slideSearch = appSearch('GET', 'suite.drive.api.list.files')
-const writerSearch = appSearch('GET', 'suite.writer.api.general.search')
 const meetSearch = appSearch('POST', 'frappe.client.get_list')
 // Shared-aware, like the grid's own fetch: a calendar shared with the reader lives in its
 // owner's account, so a search of the route's account alone cannot see what the grid is
@@ -942,49 +816,6 @@ const mailSearchWords = computed(() => parseMailSearchQuery(query.value.trim()).
 const appQuery = computed(() =>
 	normalizedQuery.value.replace(/^>\s*/, '').trim()
 )
-const driveResults = computed<DriveResult[]>(() =>
-	activeApp.value === 'drive' && Array.isArray(driveSearch.data)
-		? driveSearch.data.slice(0, 20)
-		: []
-)
-const sheetResults = computed<SheetResult[]>(() => {
-	if (activeApp.value !== 'sheets' || !Array.isArray(sheetSearch.data?.sheets))
-		return []
-	return sheetSearch.data.sheets
-		.slice(0, 20)
-		.map((sheet: Omit<SheetResult, 'resultType'>) => ({
-			...sheet,
-			resultType: 'sheet' as const,
-			content_doctype: 'Sheet' as const,
-			file_type: 'Spreadsheet' as const,
-		}))
-})
-const slideResults = computed<SlideResult[]>(() => {
-	if (activeApp.value !== 'slides' || !Array.isArray(slideSearch.data?.rows))
-		return []
-	return slideSearch.data.rows
-		.filter((row: SlideResult) => row.content_docname)
-		.slice(0, 20)
-		.map((row: Omit<SlideResult, 'resultType'>) => ({
-			...row,
-			resultType: 'slide' as const,
-		}))
-})
-const writerResults = computed<WriterResult[]>(() => {
-	if (
-		activeApp.value !== 'writer' ||
-		!Array.isArray(writerSearch.data?.results)
-	)
-		return []
-	return writerSearch.data.results
-		.slice(0, 20)
-		.map((document: Omit<WriterResult, 'resultType'>) => ({
-			...document,
-			resultType: 'writer' as const,
-			content_doctype: 'Writer Document' as const,
-			file_type: 'Document' as const,
-		}))
-})
 const meetResults = computed<MeetResult[]>(() => {
 	if (activeApp.value !== 'meet' || !Array.isArray(meetSearch.data)) return []
 	return meetSearch.data
@@ -1023,17 +854,13 @@ const resultsLabel = (label: string) => (hasOtherSections.value ? label : undefi
 const contextSearchLabel = computed(
 	() =>
 		({
-			drive: 'Drive',
-			sheets: 'Sheets',
-			slides: 'Slides',
-			writer: 'Writer',
 			meet: 'Meet',
 			mail: 'Mail',
 			calendar: 'Calendar',
 		}[activeApp.value])
 )
-// Where nothing is searched (Home, and the Drive area behind the files flip),
-// the query line only filters commands, so it says that instead of offering a search.
+// Where nothing is searched (Home and Drive), the query line only filters
+// commands, so it says that instead of offering a search.
 const palettePlaceholder = computed(() => {
 	if (navigationMode.value) return 'Switch apps'
 	if (contextSearchLabel.value) return `Search in ${contextSearchLabel.value}`
@@ -1107,9 +934,6 @@ function enterHint(value: unknown) {
 		if (item.resultType === 'mail-search-page') return 'to see all results'
 		if (item.resultType === 'mail-contact') return 'to choose contact'
 		if (item.resultType === 'mail-filter-suggestion') return 'to apply filter'
-		if (item.resultType === 'sheet') return 'to open sheet'
-		if (item.resultType === 'slide') return 'to open presentation'
-		if (item.resultType === 'writer') return 'to open document'
 		if (item.resultType === 'meeting') return 'to open meeting'
 		if (item.resultType === 'calendar-event') return 'to view event'
 	}
@@ -1120,13 +944,7 @@ function enterHint(value: unknown) {
 		return `to run ${label}`
 	}
 	if ('area' in item && 'label' in item) return `to switch to ${String(item.label)}`
-	if ('is_folder' in item && item.is_folder) return 'to open folder'
-	if ('content_doctype' in item) {
-		if (item.content_doctype === 'Presentation') return 'to open presentation'
-		if (item.content_doctype === 'Sheet') return 'to open sheet'
-		if (item.content_doctype === 'Writer Document') return 'to open document'
-	}
-	return 'to open file'
+	return 'to open'
 }
 
 // The search as it stands, as a route query: the search page's, and each result's.
@@ -1147,16 +965,7 @@ async function applyMailQuickFilter(option: MailFilterOption) {
 }
 
 watch(
-	[
-		driveResults,
-		sheetResults,
-		slideResults,
-		writerResults,
-		meetResults,
-		calendarResults,
-		mailResults,
-		mailSuggestions,
-	],
+	[meetResults, calendarResults, mailResults, mailSuggestions],
 	async (groups) => {
 		// Not on a phone: a highlighted row there reads as a selection nobody made, and the arrow
 		// keys it exists for are not on the screen.
@@ -1211,30 +1020,7 @@ watch(
 			return
 		}
 
-		if (activeApp.value === 'drive') {
-			driveSearch.submit({ query: text })
-		} else if (activeApp.value === 'sheets') {
-			sheetSearch.submit({
-				start: 0,
-				limit: 20,
-				search: text,
-				owner_filter: 'all',
-				order_by: 'modified',
-				sort_dir: 'desc',
-			})
-		} else if (activeApp.value === 'slides') {
-			slideSearch.submit({
-				search: text,
-				file_kinds: JSON.stringify(['Presentation']),
-				order_by: 'modified',
-				ascending: false,
-				start: 0,
-				limit: 20,
-				paginated: true,
-			})
-		} else if (activeApp.value === 'writer') {
-			writerSearch.submit({ query: text })
-		} else if (activeApp.value === 'meet') {
+		if (activeApp.value === 'meet') {
 			meetSearch.submit({
 				doctype: 'Meet Room',
 				fields: ['name', 'title', 'modified'],
@@ -1254,8 +1040,8 @@ watch(
 				filters: calendarFilterParams.value,
 			})
 		} else {
-			// No search here (Home, and the Drive area behind the files flip): only the
-			// commands answer, and they are filtered already, so nothing is left to wait for.
+			// No search here (Home and Drive): only the commands answer, and they are
+			// filtered already, so nothing is left to wait for.
 			resetSearches()
 		}
 	}
@@ -1274,9 +1060,6 @@ watch(
 		mailAppliedFilters.value = []
 		resetCalendarFilters()
 		resetSearches()
-
-		if (['drive', 'slides', 'sheets', 'writer'].includes(activeApp.value))
-			getRecents.reload()
 		if (isMailSearchRoute.value) {
 			query.value = typeof route.query.text === 'string' ? route.query.text : ''
 			// The search being edited says what it searched, so it wins over the remembered
@@ -1330,28 +1113,14 @@ function resetSearches() {
 	// Nothing was asked, so nothing is outstanding: the query is as answered as it is going to be.
 	settleSearch()
 	cancelSearches()
-	for (const resource of [
-		driveSearch,
-		sheetSearch,
-		slideSearch,
-		writerSearch,
-		meetSearch,
-		calendarSearch,
-	]) {
+	for (const resource of [meetSearch, calendarSearch]) {
 		resource.reset()
 	}
 	resetMailSearch()
 }
 
 function cancelSearches() {
-	for (const resource of [
-		driveSearch,
-		sheetSearch,
-		slideSearch,
-		writerSearch,
-		meetSearch,
-		calendarSearch,
-	]) {
+	for (const resource of [meetSearch, calendarSearch]) {
 		// A debounced resource's submit carries the debouncer's cancel.
 		const submit: object = resource.submit
 		if ('cancel' in submit && typeof submit.cancel === 'function') submit.cancel()
@@ -1482,75 +1251,59 @@ async function selectItem(value: CommandPaletteValue, event: CommandPaletteSelec
 		await router.push(item.area.to)
 		return
 	}
-	if ('resultType' in item) {
-		let location: RouteLocationRaw
-		if (item.resultType === 'sheet') {
-			location = { name: 'sheets-editor', params: { id: item.name } }
-		} else if (item.resultType === 'slide') {
-			location = {
-				name: 'slides-editor',
-				params: { presentationId: item.content_docname },
-				query: { slide: 1 },
-			}
-		} else if (item.resultType === 'writer') {
-			location = { name: 'writer-document', params: { id: item.name } }
-		} else if (item.resultType === 'mail') {
-			rememberMailSearch()
-			location = {
-				name: 'mail-mail',
-				params: {
-					accountId: item.account,
-					mailbox: 'search',
-					threadID: item.thread_id,
-				},
-				query: mailSearchQuery.value,
-			}
-		} else if (item.resultType === 'calendar-event') {
-			const start = eventStartLocal(item)
-			// The view the reader is in is the view the result opens in — Agenda included.
-			// Left out, it fell through to the fallback, and searching from Agenda landed
-			// on a month grid nobody asked for.
-			const calendarRoute = [
-				'calendar-month',
-				'calendar-week',
-				'calendar-day',
-				'calendar-agenda',
-			].includes(String(route.name))
-				? String(route.name)
-				: 'calendar-month'
-			location = {
-				name: calendarRoute,
-				params: {
-					// The reader's own account, not the event's: a hit on a shared calendar
-					// belongs to whoever owns it, and routing there would switch the calendar
-					// to an account nobody thinks of as theirs. The grid shows the shared
-					// event inside the reader's view, and so does the link to it — which is
-					// what `account` is for, ids being unique only within an account.
-					accountId: route.params.accountId || item.account,
-					year: start.year(),
-					month: start.month() + 1,
-					day: start.date(),
-				},
-				query: {
-					event: item.master_id || item.id,
-					recurrence: item.recurrence_id || undefined,
-					account: item.account || undefined,
-				},
-			}
-		} else {
-			location = { name: 'meet-meeting', params: { meetingId: item.name } }
+	let location: RouteLocationRaw
+	if (item.resultType === 'mail') {
+		rememberMailSearch()
+		location = {
+			name: 'mail-mail',
+			params: {
+				accountId: item.account,
+				mailbox: 'search',
+				threadID: item.thread_id,
+			},
+			query: mailSearchQuery.value,
 		}
-		const href = router.resolve(location).href
-		if (openInNewTab) {
-			window.open(href, '_blank', 'noopener')
-		} else {
-			await router.push(location)
+	} else if (item.resultType === 'calendar-event') {
+		const start = eventStartLocal(item)
+		// The view the reader is in is the view the result opens in — Agenda included.
+		// Left out, it fell through to the fallback, and searching from Agenda landed
+		// on a month grid nobody asked for.
+		const calendarRoute = [
+			'calendar-month',
+			'calendar-week',
+			'calendar-day',
+			'calendar-agenda',
+		].includes(String(route.name))
+			? String(route.name)
+			: 'calendar-month'
+		location = {
+			name: calendarRoute,
+			params: {
+				// The reader's own account, not the event's: a hit on a shared calendar
+				// belongs to whoever owns it, and routing there would switch the calendar
+				// to an account nobody thinks of as theirs. The grid shows the shared
+				// event inside the reader's view, and so does the link to it — which is
+				// what `account` is for, ids being unique only within an account.
+				accountId: route.params.accountId || item.account,
+				year: start.year(),
+				month: start.month() + 1,
+				day: start.date(),
+			},
+			query: {
+				event: item.master_id || item.id,
+				recurrence: item.recurrence_id || undefined,
+				account: item.account || undefined,
+			},
 		}
-		return
+	} else {
+		location = { name: 'meet-meeting', params: { meetingId: item.name } }
 	}
-
-	const { openEntity } = await import('@/apps/drive/legacy/utils/files')
-	openEntity(item, openInNewTab)
+	const href = router.resolve(location).href
+	if (openInNewTab) {
+		window.open(href, '_blank', 'noopener')
+	} else {
+		await router.push(location)
+	}
 }
 
 onScopeDispose(() => {
@@ -1600,7 +1353,7 @@ onScopeDispose(() => {
 		visibility: hidden;
 	}
 
-	/* The whole screen, not the screen above the tab bar: the strip left for the bar showed the
+	/* The whole screen, not the screen above the bottom nav: the strip left for the nav showed the
 	   search page behind this one — its "Search your mail" over this one's own empty state. The
 	   way out is the back arrow in the query line, which is where a thumb already is. */
 	.dialog-scroll-container:has(.mail-mobile-search-page) {

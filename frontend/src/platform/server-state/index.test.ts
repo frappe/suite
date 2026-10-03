@@ -1,4 +1,4 @@
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Realtime, Room, SocketLike } from '@/platform/realtime'
@@ -500,6 +500,36 @@ describe('server state mutations and realtime', () => {
     expect(children.rows).toEqual([])
     await tick()
     expect(mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children')).toHaveLength(2)
+    state.dispose()
+  })
+
+  it('shows a new row only where the server orders it, never at the end first', async () => {
+    const createOperation: Operation<{ parent: string; title: string }, Node> = {
+      id: 'node_create', owner: 'drive', method: 'POST', path: 'nodes', entity,
+    }
+    // The server sorts children by title.
+    const rows: Node[] = [{ ...node('Budget'), name: 'b' }, { ...node('Notes'), name: 'n' }]
+    const mock = mockTransport((operation, input) => {
+      if (operation.id !== 'node_create') return { rows: [...rows].sort((a, b) => a.title.localeCompare(b.title)), next_cursor: null }
+      const created = { ...node(input.title), name: 'c' }
+      rows.push(created)
+      return created
+    })
+    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const children = state.useQuery(infinite(childrenOperation, { node: 'root' }, {
+      member: (candidate) => candidate.parent === 'root' && candidate.state === 'Active',
+    }))
+    await children.settled()
+
+    // Each order the list shows on the way.
+    const seen = [children.rows.map((row) => row.title).join(', ')]
+    const stop = watch(() => children.rows.map((row) => row.title).join(', '), (titles) => {
+      if (titles !== seen.at(-1)) seen.push(titles)
+    }, { flush: 'sync' })
+    await state.useMutation(mutation(createOperation, { invalidates: ['node_children'] })).run({ parent: 'root', title: 'Forecast' })
+    await vi.waitFor(() => expect(children.rows.map((row) => row.title)).toEqual(['Budget', 'Forecast', 'Notes']))
+    expect(seen).toEqual(['Budget, Notes', 'Budget, Forecast, Notes'])
+    stop()
     state.dispose()
   })
 

@@ -32,7 +32,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 
-import { createNode } from '@/apps/drive/client/nodes'
+import { createNode, type CreateNodeInput } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { useMutation } from '@/platform/server-state'
 
@@ -86,19 +86,20 @@ async function submit() {
     await focusField(titleError.value ? 0 : 1)
     return
   }
-  const created = await mutation.run({
-    parent: request.parent,
-    title: title.value.trim(),
-    kind: request.kind,
-    url: request.kind === 'link' ? url.value.trim() : undefined,
-    content_doctype: request.contentDoctype,
-  })
+  const created = await mutation.run(createInput(request, title.value.trim(), url.value.trim()))
   if (!created) {
     error.value = mutation.error?.message ?? `Could not create this ${noun.value}.`
     return
   }
   open.value = false
   emit('created', created, request)
+}
+
+function createInput(request: CreateRequest, title: string, url: string): CreateNodeInput {
+  const base = { parent_node: request.parent, title }
+  if (request.kind === 'link') return { ...base, kind: 'link', url }
+  if (request.kind === 'document') return { ...base, kind: 'document', content_doctype: request.contentDoctype ?? '' }
+  return { ...base, kind: 'folder' }
 }
 
 function validUrl(value: string): boolean {

@@ -2,7 +2,7 @@
 	<!-- The offer to install the suite. Mounted once by the shell on phones and
 	     never unmounted, since Chrome fires `beforeinstallprompt` once and a
 	     listener that is not there at the time misses it. Shown only while the
-	     route is inside an app the phone can use (`pwa` in the registry). The
+	     route is an area page (`route.meta.area`) inside the shell frame. The
 	     manifest is on every route (see platform/pwa setPwaTags), so Chrome may
 	     fire elsewhere; the offer waits for such an app. The iOS hint follows
 	     the same gate. -->
@@ -75,10 +75,11 @@ import { useRoute } from 'vue-router'
 import { Button, Dialog } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
-import { isInstallableApp } from '@/apps/registry'
-
 const route = useRoute()
-const installable = computed(() => isInstallableApp(route.meta.appId))
+// The install offer shows on area pages, not on a document or a Meet call.
+const installable = computed(
+	() => typeof route.meta.area === 'string' && route.meta.frame !== 'none',
+)
 
 // Initialize deferredPrompt for use later to show browser install prompt.
 const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)

@@ -2,21 +2,12 @@
   The phone account sheet, opened from the avatar in the bottom nav [T010]:
   who is signed in, then Settings, Theme and Log out. The sheet shows no title,
   so a visually hidden one names the dialog "Account".
-
-  Between the flips an Apps row drills in to the old pages the rail cannot
-  reach [T018]. Both views share one grid cell, so the sheet keeps its height.
-  Focus moves with the view: into the Apps view, then back to the Apps row.
 -->
 <template>
   <BottomSheet :open="open" @update:open="$emit('update:open', $event)">
-    <div class="grid px-4 pb-8">
+    <div class="px-4 pb-8">
       <DialogTitle class="sr-only">{{ __("Account") }}</DialogTitle>
-      <div
-        ref="accountView"
-        class="col-start-1 row-start-1"
-        :class="{ invisible: appsOpen }"
-        :inert="appsOpen || undefined"
-      >
+      <div>
         <div class="flex items-center gap-3 px-1 pb-4">
           <Avatar size="3xl" :image="user?.avatar ?? undefined" :label="name" />
           <div class="flex min-w-0 flex-col gap-0.5">
@@ -26,17 +17,6 @@
         </div>
 
         <nav class="space-y-0.5" :aria-label="__('Account')">
-          <SidebarItem
-            v-if="legacyApps"
-            :label="__('Apps')"
-            icon="lucide-layout-grid"
-            data-apps-row
-            @click="showApps(true)"
-          >
-            <template #suffix>
-              <span class="lucide-chevron-right mr-2 size-4 text-ink-gray-5" aria-hidden="true" />
-            </template>
-          </SidebarItem>
           <SidebarItem :label="__('Settings')" icon="lucide-settings" @click="showSettings" />
           <div class="flex h-7 items-center justify-between gap-3 pl-2">
             <span class="flex items-center gap-2 text-sm text-ink-gray-8">
@@ -53,67 +33,25 @@
           <SidebarItem :label="__('Log out')" icon="lucide-log-out" @click="logOut" />
         </nav>
       </div>
-
-      <div
-        v-if="legacyApps"
-        ref="appsView"
-        class="col-start-1 row-start-1"
-        :class="{ invisible: !appsOpen }"
-        :inert="!appsOpen || undefined"
-      >
-        <div class="flex items-center gap-2 pb-2">
-          <Button
-            variant="ghost"
-            icon="lucide-chevron-left"
-            :aria-label="__('Back')"
-            @click="showApps(false)"
-          />
-          <span class="truncate text-lg font-semibold text-ink-gray-9">{{ __("Apps") }}</span>
-        </div>
-        <nav class="space-y-0.5" :aria-label="__('Apps')">
-          <SidebarItem
-            v-for="app in legacyAppLinks"
-            :key="app.to"
-            :label="app.label()"
-            :icon="app.icon"
-            @click="openApp(app.to)"
-          />
-        </nav>
-      </div>
     </div>
   </BottomSheet>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from "vue";
-import { Avatar, BottomSheet, Button, SidebarItem, TabButtons } from "frappe-ui";
+import { computed } from "vue";
+import { Avatar, BottomSheet, SidebarItem, TabButtons } from "frappe-ui";
 import { DialogTitle } from "reka-ui";
-import { useRouter } from "vue-router";
 
 import { useSession } from "@/platform/session";
 import { useTheme, type ThemeMode } from "@/platform/theme";
 import { translate as __ } from "@/platform/translation";
-import { legacyAppLinks, showsLegacyApps } from "@/shell/accountMenu";
 import { openSettings } from "@/shell/settings/useSettingsDialog";
 
-const props = defineProps<{ open: boolean }>();
+defineProps<{ open: boolean }>();
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
 
 const session = useSession();
 const theme = useTheme();
-const router = useRouter();
-const legacyApps = showsLegacyApps();
-const appsOpen = ref(false);
-const accountView = useTemplateRef<HTMLElement>("accountView");
-const appsView = useTemplateRef<HTMLElement>("appsView");
-
-// Each open starts on the account view.
-watch(
-  () => props.open,
-  (open) => {
-    if (open) appsOpen.value = false;
-  },
-);
 const user = computed(() => session.user.value);
 const name = computed(() => user.value?.fullName || user.value?.id || __("Account"));
 const email = computed(() => user.value?.email ?? null);
@@ -132,21 +70,6 @@ function setTheme(value: string | number) {
 function showSettings() {
   emit("update:open", false);
   openSettings();
-}
-
-// A view is inert until it shows, so focus moves after the render.
-async function showApps(open: boolean) {
-  appsOpen.value = open;
-  await nextTick();
-  const target = open
-    ? appsView.value?.querySelector<HTMLElement>("button")
-    : accountView.value?.querySelector<HTMLElement>("[data-apps-row]");
-  target?.focus();
-}
-
-function openApp(to: string) {
-  emit("update:open", false);
-  void router.push(to);
 }
 
 function logOut() {

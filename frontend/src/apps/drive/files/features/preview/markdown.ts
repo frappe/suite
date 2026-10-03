@@ -1,6 +1,15 @@
 import DOMPurify from 'dompurify'
 import { Marked } from 'marked'
 
+/**
+ * Heading ids carry a prefix, so a heading in a file can never take the id of
+ * an element of the app, or of a property `document` or `window` names.
+ */
+const PLACE_PREFIX = 'md-'
+
+/** The ids the file being rendered has used, with how often. `renderMarkdown` starts it afresh. */
+let usedIds = new Map<string, number>()
+
 // An own instance, so these rules leave the shared `marked` alone: frappe-ui's
 // editor uses that one to read pasted Markdown.
 const markdown = new Marked({
@@ -8,6 +17,11 @@ const markdown = new Marked({
   renderer: {
     // HTML written in the file shows as text. It is never parsed as markup.
     html: ({ text, block }) => (block ? `<p>${escapeHtml(text)}</p>` : escapeHtml(text)),
+    // Each heading gets the id a GitHub link to it uses, so `[Setup](#setup)` finds it.
+    heading({ tokens, depth }) {
+      const inner = this.parser.parseInline(tokens)
+      return `<h${depth} id="${PLACE_PREFIX}${uniqueId(slug(inner))}">${inner}</h${depth}>\n`
+    },
   },
 })
 
@@ -30,6 +44,7 @@ purify.addHook('afterSanitizeAttributes', (node) => {
       node.setAttribute('rel', 'noopener noreferrer')
     }
   } else if (node.tagName === 'IMG') {
+    // Remote images load on purpose, as on GitHub; they go without a referrer, and browsers send no cookies except SameSite=None ones.
     if (isRemoteImage(node.getAttribute('src'))) {
       node.setAttribute('referrerpolicy', 'no-referrer')
       node.setAttribute('loading', 'lazy')
@@ -46,11 +61,44 @@ purify.addHook('afterSanitizeAttributes', (node) => {
  * tab; links to a place in the file do not.
  */
 export function renderMarkdown(text: string): string {
+  usedIds = new Map()
   return purify.sanitize(markdown.parse(text, { async: false }), {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ['style', 'form'],
     FORBID_ATTR: ['style'],
   })
+}
+
+/**
+ * The heading a link to a place in the file goes to, such as `#setup`, in the
+ * HTML `renderMarkdown` made. `null` when the file has no such heading.
+ */
+export function placeFor(root: ParentNode, href: string): HTMLElement | null {
+  let place: string
+  try {
+    place = decodeURIComponent(href.replace(/^#/, ''))
+  } catch {
+    return null
+  }
+  const id = PLACE_PREFIX + place
+  return [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')].find((heading) => heading.id === id) ?? null
+}
+
+/** GitHub's slug for a heading: its text in lower case, punctuation dropped, spaces as hyphens. */
+function slug(html: string): string {
+  const text = unescapeHtml(html.replace(/<[^>]*>/g, ''))
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '')
+    .replace(/ /g, '-')
+}
+
+/** A second heading with the same slug gets `-1`, a third `-2`, as on GitHub. */
+function uniqueId(base: string): string {
+  const count = usedIds.get(base) ?? 0
+  usedIds.set(base, count + 1)
+  return count ? `${base}-${count}` : base
 }
 
 /**
@@ -72,4 +120,10 @@ const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;'
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ESCAPES[character] ?? character)
+}
+
+const UNESCAPES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }
+
+function unescapeHtml(html: string): string {
+  return html.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => UNESCAPES[entity] ?? entity)
 }

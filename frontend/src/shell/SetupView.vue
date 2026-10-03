@@ -151,15 +151,32 @@ import { Button, Combobox, ErrorMessage, Tooltip, createResource } from 'frappe-
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
 
-import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
+import {
+  calendarLogo,
+  driveLogo,
+  mailLogo,
+  meetLogo,
+  sheetsLogo,
+  slidesLogo,
+  suiteLogo,
+  writerLogo,
+} from '@/platform/brand'
 import { setupTheme, switchTheme, systemDark, themeMode } from '@/utils/setupTheme'
 import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 import InviteStep from '@/shell/InviteStep.vue'
 import { detectTimezone, useTimezones } from '@/shell/useTimezones'
 
-const apps = SUITE_APPS
-const suiteLogo = SUITE_LOGO
+// The welcome step's row of product marks.
+const apps = [
+  { id: 'drive', name: 'Drive', logo: driveLogo },
+  { id: 'slides', name: 'Slides', logo: slidesLogo },
+  { id: 'writer', name: 'Writer', logo: writerLogo },
+  { id: 'sheets', name: 'Sheets', logo: sheetsLogo },
+  { id: 'meet', name: 'Meet', logo: meetLogo },
+  { id: 'mail', name: 'Mail', logo: mailLogo },
+  { id: 'calendar', name: 'Calendar', logo: calendarLogo },
+]
 
 type Step = 'welcome' | 'workspace' | 'invite' | 'ready'
 
@@ -262,7 +279,7 @@ async function openSuite() {
     return
   }
   // Full reload so the router's cached setup state refetches.
-  window.location.href = '/suite'
+  window.location.href = '/home'
 }
 </script>
 

@@ -40,22 +40,27 @@ watch(
 // The dialog focuses the field itself instead of using `autofocus`, which
 // would select the whole title. A file selects its name up to the extension.
 // A menu that opened the dialog hands focus back to its trigger as it closes,
-// and the dialog then focuses the field again with the whole title selected.
-// So for a moment after opening, every focus selects the title again, after
-// that refocus is done.
+// and the dialog's focus trap then focuses the field again with the whole
+// title selected. So until the user clicks or types in the field, each focus
+// selects the name again, after the trap's own selection.
+let selecting: AbortController | undefined
 watch(open, async (isOpen) => {
+  selecting?.abort()
   if (!isOpen) return
+  const session = (selecting = new AbortController())
   await nextTick()
+  // After the dialog's own focus on open, as frappe-ui's autofocus does.
   requestAnimationFrame(() => {
     const input = form.value?.querySelector('input')
-    if (!input) return
+    if (!input || session.signal.aborted) return
     const select = () => {
       if (props.node?.kind === 'file') selectStem(input)
       else input.select()
     }
-    const reselect = () => queueMicrotask(select)
-    input.addEventListener('focus', reselect)
-    setTimeout(() => input.removeEventListener('focus', reselect), 250)
+    const listen = { signal: session.signal }
+    input.addEventListener('focus', () => queueMicrotask(select), listen)
+    input.addEventListener('pointerdown', () => session.abort(), listen)
+    input.addEventListener('keydown', () => session.abort(), listen)
     input.focus()
     select()
   })

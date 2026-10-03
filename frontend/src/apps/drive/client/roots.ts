@@ -15,7 +15,7 @@ export interface RootUsage {
 
 const discoverOperation = driveOperation<Record<string, never>, DriveRoots>(api.roots_discover)
 const usageOperation = driveOperation<{ root: string }, RootUsage>(api.root_usage)
-const emptyTrashOperation = driveOperation<{ root: string }, { purged: number }>(api.root_empty_trash)
+const emptyTrashOperation = driveOperation<{ root: string }, { count: number }>(api.root_empty_trash)
 
 export function roots() {
   return query(discoverOperation, {}, { staleTime: 5 * 60_000, gcTime: 30 * 60_000 })

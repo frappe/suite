@@ -19,8 +19,9 @@ export type ScrollOwner = 'shell' | 'content'
 /**
  * Who draws the phone chrome: the top safe-area inset and the bottom bar.
  * `shell`: the shell pads its header target and draws its bottom nav.
- * `page`: the page applies the inset and draws its own tab bar, so the shell
- * does neither (Mail and Calendar, spec section 9.3).
+ * `page`: the page applies the inset and draws its own bottom bar, so the shell
+ * does neither (Mail, spec section 9.3). A page may ask for the shell's chrome
+ * back with `useShellPhoneChrome`.
  */
 export type PhoneChromeOwner = 'shell' | 'page'
 

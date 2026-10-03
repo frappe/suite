@@ -3,16 +3,17 @@ import type { Operation } from '@/platform/transport'
 import { driveLinks } from './links'
 
 /**
- * Add the entity declaration and local body type that the generated schema
- * cannot express yet, and the share-link codes each request needs.
+ * Add the entity declaration the generated schema cannot express yet, and the
+ * share-link codes each request needs. The generated input validator stays
+ * on: every Drive route declares its input, so a request it refuses is a bug.
  *
- * A request sends the codes of the nodes it names: its path nodes, `parent`,
- * `nodes` and `patch.parent`, plus the `covers` nodes, such as the document a
+ * A request sends the codes of the nodes it names: its path nodes, `parent_node`,
+ * `nodes` and `patch.parent_node`, plus the `covers` nodes, such as the document a
  * comment request belongs to.
  */
 export function driveOperation<Input, Output>(
   operation: Operation<any, any>,
-  options: { entity?: boolean; looseInput?: boolean; covers?: readonly string[] } = {},
+  options: { entity?: boolean; covers?: readonly string[] } = {},
 ): Operation<Input, Output> {
   const nodeParams = operation.nodeParams ?? []
   const covers = options.covers ?? []
@@ -23,7 +24,6 @@ export function driveOperation<Input, Output>(
     ...(options.entity
       ? { entity: { tag: 'DriveNode', id: 'name', version: 'modified', doctype: 'Drive Node' } }
       : {}),
-    ...(options.looseInput ? { validateInput: undefined } : {}),
     scope: (input: Input) =>
       driveLinks.scope([...covers, ...namedNodes(input, nodeParams)], {
         returnsNodes: options.entity,
@@ -36,7 +36,7 @@ function namedNodes(input: unknown, nodeParams: readonly string[]): string[] {
   if (typeof input !== 'object' || input === null) return []
   const record = input as Record<string, unknown>
   const patch = typeof record.patch === 'object' && record.patch !== null ? (record.patch as Record<string, unknown>) : {}
-  const named = [...nodeParams.map((name) => record[name]), record.parent, patch.parent]
+  const named = [...nodeParams.map((name) => record[name]), record.parent_node, patch.parent_node]
   if (Array.isArray(record.nodes)) named.push(...record.nodes)
   return named.filter((value): value is string => typeof value === 'string' && value !== '')
 }

@@ -4,11 +4,8 @@ import {
   createWebHistory,
   type RouteLocationNormalizedLoaded,
   type RouteRecordNormalized,
-  type RouteRecordRaw,
 } from 'vue-router'
 
-import { SUITE_APPS } from '@/apps/registry'
-import { lastAppPrefix, rememberLastApp } from '@/utils/lastApp'
 import {
   areaDefinitions,
   areaIsAvailable,
@@ -17,7 +14,6 @@ import {
 import {
   areaPlaceholderNames,
   canonicalRoutes,
-  driveAreaMounted,
   routes,
 } from '@/composition/routes'
 import { takeLinkFragment } from '@/composition/linkFragment'
@@ -28,58 +24,14 @@ import { installScrollRestoration } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 import { transport, type Operation } from '@/platform/transport'
 
-declare module 'vue-router' {
-  interface RouteMeta {
-    /** Temporary legacy product identity used by old layouts, the last app and the install offer. */
-    appId?: string
-  }
-}
-
-const legacyRouteLoaders: Record<
-  string,
-  () => Promise<{ routes: RouteRecordRaw[] }>
-> = {
-  drive: () => import('@/apps/drive/legacy/routes'),
-  slides: () => import('@/apps/slides/routes'),
-  writer: () => import('@/apps/writer/routes'),
-  sheets: () => import('@/apps/sheets/routes'),
-}
-// With the files flip on, the Drive area owns `/drive`, so the old Drive pages
-// do not mount [T020].
-const legacyApps = SUITE_APPS.filter(
-  (app) =>
-    app.id in legacyRouteLoaders && !(app.id === 'drive' && driveAreaMounted),
-).map(
-  (app) => ({
-    ...app,
-    loadRoutes: legacyRouteLoaders[app.id]!,
-  }),
-)
-const legacyPlaceholderGroups: RouteRecordRaw[] = legacyApps.map((app) => ({
-  path: `${app.prefix}/:pathMatch(.*)*`,
-  name: `legacy-placeholder-${app.id}`,
-  component: () => import('@/shell/AppContainer.vue'),
-  meta: {
-    appId: app.id,
-    frame: 'none',
-    scroll: 'content',
-    title: `Frappe ${app.name}`,
-    favicon: app.logo,
-  },
-}))
-// `/` and the PWA start go to Home once the files flip is on. Before it they
-// go to the last app, Mail by default [T014].
-const startPath = () => (driveAreaMounted ? '/home' : lastAppPrefix())
+// `/`, the PWA start URL and the old launcher URL all open Home.
+const startPath = '/home'
 const notFoundRoute = routes.at(-1)!
 const routerRoutes = [
   { path: '/', name: 'suite-root', redirect: startPath },
   ...routes.slice(0, -1),
-  {
-    path: '/suite/start',
-    name: 'suite-start',
-    redirect: startPath,
-  },
-  ...legacyPlaceholderGroups,
+  { path: '/suite', name: 'suite-launcher', redirect: startPath },
+  { path: '/suite/start', name: 'suite-start', redirect: startPath },
   notFoundRoute,
 ]
 
@@ -90,7 +42,6 @@ const router = createRouter({
 
 const session = useSession()
 const registeredAreas = new Set<string>()
-const registeredLegacyApps = new Set<string>()
 
 type OnboardingState = { isOnboarded: boolean; canOnboard: boolean }
 
@@ -147,15 +98,12 @@ async function ensureAreaRoutesLoaded(areaId: string): Promise<void> {
   if (!area) return
   const routeModule = await area.loadRoutes()
   const seed = canonicalRoutes.find((route) => route.meta?.area === areaId)
-  const meta = { ...seed?.meta }
-  if (areaId === 'mail' || areaId === 'calendar' || areaId === 'meet')
-    meta.appId = areaId
 
   router.addRoute({
     path: area.to,
     name: `area-group-${areaId}`,
     component: () => import('@/shell/AppContainer.vue'),
-    meta,
+    meta: { ...seed?.meta },
     children: routeModule.routes,
   })
   for (const name of areaPlaceholderNames(areaId)) {
@@ -164,37 +112,14 @@ async function ensureAreaRoutesLoaded(areaId: string): Promise<void> {
   registeredAreas.add(areaId)
 }
 
-async function ensureLegacyRoutesLoaded(appId: string): Promise<void> {
-  if (registeredLegacyApps.has(appId)) return
-  const app = legacyApps.find((candidate) => candidate.id === appId)
-  if (!app) return
-  const routeModule = await app.loadRoutes()
-  router.addRoute({
-    path: app.prefix,
-    name: `legacy-group-${appId}`,
-    component: () => import('@/shell/AppContainer.vue'),
-    meta: {
-      appId,
-      frame: 'none',
-      scroll: 'content',
-      title: `Frappe ${app.name}`,
-      favicon: app.logo,
-    },
-    children: routeModule.routes,
-  })
-  const placeholderName = `legacy-placeholder-${appId}`
-  if (router.hasRoute(placeholderName)) router.removeRoute(placeholderName)
-  registeredLegacyApps.add(appId)
-}
-
 router.beforeEach(async (to, from) => {
   // A share link's token rides the fragment. It seeds the link store and
   // leaves the URL before any page asks for the node (spec §10.1).
   const withoutLink = takeLinkFragment(to)
   if (withoutLink) return withoutLink
 
-  // Old page URLs go to the flip-2 routes while the files flip is on
-  // (spec §14.3). A row the server must answer loads the page from it.
+  // Old page URLs go to their new routes (spec §14.3). A row the server must
+  // answer loads the page from it.
   const moved = redirectOldPath(to, from)
   if (moved !== null) return moved
 
@@ -205,20 +130,14 @@ router.beforeEach(async (to, from) => {
     return false
   }
 
-  const legacyAppId = legacyPlaceholderApp(to)
-  if (legacyAppId) {
-    await ensureLegacyRoutesLoaded(legacyAppId)
-    return to.fullPath
-  }
-
   if (session.status.value === 'loading') await session.refresh()
 
-  // Public Mail entry pages belong to the legacy Mail surface. Load their
-  // metadata before the auth gate so their existing allowGuest rules survive.
+  // Public Mail entry pages (login, signup, the MIME view) admit guests. Load
+  // their metadata before the auth gate so their own allowGuest rules decide.
   // Once loaded, the route carries that metadata, so the gate below decides.
   if (
     session.status.value === 'guest' &&
-    isLegacyMailGuestPath(to.path) &&
+    isMailGuestPath(to.path) &&
     !registeredAreas.has('mail')
   ) {
     await ensureAreaRoutesLoaded('mail')
@@ -257,7 +176,7 @@ router.beforeEach(async (to, from) => {
     if (onboarding.canOnboard && !onboarding.isOnboarded) {
       if (!onSetupPage) return '/suite/setup'
     } else if (onSetupPage) {
-      return '/suite'
+      return startPath
     }
   }
 
@@ -281,11 +200,6 @@ installPageMeta(router)
 installScrollRestoration(router)
 installPwa(session)
 
-router.afterEach((to, _from, failure) => {
-  if (failure) return
-  rememberLastApp(to.meta.appId ?? to.meta.area)
-})
-
 function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
   const matched = to.matched.find((record) =>
     String(record.name ?? '').startsWith('area-placeholder-'),
@@ -295,22 +209,11 @@ function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
     : null
 }
 
-function legacyPlaceholderApp(
-  to: RouteLocationNormalizedLoaded,
-): string | null {
-  const matched = to.matched.find((record) =>
-    String(record.name ?? '').startsWith('legacy-placeholder-'),
-  )
-  return matched && typeof matched.meta.appId === 'string'
-    ? matched.meta.appId
-    : null
-}
-
 function isServerLinkPath(path: string): boolean {
   return /^\/(?:drive\/)?l\//.test(path)
 }
 
-function isLegacyMailGuestPath(path: string): boolean {
+function isMailGuestPath(path: string): boolean {
   return /^\/mail\/(?:login|signup(?:\/|$)|reset-password(?:\/|$)|mime-message\/)/.test(
     path,
   )

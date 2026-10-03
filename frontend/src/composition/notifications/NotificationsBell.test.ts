@@ -51,13 +51,11 @@ vi.mock("vue-router", () => ({
 
 vi.mock("@/apps/drive", () => ({
   driveNodeRoute: (node: { name: string }) => `/d/${node.name}/item`,
-}));
-
-vi.mock("@/composition/notifications/client", () => ({
-  notificationsFeed: () => ({ test: "feed" }),
-  notificationUnreadCount: () => ({ test: "count" }),
-  markNotificationsRead: { test: "mark-read" },
-  loadNotificationNode: state.loadNode,
+  driveNotifications: () => ({ test: "feed" }),
+  driveUnreadNotificationCount: () => ({ test: "count" }),
+  markDriveNotificationsRead: () => ({ test: "mark-read" }),
+  markAllDriveNotificationsRead: () => ({ test: "mark-all-read" }),
+  loadDriveNodeSummary: state.loadNode,
 }));
 
 vi.mock("@/platform/server-state", () => ({

@@ -14,14 +14,30 @@ export interface ChangedItem {
   readonly title: string
 }
 
-/** An item a move placed, and the folder it was in before the move. */
+/** An item a move placed: the folder it was in before the move, and the one it is in now. */
 export interface MovedItem extends ChangedItem {
   /** Undo puts the item back in this folder. */
   readonly from: string
+  /**
+   * Where the move put it. Undo names this folder as the one it expects the
+   * item in, so a move made elsewhere since, in another tab or by someone
+   * else, makes the server refuse the Undo instead of pulling the item out of
+   * its new folder.
+   */
+  readonly to: string
 }
 
 /** A toast with Undo stays long enough for the user to reach it. */
 const UNDO_DURATION = 10_000
+
+/**
+ * The changes announced on each node, latest last. Undo takes a change back
+ * only on the nodes where it is still the latest, so the Undo of an earlier
+ * move cannot pull an item out of the folder a later move put it in. A change
+ * that was taken back leaves the list, and the change before it is the latest
+ * again. Changes made in another tab or by another user are not seen here.
+ */
+const changes = new Map<string, symbol[]>()
 
 /** A change the user can take back from its toast. Messages are limited HTML. */
 interface Undoable<Item extends ChangedItem> {
@@ -37,10 +53,13 @@ interface Undoable<Item extends ChangedItem> {
 
 /**
  * Reports a finished change in a toast with Undo. Undo runs at most once. When
- * it fails for some items, an error toast names them with the server's reason.
+ * it fails for some items, or a later change has moved them on, an error toast
+ * names them with the reason.
  */
 function announce<Item extends ChangedItem>(items: readonly Item[], change: Undoable<Item>): void {
   if (!items.length) return
+  const id = Symbol('change')
+  for (const item of items) changes.set(item.node, [...(changes.get(item.node) ?? []), id])
   let undone = false
   toast.success(change.done, {
     duration: UNDO_DURATION,
@@ -49,14 +68,26 @@ function announce<Item extends ChangedItem>(items: readonly Item[], change: Undo
       onClick: () => {
         if (undone) return
         undone = true
-        void takeBack(items, change)
+        void takeBack(id, items, change)
       },
     },
   })
 }
 
-async function takeBack<Item extends ChangedItem>(items: readonly Item[], change: Undoable<Item>) {
-  const failed = await change.undo(items)
+async function takeBack<Item extends ChangedItem>(id: symbol, items: readonly Item[], change: Undoable<Item>) {
+  const latest = items.filter((item) => changes.get(item.node)?.at(-1) === id)
+  const later = items.filter((item) => !latest.includes(item))
+  const refused = latest.length ? await change.undo(latest) : []
+  for (const item of latest) {
+    if (refused.some((failure) => failure.node === item.node)) continue
+    const left = (changes.get(item.node) ?? []).filter((each) => each !== id)
+    if (left.length) changes.set(item.node, left)
+    else changes.delete(item.node)
+  }
+  const failed = [
+    ...later.map((item) => ({ node: item.node, type: 'Changed', message: later.length === 1 ? 'It changed again after that.' : 'They changed again after that.' })),
+    ...refused,
+  ]
   if (!failed.length) {
     toast.success(change.undone)
     return
@@ -107,18 +138,23 @@ export function announceRestore(items: readonly ChangedItem[]): void {
 /** One item goes back through the single move route. Answers what failed. */
 async function moveBack(item: MovedItem): Promise<DriveFailure[]> {
   const move = useMutation(moveNode(), { silent: true })
-  if (await move.run({ node: item.node, parent: item.from })) return []
+  if (await move.run({ node: item.node, parent_node: item.from, expect_parent_node: item.to })) return []
   return [refusal(item.node, move.error)]
 }
 
-/** Several items go back through the batch route, one request for each folder they came from. */
+/** Several items go back through the batch route, one request for each pair of folders they went between. */
 async function moveAllBack(items: readonly MovedItem[]): Promise<DriveFailure[]> {
   const batch = useMutation(batchNodes(), { silent: true })
-  const byFolder = new Map<string, string[]>()
-  for (const item of items) byFolder.set(item.from, [...(byFolder.get(item.from) ?? []), item.node])
+  const byMove = new Map<string, MovedItem[]>()
+  for (const item of items) {
+    const key = `${item.from}\u0000${item.to}`
+    byMove.set(key, [...(byMove.get(key) ?? []), item])
+  }
   const failed: DriveFailure[] = []
-  for (const [parent, nodes] of byFolder) {
-    const result = await batch.run({ nodes, patch: { parent } })
+  for (const group of byMove.values()) {
+    const nodes = group.map((item) => item.node)
+    const { from, to } = group[0]!
+    const result = await batch.run({ nodes, patch: { parent_node: from, expect_parent_node: to } })
     failed.push(...(result ? result.failed : nodes.map((node) => refusal(node, batch.error))))
   }
   return failed

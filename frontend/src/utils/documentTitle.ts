@@ -1,10 +1,12 @@
-import calendarLogo from '@/assets/app-logos/calendar.svg'
-import driveLogo from '@/assets/app-logos/drive.svg'
-import mailLogo from '@/assets/app-logos/mail.svg'
-import meetLogo from '@/assets/app-logos/meet.png'
-import sheetsLogo from '@/assets/app-logos/sheets.svg'
-import slidesLogo from '@/assets/app-logos/slides.svg'
-import writerLogo from '@/assets/app-logos/writer.png'
+import {
+	calendarLogo,
+	driveLogo,
+	mailLogo,
+	meetLogo,
+	sheetsLogo,
+	slidesLogo,
+	writerLogo,
+} from '@/platform/brand'
 
 const APP_LOGOS: Record<string, string> = {
   Calendar: calendarLogo,

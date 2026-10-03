@@ -25,6 +25,7 @@ export interface QueryOptions<Row = unknown> {
   staleTime?: number
   gcTime?: number
   refetchInterval?: number
+  /** Whether a row belongs in the list. A row that stops belonging leaves at once; one that comes to belong shows once the list refetches. */
   member?: (row: Row) => boolean
   invalidates?: readonly string[]
 }
@@ -792,25 +793,22 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     }
   }
 
+  /**
+   * A row that stops belonging leaves the list at once. A row that comes to
+   * belong waits for the list's refetch, which puts it where the server's
+   * order does: the list cannot know that place, and a row shown at the end
+   * would jump when the refetch lands.
+   */
   function reconcileMembership(entity: EntityRecord): void {
     for (const record of queryStore.values()) {
       const descriptor = record.descriptor
       const member = descriptor.options.member
       if (!member || descriptor.operation.entity?.tag !== entity.tag || record.normalized === undefined) continue
-      const belongs = member(entity.data)
-      const references = refsIn(record.normalized)
-      const contains = references.has(entity.key)
-      if (belongs && !contains) addEntityReference(record, entity.key)
-      if (!belongs && contains) record.normalized = removeEntityReference(record.normalized, entity.key)
+      if (!member(entity.data) && refsIn(record.normalized).has(entity.key)) {
+        record.normalized = removeEntityReference(record.normalized, entity.key)
+      }
       invalidateRecord(record)
     }
-  }
-
-  function addEntityReference(record: QueryRecord, key: string): void {
-    const target = record.descriptor.kind === 'infinite' ? record.pages[0] : record.normalized
-    if (Array.isArray(target)) target.push({ __suiteEntity: key })
-    else if (isObject(target) && Array.isArray(target.rows)) target.rows.push({ __suiteEntity: key })
-    if (record.descriptor.kind === 'infinite') record.normalized = mergePages(record.pages)
   }
 
   function invalidateRecord(record: QueryRecord): void {

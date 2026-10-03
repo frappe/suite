@@ -100,13 +100,16 @@
                   <template #item-prefix="{ item }">
                     <span :class="['size-4 shrink-0', typeIcon(item.value)]" aria-hidden="true" />
                   </template>
-                  <!-- A phone shows one type by its icon only, so the search field keeps its room. -->
+                  <!-- A phone shows one type by its icon only, so the search field keeps its room.
+                       The hidden words tell this trigger apart from the Type column's header,
+                       and keep the visible text in its name. -->
                   <template #summary="{ summary }">
+                    <span class="sr-only">{{ listingTypes.length ? 'Filter by type: ' : 'Filter by ' }}</span>
                     <span :class="listingTypes.length === 1 && 'max-md:sr-only'">{{ typeSummary(listingTypes) ?? summary }}</span>
                   </template>
                   <!-- Clear only. Every type at once would still hide links and other files, so there is no Select all. -->
                   <template #footer="{ clear }">
-                    <div v-if="listingTypes.length" class="border-t border-outline-gray-1 px-2 py-1.5">
+                    <div v-if="listingTypes.length" class="border-t border-outline-gray-1 px-2 py-1.5" @focusin="enterTypeOptions">
                       <Button variant="ghost" label="Clear" @click="clear" />
                     </div>
                   </template>
@@ -127,6 +130,7 @@
                   :presentation="userPresentation"
                   :arrangeable="arrangeable"
                   :columns="offeredColumns"
+                  :date-column="dateColumn"
                   @change="setPresentation"
                   @toggle-column="setColumn"
                 />
@@ -167,12 +171,12 @@
             :selection-mode="selectionMode"
             :empty-title="emptyTitle"
             :empty-description="emptyDescription"
-            :show-breadcrumbs="isSearching"
+            :show-breadcrumbs="showsLocation"
             :sortable="arrangeable"
             :menu-options="rowMenuOptions"
             :row-drop="rowDrop"
             :menu-target="contextOpen ? contextRow : null"
-            :date-column="destination === 'recent' && !isSearching ? 'opened' : 'modified'"
+            :date-column="dateColumn"
             @update:selection="selection = $event"
             @sort="changeSort"
             @open="openNode"
@@ -195,6 +199,7 @@
       v-model:open="pickerOpen"
       :mode="pickerMode"
       :items="pickerBulk ? selectedRows : activeNode ? [activeNode] : []"
+      :folder="concreteDestination ? parentId : undefined"
       :busy="moveMutation.isPending || copyMutation.isPending || batchMutation.isPending"
       @choose="applyPicker"
     />
@@ -281,6 +286,7 @@ import {
   writePresentationPreference,
   FILES_COLUMNS,
   type FilesColumn,
+  type FilesDateColumn,
   type FilesSort,
   type PresentationChange,
   type PresentationState,
@@ -469,9 +475,11 @@ const presentationQuery = computed(() => ({
   sort: userPresentation.value.sort,
   dir: userPresentation.value.dir,
 }))
+// A search result, a shared item and a starred item each show where they live.
+const showsLocation = computed(() => isSearching.value || props.destination === 'shared' || props.destination === 'starred')
 const expansion = computed(() => {
   const parts = ['access']
-  if (isSearching.value) parts.push('breadcrumbs')
+  if (showsLocation.value) parts.push('breadcrumbs')
   if (presentation.value.view === 'grid') parts.push('preview')
   return parts.join(',')
 })
@@ -629,6 +637,7 @@ watch(() => [detail.error, listing.error] as const, (errors) => {
 // their own order, so they offer no sort.
 const arrangeable = computed(() => concreteDestination.value && !isSearching.value)
 /** The listing hides Owner in the user's own space, so View settings does not offer it there. */
+const dateColumn = computed<FilesDateColumn>(() => props.destination === 'recent' && !isSearching.value ? 'opened' : 'modified')
 const offeredColumns = computed(() => inOwnSpace.value ? FILES_COLUMNS.filter((column) => column !== 'owner') : FILES_COLUMNS)
 /** The open folder's own actions. A root is named by the sidebar and offers none. */
 const folderActions = computed<DropdownActionOption[]>(() => {
@@ -780,6 +789,19 @@ function rootPath(id: string): string | null {
 function typeIcon(value: string | number) {
   const option = typeChoices.value.find((choice) => choice.value === value)
   return option ? [nodeIcon(option.sample), nodeIconTint(option.sample)] : []
+}
+/**
+ * With no search field, frappe-ui's MultiSelect focuses the first button in
+ * its popover when it opens, which is Clear here, so Enter would clear the
+ * filter. Focus that arrives from outside the popover goes to the first chosen
+ * type instead, as it does in a listbox. Clear shows only when a type is
+ * chosen. Remove this once MultiSelect does it itself.
+ */
+function enterTypeOptions(event: FocusEvent) {
+  const listbox = (event.currentTarget as HTMLElement).closest<HTMLElement>('[role="listbox"]')
+  const from = event.relatedTarget instanceof Node ? event.relatedTarget : null
+  if (!listbox || listbox.contains(from)) return
+  listbox.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')?.focus()
 }
 function setTypes(values: readonly (string | number)[]) {
   const chosen = new Set(values)
@@ -966,9 +988,9 @@ function beginBulkMove() { pickerMode.value = 'move'; pickerBulk.value = true; p
 async function applyPicker(parent: string, destination: string) {
   // Read before the move: a move changes each node's parent in place.
   const moving: MovedItem[] = (pickerBulk.value ? selectedRows.value : activeNode.value ? [activeNode.value] : [])
-    .flatMap((row) => row.parent ? [{ node: row.name, title: row.title, from: row.parent }] : [])
+    .flatMap((row) => row.parent_node ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }] : [])
   if (pickerBulk.value) {
-    const result = await runBatch(moving.map((item) => item.node), { parent }, 'moved')
+    const result = await runBatch(moving.map((item) => item.node), { parent_node: parent }, 'moved')
     if (!result) return
     pickerOpen.value = false
     announceMove(moving.filter((item) => result.ok.includes(item.node)), destination)
@@ -978,8 +1000,8 @@ async function applyPicker(parent: string, destination: string) {
   }
   if (!activeNode.value) return
   const result = pickerMode.value === 'move'
-    ? await moveMutation.run({ node: activeNode.value.name, parent })
-    : await copyMutation.run({ node: activeNode.value.name, parent })
+    ? await moveMutation.run({ node: activeNode.value.name, parent_node: parent })
+    : await copyMutation.run({ node: activeNode.value.name, parent_node: parent })
   if (!result) {
     toast.error((pickerMode.value === 'move' ? moveMutation.error : copyMutation.error)?.message ?? 'The action failed.')
     return
@@ -995,7 +1017,7 @@ async function runBulkTrash() {
   announceTrash(trashing.filter((item) => result.ok.includes(item.node)))
 }
 /** Sends the nodes the caller also announces, so the toast's Undo covers exactly what changed. */
-async function runBatch(nodes: string[], patch: { parent?: string; state?: 'Trashed' }, verb: string): Promise<DriveBatchResult | null> {
+async function runBatch(nodes: string[], patch: { parent_node?: string; state?: 'Trashed' }, verb: string): Promise<DriveBatchResult | null> {
   const result = await batchMutation.run({ nodes, patch })
   if (!result) return null
   batchOutcome.value = result

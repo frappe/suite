@@ -40,7 +40,7 @@
               : 'border-outline-gray-2 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-7'"
             @click="emit('toggle-column', column, !shown(column))"
           >
-            {{ COLUMN_LABELS[column] }}
+            {{ column === 'modified' && dateColumn === 'opened' ? 'Opened' : COLUMN_LABELS[column] }}
           </button>
         </div>
       </div>
@@ -53,6 +53,7 @@ import { computed, useId } from 'vue'
 import { Button, Popover, Select, TabButtons, type SelectOption } from 'frappe-ui'
 import type {
   FilesColumn,
+  FilesDateColumn,
   FilesDirection,
   FilesSort,
   FilesViewMode,
@@ -66,6 +67,8 @@ const props = defineProps<{
   arrangeable: boolean
   /** The optional list columns this place offers. */
   columns: readonly FilesColumn[]
+  /** Names the date column's pill as the list heads it. */
+  dateColumn?: FilesDateColumn
 }>()
 
 const emit = defineEmits<{

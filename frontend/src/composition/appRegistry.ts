@@ -6,69 +6,38 @@ import { driveUploadProgress, filesArea } from "@/apps/drive";
 import { mailArea, useInboxSummary } from "@/apps/mail";
 import { meetArea } from "@/apps/meet";
 import { homeArea } from "@/composition/home";
-import { type BootFlag, readBootFlag } from "@/platform/boot";
-import type { AreaDefinition, PlatformCapability } from "@/platform/contracts";
+import type { AreaDefinition } from "@/platform/contracts";
 import { hasCapabilities, type Session, useSession } from "@/platform/session";
 import type { AreaProgressSource } from "@/shell/areaProgress";
 
-/** Each area in rail order, with the flip that puts it on the rail [T014, T018]. */
-const areaRollout: readonly (readonly [AreaDefinition, BootFlag])[] = [
-  [homeArea, "suite_flip_files"],
-  [filesArea, "suite_flip_files"],
-  [mailArea, "suite_flip_shell"],
-  [calendarArea, "suite_flip_shell"],
-  [meetArea, "suite_flip_shell"],
-];
-
-const areaFlip = new Map(areaRollout);
-
-export const areaDefinitions: readonly AreaDefinition[] = areaRollout.map(
-  ([area]) => area,
-);
-
-export type FlipState = Readonly<Record<BootFlag, boolean>>;
-
 /**
- * The areas the rail and the phone nav list: those whose flip is on and whose
- * capabilities the session has. Keeps rail order.
+ * Every area, in rail order. The rail, the phone nav and the palette's `>`
+ * switcher list all of them: an area whose capability the site lacks (Mail
+ * and Calendar without a mail account) still has a place, and opening it
+ * shows what it needs (`UnavailableSurface`) instead of hiding the product.
  */
-export function filterAreas(
-  areas: readonly AreaDefinition[],
-  capabilities: Record<PlatformCapability, boolean>,
-  flips: FlipState,
-): AreaDefinition[] {
-  return areas.filter((area) => {
-    const flip = areaFlip.get(area);
-    return (
-      (!flip || flips[flip]) &&
-      (area.requires ?? []).every((capability) => capabilities[capability])
-    );
-  });
-}
+export const areaDefinitions: readonly AreaDefinition[] = [
+  homeArea,
+  filesArea,
+  mailArea,
+  calendarArea,
+  meetArea,
+];
 
 export function findArea(id: string): AreaDefinition | undefined {
   return areaDefinitions.find((area) => area.id === id);
 }
 
 export interface AppRegistry {
-  allAreas: readonly AreaDefinition[];
-  areas: Readonly<Ref<AreaDefinition[]>>;
+  areas: readonly AreaDefinition[];
   badges: Readonly<Ref<Readonly<Record<string, number>>>>;
 }
 
 export function useAppRegistry(session: Session = useSession()): AppRegistry {
   const inbox = useInboxSummary(() => session.capabilities.value.jmap);
-  // Read from boot once: a key change applies on the next page load [T014].
-  const flips: FlipState = {
-    suite_flip_shell: readBootFlag("suite_flip_shell"),
-    suite_flip_files: readBootFlag("suite_flip_files"),
-  };
 
   return {
-    allAreas: areaDefinitions,
-    areas: computed(() =>
-      filterAreas(areaDefinitions, session.capabilities.value, flips),
-    ),
+    areas: areaDefinitions,
     badges: computed(() => deriveAreaBadges(inbox.data)),
   };
 }

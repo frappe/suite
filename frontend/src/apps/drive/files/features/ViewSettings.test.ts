@@ -8,6 +8,7 @@ import {
   resolvePresentation,
   writePresentationPreference,
   type FilesColumn,
+  type FilesDateColumn,
 } from './presentation'
 import ViewSettings from './ViewSettings.vue'
 
@@ -44,7 +45,8 @@ async function mountPanel({
   query = {},
   arrangeable = true,
   columns = FILES_COLUMNS,
-}: { query?: LocationQueryRaw; arrangeable?: boolean; columns?: readonly FilesColumn[] } = {}) {
+  dateColumn,
+}: { query?: LocationQueryRaw; arrangeable?: boolean; columns?: readonly FilesColumn[]; dateColumn?: FilesDateColumn } = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }] })
   await router.push({ path: '/', query })
   const saved = ref(0)
@@ -57,6 +59,7 @@ async function mountPanel({
       presentation: presentation.value,
       arrangeable,
       columns,
+      dateColumn,
       onChange: (change: Parameters<typeof replacePresentation>[2]) => replacePresentation(router, presentation.value, change),
       onToggleColumn: (column: FilesColumn, visible: boolean) => {
         const chosen = presentation.value
@@ -175,11 +178,35 @@ describe('View settings panel', () => {
     expect(readPresentationPreference()?.columns).not.toContain('size')
   })
 
+  it('still switches the view when the browser refuses to save it', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage is blocked', 'SecurityError')
+    })
+    try {
+      const { router } = await mountPanel({ query: { view: 'list' } })
+      await openPanel()
+
+      byRole('radio', 'Grid').click()
+      await settle()
+
+      expect(router.currentRoute.value.query.view).toBe('grid')
+      expect(byRole('radio', 'Grid').getAttribute('aria-checked')).toBe('true')
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
   it('offers only what applies to the place and the view', async () => {
     await mountPanel({ query: { view: 'list' }, arrangeable: false, columns: ['modified', 'kind', 'size'] })
     await openPanel()
     expect(labels()).toEqual([])
     expect(pills()).toEqual(['Modified', 'Type', 'Size'])
+
+    // Recent's list heads its date column Opened, and the pill says the same.
+    unmount?.()
+    await mountPanel({ query: { view: 'list' }, arrangeable: false, columns: ['modified', 'kind', 'size'], dateColumn: 'opened' })
+    await openPanel()
+    expect(pills()).toEqual(['Opened', 'Type', 'Size'])
 
     unmount?.()
     await mountPanel({ query: { view: 'grid' } })

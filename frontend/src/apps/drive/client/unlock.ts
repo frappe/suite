@@ -28,8 +28,7 @@ interface UnlockDependencies {
 type UnlockInput = { token: string; password: string }
 type UnlockOutput = { ticket: string; expires: number }
 
-// The generated schema has no `password`: the route reads it as an untyped argument.
-const unlockOperation = driveOperation<UnlockInput, UnlockOutput>(api.link_unlock, { looseInput: true })
+const unlockOperation = driveOperation<UnlockInput, UnlockOutput>(api.link_unlock)
 
 export async function unlockNode(
   node: string,

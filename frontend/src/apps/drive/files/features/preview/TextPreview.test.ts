@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
 import TextPreview from './TextPreview.vue'
@@ -6,6 +6,9 @@ import type { TextLanguage } from '../../internal/previewKind'
 import { TEXT_PREVIEW_LIMIT } from './textContent'
 
 const SRC = '/api/suite/drive/nodes/n1/content'
+// The editor loads its language on first use, which takes longer than
+// waitFor's 1 s default on a cold module cache.
+const EDITOR = { timeout: 5000 }
 let unmount: (() => void) | null = null
 
 afterEach(() => {
@@ -30,7 +33,7 @@ async function mount(props: { size: number; language?: TextLanguage; rendered?: 
   app.mount(root)
   unmount = () => app.unmount()
   // Let the fetch, the editor's import and the render settle.
-  await vi.waitFor(() => expect(root.textContent?.trim() || root.querySelector('.cm-editor')).toBeTruthy())
+  await vi.waitFor(() => expect(root.textContent?.trim() || root.querySelector('.cm-editor')).toBeTruthy(), EDITOR)
   return root
 }
 
@@ -49,7 +52,7 @@ describe('text preview', () => {
     serve(async () => new Response(page))
     const root = await mount({ size: page.length, language: 'html' })
 
-    await vi.waitFor(() => expect(root.querySelector('.cm-content')).not.toBeNull())
+    await vi.waitFor(() => expect(root.querySelector('.cm-content')).not.toBeNull(), EDITOR)
     expect(root.querySelector('.cm-content')?.textContent).toBe('<h1>Hello</h1><script>window.ran = true</script>')
     expect(root.querySelector('h1, script')).toBeNull()
     expect((window as { ran?: boolean }).ran).toBeUndefined()
@@ -84,7 +87,7 @@ describe('text preview', () => {
 
     unmount?.()
     const source = await mount({ size: text.length, language: 'markdown' })
-    await vi.waitFor(() => expect(source.querySelector('.cm-content')).not.toBeNull())
+    await vi.waitFor(() => expect(source.querySelector('.cm-content')).not.toBeNull(), EDITOR)
     expect(source.querySelector('.cm-content')?.textContent).toContain('# Plan')
     expect(source.querySelector('h1')).toBeNull()
   })
@@ -132,11 +135,45 @@ describe('text preview', () => {
     expect(root.querySelector('article')?.textContent).toContain('Logout')
   })
 
+  it('scrolls to the heading a link in the file points to, as GitHub names it', async () => {
+    const text = [
+      '[Setup](#setup) · [Q&A](#qa) · [Second notes](#notes-1) · [Missing](#nowhere)',
+      '',
+      '## Setup',
+      '## Notes',
+      '## Q&A',
+      '## Notes',
+    ].join('\n')
+    serve(async () => new Response(text))
+    const root = await mount({ size: text.length, language: 'markdown', rendered: true })
+    const scrolled: string[] = []
+    // jsdom does not scroll, so the test records which heading would come into view.
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(`${this.tagName} ${this.textContent} ${[...this.parentElement!.children].indexOf(this)}`)
+    }
+    onTestFinished(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    })
+    const open = (label: string) => {
+      const link = [...root.querySelectorAll('a')].find((anchor) => anchor.textContent === label)!
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+      link.dispatchEvent(click)
+      return click.defaultPrevented
+    }
+
+    // The page's address stays as it is: the jump happens inside the preview.
+    expect(open('Setup')).toBe(true)
+    open('Q&A')
+    open('Second notes')
+    open('Missing')
+    await vi.waitFor(() => expect(scrolled).toEqual(['H2 Setup 1', 'H2 Q&A 3', 'H2 Notes 4']))
+  })
+
   it('shows an empty file as an empty viewer, without fetching it', async () => {
     const fetch = serve(async () => new Response('', { status: 409 }))
     const root = await mount({ size: 0 })
 
-    await vi.waitFor(() => expect(root.querySelector('.cm-content')).not.toBeNull())
+    await vi.waitFor(() => expect(root.querySelector('.cm-content')).not.toBeNull(), EDITOR)
     expect(root.querySelector('.cm-content')?.textContent).toBe('')
     expect(fetch).not.toHaveBeenCalled()
   })

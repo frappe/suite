@@ -48,8 +48,10 @@
 
     <div class="flex shrink-0 flex-col items-center gap-1 px-[11px] pb-3 pt-2">
       <!-- The bell is a plain Button (it triggers a popover), so this wrapper
-           lets the styles below size and ink it like the items around it. -->
-      <div class="rail-bell flex">
+           lets the styles below size and ink it like the items around it. It
+           also holds the bell's 34 px while the async component loads, so the
+           group below does not move once the bell arrives. -->
+      <div class="rail-bell flex min-h-[34px]">
         <slot name="bell" />
       </div>
       <RailItem :label="__('Settings')" variant="ghost" @click="openSettings()">

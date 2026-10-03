@@ -30,10 +30,6 @@ vi.mock('@/platform/session', async (importOriginal) => {
   return { ...actual, useSession: () => session }
 })
 
-// Writer's route module warms the legacy Drive user list. The list is data,
-// not routing, and its module pulls in UI this test environment cannot build.
-vi.mock('@/apps/drive/legacy/sdk', () => ({ allUsers: { fetch: () => {} } }))
-
 vi.mock('@/apps/drive', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/apps/drive')>()),
   rememberDriveLink: (token: string, node: string) => state.remembered.push([token, node]),
@@ -65,20 +61,11 @@ describe('suite route table', () => {
     state.status = 'authenticated'
   })
 
-  // Each app's routes load on its first visit. Before that, one lazy group
-  // holds the app's whole prefix, so no app URL falls through to Not Found.
+  // Each area's routes load on its first visit. Before that, a placeholder
+  // holds the area's entry URLs, so no area URL falls through to Not Found.
   it.each([
-    ['/drive', 'drive'],
-    ['/slides', 'slides'],
-    ['/writer', 'writer'],
-    ['/sheets/new', 'sheets'],
-  ])('holds %s for the %s app before any navigation', (path, appId) => {
-    const resolved = router.resolve(path)
-    expect(resolved.name).not.toBe('not-found')
-    expect(resolved.meta.appId).toBe(appId)
-  })
-
-  it.each([
+    ['/drive', 'files'],
+    ['/drive/f/node-1/slug', 'files'],
     ['/mail/login', 'mail'],
     ['/calendar', 'calendar'],
     ['/meet/room-1', 'meet'],
@@ -89,15 +76,18 @@ describe('suite route table', () => {
   })
 
   it.each([
-    ['/drive', 'drive-Home'],
-    ['/sheets/new', 'sheets-editor'],
+    ['/drive', 'files'],
     ['/calendar', 'calendar-root-shortcut'],
     ['/meet', 'meet-home'],
-  ])('settles %s on its own route once the app loads', async (path, name) => {
+  ])('settles %s on its own route once the area loads', async (path, name) => {
     expect((await settle(path))?.name).toBe(name)
   })
 
-  it.each(['/slides/presentation/demo', '/writer/w/demo', '/meet/demo', '/mail/login'])(
+  it('finds no page for an old Drive path the redirect table does not know', () => {
+    expect(router.resolve('/drive/favourites').name).toBe('not-found')
+  })
+
+  it.each(['/meet/demo', '/mail/login'])(
     'lets a guest reach %s without a login redirect',
     async (path) => {
       state.status = 'guest'
@@ -107,15 +97,21 @@ describe('suite route table', () => {
     },
   )
 
-  it.each(['suite-start', 'suite-root'])(
-    'sends %s to the app it was last in before the files flip',
+  it.each(['suite-start', 'suite-root', 'suite-launcher'])(
+    'sends %s to Home',
     (name) => {
-      localStorage.setItem('suite:last-app', 'calendar')
-      expect(redirectOf(router, name)).toBe('/calendar')
-      localStorage.removeItem('suite:last-app')
-      expect(redirectOf(router, name)).toBe('/mail')
+      expect(redirectOf(router, name)).toBe('/home')
     },
   )
+
+  it('lets a guest open a shared folder, and nothing else in the Drive area', async () => {
+    state.status = 'guest'
+    const folder = await settle('/drive/f/node-1/plans')
+    const home = await settle('/drive')
+
+    expect([folder?.name, folder?.meta.allowGuest]).toEqual(['files-folder', true])
+    expect(home).toBeUndefined()
+  })
 })
 
 describe('share links and shared items', () => {
@@ -159,55 +155,8 @@ describe('share links and shared items', () => {
   })
 })
 
-describe('the files flip', () => {
-  afterEach(() => {
-    delete window.suite_flip_files
-    vi.resetModules()
-  })
-
-  it('mounts the Drive area under /drive and starts the suite at Home', async () => {
-    window.suite_flip_files = true
-    vi.resetModules()
-    const { default: flipped } = await import('./index')
-
-    expect(flipped.resolve('/drive').name).toBe('area-placeholder-files-root')
-    expect(flipped.resolve('/drive/f/node-1/slug').name).toBe('area-placeholder-files-folder')
-    // The old Drive pages do not mount, so an old path finds no page.
-    expect(flipped.resolve('/drive/favourites').name).toBe('not-found')
-    expect(flipped.resolve('/slides').meta.appId).toBe('slides')
-    localStorage.setItem('suite:last-app', 'calendar')
-    expect(redirectOf(flipped, 'suite-start')).toBe('/home')
-    expect(redirectOf(flipped, 'suite-root')).toBe('/home')
-    localStorage.removeItem('suite:last-app')
-  })
-
-  it('lets a guest open a shared folder, and nothing else in the Drive area', async () => {
-    window.suite_flip_files = true
-    vi.resetModules()
-    const { default: flipped } = await import('./index')
-    state.status = 'guest'
-    const settledAt = async (path: string) => {
-      let settled: RouteLocationNormalized | undefined
-      const remove = flipped.beforeEach((to) => {
-        settled = to
-        return false
-      })
-      await flipped.push(path).finally(remove)
-      return settled
-    }
-
-    const folder = await settledAt('/drive/f/node-1/plans')
-    const home = await settledAt('/drive')
-
-    expect([folder?.name, folder?.meta.allowGuest]).toEqual(['files-folder', true])
-    expect(home).toBeUndefined()
-    state.status = 'authenticated'
-  })
-})
-
 // resolve() reports the record, not where its redirect leads; ask the redirect.
 function redirectOf(target: typeof router, name: string): unknown {
   const record = target.getRoutes().find((route) => route.name === name)!
-  const redirect = record.redirect as (to: unknown) => unknown
-  return redirect(target.resolve(record.path))
+  return record.redirect
 }

@@ -1,5 +1,5 @@
 <template>
-  <header class="flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5">
+  <header class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5">
     <div class="flex min-w-0 flex-1 items-center gap-1">
       <template v-if="location">
         <Button
@@ -40,7 +40,7 @@
           @keydown.escape.prevent="titleDraft = session.title.value; blurTitle()"
         />
       </div>
-      <span v-if="titleError" class="ms-1 min-w-0 max-w-64 truncate text-sm text-ink-red-7" role="alert" :title="titleError">
+      <span v-if="titleError" class="title-refusal ms-1 min-w-0 max-w-64 truncate text-sm text-ink-red-7" role="alert" :title="titleError">
         {{ titleError }}
       </span>
       <Badge v-if="trashed" label="Trashed" theme="red" variant="subtle" class="shrink-0">
@@ -252,5 +252,16 @@ defineExpose({
 .document-title :deep([data-slot='control'][readonly]) {
   background: transparent;
   cursor: default;
+}
+
+/*
+ * A refusal sits beside the title, cut short with the whole message on hover.
+ * A phone has no room beside the title and a touch screen has no hover, so
+ * there the whole message shows in a callout under the header.
+ */
+@media (max-width: 767px), (pointer: coarse) {
+  .title-refusal {
+    @apply absolute inset-x-3 top-[calc(100%+0.25rem)] z-10 m-0 max-w-none overflow-visible whitespace-normal rounded-4 border border-outline-elevation-2 bg-surface-elevation-2 px-3 py-2 shadow-2xl;
+  }
 }
 </style>

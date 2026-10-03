@@ -6,6 +6,8 @@ export type FilesDirection = 'asc' | 'desc'
 /** The optional list columns, in the order the list shows them. Name is always shown. */
 export const FILES_COLUMNS = ['owner', 'modified', 'kind', 'size'] as const
 export type FilesColumn = (typeof FILES_COLUMNS)[number]
+/** The date the date column shows. Recent shows when the user opened each file. */
+export type FilesDateColumn = 'modified' | 'opened'
 
 /** How the listing shows its rows: what the user chose, and what folder links and the saved preference carry. */
 export interface PresentationState {
@@ -61,7 +63,11 @@ export async function replacePresentation(
 
 export function writePresentationPreference({ view, sort, dir, columns }: PresentationState): void {
   if (typeof localStorage === 'undefined') return
-  localStorage.setItem(KEY, JSON.stringify({ view, sort, dir, columns }))
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ view, sort, dir, columns }))
+  } catch {
+    // Storage blocked or full (private windows): the choice still applies through the URL.
+  }
 }
 
 export function readPresentationPreference(): Partial<PresentationState> | null {

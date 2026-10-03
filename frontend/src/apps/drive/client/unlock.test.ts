@@ -53,7 +53,7 @@ describe('unlocking a password link', () => {
     const right = await unlockNode('locked-folder', 'open sesame', { transport, links })
 
     expect([wrong, right]).toEqual([{ status: 'wrong-password' }, { status: 'unlocked' }])
-    expect(sent[0]).toEqual({ url: `/api/suite/drive/links/${CODE}/unlock`, body: { password: 'guess' } })
+    expect(sent[0]).toEqual({ url: '/api/suite/drive/links/unlock', body: { token: CODE, password: 'guess' } })
     expect(links.scope(['locked-folder']).headers).toEqual({ 'X-Drive-Links': `${CODE}.${TICKET}` })
   })
 

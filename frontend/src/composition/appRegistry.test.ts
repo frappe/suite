@@ -51,7 +51,6 @@ vi.mock("@/apps/meet", () => ({
 import {
   areaDefinitions,
   deriveAreaBadges,
-  filterAreas,
   useAppRegistry,
 } from "@/composition/appRegistry";
 import type { Session } from "@/platform/session";
@@ -67,33 +66,18 @@ describe("app registry", () => {
     ]);
   });
 
-  it("lists only the areas whose flip is on, in rail order", () => {
-    const capabilities = { jmap: true, systemManager: false };
-    const ids = (flips: { suite_flip_shell: boolean; suite_flip_files: boolean }) =>
-      filterAreas(areaDefinitions, capabilities, flips).map((area) => area.id);
+  it("lists every area even when the session lacks a capability", () => {
+    const session = {
+      capabilities: ref({ jmap: false, systemManager: false }),
+    } as unknown as Session;
 
-    expect(ids({ suite_flip_shell: false, suite_flip_files: false })).toEqual([]);
-    expect(ids({ suite_flip_shell: true, suite_flip_files: false })).toEqual([
-      "mail",
-      "calendar",
-      "meet",
-    ]);
-    expect(ids({ suite_flip_shell: true, suite_flip_files: true })).toEqual([
+    expect(useAppRegistry(session).areas.map((area) => area.id)).toEqual([
       "home",
       "files",
       "mail",
       "calendar",
       "meet",
     ]);
-  });
-
-  it("filters capability-gated areas without reordering the rest", () => {
-    const flips = { suite_flip_shell: true, suite_flip_files: true };
-    expect(
-      filterAreas(areaDefinitions, { jmap: false, systemManager: false }, flips).map(
-        (area) => area.id,
-      ),
-    ).toEqual(["home", "files", "meet"]);
   });
 
   it("derives the Mail badge from the inbox unread summary", () => {

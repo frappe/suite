@@ -24,10 +24,10 @@ vi.mock('@/platform/transport', async (actual) => ({
       if (operation.id !== 'node_get') return {}
       const trashed = server.trashed.has(input.node)
       return {
-        name: input.node, title: 'Plan.pdf', kind: 'file', parent: 'p', root: 'r',
+        name: input.node, title: 'Plan.pdf', kind: 'file', parent_node: 'p', root: 'r',
         state: trashed ? 'Trashed' : 'Active', trash_root: trashed ? input.node : null, size: 1,
         mime: 'application/pdf', url: `/f/${input.node}`, content_doctype: null, content_docname: null,
-        is_template: 0, owner: 'asha@example.com', creation: null, modified: null, content_modified: null,
+        is_template: 0, owner: { id: 'asha@example.com', full_name: 'Asha', user_image: null }, creation: null, modified: null, content_modified: null,
         access: { role: 10, via_link: server.viaLink }, favourite: server.starred.has(input.node),
       }
     },

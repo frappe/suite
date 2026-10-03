@@ -1,8 +1,7 @@
 <template>
   <FeedbackProvider>
     <ShellLayout
-      :areas="registry.areas.value"
-      :all-areas="registry.allAreas"
+      :areas="registry.areas"
       :badges="registry.badges.value"
     >
       <router-view />

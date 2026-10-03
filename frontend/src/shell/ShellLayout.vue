@@ -122,7 +122,6 @@ import { settingsTab, showSettings } from "@/shell/settings/useSettingsDialog";
 
 const props = defineProps<{
   areas: readonly AreaDefinition[];
-  allAreas: readonly AreaDefinition[];
   badges: Readonly<Record<string, number>>;
 }>();
 
@@ -137,7 +136,7 @@ const SuiteCommandPalette = defineAsyncComponent(
 );
 const session = useSession();
 const activeArea = computed(() =>
-  props.allAreas.find((area) => area.id === route.meta.area),
+  props.areas.find((area) => area.id === route.meta.area),
 );
 const unavailable = computed(() => {
   const area = activeArea.value;

@@ -23,13 +23,13 @@ const items = computed(() => subject.data ? [subject.data] : [])
 
 async function move(parent: string, destination: string) {
   // Read before the move: it changes the node's parent in place.
-  const from = subject.data?.parent
-  const moved = await mutation.run({ node: props.node, parent })
+  const from = subject.data?.parent_node
+  const moved = await mutation.run({ node: props.node, parent_node: parent })
   if (!moved) {
     toast.error(mutation.error?.message ?? 'Could not move this item.')
     return
   }
-  if (from) announceMove([{ node: moved.name, title: moved.title, from }], destination)
+  if (from) announceMove([{ node: moved.name, title: moved.title, from, to: parent }], destination)
   emit('moved', moved)
   open.value = false
 }

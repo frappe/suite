@@ -18,11 +18,11 @@ export type UploadSession =
   | { upload_id: string; mode: 'direct'; url: string; fields: Record<string, string> }
 
 export interface OpenUploadInput {
-  parent: string
+  parent_node: string
   filename: string
   size: number
   mime?: string
-  /** A replace session: the Active file below `parent` that the bytes replace. */
+  /** A replace session: the Active file below `parent_node` that the bytes replace. */
   replaces?: string
 }
 
@@ -55,16 +55,12 @@ export function openUpload(input: OpenUploadInput, signal?: AbortSignal): Promis
  * a chunk or finish names no node itself.
  */
 export function uploadTransfer(parent: string): UploadDescriptor<UploadStartInput, DriveNode, UploadSession> {
-  const chunk = {
-    ...driveOperation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }>(api.upload_chunk, {
-      looseInput: true,
-      covers: [parent],
-    }),
-    body: 'chunk',
-  }
+  const chunk = driveOperation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }>(
+    api.upload_chunk,
+    { covers: [parent] },
+  )
   const finish = driveOperation<Record<string, unknown>, DriveNode>(api.upload_finish, {
     entity: true,
-    looseInput: true,
     covers: [parent],
   })
   return upload(startOperation, chunk, finish, {
@@ -72,7 +68,7 @@ export function uploadTransfer(parent: string): UploadDescriptor<UploadStartInpu
     chunkInput: (session, offset) => ({ upload_id: session.upload_id, offset }),
     finishInput: (input, session) => ({
       upload_id: session.upload_id,
-      ...(input.replaces ? { replaces: input.replaces } : { parent: input.parent, title: input.filename }),
+      ...(input.replaces ? { replaces: input.replaces } : { parent_node: input.parent_node, title: input.filename }),
       ...(input.checksum ? { checksum: input.checksum } : {}),
     }),
     invalidates: ['node_children', 'view_list', 'root_usage'],
@@ -85,13 +81,10 @@ export function uploadTransfer(parent: string): UploadDescriptor<UploadStartInpu
  * answers with `received`. A session that is gone refuses it.
  */
 export async function probeUpload(uploadId: string, parent: string, signal?: AbortSignal): Promise<number> {
-  const probe = {
-    ...driveOperation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }>(api.upload_chunk, {
-      looseInput: true,
-      covers: [parent],
-    }),
-    body: 'chunk',
-  }
+  const probe = driveOperation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }>(
+    api.upload_chunk,
+    { covers: [parent] },
+  )
   const reply = await transport.request(probe, { upload_id: uploadId, offset: 0, chunk: new Blob([]) }, { signal })
   return reply.received
 }
@@ -139,7 +132,7 @@ function storageMessage(body: string): string {
 
 export interface FinishUploadInput {
   upload_id: string
-  parent?: string
+  parent_node?: string
   title?: string
   replaces?: string
   checksum?: string
@@ -148,7 +141,7 @@ export interface FinishUploadInput {
 /** Finishes a session whose bytes are already stored, as a direct upload's are. */
 export function finishUpload(parent: string) {
   return mutation(
-    driveOperation<FinishUploadInput, DriveNode>(api.upload_finish, { entity: true, looseInput: true, covers: [parent] }),
+    driveOperation<FinishUploadInput, DriveNode>(api.upload_finish, { entity: true, covers: [parent] }),
     { invalidates: ['node_children', 'view_list', 'root_usage'] },
   )
 }

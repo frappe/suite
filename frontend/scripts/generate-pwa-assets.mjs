@@ -34,7 +34,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SCALE = Number(argValue('--scale') ?? 0.3)
 const BACKGROUND = argValue('--background') ?? '#ffffff'
 
-const LOGO = path.join(root, 'src/assets/app-logos/suite.svg')
+const LOGO = path.join(root, 'src/platform/brand/suite.svg')
 const OUT_DIR = path.join(root, 'public/pwa/suite')
 const SPLASH_DIR = path.join(OUT_DIR, 'splash')
 

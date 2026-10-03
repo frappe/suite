@@ -33,11 +33,20 @@ export interface DrivePreview {
   expires: number
 }
 
+/** A user as Drive publishes them wherever a row names one (Drive spec §11.3). */
+export interface DrivePerson {
+  /** The `User` id, the value a grant principal carries. */
+  id: string
+  /** The id itself when the user is gone. */
+  full_name: string
+  user_image: string | null
+}
+
 export interface DriveNode {
   name: string
   title: string
   kind: string
-  parent: string | null
+  parent_node: string | null
   root: string
   state: string
   /** The node whose trashing trashed this one: its own name on a trash root, null while Active. */
@@ -48,7 +57,7 @@ export interface DriveNode {
   content_doctype: string | null
   content_docname: string | null
   is_template: number
-  owner: string
+  owner: DrivePerson
   creation: string | null
   modified: string | null
   content_modified: string | null

@@ -2,7 +2,7 @@ import { transport as defaultTransport, type Transport } from '@/platform/transp
 
 import { api } from './generated'
 import { driveOperation } from './operation'
-import { DRIVE_ROLES } from './types'
+import { DRIVE_ROLES, type DrivePerson } from './types'
 
 /**
  * Drive grants as the share dialog reads and writes them (Drive spec §11.2).
@@ -10,6 +10,11 @@ import { DRIVE_ROLES } from './types'
  * A principal is one of five spellings (Drive spec §4.4): a user's email,
  * `$GROUP:<name>`, `$GENERAL` (everyone at the org), `$PUBLIC` (public on the
  * web) and `$LINK:<token>`. Role 0 is an explicit deny.
+ *
+ * A user, group or general row is written by its principal under the node
+ * (`PUT /nodes/{node}/grants/{principal}`). A link's token never travels in a
+ * path, so an existing link is rewritten and removed by its grant id
+ * (`PATCH`/`DELETE /grants/{grant}`).
  */
 
 export const GENERAL = '$GENERAL'
@@ -30,6 +35,8 @@ export interface DriveGrant {
   has_password: boolean
   /** Absent on a redacted inherited link. */
   name?: string
+  /** The user a user principal names, with their name and avatar. */
+  person?: DrivePerson
   sent_to?: string | null
   /** `/l/<token>`, on a link grant. */
   url?: string
@@ -43,19 +50,13 @@ export interface InheritedGrant {
   source_title: string
 }
 
-/** The user whose Personal root holds a node. Their access cannot be denied. */
-export interface GrantOwner {
-  user: string
-  full_name: string
-}
-
 export interface GrantList {
   /** The node's own rows, expired ones included. */
   grants: DriveGrant[]
   /** Live grants on ancestors, nearest ancestor first. */
   inherited: InheritedGrant[]
-  /** `null` in the Shared root. */
-  owner: GrantOwner | null
+  /** The user whose Personal root holds the node: their access cannot be denied. `null` in the Shared root. */
+  owner: DrivePerson | null
 }
 
 export interface ExplainRow {
@@ -91,10 +92,8 @@ export interface GrantWrite {
   notify?: boolean
 }
 
-export interface WrittenGrant {
-  grant: DriveGrant
-  url?: string
-}
+/** A rewrite of one existing grant by its id. The same fields as `GrantWrite`, less the mailing options. */
+export type GrantPatch = Pick<GrantWrite, 'role' | 'expires_on' | 'password'>
 
 export interface Role {
   value: number
@@ -155,58 +154,64 @@ export function isExpired(grant: Pick<DriveGrant, 'expires_on'>, now = new Date(
   return parseStamp(grant.expires_on).getTime() <= now.getTime()
 }
 
-/** A server stamp, read as local time like every other Drive date. */
+/** A server stamp: RFC 3339 in UTC (`2026-10-03T06:30:00Z`, Drive spec §11.3). */
 export function parseStamp(stamp: string): Date {
-  return new Date(stamp.replace(' ', 'T'))
+  return new Date(stamp)
 }
 
 /**
- * Access ends at the end of the chosen day (unified spec §7.9). The stamp has
- * no zone, so the server reads it in the site's timezone: the frontend is not
- * told the site's zone, so it cannot convert from the sharer's.
+ * Access ends at the end of the chosen day in the sharer's own zone (unified
+ * spec §7.9), sent as the UTC instant the server requires (Drive spec §11.3).
  */
 export function endOfDayStamp(date: string): string {
-  return `${date.slice(0, 10)} 23:59:59`
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number) as [number, number, number]
+  return new Date(year, month - 1, day, 23, 59, 59).toISOString().replace('.000Z', 'Z')
 }
 
-const listOperation = driveOperation<{ node: string; inherited: 1 }, GrantList>(api.node_grants, {
-  looseInput: true,
-})
+const listOperation = driveOperation<{ node: string; inherited: true }, GrantList>(api.node_grants)
 const explainOperation = driveOperation<{ node: string; principal: string }, { explain: GrantExplanation }>(
   api.node_grants,
-  { looseInput: true },
 )
-const putOperation = driveOperation<{ node: string; principal: string } & GrantWrite, WrittenGrant>(
-  api.node_put_grant,
-  { looseInput: true },
-)
-const deleteOperation = driveOperation<{ node: string; principal: string; below?: 1 }, { rows?: number }>(
+const putOperation = driveOperation<{ node: string; principal: string } & GrantWrite, DriveGrant>(api.node_put_grant)
+const deleteOperation = driveOperation<{ node: string; principal: string; below?: true }, { count: number }>(
   api.node_delete_grant,
-  { looseInput: true },
 )
-// Rotation names a grant, not a node, so it carries the node's link codes itself.
+// The grant routes name a grant, not a node, so they carry the node's link codes themselves.
+const patchOperation = (node: string) =>
+  driveOperation<{ grant: string } & GrantPatch, DriveGrant>(api.grant_patch, { covers: [node] })
+const removeOperation = (node: string) =>
+  driveOperation<{ grant: string }, { count: number }>(api.grant_delete, { covers: [node] })
 const rotateOperation = (node: string) =>
-  driveOperation<{ grant: string }, WrittenGrant>(api.grant_rotate, { covers: [node] })
+  driveOperation<{ grant: string }, DriveGrant>(api.grant_rotate, { covers: [node] })
 
 /** The grant calls of one node. Every call needs MANAGE on it. */
 export function nodeGrants(node: string, transport: Transport = defaultTransport) {
   return {
     async list(): Promise<GrantList> {
-      const answer = await transport.request(listOperation, { node, inherited: 1 })
+      const answer = await transport.request(listOperation, { node, inherited: true })
       return { grants: answer.grants ?? [], inherited: answer.inherited ?? [], owner: answer.owner ?? null }
     },
     async explain(principal: string): Promise<GrantExplanation> {
       return (await transport.request(explainOperation, { node, principal })).explain
     },
-    put(principal: string, write: GrantWrite): Promise<WrittenGrant> {
+    /** Writes the row of a principal: a user, a group, the org or the public, or `$LINK` for a new link. */
+    put(principal: string, write: GrantWrite): Promise<DriveGrant> {
       return transport.request(putOperation, { node, principal, ...write })
     },
-    /** Removes the local row. `below` also removes it from every item inside; the answer counts them. */
-    async remove(principal: string, below = false): Promise<number | undefined> {
-      const answer = await transport.request(deleteOperation, { node, principal, ...(below ? { below: 1 as const } : {}) })
-      return answer.rows
+    /** Removes a principal's local row. `below` also removes it from every item inside; the answer counts them all. */
+    async remove(principal: string, below = false): Promise<number> {
+      const answer = await transport.request(deleteOperation, { node, principal, ...(below ? { below: true as const } : {}) })
+      return answer.count
     },
-    rotate(grant: string): Promise<WrittenGrant> {
+    /** Rewrites one existing row by its id: the way to change a link. */
+    patch(grant: string, write: GrantPatch): Promise<DriveGrant> {
+      return transport.request(patchOperation(node), { grant, ...write })
+    },
+    /** Removes one existing row by its id: the way to remove a link. */
+    async removeGrant(grant: string): Promise<number> {
+      return (await transport.request(removeOperation(node), { grant })).count
+    },
+    rotate(grant: string): Promise<DriveGrant> {
       return transport.request(rotateOperation(node), { grant })
     },
   }

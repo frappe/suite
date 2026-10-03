@@ -117,14 +117,15 @@ import { computed, ref } from "vue";
 import { Button, Popover, ScrollArea, Skeleton } from "frappe-ui";
 import { useRouter } from "vue-router";
 
-import { driveNodeRoute, type DriveNodeSummary } from "@/apps/drive";
 import {
-  loadNotificationNode,
-  markNotificationsRead,
-  notificationsFeed,
-  notificationUnreadCount,
+  driveNodeRoute,
+  driveNotifications,
+  driveUnreadNotificationCount,
+  loadDriveNodeSummary,
+  markAllDriveNotificationsRead,
+  markDriveNotificationsRead,
   type DriveNotification,
-} from "@/composition/notifications/client";
+} from "@/apps/drive";
 import {
   notificationDescription,
   notificationTime,
@@ -135,22 +136,23 @@ import { translate as __ } from "@/platform/translation";
 
 const router = useRouter();
 const open = ref(false);
-const count = useQuery(notificationUnreadCount());
-const feed = useQuery(() => (open.value ? notificationsFeed() : false));
-const markRead = useMutation(markNotificationsRead);
+const count = useQuery(driveUnreadNotificationCount());
+const feed = useQuery(() => (open.value ? driveNotifications() : false));
+const markRead = useMutation(markDriveNotificationsRead());
+const markAll = useMutation(markAllDriveNotificationsRead());
 const unread = computed(() => count.data?.unread ?? 0);
 
 async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] });
   }
-  const node = await loadNotificationNode(notification.activity.node);
+  const node = await loadDriveNodeSummary(notification.activity.node);
   open.value = false;
-  await router.push(driveNodeRoute(node as DriveNodeSummary));
+  await router.push(driveNodeRoute(node));
 }
 
 async function markAllRead() {
   if (!unread.value) return;
-  await markRead.run({ all: true });
+  await markAll.run({ all: true });
 }
 </script>

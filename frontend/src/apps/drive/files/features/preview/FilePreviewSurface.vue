@@ -189,9 +189,9 @@ const markdownViews = computed(() => [
   { label: "Preview", value: "preview", icon: narrow.value ? "lucide-eye" : undefined },
   { label: "Source", value: "source", icon: narrow.value ? "lucide-code" : undefined },
 ]);
-/** Every Markdown file opens as its source. The viewer switches to Preview with the toggle. */
-const markdownView = ref<"preview" | "source">("source");
-watch(() => props.session.nodeId, () => (markdownView.value = "source"));
+/** Every Markdown file opens rendered. The viewer switches to Source with the toggle. */
+const markdownView = ref<"preview" | "source">("preview");
+watch(() => props.session.nodeId, () => (markdownView.value = "preview"));
 function chooseMarkdownView(value: string | number) {
   markdownView.value = value === "preview" ? "preview" : "source";
 }

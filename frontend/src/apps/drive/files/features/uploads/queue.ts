@@ -322,7 +322,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   async function createFolder(parent: string, title: string): Promise<DriveNode | { error: PlatformError }> {
     const mutation = serverState.useMutation(createNode(), { silent: true })
-    const created = (await mutation.run({ parent, title, kind: 'folder' })) as DriveNode | undefined
+    const created = (await mutation.run({ parent_node: parent, title, kind: 'folder' })) as DriveNode | undefined
     return created ?? { error: mutation.error ?? { type: 'RequestError', message: 'The folder could not be created.', status: 0 } }
   }
 
@@ -427,7 +427,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     while (true) {
       try {
         job.session = await openUpload({
-          parent: entry.parent,
+          parent_node: entry.parent,
           filename: entry.title,
           size: entry.size,
           ...(file?.type ? { mime: file.type } : {}),
@@ -468,7 +468,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         },
       )
       const node = await mutation.run({
-        parent: entry.parent,
+        parent_node: entry.parent,
         filename: entry.title,
         size: entry.size,
         ...(entry.replaces ? { replaces: entry.replaces } : {}),
@@ -506,7 +506,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       const mutation = serverState.useMutation(finishUpload(entry.parent), { silent: true })
       const node = await mutation.run({
         upload_id: session.upload_id,
-        ...(entry.replaces ? { replaces: entry.replaces } : { parent: entry.parent, title: entry.title }),
+        ...(entry.replaces ? { replaces: entry.replaces } : { parent_node: entry.parent, title: entry.title }),
       })
       if (node) return complete(job, node)
       const error = mutation.error ?? { type: 'RequestError', message: 'The upload failed.', status: 0 }

@@ -33,16 +33,11 @@
         <ul>
           <!-- The owner's access cannot be denied or removed here, so their row has no menu. -->
           <li v-if="sections.owner" class="flex min-h-12 items-center gap-3">
-            <span
-              class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
-              aria-hidden="true"
-            >
-              <span class="lucide-user size-4" />
-            </span>
+            <Avatar size="md" :image="sections.owner.user_image ?? undefined" :label="sections.owner.full_name" class="shrink-0" />
             <div class="min-w-0 flex-1">
-              <p class="truncate">{{ state.label(sections.owner) }}</p>
-              <p v-if="state.label(sections.owner) !== sections.owner" class="mt-1 truncate text-sm text-ink-gray-5">
-                {{ sections.owner }}
+              <p class="truncate">{{ sections.owner.full_name }}</p>
+              <p v-if="sections.owner.full_name !== sections.owner.id" class="mt-1 truncate text-sm text-ink-gray-5">
+                {{ sections.owner.id }}
               </p>
             </div>
             <span class="shrink-0 px-2 text-base text-ink-gray-5">Owner</span>
@@ -165,7 +160,7 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import { Button, Dropdown, ErrorMessage, Skeleton, type DropdownItem } from 'frappe-ui'
+import { Avatar, Button, Dropdown, ErrorMessage, Skeleton, type DropdownItem } from 'frappe-ui'
 
 import { GENERAL, PUBLIC, roleLabel, rolesFor, type PrincipalKind } from '@/apps/drive/client/grants'
 
@@ -200,7 +195,7 @@ const generalRows = computed<GeneralRow[]>(() => {
   const rows: GeneralRow[] = [
     {
       principal: GENERAL,
-      label: props.state.organization,
+      label: props.state.organization.value,
       accessName: 'Organization access',
       icon: 'lucide-building-2',
       kind: 'general',
@@ -292,12 +287,9 @@ function inheritedMeta(inherited: InheritedRow): string {
 
 /** Adds each person picked in turn. Resolves with those not added: a failed write, or a declined confirm. */
 async function share(people: PickedPerson[], role: number, notify: boolean): Promise<PickedPerson[]> {
-  const left: PickedPerson[] = []
-  for (const person of people) {
-    props.state.rememberName(person.principal, person.name)
-    if (!(await props.state.add(person.principal, role, notify))) left.push(person)
-  }
-  return left
+  for (const person of people) props.state.rememberName(person.principal, person.name)
+  const left = new Set(await props.state.add(people.map((person) => person.principal), role, notify))
+  return people.filter((person) => left.has(person.principal))
 }
 
 async function newLink() {

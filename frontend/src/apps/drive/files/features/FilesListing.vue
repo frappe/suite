@@ -1,8 +1,11 @@
 <template>
   <!-- Presses here can draw a selection rectangle, and right-clicks open the
        page's context menu. The listing fills the pane, so its empty space below
-       the last item takes both. -->
-  <div ref="listing" class="relative pt-3" @keydown="onKeydown" @pointerdown="onPointerdown" @contextmenu="onContextMenu">
+       the last item takes both.
+       A new sort reorders the rows in place. The browser's scroll anchoring
+       would follow the top row to its new place and move the page, so no row
+       is an anchor. -->
+  <div ref="listing" class="relative pt-3 [overflow-anchor:none]" @keydown="onKeydown" @pointerdown="onPointerdown" @contextmenu="onContextMenu">
     <!-- The root holds the gap above every state, so the listing does not move
          when the skeleton gives way to rows, an empty state or an error. -->
     <!-- A fast load shows nothing rather than a skeleton that flashes. -->
@@ -101,8 +104,8 @@
             </ListCell>
             <ListCell v-if="shows('kind')" :class="wideOnly('kind')"><span class="truncate text-base text-ink-gray-7">{{ nodeTypeLabel(row) }}</span></ListCell>
             <ListCell v-if="shows('owner')" :class="wideOnly('owner')">
-              <Avatar size="xs" :label="row.owner" class="mr-2 shrink-0" />
-              <span class="truncate text-base text-ink-gray-7">{{ row.owner }}</span>
+              <Avatar size="xs" :image="row.owner.user_image ?? undefined" :label="row.owner.full_name" class="mr-2 shrink-0" />
+              <span class="truncate text-base text-ink-gray-7">{{ row.owner.full_name }}</span>
             </ListCell>
             <ListCell v-if="shows('size')" class="justify-end" :class="wideOnly('size')"><span class="truncate text-base text-ink-gray-5">{{ row.size ? formatBytes(row.size) : '' }}</span></ListCell>
             <ListCell v-if="shows('modified')" class="justify-end" :class="wideOnly('modified')"><span class="truncate text-base text-ink-gray-5">{{ rowDate(row) }}</span></ListCell>
@@ -205,7 +208,7 @@ import { useSession } from '@/platform/session'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import FileCard from './FileCard.vue'
 import { loadUntilVisible } from './listingWindows'
-import type { FilesSort, PresentationState } from './presentation'
+import type { FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
 
@@ -224,8 +227,7 @@ const props = defineProps<{
   rowDrop?: (node: DriveNode) => DropHandlers | null
   /** The item whose right-click menu is open. It looks selected while the menu shows. */
   menuTarget?: string | null
-  /** The date the date column shows. Recent shows when the user opened each file. */
-  dateColumn?: 'modified' | 'opened'
+  dateColumn?: FilesDateColumn
 }>()
 const emit = defineEmits<{
   'update:selection': [value: string[]]
@@ -374,7 +376,7 @@ function breadcrumbText(row: DriveNode) {
 /** Who owns a card's file, when it is not the user, and its listing date. */
 function cardMeta(row: DriveNode) {
   const date = rowDate(row)
-  return row.owner === session.user.value?.id ? date : `${row.owner} · ${date}`
+  return row.owner.id === session.user.value?.id ? date : `${row.owner.full_name} · ${date}`
 }
 function itemAt(target: EventTarget | null) {
   const id = (target as Element | null)?.closest(`[${LISTING_ITEM}]`)?.getAttribute(LISTING_ITEM)

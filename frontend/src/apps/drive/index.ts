@@ -2,9 +2,11 @@ import { defineAsyncComponent, getCurrentInstance, onBeforeUnmount, onMounted, r
 import type { RouteLocationPathRaw } from 'vue-router'
 
 import FilesIcon from '@/apps/drive/AreaIcon.vue'
+import { api } from '@/apps/drive/client/generated'
 import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
+import { driveOperation } from '@/apps/drive/client/operation'
 import { roots } from '@/apps/drive/client/roots'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
@@ -16,6 +18,7 @@ import type { AreaDefinition } from '@/platform/contracts'
 import { openingTitleState } from '@/platform/page-meta'
 import { useMutation, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
+import { transport } from '@/platform/transport'
 import { translate as __ } from '@/platform/translation'
 
 export type {
@@ -65,6 +68,25 @@ export function useDrivePreviewRefresh(refresh: () => unknown): void {
 
 /** A file's date as Drive's listing shows it: `Just now`, `5 min ago`, `Yesterday`, then the day. */
 export { formatModified as formatDriveListingDate } from '@/apps/drive/files/internal/format'
+
+/** A server stamp (RFC 3339 in UTC, Drive spec §11.3) as a full date and time in the viewer's zone. */
+export { formatDate as formatDriveDateTime } from '@/apps/drive/files/internal/format'
+
+/** The caller's Drive notifications: the feed, the unread count, and the two read receipts (spec §9.5). */
+export {
+  markAllNotificationsRead as markAllDriveNotificationsRead,
+  markNotificationsRead as markDriveNotificationsRead,
+  notifications as driveNotifications,
+  unreadCount as driveUnreadNotificationCount,
+  type DriveNotification,
+} from '@/apps/drive/client/notifications'
+
+const summaryRead = driveOperation<{ node: string }, DriveNode>(api.node_get)
+
+/** One readable node's summary, outside the cache: for a route a notification opens. */
+export function loadDriveNodeSummary(node: string): Promise<DriveNodeSummary> {
+  return transport.request(summaryRead, { node })
+}
 
 export type DriveNodeSummary = Pick<
   DriveNode,
@@ -117,7 +139,7 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
         void import('@/platform/feedback').then(({ toast }) => toast.error(message))
         return undefined
       }
-      return create.run({ parent, content_doctype })
+      return create.run({ parent_node: parent, content_doctype })
     },
   }
 }
@@ -142,16 +164,19 @@ export function driveNodeRoute(
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
 }
 
-export function openDocumentSession(nodeId: string) {
+/** What a document session and a file preview session each need of the node, so one read opens either. */
+const OPENING_EXPAND = 'access,preview,breadcrumbs'
+const openingRead = driveOperation<{ node: string; expand: string }, DriveNode>(api.node_get, { entity: true })
+
+export async function openDocumentSession(nodeId: string) {
   // `session.share()` opens its dialog in the app that opened the session.
   rememberDialogContext(getCurrentInstance()?.appContext)
   // Every surface shows the document header: fetch it while the session opens.
   void loadDocumentHeader()
-  return openDriveDocumentSession(nodeId).catch(async (error) => {
-    if (!(error instanceof Error) || !error.message.includes('is not a content document')) throw error
-    const { openFilePreviewSession } = await import('@/apps/drive/files/features/preview/session')
-    return openFilePreviewSession(nodeId)
-  })
+  const node = await transport.request(openingRead, { node: nodeId, expand: OPENING_EXPAND })
+  if (node.content_doctype && node.content_docname) return openDriveDocumentSession(nodeId, { node })
+  const { openFilePreviewSession } = await import('@/apps/drive/files/features/preview/session')
+  return openFilePreviewSession(nodeId, node)
 }
 
 export { isDriveLocked, isDriveNodeLocked } from '@/apps/drive/client/unlock'

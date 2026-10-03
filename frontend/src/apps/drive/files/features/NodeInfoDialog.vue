@@ -35,7 +35,7 @@ const fields = computed(() => {
     { label: 'Type', value: nodeTypeLabel(row) },
     ...(row.kind === 'file' ? [{ label: 'Size', value: formatBytes(row.size) }] : []),
     { label: 'Location', value: row.breadcrumbs?.map((crumb) => crumb.title).join(' / ') || '—' },
-    { label: 'Owner', value: row.owner },
+    { label: 'Owner', value: row.owner.full_name },
     { label: 'Created', value: formatDate(row.creation) },
     { label: 'Modified', value: formatDate(row.content_modified ?? row.modified) },
   ]

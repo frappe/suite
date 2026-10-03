@@ -8,9 +8,13 @@ export function formatDay(stamp: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
 }
 
-/** `YYYY-MM-DD` of a stamp, for the date picker. */
+/** `YYYY-MM-DD` of a stamp in the viewer's zone, for the date picker. */
 export function stampDay(stamp: string | null): string {
-  return stamp ? stamp.slice(0, 10) : ''
+  if (!stamp) return ''
+  const date = parseStamp(stamp)
+  if (!Number.isFinite(date.getTime())) return ''
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 /** Copies a `/l/<token>` URL as an absolute URL and says so. */

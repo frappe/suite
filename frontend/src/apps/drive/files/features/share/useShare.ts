@@ -1,4 +1,4 @@
-import { computed, reactive, readonly, ref, shallowRef } from 'vue'
+import { computed, reactive, readonly, ref, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 
 import {
   NEW_LINK,
@@ -8,12 +8,13 @@ import {
   principalKind,
   type DriveGrant,
   type GrantList,
+  type GrantPatch,
   type GrantWrite,
 } from '@/apps/drive/client/grants'
 import { announceAccessChange } from '@/apps/drive/client/accessChanges'
 import { api } from '@/apps/drive/client/generated'
 import { driveOperation } from '@/apps/drive/client/operation'
-import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
 import { transport as defaultTransport, type Transport } from '@/platform/transport'
 
 import {
@@ -39,8 +40,8 @@ export interface ShareOptions {
   me?: string
   /** Asks the caller to confirm losing their own access. Resolves true to go on. */
   confirmLoss?: () => Promise<boolean>
-  /** The workspace name, which names everyone at the org. Empty when unknown. */
-  workspace?: string
+  /** The workspace name, which names everyone at the org. Empty or `undefined` while unknown. */
+  workspace?: MaybeRefOrGetter<string | undefined>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
   placeTitle?: (node: { name: string; title: string }) => string
 }
@@ -64,7 +65,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const notice = ref('')
   /** A write went through since the dialog opened. */
   const changed = ref(false)
-  /** Names the picker has seen, by email. The grant rows carry emails only. */
+  /** Users' names by id: from the owner and the people the grants name, and from the picker. */
   const names = reactive(new Map<string, string>())
 
   const canManage = computed(() => managesNode(node.value))
@@ -94,23 +95,30 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       if (read !== reads) return
       node.value = fresh
       list.value = freshList
-      if (freshList?.owner) names.set(freshList.owner.user, freshList.owner.full_name)
+      for (const person of peopleIn(freshList)) names.set(person.id, person.full_name)
       loadError.value = ''
     } catch (error) {
       if (read === reads) loadError.value = messageOf(error, 'Could not load who has access.')
     }
   }
 
-  async function write<T>(key: RowKey, run: () => Promise<T>): Promise<T | undefined> {
+  /**
+   * Runs one write for a row. A failure shows on the row, unless `fail` takes
+   * the message instead: then the caller owns the row's message, and it is not
+   * cleared first.
+   */
+  async function write<T>(key: RowKey, run: () => Promise<T>, fail?: (message: string) => void): Promise<T | undefined> {
     pending.add(key)
-    errors.delete(key)
+    if (!fail) errors.delete(key)
     notice.value = ''
     try {
       const answer = await run()
       changed.value = true
       return answer
     } catch (error) {
-      errors.set(key, messageOf(error, 'Could not save this change.'))
+      const message = messageOf(error, 'Could not save this change.')
+      if (fail) fail(message)
+      else errors.set(key, message)
       return undefined
     } finally {
       await load()
@@ -134,14 +142,19 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     return confirmLoss()
   }
 
-  async function change<T>(key: RowKey, next: GrantChange, run: () => Promise<T>): Promise<T | undefined> {
+  async function change<T>(
+    key: RowKey,
+    next: GrantChange,
+    run: () => Promise<T>,
+    fail?: (message: string) => void,
+  ): Promise<T | undefined> {
     pending.add(key)
-    if (await mayChange(next)) return write(key, run)
+    if (await mayChange(next)) return write(key, run, fail)
     pending.delete(key)
     return undefined
   }
 
-  const label = (principal: string) => principalLabel(principal, names, options.workspace)
+  const label = (principal: string) => principalLabel(principal, names, toValue(options.workspace))
 
   /**
    * Keeps a live row's expiry: a grant write replaces it (Drive spec §5.9).
@@ -150,6 +163,9 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const keep = (grant: DriveGrant | undefined): Pick<GrantWrite, 'expires_on'> =>
     grant ? { expires_on: isExpired(grant) ? null : grant.expires_on } : {}
   const localGrant = (principal: string) => list.value?.grants.find((grant) => grant.principal === principal)
+  /** Rewrites a listed row. A link is addressed by its grant id; every other row by its principal. */
+  const rewrite = (row: LocalRow, write: GrantPatch) =>
+    row.kind === 'link' && row.grant.name ? grants.patch(row.grant.name, write) : grants.put(row.grant.principal, write)
 
   return {
     node,
@@ -161,7 +177,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     canManage,
     load,
     label,
-    organization: organizationLabel(options.workspace),
+    organization: computed(() => organizationLabel(toValue(options.workspace))),
     isPending: (key: RowKey) => pending.has(key),
     rememberName(email: string, name: string | null) {
       if (name) names.set(email, name)
@@ -169,14 +185,14 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
 
     setRole: (row: LocalRow, role: number) =>
       change(row.grant.principal, { principal: row.grant.principal, role }, () =>
-        grants.put(row.grant.principal, { role, ...keep(row.grant) }),
+        rewrite(row, { role, ...keep(row.grant) }),
       ),
 
     /** Removes the local row. Then says whether access remains, and why (§7.4). */
     async remove(row: LocalRow, below = false) {
       const principal = row.grant.principal
       const removed = await change(principal, { principal, role: null }, async () => ({
-        count: await grants.remove(principal, below),
+        count: row.kind === 'link' && row.grant.name ? await grants.removeGrant(row.grant.name) : await grants.remove(principal, below),
       }))
       if (!removed) return
       // The count includes the row here, which this Remove started from.
@@ -201,15 +217,35 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
         else await grants.put(principal, { role, ...keep(localGrant(principal)) })
       }),
 
-    /** Adds a user or a group from the picker (§7.8). An existing row keeps its expiry. */
-    add: (principal: string, role: number, notify: boolean) =>
-      change(PICKER, { principal, role }, () =>
-        grants.put(principal, {
-          role,
-          ...keep(localGrant(principal)),
-          ...(principalKind(principal) === 'user' ? { notify } : {}),
-        }),
-      ),
+    /**
+     * Adds users and groups from the picker in turn (§7.8). An existing row
+     * keeps its expiry. Resolves with those not added: a failed write, or a
+     * declined confirm. The picker's message keeps a line for every failure.
+     */
+    async add(principals: readonly string[], role: number, notify: boolean): Promise<string[]> {
+      errors.delete(PICKER)
+      const lines: string[] = []
+      const fail = (principal: string) => (message: string) => {
+        lines.push(principals.length > 1 ? `${label(principal)}: ${message}` : message)
+        errors.set(PICKER, lines.join('\n'))
+      }
+      const left: string[] = []
+      for (const principal of principals) {
+        const added = await change(
+          PICKER,
+          { principal, role },
+          () =>
+            grants.put(principal, {
+              role,
+              ...keep(localGrant(principal)),
+              ...(principalKind(principal) === 'user' ? { notify } : {}),
+            }),
+          fail(principal),
+        )
+        if (!added) left.push(principal)
+      }
+      return left
+    },
 
     /** Mints a link for one outsider and emails it (§7.8). */
     sendLink: (email: string, role: number) =>
@@ -218,13 +254,11 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     /** A View link with no expiry and no password (§7.7). Resolves with its URL. */
     async newLink(): Promise<string | undefined> {
       const written = await write(NEW_LINK_ROW, () => grants.put(NEW_LINK, { role: DRIVE_ROLES.read }))
-      return written?.url ?? written?.grant.url
+      return written?.url
     },
 
     setPassword: (row: LocalRow, password: string | null) =>
-      write(row.grant.principal, () =>
-        grants.put(row.grant.principal, { role: row.grant.role, ...keep(row.grant), password }),
-      ),
+      write(row.grant.principal, () => rewrite(row, { role: row.grant.role, ...keep(row.grant), password })),
 
     /**
      * Sets or clears the expiry of a person, group or link row. It leaves the
@@ -232,7 +266,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
      */
     setExpiry: (row: LocalRow, date: string | null) =>
       write(row.grant.principal, () =>
-        grants.put(row.grant.principal, { role: row.grant.role, expires_on: date ? endOfDayStamp(date) : null }),
+        rewrite(row, { role: row.grant.role, expires_on: date ? endOfDayStamp(date) : null }),
       ),
 
     /** Get new URL. Resolves with the new URL. */
@@ -240,12 +274,19 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       const name = row.grant.name
       if (!name) return undefined
       const written = await write(row.grant.principal, () => grants.rotate(name))
-      return written?.url ?? written?.grant.url
+      return written?.url
     },
   }
 }
 
 export type ShareState = ReturnType<typeof useShare>
+
+/** Everyone a grants read names as a person: the owner and each user principal, inherited rows included. */
+function peopleIn(list: GrantList | null): DrivePerson[] {
+  if (!list) return []
+  const rows = [...list.grants, ...list.inherited.map((entry) => entry.grant)]
+  return [...(list.owner ? [list.owner] : []), ...rows.flatMap((grant) => (grant.person ? [grant.person] : []))]
+}
 
 function managesNode(node: DriveNode | null): boolean {
   return (node?.access?.role ?? 0) >= DRIVE_ROLES.manage

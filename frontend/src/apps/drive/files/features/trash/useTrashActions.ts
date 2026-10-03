@@ -67,7 +67,7 @@ export function useTrashActions(root: () => string | null) {
     nodes: string[],
     parent: string,
   ): Promise<DriveBatchResult | null> {
-    const second = await restoring.run({ nodes, patch: { state: 'Active', parent } })
+    const second = await restoring.run({ nodes, patch: { state: 'Active', parent_node: parent } })
     if (!second) {
       offerRetry(restoring.error, () => restoreInto(items, first, nodes, parent))
       return null
@@ -129,8 +129,8 @@ export function useTrashActions(root: () => string | null) {
       return null
     }
     outcome.value = null
-    toast.success(result.purged === 1 ? 'Deleted 1 item forever' : `Deleted ${result.purged} items forever`)
-    return result.purged
+    toast.success(result.count === 1 ? 'Deleted 1 item forever' : `Deleted ${result.count} items forever`)
+    return result.count
   }
 
   /** A whole request failed. Retry sends the same request, with no new questions. */

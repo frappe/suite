@@ -1,7 +1,6 @@
 import { computed, h, type ComputedRef } from "vue";
 import { ItemListRow, type DropdownOptions } from "frappe-ui";
 
-import { readBootFlag } from "@/platform/boot";
 import { useSession } from "@/platform/session";
 import { translate as __ } from "@/platform/translation";
 
@@ -14,41 +13,14 @@ function icon(name: string) {
   return h("span", { class: [name, "size-4 shrink-0 text-ink-gray-6"], "aria-hidden": "true" });
 }
 
-/** An old page that is not an area yet. */
-export interface LegacyAppLink {
-  readonly label: () => string;
-  readonly icon: string;
-  readonly to: string;
-}
-
 /**
- * The temporary Apps rows: the old pages the rail cannot reach between the
- * flips. Deleted with the old pages in stage 15 [T018].
- */
-export const legacyAppLinks: readonly LegacyAppLink[] = [
-  { label: () => __("Drive"), icon: "lucide-folder", to: "/drive" },
-  { label: () => __("Slides"), icon: "lucide-presentation", to: "/slides" },
-  { label: () => __("Writer"), icon: "lucide-file-text", to: "/writer" },
-  { label: () => __("Sheets"), icon: "lucide-table-2", to: "/sheets" },
-];
-
-/**
- * Whether the account menus show the Apps rows: while the shell flip is on
- * and the files flip is off. Read from boot, so it holds until reload [T018].
- */
-export function showsLegacyApps(): boolean {
-  return readBootFlag("suite_flip_shell") && !readBootFlag("suite_flip_files");
-}
-
-/**
- * The desktop account menu [T021]: who is signed in, the temporary Apps
- * submenu between the flips, Open Desk for system managers, then Log out.
+ * The desktop account menu [T021]: who is signed in, Open Desk for system
+ * managers, then Log out.
  * Settings is not here: the menu opens from the rail, and the rail's gear
  * sits directly above the avatar (spec section 3.5).
  */
 export function useAccountMenu(): ComputedRef<DropdownOptions> {
   const session = useSession();
-  const legacyApps = showsLegacyApps();
 
   return computed(() => {
     const user = session.user.value;
@@ -80,16 +52,6 @@ export function useAccountMenu(): ComputedRef<DropdownOptions> {
         group: __("Actions"),
         hideLabel: true,
         options: [
-          {
-            label: __("Apps"),
-            icon: "lucide-layout-grid",
-            condition: () => legacyApps,
-            submenu: legacyAppLinks.map((app) => ({
-              label: app.label(),
-              icon: app.icon,
-              route: app.to,
-            })),
-          },
           {
             // A full page load in the same tab: Desk is not part of this app.
             label: __("Open Desk"),

@@ -1,7 +1,6 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from "vue";
 import type { RouteMeta, RouteRecordRaw } from "vue-router";
 
-import { readBootFlag } from "@/platform/boot";
 import type { PhoneChromeOwner, ShellFrame } from "@/platform/contracts";
 
 const calendarLogo = "/assets/suite/calendar/images/logo.svg";
@@ -9,14 +8,6 @@ const driveLogo = "/assets/suite/drive/images/logo.svg";
 const mailLogo = "/assets/suite/mail/images/logo.svg";
 const meetLogo = "/assets/suite/meet/images/meet.png";
 const suiteLogo = "/assets/suite/frontend/logo.svg";
-
-/**
- * Mail, Calendar and Meet render in the shell while `suite_flip_shell` is on.
- * Off, they stay outside it and draw their standalone chrome [T018].
- */
-export const adoptedAppFrame: ShellFrame = readBootFlag("suite_flip_shell")
-  ? "shell"
-  : "none";
 
 const RouteLoading = defineComponent({
   name: "RouteLoading",
@@ -55,13 +46,15 @@ function placeholder(
 }
 
 /**
- * `suite_flip_files` selects which route table mounts under `/drive`: on, the
- * Drive area; off, the old Drive pages (the router's legacy group). Home and
- * `/d/` answer in both states [T013, T020].
+ * One placeholder per area entry URL. The router swaps a placeholder for the
+ * area's route group the first time a URL under it is visited.
  */
-export const driveAreaMounted = readBootFlag("suite_flip_files");
-
-const driveAreaRoutes: RouteRecordRaw[] = [
+export const canonicalRoutes: RouteRecordRaw[] = [
+  placeholder(
+    "/home",
+    "area-placeholder-home",
+    areaMeta("home", "Home", suiteLogo),
+  ),
   placeholder(
     "/drive",
     "area-placeholder-files-root",
@@ -97,22 +90,14 @@ const driveAreaRoutes: RouteRecordRaw[] = [
     "area-placeholder-files-trash",
     areaMeta("files", "Trash", driveLogo),
   ),
-];
-
-export const canonicalRoutes: RouteRecordRaw[] = [
-  placeholder(
-    "/home",
-    "area-placeholder-home",
-    areaMeta("home", "Home", suiteLogo),
-  ),
-  ...(driveAreaMounted ? driveAreaRoutes : []),
-  // Mail and Calendar keep their own phone chrome: inset and tab bar [T010]. The area group
-  // copies this metadata, so every Mail and Calendar page inherits it.
+  // Mail owns its phone chrome by default: an open thread and the composer are
+  // full screen. Its list pages ask the shell for its chrome through
+  // `useShellPhoneChrome`. The area group copies this metadata, so every Mail
+  // page inherits it.
   placeholder(
     "/mail/:pathMatch(.*)*",
     "area-placeholder-mail",
     areaMeta("mail", "Mail", mailLogo, {
-      frame: adoptedAppFrame,
       scroll: "content",
       phoneChrome: "page",
     }),
@@ -120,21 +105,14 @@ export const canonicalRoutes: RouteRecordRaw[] = [
   placeholder(
     "/calendar/:pathMatch(.*)*",
     "area-placeholder-calendar",
-    areaMeta("calendar", "Calendar", calendarLogo, {
-      frame: adoptedAppFrame,
-      scroll: "content",
-      phoneChrome: "page",
-    }),
+    areaMeta("calendar", "Calendar", calendarLogo, { scroll: "content" }),
   ),
   // One placeholder holds the whole prefix. A call (`/meet/:meetingId`) sets
   // its own frame `none` and admits guests in Meet's route module.
   placeholder(
     "/meet/:pathMatch(.*)*",
     "area-placeholder-meet",
-    areaMeta("meet", "Meet", meetLogo, {
-      frame: adoptedAppFrame,
-      scroll: "content",
-    }),
+    areaMeta("meet", "Meet", meetLogo, { scroll: "content" }),
   ),
   // The tab says "Opening…" until the document host names it after the node,
   // unless the opener named the node in the history entry (`openingTitleState`).
@@ -151,17 +129,6 @@ export const canonicalRoutes: RouteRecordRaw[] = [
 
 export const routes: RouteRecordRaw[] = [
   ...canonicalRoutes,
-  {
-    path: "/suite",
-    name: "suite-launcher",
-    component: () => import("@/shell/LauncherView.vue"),
-    meta: {
-      frame: "none",
-      scroll: "content",
-      title: "Frappe Suite",
-      favicon: suiteLogo,
-    },
-  },
   {
     path: "/suite/setup",
     name: "suite-setup",

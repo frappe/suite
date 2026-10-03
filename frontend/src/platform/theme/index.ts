@@ -1,6 +1,5 @@
 import { computed, readonly, ref, type Ref } from 'vue'
 
-import { toast } from '@/platform/feedback'
 import { useSession, type Session } from '@/platform/session'
 import { transport, type Operation, type Transport } from '@/platform/transport'
 
@@ -156,6 +155,9 @@ export const cycleTheme = singleton.cycle
  * the previous mode back, so that is what the toast reports instead.
  */
 export async function cycleThemeAndAnnounce(): Promise<void> {
+  // Loaded here, not at the top: `main.ts` loads this module on every page, and a static
+  // import would put frappe-ui's dialog and toast stack in the first download.
+  const { toast } = await import('@/platform/feedback')
   if (!(await singleton.cycle())) {
     toast.error(__('Could not save the theme'))
     return

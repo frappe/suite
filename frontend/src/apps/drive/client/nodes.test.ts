@@ -22,16 +22,16 @@ describe('generic document creation', () => {
           operation.validateInput?.(input)
           calls.push({ id: operation.id, input: structuredClone(input) })
           return {
-            name: 'new-node', title: 'Untitled presentation', kind: 'document', parent: 'folder-1',
+            name: 'new-node', title: 'Untitled presentation', kind: 'document', parent_node: 'folder-1',
           } as never
         },
       },
     })
     const mutation = state.useMutation(createDocument())
-    await mutation.run({ parent: 'folder-1', content_doctype: 'Presentation' })
+    await mutation.run({ parent_node: 'folder-1', content_doctype: 'Presentation' })
     expect(calls).toEqual([{
-      id: 'node_create',
-      input: { parent: 'folder-1', title: 'Untitled presentation', kind: 'document', content_doctype: 'Presentation' },
+      id: 'node_create.create_document',
+      input: { parent_node: 'folder-1', title: 'Untitled presentation', kind: 'document', content_doctype: 'Presentation' },
     }])
     state.dispose()
   })
