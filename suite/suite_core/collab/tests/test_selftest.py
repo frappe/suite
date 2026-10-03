@@ -12,7 +12,14 @@ from suite.tests.utils import ensure_user
 class TestCollabSelfTest(IntegrationTestCase):
     def setUp(self):
         super().setUp()
-        self.addCleanup(frappe.db.rollback)
+        # The self-test commits its record, so the site's own last result is put back afterwards
+        fields = ("self_test_at", "self_test_passed", "self_test_report")
+        kept = {field: frappe.db.get_single_value("Suite Collab Settings", field) for field in fields}
+        self.addCleanup(self.restore, kept)
+
+    def restore(self, kept: dict):
+        frappe.db.set_single_value("Suite Collab Settings", kept)
+        frappe.db.commit()
 
     def recorded(self) -> tuple[int, dict]:
         settings = frappe.get_single("Suite Collab Settings")
@@ -24,8 +31,10 @@ class TestCollabSelfTest(IntegrationTestCase):
         passed, report = self.recorded()
         self.assertEqual(passed, 1)
         self.assertEqual((report["pycrdt"], report["compaction"]), ("0.14.8", "pass"))
-        self.assertEqual(report["database"]["innodb_flush_log_at_trx_commit"], 1)
-        self.assertEqual(report["database"]["transaction_isolation"], "absent")
+        database = report["database"]
+        self.assertEqual(set(database), set(selftest.DATABASE_VARIABLES))
+        self.assertNotIn("absent", (database["innodb_flush_log_at_trx_commit"], database["version"]))
+        self.assertTrue({database["tx_isolation"], database["transaction_isolation"]} - {"absent"})
         self.assertIn("node", report)
 
     def test_another_pycrdt_version_fails_the_run(self):

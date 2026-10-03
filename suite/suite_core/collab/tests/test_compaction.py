@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pycrdt
 from frappe.tests import UnitTestCase
 
+from suite.suite_core.collab import compaction
 from suite.suite_core.collab.compaction import CompactionFailed, compact, load, same
 
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
@@ -175,3 +176,26 @@ class TestCompaction(UnitTestCase):
         with self.assertRaises(CompactionFailed) as failed:
             compact(None, [*rows, rows[-1] + b"\x00"], ROOTS)
         self.assertEqual(failed.exception.reason, "malformed_row")
+
+    def test_a_result_any_check_disagrees_with_is_refused(self):
+        # Each check, made to disagree once, must refuse rather than install
+        _typed, rows = typing(seed=3)
+
+        real_fingerprint, real_snapshot = compaction.fingerprint, compaction.snapshot
+        for reason, target, call in (
+            ("content_mismatch", "fingerprint", 2),
+            ("reencode_mismatch", "fingerprint", 3),
+            ("not_contained", "snapshot", 4),
+        ):
+            real = real_fingerprint if target == "fingerprint" else real_snapshot
+            calls = []
+
+            def disagreeing(*args, real=real, call=call, calls=calls):
+                calls.append(1)
+                found = real(*args)
+                return (*found[:-1], {"changed": True}) if len(calls) == call else found
+
+            with self.subTest(reason), patch.object(compaction, target, disagreeing):
+                with self.assertRaises(CompactionFailed) as failed:
+                    compact(None, rows, ROOTS)
+                self.assertEqual(failed.exception.reason, reason)

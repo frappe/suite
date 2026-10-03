@@ -1,7 +1,9 @@
 import gzip
 import json
 import os
+import shutil
 import signal
+import tempfile
 import threading
 import uuid
 from unittest.mock import patch
@@ -13,6 +15,7 @@ from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
 from suite.suite_core.collab import checkpoints, compaction
+from suite.suite_core.collab.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
@@ -99,6 +102,14 @@ class CheckpointCase(IntegrationTestCase):
         return frappe.db.sql(
             "SELECT COUNT(*) FROM `__writer_collab_update` WHERE `doc_id` = %s", self.doc_row(node).id
         )[0][0]
+
+    def set_doc(self, node: str, **values):
+        assignments = ", ".join(f"`{key}` = %({key})s" for key in values)
+        frappe.db.sql(
+            f"UPDATE `__writer_collab_doc` SET {assignments} WHERE `node` = %(node)s",
+            {**values, "node": node},
+        )
+        frappe.db.commit()
 
     def text_of(self, state: bytes) -> str:
         doc = compaction.load([state])
@@ -351,6 +362,30 @@ class TestWriterCheckpoints(CheckpointCase):
         checkpoints.free_place(current)
         self.assertIsNotNone(checkpoints.take_place("writer", "doc-a"))
 
+    def test_a_host_short_of_memory_keeps_every_row_and_retries_later(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        cgroup = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, cgroup)
+        gib = 2**30
+        with open(f"{cgroup}/memory.max", "w") as limit:
+            limit.write(f"{gib}\n")
+
+        # Two places at 240 MB each on top of what the container already holds must leave a fifth free
+        for anon, compacts in ((400 * 2**20, False), (200 * 2**20, True)):
+            with open(f"{cgroup}/memory.stat", "w") as stat:
+                stat.write(f"file 999\nanon {anon}\n")
+            self.set_doc(node, next_compaction_at=None)
+            with patch.object(checkpoints, "CGROUP", cgroup):
+                self.compact(node)
+            doc = self.doc_row(node)
+            self.assertEqual(doc.checkpoint_rev == 1, compacts)
+            if not compacts:
+                self.assertEqual(
+                    (doc.last_compaction_error, self.row_count(node)), ("insufficient_memory", 1)
+                )
+                self.assertGreater(doc.next_compaction_at, frappe.utils.now_datetime())
+
     def opened(self, node: str) -> tuple[dict, list[int], str]:
         """What a tab opening now gets: the header, the revs sent as rows, and the text it shows."""
         header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
@@ -399,8 +434,13 @@ class TestWriterCheckpoints(CheckpointCase):
                 thread.join()
             return sql(query, *args, **kwargs)
 
+        # The database default may already be REPEATABLE READ; the open must not rely on it
+        frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        self.addCleanup(frappe.db.sql, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        frappe.db.commit()
         with patch.object(frappe.db, "sql", install_first):
             header, revs, text = self.opened(node)
+        self.assertEqual(isolation(), "READ-COMMITTED")
 
         self.assertEqual(installed, [True])
         self.assertEqual((header["base"], revs, text), (2, [3], typed))
@@ -435,14 +475,6 @@ class TestWriterCompactionTriggers(CheckpointCase):
                 encoded = json.dumps(header).encode()
                 body = len(encoded).to_bytes(4, "big") + encoded + body[4 + length :]
             self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
-
-    def set_doc(self, node: str, **values):
-        assignments = ", ".join(f"`{key}` = %({key})s" for key in values)
-        frappe.db.sql(
-            f"UPDATE `__writer_collab_doc` SET {assignments} WHERE `node` = %(node)s",
-            {**values, "node": node},
-        )
-        frappe.db.commit()
 
     def test_a_small_tail_asks_for_nothing_and_a_large_one_asks_once_it_is_large(self):
         node = self.new_document()

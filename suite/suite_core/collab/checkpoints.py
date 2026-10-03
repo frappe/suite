@@ -36,6 +36,7 @@ PER_COMPACTION = 240 * 2**20
 LEASE = TIMEOUT + 90
 PACED_FROM = 512 * 2**10
 ALERT_AT = 3
+CGROUP = "/sys/fs/cgroup"
 
 
 class Skipped(Exception):
@@ -372,9 +373,9 @@ def free_place(held: tuple[str, list[str]]) -> None:
 def enough_memory() -> bool:
     """With every place compacting, 20% of the container must stay free. True where the cgroup can't be read."""
     try:
-        with open("/sys/fs/cgroup/memory.max") as limit_file:
+        with open(f"{CGROUP}/memory.max") as limit_file:
             limit = limit_file.read().strip()
-        with open("/sys/fs/cgroup/memory.stat") as stat_file:
+        with open(f"{CGROUP}/memory.stat") as stat_file:
             anon = next(int(line.split()[1]) for line in stat_file if line.startswith("anon "))
     except (OSError, StopIteration, ValueError):
         return True
