@@ -123,3 +123,15 @@ class TestRequestPrincipals(UnitTestCase):
     def test_admin_status_is_carried_structurally(self, session, _groups, _is_admin):
         session.user = "Administrator"
         self.assertTrue(principals_for_request().is_admin)
+
+
+class TestGroupMembershipIndex(UnitTestCase):
+    def test_membership_is_indexed_by_user_and_survives_schema_sync(self):
+        def indexed():
+            return any(
+                row.Column_name == "user" and row.Seq_in_index == 1
+                for row in frappe.db.sql("SHOW INDEX FROM `tabUser Group Member`", as_dict=True)
+            )
+
+        self.assertTrue(indexed())
+        self.assertEqual(frappe.get_meta("User Group Member").get_field("user").search_index, 1)
