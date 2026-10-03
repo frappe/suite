@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { CredentialGrouper } from '@/apps/drive'
 
-import { createWriterDocument } from './writerDocument'
+import { createWriterDocument, isLocked } from './writerDocument'
 
 type Sent = { url: string; method: string; headers: Headers; body: unknown }
 
@@ -81,5 +81,13 @@ describe('Writer document client', () => {
     })
     expect(document.saveHtml.error).toMatchObject({ type: 'DriveForbidden' })
     expect(document.saveHtml.loading).toBe(false)
+  })
+})
+
+describe('locked documents', () => {
+  it('lock a document only while the lock is set', () => {
+    expect(isLocked({ lock: true })).toBe(true)
+    expect(isLocked({ lock: null })).toBe(false)
+    expect(isLocked({})).toBe(false)
   })
 })

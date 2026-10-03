@@ -35,28 +35,31 @@ Things checked and found equal or better are not listed. These include DOCX and 
 - **Where it was:** `fe/writer/components/WriterSettings.vue`, `fe/writer/pages/Document.vue`
 - **Where it goes:** `fe/writer/components/core-editor/menu-buttons.js` (`openSettings`), `fe/writer/surface/WriterSurface.vue`
 
-### 1.2 Locked documents open as editable
+### 1.2 Locked documents open as editable (done)
 
 - **Before:** a locked document was read-only until the user unlocked it.
 - **Now:** `settings.lock` is ignored, so a locked document opens as editable.
 - **Done:** a locked document opens read-only. The user can unlock it for the current session. See also "Lock and Wide view" in section 2.
 - **Where it was:** `fe/writer/pages/Document.vue` (lock buttons)
+- **Done:** `WriterSurface.vue` treats a truthy `settings.lock` as read-only (`isLocked` in `writerDocument.ts`). Unlocking for a session waits for the Settings dialog and the View menu in section 2.
 - **Where it goes:** `fe/writer/surface/WriterSurface.vue`
 
-### 1.3 Mention suggestions are empty for most users
+### 1.3 Mention suggestions are empty for most users (done)
 
 - **Before:** typing `@` in the body or in a comment listed every user on the site.
 - **Now:** the list comes from `GET /api/suite/users`, which answers only a System Manager. Everyone else gets no suggestions.
 - **Done:** any user who can open the document gets suggestions. The list is not limited to System Managers.
 - **Where it was:** `suite.drive.api.product.get_users` (`allUsers`)
+- **Done:** `listUsers` in `fe/writer/drive.ts` reads every page of `GET /api/suite/people`, which any Suite user may call, and keeps the users.
 - **Where it goes:** `fe/writer/drive.ts` (`listUsers`)
 
-### 1.4 The title never takes the first line
+### 1.4 The title never takes the first line (done)
 
 - **Before:** pressing Enter in the first block renamed an untitled document to that line.
 - **Now:** `autorename` checks for "Untitled Document" (capital D). Drive names new documents "Untitled document" (lower-case d), so the check never matches.
 - **Done:** pressing Enter in the first block of a new, untitled document renames it to the first line. The check uses the one default title that Drive sets.
 - **Where it was:** `fe/writer/components/CoreEditor.vue` (`autorename`)
+- **Done:** `autorename` calls `hasDefaultDocumentTitle` from `fe/drive/client/nodes.ts`, next to the default title it checks.
 - **Where it goes:** same file. The default title is in `fe/drive/client/nodes.ts`.
 
 ## 2. Document settings and print

@@ -62,17 +62,27 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
 }
 
 /**
- * The site's people. `GET /api/suite/users` answers only a System Manager, so
- * anyone else gets an empty list until `GET /api/suite/people` ships.
+ * Every person a mention can name, from `GET /api/suite/people`, which any
+ * Suite user may call. The route pages users and groups together, so this
+ * walks every page and keeps the users.
  */
 export async function listUsers(): Promise<WriterUser[]> {
-  const rows = await transport.request(suiteApi.users_get, {})
-  return rows.map((row) => ({
-    name: row.name,
-    email: row.email,
-    full_name: row.full_name,
-    user_image: row.user_image,
-    value: row.email,
-    label: row.full_name.trimEnd(),
-  }))
+  const users: WriterUser[] = []
+  let cursor: string | undefined
+  do {
+    const page = await transport.request(suiteApi.people_get, cursor ? { cursor } : {})
+    for (const row of page.rows) {
+      if (row.kind !== 'user') continue
+      users.push({
+        name: row.name,
+        email: row.email,
+        full_name: row.full_name ?? '',
+        user_image: row.user_image,
+        value: row.email,
+        label: (row.full_name || row.email).trimEnd(),
+      })
+    }
+    cursor = page.next_cursor ?? undefined
+  } while (cursor)
+  return users
 }

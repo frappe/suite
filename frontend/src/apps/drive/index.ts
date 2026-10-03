@@ -30,6 +30,7 @@ export type {
   SessionState,
 } from '@/apps/drive/client/session'
 export { CredentialOverflowError } from '@/apps/drive/client/links'
+export { hasDefaultDocumentTitle } from '@/apps/drive/client/nodes'
 
 /** Remembers the share link a `#link=` fragment carried, for the node it opened. */
 export function rememberDriveLink(token: string, node: string): void {

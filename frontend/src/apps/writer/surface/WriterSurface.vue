@@ -31,7 +31,7 @@ import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
-import { createWriterDocument, type WriterDocument } from './writerDocument'
+import { createWriterDocument, isLocked, type WriterDocument } from './writerDocument'
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
 import { createWriteGate, type DocumentWrite } from './writes'
 
@@ -118,7 +118,6 @@ const documentResource = writes.guard(
 )
 
 const readable = computed(() => props.session.state.value !== 'Refused' && writes.role.value >= 10)
-const editable = computed(() => readable.value && writes.writable.value)
 const canComment = computed(
   () => props.session.state.value === 'Active' && writes.role.value >= COMMENT,
 )
@@ -132,6 +131,9 @@ const saveState = computed<DocumentSaveState>(() =>
   saving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean',
 )
 const settings = computed(() => documentResource.doc?.settings ?? {})
+const editable = computed(
+  () => readable.value && writes.writable.value && !isLocked(settings.value),
+)
 const fakeFileResource = computed(() => ({
   doc: {
     name: props.session.nodeId,

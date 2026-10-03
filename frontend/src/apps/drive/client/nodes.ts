@@ -259,8 +259,15 @@ export const unstarNode = () =>
     invalidates: ['view_list'],
   })
 
+const DEFAULT_DOCUMENT_TITLE = 'Untitled document'
+
 function defaultDocumentTitle(contentDoctype: string): string {
   if (contentDoctype === 'Sheet') return 'Untitled spreadsheet'
   if (contentDoctype === 'Presentation') return 'Untitled presentation'
-  return 'Untitled document'
+  return DEFAULT_DOCUMENT_TITLE
+}
+
+/** True while a Writer document still has the title Drive gave it, with or without a copy suffix. */
+export function hasDefaultDocumentTitle(title: string): boolean {
+  return title.startsWith(DEFAULT_DOCUMENT_TITLE)
 }

@@ -7,6 +7,14 @@ import type { DocumentWrite } from './writes'
 
 export type WriterSettings = Record<string, unknown>
 
+/**
+ * True when the document's settings lock it. `lock: null` is the old Writer's
+ * mark for a lock lifted for the current session, so only a truthy value locks.
+ */
+export function isLocked(settings: WriterSettings): boolean {
+  return Boolean(settings.lock)
+}
+
 export interface WriterDocumentRow {
   name: string
   collab?: number

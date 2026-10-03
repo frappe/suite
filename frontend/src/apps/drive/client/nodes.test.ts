@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerState } from '@/platform/server-state'
 
-import { children, createDocument } from './nodes'
+import { children, createDocument, hasDefaultDocumentTitle } from './nodes'
 
 describe('children descriptors', () => {
   it('resets the cursor when server presentation changes', () => {
@@ -46,5 +46,29 @@ describe('generic document creation', () => {
       },
     ])
     state.dispose()
+  })
+})
+
+describe('default document title', () => {
+  it('is recognised on the title Drive gives a new Writer document, and only until it is renamed', async () => {
+    const titles: unknown[] = []
+    const state = createServerState({
+      realtime: false,
+      persistence: false,
+      transport: {
+        async request(_operation, input) {
+          titles.push((input as { title?: unknown }).title)
+          return { name: 'new-node', title: 'x', kind: 'document', parent_node: 'p' } as never
+        },
+      },
+    })
+    await state
+      .useMutation(createDocument())
+      .run({ parent_node: 'p', content_doctype: 'Writer Document' })
+    state.dispose()
+
+    expect(titles).toHaveLength(1)
+    expect(hasDefaultDocumentTitle(titles[0] as string)).toBe(true)
+    expect(hasDefaultDocumentTitle('Quarterly plan')).toBe(false)
   })
 })

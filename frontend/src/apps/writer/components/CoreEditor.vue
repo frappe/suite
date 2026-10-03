@@ -101,6 +101,7 @@ import {
 import { v4 as uuidv4 } from 'uuid'
 import { computed, inject, onBeforeUnmount, provide, ref, watch } from 'vue'
 
+import { hasDefaultDocumentTitle } from '@/apps/drive'
 import { useUsers } from '@/apps/writer/composables/useUsers'
 import emitter from '@/apps/writer/emitter'
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
@@ -366,7 +367,7 @@ const autorename = () => {
     }
     return
   }
-  if (!props.file.doc.file_name.startsWith('Untitled Document')) return
+  if (!hasDefaultDocumentTitle(props.file.doc.file_name)) return
 
   const implicitTitle = editor.value.state.doc.firstChild.textContent
     .replaceAll('#', '')
