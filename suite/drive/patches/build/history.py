@@ -12,6 +12,7 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.ports import REMOVED
+from suite.drive.patches.build.writer_bodies import convert_writer_body
 
 
 class BuildHistoryError(RuntimeError):
@@ -30,6 +31,10 @@ HISTORY_FIELDS = (
     "comments_seen",
     "comment_threads_renamed",
     "comments_renamed",
+    "writer_media_copied",
+    "writer_bodies_rewritten",
+    "writer_media_references_missing",
+    "writer_bodies_unreadable",
 )
 
 VERSION_FIELDS = (
@@ -97,6 +102,7 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
                         first_pending = first_pending or document.name
                     else:
                         if doctype == "Writer Document":
+                            convert_writer_body(env, content, document, node)
                             _writer_versions(env, content, document, node, batch_size)
                         else:
                             _sheet_versions(env, content, document, node, batch_size)

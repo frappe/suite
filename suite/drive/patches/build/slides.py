@@ -529,16 +529,14 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
     candidates = env.content.media_files_by_urls(tuple(sorted(_url_lookup(unresolved, host))))
     all_files = defaultdict(list)
     by_url = defaultdict(list)
-    foreign = defaultdict(list)
     for row in candidates:
         for alias in _aliases(row, host):
             all_files[alias].append(row)
-        if row.deck == deck.name:
-            continue
-        adoptable = env.content.presentation_is_template(row.deck)
-        for alias in _aliases(row, host):
-            foreign[alias].append(row)
-            if adoptable:
+            # B112: a picture another deck holds, template or not, is copied
+            # into this one. The copy is a new node for the same blob, so the
+            # other deck keeps its picture and this deck's readers read the
+            # copy through this deck's grants.
+            if row.deck != deck.name:
                 by_url[alias].append(row)
     media_nodes = {row["name"] for row in writer.children if row.get("kind") == "file"}
     mapping = {}
@@ -547,15 +545,7 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
     for value in unresolved:
         rows = _named_rows(by_url, value, host)
         if not rows:
-            # A non-template global File cannot be adopted: Build cannot
-            # reconstruct the original paste actor's access.
-            if _named_rows(foreign, value, host):
-                result.record_issue(
-                    f"Presentation:{deck.name}",
-                    f"media reference {value!r} belongs to a non-template Presentation and was not adopted",
-                    phase="slides",
-                )
-            elif (
+            if (
                 not _named_rows(all_files, value, host)
                 and value not in media_nodes
                 and not _never_media(value, host)

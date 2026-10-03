@@ -40,6 +40,7 @@ from suite.drive.patches.build.ports import (
     SheetSnapshotRow,
     SlideRow,
     TreeRow,
+    WriterBody,
     WriterTemplateRow,
     WriterVersionRow,
 )
@@ -713,10 +714,12 @@ class FakeContent:
         slides=(),
         media=(),
         shares=(),
+        writer_bodies=None,
         users=None,
         timezone="UTC",
         host="site.example",
     ):
+        self.writer_bodies = dict(writer_bodies or {})
         self.document_rows = {(row.doctype, row.name): row for row in documents}
         self.file_rows = list(files)
         self.writer_version_rows = list(writer_versions)
@@ -798,9 +801,11 @@ class FakeContent:
     def writer_document_is_template(self, name):
         return any(row.name == name for row in self.writer_template_rows)
 
-    def presentation_is_template(self, deck):
-        row = self.document_rows.get(("Presentation", deck))
-        return bool(row and row.is_template)
+    def writer_body(self, name):
+        return self.writer_bodies.get(name)
+
+    def update_writer_body(self, name, content, html):
+        self.writer_bodies[name] = WriterBody(content=content, html=html)
 
     def content_shares(self, after, limit):
         return [row for row in sorted(self.share_rows, key=lambda row: row.name) if row.name > after][:limit]
@@ -1149,6 +1154,9 @@ class FakeContentTarget:
 
     def update_slides(self, rows):
         self.content.update_slides(rows)
+
+    def update_writer_body(self, name, content, html):
+        self.content.update_writer_body(name, content, html)
 
     def versions_to_thin(self, report_at):
         return self.thin_count

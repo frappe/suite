@@ -4430,6 +4430,24 @@ From the [012] amendment to [011]:
   `attachmentName` is dropped. `Slide.background` and legacy `/files/`
   paths are rewritten the same way. A legacy `poster` may be a dict, not a
   string.
+- **Pictures another document owns.** A deck or a Writer document can show
+  a picture that is filed under a different deck or document; the legacy
+  embed routes served it to anyone who could read the picture. The new
+  routes serve a picture only through the document that holds it (§9.4),
+  so Build copies the picture into the document that shows it: a new media
+  node under that document, for the same `File Blob`, with no bytes copied.
+  The document's owner owns the copy, and a copy under a Trashed document is
+  Trashed with it. The reference is rewritten to the new node, and the
+  other document keeps its own node. Build adds no grant: the copy is read
+  through the grants of the document that shows it. Build copies only a
+  stored file below another document whose blob is Ready. Any other
+  reference stays in the body as it is and is reported as missing. A
+  document that already holds a node for the same blob reuses it, so a
+  rerun copies nothing and rewrites nothing. Writer bodies are rewritten in
+  `content` (the live Yjs attributes, in all three media id spellings) and
+  in `html`. Writer versions and Writer templates are not rewritten: §14.6
+  copies version bytes exactly, and step 8 validates a template against its
+  source. A Writer body pycrdt cannot read is left as it is and reported.
 - `Presentation.thumbnail` Files become `Drive Node Preview` rows on the
   deck node. The field and its `attached_to_field` handling go.
 - Template decks (`is_template = 1`) gain nodes in Administrator's Personal

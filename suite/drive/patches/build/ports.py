@@ -650,6 +650,14 @@ class ContentRow:
 
 
 @dataclass(frozen=True)
+class WriterBody:
+    """One Writer Document's live body: the Yjs update and its HTML mirror."""
+
+    content: str | None
+    html: str | None
+
+
+@dataclass(frozen=True)
 class WriterVersionRow:
     """One legacy Writer version whose payload is exact HTML."""
 
@@ -817,9 +825,9 @@ class LegacyContent(Protocol):
 
     def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]: ...
 
-    def presentation_is_template(self, deck: str) -> bool: ...
-
     def writer_document_is_template(self, name: str) -> bool: ...
+
+    def writer_body(self, name: str) -> WriterBody | None: ...
 
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]: ...
 
@@ -928,6 +936,8 @@ class ContentTarget(Protocol):
     def adopt_media_node(self, name: str, values: dict) -> None: ...
 
     def update_slides(self, rows: list[dict]) -> None: ...
+
+    def update_writer_body(self, name: str, content: str | None, html: str | None) -> None: ...
 
     def versions_to_thin(self, report_at: str) -> int: ...
 
@@ -1615,9 +1625,6 @@ class SiteContentSource:
         )
         return [MediaFileRow(**dict(row)) for row in rows]
 
-    def presentation_is_template(self, deck: str) -> bool:
-        return bool(frappe.db.get_value("Presentation", deck, "is_template"))
-
     def writer_document_is_template(self, name: str) -> bool:
         """Whether §14.7 step 8 minted this `Writer Document` from a template.
 
@@ -1628,6 +1635,10 @@ class SiteContentSource:
         return bool(
             frappe.db.sql("SELECT 1 FROM `tabWriter Template` WHERE `name` = %(name)s", {"name": name})
         )
+
+    def writer_body(self, name: str) -> WriterBody | None:
+        row = frappe.db.get_value("Writer Document", name, ["content", "html"], as_dict=True)
+        return WriterBody(content=row.content, html=row.html) if row else None
 
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]:
         doctypes = (
@@ -2093,6 +2104,13 @@ class SiteContentTarget:
                 {"elements": row["elements"], "background": row["background"]},
                 update_modified=False,
             )
+
+    def update_writer_body(self, name: str, content: str | None, html: str | None) -> None:
+        # §14.7 preserves source stamps, so the body changes and `modified`
+        # does not, as with every other Build write.
+        frappe.db.set_value(
+            "Writer Document", name, {"content": content, "html": html}, update_modified=False
+        )
 
     def versions_to_thin(self, report_at: str) -> int:
         """Project the runtime ladder deletions at one frozen report time.

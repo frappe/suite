@@ -1,9 +1,13 @@
 """Writer and Sheet history conversion without a site."""
 
+import base64
 import json
 import tempfile
 import unittest
+from itertools import count
 from pathlib import Path
+
+import pycrdt
 
 from suite.drive.patches.build.content_mapping import MAX_VERSION_SEQ
 from suite.drive.patches.build.history import BuildHistoryError, convert_history_and_comments
@@ -12,6 +16,7 @@ from suite.drive.patches.build.ports import (
     ContentRow,
     SheetSnapshotRow,
     TreeRow,
+    WriterBody,
     WriterVersionRow,
 )
 from suite.drive.patches.build.report import build_report
@@ -834,6 +839,181 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(content.legacy_comments_ported, 1)
         self.assertEqual(target.thread_rows["legacy-1"]["node"], "file-1")
         self.assertEqual(target.comment_rows["legacy-1"]["thread"], "legacy-1")
+
+
+def yjs_body(*blocks) -> str:
+    """One Writer body, as the editor stores it: a base64 Yjs update."""
+    document = pycrdt.Doc()
+    fragment = pycrdt.XmlFragment()
+    document["default"] = fragment
+    for block in blocks:
+        fragment.children.append(block)
+    return base64.b64encode(document.get_update()).decode("ascii")
+
+
+def body_fragment(content: str) -> pycrdt.XmlFragment:
+    document = pycrdt.Doc()
+    fragment = pycrdt.XmlFragment()
+    document["default"] = fragment
+    document.apply_update(base64.b64decode(content))
+    return fragment
+
+
+def image(**attributes) -> pycrdt.XmlElement:
+    return pycrdt.XmlElement("image", attributes)
+
+
+def paragraph(*children) -> pycrdt.XmlElement:
+    return pycrdt.XmlElement("paragraph", None, list(children))
+
+
+def embed(node: str) -> str:
+    return f"/api/method/suite.writer.api.embed.get?id={node}"
+
+
+class WriterBodyTest(unittest.TestCase):
+    """§14.6: a Writer body after Build shows every picture it showed before."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        ids = count(1)
+        self.source = FakeContent()
+        self.target = FakeContentTarget(content=self.source)
+        self.env = build_environment(
+            Path(self.tmp.name),
+            content=self.source,
+            content_target=self.target,
+            content_ready=True,
+            make_id=lambda: f"copy-{next(ids)}",
+        )
+        self.target.node_rows["root-1"] = {"name": "root-1", "kind": "root", "path": "", "root": "root-1"}
+
+    def add_document(self, docname, node, *, owner=OWNER, body=None):
+        self.source.add_content_document(
+            ContentRow(
+                doctype="Writer Document",
+                name=docname,
+                node=node,
+                owner=owner,
+                creation=STAMP,
+                modified=STAMP,
+                modified_by=owner,
+            )
+        )
+        self.target.node_rows[node] = {
+            **self.node(node, "root-1", kind="document", title=docname),
+            "content_doctype": "Writer Document",
+            "content_docname": docname,
+        }
+        if body is not None:
+            self.source.writer_bodies[docname] = body
+
+    def add_picture(self, name, document_node, blob, title, *, owner=OWNER):
+        self.target.add_blob(blob, f"bytes of {blob}".encode(), mime_type="image/png")
+        self.target.node_rows[name] = {
+            **self.node(name, document_node, kind="file", title=title, owner=owner),
+            "blob": blob,
+            "size": len(f"bytes of {blob}"),
+            "mime": "image/png",
+        }
+
+    def node(self, name, parent, *, kind, title, owner=OWNER):
+        stored = self.target.node_rows[parent]
+        path = "" if stored["kind"] == "root" else f"{stored['path'] or '/'}{parent}/"
+        return {
+            "name": name,
+            "title": title,
+            "parent_node": parent,
+            "root": "root-1",
+            "path": path,
+            "kind": kind,
+            "state": "Active",
+            "owner": owner,
+            "creation": STAMP,
+            "modified": STAMP,
+            "content_modified": STAMP,
+        }
+
+    def children(self, parent):
+        return {name: row for name, row in self.target.node_rows.items() if row.get("parent_node") == parent}
+
+    def test_a_picture_another_document_owns_is_copied_under_the_document_that_shows_it(self):
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(
+                    paragraph(image(src=embed("pic-1"), alt="borrowed")),
+                    paragraph(image(src=embed("own-1"))),
+                    # The same picture again, in the plain spelling: one copy serves both.
+                    paragraph(image(**{"data-node": "pic-1"})),
+                    paragraph(image(src=embed("gone-1"))),
+                ),
+                html=(
+                    '<p><img src="/api/method/drive.api.embed.get_file_content'
+                    '?embed_name=pic-1&parent_entity_name=node-a"></p>'
+                    f'<p><img src="{embed("own-1")}"></p>'
+                    f'<p><img src="{embed("gone-1")}"></p>'
+                ),
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        first = convert_history_and_comments(self.env)
+        body = self.source.writer_bodies["reader-doc"]
+        second = convert_history_and_comments(self.env)
+
+        copies = {name: row for name, row in self.children("node-b").items() if name != "own-1"}
+        self.assertEqual(list(copies), ["copy-1"])
+        copy = copies["copy-1"]
+        self.assertEqual(
+            {key: copy[key] for key in ("blob", "title", "kind", "state", "root", "path", "owner", "mime")},
+            {
+                "blob": "blob-1",
+                "title": "photo.png",
+                "kind": "file",
+                "state": "Active",
+                "root": "root-1",
+                "path": "/node-b/",
+                "owner": OWNER,
+                "mime": "image/png",
+            },
+        )
+        # The owning document keeps its picture where it was.
+        self.assertEqual(self.target.node_rows["pic-1"]["parent_node"], "node-a")
+        self.assertEqual(self.target.grant_rows, {})
+
+        sources = [
+            {key: value for key, value in dict(child.children[0].attributes).items()}
+            for child in body_fragment(body.content).children
+        ]
+        self.assertEqual(
+            sources,
+            [
+                {"src": embed("copy-1"), "alt": "borrowed"},
+                {"src": embed("own-1")},
+                {"data-node": "copy-1"},
+                {"src": embed("gone-1")},
+            ],
+        )
+        self.assertEqual(
+            body.html,
+            '<p><img src="/api/method/drive.api.embed.get_file_content'
+            '?embed_name=copy-1&parent_entity_name=node-a"></p>'
+            f'<p><img src="{embed("own-1")}"></p>'
+            f'<p><img src="{embed("gone-1")}"></p>',
+        )
+        # The reference that names no node stays, and is reported.
+        self.assertIn("gone-1", " ".join(issue.reason for issue in second.issues))
+
+        # A rerun copies nothing and rewrites nothing.
+        self.assertEqual(self.source.writer_bodies["reader-doc"], body)
+        for content in (first, second):
+            self.assertEqual(content.writer_media_copied, 1)
+            self.assertEqual(content.writer_bodies_rewritten, 1)
+            self.assertEqual(content.writer_media_references_missing, 1)
 
 
 if __name__ == "__main__":

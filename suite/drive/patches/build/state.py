@@ -68,6 +68,11 @@ CUMULATIVE_FIELDS = frozenset(
         # for the same reason `pending_link_nodes` is one.
         "personal_roots_created_for_reservations",
         "pending_reservation_roots",
+        # A Writer body is rewritten once: the next history pass reads a body
+        # that names only the document's own pictures and writes nothing, so
+        # neither count could be derived again.
+        "writer_media_copied",
+        "writer_bodies_rewritten",
     }
 )
 
@@ -431,6 +436,16 @@ class ContentConversion:
     # same rows without writing any.
     comment_threads_renamed: int = 0
     comments_renamed: int = 0
+    # Not in §14.9, and owned by the history phase. §14.6's Writer body pass
+    # (`writer_bodies`): pictures another document owned that now have a node
+    # of their own under the document showing them, and the bodies rewritten
+    # to name them. Those two are cumulative. The last two are recounted every
+    # pass: a reference that names no copyable picture stays in the body, and
+    # a body pycrdt cannot read stays as it is.
+    writer_media_copied: int = 0
+    writer_bodies_rewritten: int = 0
+    writer_media_references_missing: int = 0
+    writer_bodies_unreadable: int = 0
     trash_disagreements: int = 0
     orphan_content_docs_adopted: int = 0
     versions_to_thin: int = 0
@@ -439,7 +454,7 @@ class ContentConversion:
     # Not in §14.9, and owned by the slides phase like the counters above it.
     # §14.7's `media_duplicates_collapsed` counts a deck's own `File` rows
     # that share one node. This counts the extra `File Blob` rows a borrowed
-    # reference named on a template deck, which are nobody's own rows, so the
+    # reference named on another deck, which are not this deck's own rows, so the
     # two numbers stay apart.
     borrowed_duplicates_collapsed: int = 0
     # Not in §14.9, and owned by the slides phase. A legacy media reference
