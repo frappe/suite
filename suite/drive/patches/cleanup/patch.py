@@ -40,8 +40,18 @@ PHASES = (
 
 
 def execute() -> None:
-    """The patch entry point: Cleanup against the current site."""
+    """The patch entry point: Cleanup against the current site.
+
+    A completed Cleanup then queues the preview backfill (§9.2): Build
+    gives migrated files no preview rows, and the daily sweep's 500 a day
+    would take weeks on a large site. The job runs after the patch commits,
+    on the long queue, so `bench migrate` does not wait for it. A Cleanup
+    that refuses or fails raises first and queues nothing.
+    """
+    from suite.drive._core.previews import enqueue_backfill
+
     run_cleanup(CleanupEnvironment.for_site())
+    enqueue_backfill()
 
 
 def run_cleanup(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> dict:

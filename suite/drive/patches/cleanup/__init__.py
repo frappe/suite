@@ -47,6 +47,10 @@ with `driver = "s3"` exists (a database restored from backup). After it
 runs, the legacy objects are gone and only the canonical copies remain, so
 the backup restore is no longer a complete rollback.
 
+When every phase has run, `execute` queues the preview backfill on the
+long queue (`suite.drive._core.previews.enqueue_backfill`, spec §9.2), so
+migrated files get thumbnails without `bench migrate` waiting for them.
+
 `removal.py` holds the ordered contract itself: Drive-owned `File` rows,
 the two root rows, and every Removed row, deepest-first, plus the name
 census and disk-settings snapshot every later phase needs (step 1); the

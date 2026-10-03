@@ -2411,13 +2411,15 @@ until the node is purged. `site_config` overrides the tiers under
 ### 9.2 Previews
 
 `suite/drive/_core/previews.py`: `enqueue_render`, `render`, `push_preview`,
-`sweep_missing`.
+`sweep_missing`, `enqueue_backfill`, `backfill_missing`.
 
 ```python
 def enqueue_render(node: str) -> None: ...
 def render(node: str) -> None: ...
 def push_preview(p: Principals, node: str, image_bytes: bytes, mime: str) -> None: ...
 def sweep_missing() -> dict: ...
+def enqueue_backfill() -> None: ...
+def backfill_missing() -> dict: ...
 ```
 
 One derived artifact exists: a 512 px longest-side WebP, one row per node
@@ -2461,8 +2463,8 @@ only when the caller asks for `expand=preview`. [006 §4] had the listing
 mint one for every row; [014 §7] made it an expansion, and the later ticket
 wins (§5.3). The field holds `{"url", "expires"}` (§11.3).
 
-The gap sweep runs daily. It covers failed renders and migrated nodes.
-Documents get no sweep [006 §8].
+The gap sweep runs daily. It covers failed renders and any migrated file
+the backfill below did not reach. Documents get no sweep [006 §8].
 
 ```sql
 SELECT n.name
@@ -2480,6 +2482,37 @@ LIMIT %(batch)s
 `renderable_mimes` is the mime list the render pipeline handles. Index:
 `Drive Node Preview.node` (the UNIQUE) drives the anti-join; the outer scan
 is bounded by `LIMIT` and resumes from the last `creation` on the next run.
+
+The backfill. The sweep queues one page of 500 a day, so a migrated site
+with thousands of files would wait weeks for its thumbnails. After
+migration, `backfill_missing()` makes them all in one job (decision of
+2026-10-04). It runs the sweep's query page after page until a page comes
+back empty, and it covers every Active file, media nodes under documents
+included.
+
+- Cleanup queues it once, after its last phase (§14.10), through
+  `enqueue_backfill()`: one job on the long queue, after the patch commits,
+  with a fixed job id so a second call while it is queued or running adds
+  nothing. `bench migrate` does not wait for it. A Cleanup that refuses or
+  fails queues nothing.
+- The job renders each file itself and commits after each one. It does not
+  queue one short job per file, because thousands of queued renders would
+  fill the short queue that uploads use.
+- It only moves forward. A cursor in the site cache records the last file
+  it tried, so a job that stops partway continues after that file when it
+  runs again. A finished run clears the cursor.
+- A file that fails to render is logged, as a failed render job is, and
+  passed over: the same run does not try it again. The daily sweep still
+  does, as it does for any failed render.
+- A file that already has a preview for its head is not in the query, so a
+  second run renders only what is still missing.
+- It returns how many previews it made, how many files it skipped (the file
+  changed or left Active while the job ran) and how many failed, and how
+  long it took. An operator can run it again in the foreground:
+  `bench --site <site> execute suite.drive._core.previews.backfill_missing`.
+
+The daily sweep stays as the safety net for failed renders and for queue
+refusals.
 
 ### 9.3 Comments
 
@@ -4518,8 +4551,10 @@ From the [012] amendment to [011]:
   (`presentation.py:43`), so this is a create, not a move.
 - `Writer Template` rows become `Writer Document` rows with nodes and
   `is_template`, granted the same way. The doctype is then dropped.
-- Media nodes get no preview rows at migration; the daily gap sweep fills
-  them. Deck previews come from the thumbnail Files above.
+- Build writes no preview rows for files or media nodes. The backfill that
+  Cleanup queues makes them after the migrate (§9.2), and the daily gap
+  sweep catches any it missed. Deck previews come from the thumbnail Files
+  above.
 
 ### 14.8 Settings, quota, reservations
 
@@ -4685,6 +4720,11 @@ Then, in order:
 Local legacy files are never deleted: backfilled blobs point at them in
 place through `../<rel_path>` keys.
 
+When every phase has run, Cleanup queues the preview backfill (§9.2) on the
+long queue. It runs after the migrate commits, so `bench migrate` does not
+wait for it, and it makes a thumbnail for every migrated file that can have
+one.
+
 ### 14.11 One storage location, and rollback
 
 After Build, an S3 site holds blobs in two places: Drive files copied into
@@ -4737,6 +4777,7 @@ the spec.
 | Build commit batch | 1000 rows | §14.2 | [011] |
 | S3 multipart copy threshold | 5 GB | §14.2 | [011] |
 | Old whitelisted methods deleted | 69, in 11 files, 26 guest-callable | §11.7 | [014] |
+| Preview backfill | pages of 500, until none are left; one long-queue job, 6 h timeout, queued once after Cleanup | §9.2, §14.10 | picked |
 | Daily jobs | five: usage recompute, preview gap sweep, version thinning, trash purge, unused-media sweep | §7.7, §8.8, §9.1, §9.2, §10.6 | [006, 010, 011, 012]; expiry retention accepted |
 | Framework GC orphan age | 24 h | §2.4, §8.4, §8.8, §13.1 | framework, `gc.py:17` |
 | Framework GC batch | 500 rows | §13.1 | framework, `gc.py:16` |

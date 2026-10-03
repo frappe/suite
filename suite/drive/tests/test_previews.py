@@ -21,9 +21,11 @@ from suite.drive._core.previews import (
     PREVIEW_LONGEST_SIDE,
     PREVIEW_TTL_SECONDS,
     RENDERABLE_MIMES,
+    _backfill_cursor_key,
     _publish_rendered,
     _render_webp,
     _sweep_cursor_key,
+    backfill_missing,
     preview_expansions,
     push_preview,
     render,
@@ -240,6 +242,24 @@ class TestPreviewContract(UnitTestCase):
             enqueue_after_commit=True,
             node="node",
         )
+
+    @patch("suite.drive._core.previews.frappe.enqueue")
+    def test_the_backfill_is_one_post_commit_long_job(self, enqueue):
+        from suite.drive._core.previews import enqueue_backfill
+
+        enqueue_backfill()
+
+        enqueue.assert_called_once()
+        self.assertEqual(enqueue.call_args.args, ("suite.drive._core.previews.backfill_missing",))
+        kwargs = enqueue.call_args.kwargs
+        self.assertEqual(kwargs["queue"], "long")
+        self.assertTrue(kwargs["enqueue_after_commit"])
+        # A fixed id, deduplicated: a second call while one runs adds nothing.
+        self.assertTrue(kwargs["deduplicate"])
+        self.assertTrue(kwargs["job_id"])
+        # Hours, not the long queue's default 25 minutes.
+        self.assertGreaterEqual(kwargs["timeout"], 60 * 60)
+        self.assertIs(frappe.get_attr(enqueue.call_args.args[0]), backfill_missing)
 
     @patch("suite.drive._core.previews.frappe.log_error")
     @patch("suite.drive._core.previews.frappe.enqueue")
@@ -522,6 +542,9 @@ class TestPreviews(IntegrationTestCase):
         frappe.cache().set_value(
             _sweep_cursor_key(), frappe.as_json({"creation": str(now_datetime()), "name": ""})
         )
+        # The backfill pages through the site the same way, from its own cursor.
+        self._backfill_cursor_before = frappe.cache().get_value(_backfill_cursor_key())
+        self._start_backfill_here()
 
     def tearDown(self):
         frappe.set_user("Administrator")
@@ -541,12 +564,31 @@ class TestPreviews(IntegrationTestCase):
         frappe.db.delete("Drive Root", {"name": ["in", self.root_ids]})
         for blob in set(frappe.get_all("File Blob", pluck="name")) - self._blobs_before:
             frappe.delete_doc("File Blob", blob, force=1, ignore_permissions=True, ignore_missing=True)
-        if self._sweep_cursor_before is None:
-            frappe.cache().delete_value(_sweep_cursor_key())
-        else:
-            frappe.cache().set_value(_sweep_cursor_key(), self._sweep_cursor_before)
+        for key, before in (
+            (_sweep_cursor_key(), self._sweep_cursor_before),
+            (_backfill_cursor_key(), self._backfill_cursor_before),
+        ):
+            if before is None:
+                frappe.cache().delete_value(key)
+            else:
+                frappe.cache().set_value(key, before)
         frappe.db.commit()
         super().tearDown()
+
+    def _start_backfill_here(self):
+        """Point the backfill at this test's files, not the rest of the site."""
+        frappe.cache().set_value(
+            _backfill_cursor_key(), frappe.as_json({"creation": str(now_datetime()), "name": ""})
+        )
+
+    def _broken_image(self, title: str) -> str:
+        """A PNG cut short: its header reads, its pixels never decode."""
+        content = _png()
+        return self._file(title, content[: len(content) // 2])
+
+    def _has_current_preview(self, node: str) -> bool:
+        head = frappe.db.get_value("Drive Node", node, "blob")
+        return bool(frappe.db.exists("Drive Node Preview", {"node": node, "source_blob": head}))
 
     def _blob(self, content: bytes, filename: str = "source.png"):
         return put_blob(io.BytesIO(content), is_private=True, filename=filename)
@@ -822,3 +864,100 @@ class TestPreviews(IntegrationTestCase):
             )
         self.assertEqual(frappe.db.get_value("Drive Node", node, "blob"), blob.name)
         log_error.assert_called_once()
+
+    def test_the_backfill_renders_every_missing_preview_past_one_page(self):
+        missing = [
+            self._file(f"missing-{index}.png", _png(color=color))
+            for index, color in enumerate(("red", "green", "blue", "yellow", "orange"))
+        ]
+        previewed = self._file("previewed.png", _png(color="black"))
+        render(previewed)
+        kept_preview = frappe.db.get_value("Drive Node Preview", {"node": previewed}, "blob")
+        unsupported = self._blob(b"not renderable", "plain.txt")
+        with patch("suite.drive._core.previews.enqueue_render"):
+            create_file(
+                self.admin,
+                self.root.name,
+                "plain.txt",
+                blob=unsupported.name,
+                size=unsupported.file_size,
+                mime=unsupported.mime_type,
+            )
+        trashed = self._file("trashed.png", _png(color="purple"))
+        update(self.admin, trashed, state="Trashed")
+        frappe.db.commit()
+
+        # Pages of two: five missing files need three pages, where the daily
+        # sweep would stop after one.
+        with patch("suite.drive._core.previews.SWEEP_BATCH", 2):
+            result = backfill_missing()
+
+        self.assertEqual((result["made"], result["skipped"], result["failed"]), (5, 0, 0))
+        for node in missing:
+            self.assertTrue(self._has_current_preview(node), node)
+        self.assertEqual(frappe.db.get_value("Drive Node Preview", {"node": previewed}, "blob"), kept_preview)
+        self.assertFalse(frappe.db.exists("Drive Node Preview", {"node": trashed}))
+        self.assertIsNone(frappe.cache().get_value(_backfill_cursor_key()))
+
+        # A second run finds nothing left to render.
+        self._start_backfill_here()
+        with patch("suite.drive._core.previews._render_webp") as render_webp:
+            again = backfill_missing()
+        render_webp.assert_not_called()
+        self.assertEqual((again["made"], again["skipped"], again["failed"]), (0, 0, 0))
+
+    def test_a_file_that_fails_to_render_is_logged_and_passed_over(self):
+        broken = self._broken_image("broken.png")
+        healthy = self._file("healthy.png")
+        frappe.db.commit()
+
+        with patch("suite.drive._core.previews.frappe.log_error") as log_error:
+            result = backfill_missing()
+
+        self.assertEqual((result["made"], result["skipped"], result["failed"]), (1, 0, 1))
+        log_error.assert_called_once()
+        self.assertIn("preview", log_error.call_args.args[0])
+        self.assertFalse(frappe.db.exists("Drive Node Preview", {"node": broken}))
+        self.assertTrue(self._has_current_preview(healthy))
+
+    def test_a_stopped_backfill_continues_after_the_last_file_it_tried(self):
+        broken = self._broken_image("first-broken.png")
+        done = self._file("second.png", _png(color="green"))
+        interrupted = self._file("third.png", _png(color="blue"))
+        untouched = self._file("fourth.png", _png(color="yellow"))
+        frappe.db.commit()
+
+        class WorkerStopped(BaseException):
+            """Stands in for a killed worker: not an error the loop handles."""
+
+        real_render = render
+        tried: list[str] = []
+        stopped = False
+
+        def stop_at_the_third_file(node):
+            nonlocal stopped
+            tried.append(node)
+            if node == interrupted and not stopped:
+                stopped = True
+                raise WorkerStopped
+            real_render(node)
+
+        with (
+            patch("suite.drive._core.previews.render", side_effect=stop_at_the_third_file),
+            patch("suite.drive._core.previews.frappe.log_error"),
+        ):
+            with self.assertRaises(WorkerStopped):
+                backfill_missing()
+            self.assertEqual(tried, [broken, done, interrupted])
+            self.assertTrue(self._has_current_preview(done))
+            self.assertFalse(self._has_current_preview(untouched))
+
+            tried.clear()
+            result = backfill_missing()
+
+        # The rerun starts at the file the stopped run was on. The broken file
+        # before it is not tried again, and the finished file is not redone.
+        self.assertEqual(tried, [interrupted, untouched])
+        self.assertEqual((result["made"], result["skipped"], result["failed"]), (2, 0, 0))
+        self.assertTrue(self._has_current_preview(interrupted))
+        self.assertTrue(self._has_current_preview(untouched))

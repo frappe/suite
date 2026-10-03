@@ -3,6 +3,7 @@
 import io
 import time
 from collections.abc import Iterable
+from typing import Literal
 
 import frappe
 from frappe import _
@@ -44,8 +45,15 @@ def _preview_longest_side() -> int:
 # 178.9 Mpx bomb threshold, peaks at 2.6 GB of resident memory, and stores 542
 # bytes. A byte cap cannot see that; a pixel count can, from the header alone.
 MAX_PUSHED_PREVIEW_PIXELS = 25_000_000
+# One page of `MISSING_PREVIEW_SQL`. The daily sweep queues one page per run;
+# the backfill renders page after page until none is left.
 SWEEP_BATCH = 500
 SWEEP_CURSOR_KEY = "drive:preview-sweep-cursor"
+BACKFILL_CURSOR_KEY = "drive:preview-backfill-cursor"
+BACKFILL_JOB_ID = "drive-preview-backfill"
+# Long enough for a whole migrated site in one job. A job that runs out of
+# time keeps its cursor, and the next run continues from there.
+BACKFILL_TIMEOUT_SECONDS = 6 * 60 * 60
 
 IMAGE_MIMES = frozenset(
     {
@@ -73,6 +81,8 @@ VIDEO_MIMES = frozenset(
 )
 PDF_MIME = "application/pdf"
 RENDERABLE_MIMES = tuple(sorted((*IMAGE_MIMES, *VIDEO_MIMES, PDF_MIME)))
+
+BackfillOutcome = Literal["made", "skipped", "failed"]
 
 # §9.2's sweep matches `pv.name IS NULL`. A row that survives a head change
 # is invisible to that filter, so every writer that repoints `Drive Node.blob`
@@ -248,7 +258,7 @@ def preview_expansions(nodes: Iterable[str]) -> dict[str, dict]:
 
 def sweep_missing() -> dict:
     """Queue one bounded page of active files whose supported head lacks a preview."""
-    after_creation, after_name = _sweep_cursor()
+    after_creation, after_name = _read_cursor(_sweep_cursor_key())
     rows = _missing_rows(after_creation, after_name)
     wrapped = False
     if not rows and after_creation is not None:
@@ -259,11 +269,7 @@ def sweep_missing() -> dict:
         enqueue_render(row.name)
 
     if rows:
-        last = rows[-1]
-        frappe.cache().set_value(
-            _sweep_cursor_key(),
-            frappe.as_json({"creation": str(last.creation), "name": last.name}),
-        )
+        _write_cursor(_sweep_cursor_key(), str(rows[-1].creation), rows[-1].name)
     else:
         frappe.cache().delete_value(_sweep_cursor_key())
     return {
@@ -271,6 +277,73 @@ def sweep_missing() -> dict:
         "cursor": rows[-1].name if rows else None,
         "wrapped": wrapped,
     }
+
+
+def enqueue_backfill() -> None:
+    """Queue one preview backfill on the long queue, after the caller commits.
+
+    Cleanup calls this once at the end of the migration, so `bench migrate`
+    does not wait for thousands of renders. The fixed job id means a second
+    call while a backfill is queued or running adds nothing.
+    """
+    frappe.enqueue(
+        "suite.drive._core.previews.backfill_missing",
+        queue="long",
+        timeout=BACKFILL_TIMEOUT_SECONDS,
+        job_id=BACKFILL_JOB_ID,
+        deduplicate=True,
+        enqueue_after_commit=True,
+    )
+
+
+def backfill_missing() -> dict:
+    """Render every active file whose supported head lacks a preview, in one pass.
+
+    This is the daily sweep's query without its one-page limit. The job
+    renders each file itself and commits after each one, instead of queuing
+    one short job per file: thousands of queued renders would fill the short
+    queue that new uploads also use.
+
+    The pass only moves forward. A cursor in the site cache records the last
+    file it tried, so a run that stops partway continues after that file
+    when it runs again. A file that fails to render is logged and passed
+    over, so this run does not try it again; the daily sweep still does, as
+    it does for any failed render. A file that already has a preview for
+    its current head is not in the query, so a second run renders only what
+    is still missing. A finished run clears its cursor.
+
+    An operator can run it again, in the foreground:
+
+        bench --site <site> execute suite.drive._core.previews.backfill_missing
+    """
+    started = time.monotonic()
+    key = _backfill_cursor_key()
+    after_creation, after_name = _read_cursor(key)
+    counts: dict[BackfillOutcome, int] = {"made": 0, "skipped": 0, "failed": 0}
+    while rows := _missing_rows(after_creation, after_name):
+        for row in rows:
+            counts[_backfill_one(row.name)] += 1
+            after_creation, after_name = str(row.creation), row.name
+            _write_cursor(key, after_creation, after_name)
+    frappe.cache().delete_value(key)
+    return {**counts, "seconds": round(time.monotonic() - started, 1)}
+
+
+def _backfill_one(node: str) -> BackfillOutcome:
+    """Render one file in its own transaction and say what came of it."""
+    try:
+        render(node)
+    except Exception:
+        frappe.db.rollback()
+        frappe.log_error("Drive: could not render a preview", frappe.get_traceback())
+        return "failed"
+    frappe.db.commit()
+    head = frappe.db.get_value("Drive Node", node, "blob")
+    # `render` writes nothing when the file changed or left Active while the
+    # backfill ran; whoever changed it queued its own render.
+    if head and frappe.db.exists("Drive Node Preview", {"node": node, "source_blob": head}):
+        return "made"
+    return "skipped"
 
 
 def _renderable_file(node: frappe._dict | None) -> bool:
@@ -376,8 +449,8 @@ def _missing_rows(after_creation, after_name):
     )
 
 
-def _sweep_cursor() -> tuple[str | None, str | None]:
-    raw = frappe.cache().get_value(_sweep_cursor_key())
+def _read_cursor(key: str) -> tuple[str | None, str | None]:
+    raw = frappe.cache().get_value(key)
     if not raw:
         return None, None
     try:
@@ -393,6 +466,18 @@ def _sweep_cursor() -> tuple[str | None, str | None]:
     return value["creation"], value["name"]
 
 
+def _write_cursor(key: str, creation: str, name: str) -> None:
+    frappe.cache().set_value(key, frappe.as_json({"creation": creation, "name": name}))
+
+
 def _sweep_cursor_key() -> str:
+    return _site_key(SWEEP_CURSOR_KEY)
+
+
+def _backfill_cursor_key() -> str:
+    return _site_key(BACKFILL_CURSOR_KEY)
+
+
+def _site_key(prefix: str) -> str:
     site = getattr(frappe.local, "site", None) or "no-site"
-    return f"{SWEEP_CURSOR_KEY}:{site}"
+    return f"{prefix}:{site}"

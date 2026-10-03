@@ -12,6 +12,7 @@ import inspect
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import suite.drive.patches.cleanup as cleanup
 
@@ -72,6 +73,31 @@ class TestCleanupIsRegisteredOnce(unittest.TestCase):
     def test_execute_runs_the_site_environment_through_run_cleanup(self):
         source = inspect.getsource(cleanup.execute)
         self.assertIn("run_cleanup(CleanupEnvironment.for_site())", source)
+
+
+class TestCleanupQueuesThePreviewBackfill(unittest.TestCase):
+    """§9.2: migrated files get thumbnails from one job queued after Cleanup."""
+
+    def setUp(self):
+        self.calls = MagicMock()
+
+    def _execute(self):
+        with (
+            patch("suite.drive.patches.cleanup.patch.CleanupEnvironment.for_site"),
+            patch("suite.drive.patches.cleanup.patch.run_cleanup", self.calls.run_cleanup),
+            patch("suite.drive._core.previews.enqueue_backfill", self.calls.enqueue_backfill),
+        ):
+            cleanup.execute()
+
+    def test_a_completed_cleanup_queues_the_backfill_once_after_its_phases(self):
+        self._execute()
+        self.assertEqual([call[0] for call in self.calls.mock_calls], ["run_cleanup", "enqueue_backfill"])
+
+    def test_a_refused_cleanup_queues_nothing(self):
+        self.calls.run_cleanup.side_effect = cleanup.CleanupAuthorizationError("no backup recorded")
+        with self.assertRaises(cleanup.CleanupAuthorizationError):
+            self._execute()
+        self.calls.enqueue_backfill.assert_not_called()
 
 
 class TestCleanupIsOnlyAPatch(unittest.TestCase):
