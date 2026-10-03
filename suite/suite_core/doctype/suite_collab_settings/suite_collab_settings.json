@@ -4,7 +4,11 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "mode"
+  "mode",
+  "self_test_section",
+  "self_test_at",
+  "self_test_passed",
+  "self_test_report"
  ],
  "fields": [
   {
@@ -14,11 +18,36 @@
    "fieldtype": "Select",
    "label": "Mode",
    "options": "off\non"
+  },
+  {
+   "fieldname": "self_test_section",
+   "fieldtype": "Section Break",
+   "label": "Self-test"
+  },
+  {
+   "fieldname": "self_test_at",
+   "fieldtype": "Datetime",
+   "label": "Last run",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "self_test_passed",
+   "fieldtype": "Check",
+   "label": "Passed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "self_test_report",
+   "fieldtype": "Code",
+   "label": "Report",
+   "options": "JSON",
+   "read_only": 1
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-01 23:55:00.000000",
+ "modified": "2026-10-04 02:00:00.000000",
  "modified_by": "Administrator",
  "module": "Suite Core",
  "name": "Suite Collab Settings",

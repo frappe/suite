@@ -342,7 +342,7 @@ def enough_memory() -> bool:
 
 def limit_memory() -> None:
     """Cap this work horse's address space, on Linux and only in a forked horse."""
-    if sbool(os.environ.get("FRAPPE_BACKGROUND_WORKERS_NOFORK")):
+    if sbool(os.environ.get("FRAPPE_BACKGROUND_WORKERS_NOFORK", False)):
         return
     try:
         with open("/proc/self/status") as status:
