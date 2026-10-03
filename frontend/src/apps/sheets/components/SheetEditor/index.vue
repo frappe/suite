@@ -818,8 +818,8 @@
         <Button variant="ghost" size="sm" iconLeft="lucide-lock"        label="Freeze cols to here"  @click="doFreezeCol()" />
         <Button v-if="freezeCols > 0" variant="ghost" size="sm" iconLeft="lucide-unlock" label="Unfreeze cols" @click="doUnfreezeCols()" />
         <hr class="sn-ctx-sep" />
-        <Button variant="ghost" size="sm" iconLeft="lucide-square-check"   label="Data validation…" @click="contextMenu.open=false; openValidationDialog()" />
-        <Button variant="ghost" size="sm" iconLeft="lucide-blend"          label="Conditional format…" @click="contextMenu.open=false; openCfDialog(null)" />
+        <Button variant="ghost" size="sm" iconLeft="lucide-square-check"   label="Data validation…" @click="fromContextMenu(openValidationDialog)" />
+        <Button variant="ghost" size="sm" iconLeft="lucide-blend"          label="Conditional format…" @click="fromContextMenu(() => openCfDialog(null))" />
         <Button v-if="!selectionHasProtectedRange()" variant="ghost" size="sm" iconLeft="lucide-lock"   label="Protect range"     @click="protectSelection()" />
         <Button v-else                               variant="ghost" size="sm" iconLeft="lucide-unlock" label="Remove protection" @click="unprotectSelection()" />
         <hr class="sn-ctx-sep" />
@@ -891,7 +891,7 @@
       :sheet="sheet"
       :grid="grid"
       :is-protected="(id) => _cellSilentlyProtected(id)"
-      @close="showFindReplace = false; canvasRef?.focus?.()"
+      @close="closeFindReplace"
       @navigate-to="onNavigateTo"
     />
 
@@ -4640,6 +4640,12 @@ function addNoteFromPanel() {
   openCommentPanel()
 }
 
+// Runs a context-menu item's action after closing the menu.
+function fromContextMenu(action) {
+  contextMenu.open = false
+  action()
+}
+
 // ── Data validation ───────────────────────────────────────────────────────────
 
 function openValidationDialog() {
@@ -4995,6 +5001,11 @@ async function openCellHistory() {
 
 
 // ── Find & Replace ────────────────────────────────────────────────────────────
+
+function closeFindReplace() {
+  showFindReplace.value = false
+  canvasRef.value?.focus?.()
+}
 
 function onNavigateTo(id) {
   if (!grid) return

@@ -161,7 +161,7 @@
             :result="trash.outcome.value ?? batchOutcome"
             :verb="trash.outcome.value ? trash.verb.value : batchVerb"
             class="mt-3"
-            @dismiss="trash.dismissOutcome(); batchOutcome = null"
+            @dismiss="dismissOutcome"
           />
           <FilesListing
             class="flex-1"
@@ -534,6 +534,11 @@ const hasRows = computed(() => listing.rows.length > 0)
 const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
 // A trashed folder's own Restore needs its root too, for a restore into a folder the user picks.
 const trash = useTrashActions(() => trashRoot.value ?? trashedFolder.value?.root ?? null)
+
+function dismissOutcome() {
+  trash.dismissOutcome()
+  batchOutcome.value = null
+}
 // Search replaces the Trash listing, so its rows get no Trash actions.
 const trashActions = computed(() => props.destination === 'trash' && !isSearching.value)
 const uploads = ref<InstanceType<typeof DriveUploads> | null>(null)

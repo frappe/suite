@@ -37,7 +37,7 @@
           @blur="renameOnBlur"
           @keydown.stop
           @keydown.enter.prevent="renameOnEnter"
-          @keydown.escape.prevent="titleDraft = session.title.value; blurTitle()"
+          @keydown.escape.prevent="revertTitle"
         />
       </div>
       <span v-if="titleError" class="title-refusal ms-1 min-w-0 max-w-64 truncate text-sm text-ink-red-7" role="alert" :title="titleError">
@@ -156,6 +156,11 @@ watch(titleDraft, () => { titleError.value = undefined }, { flush: 'sync' })
 
 function blurTitle() {
   titleInput.value?.inputElement?.blur()
+}
+
+function revertTitle() {
+  titleDraft.value = props.session.title.value
+  blurTitle()
 }
 
 /** Selects a file's name up to its extension, or a document's whole title. */

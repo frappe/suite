@@ -36,7 +36,7 @@
                 ? 'border-outline-gray-3 bg-surface-gray-2'
                 : 'border-outline-gray-1 bg-surface-base hover:bg-surface-gray-1'"
               @click="choose(row)"
-              @dblclick="choose(row); create()"
+              @dblclick="chooseAndCreate(row)"
             >
               <span class="flex h-20 w-full items-center justify-center overflow-hidden rounded-4 bg-surface-gray-1">
                 <img
@@ -112,6 +112,11 @@ watch([typeKey, open], () => {
 function choose(row: DriveNode) {
   selected.value = row
   title.value = row.title
+}
+
+function chooseAndCreate(row: DriveNode) {
+  choose(row)
+  create()
 }
 
 async function create() {
