@@ -29,6 +29,8 @@ export interface DriveAccess {
 export interface DriveBreadcrumb {
   name: string
   title: string
+  /** A file under a content document has the document as its last step, not a folder. */
+  kind: string
 }
 
 export interface DrivePreview {

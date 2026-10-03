@@ -316,7 +316,7 @@ def node_children(
         # already read and authorized that folder: reading it again would let
         # a grant revoked mid-request 404 a page the plain listing answered.
         listed = result["container"]
-        trail = [*node_core.breadcrumbs(listed, principals), {"name": listed.name, "title": listed.title}]
+        trail = [*node_core.breadcrumbs(listed, principals), node_core.crumb(listed)]
         for answer in rows:
             answer["breadcrumbs"] = list(trail)
     return shapes.page(result, rows)

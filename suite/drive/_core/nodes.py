@@ -526,21 +526,26 @@ def breadcrumbs(row: frappe._dict, principals: Principals) -> list[dict]:
     if not chain:
         return []
     roles = chain_roles(row, principals)
-    titles = {
-        ancestor.name: ancestor.title
+    ancestors = {
+        ancestor.name: ancestor
         for ancestor in frappe.get_all(
             "Drive Node",
             filters={"name": ["in", chain]},
-            fields=["name", "title"],
+            fields=["name", "title", "kind"],
         )
     }
     trail: list[dict] = []
     for node_id in chain:
-        if roles.get(node_id, 0) < READ or node_id not in titles:
+        if roles.get(node_id, 0) < READ or node_id not in ancestors:
             trail = []
             continue
-        trail.append({"name": node_id, "title": titles[node_id]})
+        trail.append(crumb(ancestors[node_id]))
     return trail
+
+
+def crumb(row: frappe._dict) -> dict:
+    """Return one §11.3 breadcrumb step for an ancestor row."""
+    return {"name": row.name, "title": row.title, "kind": row.kind}
 
 
 def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_TTL_SECONDS) -> dict:
@@ -3292,13 +3297,13 @@ def _attach_breadcrumbs_from_union(
 ) -> None:
     """Attach every trail after one title read over the ancestor-id union."""
     ancestor_ids = sorted({node for row in rows for node in chains[row.name][:-1]})
-    titles = (
+    ancestors = (
         {
-            row.name: row.title
+            row.name: row
             for row in frappe.get_all(
                 "Drive Node",
                 filters={"name": ("in", ancestor_ids)},
-                fields=["name", "title"],
+                fields=["name", "title", "kind"],
             )
         }
         if ancestor_ids
@@ -3320,10 +3325,10 @@ def _attach_breadcrumbs_from_union(
                     ticket_results,
                 )["role"]
             )
-            if role < READ or node_id not in titles:
+            if role < READ or node_id not in ancestors:
                 trail = []
                 continue
-            trail.append({"name": node_id, "title": titles[node_id]})
+            trail.append(crumb(ancestors[node_id]))
         row.breadcrumbs = trail
 
 

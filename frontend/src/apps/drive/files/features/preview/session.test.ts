@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import type { DriveBreadcrumb } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
 
 const server = vi.hoisted(() => ({
@@ -7,6 +8,8 @@ const server = vi.hoisted(() => ({
   visits: [] as string[],
   starred: new Set<string>(),
   trashed: new Set<string>(),
+  /** The breadcrumbs a node read answers with, root first, down to the parent. */
+  trails: new Map<string, DriveBreadcrumb[]>(),
 }))
 
 vi.mock('@/platform/transport', async (actual) => ({
@@ -26,11 +29,13 @@ vi.mock('@/platform/transport', async (actual) => ({
       }
       if (operation.id !== 'node_get') return {}
       const trashed = server.trashed.has(input.node)
+      const breadcrumbs = server.trails.get(input.node)
       return {
         name: input.node,
         title: 'Plan.pdf',
         kind: 'file',
-        parent_node: 'p',
+        parent_node: breadcrumbs?.at(-1)?.name ?? 'p',
+        breadcrumbs,
         root: 'r',
         state: trashed ? 'Trashed' : 'Active',
         trash_root: trashed ? input.node : null,
@@ -79,6 +84,32 @@ describe('file preview session', () => {
     expect(starred.favourite.value).toBe(false)
     starred.dispose()
     plain.dispose()
+  })
+
+  it('names the folder a file is in, and no folder for a picture inside a document', async () => {
+    const root = { name: 'r', title: 'My files', kind: 'root' }
+    const folder = { name: 'talks', title: 'Talks', kind: 'folder' }
+    const deck = { name: 'deck', title: 'Launch', kind: 'document' }
+    server.trails.set('in-folder', [root, folder])
+    server.trails.set('in-root', [root])
+    // A document is never listed as a folder, so a picture under it has none to step through.
+    server.trails.set('in-deck', [root, folder, deck])
+    server.trails.set('below-deck', [
+      root,
+      deck,
+      { name: 'assets', title: 'Assets', kind: 'folder' },
+    ])
+
+    const sessions = await Promise.all(
+      ['in-folder', 'in-root', 'in-deck', 'below-deck'].map((node) => openFilePreviewSession(node)),
+    )
+    expect(sessions.map((session) => session.folder.value?.name ?? null)).toEqual([
+      'talks',
+      'r',
+      null,
+      null,
+    ])
+    for (const session of sessions) session.dispose()
   })
 
   it('follows a restore and its undo made elsewhere, without waiting for a refresh', async () => {

@@ -53,6 +53,9 @@ class AccessShape(TypedDict, total=False):
 class BreadcrumbShape(TypedDict):
     name: str
     title: str
+    # A file under a content document has the document as its last crumb, and
+    # a document is not a folder a client can list or link to as one.
+    kind: str
 
 
 class PreviewShape(TypedDict):

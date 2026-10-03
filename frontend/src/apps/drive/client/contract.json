@@ -86,11 +86,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -446,11 +451,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -791,11 +801,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -1145,11 +1160,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -1661,11 +1681,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -1998,11 +2023,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -2344,11 +2374,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -2687,11 +2722,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -3034,11 +3074,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -3376,11 +3421,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -3771,11 +3821,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -4137,11 +4192,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -4660,11 +4720,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -5367,11 +5432,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -6928,11 +6998,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"

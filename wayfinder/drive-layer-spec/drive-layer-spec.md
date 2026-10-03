@@ -3413,7 +3413,7 @@ copy archive state or quota counters into the node's stored fields.
 | Name | Adds |
 |---|---|
 | `access` | `{"role": 40, "via_link": "$LINK:...", "source_node": "...", "source_principal": "..."}` |
-| `breadcrumbs` | `[{"name", "title"}]` from the root down to the parent |
+| `breadcrumbs` | `[{"name", "title", "kind"}]` from the root down to the parent. `kind` tells a folder from a content document, which a client never lists as one (§8.10) |
 | `preview` | `{"url": "/f/<blob>/<file>?e=&s=", "expires": <epoch>}` |
 
 `access` is available on every node-valued detail, children page, and frozen

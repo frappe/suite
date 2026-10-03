@@ -689,13 +689,15 @@ class TestDriveViews(IntegrationTestCase):
 
         self.assertEqual([row.name for row in rows], [match.name])
         self.assertEqual(
-            [crumb["name"] for crumb in rows[0].breadcrumbs],
-            [self.personal.name, folder.name],
+            [(crumb["name"], crumb["kind"]) for crumb in rows[0].breadcrumbs],
+            [(self.personal.name, "root"), (folder.name, "folder")],
         )
         title_reads = [
             call
             for call in get_all.call_args_list
-            if call.args and call.args[0] == "Drive Node" and call.kwargs.get("fields") == ["name", "title"]
+            if call.args
+            and call.args[0] == "Drive Node"
+            and call.kwargs.get("fields") == ["name", "title", "kind"]
         ]
         self.assertEqual(len(title_reads), 1)
 

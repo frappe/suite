@@ -27,7 +27,7 @@ const net = vi.hoisted(() => {
     name: string,
     title: string,
     parent: string | null,
-    breadcrumbs: Array<{ name: string; title: string }>,
+    breadcrumbs: Array<{ name: string; title: string; kind: string }>,
   ) => ({
     name,
     title,
@@ -49,21 +49,24 @@ const net = vi.hoisted(() => {
     access: { role: 50 },
     breadcrumbs,
   })
-  const top = { name: 'mine', title: 'Aanya' }
+  const top = { name: 'mine', title: 'Aanya', kind: 'folder' }
   const nodes = new Map([
     ['mine', folder('mine', 'Aanya', null, [])],
     ['projects', folder('projects', 'Projects', 'mine', [top])],
     ['archive', folder('archive', 'Archive', 'mine', [top])],
     [
       'launch',
-      folder('launch', 'Launch', 'projects', [top, { name: 'projects', title: 'Projects' }]),
+      folder('launch', 'Launch', 'projects', [
+        top,
+        { name: 'projects', title: 'Projects', kind: 'folder' },
+      ]),
     ],
     [
       'assets',
       folder('assets', 'Assets', 'launch', [
         top,
-        { name: 'projects', title: 'Projects' },
-        { name: 'launch', title: 'Launch' },
+        { name: 'projects', title: 'Projects', kind: 'folder' },
+        { name: 'launch', title: 'Launch', kind: 'folder' },
       ]),
     ],
   ])

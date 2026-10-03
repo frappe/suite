@@ -1,7 +1,10 @@
 import type { DriveBreadcrumb } from '@/apps/drive/client/types'
 
-/** A folder and its ancestors, root first. The header shows it as breadcrumbs. */
-export type FolderTrail = readonly DriveBreadcrumb[]
+/**
+ * A folder and its ancestors, root first. The header shows it as breadcrumbs.
+ * The header names and links each step, so it does not need the step's kind.
+ */
+export type FolderTrail = readonly Pick<DriveBreadcrumb, 'name' | 'title'>[]
 
 /** What the page knows about a folder before its details load. */
 export interface KnownTrail {
