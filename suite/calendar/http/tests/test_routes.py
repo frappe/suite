@@ -1,11 +1,11 @@
-import frappe
-from frappe.tests import UnitTestCase
 from unittest.mock import patch
 
+import frappe
+from frappe.tests import UnitTestCase
 from pydantic import TypeAdapter
 
-from suite.calendar.http.framework import HTTP
 from suite.calendar.http import routes
+from suite.calendar.http.framework import HTTP
 from suite.composition.tests.http_conformance import HttpConformanceMixin
 
 
@@ -46,7 +46,12 @@ class TestHandlers(UnitTestCase):
             # Resolved through its series: the object itself.
             {"account": "a1", "id": "1", "start": "2026-09-15T09:00:00", "recurrence_rule": weekly},
             # Not resolved yet: the stored JSON text.
-            {"account": "a1", "id": "2", "start": "2026-09-15T10:00:00", "recurrence_rule": '{"frequency": "daily"}'},
+            {
+                "account": "a1",
+                "id": "2",
+                "start": "2026-09-15T10:00:00",
+                "recurrence_rule": '{"frequency": "daily"}',
+            },
             # One-off events, in each shape the read hands over.
             {"account": "a1", "id": "3", "start": "2026-09-15T11:00:00", "recurrence_rule": "{}"},
             {"account": "a1", "id": "4", "start": "2026-09-15T12:00:00", "recurrence_rule": {}},

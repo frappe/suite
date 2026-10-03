@@ -4,8 +4,8 @@
 	<MobileTitleHeader v-if="isMobile" with-menu with-search :title="__('All Inboxes')" />
 
 	<!-- Header -->
-	<!-- hidden on mobile: the tab bar's morphing Mail tab carries the folder name, and
-	     the header's actions live in the bar/FAB. Hidden (not v-if) so HeaderActions'
+	<!-- hidden on mobile: the title row carries the folder name, and the header's
+	     actions are the compose button and the sidebar sheet. Hidden (not v-if) so HeaderActions'
 	     modals stay mounted for the views' v-model bindings. -->
 	<header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
 		<div class="flex items-center space-x-2">

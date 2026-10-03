@@ -27,7 +27,7 @@ import {
 } from 'frappe-ui'
 import { DialogDescription } from 'reka-ui'
 
-import meetLogo from '@/assets/app-logos/meet.png'
+import { meetLogo } from '@/platform/brand'
 import { submit as submitCall } from '@/apps/meet/utils/request'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import {

@@ -94,15 +94,6 @@ export const useAccountSwitch = () => {
 	return { switchAccount }
 }
 
-const isSidebarOpen = ref(false)
-
-export const useSidebar = () => {
-	const openSidebar = () => (isSidebarOpen.value = true)
-	const closeSidebar = () => (isSidebarOpen.value = false)
-
-	return { isSidebarOpen, openSidebar, closeSidebar }
-}
-
 // Horizontal swipe-to-page detection, shared by the mailbox thread pane and the screener
 // preview: left → onSwipe(1) (next), right → onSwipe(-1). The rule itself lives in
 // createSwipeGesture; this binds it to the touch events and to the view. Judged on
@@ -146,17 +137,6 @@ export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) =>
 	return { onTouchStart, onTouchMove, onTouchEnd }
 }
 
-// Mobile folder bottom sheet — shared so both the header title (mailbox views)
-// and the tab bar's Mail re-tap can open the same sheet.
-const isFolderSheetOpen = ref(false)
-
-export const useFolderSheet = () => {
-	const openFolderSheet = () => (isFolderSheetOpen.value = true)
-	const closeFolderSheet = () => (isFolderSheetOpen.value = false)
-
-	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
-}
-
 // The search page's address — the one place that knows it is the mailbox route with the virtual
 // 'search' mailbox — for whoever sends someone there: the palette, the results header, the phone.
 export const mailSearchRoute = (accountId: string, query: Record<string, string> = {}) => ({
@@ -176,7 +156,7 @@ export const useMobileSearch = () => {
 	)
 
 	// Keep the search route behind the palette so browser Back dismisses search and the
-	// route watcher in the tab bar closes the palette.
+	// route watcher in DefaultLayout closes the palette.
 	const openSearch = async () => {
 		if (!isSearchRoute.value) await router.push(mailSearchRoute(store.accountId))
 		root.paletteOpen = true
@@ -188,11 +168,18 @@ export const useMobileSearch = () => {
 		Object.keys(route.query).some((key) => key !== 'all_accounts'),
 	)
 
-	return { hasSearchQuery, isSearchRoute, openSearch }
+	// The palette's open state, for the layout that hides the compose button behind it and
+	// closes it when the search route is left.
+	const paletteOpen = computed({
+		get: () => root.paletteOpen,
+		set: (open: boolean) => (root.paletteOpen = open),
+	})
+
+	return { hasSearchQuery, isSearchRoute, openSearch, paletteOpen }
 }
 
-// Mobile selection mode — MailboxView owns the selection; the tab bar and FAB
-// (mounted in DefaultLayout) hide behind the contextual action bar while it's on.
+// Mobile selection mode — MailboxView owns the selection; the compose button
+// (mounted in DefaultLayout) hides behind the contextual action bar while it's on.
 const isMobileSelectionActive = ref(false)
 
 export const useMobileSelection = () => {
@@ -275,7 +262,7 @@ export const useKeyboardOpen = () => {
 	if (!watchingFocus && isMobile.value) {
 		watchingFocus = true
 		// Re-read the focus on the next frame rather than trusting the event: moving between two
-		// fields fires focusout before focusin, and acting on the focusout would flash the bar back
+		// fields fires focusout before focusin, and acting on the focusout would flash the nav back
 		// in between them.
 		const sync = () =>
 			requestAnimationFrame(() => (keyboardOpen.value = isEditable(document.activeElement)))
@@ -284,7 +271,7 @@ export const useKeyboardOpen = () => {
 		// A field torn down with its route never fires focusout — Chrome and Safari move focus to
 		// <body> silently — so this would latch on and stay on. Compose is a page whose editor is
 		// focused on mount and which closes by navigating away, i.e. exactly that shape: leaving it
-		// left the tab bar and its FAB hidden for the rest of the session.
+		// left the bottom nav and the compose button hidden for the rest of the session.
 		router.afterEach(() => sync())
 	}
 	return keyboardOpen

@@ -1,5 +1,5 @@
 <template>
-	<!-- On mobile the tab bar owns these actions (Compose FAB, Profile tab); the header is
+	<!-- On mobile the compose button and the sidebar sheet's Profile row own these actions; the header is
 	     CSS-hidden there. Search is not among them on either: the palette answers ⌘K and has a
 	     row of its own in the sidebar, and a third button for it here said the same thing twice. -->
 	<div v-if="!isMobile" class="flex space-x-2">

@@ -208,7 +208,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     }
   ]
 }

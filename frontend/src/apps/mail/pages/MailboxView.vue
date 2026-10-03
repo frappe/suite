@@ -1,7 +1,7 @@
 <template>
 	<!-- Header -->
-	<!-- hidden on mobile: the tab bar's morphing Mail tab carries the folder name, and
-	     the header's actions live in the bar/FAB. Hidden (not v-if) so HeaderActions'
+	<!-- hidden on mobile: the title row carries the folder name, and the header's
+	     actions are the compose button and the sidebar sheet. Hidden (not v-if) so HeaderActions'
 	     modals stay mounted for the views' v-model bindings. -->
 	<header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
 		<div class="flex items-center space-x-2">
@@ -41,7 +41,7 @@
 	</div>
 
 	<!-- Mobile sizes by flex (the dvh calcs assume desktop chrome and overshoot
-	     once the tab bar exists, making the outer container scroll too). -->
+	     once the bottom nav exists, making the outer container scroll too). -->
 	<div
 		class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
 		:class="
@@ -387,10 +387,10 @@
 	<Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
 	<Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
 	<ScreenedEmailAddressModal />
-	<!-- Selection action bar (design: 5·Selection) — replaces the tab bar while
-	     selecting: thumb reach, Delete last and red. -->
-	<!-- Same 52px row + safe-area padding as the tab bar it overlays, so entering/
-	     leaving selection mode never shifts the layout. Teleported to Mail's overlay layer: inside
+	<!-- Selection action bar (design: 5·Selection) — covers the shell's bottom nav
+	     while selecting: thumb reach, Delete last and red. -->
+	<!-- Fixed over the nav with safe-area padding, so entering/leaving selection mode
+	     never shifts the list. Teleported to Mail's overlay layer: inside
 	     the layout's `isolate` stacking context, no z-index could beat the nav. -->
 	<Teleport :to="overlayLayer ?? 'body'">
 	<div
@@ -400,7 +400,7 @@
 		<!-- Four labeled actions + More: seven unlabeled icons were the old screener
 		     trap (no labels, no tooltips on touch). Overflow actions and the folder
 		     menus live in the More sheet, which chains into the folder sheets. -->
-		<!-- flex-1 columns (like the tab bar underneath): equal widths keep the icon
+		<!-- flex-1 columns (like the nav underneath): equal widths keep the icon
 		     centers evenly spaced regardless of label length. -->
 		<div class="flex h-15 items-stretch">
 			<button
@@ -665,7 +665,7 @@ const mailThreadRef = useTemplateRef('mailThread')
 const selections = ref<string[]>([])
 
 // Mobile selection mode (design: 5·Selection): rows show checkboxes, the toolbar
-// turns contextual, and the action bar replaces the tab bar (via the composable).
+// turns contextual, and the action bar covers the bottom nav; the compose button hides (via the composable).
 const mobileSelectionMode = computed(() => isMobile.value && selections.value.length > 0)
 watch(mobileSelectionMode, (active) => setMobileSelectionActive(active))
 onUnmounted(() => setMobileSelectionActive(false))
@@ -1029,7 +1029,7 @@ const screenerCount = computed(
 )
 const showScreenerBanner = computed(
 	() =>
-		// The mobile tab bar's Screener badge carries this nudge; the banner is desktop-only.
+		// On a phone the Screener row's unread count in the sidebar sheet carries this nudge; the banner is desktop-only.
 		!isMobile.value &&
 		mailbox === mailboxIds.inbox &&
 		screeningEnabled.value &&

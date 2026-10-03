@@ -10,7 +10,7 @@ import type { CalendarMode } from 'frappe-ui/experimental'
  * an agenda, which is the phone's home.
  *
  * Named in one place because every surface has to agree on them: the switcher
- * sheet that lists them, the tab bar that names the one you are on, the view
+ * sheet that lists them and marks the one you are on, the view
  * itself, the library's own name for it, and the route each is written to.
  * Mail does the same with its folders.
  */

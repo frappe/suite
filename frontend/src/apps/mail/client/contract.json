@@ -24,7 +24,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     }
   ]
 }

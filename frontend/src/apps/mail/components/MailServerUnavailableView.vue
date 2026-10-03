@@ -20,8 +20,8 @@ import { Button } from 'frappe-ui'
 
 import { useShellPhoneChrome } from '@/platform/phone-chrome'
 
-// This view replaces Mail's tab bar. In the shell on a phone, the shell's bottom nav
-// comes back, so the user can still switch areas during an outage.
+// This view replaces Mail's layout, which asks for the shell's bottom nav itself. Asked
+// for here too, so the user can still switch areas during an outage.
 useShellPhoneChrome()
 
 // A reload re-runs the boot fetches from scratch — if the server is back, the app

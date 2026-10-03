@@ -47,7 +47,8 @@
         "BadRequest"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "scheduled_meetings_post",
@@ -146,7 +147,8 @@
         "BadRequest"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "room_preview",
@@ -173,7 +175,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "room_access",
@@ -200,7 +203,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "room_connection",
@@ -227,7 +231,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "room_presence_token",
@@ -254,7 +259,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "room_join",
@@ -281,7 +287,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "guest_room_join",
@@ -321,7 +328,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "guest_room_connection",
@@ -358,7 +366,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "guest_room_token",
@@ -395,7 +404,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "room_token",
@@ -422,7 +432,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "e2ee_device",
@@ -454,7 +465,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "recording_state",
@@ -488,7 +500,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "recording_preflight",
@@ -515,7 +528,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "recording_start",
@@ -547,7 +561,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "recording_stop",
@@ -581,7 +596,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "calendar_meeting",
@@ -723,7 +739,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "room_link",
@@ -772,7 +789,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     }
   ]
 }

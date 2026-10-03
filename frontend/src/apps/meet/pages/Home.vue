@@ -1,71 +1,80 @@
 <template>
-	<div class="flex h-screen bg-surface-base">
-		<MeetSidebar />
+	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
+		<!-- Meet's own sidebar, in the shell's sidebar slot on a desktop and in the
+		     bottom nav's sheet on a phone, like Drive's. -->
+		<AreaSidebar area="meet" :title="__('Meet')">
+			<SidebarSection class="!mt-0">
+				<SidebarItem :label="__('Home')" icon="lucide-home" route="/meet" :active="true" />
+				<SidebarItem :label="__('Calendar')" icon="lucide-calendar" route="/calendar" />
+			</SidebarSection>
+		</AreaSidebar>
+		<PageHeader class="hidden md:flex">
+			<PageHeaderTitle :title="__('Home')" />
+		</PageHeader>
+		<PageHeaderMobile class="md:hidden" :title="__('Meet')" />
 
-		<div class="flex flex-1 flex-col overflow-auto">
-			<div class="flex flex-1 items-start justify-center pt-[100px]">
-				<div class="w-[760px] max-w-full px-6">
-					<div class="mb-2 flex flex-col gap-0.5">
-						<h1 class="text-lg-semibold text-ink-gray-8 tracking-[0.2px]">
-							Hey {{ firstName }},
-						</h1>
-						<p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
-							Start an open meeting, create a restricted meeting, or join with a code.
-						</p>
-					</div>
-
-					<div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
-						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-							@click="startInstantMeeting"
-						>
-							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-									<LucideZap class="size-6 text-ink-gray-8" />
-								</div>
-							</div>
-							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Instant meet</span>
-						</button>
-
-						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-							@click="startRestrictedMeeting"
-						>
-							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-									<LucideLock class="size-6 text-ink-gray-8" />
-								</div>
-							</div>
-							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Restricted meet</span>
-						</button>
-
-						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-							@click="openScheduleDialog"
-						>
-							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-									<LucideCalendarPlus class="size-6 text-ink-gray-8" />
-								</div>
-							</div>
-							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Schedule meet</span>
-						</button>
-
-						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-							@click="showJoinDialog = true"
-						>
-							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-									<LucideLink class="size-6 text-ink-gray-8" />
-								</div>
-							</div>
-							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Join with code</span>
-						</button>
-					</div>
-
-					<UpcomingMeetings ref="upcomingMeetingsRef" />
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			<div class="mx-auto w-[760px] max-w-full px-6 pb-12 pt-8 md:pt-[100px]">
+				<div class="mb-2 flex flex-col gap-0.5">
+					<h1 class="text-lg-semibold text-ink-gray-8 tracking-[0.2px]">
+						Hey {{ firstName }},
+					</h1>
+					<p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
+						Start an open meeting, create a restricted meeting, or join with a code.
+					</p>
 				</div>
+
+				<div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+						@click="startInstantMeeting"
+					>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideZap class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Instant meet</span>
+					</button>
+
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+						@click="startRestrictedMeeting"
+					>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideLock class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Restricted meet</span>
+					</button>
+
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+						@click="openScheduleDialog"
+					>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideCalendarPlus class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Schedule meet</span>
+					</button>
+
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+						@click="showJoinDialog = true"
+					>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideLink class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Join with code</span>
+					</button>
+				</div>
+
+				<UpcomingMeetings ref="upcomingMeetingsRef" />
 			</div>
 		</div>
 
@@ -154,10 +163,15 @@ import {
 	Button,
 	Dialog,
 	FormControl,
+	PageHeader,
+	PageHeaderMobile,
+	PageHeaderTitle,
+	SidebarItem,
+	SidebarSection,
 	toast,
 	useCall,
 } from "frappe-ui";
-import { ref, computed, onMounted, onScopeDispose, onUnmounted, watch } from "vue";
+import { ref, computed, onScopeDispose, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { userStore as useCalendarUserStore } from "@/apps/calendar/stores/user";
@@ -167,10 +181,10 @@ import {
 	adjustScheduleEndTime,
 	adjustScheduleStartTime,
 } from "@/apps/calendar/utils/scheduleTime";
+import { AreaSidebar } from "@/platform/area-sidebar";
 import { useStartMeeting } from "../composables/useStartMeeting";
 import { submit } from "../utils/request";
 import { useRootStore } from "@/stores/root";
-import MeetSidebar from "../components/MeetSidebar.vue";
 import UpcomingMeetings from "../components/UpcomingMeetings.vue";
 import LucideCalendarPlus from "~icons/lucide/calendar-plus";
 import LucideZap from "~icons/lucide/zap";
@@ -381,12 +395,4 @@ const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
 	},
 ]);
 onScopeDispose(unregisterPaletteGroups);
-
-onMounted(() => {
-	document.documentElement.style.overflow = "hidden";
-});
-onUnmounted(() => {
-	document.documentElement.style.overflow = "";
-});
-
 </script>

@@ -43,7 +43,7 @@ export const routes: RouteRecordRaw[] = [
 				name: 'calendar-agenda',
 				component: () => import('@/apps/calendar/pages/CalendarView.vue'),
 			},
-			// Phone-only destination: the tab bar's search tab. A page of its own rather
+			// Phone-only destination: the sidebar sheet's Search row. A page of its own rather
 			// than the palette raised over the calendar, so a result opens where it was
 			// found and Back returns to the search. On a desktop search is the palette.
 			{
@@ -51,7 +51,7 @@ export const routes: RouteRecordRaw[] = [
 				name: 'calendar-search',
 				component: () => import('@/apps/calendar/pages/CalendarView.vue'),
 			},
-			// Phone-only destination: the tab bar's third tab. On a desktop the same
+			// Phone-only destination: the sidebar sheet's Profile row. On a desktop the same
 			// settings are the SettingsDialog the sidebar opens.
 			{
 				path: 'account/:accountId/profile',

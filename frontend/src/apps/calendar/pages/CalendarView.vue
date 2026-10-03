@@ -683,7 +683,7 @@ const newEventDate = () => {
 	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
 }
 
-// The mobile tab bar and Suite launcher ask for a new event through the URL
+// The phone's new-event button (CalendarLayout) and other areas ask for a new event through the URL
 // (?new=1). Consume the flag so reload or Back does not reopen the modal.
 const openNewEventFromRoute = (flag) => {
 	if (!flag) return
@@ -1217,23 +1217,27 @@ const NOTIFY_MODAL_OPTIONS = {
 </script>
 
 <template>
-	<!-- h-full, not a viewport unit: on a phone the layout owns the height and hands
-	     this view what is left above the tab bar; on a desktop it is the page. A dvh
-	     here made the view a whole viewport tall inside a box that was a tab bar
-	     shorter, so its last 60px sat under the bar — which in the day grid is where
-	     11 pm is, scrolled to and never arriving. -->
-	<div class="flex h-full min-h-0 w-full min-w-0 flex-col sm:h-screen">
+	<!-- h-full, not a viewport unit: the shell owns the height and hands this view
+	     the box above the phone's bottom nav. A dvh here made the view a whole
+	     viewport tall inside a shorter box, so its last 60px sat under the nav —
+	     which in the day grid is where 11 pm is, scrolled to and never arriving. -->
+	<div class="flex h-full min-h-0 w-full min-w-0 flex-col">
+		<!-- The sidebar sits in the shell's sidebar slot on a desktop and in the
+		     bottom nav's sheet on a phone, so it is mounted once, outside the two
+		     trees. The month card and the upcoming list read the desktop grid;
+		     the phone has neither. -->
+		<AppSidebar
+			:is-mobile="isMobile"
+			:calendar-color="calendarColor"
+			:month="calendarRef?.currentMonth"
+			:year="calendarRef?.currentYear"
+			:day="calendarRef?.currentDay"
+			:events="visibleTodayEvents"
+			:selected-event="openEvent"
+			@select-date="(date) => calendarRef?.setCalendarDate(date)"
+			@select-event="(event, e) => toggleEventDetail(event, rowOf(e), true)"
+		/>
 		<div v-if="!isMobile" class="flex min-h-0 min-w-0 flex-1">
-			<AppSidebar
-				:calendar-color="calendarColor"
-				:month="calendarRef?.currentMonth"
-				:year="calendarRef?.currentYear"
-				:day="calendarRef?.currentDay"
-				:events="visibleTodayEvents"
-				:selected-event="openEvent"
-				@select-date="(date) => calendarRef?.setCalendarDate(date)"
-				@select-event="(event, e) => toggleEventDetail(event, rowOf(e), true)"
-			/>
 			<div ref="grid" class="min-h-0 min-w-0 flex-1 p-4">
 				<Calendar
 					ref="calendar"
@@ -1341,7 +1345,7 @@ const NOTIFY_MODAL_OPTIONS = {
 
 		<!-- The phone. Agenda is home — a week strip for orientation and the list of
 		     what is coming — with the month a tap away and the same events under it.
-		     The tab bar and its FAB are the app's own chrome here, as mail's are. -->
+		     The bottom nav is the shell's; the new-event button is the layout's. -->
 		<MobileSearch
 			v-else-if="isSearchRoute"
 			:query="searchText"

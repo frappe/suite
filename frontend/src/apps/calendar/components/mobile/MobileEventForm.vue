@@ -437,7 +437,7 @@ import {
 } from 'lucide-vue-next'
 import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 
-import meetLogo from '@/assets/app-logos/meet.png'
+import { meetLogo } from '@/platform/brand'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { formatAlertPhrase, getRepeatMessage } from '@/apps/calendar/utils/format'

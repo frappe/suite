@@ -63,8 +63,11 @@ const props = defineProps<{
 	isPreview?: boolean
 }>()
 
+// What DeviceSettingsTab emits when the person picks a device.
+type DeviceChange = { type: string; deviceId: string }
+
 const emit = defineEmits<{
-	'device-changed': [event: unknown]
+	'device-changed': [event: DeviceChange]
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -121,10 +124,16 @@ const bodies = Object.fromEntries(
 	]),
 ) as Record<MeetTabId, Component>
 
-function bodyProps(id: MeetTabId): Record<string, unknown> {
+// The props a tab body takes. Only the video tab and the device tabs take any.
+type TabBodyProps = {
+	isVisible?: boolean
+	onDeviceChanged?: (event: DeviceChange) => void
+}
+
+function bodyProps(id: MeetTabId): TabBodyProps {
 	return {
 		...(id === 'meet.video' ? { isVisible: open.value && activeTab.value === id } : {}),
-		...(DEVICE_TABS.includes(id) ? { onDeviceChanged: (event: unknown) => emit('device-changed', event) } : {}),
+		...(DEVICE_TABS.includes(id) ? { onDeviceChanged: (event: DeviceChange) => emit('device-changed', event) } : {}),
 	}
 }
 </script>

@@ -17,7 +17,7 @@
 	     slides via transform, so close animates too. visibility rides the same transition — it
 	     flips only after the slide-out ends, keeping the offscreen pane out of the focus order.
 	     Teleported to Mail's overlay layer on mobile (like the selection bar): inside the layout's isolate
-	     stacking context the remounting tab bar paints over the pane during the slide-out,
+	     stacking context the remounting bottom nav paints over the pane during the slide-out,
 	     whatever the pane's own z-index says. -->
 	<Teleport :to="overlayLayer ?? 'body'" :disabled="!isMobile">
 		<div
@@ -58,7 +58,7 @@ import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
  * live in one component: every geometry rule here (column against pane, overlay against split,
  * the mobile slide) is a statement about the pair. Kept apart, the mailbox list and the merged All
  * Inboxes list each grew their own copy and the copies drifted — the merged one shipped without the
- * Teleport, so the mobile tab bar painted over its pane.
+ * Teleport, so the phone's bottom bar painted over its pane.
  *
  * The list content goes in `#list`, the thread in the default slot. Both are the caller's — this
  * owns nothing but the frame.

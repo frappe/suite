@@ -11,7 +11,7 @@
 	<div class="flex min-h-0 flex-1 flex-col">
 		<!-- A flat h-14 title row on mail's geometry — hamburger, then the period,
 		     then actions — so on a phone the two apps share one top edge. The
-		     hamburger opens the view switcher, where mail's opens its folders:
+		     menu button opens the sidebar sheet, where mail's opens its folders:
 		     which list you are looking at is the same question in both.
 
 		     The rule under it is the bar's own, drawn where the bar meets content:
@@ -28,7 +28,7 @@
 			<button
 				:aria-label="__('Switch view')"
 				class="text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-				@click="openViewSheet"
+				@click="openAreaSidebar('calendar')"
 			>
 				<!-- 20px at the 1.5 the app draws its icons at, as mail's is: the
 				     title's own size, so glyph and word stand the same height. -->
@@ -124,7 +124,7 @@
 			:on-cell-click="(slot) => emit('selectSlot', slot)"
 		>
 			<!-- The header this list would draw for itself — a month picker, a switcher
-			     between four views — is the row above and the tab bar's sheet. Passing the
+			     between four views — is the row above and the sidebar sheet. Passing the
 			     slot empty is how that is said. -->
 			<template #header />
 			<!-- The agenda's rows say what the desktop's do, from the same helper:
@@ -167,7 +167,7 @@ import { Calendar, calendarDaySpan } from 'frappe-ui/experimental'
 import { ChevronDown, ChevronLeft, ChevronRight, Menu } from 'lucide-vue-next'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { useViewSheet } from '@/apps/calendar/composables/useViewSheet'
+import { openAreaSidebar } from '@/platform/area-sidebar'
 import { modeForView, viewForMode } from '@/apps/calendar/utils/mobileView'
 import { weekSpanLabel } from '@/apps/calendar/utils/format'
 import { eventRowDescription } from '@/apps/calendar/utils/eventMeta'
@@ -196,9 +196,6 @@ const emit = defineEmits<{
 	selectView: [view: MobileView]
 }>()
 
-// The sheet itself is mounted by the tab bar, which is also allowed to open it.
-const { openViewSheet } = useViewSheet()
-
 const isMonth = computed(() => props.view === 'month')
 const isWeek = computed(() => props.view === 'week')
 const isDay = computed(() => props.view === 'day')
@@ -221,7 +218,7 @@ const pickDate = (date: string) => {
 /**
  * One mode, and nothing the phone already draws.
  *
- * The other modes go because the view switcher is the tab bar's sheet, the shortcuts
+ * The other modes go because the view switcher is the sidebar sheet, the shortcuts
  * go because there is no keyboard, and editing goes because a tap is how the phone
  * scrolls and opens rather than how it creates — the + button is where creating
  * lives, a tapped event opens the same sheet the agenda opens, and a tapped hour
@@ -257,7 +254,7 @@ const agenda = useTemplateRef<{
 
 /**
  * The library switching views on its own account, which is this shell's business:
- * on a phone the view is the route, and the route is what the tab bar, the title
+ * on a phone the view is the route, and the route is what the sidebar, the title
  * and the fetch window read.
  *
  * It happens where a view offers a way into another — the month's "+n more" and

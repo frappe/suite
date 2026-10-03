@@ -1,7 +1,7 @@
 <template>
 	<div class="flex h-full flex-col">
 		<header class="flex items-center border-b px-3 py-2.5 sm:px-5">
-			<Button v-if="isMobile" icon="lucide-menu" variant="ghost" @click="openSidebar" />
+			<Button v-if="isMobile" icon="lucide-menu" variant="ghost" @click="openAreaSidebar('mail')" />
 			<Breadcrumbs :items="breadcrumbs" class="mx-2" />
 			<Badge v-if="badgeLabel && !loading" :label="badgeLabel" :theme="badgeTheme" />
 			<div class="ml-auto flex space-x-2">
@@ -34,7 +34,8 @@
 <script setup lang="ts">
 import { Badge, Breadcrumbs, Button } from 'frappe-ui'
 
-import { useScreenSize, useSidebar } from '@/apps/mail/utils/composables'
+import { useScreenSize } from '@/apps/mail/utils/composables'
+import { openAreaSidebar } from '@/platform/area-sidebar'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 
 const { removeSpacing = false, loading = false } = defineProps<{
@@ -48,5 +49,4 @@ const { removeSpacing = false, loading = false } = defineProps<{
 }>()
 
 const { isMobile } = useScreenSize()
-const { openSidebar } = useSidebar()
 </script>

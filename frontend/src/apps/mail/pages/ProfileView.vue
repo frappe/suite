@@ -5,8 +5,8 @@
 	  The sheet made Profile the odd tab out — Inbox, Screener and Search navigate, Profile
 	  overlaid — and its Settings row was a pass-through to a page that then carried a Profile
 	  row of its own. As a page it can hold that settings list directly, so the tab lands where
-	  the sheet's Settings row used to lead: one destination instead of two, with the tab bar
-	  still underneath it and the other three tabs one tap away.
+	  the sheet's Settings row used to lead: one destination instead of two, with the bottom
+	  nav still underneath it.
 	-->
 	<MobileProfilePage
 		:accounts
@@ -18,7 +18,7 @@
 		<!-- Same title row AND the same header box as the other tab destinations — this is
 		     one of the four, not a pushed page. The wrapper's paddings are copied verbatim
 		     from ScreenerView rather than trimmed to what this view needs: the two headers
-		     sit side by side in the tab bar, so they have to measure the same. Its sub-pages
+		     are reached from the same sheet, so they have to measure the same. Its sub-pages
 		     keep the compact back-chevron bar. -->
 		<template #header>
 			<header class="flex shrink-0 items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5">

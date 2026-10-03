@@ -164,7 +164,7 @@ const Layout = computed(() => {
 
 // iOS standalone scrolls the whole document to reveal a focused input above the
 // keyboard, and can leave that offset behind after dismissal — the entire shell
-// then sits displaced (rows under the clock, tab bar mid-screen, void below).
+// then sits displaced (rows under the clock, bottom nav mid-screen, void below).
 // Every scroller in the app is internal, so a document offset is always dirt;
 // sweep it whenever focus leaves a field. rAF: let the keyboard dismissal settle
 // first, and never fight iOS while the field is still focused.
@@ -223,7 +223,7 @@ onUnmounted(() => {
    lucide-vue-next ship stroke-width 2 — so default every lucide svg to 1.5
    instead of repeating the attribute at each call site. :where() keeps the
    rule at zero specificity, so an explicit stroke-* utility (e.g. stroke-2
-   on the tab bar) still wins. Covers teleported menus/sheets too, through
+   on a button) still wins. Covers teleported menus/sheets too, through
    the overlay layer. */
 :where(.mail-app svg.lucide) {
 	stroke-width: 1.5;

@@ -271,12 +271,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { EditorContent } from '@tiptap/vue-3'
 import {
 	ChevronDown, ChevronUp, ExternalLink, Forward, Reply, ReplyAll, UploadCloud, } from 'lucide-vue-next'
 import {
-	Button, Combobox, Dropdown, Progress, Tooltip, useFileUpload } from 'frappe-ui'
+	Button, Combobox, Dropdown, Progress, Tooltip, UploadError, useFileUpload } from 'frappe-ui'
 import { Icon as FeatherIcon, TextEditor } from 'frappe-ui/experimental'
 
 import { formatBytes, isOverlayPresent, raiseToast } from '@/apps/mail/utils'
@@ -290,7 +290,13 @@ import {
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 
-import type { Attachment, ComposeMailData, File as FileDoc, Identity } from '@/apps/mail/types'
+import type {
+	Attachment,
+	ComposeMailData,
+	File as FileDoc,
+	Identity,
+	UserResource,
+} from '@/apps/mail/types'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
@@ -330,7 +336,32 @@ const isUploading = computed(
 	() => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
 )
 
+const user = inject('$user') as UserResource
+
+// The server refuses a file over the Mail attachment limit (`upload_file`); saying so here
+// spares sending the bytes first.
+const refuseOversized = (file: File) => {
+	const limit = user.data?.max_attachment_size
+	if (!limit || file.size <= limit) return false
+	raiseToast(
+		__('{0} is {1}. Mail can attach files up to {2}.', [
+			file.name,
+			formatBytes(file.size),
+			formatBytes(limit),
+		]),
+		'error',
+	)
+	return true
+}
+
+// The server's own refusal, already translated, or a generic line when it sent none.
+const uploadFailure = (file: File, reason: unknown) =>
+	reason instanceof UploadError && reason.messages.length
+		? reason.messages.join('\n')
+		: __('Failed to upload {0}', [file.name])
+
 const uploadInlineImage = async (file: File) => {
+	if (refuseOversized(file)) throw new Error(__('{0} is too large to attach.', [file.name]))
 	pendingInlineUploads.value++
 	try {
 		return await uploadFunction(file)
@@ -548,12 +579,12 @@ const handleDrop = (e: DragEvent) => {
 }
 
 const uploadFiles = async (files: File[]) => {
-	if (!files.length) return
+	const accepted = files.filter((file) => !refuseOversized(file))
+	if (!accepted.length) return
 
-	const results = await Promise.allSettled(files.map(uploadFile))
+	const results = await Promise.allSettled(accepted.map(uploadFile))
 	results.forEach((res, i) => {
-		if (res.status === 'rejected')
-			raiseToast(__('Failed to upload {0}', [files[i].name]), 'error')
+		if (res.status === 'rejected') raiseToast(uploadFailure(accepted[i], res.reason), 'error')
 	})
 }
 

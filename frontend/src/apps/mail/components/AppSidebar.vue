@@ -1,140 +1,107 @@
 <template>
-	<div
-		v-if="isMobile && isSidebarOpen"
-		class="fixed inset-0 z-10 bg-black bg-opacity-50"
-		@click="closeSidebar"
-	/>
-
-	<Transition>
-		<!-- Composition mode (default slot): the app owns the body, so each
-		     SidebarSection's collapse state can be bound (v-model:collapsed) — the
-		     legacy `sections` config keeps that state internal. Owning it lets
-		     More/People default to collapsed and persist their state. -->
-		<Sidebar
-			v-if="!isMobile || isSidebarOpen"
-			id="sidebar"
-			v-model:collapsed="isSidebarCollapsed"
-			class="border-r border-outline-gray-1"
-			:class="{ 'fixed left-0 top-0 z-10 w-60 !bg-surface-base': isMobile }"
-			:disable-collapse="isMobile"
+	<!-- Mail's own sidebar, in the shell's sidebar slot on a desktop and in the
+	     bottom nav's sheet on a phone. The page header's folder button and a tap
+	     on the active Mail tab open the sheet. -->
+	<AreaSidebar area="mail" :title="__('Mail')">
+		<!-- The active account leads. Its menu holds what the sidebar header's
+		     menu held: the way back from the dashboard, the shortcuts list and the
+		     account switcher. -->
+		<SidebarSection class="!mt-0">
+			<Dropdown :options="menuItems" :match-trigger-width="true">
+				<SidebarItem :label="subtitle || __('Account')" icon="lucide-circle-user-round">
+					<template #suffix>
+						<span class="lucide-chevrons-up-down mr-2 size-3.5 text-ink-gray-5" aria-hidden="true" />
+					</template>
+				</SidebarItem>
+			</Dropdown>
+			<CommandPaletteSidebarItem v-if="!isMobile" />
+		</SidebarSection>
+		<SidebarSection
+			v-for="section in sidebarItems"
+			:key="section.key ?? section.label"
+			:label="section.label"
+			:collapsible="section.collapsible"
+			:collapsed="isSectionCollapsed(section)"
+			class="!mt-4"
+			@update:collapsed="(collapsed) => setSectionCollapsed(section.key, collapsed)"
 		>
-			<!-- No padding around the header: its own inset centres the logo in the
-			     collapsed rail, in line with the icons of the px-2 body below. -->
-			<div class="flex h-full flex-col">
-				<SidebarHeader
-					:title="__('Mail')"
-					:subtitle="subtitle"
-					:menu-items="menuItems"
-					:show-logo="false"
-				/>
-
-				<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
-					<SidebarSection>
-						<CommandPaletteSidebarItem />
-					</SidebarSection>
-					<SidebarSection
-						v-for="section in sidebarItems"
-						:key="section.key ?? section.label"
-						:label="section.label"
-						:collapsible="section.collapsible"
-						:collapsed="isSectionCollapsed(section)"
-						@update:collapsed="(collapsed) => setSectionCollapsed(section.key, collapsed)"
-					>
-						<SidebarItem
-							v-for="item in section.items"
-							:key="item.label"
-								:label="item.label"
-								:icon="item.icon"
-								:route="item.to"
-								:class="
-									threadDrag.overMailbox.value === item.mailboxId &&
-									'ring-2 ring-outline-gray-3 ring-inset'
-								"
-								@dragover="onFolderDragOver($event, item)"
-								@dragleave="onFolderDragLeave(item)"
-								@drop="onFolderDrop($event, item)"
-								:active="
-									item.activeFor?.includes(
-										['mail-mailbox', 'mail-mail'].includes(route.name as string)
-											? route.params.mailbox
-											: route.name,
-									)
-								"
-								:on-click="item.onClick"
-								class="group"
-							>
-								<template #suffix>
-									<div class="flex items-center">
-										<Dropdown v-if="item.menuOptions" :options="item.menuOptions">
-											<Button variant="ghost" class="!bg-transparent" @click.stop>
-												<template #icon>
-													<Ellipsis
-														class="text-ink-gray-6 invisible h-4 w-4 group-hover:visible"
-													/>
-												</template>
-											</Button>
-										</Dropdown>
-										<span
-											class="text-ink-gray-4 mr-2 text-sm"
-											:class="{ 'group-hover:hidden': item.menuOptions }"
-										>
-											{{ item.suffix }}
-										</span>
-									</div>
+			<SidebarItem
+				v-for="item in section.items"
+				:key="item.label"
+				:label="item.label"
+				:icon="item.icon"
+				:route="item.to"
+				:class="
+					threadDrag.overMailbox.value === item.mailboxId &&
+					'ring-2 ring-outline-gray-3 ring-inset'
+				"
+				@dragover="onFolderDragOver($event, item)"
+				@dragleave="onFolderDragLeave(item)"
+				@drop="onFolderDrop($event, item)"
+				:active="
+					item.activeFor?.includes(
+						['mail-mailbox', 'mail-mail'].includes(route.name as string)
+							? route.params.mailbox
+							: route.name,
+					)
+				"
+				:on-click="item.onClick"
+				class="group"
+			>
+				<template #suffix>
+					<div class="flex items-center">
+						<Dropdown v-if="item.menuOptions" :options="item.menuOptions">
+							<Button variant="ghost" class="!bg-transparent" @click.stop>
+								<template #icon>
+									<Ellipsis
+										class="text-ink-gray-6 invisible h-4 w-4 group-hover:visible"
+									/>
 								</template>
-						</SidebarItem>
-					</SidebarSection>
-				</div>
+							</Button>
+						</Dropdown>
+						<span
+							class="text-ink-gray-4 mr-2 text-sm"
+							:class="{ 'group-hover:hidden': item.menuOptions }"
+						>
+							{{ item.suffix }}
+						</span>
+					</div>
+				</template>
+			</SidebarItem>
+		</SidebarSection>
 
-				<div class="mt-auto p-2">
-					<!-- Personal widgets (events, quota) are meaningless while administering the server. -->
-					<UpcomingEvents
-						v-if="user.data.is_jmap_configured && !route.meta.isDashboard"
-						:is-collapsed="isSidebarCollapsed"
-					/>
-					<QuotaBar
-						v-if="user.data.is_jmap_configured && !route.meta.isDashboard"
-						:is-collapsed="isSidebarCollapsed"
-					/>
-					<SidebarCollapseToggle v-if="!isMobile" />
-				</div>
-			</div>
-		</Sidebar>
-	</Transition>
+		<!-- Personal widgets (events, quota) are meaningless while administering the
+		     server, and the phone's sheet is a folder switcher, not a dashboard. -->
+		<AreaSidebarFooter v-if="showWidgets">
+			<UpcomingEvents :is-collapsed="false" />
+			<QuotaBar :is-collapsed="false" />
+		</AreaSidebarFooter>
+	</AreaSidebar>
 
 	<FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
 	<DeleteFolderModal v-model="showDeleteMailbox" :mailbox="selectedMailbox" />
 </template>
 
 <script setup lang="ts">
-import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { Icon } from 'frappe-ui/experimental'
 import { Keyboard, User } from 'lucide-vue-next'
-import {
-	Button,
-	Dropdown,
-	Sidebar,
-	SidebarCollapseToggle,
-	SidebarHeader,
-	SidebarItem,
-	SidebarSection,
-} from 'frappe-ui'
+import { Button, Dropdown, SidebarItem, SidebarSection } from 'frappe-ui'
 
 import { accountSubmenu } from '@/composables/accountSubmenu'
-import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { canMoveToMailbox } from '@/apps/mail/utils/mailboxTargets'
-import { useAccountSwitch, useScreenSize, useSettings, useShortcuts, useSidebar } from '@/apps/mail/utils/composables'
+import { useAccountSwitch, useScreenSize, useShortcuts } from '@/apps/mail/utils/composables'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
-import { sessionStore } from '@/apps/mail/stores/session'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
+import { AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
 import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
@@ -142,13 +109,13 @@ import type { MailboxData } from '@/apps/mail/types'
 import ArrowLeft from '~icons/lucide/arrow-left'
 import BookUser from '~icons/lucide/book-user'
 import CalendarClock from '~icons/lucide/calendar-clock'
+import CircleUserRound from '~icons/lucide/circle-user-round'
 import ContactRound from '~icons/lucide/contact-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
 import House from '~icons/lucide/house'
 import Lock from '~icons/lucide/lock'
-import LogOut from '~icons/lucide/log-out'
 import Mailbox from '~icons/lucide/mailbox'
 import Mails from '~icons/lucide/mails'
 import Megaphone from '~icons/lucide/megaphone'
@@ -164,8 +131,6 @@ const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { switchAccount } = useAccountSwitch()
-const { isSidebarOpen, closeSidebar } = useSidebar()
-const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 
 // Per-section open/closed state for collapsible sections, keyed by the section's
 // stable `key` (labels are translated, so they can't be storage keys). More and
@@ -179,7 +144,6 @@ const setSectionCollapsed = (key: string | undefined, collapsed: boolean) => {
 }
 const isSectionCollapsed = (section: { key?: string }) =>
 	!!section.key && !!collapsedSections.value[section.key]
-const { logout } = sessionStore()
 const store = userStore()
 const { mailboxes, allInboxesUnread } = store
 
@@ -221,25 +185,22 @@ const onFolderDrop = (e: DragEvent, item: { mailboxId?: string }) => {
 
 const user = inject('$user')
 
-// Standalone chrome: Apps, Settings and Log out show only while Mail renders
-// outside the shell (`suite_flip_shell` off). Inside, the rail and its account
-// menu replace them [T010, T018].
-const standalone = computed(() => route.meta.frame === 'none')
-const appsMenuOption = useAppSwitcher('mail')
-
-const { openSettings } = useSettings()
 const showFolderModal = ref(false)
 const selectedMailbox = ref()
 const showDeleteMailbox = ref(false)
 const { openShortcuts } = useShortcuts()
 
-// The header shows the active mail account, not the Suite account [T010].
+// The account row shows the active mail account, not the Suite account [T010].
 const subtitle = computed(
 	() => user.data.accounts?.find((a) => a.id === store.accountId)?._name ?? '',
 )
 
+const showWidgets = computed(
+	() => !isMobile.value && user.data.is_jmap_configured && !route.meta.isDashboard,
+)
+
 // Leave the dashboard for the active account's default mailbox (or the address
-// books when no mailbox exists yet). Shared by the header menu item and the
+// books when no mailbox exists yet). Shared by the account menu item and the
 // pinned "Back to Mail" sidebar item.
 const goToMailbox = () => {
 	const mailbox = mailboxes.data?.[0]?.id
@@ -260,10 +221,6 @@ const menuItems = computed(() => [
 		group: '',
 		options: [
 			{
-				...appsMenuOption.value,
-				condition: () => standalone.value && !isMobile.value,
-			},
-			{
 				icon: Mailbox,
 				label: __('Mailbox'),
 				onClick: goToMailbox,
@@ -271,17 +228,6 @@ const menuItems = computed(() => [
 					user.data.is_suite_admin &&
 					user.data.is_jmap_configured &&
 					route.meta.isDashboard,
-			},
-		],
-	},
-	{
-		group: '',
-		options: [
-			{
-				icon: Settings,
-				label: __('Settings'),
-				onClick: () => openSettings('mail.credentials'),
-				condition: () => standalone.value,
 			},
 			{
 				icon: Keyboard,
@@ -299,12 +245,6 @@ const menuItems = computed(() => [
 				label: __('Accounts'),
 				submenu: accountSubmenu(user.data.accounts, store.accountId, switchAccount),
 				condition: () => user.data.accounts?.length > 1 && !route.meta.isDashboard,
-			},
-			{
-				icon: LogOut,
-				label: __('Log Out'),
-				onClick: logout.submit,
-				condition: () => standalone.value,
 			},
 		],
 	},
@@ -551,33 +491,20 @@ const sidebarItems = computed(() => {
 			items: [{ label: __('Admin Dashboard'), icon: Crown, to: { path: '/mail/dashboard' } }],
 		})
 
+	// The phone's settings page. A desktop opens Settings from the account menu instead.
+	if (isMobile.value)
+		groups.push({
+			label: '',
+			items: [
+				{
+					label: __('Profile'),
+					icon: CircleUserRound,
+					to: { name: 'mail-profile', params: { accountId: store.accountId } },
+					activeFor: ['mail-profile'],
+				},
+			],
+		})
+
 	return groups
 })
-
-// Shortcuts
-
-const handleKeyDown = (event: KeyboardEvent) => {
-	if (event.metaKey || event.ctrlKey) {
-		if (event.key === ';') {
-			event.preventDefault()
-			isSidebarCollapsed.value = !isSidebarCollapsed.value
-			return
-		}
-	}
-}
-
-onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 </script>
-
-<style scoped>
-.v-enter-from,
-.v-leave-to {
-	@apply -translate-x-full opacity-0;
-}
-
-.v-enter-to,
-.v-leave-from {
-	@apply translate-x-0 opacity-100;
-}
-</style>

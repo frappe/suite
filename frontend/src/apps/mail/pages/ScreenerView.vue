@@ -258,7 +258,7 @@
 
 				<!-- Read-only thread preview — split when the reading pane is on, full-width otherwise.
 				     Teleported to Mail's overlay layer on mobile (like the selection bar): inside the layout's
-				     isolate stacking context the tab bar would paint over the sliding pane. -->
+				     isolate stacking context the bottom nav would paint over the sliding pane. -->
 				<Teleport :to="overlayLayer ?? 'body'" :disabled="!isMobile">
 				<div
 					class="bg-surface-base flex flex-col"

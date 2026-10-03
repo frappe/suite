@@ -27,7 +27,7 @@ export const takePendingCompose = () => {
 
 /**
  * Compose, on mobile. There is no composer window there — the page is the whole of it — so every
- * opener navigates: the tab bar's button, a reply popped out of a thread, a `mailto:` link in a
+ * opener navigates: the compose button, a reply popped out of a thread, a `mailto:` link in a
  * message, another app asking mail to write to someone.
  *
  * Passing no draft is a request for an empty one, and clears whatever a navigation that never

@@ -32,7 +32,7 @@ import {
 import { eventColor } from '@/apps/calendar/utils/color'
 import DOMPurify from 'dompurify'
 
-import meetLogo from '@/assets/app-logos/meet.png'
+import { meetLogo } from '@/platform/brand'
 
 import {
 	getMeetUrl,

@@ -15,9 +15,9 @@ import '@/apps/mail/runtime'
  * MailLayout (which provides $user/$dayjs/$socket) because they don't need
  * those injects. All authed routes nest under MailLayout.
  *
- * The authed routes take their frame from the Mail area group: in the shell
- * while `suite_flip_shell` is on. The public routes set `frame: 'none'`, so
- * they stay outside the shell in both states [T010].
+ * The authed routes take their frame from the Mail area group and render in
+ * the shell. The public routes set `frame: 'none'`, so they stay outside it
+ * [T010].
  */
 
 // Lightweight placeholder used by shortcut routes — the mail guard intercepts

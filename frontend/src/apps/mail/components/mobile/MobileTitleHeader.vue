@@ -13,7 +13,7 @@
 			v-if="withMenu"
 			:aria-label="__('Folders')"
 			:class="ROW_BUTTON"
-			@click="openFolderSheet"
+			@click="openAreaSidebar('mail')"
 		>
 			<!-- 20px at the 1.5 the app draws its icons at: the title's own size, so
 			     the glyph and the word beside it stand the same height. Sized by class,
@@ -57,7 +57,8 @@
 <script setup lang="ts">
 import { ChevronLeft, Menu, Search } from 'lucide-vue-next'
 
-import { useFolderSheet, useMobileSearch } from '@/apps/mail/utils/composables'
+import { useMobileSearch } from '@/apps/mail/utils/composables'
+import { openAreaSidebar } from '@/platform/area-sidebar'
 
 defineProps<{
 	title: string
@@ -72,6 +73,5 @@ const emit = defineEmits<{ back: [] }>()
 /** The round 40px hit area every button in the row shares, at either end of the title. */
 const ROW_BUTTON = 'text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full'
 
-const { openFolderSheet } = useFolderSheet()
 const { openSearch } = useMobileSearch()
 </script>

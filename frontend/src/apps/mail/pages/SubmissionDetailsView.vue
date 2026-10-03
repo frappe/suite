@@ -22,7 +22,7 @@
 
 		<!-- One narrow column read top to bottom: where the send stands and what can be done
 		about it, its history, then the facts. max-sm:pb-20 keeps the last section clear of
-		the tab bar and compose button, as the lists do. -->
+		the bottom nav and compose button, as the lists do. -->
 		<div v-if="data" class="flex-1 overflow-y-auto px-3 py-4 max-sm:pb-20 sm:px-5 sm:py-6">
 			<div class="mx-auto flex max-w-2xl flex-col gap-7">
 				<div class="flex flex-col gap-2.5">
