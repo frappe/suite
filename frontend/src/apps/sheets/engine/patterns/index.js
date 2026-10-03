@@ -18,30 +18,30 @@
 // must be caught by the named-sequence detector before falling through to
 // "any text → copy".
 
-import { numericDetector }        from './numeric.js'
-import { dateDetector }           from './date.js'
-import { namedSequenceDetector }  from './named-sequence.js'
-import { timeDetector }           from './time.js'
-import { textNumberDetector }     from './text-number.js'
-import { alphabeticDetector }     from './alphabetic.js'
+import { alphabeticDetector } from './alphabetic.js'
+import { dateDetector } from './date.js'
+import { namedSequenceDetector } from './named-sequence.js'
+import { numericDetector } from './numeric.js'
+import { textNumberDetector } from './text-number.js'
+import { timeDetector } from './time.js'
 
 // Priority order — most specific first.  Date and time match strict regex
 // shapes so they never steal generic cases.  Named-sequence handles calendar
 // wrap-around.  Text-with-numbers tokenises around embedded ints.  Alphabetic
 // matches pure-letter sequences.  Numeric is the last resort before copy.
 const DETECTORS = [
-	dateDetector,
-	timeDetector,
-	namedSequenceDetector,
-	textNumberDetector,
-	alphabeticDetector,
-	numericDetector,
+  dateDetector,
+  timeDetector,
+  namedSequenceDetector,
+  textNumberDetector,
+  alphabeticDetector,
+  numericDetector,
 ]
 
 export function detectSeries(values) {
-	for (const det of DETECTORS) {
-		const result = det.detect(values)
-		if (result) return result
-	}
-	return null
+  for (const det of DETECTORS) {
+    const result = det.detect(values)
+    if (result) return result
+  }
+  return null
 }

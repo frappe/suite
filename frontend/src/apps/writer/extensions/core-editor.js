@@ -1,6 +1,6 @@
-import { Extension } from '@tiptap/vue-3'
-import { Plugin } from '@tiptap/pm/state'
 import { Slice } from '@tiptap/pm/model'
+import { Plugin } from '@tiptap/pm/state'
+import { Extension } from '@tiptap/vue-3'
 
 // Custom extension bundling an override of removeEmptyTextStyle (tabs strip
 // all marks otherwise) and a copy transformer that unwraps single-tab
@@ -16,15 +16,9 @@ export const CoreEditorExtension = Extension.create({
             if (!node.isText) return true
             const isEmpty = !node.marks
               .filter((mark) => mark.type.name === 'textStyle')
-              .some((mark) =>
-                Object.values(mark.attrs).some((value) => !!value),
-              )
+              .some((mark) => Object.values(mark.attrs).some((value) => !!value))
             if (isEmpty) {
-              tr.removeMark(
-                pos,
-                pos + node.nodeSize,
-                node.type.schema.marks.textStyle,
-              )
+              tr.removeMark(pos, pos + node.nodeSize, node.type.schema.marks.textStyle)
             }
           })
         },

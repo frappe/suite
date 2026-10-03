@@ -24,7 +24,11 @@
         class="flex items-center justify-between gap-3 py-2.5"
       >
         <div class="flex min-w-0 items-center gap-3">
-          <Avatar size="lg" :image="user.user_image ?? undefined" :label="user.full_name || user.email" />
+          <Avatar
+            size="lg"
+            :image="user.user_image ?? undefined"
+            :label="user.full_name || user.email"
+          />
           <div class="min-w-0">
             <div class="truncate text-p-base text-ink-gray-8">
               {{ user.full_name || user.email }}
@@ -65,8 +69,8 @@
 </template>
 
 <script setup lang="ts">
+import { Avatar, Badge, Button, createResource, Dialog, TextInput, toast } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { Avatar, Badge, Button, Dialog, TextInput, createResource, toast } from 'frappe-ui'
 
 import InviteStep from '@/shell/InviteStep.vue'
 

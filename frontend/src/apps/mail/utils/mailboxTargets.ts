@@ -1,12 +1,12 @@
 /** Anything filed in mailboxes: a mail, a thread summary, a search result. */
 interface Filed {
-	mailboxes: { mailbox_id: string }[]
+  mailboxes: { mailbox_id: string }[]
 }
 
 interface MailboxIds {
-	sent?: string
-	drafts?: string
-	screener?: string
+  sent?: string
+  drafts?: string
+  screener?: string
 }
 
 /**
@@ -21,11 +21,11 @@ interface MailboxIds {
  * mails — including the copy in Sent that a mail to yourself leaves behind (see mailCopies).
  */
 export const commonMailboxIds = (items: Filed[]): string[] =>
-	items.length
-		? items
-				.map((item) => item.mailboxes.map((m) => m.mailbox_id))
-				.reduce((common, ids) => common.filter((id) => ids.includes(id)))
-		: []
+  items.length
+    ? items
+        .map((item) => item.mailboxes.map((m) => m.mailbox_id))
+        .reduce((common, ids) => common.filter((id) => ids.includes(id)))
+    : []
 
 /**
  * Whether a mailbox can be moved into. The "Move to" menu and the folders that take a dragged
@@ -38,10 +38,10 @@ export const commonMailboxIds = (items: Filed[]): string[] =>
  * hands to the sidebar, so a folder is never offered as the target it is already the source of).
  */
 export const canMoveToMailbox = (
-	mailboxId: string | undefined,
-	filedIn: string[],
-	mailboxIds: MailboxIds,
+  mailboxId: string | undefined,
+  filedIn: string[],
+  mailboxIds: MailboxIds,
 ): boolean =>
-	!!mailboxId &&
-	!filedIn.includes(mailboxId) &&
-	![mailboxIds.sent, mailboxIds.drafts, mailboxIds.screener].includes(mailboxId)
+  !!mailboxId &&
+  !filedIn.includes(mailboxId) &&
+  ![mailboxIds.sent, mailboxIds.drafts, mailboxIds.screener].includes(mailboxId)

@@ -26,7 +26,11 @@ export interface UnsavedTracking {
   storeThrough(store: () => Promise<void>): Promise<void>
 }
 
-export function trackUnsaved(doc: Y.Doc, unsaved: Ref<boolean>, onChange: () => void): UnsavedTracking {
+export function trackUnsaved(
+  doc: Y.Doc,
+  unsaved: Ref<boolean>,
+  onChange: () => void,
+): UnsavedTracking {
   let revision = 0
   doc.on('update', (_update: Uint8Array, origin: unknown) => {
     if (!origin || origin === SERVER_ORIGIN) return

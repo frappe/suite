@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+
 import { createServerState } from '@/platform/server-state'
+
 import { children, createDocument } from './nodes'
 
 describe('children descriptors', () => {
@@ -22,17 +24,27 @@ describe('generic document creation', () => {
           operation.validateInput?.(input)
           calls.push({ id: operation.id, input: structuredClone(input) })
           return {
-            name: 'new-node', title: 'Untitled presentation', kind: 'document', parent_node: 'folder-1',
+            name: 'new-node',
+            title: 'Untitled presentation',
+            kind: 'document',
+            parent_node: 'folder-1',
           } as never
         },
       },
     })
     const mutation = state.useMutation(createDocument())
     await mutation.run({ parent_node: 'folder-1', content_doctype: 'Presentation' })
-    expect(calls).toEqual([{
-      id: 'node_create.create_document',
-      input: { parent_node: 'folder-1', title: 'Untitled presentation', kind: 'document', content_doctype: 'Presentation' },
-    }])
+    expect(calls).toEqual([
+      {
+        id: 'node_create.create_document',
+        input: {
+          parent_node: 'folder-1',
+          title: 'Untitled presentation',
+          kind: 'document',
+          content_doctype: 'Presentation',
+        },
+      },
+    ])
     state.dispose()
   })
 })

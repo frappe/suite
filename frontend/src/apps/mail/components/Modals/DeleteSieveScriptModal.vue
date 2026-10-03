@@ -1,24 +1,22 @@
 <template>
-	<Dialog
-		v-model:open="show"
-	 v-bind="{
-			title: __('Delete Sieve Script'),
-			message: __(`Are you sure you want to delete '{0}'? `, [script._name]),
-			icon: 'lucide-alert-triangle', theme: 'amber',
-			actions: [
-				{ label: __('Confirm'), theme: 'red', onClick: () => deleteScript.submit() },
-			],
-		}"
-	/>
+  <Dialog
+    v-model:open="show"
+    v-bind="{
+      title: __('Delete Sieve Script'),
+      message: __(`Are you sure you want to delete '{0}'? `, [script._name]),
+      icon: 'lucide-alert-triangle',
+      theme: 'amber',
+      actions: [{ label: __('Confirm'), theme: 'red', onClick: () => deleteScript.submit() }],
+    }"
+  />
 </template>
 
 <script setup lang="ts">
-import { Dialog, createResource } from 'frappe-ui'
+import { createResource, Dialog } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
-
 import type { SieveScript } from '@/apps/mail/types'
+import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
 const { script } = defineProps<{ script: SieveScript }>()
@@ -26,13 +24,13 @@ const { script } = defineProps<{ script: SieveScript }>()
 const store = userStore()
 
 const deleteScript = createResource({
-	url: 'suite.mail.api.sieve.delete_sieve_script',
-	makeParams: () => ({ account: store.accountId, id: script.id }),
-	onSuccess: () => {
-		raiseToast(__('Sieve script deleted.'))
-		store.sieveScripts.reload()
-		show.value = false
-	},
-	onError: (error) => raiseToast(error.message, 'error'),
+  url: 'suite.mail.api.sieve.delete_sieve_script',
+  makeParams: () => ({ account: store.accountId, id: script.id }),
+  onSuccess: () => {
+    raiseToast(__('Sieve script deleted.'))
+    store.sieveScripts.reload()
+    show.value = false
+  },
+  onError: (error) => raiseToast(error.message, 'error'),
 })
 </script>

@@ -1,9 +1,9 @@
+import { mutation, query } from '@/platform/server-state'
+import { transport } from '@/platform/transport'
 
 import { api } from './generated'
 import { driveOperation } from './operation'
 import type { DriveRoots } from './types'
-import { mutation, query } from '@/platform/server-state'
-import { transport } from '@/platform/transport'
 
 export interface RootUsage {
   used_bytes: number
@@ -15,7 +15,9 @@ export interface RootUsage {
 
 const discoverOperation = driveOperation<Record<string, never>, DriveRoots>(api.roots_discover)
 const usageOperation = driveOperation<{ root: string }, RootUsage>(api.root_usage)
-const emptyTrashOperation = driveOperation<{ root: string }, { count: number }>(api.root_empty_trash)
+const emptyTrashOperation = driveOperation<{ root: string }, { count: number }>(
+  api.root_empty_trash,
+)
 
 export function roots() {
   return query(discoverOperation, {}, { staleTime: 5 * 60_000, gcTime: 30 * 60_000 })
@@ -35,6 +37,7 @@ export function readRootUsage(root: string, signal?: AbortSignal): Promise<RootU
 }
 
 /** Deletes everything in one root's Trash forever, under MANAGE on the root. */
-export const emptyTrash = () => mutation(emptyTrashOperation, {
-  invalidates: ['node_children', 'view_list', 'root_usage'],
-})
+export const emptyTrash = () =>
+  mutation(emptyTrashOperation, {
+    invalidates: ['node_children', 'view_list', 'root_usage'],
+  })

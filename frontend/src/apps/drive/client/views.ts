@@ -21,23 +21,33 @@ export interface ViewInput {
 type ViewRequest = Omit<ViewInput, 'types'> & { type?: string }
 
 const viewOperation = driveOperation<ViewRequest, DrivePage>(api.view_list, { entity: true })
-const clearOperation = driveOperation<{ nodes?: string[] }, { count: number }>(api.view_clear_recents)
+const clearOperation = driveOperation<{ nodes?: string[] }, { count: number }>(
+  api.view_clear_recents,
+)
 
 export function view({ types, ...input }: ViewInput) {
-  return infinite(viewOperation, { limit: 60, ...input, type: listingTypesParam(types) }, {
-    cursorParam: 'cursor',
-    member: (row: DriveNode) => {
-      if (input.view === 'trash') return row.state === 'Trashed' && row.root === input.root
-      if (input.view === 'favourites') return row.state === 'Active' && row.favourite !== false
-      return row.state === 'Active'
+  return infinite(
+    viewOperation,
+    { limit: 60, ...input, type: listingTypesParam(types) },
+    {
+      cursorParam: 'cursor',
+      member: (row: DriveNode) => {
+        if (input.view === 'trash') return row.state === 'Trashed' && row.root === input.root
+        if (input.view === 'favourites') return row.state === 'Active' && row.favourite !== false
+        return row.state === 'Active'
+      },
     },
-  })
+  )
 }
 
 export function recents(input: Pick<ViewInput, 'limit' | 'expand'> = {}) {
-  return query(viewOperation, { view: 'recents', limit: 12, ...input }, {
-    member: (row: DriveNode) => row.state === 'Active',
-  })
+  return query(
+    viewOperation,
+    { view: 'recents', limit: 12, ...input },
+    {
+      member: (row: DriveNode) => row.state === 'Active',
+    },
+  )
 }
 
 export const clearRecents = () => mutation(clearOperation, { invalidates: ['view_list'] })

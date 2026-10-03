@@ -11,7 +11,9 @@
       <SettingsRow
         v-if="answer.is_admin"
         :title="__('Enable WebDAV')"
-        :description="__('Let WebDAV clients, such as Finder, Windows Explorer and rclone, connect to Drive')"
+        :description="
+          __('Let WebDAV clients, such as Finder, Windows Explorer and rclone, connect to Drive')
+        "
       >
         <Switch
           :model-value="siteEnabled"
@@ -36,18 +38,32 @@
 
         <section class="flex flex-col gap-4">
           <div class="space-y-1">
-            <h3 class="text-base font-semibold text-ink-gray-8">{{ __('Client configuration') }}</h3>
+            <h3 class="text-base font-semibold text-ink-gray-8">
+              {{ __('Client configuration') }}
+            </h3>
             <p class="text-base text-ink-gray-6">
-              {{ __('Connect a WebDAV client with these details. It shows your Home folder and the shared Everyone folder.') }}
+              {{
+                __(
+                  'Connect a WebDAV client with these details. It shows your Home folder and the shared Everyone folder.',
+                )
+              }}
             </p>
           </div>
           <CopyField :label="__('Server URL')" :value="connection.server_url" />
           <CopyField :label="__('Username')" :value="connection.username" />
           <p class="text-sm text-ink-gray-5">
-            {{ __('Sign in with your password, or use the API key and secret in place of the username and password.') }}
+            {{
+              __(
+                'Sign in with your password, or use the API key and secret in place of the username and password.',
+              )
+            }}
           </p>
           <p v-if="connection.two_factor_blocked" class="text-sm text-ink-amber-3">
-            {{ __('Your account uses two-factor authentication. A WebDAV client cannot sign in with your password, so use an API key and secret.') }}
+            {{
+              __(
+                'Your account uses two-factor authentication. A WebDAV client cannot sign in with your password, so use an API key and secret.',
+              )
+            }}
           </p>
         </section>
 
@@ -55,7 +71,9 @@
           <h3 class="text-base font-semibold text-ink-gray-8">{{ __('API access') }}</h3>
           <CopyField v-if="connection.api_key" :label="__('API key')" :value="connection.api_key" />
           <p v-else class="text-base text-ink-gray-6">
-            {{ __('You do not have an API key yet. Generate one to sign in without your password.') }}
+            {{
+              __('You do not have an API key yet. Generate one to sign in without your password.')
+            }}
           </p>
           <Button
             class="self-start"
@@ -80,13 +98,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Button, Dialog, SettingsRow, Switch } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
 import type { WebdavGetOutput } from '@/apps/drive/client/generated'
-import { generateUserKeys, saveSiteSettings, saveUserSettings, webdav } from '@/apps/drive/client/settings'
+import {
+  generateUserKeys,
+  saveSiteSettings,
+  saveUserSettings,
+  webdav,
+} from '@/apps/drive/client/settings'
 import { useMutation, useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
+
 import CopyField from './CopyField.vue'
 import SettingsPage from './SettingsPage.vue'
 

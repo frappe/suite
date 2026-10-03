@@ -82,7 +82,8 @@ export interface UploadTarget {
 export function uploadTargetOf(
   node: Pick<DriveNode, 'name' | 'root' | 'kind' | 'state' | 'access'> | null | undefined,
 ): UploadTarget | null {
-  if (!node || (node.kind !== 'folder' && node.kind !== 'root') || node.state !== 'Active') return null
+  if (!node || (node.kind !== 'folder' && node.kind !== 'root') || node.state !== 'Active')
+    return null
   return hasRole(node, DRIVE_ROLES.upload) ? { parent: node.name, root: node.root } : null
 }
 
@@ -104,7 +105,12 @@ export interface UploadPrompts {
   /** A top folder title is taken. There is no merge. */
   folderCollision(input: { title: string; freeTitle: string }): Promise<'keep-both' | 'skip'>
   /** The batch does not fit in the root. */
-  quota(input: { total: number; free: number; fitting: number; count: number }): Promise<'fit' | 'cancel'>
+  quota(input: {
+    total: number
+    free: number
+    fitting: number
+    count: number
+  }): Promise<'fit' | 'cancel'>
   /** Resume without a stored handle: the user picks the file again. */
   pickFile(input: { name: string }): Promise<File | null>
 }
@@ -181,12 +187,23 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   const active = computed(() => entries.value.filter((entry) => ACTIVE.includes(entry.state)))
 
   const indicator = computed<UploadIndicator | null>(() => {
-    const attention = !state.seen && entries.value.some((entry) => entry.state === 'failed' || entry.state === 'interrupted')
+    const attention =
+      !state.seen &&
+      entries.value.some((entry) => entry.state === 'failed' || entry.state === 'interrupted')
     if (active.value.length || state.preparing) {
-      const counted = [...jobs.values()].filter((job) => job.run === run && job.entry.state !== 'skipped')
+      const counted = [...jobs.values()].filter(
+        (job) => job.run === run && job.entry.state !== 'skipped',
+      )
       const size = counted.reduce((sum, job) => sum + job.entry.size, 0)
-      const sent = counted.reduce((sum, job) => sum + (job.entry.state === 'done' ? job.entry.size : job.entry.sent), 0)
-      return { fraction: size ? sent / size : 0, tone: state.halted ? 'paused' : 'running', attention }
+      const sent = counted.reduce(
+        (sum, job) => sum + (job.entry.state === 'done' ? job.entry.size : job.entry.sent),
+        0,
+      )
+      return {
+        fraction: size ? sent / size : 0,
+        tone: state.halted ? 'paused' : 'running',
+        attention,
+      }
     }
     if (state.showDone) return { fraction: 1, tone: 'done', attention }
     return attention ? { fraction: null, tone: 'running', attention } : null
@@ -197,7 +214,9 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     () => active.value.length + state.preparing,
     (count, previous) => {
       if (count || !previous) return
-      const finished = [...jobs.values()].some((job) => job.run === run && job.entry.state === 'done')
+      const finished = [...jobs.values()].some(
+        (job) => job.run === run && job.entry.state === 'done',
+      )
       run += 1
       if (!finished) return
       state.showDone = true
@@ -222,7 +241,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     return answer
   }
 
-  function addJob(picked: PickedFile, parent: string, batch: Batch, replaces: string | null = null, title = picked.file.name) {
+  function addJob(
+    picked: PickedFile,
+    parent: string,
+    batch: Batch,
+    replaces: string | null = null,
+    title = picked.file.name,
+  ) {
     const entry = reactive<UploadEntry>({
       id: `upload-${nextId++}`,
       title,
@@ -255,7 +280,10 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   /** Files into one folder. Returns after the quota check; the uploads go on. */
   async function uploadFiles(picked: readonly PickedFile[], target: UploadTarget): Promise<void> {
-    const fitting = await preflight(picked.map((item) => item.file.size), target.root)
+    const fitting = await preflight(
+      picked.map((item) => item.file.size),
+      target.root,
+    )
     if (!fitting) return
     const batch: Batch = { size: fitting.length, applied: null }
     for (const index of fitting) addJob(picked[index]!, target.parent, batch)
@@ -264,7 +292,10 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   /** Folder trees into one folder: folders top-down with `POST /nodes`, then their files. */
-  async function uploadFolders(folders: readonly FolderUpload[], target: UploadTarget): Promise<void> {
+  async function uploadFolders(
+    folders: readonly FolderUpload[],
+    target: UploadTarget,
+  ): Promise<void> {
     const sizes = folders.flatMap((folder) => folder.files.map((item) => item.file.size))
     const fitting = await preflight(sizes, target.root)
     if (!fitting) return
@@ -320,15 +351,36 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     }
   }
 
-  async function createFolder(parent: string, title: string): Promise<DriveNode | { error: PlatformError }> {
+  async function createFolder(
+    parent: string,
+    title: string,
+  ): Promise<DriveNode | { error: PlatformError }> {
     const mutation = serverState.useMutation(createNode(), { silent: true })
-    const created = (await mutation.run({ parent_node: parent, title, kind: 'folder' })) as DriveNode | undefined
-    return created ?? { error: mutation.error ?? { type: 'RequestError', message: 'The folder could not be created.', status: 0 } }
+    const created = (await mutation.run({ parent_node: parent, title, kind: 'folder' })) as
+      DriveNode | undefined
+    return (
+      created ?? {
+        error: mutation.error ?? {
+          type: 'RequestError',
+          message: 'The folder could not be created.',
+          status: 0,
+        },
+      }
+    )
   }
 
   /** A browser replace keeps no old version (spec §6.8). */
-  function replaceFile(target: { node: string; parent: string; title: string }, picked: PickedFile): UploadEntry {
-    const entry = addJob(picked, target.parent, { size: 1, applied: null }, target.node, target.title)
+  function replaceFile(
+    target: { node: string; parent: string; title: string },
+    picked: PickedFile,
+  ): UploadEntry {
+    const entry = addJob(
+      picked,
+      target.parent,
+      { size: 1, applied: null },
+      target.node,
+      target.title,
+    )
     pump()
     return entry
   }
@@ -351,7 +403,9 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       room -= sizes[index]!
       return true
     })
-    const choice = await ask((p) => p.quota({ total, free, fitting: fitting.length, count: sizes.length }))
+    const choice = await ask((p) =>
+      p.quota({ total, free, fitting: fitting.length, count: sizes.length }),
+    )
     return choice === 'fit' && fitting.length ? fitting : null
   }
 
@@ -478,7 +532,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       })
       stop()
       if (node) return complete(job, node)
-      const error = mutation.error ?? { type: 'RequestError', message: 'The upload failed.', status: 0 }
+      const error = mutation.error ?? {
+        type: 'RequestError',
+        message: 'The upload failed.',
+        status: 0,
+      }
       // The title was taken while the bytes travelled. The session stays; finish again.
       if (!(await settleRefusal(job, error))) return
       entry.state = 'uploading'
@@ -490,7 +548,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
    * finishes the session. A refused finish keeps the stored bytes, so only
    * the finish runs again.
    */
-  async function transferDirect(job: Job, file: File, session: Extract<UploadSession, { mode: 'direct' }>) {
+  async function transferDirect(
+    job: Job,
+    file: File,
+    session: Extract<UploadSession, { mode: 'direct' }>,
+  ) {
     const { entry } = job
     entry.state = 'uploading'
     entry.error = null
@@ -506,10 +568,16 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       const mutation = serverState.useMutation(finishUpload(entry.parent), { silent: true })
       const node = await mutation.run({
         upload_id: session.upload_id,
-        ...(entry.replaces ? { replaces: entry.replaces } : { parent_node: entry.parent, title: entry.title }),
+        ...(entry.replaces
+          ? { replaces: entry.replaces }
+          : { parent_node: entry.parent, title: entry.title }),
       })
       if (node) return complete(job, node)
-      const error = mutation.error ?? { type: 'RequestError', message: 'The upload failed.', status: 0 }
+      const error = mutation.error ?? {
+        type: 'RequestError',
+        message: 'The upload failed.',
+        status: 0,
+      }
       if (!(await settleRefusal(job, error))) return
       entry.state = 'uploading'
     }
@@ -558,18 +626,25 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     return true
   }
 
-  function resolveCollision(job: Job, freeTitle: string): Promise<CollisionChoice & { node?: string }> {
+  function resolveCollision(
+    job: Job,
+    freeTitle: string,
+  ): Promise<CollisionChoice & { node?: string }> {
     const { entry, batch } = job
     return ask(async (p) => {
       const existing = await findChild(entry.parent, entry.title).catch(() => null)
-      const canReplace = !!existing && existing.kind === 'file' && hasRole(existing, DRIVE_ROLES.edit)
+      const canReplace =
+        !!existing && existing.kind === 'file' && hasRole(existing, DRIVE_ROLES.edit)
       const remembered = batch.applied
-      const choice = remembered && (remembered.action !== 'replace' || canReplace)
-        ? remembered
-        : await p.collision({ title: entry.title, freeTitle, canReplace, batch: batch.size > 1 })
+      const choice =
+        remembered && (remembered.action !== 'replace' || canReplace)
+          ? remembered
+          : await p.collision({ title: entry.title, freeTitle, canReplace, batch: batch.size > 1 })
       if (choice.applyToAll && choice.action !== 'rename') batch.applied = choice
       if (choice.action === 'replace') {
-        return existing && canReplace ? { action: 'replace', node: existing.name } : { action: 'skip' }
+        return existing && canReplace
+          ? { action: 'replace', node: existing.name }
+          : { action: 'skip' }
       }
       return choice
     })
@@ -618,7 +693,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   function retryAll() {
     state.halted = null
     for (const job of jobs.values()) {
-      if ((job.entry.state === 'failed' || job.entry.state === 'held') && job.file && job.entry.retryable) {
+      if (
+        (job.entry.state === 'failed' || job.entry.state === 'held') &&
+        job.file &&
+        job.entry.retryable
+      ) {
         job.entry.state = 'queued'
         job.entry.error = null
         job.run = run
@@ -640,7 +719,10 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     if (!file) {
       const picked = await ask((p) => p.pickFile({ name: job.fileName }))
       if (!picked) return
-      const same = picked.name === job.fileName && picked.size === job.entry.size && picked.lastModified === job.lastModified
+      const same =
+        picked.name === job.fileName &&
+        picked.size === job.entry.size &&
+        picked.lastModified === job.lastModified
       if (!same) {
         const batch: Batch = { size: 1, applied: null }
         addJob({ file: picked }, job.entry.parent, batch)
@@ -662,7 +744,12 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     restored ??= (async () => {
       const found = await records.load().catch(() => [] as UploadRecord[])
       for (const record of found) {
-        if ([...jobs.values()].some((job) => (job.session?.upload_id ?? job.staleRecord) === record.upload_id)) continue
+        if (
+          [...jobs.values()].some(
+            (job) => (job.session?.upload_id ?? job.staleRecord) === record.upload_id,
+          )
+        )
+          continue
         const entry = reactive<UploadEntry>({
           id: `upload-${nextId++}`,
           title: record.title ?? record.name,
@@ -701,7 +788,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   /** Removes an entry that is not running. An interrupted one also forgets its record. */
   async function dismiss(id: string) {
     const job = jobs.get(id)
-    if (!job || job.entry.state === 'uploading' || job.entry.state === 'checking' || job.entry.state === 'queued') return
+    if (
+      !job ||
+      job.entry.state === 'uploading' ||
+      job.entry.state === 'checking' ||
+      job.entry.state === 'queued'
+    )
+      return
     jobs.delete(id)
     if (job.session && job.entry.state !== 'done') await records.remove(job.session.upload_id)
   }
@@ -768,7 +861,8 @@ async function readHandle(handle: FileSystemFileHandle | undefined): Promise<Fil
     const permissioned = handle as PermissionHandle
     const options = { mode: 'read' as const }
     let permission = (await permissioned.queryPermission?.(options)) ?? 'granted'
-    if (permission !== 'granted') permission = (await permissioned.requestPermission?.(options)) ?? 'denied'
+    if (permission !== 'granted')
+      permission = (await permissioned.requestPermission?.(options)) ?? 'denied'
     return permission === 'granted' ? await handle.getFile() : null
   } catch {
     return null
@@ -782,7 +876,10 @@ type PermissionHandle = FileSystemFileHandle & {
 
 /** The server's `DriveFileTooLarge` message, for a file refused before any request. */
 function tooLargeMessage(limit: number, size: number): string {
-  return __('Files can be up to {0}. This one is {1}.', [formatSize(limit), formatSize(size, { roundUp: true })])
+  return __('Files can be up to {0}. This one is {1}.', [
+    formatSize(limit),
+    formatSize(size, { roundUp: true }),
+  ])
 }
 
 /** A full root answers `DriveOverQuota`; a proxy's body cap answers a bare 413. */
@@ -791,8 +888,13 @@ function isOverQuota(error: PlatformError): boolean {
 }
 
 function platformError(cause: unknown): PlatformError {
-  if (cause instanceof TransportError) return { ...cause.details, type: cause.type, message: cause.message, status: cause.status }
-  return { type: 'RequestError', message: cause instanceof Error ? cause.message : 'The upload failed.', status: 0 }
+  if (cause instanceof TransportError)
+    return { ...cause.details, type: cause.type, message: cause.message, status: cause.status }
+  return {
+    type: 'RequestError',
+    message: cause instanceof Error ? cause.message : 'The upload failed.',
+    status: 0,
+  }
 }
 
 let queue: UploadQueue | null = null

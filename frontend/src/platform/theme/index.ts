@@ -50,8 +50,8 @@ export function createTheme(options: CreateThemeOptions = {}): Theme {
   let initialized: Promise<void> | null = null
   let saveQueue = Promise.resolve(true)
 
-  const resolvedMode = computed<ResolvedTheme>(() =>
-    overrides.value.at(-1)?.mode ?? resolve(savedMode.value, systemDark.value),
+  const resolvedMode = computed<ResolvedTheme>(
+    () => overrides.value.at(-1)?.mode ?? resolve(savedMode.value, systemDark.value),
   )
 
   const apply = () => applyDocumentTheme(savedMode.value, resolvedMode.value)

@@ -12,12 +12,7 @@
     :retry="load"
     :tab="requestedTab"
   />
-  <SettingsDialog
-    v-else
-    v-model:open="open"
-    v-model:tab="activeTab"
-    size="5xl"
-  >
+  <SettingsDialog v-else v-model:open="open" v-model:tab="activeTab" size="5xl">
     <template #title>{{ __('Settings') }}</template>
     <!-- SettingsDialog draws no close button. This one sits where Dialog
          puts its own. -->
@@ -42,7 +37,11 @@
                 class="shrink-0"
                 aria-hidden="true"
               />
-              <span v-else :class="[tab.icon, 'size-4 shrink-0 text-ink-gray-6']" aria-hidden="true" />
+              <span
+                v-else
+                :class="[tab.icon, 'size-4 shrink-0 text-ink-gray-6']"
+                aria-hidden="true"
+              />
             </template>
             {{ tab.label() }}
           </SettingsNavItem>
@@ -55,14 +54,18 @@
         </SettingsPanel>
       </SettingsContent>
     </template>
-    <div v-else class="flex min-h-0 flex-1 items-center justify-center" role="status" :aria-label="__('Loading')">
+    <div
+      v-else
+      class="flex min-h-0 flex-1 items-center justify-center"
+      role="status"
+      :aria-label="__('Loading')"
+    >
       <LoadingIndicator class="size-5 text-ink-gray-5" />
     </div>
   </SettingsDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import {
   Avatar,
   Button,
@@ -75,13 +78,14 @@ import {
   SettingsPanel,
   SettingsSidebar,
 } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { resolveSettingsTab, type SettingsTabId } from '@/shell/settings/settings'
 import SettingsDrillIn from '@/shell/settings/SettingsDrillIn.vue'
 import SettingsLoadFailed from '@/shell/settings/SettingsLoadFailed.vue'
 import SettingsTabBody from '@/shell/settings/SettingsTabBody.vue'
-import { resolveSettingsTab, type SettingsTabId } from '@/shell/settings/settings'
 import { useSettingsGroups } from '@/shell/settings/useSettingsDialog'
 import { isMobile } from '@/shell/useIsMobile'
 

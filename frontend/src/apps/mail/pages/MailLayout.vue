@@ -1,31 +1,30 @@
 <template>
-	<!-- Nothing in mail works without the mail server, so an outage replaces the whole
+  <!-- Nothing in mail works without the mail server, so an outage replaces the whole
 	     route group (incl. noLayout pages) rather than decorating a UI whose every fetch
 	     would fail. -->
-	<MailServerUnavailableView v-if="mailServerUnavailable" class="mail-app mail-app-root" />
-	<component :is="Layout" v-else class="mail-app mail-app-root">
-		<router-view />
-	</component>
-	<ShortcutsModal v-model:open="showShortcuts" />
+  <MailServerUnavailableView v-if="mailServerUnavailable" class="mail-app mail-app-root" />
+  <component :is="Layout" v-else class="mail-app mail-app-root">
+    <router-view />
+  </component>
+  <ShortcutsModal v-model:open="showShortcuts" />
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onScopeDispose, onUnmounted, provide } from 'vue'
-import { useRoute } from 'vue-router'
 import { providePortalTarget } from 'frappe-ui'
+import { computed, onMounted, onScopeDispose, onUnmounted, provide } from 'vue'
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
-import { mailServerUnavailable } from '@/boot/config'
-import { type RouteLocationRaw, useRouter } from 'vue-router'
-import { isMailRoute } from '@/apps/mail/router'
-import { shouldIgnoreKeypress } from '@/apps/mail/utils'
-import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
-import { initSocket } from '@/apps/mail/socket'
-import dayjs from '@/apps/mail/utils/dayjs'
-import { userStore } from '@/apps/mail/stores/user'
-import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
+import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
+import { isMailRoute } from '@/apps/mail/router'
+import { initSocket } from '@/apps/mail/socket'
+import { userStore } from '@/apps/mail/stores/user'
+import { shouldIgnoreKeypress } from '@/apps/mail/utils'
+import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
+import dayjs from '@/apps/mail/utils/dayjs'
+import { useGPrefix } from '@/apps/mail/utils/listNavigation'
+import { mailServerUnavailable } from '@/boot/config'
 import { useRootStore } from '@/stores/root'
 
 /**
@@ -79,16 +78,16 @@ const gPrefix = useGPrefix()
 const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
 
 const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
-	a: () => ({ name: 'mail-all-inboxes' }),
-	r: () => ({ name: 'mail-screener', params: { accountId } }),
-	o: () => ({ name: 'mail-outbox', params: { accountId } }),
-	i: () => mailboxRoute(mailboxIds.inbox),
-	f: () => mailboxRoute('starred'),
-	s: () => mailboxRoute(mailboxIds.sent),
-	d: () => mailboxRoute(mailboxIds.drafts),
-	j: () => mailboxRoute(mailboxIds.junk),
-	e: () => mailboxRoute(mailboxIds.archive),
-	t: () => mailboxRoute(mailboxIds.trash),
+  a: () => ({ name: 'mail-all-inboxes' }),
+  r: () => ({ name: 'mail-screener', params: { accountId } }),
+  o: () => ({ name: 'mail-outbox', params: { accountId } }),
+  i: () => mailboxRoute(mailboxIds.inbox),
+  f: () => mailboxRoute('starred'),
+  s: () => mailboxRoute(mailboxIds.sent),
+  d: () => mailboxRoute(mailboxIds.drafts),
+  j: () => mailboxRoute(mailboxIds.junk),
+  e: () => mailboxRoute(mailboxIds.archive),
+  t: () => mailboxRoute(mailboxIds.trash),
 }
 
 // ⌘Z takes back the last undoable action, wherever it was taken. The slot is app-wide (useUndo),
@@ -97,56 +96,56 @@ const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
 const { undo } = useUndo()
 
 const handleGlobalShortcuts = (e: KeyboardEvent) => {
-	// The listener sits on window, so it only acts while a Mail route is active.
-	if (!isMailRoute(route)) return
+  // The listener sits on window, so it only acts while a Mail route is active.
+  if (!isMailRoute(route)) return
 
-	const key = e.key.toLowerCase()
+  const key = e.key.toLowerCase()
 
-	// Above the guard, which drops every modified key: this is the one shortcut here that has one.
-	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		gPrefix.disarm()
-		return undo()
-	}
+  // Above the guard, which drops every modified key: this is the one shortcut here that has one.
+  if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
+    e.preventDefault()
+    gPrefix.disarm()
+    return undo()
+  }
 
-	if (shouldIgnoreKeypress(e)) return
+  if (shouldIgnoreKeypress(e)) return
 
-	if (e.key === '?') {
-		e.preventDefault()
-		showShortcuts.value = true
-		return
-	}
+  if (e.key === '?') {
+    e.preventDefault()
+    showShortcuts.value = true
+    return
+  }
 
-	if (gPrefix.armed.value) {
-		const destination = GO_TO_KEYS[key]?.()
-		gPrefix.disarm()
-		if (!destination) return
-		e.preventDefault()
-		router.push(destination)
-		return
-	}
+  if (gPrefix.armed.value) {
+    const destination = GO_TO_KEYS[key]?.()
+    gPrefix.disarm()
+    if (!destination) return
+    e.preventDefault()
+    router.push(destination)
+    return
+  }
 
-	if (key === 'g') gPrefix.press(e.shiftKey)
+  if (key === 'g') gPrefix.press(e.shiftKey)
 }
 const { openSettings } = useSettings()
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layout', () =>
-	mailServerUnavailable.value
-		? []
-		: [
-				{
-					commands: [
-						{
-							id: 'mail-settings',
-							label: 'Settings',
-							shortcut: 'Mod+Shift+Comma',
-							enterHint: 'open settings',
-							icon: 'lucide-settings',
-							run: () => openSettings('mail.credentials'),
-						},
-					],
-				},
-			],
+  mailServerUnavailable.value
+    ? []
+    : [
+        {
+          commands: [
+            {
+              id: 'mail-settings',
+              label: 'Settings',
+              shortcut: 'Mod+Shift+Comma',
+              enterHint: 'open settings',
+              icon: 'lucide-settings',
+              run: () => openSettings('mail.credentials'),
+            },
+          ],
+        },
+      ],
 )
 onScopeDispose(unregisterPaletteGroups)
 
@@ -158,8 +157,8 @@ provide('$socket', socket)
 onScopeDispose(() => socket.disconnect())
 
 const Layout = computed(() => {
-	if (route.meta.noLayout) return 'div'
-	return DefaultLayout
+  if (route.meta.noLayout) return 'div'
+  return DefaultLayout
 })
 
 // iOS standalone scrolls the whole document to reveal a focused input above the
@@ -169,19 +168,19 @@ const Layout = computed(() => {
 // sweep it whenever focus leaves a field. rAF: let the keyboard dismissal settle
 // first, and never fight iOS while the field is still focused.
 const resetDocumentScroll = () => {
-	requestAnimationFrame(() => {
-		if (window.scrollY) window.scrollTo(0, 0)
-	})
+  requestAnimationFrame(() => {
+    if (window.scrollY) window.scrollTo(0, 0)
+  })
 }
 
 onMounted(() => {
-	window.addEventListener('keydown', handleGlobalShortcuts)
-	window.addEventListener('focusout', resetDocumentScroll)
+  window.addEventListener('keydown', handleGlobalShortcuts)
+  window.addEventListener('focusout', resetDocumentScroll)
 })
 
 onUnmounted(() => {
-	window.removeEventListener('keydown', handleGlobalShortcuts)
-	window.removeEventListener('focusout', resetDocumentScroll)
+  window.removeEventListener('keydown', handleGlobalShortcuts)
+  window.removeEventListener('focusout', resetDocumentScroll)
 })
 </script>
 
@@ -193,29 +192,29 @@ onUnmounted(() => {
    referenced via their CSS variables (NOT @apply, which would break the build for these
    plugin-registered token classes); plain Tailwind utilities below still use @apply. */
 .mail-app-root {
-	@apply text-lg sm:text-md text-ink-gray-8 bg-surface-base;
+  @apply text-lg sm:text-md text-ink-gray-8 bg-surface-base;
 }
 
 /* The overlay layer has no text colour of its own, so un-classed text in a teleported
    dialog or menu (modal <h1> titles, for one) would fall back to black. */
 .mail-app {
-	color: var(--ink-gray-8);
+  color: var(--ink-gray-8);
 }
 
 .mail-app h1 {
-	@apply !font-semibold;
+  @apply !font-semibold;
 }
 
 .mail-app h2 {
-	@apply text-lg !font-medium sm:text-md;
+  @apply text-lg !font-medium sm:text-md;
 }
 
 /* :where() keeps the helper at the one-class weight it had as a bare `.icon`. */
 :where(.mail-app) .icon {
-	stroke-width: 1.5;
-	width: 1rem;
-	height: 1rem;
-	color: var(--ink-gray-6);
+  stroke-width: 1.5;
+  width: 1rem;
+  height: 1rem;
+  color: var(--ink-gray-6);
 }
 
 /* The mail app's icon weight is 1.5 (.icon, FeatherIcon's default, and
@@ -226,7 +225,7 @@ onUnmounted(() => {
    on a button) still wins. Covers teleported menus/sheets too, through
    the overlay layer. */
 :where(.mail-app svg.lucide) {
-	stroke-width: 1.5;
+  stroke-width: 1.5;
 }
 
 /* Swipe paging (mobile) — shared by the thread pane (MailThread) and the screener
@@ -236,22 +235,22 @@ onUnmounted(() => {
 .mail-app .page-next-leave-active,
 .mail-app .page-prev-enter-active,
 .mail-app .page-prev-leave-active {
-	transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .mail-app .page-next-leave-active,
 .mail-app .page-prev-leave-active {
-	position: absolute;
-	inset: 0;
+  position: absolute;
+  inset: 0;
 }
 
 .mail-app .page-next-enter-from,
 .mail-app .page-prev-leave-to {
-	transform: translateX(100%);
+  transform: translateX(100%);
 }
 
 .mail-app .page-next-leave-to,
 .mail-app .page-prev-enter-from {
-	transform: translateX(-100%);
+  transform: translateX(-100%);
 }
 </style>

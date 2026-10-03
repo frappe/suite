@@ -1,8 +1,4 @@
-import {
-  START_LOCATION,
-  type RouteLocationNormalized,
-  type RouteLocationRaw,
-} from 'vue-router'
+import { START_LOCATION, type RouteLocationNormalized, type RouteLocationRaw } from 'vue-router'
 
 import table from './redirects.json'
 
@@ -89,19 +85,14 @@ export function redirectOldPath(
   return found.address === null ? null : found.address + to.hash
 }
 
-function answer(
-  row: Row,
-  params: Record<string, string>,
-  query: string,
-): OldPathAnswer | null {
+function answer(row: Row, params: Record<string, string>, query: string): OldPathAnswer | null {
   if (row.lookup !== null) return { address: null, serverLoad: true }
   if (row.new === null) return null
   const address = row.new
     .split('/')
     .map((segment) => (segment.startsWith(':') ? params[segment.slice(1)] : segment))
     .join('/')
-  const serverLoad =
-    SERVER_PREFIXES.has(segmentsOf(row.old)[0]!) || address.startsWith('/l/')
+  const serverLoad = SERVER_PREFIXES.has(segmentsOf(row.old)[0]!) || address.startsWith('/l/')
   return { address: withQuery(address, query), serverLoad }
 }
 

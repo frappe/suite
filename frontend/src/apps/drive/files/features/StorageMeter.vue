@@ -12,7 +12,10 @@
     @click="openSettings('drive.statistics')"
   >
     <!-- The track darkens with the hover background, so it stays visible on it. -->
-    <span v-if="meter.percent !== null" class="h-1 w-full overflow-hidden rounded-full bg-surface-gray-3 transition-colors group-hover:bg-surface-gray-4">
+    <span
+      v-if="meter.percent !== null"
+      class="h-1 w-full overflow-hidden rounded-full bg-surface-gray-3 transition-colors group-hover:bg-surface-gray-4"
+    >
       <span
         class="block h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none"
         :class="FILL[meter.level]"
@@ -31,10 +34,11 @@
 import { Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { rootUsage, roots } from '@/apps/drive/client/roots'
+import { roots, rootUsage } from '@/apps/drive/client/roots'
 import { useQuery } from '@/platform/server-state'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
+
 import { storageMeter, type StorageLevel } from './storageMeter'
 
 const FILL: Record<StorageLevel, string> = {

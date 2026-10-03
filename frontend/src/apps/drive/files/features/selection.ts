@@ -30,4 +30,3 @@ export function selectAllLoaded(visible: readonly string[]): SelectionState {
 export function clearSelection(): SelectionState {
   return { selected: [], anchor: null }
 }
-

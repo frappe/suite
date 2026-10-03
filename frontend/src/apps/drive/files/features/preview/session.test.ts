@@ -12,7 +12,10 @@ const server = vi.hoisted(() => ({
 vi.mock('@/platform/transport', async (actual) => ({
   ...(await actual<typeof import('@/platform/transport')>()),
   transport: {
-    request: async (operation: Operation, input: { node: string; nodes?: string[]; patch?: { state?: string } }) => {
+    request: async (
+      operation: Operation,
+      input: { node: string; nodes?: string[]; patch?: { state?: string } },
+    ) => {
       if (operation.id === 'node_visit') server.visits.push(input.node)
       if (operation.id === 'node_batch') {
         for (const node of input.nodes ?? []) {
@@ -24,11 +27,25 @@ vi.mock('@/platform/transport', async (actual) => ({
       if (operation.id !== 'node_get') return {}
       const trashed = server.trashed.has(input.node)
       return {
-        name: input.node, title: 'Plan.pdf', kind: 'file', parent_node: 'p', root: 'r',
-        state: trashed ? 'Trashed' : 'Active', trash_root: trashed ? input.node : null, size: 1,
-        mime: 'application/pdf', url: `/f/${input.node}`, content_doctype: null, content_docname: null,
-        is_template: 0, owner: { id: 'asha@example.com', full_name: 'Asha', user_image: null }, creation: null, modified: null, content_modified: null,
-        access: { role: 10, via_link: server.viaLink }, favourite: server.starred.has(input.node),
+        name: input.node,
+        title: 'Plan.pdf',
+        kind: 'file',
+        parent_node: 'p',
+        root: 'r',
+        state: trashed ? 'Trashed' : 'Active',
+        trash_root: trashed ? input.node : null,
+        size: 1,
+        mime: 'application/pdf',
+        url: `/f/${input.node}`,
+        content_doctype: null,
+        content_docname: null,
+        is_template: 0,
+        owner: { id: 'asha@example.com', full_name: 'Asha', user_image: null },
+        creation: null,
+        modified: null,
+        content_modified: null,
+        access: { role: 10, via_link: server.viaLink },
+        favourite: server.starred.has(input.node),
       }
     },
   },
@@ -71,10 +88,14 @@ describe('file preview session', () => {
 
     const batch = useMutation(batchNodes())
     await batch.run({ nodes: ['binned'], patch: { state: 'Active' } })
-    await vi.waitFor(() => expect([session.state.value, session.trashRoot.value]).toEqual(['Active', null]))
+    await vi.waitFor(() =>
+      expect([session.state.value, session.trashRoot.value]).toEqual(['Active', null]),
+    )
 
     await batch.run({ nodes: ['binned'], patch: { state: 'Trashed' } })
-    await vi.waitFor(() => expect([session.state.value, session.trashRoot.value]).toEqual(['Trashed', 'binned']))
+    await vi.waitFor(() =>
+      expect([session.state.value, session.trashRoot.value]).toEqual(['Trashed', 'binned']),
+    )
     session.dispose()
   })
 })

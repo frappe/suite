@@ -16,28 +16,32 @@ const SPARK_TYPES = new Set(['line', 'column'])
 // ("bluee") that canvas silently ignores, leaving the sparkline in whatever
 // colour was last set. An unrecognised value falls back to the default.
 const HEX_RE = /^#[0-9a-f]{3,8}$/i
-const CSS_COLORS = new Set((
-  'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue ' +
-  'blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk ' +
-  'crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki ' +
-  'darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen ' +
-  'darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue ' +
-  'dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite ' +
-  'gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki ' +
-  'lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan ' +
-  'lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen ' +
-  'lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen ' +
-  'magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen ' +
-  'mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream ' +
-  'mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid ' +
-  'palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum ' +
-  'powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown ' +
-  'seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen ' +
-  'steelblue tan teal thistle tomato transparent turquoise violet wheat white whitesmoke ' +
-  'yellow yellowgreen'
-).split(' '))
+const CSS_COLORS = new Set(
+  (
+    'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue ' +
+    'blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk ' +
+    'crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki ' +
+    'darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen ' +
+    'darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue ' +
+    'dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite ' +
+    'gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki ' +
+    'lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan ' +
+    'lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen ' +
+    'lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen ' +
+    'magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen ' +
+    'mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream ' +
+    'mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid ' +
+    'palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum ' +
+    'powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown ' +
+    'seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen ' +
+    'steelblue tan teal thistle tomato transparent turquoise violet wheat white whitesmoke ' +
+    'yellow yellowgreen'
+  ).split(' '),
+)
 
-function _isColor(c) { return HEX_RE.test(c) || CSS_COLORS.has(c.toLowerCase()) }
+function _isColor(c) {
+  return HEX_RE.test(c) || CSS_COLORS.has(c.toLowerCase())
+}
 
 // Normalise a type argument to a supported chart type (default 'line').
 export function sparkType(v) {
@@ -50,8 +54,8 @@ export function sparkType(v) {
 // blank or a stray label in the range doesn't read as a spurious 0.
 export function sparkSpec(data, type, color) {
   const nums = (data || [])
-    .filter(v => !(v == null || (typeof v === 'string' && v.trim() === '')))
-    .map(v => Number(v))
+    .filter((v) => !(v == null || (typeof v === 'string' && v.trim() === '')))
+    .map((v) => Number(v))
     .filter(Number.isFinite)
   const c = typeof color === 'string' ? color.trim() : ''
   return {
@@ -79,20 +83,26 @@ export function sparkGeometry(spec, w, h, pad = 3) {
 
   const min = Math.min(...data)
   const max = Math.max(...data)
-  const span = (max - min) || 1
+  const span = max - min || 1
   // Map a value to a y inside the padded box, higher value = higher (smaller y).
   const yOf = (v) => pad + (ph - ((v - min) / span) * ph)
 
   if (spec.type === 'column') {
     const n = data.length
-    const gap = n > 20 ? 0 : 1                       // drop gaps when very dense
+    const gap = n > 20 ? 0 : 1 // drop gaps when very dense
     const bw = Math.max(1, (pw - gap * (n - 1)) / n)
     // Bars grow from zero when the range straddles it, else from the low edge.
     const baseY = yOf(min < 0 && max > 0 ? 0 : min)
     const bars = data.map((v, i) => {
       const bx = pad + i * (bw + gap)
       const vy = yOf(v)
-      return { x: bx, y: Math.min(vy, baseY), w: bw, h: Math.max(1, Math.abs(vy - baseY)), neg: v < 0 }
+      return {
+        x: bx,
+        y: Math.min(vy, baseY),
+        w: bw,
+        h: Math.max(1, Math.abs(vy - baseY)),
+        neg: v < 0,
+      }
     })
     return { kind: 'bars', bars }
   }

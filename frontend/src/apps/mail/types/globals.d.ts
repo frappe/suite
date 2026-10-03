@@ -5,6 +5,5 @@ export {}
 // here to avoid a conflicting duplicate declaration.
 
 declare global {
-	interface Window {
-	}
+  interface Window {}
 }

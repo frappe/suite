@@ -74,7 +74,11 @@ function announce<Item extends ChangedItem>(items: readonly Item[], change: Undo
   })
 }
 
-async function takeBack<Item extends ChangedItem>(id: symbol, items: readonly Item[], change: Undoable<Item>) {
+async function takeBack<Item extends ChangedItem>(
+  id: symbol,
+  items: readonly Item[],
+  change: Undoable<Item>,
+) {
   const latest = items.filter((item) => changes.get(item.node)?.at(-1) === id)
   const later = items.filter((item) => !latest.includes(item))
   const refused = latest.length ? await change.undo(latest) : []
@@ -85,7 +89,12 @@ async function takeBack<Item extends ChangedItem>(id: symbol, items: readonly It
     else changes.delete(item.node)
   }
   const failed = [
-    ...later.map((item) => ({ node: item.node, type: 'Changed', message: later.length === 1 ? 'It changed again after that.' : 'They changed again after that.' })),
+    ...later.map((item) => ({
+      node: item.node,
+      type: 'Changed',
+      message:
+        later.length === 1 ? 'It changed again after that.' : 'They changed again after that.',
+    })),
     ...refused,
   ]
   if (!failed.length) {
@@ -106,7 +115,7 @@ export function announceMove(items: readonly MovedItem[], destination: string): 
     done: `Moved ${subject(items)} to ${escapeHtml(destination)}`,
     undone: `Moved ${subject(items)} back`,
     stuck: (what) => `Could not move ${what} back`,
-    undo: (moved) => moved.length === 1 ? moveBack(moved[0]!) : moveAllBack(moved),
+    undo: (moved) => (moved.length === 1 ? moveBack(moved[0]!) : moveAllBack(moved)),
   })
 }
 
@@ -138,7 +147,8 @@ export function announceRestore(items: readonly ChangedItem[]): void {
 /** One item goes back through the single move route. Answers what failed. */
 async function moveBack(item: MovedItem): Promise<DriveFailure[]> {
   const move = useMutation(moveNode(), { silent: true })
-  if (await move.run({ node: item.node, parent_node: item.from, expect_parent_node: item.to })) return []
+  if (await move.run({ node: item.node, parent_node: item.from, expect_parent_node: item.to }))
+    return []
   return [refusal(item.node, move.error)]
 }
 
@@ -161,7 +171,10 @@ async function moveAllBack(items: readonly MovedItem[]): Promise<DriveFailure[]>
 }
 
 /** Trashes or restores the items in one batch request. Answers what failed. */
-async function setState(items: readonly ChangedItem[], state: 'Active' | 'Trashed'): Promise<DriveFailure[]> {
+async function setState(
+  items: readonly ChangedItem[],
+  state: 'Active' | 'Trashed',
+): Promise<DriveFailure[]> {
   const batch = useMutation(batchNodes(), { silent: true })
   const nodes = items.map((item) => item.node)
   const result = await batch.run({ nodes, patch: { state } })

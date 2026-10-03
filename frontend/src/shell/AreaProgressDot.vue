@@ -23,23 +23,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed } from 'vue'
 
-import { progressState, type AreaProgress } from "@/shell/areaProgress";
+import { progressState, type AreaProgress } from '@/shell/areaProgress'
 
 const props = defineProps<{
-  progress: AreaProgress | null;
+  progress: AreaProgress | null
   /** The area's name, spoken before the state: "Files: Paused". */
-  label: string;
-}>();
+  label: string
+}>()
 
 const status = computed(() => {
-  const state = progressState(props.progress);
-  return state ? `${props.label}: ${state}` : "";
-});
+  const state = progressState(props.progress)
+  return state ? `${props.label}: ${state}` : ''
+})
 const shown = computed(() => {
-  const progress = props.progress;
-  if (!progress) return false;
-  return progress.attention || (progress.fraction != null && progress.tone !== "done");
-});
+  const progress = props.progress
+  if (!progress) return false
+  return progress.attention || (progress.fraction != null && progress.tone !== 'done')
+})
 </script>

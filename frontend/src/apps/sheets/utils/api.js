@@ -82,7 +82,13 @@ export async function call(method, args = {}, { keepalive = false, fetch } = {})
 // The refusals that mean "this caller may not do that here": Frappe's own, and
 // Drive's for a linked sheet. Drive answers a caller below Read with
 // `DriveNotFound`, so it is a refusal too.
-const REFUSALS = new Set(['PermissionError', 'DriveForbidden', 'DriveNotFound', 'DriveLocked', 'DriveLinkExpired'])
+const REFUSALS = new Set([
+  'PermissionError',
+  'DriveForbidden',
+  'DriveNotFound',
+  'DriveLocked',
+  'DriveLinkExpired',
+])
 
 export function isRefusal(err) {
   return REFUSALS.has(err?.excType) || err?.status === 401 || err?.status === 403

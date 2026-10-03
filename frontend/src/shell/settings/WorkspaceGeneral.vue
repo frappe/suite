@@ -60,8 +60,8 @@
 </template>
 
 <script setup lang="ts">
+import { Avatar, createResource, Dropdown, ErrorMessage, FileUploader, toast } from 'frappe-ui'
 import { ref, watch } from 'vue'
-import { Avatar, Dropdown, ErrorMessage, FileUploader, createResource, toast } from 'frappe-ui'
 
 import { useWorkspace } from '@/shell/useWorkspace'
 

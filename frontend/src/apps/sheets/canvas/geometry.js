@@ -1,12 +1,28 @@
-import { COL_HEADER_H, ROW_HEADER_W, DEFAULT_COL_W, DEFAULT_ROW_H, TOTAL_ROWS, TOTAL_COLS } from './constants.js'
+import {
+  COL_HEADER_H,
+  DEFAULT_COL_W,
+  DEFAULT_ROW_H,
+  ROW_HEADER_W,
+  TOTAL_COLS,
+  TOTAL_ROWS,
+} from './constants.js'
 
-export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }, hiddenRows = null, hiddenCols = null, getZoom = () => 1, filterHiddenRows = null) {
-  const cw = c => (hiddenCols && hiddenCols.has(c)) ? 0 : (colW[c] ?? DEFAULT_COL_W)
-  const rh = r => (hiddenRows && hiddenRows.has(r)) ? 0 : (rowH[r] ?? DEFAULT_ROW_H)
+export function createGeometry(
+  colW,
+  rowH,
+  scroll,
+  freeze = { rows: 0, cols: 0 },
+  hiddenRows = null,
+  hiddenCols = null,
+  getZoom = () => 1,
+  filterHiddenRows = null,
+) {
+  const cw = (c) => (hiddenCols && hiddenCols.has(c) ? 0 : (colW[c] ?? DEFAULT_COL_W))
+  const rh = (r) => (hiddenRows && hiddenRows.has(r) ? 0 : (rowH[r] ?? DEFAULT_ROW_H))
   // Distinguishes filter-hidden rows (transient, many small gaps) from
   // manually-hidden rows so the grid painter can draw the bold "there's
   // something hidden here" boundary only for the manual variety.
-  const isFilterHidden = r => !!(filterHiddenRows && filterHiddenRows.has(r))
+  const isFilterHidden = (r) => !!(filterHiddenRows && filterHiddenRows.has(r))
   // Convert page coordinates into the renderer's *logical* coordinate system.
   // Renderer scales ctx by zoom; mouse coords come in physical CSS pixels.
   const _logical = (ex, ey, canvasRect) => {
@@ -52,15 +68,23 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
 
   function firstVisCol() {
     const fc = freeze.cols || 0
-    let c = fc, x = 0
-    while (c < TOTAL_COLS - 1 && x + cw(c) <= scroll.x) { x += cw(c); c++ }
+    let c = fc,
+      x = 0
+    while (c < TOTAL_COLS - 1 && x + cw(c) <= scroll.x) {
+      x += cw(c)
+      c++
+    }
     return c
   }
 
   function firstVisRow() {
     const fr = freeze.rows || 0
-    let r = fr, y = 0
-    while (r < TOTAL_ROWS - 1 && y + rh(r) <= scroll.y) { y += rh(r); r++ }
+    let r = fr,
+      y = 0
+    while (r < TOTAL_ROWS - 1 && y + rh(r) <= scroll.y) {
+      y += rh(r)
+      r++
+    }
     return r
   }
 
@@ -84,16 +108,24 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
     const fr = freeze.rows || 0
 
     // Determine column (check frozen cols first)
-    let c = 0, found = false
+    let c = 0,
+      found = false
     let cx = ROW_HEADER_W
     for (let i = 0; i < fc; i++) {
-      if (x < cx + cw(i)) { c = i; found = true; break }
+      if (x < cx + cw(i)) {
+        c = i
+        found = true
+        break
+      }
       cx += cw(i)
     }
     if (!found) {
       cx = ROW_HEADER_W + frozenW() - scroll.x
       c = fc
-      while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) { cx += cw(c); c++ }
+      while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) {
+        cx += cw(c)
+        c++
+      }
     }
 
     // Determine row (check frozen rows first)
@@ -101,13 +133,20 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
     found = false
     let ry = COL_HEADER_H
     for (let i = 0; i < fr; i++) {
-      if (y < ry + rh(i)) { r = i; found = true; break }
+      if (y < ry + rh(i)) {
+        r = i
+        found = true
+        break
+      }
       ry += rh(i)
     }
     if (!found) {
       ry = COL_HEADER_H + frozenH() - scroll.y
       r = fr
-      while (r < TOTAL_ROWS - 1 && ry + rh(r) <= y) { ry += rh(r); r++ }
+      while (r < TOTAL_ROWS - 1 && ry + rh(r) <= y) {
+        ry += rh(r)
+        r++
+      }
     }
 
     return { r, c }
@@ -128,8 +167,12 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
   // mainX/Y: left/top edge of the scrollable region (= ROW_HEADER_W+frozenW,
   // COL_HEADER_H+frozenH). Scrollable cells whose visible position is left/
   // above these are occluded by the frozen pane and must not be hittable.
-  function _mainX() { return ROW_HEADER_W + frozenW() }
-  function _mainY() { return COL_HEADER_H + frozenH() }
+  function _mainX() {
+    return ROW_HEADER_W + frozenW()
+  }
+  function _mainY() {
+    return COL_HEADER_H + frozenH()
+  }
 
   function hitTestColResize(ex, ey, canvasRect) {
     const { x, y } = _logical(ex, ey, canvasRect)
@@ -141,8 +184,11 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
       // Frozen cols only matter inside [ROW_HEADER_W, mainX]; scrollable cols
       // only matter when their right edge is visible past mainX. Otherwise
       // they're either off-canvas or hidden under the frozen pane.
-      if (c < fc) { if (right > mainX) continue }
-      else        { if (right <= mainX) continue }
+      if (c < fc) {
+        if (right > mainX) continue
+      } else {
+        if (right <= mainX) continue
+      }
       if (Math.abs(x - right) <= 4) return c
     }
     return null
@@ -165,7 +211,10 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
     // Outside the frozen strip: walk scrollable cols starting at mainX.
     let cx = mainX - scroll.x
     let c = fc
-    while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) { cx += cw(c); c++ }
+    while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) {
+      cx += cw(c)
+      c++
+    }
     return c
   }
 
@@ -178,12 +227,23 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
     const mainX = _mainX()
     let c, cx
     if (x < mainX) {
-      cx = ROW_HEADER_W; c = 0
-      while (c < fc && x >= cx + cw(c)) { cx += cw(c); c++ }
-      if (c >= fc) { c = fc; cx = mainX - scroll.x }
+      cx = ROW_HEADER_W
+      c = 0
+      while (c < fc && x >= cx + cw(c)) {
+        cx += cw(c)
+        c++
+      }
+      if (c >= fc) {
+        c = fc
+        cx = mainX - scroll.x
+      }
     } else {
-      cx = mainX - scroll.x; c = fc
-      while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) { cx += cw(c); c++ }
+      cx = mainX - scroll.x
+      c = fc
+      while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) {
+        cx += cw(c)
+        c++
+      }
     }
     return x < cx + cw(c) / 2 ? c : c + 1
   }
@@ -203,11 +263,16 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
     }
     let ry = mainY - scroll.y
     let r = fr
-    while (r < TOTAL_ROWS - 1 && ry + rh(r) <= y) { ry += rh(r); r++ }
+    while (r < TOTAL_ROWS - 1 && ry + rh(r) <= y) {
+      ry += rh(r)
+      r++
+    }
     return r
   }
 
-  function setColWidth(c, w) { colW[c] = Math.max(30, w) }
+  function setColWidth(c, w) {
+    colW[c] = Math.max(30, w)
+  }
 
   function hitTestRowResize(ex, ey, canvasRect) {
     const { x, y } = _logical(ex, ey, canvasRect)
@@ -218,21 +283,41 @@ export function createGeometry(colW, rowH, scroll, freeze = { rows: 0, cols: 0 }
       const yTop = rowY(r)
       if (yTop > y + 10) break
       const bottom = yTop + rh(r)
-      if (r < fr) { if (bottom > mainY) continue }
-      else        { if (bottom <= mainY) continue }
+      if (r < fr) {
+        if (bottom > mainY) continue
+      } else {
+        if (bottom <= mainY) continue
+      }
       if (Math.abs(y - bottom) <= 4) return r
     }
     return null
   }
 
-  function setRowHeight(r, h) { rowH[r] = Math.max(16, h) }
+  function setRowHeight(r, h) {
+    rowH[r] = Math.max(16, h)
+  }
 
   return {
-    cw, rh, colX, rowY, frozenW, frozenH, isFilterHidden,
-    firstVisCol, firstVisRow, lastVisCol, lastVisRow,
-    hitTest, clamp,
-    hitTestColResize, hitTestColHeader, hitTestRowHeader, hitTestCorner,
+    cw,
+    rh,
+    colX,
+    rowY,
+    frozenW,
+    frozenH,
+    isFilterHidden,
+    firstVisCol,
+    firstVisRow,
+    lastVisCol,
+    lastVisRow,
+    hitTest,
+    clamp,
+    hitTestColResize,
+    hitTestColHeader,
+    hitTestRowHeader,
+    hitTestCorner,
     colInsertIndex,
-    setColWidth, hitTestRowResize, setRowHeight,
+    setColWidth,
+    hitTestRowResize,
+    setRowHeight,
   }
 }

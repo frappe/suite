@@ -66,7 +66,8 @@ export interface DocumentTypeDefinition {
  * Composition provides the ordered document registry at the app root.
  * Products inject it for their New menus without importing composition.
  */
-export const DOCUMENT_TYPES_KEY: InjectionKey<readonly DocumentTypeDefinition[]> = Symbol('suite:document-types')
+export const DOCUMENT_TYPES_KEY: InjectionKey<readonly DocumentTypeDefinition[]> =
+  Symbol('suite:document-types')
 
 /**
  * What the guest frame offers the page inside it (spec §10.3, §10.8).

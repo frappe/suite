@@ -66,7 +66,9 @@
               <!-- Tab header actions teleport here, so they leave with the page. -->
               <div :id="SETTINGS_PAGE_ACTIONS_ID" class="flex shrink-0 items-center gap-2" />
             </div>
-            <div class="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+            <div
+              class="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+            >
               <SettingsTabBody :tab="page" />
             </div>
           </div>
@@ -77,19 +79,19 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, provide, shallowRef, watch } from 'vue'
 import { Button } from 'frappe-ui'
 import { DialogContent, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import { onBeforeUnmount, onMounted, provide, shallowRef, watch } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
-import SettingsList from '@/shell/settings/SettingsList.vue'
-import SettingsTabBody from '@/shell/settings/SettingsTabBody.vue'
 import {
   SETTINGS_PAGE_ACTIONS_ID,
   SETTINGS_PHONE_PAGE,
   type SettingsTab,
   type VisibleSettingsGroup,
 } from '@/shell/settings/settings'
+import SettingsList from '@/shell/settings/SettingsList.vue'
+import SettingsTabBody from '@/shell/settings/SettingsTabBody.vue'
 
 const props = defineProps<{
   groups: readonly VisibleSettingsGroup[] | null
@@ -125,7 +127,10 @@ function findTab(id: string | undefined): SettingsTab | undefined {
 function push(state: EntryState) {
   // Keep the router's own state, so vue-router sees the same position and
   // treats a pop between these entries as a no-op.
-  history.pushState({ ...(history.state as object | null), ...state, suiteSettingsOpen: openId }, '')
+  history.pushState(
+    { ...(history.state as object | null), ...state, suiteSettingsOpen: openId },
+    '',
+  )
   depth += 1
 }
 

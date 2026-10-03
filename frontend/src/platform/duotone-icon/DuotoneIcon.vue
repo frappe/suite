@@ -26,11 +26,11 @@
 </template>
 
 <style scoped>
-svg :deep([data-tone="tint"]) {
+svg :deep([data-tone='tint']) {
   fill: currentColor;
   fill-opacity: 0.1;
 }
-svg :deep([data-tone="accent"]) {
+svg :deep([data-tone='accent']) {
   fill: currentColor;
   fill-opacity: 0.5;
   stroke: none;

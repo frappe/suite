@@ -10,8 +10,8 @@
 </template>
 
 <script setup lang="ts">
-import { useId } from 'vue'
 import { Button, TextInput, toast } from 'frappe-ui'
+import { useId } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 

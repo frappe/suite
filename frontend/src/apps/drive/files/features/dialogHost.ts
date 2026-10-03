@@ -1,4 +1,12 @@
-import { Fragment, defineComponent, h, render, shallowRef, type AppContext, type Component } from 'vue'
+import {
+  defineComponent,
+  Fragment,
+  h,
+  render,
+  shallowRef,
+  type AppContext,
+  type Component,
+} from 'vue'
 
 /**
  * Opens Drive dialogs by function call, so other products never render a Drive
@@ -25,7 +33,9 @@ let hostContext: AppContext | null = null
 function close(id: number) {
   const entry = entries.value.find((candidate) => candidate.id === id)
   if (!entry?.open) return
-  entries.value = entries.value.map((candidate) => (candidate.id === id ? { ...candidate, open: false } : candidate))
+  entries.value = entries.value.map((candidate) =>
+    candidate.id === id ? { ...candidate, open: false } : candidate,
+  )
   entry.settle()
 }
 
@@ -88,12 +98,22 @@ export async function presentDialog<Result>(
   return new Promise((resolve) => {
     let result: Result | undefined
     const handlers = resultEvent
-      ? { [`on${resultEvent[0].toUpperCase()}${resultEvent.slice(1)}`]: (value: Result) => { result = value } }
+      ? {
+          [`on${resultEvent[0].toUpperCase()}${resultEvent.slice(1)}`]: (value: Result) => {
+            result = value
+          },
+        }
       : {}
     entries.value = [
       // Dialogs that closed earlier have finished leaving by now.
       ...entries.value.filter((entry) => entry.open),
-      { id: nextId++, component, props: { ...props, ...handlers }, open: true, settle: () => resolve(result) },
+      {
+        id: nextId++,
+        component,
+        props: { ...props, ...handlers },
+        open: true,
+        settle: () => resolve(result),
+      },
     ]
   })
 }

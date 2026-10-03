@@ -25,60 +25,67 @@ import { call } from '../utils/api.js'
  * @param {(method:string, args:object) => Promise} [opts.callFn]
  */
 export function createRealtimeAdapter({
-	sheetId,
-	realtime = window.frappe?.realtime,
-	callFn   = call,
+  sheetId,
+  realtime = window.frappe?.realtime,
+  callFn = call,
 } = {}) {
-	if (!sheetId) throw new Error('createRealtimeAdapter: sheetId is required')
+  if (!sheetId) throw new Error('createRealtimeAdapter: sheetId is required')
 
-	// Map<eventName, Map<originalCb, wrappedCb>> — needed so `off` can
-	// remove the exact wrapped callback we registered on the socket.
-	const wrapped = new Map()
+  // Map<eventName, Map<originalCb, wrappedCb>> — needed so `off` can
+  // remove the exact wrapped callback we registered on the socket.
+  const wrapped = new Map()
 
-	const join = () => realtime?.emit?.('doc_subscribe', 'Sheet', sheetId)
-	join()
-	realtime?.on?.('connect', join)
+  const join = () => realtime?.emit?.('doc_subscribe', 'Sheet', sheetId)
+  join()
+  realtime?.on?.('connect', join)
 
-	function close() {
-		realtime?.off?.('connect', join)
-		realtime?.emit?.('doc_unsubscribe', 'Sheet', sheetId)
-	}
+  function close() {
+    realtime?.off?.('connect', join)
+    realtime?.emit?.('doc_unsubscribe', 'Sheet', sheetId)
+  }
 
-	function publish(event, payload) {
-		// Fire-and-forget; the relay errors land in the console but never
-		// block typing.
-		return callFn('suite.sheets.api.yjs_relay', {
-			name:    sheetId,
-			event,
-			payload: JSON.stringify(payload ?? {}),
-		}).catch(err => {
-			// eslint-disable-next-line no-console
-			console.warn(`[yjs:${event}] relay failed`, err)
-		})
-	}
+  function publish(event, payload) {
+    // Fire-and-forget; the relay errors land in the console but never
+    // block typing.
+    return callFn('suite.sheets.api.yjs_relay', {
+      name: sheetId,
+      event,
+      payload: JSON.stringify(payload ?? {}),
+    }).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn(`[yjs:${event}] relay failed`, err)
+    })
+  }
 
-	function on(event, cb) {
-		if (!realtime?.on) return
-		const w = (msg) => {
-			if (msg?.sheet !== sheetId) return
-			let inner = null
-			try { inner = msg?.payload ? JSON.parse(msg.payload) : null } catch (_) { /* ignore */ }
-			if (inner) cb(inner)
-		}
-		let bucket = wrapped.get(event)
-		if (!bucket) { bucket = new Map(); wrapped.set(event, bucket) }
-		bucket.set(cb, w)
-		realtime.on(event, w)
-	}
+  function on(event, cb) {
+    if (!realtime?.on) return
+    const w = (msg) => {
+      if (msg?.sheet !== sheetId) return
+      let inner = null
+      try {
+        inner = msg?.payload ? JSON.parse(msg.payload) : null
+      } catch (_) {
+        /* ignore */
+      }
+      if (inner) cb(inner)
+    }
+    let bucket = wrapped.get(event)
+    if (!bucket) {
+      bucket = new Map()
+      wrapped.set(event, bucket)
+    }
+    bucket.set(cb, w)
+    realtime.on(event, w)
+  }
 
-	function off(event, cb) {
-		const bucket = wrapped.get(event)
-		const w = bucket?.get(cb)
-		if (w) {
-			realtime?.off?.(event, w)
-			bucket.delete(cb)
-		}
-	}
+  function off(event, cb) {
+    const bucket = wrapped.get(event)
+    const w = bucket?.get(cb)
+    if (w) {
+      realtime?.off?.(event, w)
+      bucket.delete(cb)
+    }
+  }
 
-	return { publish, on, off, close }
+  return { publish, on, off, close }
 }

@@ -1,398 +1,417 @@
 <template>
-	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
-		<!-- Meet's own sidebar, in the shell's sidebar slot on a desktop and in the
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <!-- Meet's own sidebar, in the shell's sidebar slot on a desktop and in the
 		     bottom nav's sheet on a phone, like Drive's. -->
-		<AreaSidebar area="meet" :title="__('Meet')">
-			<SidebarSection class="!mt-0">
-				<SidebarItem :label="__('Home')" icon="lucide-home" route="/meet" :active="true" />
-				<SidebarItem :label="__('Calendar')" icon="lucide-calendar" route="/calendar" />
-			</SidebarSection>
-		</AreaSidebar>
-		<PageHeader class="hidden md:flex">
-			<PageHeaderTitle :title="__('Home')" />
-		</PageHeader>
-		<PageHeaderMobile class="md:hidden" :title="__('Meet')" />
+    <AreaSidebar area="meet" :title="__('Meet')">
+      <SidebarSection class="!mt-0">
+        <SidebarItem :label="__('Home')" icon="lucide-home" route="/meet" :active="true" />
+        <SidebarItem :label="__('Calendar')" icon="lucide-calendar" route="/calendar" />
+      </SidebarSection>
+    </AreaSidebar>
+    <PageHeader class="hidden md:flex">
+      <PageHeaderTitle :title="__('Home')" />
+    </PageHeader>
+    <PageHeaderMobile class="md:hidden" :title="__('Meet')" />
 
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<div class="mx-auto w-[760px] max-w-full px-6 pb-12 pt-8 md:pt-[100px]">
-				<div class="mb-2 flex flex-col gap-0.5">
-					<h1 class="text-lg-semibold text-ink-gray-8 tracking-[0.2px]">
-						Hey {{ firstName }},
-					</h1>
-					<p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
-						Start an open meeting, create a restricted meeting, or join with a code.
-					</p>
-				</div>
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <div class="mx-auto w-[760px] max-w-full px-6 pb-12 pt-8 md:pt-[100px]">
+        <div class="mb-2 flex flex-col gap-0.5">
+          <h1 class="text-lg-semibold text-ink-gray-8 tracking-[0.2px]">Hey {{ firstName }},</h1>
+          <p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
+            Start an open meeting, create a restricted meeting, or join with a code.
+          </p>
+        </div>
 
-				<div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="startInstantMeeting"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideZap class="size-6 text-ink-gray-8" />
-							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Instant meet</span>
-					</button>
+        <div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
+          <button
+            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+            @click="startInstantMeeting"
+          >
+            <div
+              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
+            >
+              <div
+                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
+              >
+                <LucideZap class="size-6 text-ink-gray-8" />
+              </div>
+            </div>
+            <span
+              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
+              >Instant meet</span
+            >
+          </button>
 
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="startRestrictedMeeting"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideLock class="size-6 text-ink-gray-8" />
-							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Restricted meet</span>
-					</button>
+          <button
+            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+            @click="startRestrictedMeeting"
+          >
+            <div
+              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
+            >
+              <div
+                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
+              >
+                <LucideLock class="size-6 text-ink-gray-8" />
+              </div>
+            </div>
+            <span
+              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
+              >Restricted meet</span
+            >
+          </button>
 
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="openScheduleDialog"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideCalendarPlus class="size-6 text-ink-gray-8" />
-							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Schedule meet</span>
-					</button>
+          <button
+            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+            @click="openScheduleDialog"
+          >
+            <div
+              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
+            >
+              <div
+                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
+              >
+                <LucideCalendarPlus class="size-6 text-ink-gray-8" />
+              </div>
+            </div>
+            <span
+              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
+              >Schedule meet</span
+            >
+          </button>
 
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="showJoinDialog = true"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideLink class="size-6 text-ink-gray-8" />
-							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Join with code</span>
-					</button>
-				</div>
+          <button
+            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+            @click="showJoinDialog = true"
+          >
+            <div
+              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
+            >
+              <div
+                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
+              >
+                <LucideLink class="size-6 text-ink-gray-8" />
+              </div>
+            </div>
+            <span
+              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
+              >Join with code</span
+            >
+          </button>
+        </div>
 
-				<UpcomingMeetings ref="upcomingMeetingsRef" />
-			</div>
-		</div>
+        <UpcomingMeetings ref="upcomingMeetingsRef" />
+      </div>
+    </div>
 
-		<Dialog
-			v-model:open="showJoinDialog"
-			:title="'Join with meeting code'"
-			dismissible
-		>
-			<template #default>
-				<FormControl
-					v-model="meetingCode"
-					placeholder="abcd-efgh-ijkl"
-					:error="meetingCodeError"
-					@keydown.enter="joinWithCode"
-					data-testid="meeting-code-input"
-				/>
-			</template>
-			<template #actions>
-				<div class="flex justify-end">
-					<Button
-						variant="solid"
-						@click="joinWithCode"
-						data-testid="join-meeting-button"
-					>
-						Join
-					</Button>
-				</div>
-			</template>
-		</Dialog>
+    <Dialog v-model:open="showJoinDialog" :title="'Join with meeting code'" dismissible>
+      <template #default>
+        <FormControl
+          v-model="meetingCode"
+          placeholder="abcd-efgh-ijkl"
+          :error="meetingCodeError"
+          @keydown.enter="joinWithCode"
+          data-testid="meeting-code-input"
+        />
+      </template>
+      <template #actions>
+        <div class="flex justify-end">
+          <Button variant="solid" @click="joinWithCode" data-testid="join-meeting-button">
+            Join
+          </Button>
+        </div>
+      </template>
+    </Dialog>
 
-		<Dialog v-model:open="showScheduleDialog" :title="'Schedule meet'" dismissible>
-			<template #default>
-				<div class="space-y-4">
-					<FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />
-					<div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-						<FormControl
-							v-model="scheduleDate"
-							label="Date"
-							type="date"
-							format="MMM D, YYYY"
-							:placeholder="__('Select date')"
-						/>
-						<FormControl
-							v-model="scheduleStartTime"
-							label="Start"
-							type="time"
-							:interval="15"
-							format="h:mm A"
-							:placeholder="__('Select time')"
-						/>
-						<FormControl
-							v-model="scheduleEndTime"
-							label="End"
-							type="time"
-							:interval="15"
-							format="h:mm A"
-							:placeholder="__('Select time')"
-						/>
-					</div>
-					<ParticipantSelector
-						v-model="scheduleParticipants"
-						:account="calendarStore.accountId"
-						:display-participants="scheduledParticipants"
-						:excluded-emails="currentUserEmail ? [currentUserEmail] : []"
-					/>
-				</div>
-			</template>
-			<template #actions>
-				<div class="flex justify-end">
-					<Button
-						variant="solid"
-						:loading="scheduleMeeting.loading"
-						:disabled="!isScheduleTimeValid"
-						@click="submitScheduledMeeting"
-					>
-						Schedule
-					</Button>
-				</div>
-			</template>
-		</Dialog>
-	</div>
+    <Dialog v-model:open="showScheduleDialog" :title="'Schedule meet'" dismissible>
+      <template #default>
+        <div class="space-y-4">
+          <FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <FormControl
+              v-model="scheduleDate"
+              label="Date"
+              type="date"
+              format="MMM D, YYYY"
+              :placeholder="__('Select date')"
+            />
+            <FormControl
+              v-model="scheduleStartTime"
+              label="Start"
+              type="time"
+              :interval="15"
+              format="h:mm A"
+              :placeholder="__('Select time')"
+            />
+            <FormControl
+              v-model="scheduleEndTime"
+              label="End"
+              type="time"
+              :interval="15"
+              format="h:mm A"
+              :placeholder="__('Select time')"
+            />
+          </div>
+          <ParticipantSelector
+            v-model="scheduleParticipants"
+            :account="calendarStore.accountId"
+            :display-participants="scheduledParticipants"
+            :excluded-emails="currentUserEmail ? [currentUserEmail] : []"
+          />
+        </div>
+      </template>
+      <template #actions>
+        <div class="flex justify-end">
+          <Button
+            variant="solid"
+            :loading="scheduleMeeting.loading"
+            :disabled="!isScheduleTimeValid"
+            @click="submitScheduledMeeting"
+          >
+            Schedule
+          </Button>
+        </div>
+      </template>
+    </Dialog>
+  </div>
 </template>
 
 <script setup lang="ts">
+import LucideCalendarPlus from '~icons/lucide/calendar-plus'
+import LucideLink from '~icons/lucide/link'
+import LucideLock from '~icons/lucide/lock'
+import LucideZap from '~icons/lucide/zap'
 import {
-	Button,
-	Dialog,
-	FormControl,
-	PageHeader,
-	PageHeaderMobile,
-	PageHeaderTitle,
-	SidebarItem,
-	SidebarSection,
-	toast,
-	useCall,
-} from "frappe-ui";
-import { ref, computed, onScopeDispose, watch } from "vue";
-import { useRouter } from "vue-router";
+  Button,
+  Dialog,
+  FormControl,
+  PageHeader,
+  PageHeaderMobile,
+  PageHeaderTitle,
+  SidebarItem,
+  SidebarSection,
+  toast,
+  useCall,
+} from 'frappe-ui'
+import { computed, onScopeDispose, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
-import { userStore as useCalendarUserStore } from "@/apps/calendar/stores/user";
-import dayjs from "@/apps/calendar/utils/dayjs";
-import ParticipantSelector from "@/apps/calendar/components/ParticipantSelector.vue";
-import {
-	adjustScheduleEndTime,
-	adjustScheduleStartTime,
-} from "@/apps/calendar/utils/scheduleTime";
-import { AreaSidebar } from "@/platform/area-sidebar";
-import { useStartMeeting } from "../composables/useStartMeeting";
-import { submit } from "../utils/request";
-import { useRootStore } from "@/stores/root";
-import UpcomingMeetings from "../components/UpcomingMeetings.vue";
-import LucideCalendarPlus from "~icons/lucide/calendar-plus";
-import LucideZap from "~icons/lucide/zap";
-import LucideLink from "~icons/lucide/link";
-import LucideLock from "~icons/lucide/lock";
+import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
+import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
+import dayjs from '@/apps/calendar/utils/dayjs'
+import { adjustScheduleEndTime, adjustScheduleStartTime } from '@/apps/calendar/utils/scheduleTime'
+import { AreaSidebar } from '@/platform/area-sidebar'
+import { useRootStore } from '@/stores/root'
+
+import UpcomingMeetings from '../components/UpcomingMeetings.vue'
+import { useStartMeeting } from '../composables/useStartMeeting'
+import { submit } from '../utils/request'
 
 interface CalendarParticipant {
-	email: string;
-	_name?: string;
-	user_image?: string;
-	participation_status?: string;
-	expect_reply?: boolean;
-	isNew?: boolean;
+  email: string
+  _name?: string
+  user_image?: string
+  participation_status?: string
+  expect_reply?: boolean
+  isNew?: boolean
 }
 
-const router = useRouter();
-const root = useRootStore();
-const { isStartingMeeting, startMeeting } = useStartMeeting();
-const calendarStore = useCalendarUserStore();
-const meetingCode = ref("");
-const meetingCodeError = ref("");
-const showJoinDialog = ref(false);
-const showScheduleDialog = ref(false);
-const scheduleTitle = ref("");
-const scheduleDate = ref(dayjs().format("YYYY-MM-DD"));
-const scheduleStartTime = ref(dayjs().add(1, "hour").startOf("hour").format("HH:mm"));
-const scheduleEndTime = ref(dayjs().add(2, "hour").startOf("hour").format("HH:mm"));
-const scheduleParticipants = ref<CalendarParticipant[]>([]);
-const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null);
+const router = useRouter()
+const root = useRootStore()
+const { isStartingMeeting, startMeeting } = useStartMeeting()
+const calendarStore = useCalendarUserStore()
+const meetingCode = ref('')
+const meetingCodeError = ref('')
+const showJoinDialog = ref(false)
+const showScheduleDialog = ref(false)
+const scheduleTitle = ref('')
+const scheduleDate = ref(dayjs().format('YYYY-MM-DD'))
+const scheduleStartTime = ref(dayjs().add(1, 'hour').startOf('hour').format('HH:mm'))
+const scheduleEndTime = ref(dayjs().add(2, 'hour').startOf('hour').format('HH:mm'))
+const scheduleParticipants = ref<CalendarParticipant[]>([])
+const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null)
 
 watch(scheduleStartTime, (startTime) => {
-	scheduleEndTime.value = adjustScheduleEndTime(startTime, scheduleEndTime.value);
-});
+  scheduleEndTime.value = adjustScheduleEndTime(startTime, scheduleEndTime.value)
+})
 
 watch(scheduleEndTime, (endTime) => {
-	scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime);
-});
+  scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime)
+})
 
 const userResource = useCall<{ name?: string; full_name?: string; user_image?: string }>({
-	url: "/api/v2/method/suite.api.account.get_logged_in_user",
-});
+  url: '/api/v2/method/suite.api.account.get_logged_in_user',
+})
 
 const firstName = computed(() => {
-	const name = userResource.data?.full_name || userResource.data?.name || "";
-	return name.split(" ")[0] || "there";
-});
+  const name = userResource.data?.full_name || userResource.data?.name || ''
+  return name.split(' ')[0] || 'there'
+})
 
-const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`));
-const scheduleEnd = computed(() => dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`));
+const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`))
+const scheduleEnd = computed(() => dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`))
 
 const isScheduleTimeValid = computed(
-	() =>
-		Boolean(scheduleDate.value && scheduleStartTime.value && scheduleEndTime.value) &&
-		scheduleStart.value.isValid() &&
-		scheduleEnd.value.isValid() &&
-		scheduleEnd.value.isAfter(scheduleStart.value),
-);
+  () =>
+    Boolean(scheduleDate.value && scheduleStartTime.value && scheduleEndTime.value) &&
+    scheduleStart.value.isValid() &&
+    scheduleEnd.value.isValid() &&
+    scheduleEnd.value.isAfter(scheduleStart.value),
+)
 
 const scheduledDuration = computed(() => {
-	if (!isScheduleTimeValid.value) return "";
-	const start = scheduleStart.value;
-	const end = scheduleEnd.value;
-	const diff = dayjs.duration(end.diff(start));
-	return dayjs.duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() }).toISOString();
-});
+  if (!isScheduleTimeValid.value) return ''
+  const start = scheduleStart.value
+  const end = scheduleEnd.value
+  const diff = dayjs.duration(end.diff(start))
+  return dayjs
+    .duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() })
+    .toISOString()
+})
 
-const currentUserEmail = computed(() => calendarStore.userResource.data?.name || userResource.data?.name);
+const currentUserEmail = computed(
+  () => calendarStore.userResource.data?.name || userResource.data?.name,
+)
 
 const scheduledParticipants = computed(() => {
-	const currentName = calendarStore.userResource.data?.full_name || userResource.data?.full_name;
-	const currentImage = calendarStore.userResource.data?.user_image || userResource.data?.user_image;
-	const participants: CalendarParticipant[] = currentUserEmail.value
-		? [
-				{
-					email: currentUserEmail.value,
-					_name: currentName,
-					user_image: currentImage,
-					participation_status: "ACCEPTED",
-				},
-			]
-		: [];
+  const currentName = calendarStore.userResource.data?.full_name || userResource.data?.full_name
+  const currentImage = calendarStore.userResource.data?.user_image || userResource.data?.user_image
+  const participants: CalendarParticipant[] = currentUserEmail.value
+    ? [
+        {
+          email: currentUserEmail.value,
+          _name: currentName,
+          user_image: currentImage,
+          participation_status: 'ACCEPTED',
+        },
+      ]
+    : []
 
-	participants.push(...scheduleParticipants.value);
+  participants.push(...scheduleParticipants.value)
 
-	return participants;
-});
+  return participants
+})
 
 const scheduleMeeting = useCall({
-	url: "/api/suite/meet/calendar-meetings",
-	method: "POST",
-	params: () => ({
-		account: calendarStore.accountId,
-		title: scheduleTitle.value,
-		start: scheduleStart.value.format("YYYY-MM-DD[T]HH:mm:ss"),
-		duration: scheduledDuration.value,
-		time_zone: dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone,
-		participants: scheduledParticipants.value,
-		send_scheduling_messages: scheduledParticipants.value.length > 1,
-	}),
-	immediate: false,
-	onSuccess: () => {
-		showScheduleDialog.value = false;
-		toast.success("Meeting scheduled.");
-		upcomingMeetingsRef.value?.reload();
-	},
-	onError: (error: unknown) => {
-		console.error("Error scheduling meeting:", error);
-	},
-});
+  url: '/api/suite/meet/calendar-meetings',
+  method: 'POST',
+  params: () => ({
+    account: calendarStore.accountId,
+    title: scheduleTitle.value,
+    start: scheduleStart.value.format('YYYY-MM-DD[T]HH:mm:ss'),
+    duration: scheduledDuration.value,
+    time_zone: dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone,
+    participants: scheduledParticipants.value,
+    send_scheduling_messages: scheduledParticipants.value.length > 1,
+  }),
+  immediate: false,
+  onSuccess: () => {
+    showScheduleDialog.value = false
+    toast.success('Meeting scheduled.')
+    upcomingMeetingsRef.value?.reload()
+  },
+  onError: (error: unknown) => {
+    console.error('Error scheduling meeting:', error)
+  },
+})
 
-const startInstantMeeting = () => startMeeting("open");
+const startInstantMeeting = () => startMeeting('open')
 
-const startRestrictedMeeting = () => startMeeting("restricted");
+const startRestrictedMeeting = () => startMeeting('restricted')
 
 const openScheduleDialog = async () => {
-	try {
-		await calendarStore.userResource.promise;
-		if (!calendarStore.accountId) {
-			toast.error("Set up Calendar before scheduling a Meet.");
-			return;
-		}
-		showScheduleDialog.value = true;
-	} catch (error) {
-		console.error("Failed to load calendar account:", error);
-		toast.error("Could not load Calendar account.");
-	}
-};
+  try {
+    await calendarStore.userResource.promise
+    if (!calendarStore.accountId) {
+      toast.error('Set up Calendar before scheduling a Meet.')
+      return
+    }
+    showScheduleDialog.value = true
+  } catch (error) {
+    console.error('Failed to load calendar account:', error)
+    toast.error('Could not load Calendar account.')
+  }
+}
 
 const submitScheduledMeeting = () => {
-	if (!calendarStore.accountId) {
-		toast.error("Set up Calendar before scheduling a Meet.");
-		return;
-	}
-	if (!isScheduleTimeValid.value) {
-		toast.error("Enter a valid date and an end time after the start time.");
-		return;
-	}
-	toast.promise(submit(scheduleMeeting), {
-		loading: "Scheduling meeting...",
-		error: "Failed to schedule meeting. Please try again.",
-	});
-};
+  if (!calendarStore.accountId) {
+    toast.error('Set up Calendar before scheduling a Meet.')
+    return
+  }
+  if (!isScheduleTimeValid.value) {
+    toast.error('Enter a valid date and an end time after the start time.')
+    return
+  }
+  toast.promise(submit(scheduleMeeting), {
+    loading: 'Scheduling meeting...',
+    error: 'Failed to schedule meeting. Please try again.',
+  })
+}
 
 const joinWithCode = () => {
-	meetingCodeError.value = "";
+  meetingCodeError.value = ''
 
-	if (!meetingCode.value.trim()) {
-		meetingCodeError.value = "Please enter a meeting code";
-		return;
-	}
+  if (!meetingCode.value.trim()) {
+    meetingCodeError.value = 'Please enter a meeting code'
+    return
+  }
 
-	if (!isMeetingCodeValid(meetingCode.value.trim())) {
-		meetingCodeError.value =
-			"Please enter a valid meeting code (format: xxxx-xxxx-xxxx)";
-		return;
-	}
+  if (!isMeetingCodeValid(meetingCode.value.trim())) {
+    meetingCodeError.value = 'Please enter a valid meeting code (format: xxxx-xxxx-xxxx)'
+    return
+  }
 
-	showJoinDialog.value = false;
-	router.push({
-		name: "meet-meeting",
-		params: { meetingId: meetingCode.value.trim() },
-	});
-};
+  showJoinDialog.value = false
+  router.push({
+    name: 'meet-meeting',
+    params: { meetingId: meetingCode.value.trim() },
+  })
+}
 
 const isMeetingCodeValid = (code: string) => {
-	const regex = /^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/;
-	return regex.test(code);
-};
+  const regex = /^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/
+  return regex.test(code)
+}
 
-const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
-	{
-		commands: [
-			{
-				id: "meet-start-open",
-				label: "Start instant meet",
-				enterHint: "start instant meet",
-				icon: "lucide-zap",
-				keywords: ["new", "instant", "room"],
-				disabled: isStartingMeeting.value,
-				run: startInstantMeeting,
-			},
-			{
-				id: "meet-start-restricted",
-				label: "Start restricted meet",
-				enterHint: "start restricted meet",
-				icon: "lucide-lock",
-				keywords: ["new", "private", "room"],
-				disabled: isStartingMeeting.value,
-				run: startRestrictedMeeting,
-			},
-			{
-				id: "meet-join-code",
-				label: "Join with code",
-				enterHint: "join with code",
-				icon: "lucide-link",
-				keywords: ["room", "call"],
-				run: () => (showJoinDialog.value = true),
-			},
-			{
-				id: "meet-schedule",
-				label: "Schedule meet",
-				enterHint: "schedule meet",
-				icon: "lucide-calendar-plus",
-				keywords: ["calendar", "new"],
-				run: openScheduleDialog,
-			},
-		],
-	},
-]);
-onScopeDispose(unregisterPaletteGroups);
+const unregisterPaletteGroups = root.registerPaletteGroups('meet-home', () => [
+  {
+    commands: [
+      {
+        id: 'meet-start-open',
+        label: 'Start instant meet',
+        enterHint: 'start instant meet',
+        icon: 'lucide-zap',
+        keywords: ['new', 'instant', 'room'],
+        disabled: isStartingMeeting.value,
+        run: startInstantMeeting,
+      },
+      {
+        id: 'meet-start-restricted',
+        label: 'Start restricted meet',
+        enterHint: 'start restricted meet',
+        icon: 'lucide-lock',
+        keywords: ['new', 'private', 'room'],
+        disabled: isStartingMeeting.value,
+        run: startRestrictedMeeting,
+      },
+      {
+        id: 'meet-join-code',
+        label: 'Join with code',
+        enterHint: 'join with code',
+        icon: 'lucide-link',
+        keywords: ['room', 'call'],
+        run: () => (showJoinDialog.value = true),
+      },
+      {
+        id: 'meet-schedule',
+        label: 'Schedule meet',
+        enterHint: 'schedule meet',
+        icon: 'lucide-calendar-plus',
+        keywords: ['calendar', 'new'],
+        run: openScheduleDialog,
+      },
+    ],
+  },
+])
+onScopeDispose(unregisterPaletteGroups)
 </script>

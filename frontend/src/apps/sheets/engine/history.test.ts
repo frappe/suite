@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
 import { createHistory } from './history.js'
 
 // Guards the undo baseline set up at doc load: init() seeds an EMPTY snapshot
@@ -19,9 +20,9 @@ describe('history — load baseline', () => {
     let idx = 0
     const restore = vi.fn()
     const h = createHistory({ snapshot: () => snaps[idx++], restore })
-    h.init()          // seed 'empty' (pre-load)
-    h.reset()         // re-baseline to 'loaded'
-    h.push()          // 'afterEdit' — a snapshot mutation (e.g. insert column)
+    h.init() // seed 'empty' (pre-load)
+    h.reset() // re-baseline to 'loaded'
+    h.push() // 'afterEdit' — a snapshot mutation (e.g. insert column)
     expect(h.undo()).toBe(true)
     expect(restore).toHaveBeenLastCalledWith('loaded', { touches: null })
     // No further undo past the re-baselined start.

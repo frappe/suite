@@ -4,18 +4,28 @@ import { nodeIcon } from '../internal/icons'
 import { offeredTypes, typeNouns, typeQuery, typesFromQuery, typeSummary } from './typeFilter'
 
 const everywhere = offeredTypes({ folders: true })
-const values = (raw: unknown, offered = everywhere) => typesFromQuery(raw, offered).map((option) => option.value)
+const values = (raw: unknown, offered = everywhere) =>
+  typesFromQuery(raw, offered).map((option) => option.value)
 
 describe('type filter', () => {
   it('offers every listing type, and Recent offers no folders', () => {
     expect(everywhere.map((option) => option.label)).toEqual([
-      'Folders', 'Documents', 'Spreadsheets', 'Presentations', 'PDFs', 'Images', 'Videos', 'Audio',
+      'Folders',
+      'Documents',
+      'Spreadsheets',
+      'Presentations',
+      'PDFs',
+      'Images',
+      'Videos',
+      'Audio',
     ])
     expect(offeredTypes({ folders: false }).map((option) => option.value)).not.toContain('folder')
   })
 
   it('draws each type with the icon its rows have in the listing', () => {
-    const icons = Object.fromEntries(everywhere.map((option) => [option.value, nodeIcon(option.sample)]))
+    const icons = Object.fromEntries(
+      everywhere.map((option) => [option.value, nodeIcon(option.sample)]),
+    )
     expect(icons).toEqual({
       folder: 'lucide-folder',
       document: 'lucide-file-text',

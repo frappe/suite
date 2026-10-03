@@ -1,5 +1,5 @@
-import { createApp, h, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createApp, h, nextTick } from 'vue'
 
 import UnlockScreen from './UnlockScreen.vue'
 

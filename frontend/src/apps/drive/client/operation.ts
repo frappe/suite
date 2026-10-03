@@ -35,13 +35,19 @@ export function driveOperation<Input, Output>(
 function namedNodes(input: unknown, nodeParams: readonly string[]): string[] {
   if (typeof input !== 'object' || input === null) return []
   const record = input as Record<string, unknown>
-  const patch = typeof record.patch === 'object' && record.patch !== null ? (record.patch as Record<string, unknown>) : {}
+  const patch =
+    typeof record.patch === 'object' && record.patch !== null
+      ? (record.patch as Record<string, unknown>)
+      : {}
   const named = [...nodeParams.map((name) => record[name]), record.parent_node, patch.parent_node]
   if (Array.isArray(record.nodes)) named.push(...record.nodes)
   return named.filter((value): value is string => typeof value === 'string' && value !== '')
 }
 
 function nodeParam(input: unknown): string | undefined {
-  const value = typeof input === 'object' && input !== null ? (input as Record<string, unknown>).node : undefined
+  const value =
+    typeof input === 'object' && input !== null
+      ? (input as Record<string, unknown>).node
+      : undefined
   return typeof value === 'string' ? value : undefined
 }

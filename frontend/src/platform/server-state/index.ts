@@ -1,17 +1,10 @@
 import { get as idbGet, set as idbSet } from 'idb-keyval'
-import {
-  getCurrentScope,
-  onScopeDispose,
-  reactive,
-  ref,
-  watch,
-  type WatchStopHandle,
-} from 'vue'
+import { getCurrentScope, onScopeDispose, reactive, ref, watch, type WatchStopHandle } from 'vue'
 
 import { realtime as defaultRealtime, type Realtime } from '@/platform/realtime'
 import {
-  TransportError,
   transport as defaultTransport,
+  TransportError,
   type EntityDeclaration,
   type Operation,
   type PlatformError,
@@ -79,7 +72,10 @@ export interface UploadChunkReply {
   received?: number
 }
 
-export interface UploadOptions<Input = unknown, Session = unknown> extends MutationOptions<Input, unknown> {
+export interface UploadOptions<Input = unknown, Session = unknown> extends MutationOptions<
+  Input,
+  unknown
+> {
   /** Bytes per chunk request. Chunks of one file go one after another. */
   chunkSize?: number
   /** The chunk request's input without its bytes, which go in its `chunk` field. */
@@ -99,14 +95,9 @@ export type UploadRun<Input, Session = unknown> = Input & {
 }
 
 export type ReadDescriptor<Input = any, Output = any> =
-  | QueryDescriptor<Input, Output>
-  | InfiniteDescriptor<Input, any>
+  QueryDescriptor<Input, Output> | InfiniteDescriptor<Input, any>
 export type DescriptorSource<D extends ReadDescriptor = ReadDescriptor> =
-  | D
-  | false
-  | null
-  | undefined
-  | (() => D | false | null | undefined)
+  D | false | null | undefined | (() => D | false | null | undefined)
 
 export interface QueryResult<Data = unknown> {
   readonly data: Data | undefined
@@ -172,10 +163,7 @@ export interface ServerState {
    * For readers that hold an entity outside the cache. Returns the stop function.
    */
   onTouch(id: string, listener: () => void): () => void
-  onChallenge(
-    type: string,
-    handler: ChallengeHandler,
-  ): () => void
+  onChallenge(type: string, handler: ChallengeHandler): () => void
   resume(): void
   dispose(): void
 }
@@ -185,11 +173,12 @@ export type ChallengeHandler = (
   retry: () => Promise<unknown>,
 ) => Promise<unknown>
 
-type DescriptorData<D> = D extends QueryDescriptor<any, infer O>
-  ? O
-  : D extends InfiniteDescriptor<any, infer Row>
-    ? { rows: Row[]; next_cursor?: string | null; [key: string]: any }
-    : never
+type DescriptorData<D> =
+  D extends QueryDescriptor<any, infer O>
+    ? O
+    : D extends InfiniteDescriptor<any, infer Row>
+      ? { rows: Row[]; next_cursor?: string | null; [key: string]: any }
+      : never
 
 type EntityRecord = {
   key: string
@@ -298,16 +287,15 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         .load()
         .then((records) => {
           for (const persisted of records) {
-            entityStore.set(
-              persisted.key,
-              reactive({ ...persisted, stale: true }) as EntityRecord,
-            )
+            entityStore.set(persisted.key, reactive({ ...persisted, stale: true }) as EntityRecord)
           }
         })
         .catch(() => {})
     : Promise.resolve()
 
-  function useQuery<D extends ReadDescriptor>(source: DescriptorSource<D>): QueryResult<DescriptorData<D>> {
+  function useQuery<D extends ReadDescriptor>(
+    source: DescriptorSource<D>,
+  ): QueryResult<DescriptorData<D>> {
     const current = ref<QueryRecord | null>(null)
     let stop: WatchStopHandle | null = null
 
@@ -421,7 +409,8 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         const execute = () => executeMutation(descriptor, input, state.controller!.signal, state)
         // An upload runs beside other writes. Queued behind the tail, one large
         // file would hold back every rename until its last byte.
-        const pending = descriptor.kind === 'upload' ? execute() : mutationTail.then(execute, execute)
+        const pending =
+          descriptor.kind === 'upload' ? execute() : mutationTail.then(execute, execute)
         if (descriptor.kind !== 'upload') mutationTail = pending.catch(() => undefined)
         return pending
           .catch(async (cause) => {
@@ -494,7 +483,9 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
       ? start.session
       : await options.transport.request(descriptor.create, createInput(input), { signal })
     const size = descriptor.options.chunkSize ?? 1024 * 1024
-    const chunkInput = descriptor.options.chunkInput ?? ((created: Session, at: number) => ({ upload: created, offset: at }))
+    const chunkInput =
+      descriptor.options.chunkInput ??
+      ((created: Session, at: number) => ({ upload: created, offset: at }))
     let offset = Math.max(0, start?.offset ?? 0)
     state.progress = file.size ? Math.min(1, offset / file.size) : 0
     while (offset < file.size) {
@@ -505,7 +496,8 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         { signal },
       )
       // The server says how many bytes it holds. The next chunk starts there.
-      const received = isObject(reply) && typeof reply.received === 'number' ? reply.received : offset + chunk.size
+      const received =
+        isObject(reply) && typeof reply.received === 'number' ? reply.received : offset + chunk.size
       if (received <= offset) throw new TypeError('The upload made no progress')
       offset = received
       state.progress = Math.min(1, offset / file.size)
@@ -557,7 +549,8 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
       return (record.followUp ??= record.promise.then(() => {
         record.followUp = null
         // A read started since then is already fresh enough to join.
-        if (record.observers && queryStore.get(record.key) === record) return fetchRecord(record, 'revalidate')
+        if (record.observers && queryStore.get(record.key) === record)
+          return fetchRecord(record, 'revalidate')
       }))
     }
     if (next && (record.isFetchingNext || !hasNext(record))) return
@@ -570,7 +563,9 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     record.error = null
     const input = next ? nextInput(record) : record.descriptor.input
     const work = options.transport
-      .request(record.descriptor.operation as Operation<any, any>, input, { signal: controller.signal })
+      .request(record.descriptor.operation as Operation<any, any>, input, {
+        signal: controller.signal,
+      })
       .then((output) => {
         const normalized = normalizeOutput(output, record.descriptor.operation.entity)
         if (next && record.descriptor.kind === 'infinite') record.pages.push(normalized.value)
@@ -602,7 +597,10 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     return work
   }
 
-  function normalizeOutput(value: unknown, declaration?: EntityDeclaration | null): {
+  function normalizeOutput(
+    value: unknown,
+    declaration?: EntityDeclaration | null,
+  ): {
     value: Normalized
     changed: EntityRecord[]
   } {
@@ -632,8 +630,11 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
           // The same version is the same record read with other fields, such
           // as a detail read without a listing's `preview`. Merge, so one read
           // does not erase what another asked for. A newer version replaces.
-          const sameVersion = versionField !== null && compareVersion(incomingVersion, entity.version) === 0
-          entity.data = sameVersion ? { ...entity.data, ...structuredCloneSafe(item) } : structuredCloneSafe(item)
+          const sameVersion =
+            versionField !== null && compareVersion(incomingVersion, entity.version) === 0
+          entity.data = sameVersion
+            ? { ...entity.data, ...structuredCloneSafe(item) }
+            : structuredCloneSafe(item)
           entity.version = incomingVersion
           entity.fetchedAt = now()
           entity.stale = false
@@ -656,7 +657,9 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     if (Array.isArray(value)) return value.map(materialize)
     if (!isObject(value)) return value
     if (typeof value.__suiteEntity === 'string') return entityStore.get(value.__suiteEntity)?.data
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, materialize(child)]))
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, materialize(child)]),
+    )
   }
 
   function materializeRecord(record: QueryRecord): any {
@@ -672,7 +675,8 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     if (record.observers > 1) return
     joinRecordRooms(record)
     const every = record.descriptor.options.refetchInterval
-    if (every && every > 0) record.interval = setInterval(() => void fetchRecord(record, 'revalidate'), every)
+    if (every && every > 0)
+      record.interval = setInterval(() => void fetchRecord(record, 'revalidate'), every)
   }
 
   function detach(record: QueryRecord | null): void {
@@ -729,7 +733,8 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     const direct = values[declaration.id]
     if (direct !== undefined) ids.add(String(direct))
     for (const value of Object.values(values)) {
-      if (typeof value === 'string' && entityStore.has(entityKey(declaration.tag, value))) ids.add(value)
+      if (typeof value === 'string' && entityStore.has(entityKey(declaration.tag, value)))
+        ids.add(value)
     }
     const snapshots: Array<{
       entity: EntityRecord
@@ -749,7 +754,11 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   }
 
   function rollback(
-    snapshots: Array<{ entity: EntityRecord; data: Record<string, any>; version: string | number | null }>,
+    snapshots: Array<{
+      entity: EntityRecord
+      data: Record<string, any>
+      version: string | number | null
+    }>,
   ): void {
     for (const snapshot of snapshots) {
       snapshot.entity.data = snapshot.data
@@ -776,7 +785,10 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     if (invalidates.length) {
       for (const record of queryStore.values()) {
         const tag = record.descriptor.operation.entity?.tag
-        if (invalidates.includes(record.descriptor.operation.id) || (tag && invalidates.includes(tag))) {
+        if (
+          invalidates.includes(record.descriptor.operation.id) ||
+          (tag && invalidates.includes(tag))
+        ) {
           invalidateRecord(record)
         }
       }
@@ -803,7 +815,12 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     for (const record of queryStore.values()) {
       const descriptor = record.descriptor
       const member = descriptor.options.member
-      if (!member || descriptor.operation.entity?.tag !== entity.tag || record.normalized === undefined) continue
+      if (
+        !member ||
+        descriptor.operation.entity?.tag !== entity.tag ||
+        record.normalized === undefined
+      )
+        continue
       if (!member(entity.data) && refsIn(record.normalized).has(entity.key)) {
         record.normalized = removeEntityReference(record.normalized, entity.key)
       }
@@ -882,18 +899,24 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   }
 
   if (realtime) {
-    cleanup.push(realtime.onReconnect(() => {
-      for (const record of queryStore.values()) {
-        if (record.observers) void fetchRecord(record, 'revalidate')
-      }
-    }))
     cleanup.push(
-      realtime.subscribe<{ doctype: string; name: string; modified?: string }>('doc_update', (event) => {
-        const entity = entityStore.get(entityKey(event.doctype, event.name))
-        if (!entity) return
-        if (event.modified !== undefined && compareVersion(event.modified, entity.version) <= 0) return
-        markEntityStale(entity)
+      realtime.onReconnect(() => {
+        for (const record of queryStore.values()) {
+          if (record.observers) void fetchRecord(record, 'revalidate')
+        }
       }),
+    )
+    cleanup.push(
+      realtime.subscribe<{ doctype: string; name: string; modified?: string }>(
+        'doc_update',
+        (event) => {
+          const entity = entityStore.get(entityKey(event.doctype, event.name))
+          if (!entity) return
+          if (event.modified !== undefined && compareVersion(event.modified, entity.version) <= 0)
+            return
+          markEntityStale(entity)
+        },
+      ),
     )
     cleanup.push(
       realtime.subscribe<{ doctype: string; name: string }>('list_update', (event) => {
@@ -992,7 +1015,11 @@ function hasNext(record: QueryRecord): boolean {
   if (paging === 'cursor') return last.next_cursor !== null && last.next_cursor !== undefined
   if (paging === 'offset') {
     if (typeof last.has_next === 'boolean') return last.has_next
-    const limit = Number((record.descriptor.input as Record<string, unknown>)[record.descriptor.options.limitParam ?? 'limit'])
+    const limit = Number(
+      (record.descriptor.input as Record<string, unknown>)[
+        record.descriptor.options.limitParam ?? 'limit'
+      ],
+    )
     return Array.isArray(last.rows) && (!Number.isFinite(limit) || last.rows.length >= limit)
   }
   return false
@@ -1003,10 +1030,13 @@ function nextInput(record: QueryRecord): any {
   const input = { ...(record.descriptor.input as Record<string, unknown>) }
   const last = record.pages.at(-1)
   const paging = record.descriptor.options.paging ?? 'cursor'
-  if (paging === 'cursor') input[record.descriptor.options.cursorParam ?? 'cursor'] = last?.next_cursor
+  if (paging === 'cursor')
+    input[record.descriptor.options.cursorParam ?? 'cursor'] = last?.next_cursor
   if (paging === 'offset') {
     const field = record.descriptor.options.offsetParam ?? 'offset'
-    input[field] = Number(input[field] ?? 0) + record.pages.reduce((count, page) => count + (page?.rows?.length ?? 0), 0)
+    input[field] =
+      Number(input[field] ?? 0) +
+      record.pages.reduce((count, page) => count + (page?.rows?.length ?? 0), 0)
   }
   return input
 }

@@ -1,12 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
+import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import Collaboration from '@tiptap/extension-collaboration'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
-import { TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
+
 import { trackUnsaved } from '@/apps/writer/composables/unsaved'
+import { TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
 
 const uploadMock = vi.fn()
 // Every Drive request the importer makes, as `METHOD path`.
@@ -133,7 +134,7 @@ describe('_convertDocxToHtml', () => {
   it('converts a docx to normalised HTML and returns mammoth messages', async () => {
     convertToHtmlMock.mockResolvedValue({
       value: '<p><strong>hi</strong></p><table><tr><td>A</td></tr></table>',
-      messages: [{ type: 'warning', message: "A cross-reference could not be resolved" }],
+      messages: [{ type: 'warning', message: 'A cross-reference could not be resolved' }],
     })
 
     const { html, messages } = await _convertDocxToHtml(fakeFile('sample.docx'), 'file-1', [])
@@ -143,7 +144,9 @@ describe('_convertDocxToHtml', () => {
     // pipeline _normaliseHtml is tested against above.
     expect(html).toContain('<strong>hi</strong>')
     expect(parse(html).querySelector('th')).not.toBeNull()
-    expect(messages).toEqual([{ type: 'warning', message: "A cross-reference could not be resolved" }])
+    expect(messages).toEqual([
+      { type: 'warning', message: 'A cross-reference could not be resolved' },
+    ])
   })
 
   it('passes the file bytes to mammoth as an arrayBuffer', async () => {
@@ -200,7 +203,9 @@ describe('_convertDocxToHtml', () => {
   })
 
   it('propagates a conversion failure for a malformed/invalid docx', async () => {
-    convertToHtmlMock.mockRejectedValue(new Error('End of central directory record signature not found'))
+    convertToHtmlMock.mockRejectedValue(
+      new Error('End of central directory record signature not found'),
+    )
 
     await expect(_convertDocxToHtml(fakeFile('corrupt.docx'), 'file-1', [])).rejects.toThrow(
       'End of central directory record signature not found',
@@ -218,7 +223,10 @@ describe('importDocx', () => {
     convertToHtmlMock.mockResolvedValue({ value: '<p>Imported text</p>', messages: [] })
     const editor = makeEditor('')
 
-    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('sample.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     expect(editor.getText()).toContain('Imported text')
     expect(tabsIn(editor.state.doc)).toHaveLength(0)
@@ -230,20 +238,38 @@ describe('importDocx', () => {
     // The open document: a body shared through Yjs, with a line typed before.
     const body = new Y.Doc()
     const editor = new Editor({
-      extensions: [Document, Paragraph, Text, TabsExtension, Collaboration.configure({ document: body, field: 'default' })],
+      extensions: [
+        Document,
+        Paragraph,
+        Text,
+        TabsExtension,
+        Collaboration.configure({ document: body, field: 'default' }),
+      ],
     })
     editor.commands.setContent('<p>Existing line before any import.</p>')
     const unsaved = { value: false }
     const changes = vi.fn()
     trackUnsaved(body, unsaved, changes)
 
-    await importDocx(fakeFile('launch brief.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('launch brief.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     // A second editor on the same body sees the new tab and the untouched line.
     const peer = new Editor({
-      extensions: [Document, Paragraph, Text, TabsExtension, Collaboration.configure({ document: body, field: 'default' })],
+      extensions: [
+        Document,
+        Paragraph,
+        Text,
+        TabsExtension,
+        Collaboration.configure({ document: body, field: 'default' }),
+      ],
     })
-    expect(tabsIn(peer.state.doc).map((tab) => tab.node.attrs.label)).toEqual(['Untitled', 'launch brief'])
+    expect(tabsIn(peer.state.doc).map((tab) => tab.node.attrs.label)).toEqual([
+      'Untitled',
+      'launch brief',
+    ])
     expect(peer.getText()).toContain('Existing line before any import.')
     expect(peer.getText()).toContain('Imported text')
     expect(unsaved.value).toBe(true)
@@ -255,7 +281,10 @@ describe('importDocx', () => {
     convertToHtmlMock.mockResolvedValue({ value: '<p>Imported text</p>', messages: [] })
     const editor = makeEditor('<p>Original text</p>')
 
-    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('sample.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     expect(tabsIn(editor.state.doc)).toHaveLength(2)
     expect(editor.getText()).toContain('Original text')
@@ -266,7 +295,10 @@ describe('importDocx', () => {
     convertToHtmlMock.mockResolvedValue({ value: '', messages: [] })
     const editor = makeEditor('<p>Original text</p>')
 
-    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('sample.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     expect(toastMock.error).toHaveBeenCalled()
     expect(tabsIn(editor.state.doc)).toHaveLength(0)
@@ -280,7 +312,10 @@ describe('importDocx', () => {
     })
     const editor = makeEditor('')
 
-    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('sample.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     const texts = [...parse(editor.getHTML()).querySelectorAll('p')]
       .map((p) => p.textContent)
@@ -289,10 +324,15 @@ describe('importDocx', () => {
   })
 
   it('shows an error and makes no changes for a malformed or invalid docx file', async () => {
-    convertToHtmlMock.mockRejectedValue(new Error('End of central directory record signature not found'))
+    convertToHtmlMock.mockRejectedValue(
+      new Error('End of central directory record signature not found'),
+    )
     const editor = makeEditor('<p>Original text</p>')
 
-    await importDocx(fakeFile('corrupt.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('corrupt.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     expect(toastMock.error).toHaveBeenCalled()
     expect(driveRequests).toEqual([]) // nothing was uploaded, so nothing to roll back
@@ -307,7 +347,10 @@ describe('importDocx', () => {
     })
     const editor = makeEditor('')
 
-    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('sample.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     expect(toastMock.success).toHaveBeenCalled()
     expect(toastMock.error).not.toHaveBeenCalled()
@@ -320,7 +363,10 @@ describe('importDocx', () => {
     })
     const editor = makeEditor('')
 
-    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('sample.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     // The content mammoth did manage to convert is still inserted...
     expect(editor.getText()).toContain('Imported text')
@@ -342,10 +388,16 @@ describe('importDocx', () => {
     })
     const editor = makeEditor('<p>Original text</p>')
 
-    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+    await importDocx(fakeFile('sample.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
 
     // Drive purges only a trash root, so the image goes to the trash first.
-    expect(driveRequests).toEqual(['POST /api/suite/drive/nodes/batch', 'POST /api/suite/drive/nodes/batch/purge'])
+    expect(driveRequests).toEqual([
+      'POST /api/suite/drive/nodes/batch',
+      'POST /api/suite/drive/nodes/batch/purge',
+    ])
     expect(toastMock.error).toHaveBeenCalled()
     expect(editor.getText()).toBe('Original text')
   })

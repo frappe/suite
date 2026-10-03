@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveSettingsTab, visibleSettingsGroups, type SettingsGroup } from '@/shell/settings/settings'
+import {
+  resolveSettingsTab,
+  visibleSettingsGroups,
+  type SettingsGroup,
+} from '@/shell/settings/settings'
 import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDialog'
 
 const body = async () => ({})

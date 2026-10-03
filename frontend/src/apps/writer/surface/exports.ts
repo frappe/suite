@@ -63,7 +63,11 @@ function pictureFetch(fetchMedia: MediaFetch): PictureFetch {
 function tableRule(turndown: TurndownService): void {
   const cells = (tr: HTMLTableRowElement): string[] =>
     [...tr.cells].flatMap((node) => {
-      const text = turndown.turndown(node.innerHTML).trim().replace(/\n{2,}/g, '<br>').replace(/\n/g, ' ')
+      const text = turndown
+        .turndown(node.innerHTML)
+        .trim()
+        .replace(/\n{2,}/g, '<br>')
+        .replace(/\n/g, ' ')
       return [text.replace(/\|/g, '\\|'), ...Array<string>(Math.max(0, node.colSpan - 1)).fill('')]
     })
   const line = (row: string[]): string => `| ${row.join(' | ')} |`
@@ -78,7 +82,10 @@ function tableRule(turndown: TurndownService): void {
     },
   })
   // Cells are rendered by the table rule; keep their text out of the default output.
-  turndown.addRule('tableCell', { filter: ['th', 'td', 'tr', 'thead', 'tbody'], replacement: (content) => content })
+  turndown.addRule('tableCell', {
+    filter: ['th', 'td', 'tr', 'thead', 'tbody'],
+    replacement: (content) => content,
+  })
 }
 
 /**

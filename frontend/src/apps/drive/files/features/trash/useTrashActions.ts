@@ -7,8 +7,8 @@ import { confirm, toast } from '@/platform/feedback'
 import { useMutation, useQuery } from '@/platform/server-state'
 import type { PlatformError } from '@/platform/transport'
 
-import { presentDialog } from '../dialogHost'
 import { announceRestore, subject, type ChangedItem } from '../changeToast'
+import { presentDialog } from '../dialogHost'
 
 const DESTINATION_REQUIRED = 'DriveRestoreDestinationRequired'
 
@@ -41,7 +41,10 @@ export function useTrashActions(root: () => string | null) {
    * same root for all of them. Cancel leaves them in Trash.
    */
   async function restore(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
-    const first = await restoring.run({ nodes: items.map((item) => item.node), patch: { state: 'Active' } })
+    const first = await restoring.run({
+      nodes: items.map((item) => item.node),
+      patch: { state: 'Active' },
+    })
     if (!first) {
       offerRetry(restoring.error, () => restore(items))
       return null
@@ -57,7 +60,12 @@ export function useTrashActions(root: () => string | null) {
     )
     // Cancel leaves them in Trash, listed as failed in the outcome.
     if (!parent) return reportRestore(items, first)
-    return restoreInto(items, first, homeless.map((failure) => failure.node), parent)
+    return restoreInto(
+      items,
+      first,
+      homeless.map((failure) => failure.node),
+      parent,
+    )
   }
 
   /** The second restore: items whose folder is gone, into the folder the user picked. */
@@ -74,12 +82,18 @@ export function useTrashActions(root: () => string | null) {
     }
     return reportRestore(items, {
       ok: [...first.ok, ...second.ok],
-      failed: [...first.failed.filter((failure) => failure.type !== DESTINATION_REQUIRED), ...second.failed],
+      failed: [
+        ...first.failed.filter((failure) => failure.type !== DESTINATION_REQUIRED),
+        ...second.failed,
+      ],
     })
   }
 
   /** A toast with Undo names what came back. The alert stays only to list failures. */
-  function reportRestore(items: readonly ChangedItem[], result: DriveBatchResult): DriveBatchResult {
+  function reportRestore(
+    items: readonly ChangedItem[],
+    result: DriveBatchResult,
+  ): DriveBatchResult {
     announceRestore(items.filter((item) => result.ok.includes(item.node)))
     show(result, 'restored')
     return result
@@ -129,7 +143,9 @@ export function useTrashActions(root: () => string | null) {
       return null
     }
     outcome.value = null
-    toast.success(result.count === 1 ? 'Deleted 1 item forever' : `Deleted ${result.count} items forever`)
+    toast.success(
+      result.count === 1 ? 'Deleted 1 item forever' : `Deleted ${result.count} items forever`,
+    )
     return result.count
   }
 

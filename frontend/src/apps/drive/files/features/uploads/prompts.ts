@@ -10,7 +10,10 @@ import type { CollisionChoice, UploadPrompts } from './queue'
  * The questions the queue asks, as dialogs in `context`. `pickFile` comes from
  * the component that owns the hidden input.
  */
-export function uploadPrompts(context: AppContext, pickFile: UploadPrompts['pickFile']): UploadPrompts {
+export function uploadPrompts(
+  context: AppContext,
+  pickFile: UploadPrompts['pickFile'],
+): UploadPrompts {
   return {
     async collision(input) {
       const choice = await presentDialog<CollisionChoice & { applyToAll: boolean }>(

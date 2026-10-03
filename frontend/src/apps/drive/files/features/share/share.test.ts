@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { rolesFor, type DriveGrant, type ExplainRow, type GrantList } from '@/apps/drive/client/grants'
+import {
+  rolesFor,
+  type DriveGrant,
+  type ExplainRow,
+  type GrantList,
+} from '@/apps/drive/client/grants'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { Transport } from '@/platform/transport'
 
@@ -13,17 +18,41 @@ const endOfDay = (year: number, month: number, day: number) =>
   new Date(year, month - 1, day, 23, 59, 59).toISOString().replace('.000Z', 'Z')
 
 const grant = (principal: string, role: number, extra: Partial<DriveGrant> = {}): DriveGrant => ({
-  name: `g-${principal}`, node: 'doc', principal, role, expires_on: null, has_password: false, sent_to: null, ...extra,
+  name: `g-${principal}`,
+  node: 'doc',
+  principal,
+  role,
+  expires_on: null,
+  has_password: false,
+  sent_to: null,
+  ...extra,
 })
 
 const node = (kind: string, role = 50) => ({
-  name: 'doc', title: 'Plan', kind, parent_node: 'folder', root: 'root', state: 'Active', trash_root: null, size: 0, mime: null, url: null,
-  content_doctype: kind === 'document' ? 'Writer Document' : null, content_docname: kind === 'document' ? 'w1' : null,
-  is_template: 0, owner: { id: 'asha@example.com', full_name: 'Asha', user_image: null }, creation: null, modified: null, content_modified: null,
+  name: 'doc',
+  title: 'Plan',
+  kind,
+  parent_node: 'folder',
+  root: 'root',
+  state: 'Active',
+  trash_root: null,
+  size: 0,
+  mime: null,
+  url: null,
+  content_doctype: kind === 'document' ? 'Writer Document' : null,
+  content_docname: kind === 'document' ? 'w1' : null,
+  is_template: 0,
+  owner: { id: 'asha@example.com', full_name: 'Asha', user_image: null },
+  creation: null,
+  modified: null,
+  content_modified: null,
   access: { role },
 })
 
-interface Call { id: string; input: Record<string, unknown> }
+interface Call {
+  id: string
+  input: Record<string, unknown>
+}
 
 /** A fake server: answers by operation id and records every call. */
 function fakeServer(answer: (call: Call) => unknown) {
@@ -42,7 +71,8 @@ function fakeServer(answer: (call: Call) => unknown) {
 
 describe('roles offered (spec §7.5)', () => {
   it('offers Upload only where there are items to add, Manage only to people, and View only to the public', () => {
-    const labels = (kind: Parameters<typeof rolesFor>[0], nodeKind: string) => rolesFor(kind, nodeKind).map((role) => role.label)
+    const labels = (kind: Parameters<typeof rolesFor>[0], nodeKind: string) =>
+      rolesFor(kind, nodeKind).map((role) => role.label)
     expect(labels('user', 'folder')).toEqual(['View', 'Comment', 'Upload', 'Edit', 'Manage'])
     expect(labels('group', 'document')).toEqual(['View', 'Comment', 'Edit', 'Manage'])
     expect(labels('general', 'folder')).toEqual(['View', 'Comment', 'Upload', 'Edit'])
@@ -58,14 +88,48 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
       grant('asha@example.com', 40),
       grant('old@example.com', 10, { expires_on: endOfDay(2026, 9, 1) }),
       grant('$GROUP:Design team', 0),
-      grant('$LINK:abcdefghijklmnopqrstuv', 10, { has_password: true, url: '/l/abcdefghijklmnopqrstuv' }),
+      grant('$LINK:abcdefghijklmnopqrstuv', 10, {
+        has_password: true,
+        url: '/l/abcdefghijklmnopqrstuv',
+      }),
     ],
     inherited: [
-      { grant: grant('$PUBLIC', 10, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
-      { grant: grant('$GROUP:Design team', 20, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
-      { grant: grant('$LINK:launchlinklaunchlink12', 10, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
-      { grant: { node: 'root', principal: '$LINK', role: 10, expires_on: null, has_password: false }, redacted: true, source_node: 'root', source_title: 'My files' },
-      { grant: grant('$GENERAL', 30, { node: 'root' }), redacted: false, source_node: 'root', source_title: 'My files' },
+      {
+        grant: grant('$PUBLIC', 10, { node: 'folder' }),
+        redacted: false,
+        source_node: 'folder',
+        source_title: 'Launch',
+      },
+      {
+        grant: grant('$GROUP:Design team', 20, { node: 'folder' }),
+        redacted: false,
+        source_node: 'folder',
+        source_title: 'Launch',
+      },
+      {
+        grant: grant('$LINK:launchlinklaunchlink12', 10, { node: 'folder' }),
+        redacted: false,
+        source_node: 'folder',
+        source_title: 'Launch',
+      },
+      {
+        grant: {
+          node: 'root',
+          principal: '$LINK',
+          role: 10,
+          expires_on: null,
+          has_password: false,
+        },
+        redacted: true,
+        source_node: 'root',
+        source_title: 'My files',
+      },
+      {
+        grant: grant('$GENERAL', 30, { node: 'root' }),
+        redacted: false,
+        source_node: 'root',
+        source_title: 'My files',
+      },
     ],
     owner: null,
   }
@@ -79,13 +143,20 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
       ['$GROUP:Design team', false, true],
     ])
     expect(sections.public).toMatchObject({ state: 'inherited', entry: { source_title: 'Launch' } })
-    expect(sections.organization).toMatchObject({ state: 'inherited', entry: { source_title: 'My files' } })
+    expect(sections.organization).toMatchObject({
+      state: 'inherited',
+      entry: { source_title: 'My files' },
+    })
     expect(sections.links?.map((row) => row.grant.has_password)).toEqual([true])
   })
 
   it('keeps an expired org-wide row greyed with Remove, and says what applies meanwhile', () => {
     const sections = shareSections(
-      { grants: [grant('$GENERAL', 40, { expires_on: endOfDay(2026, 9, 1) })], inherited: list.inherited, owner: null },
+      {
+        grants: [grant('$GENERAL', 40, { expires_on: endOfDay(2026, 9, 1) })],
+        inherited: list.inherited,
+        owner: null,
+      },
       'document',
       NOW,
     )
@@ -100,9 +171,27 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
   it('folds inherited grants per ancestor, and offers Deny only where it can apply', () => {
     const sections = shareSections(list, 'document', NOW)
 
-    expect(sections.inherited.map((part) => [part.title, part.rows.map((row) => [row.entry.grant.principal, row.deniable])])).toEqual([
-      ['Launch', [['$PUBLIC', true], ['$GROUP:Design team', false], ['$LINK:launchlinklaunchlink12', true]]],
-      ['My files', [['$LINK', false], ['$GENERAL', true]]],
+    expect(
+      sections.inherited.map((part) => [
+        part.title,
+        part.rows.map((row) => [row.entry.grant.principal, row.deniable]),
+      ]),
+    ).toEqual([
+      [
+        'Launch',
+        [
+          ['$PUBLIC', true],
+          ['$GROUP:Design team', false],
+          ['$LINK:launchlinklaunchlink12', true],
+        ],
+      ],
+      [
+        'My files',
+        [
+          ['$LINK', false],
+          ['$GENERAL', true],
+        ],
+      ],
     ])
   })
 
@@ -114,7 +203,12 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
         grants: [grant('asha@example.com', 40)],
         inherited: [
           { grant: ownGrant('root'), redacted: false, source_node: 'root', source_title: 'Faris' },
-          { grant: grant('$GENERAL', 10, { node: 'folder' }), redacted: false, source_node: 'folder', source_title: 'Launch' },
+          {
+            grant: grant('$GENERAL', 10, { node: 'folder' }),
+            redacted: false,
+            source_node: 'folder',
+            source_title: 'Launch',
+          },
         ],
         owner,
       },
@@ -133,7 +227,11 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
   })
 
   it('hides Public on the web and Share links on a root', () => {
-    const sections = shareSections({ grants: [grant('$GENERAL', 30)], inherited: [], owner: null }, 'root', NOW)
+    const sections = shareSections(
+      { grants: [grant('$GENERAL', 30)], inherited: [], owner: null },
+      'root',
+      NOW,
+    )
 
     expect(sections.public).toBeNull()
     expect(sections.links).toBeNull()
@@ -142,11 +240,19 @@ describe('share sections (spec §7.3, §7.6, §7.9)', () => {
 })
 
 describe('share writes (spec §7.4, §7.7, §7.9)', () => {
-  const link = grant('$LINK:abcdefghijklmnopqrstuv', 20, { has_password: true, expires_on: endOfDay(2026, 12, 31), url: '/l/abcdefghijklmnopqrstuv' })
+  const link = grant('$LINK:abcdefghijklmnopqrstuv', 20, {
+    has_password: true,
+    expires_on: endOfDay(2026, 12, 31),
+    url: '/l/abcdefghijklmnopqrstuv',
+  })
 
   it('changes a link by its grant id: an expiry without sending the password, and a role keeping the expiry', async () => {
     const server = fakeServer((call) =>
-      call.id === 'node_get' ? node('document') : call.id === 'node_grants' ? { grants: [link], inherited: [] } : link,
+      call.id === 'node_get'
+        ? node('document')
+        : call.id === 'node_grants'
+          ? { grants: [link], inherited: [] }
+          : link,
     )
     const share = useShare('doc', { transport: server.transport })
     await share.load()
@@ -156,13 +262,17 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     await share.setRole(row, 40)
     await share.remove(row)
 
-    const writes = server.calls.filter((call) => call.id.startsWith('grant_')).map((call) => [call.id, call.input])
+    const writes = server.calls
+      .filter((call) => call.id.startsWith('grant_'))
+      .map((call) => [call.id, call.input])
     expect(writes).toEqual([
       ['grant_patch', { grant: link.name, role: 20, expires_on: endOfDay(2027, 1, 15) }],
       ['grant_patch', { grant: link.name, role: 40, expires_on: endOfDay(2026, 12, 31) }],
       ['grant_delete', { grant: link.name }],
     ])
-    expect(server.calls.some((call) => call.id === 'node_put_grant' || call.id === 'node_delete_grant')).toBe(false)
+    expect(
+      server.calls.some((call) => call.id === 'node_put_grant' || call.id === 'node_delete_grant'),
+    ).toBe(false)
     expect(share.changed.value).toBe(true)
   })
 
@@ -175,9 +285,23 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
         return { count: 1 }
       }
       if (call.id === 'node_grants' && call.input.principal) {
-        return { explain: { role: 20, source: 'grant', rows: [
-          { node: 'folder', depth: 1, principal: '$GROUP:Design team', role: 20, expires_on: null, held: true, winner: true },
-        ] } }
+        return {
+          explain: {
+            role: 20,
+            source: 'grant',
+            rows: [
+              {
+                node: 'folder',
+                depth: 1,
+                principal: '$GROUP:Design team',
+                role: 20,
+                expires_on: null,
+                held: true,
+                winner: true,
+              },
+            ],
+          },
+        }
       }
       return { grants, inherited: [] }
     })
@@ -209,7 +333,9 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     expect(share.label(asha.id)).toBe('Asha Rao')
     expect(share.sections.value!.people[0]!.grant.person).toEqual(asha)
     expect(share.organization.value).toBe('Everyone at Frappe')
-    expect(useShare('doc', { transport: server.transport }).organization.value).toBe('Everyone in your organization')
+    expect(useShare('doc', { transport: server.transport }).organization.value).toBe(
+      'Everyone in your organization',
+    )
   })
 
   it('names an ancestor by its place for the caller, in the fold and in its words', async () => {
@@ -218,16 +344,27 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
         ? node('document')
         : {
             grants: [],
-            inherited: [{ grant: grant('$GENERAL', 10, { node: 'root' }), redacted: false, source_node: 'root', source_title: 'Faris Ansari' }],
+            inherited: [
+              {
+                grant: grant('$GENERAL', 10, { node: 'root' }),
+                redacted: false,
+                source_node: 'root',
+                source_title: 'Faris Ansari',
+              },
+            ],
             owner: null,
           },
     )
-    const placeTitle = (place: { name: string; title: string }) => (place.name === 'root' ? 'My files' : place.title)
+    const placeTitle = (place: { name: string; title: string }) =>
+      place.name === 'root' ? 'My files' : place.title
     const share = useShare('doc', { transport: server.transport, placeTitle })
     await share.load()
 
     expect(share.sections.value!.inherited.map((part) => part.title)).toEqual(['My files'])
-    expect(share.sections.value!.organization).toMatchObject({ state: 'inherited', entry: { source_title: 'My files' } })
+    expect(share.sections.value!.organization).toMatchObject({
+      state: 'inherited',
+      entry: { source_title: 'My files' },
+    })
   })
 
   it('shows a failed write on its own row and still reads the grants again', async () => {
@@ -251,7 +388,11 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
 
   it('sends a link to an outsider and notifies only users', async () => {
     const server = fakeServer((call) =>
-      call.id === 'node_get' ? node('folder') : call.id === 'node_grants' ? { grants: [], inherited: [] } : grant('x', 10),
+      call.id === 'node_get'
+        ? node('folder')
+        : call.id === 'node_grants'
+          ? { grants: [], inherited: [] }
+          : grant('x', 10),
     )
     const share = useShare('doc', { transport: server.transport })
     await share.load()
@@ -259,7 +400,9 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     await share.sendLink('guest@example.com', 20)
     await share.add(['asha@example.com', '$GROUP:Design team'], 40, true)
 
-    expect(server.calls.filter((call) => call.id === 'node_put_grant').map((call) => call.input)).toEqual([
+    expect(
+      server.calls.filter((call) => call.id === 'node_put_grant').map((call) => call.input),
+    ).toEqual([
       { node: 'doc', principal: '$LINK', role: 20, send_to: 'guest@example.com' },
       { node: 'doc', principal: 'asha@example.com', role: 40, notify: true },
       { node: 'doc', principal: '$GROUP:Design team', role: 40 },
@@ -269,31 +412,54 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
   it('keeps the error of every person it could not add, and says who each one is about', async () => {
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document')
-      if (call.id === 'node_put_grant' && call.input.principal !== 'leah@example.com') return new Error('That user is disabled')
-      return call.id === 'node_grants' ? { grants: [], inherited: [] } : { grant: grant('leah@example.com', 20) }
+      if (call.id === 'node_put_grant' && call.input.principal !== 'leah@example.com')
+        return new Error('That user is disabled')
+      return call.id === 'node_grants'
+        ? { grants: [], inherited: [] }
+        : { grant: grant('leah@example.com', 20) }
     })
     const share = useShare('doc', { transport: server.transport })
     share.rememberName('maya@example.com', 'Maya Rao')
     await share.load()
 
-    const left = await share.add(['maya@example.com', 'leah@example.com', 'kenji@example.com'], 20, false)
+    const left = await share.add(
+      ['maya@example.com', 'leah@example.com', 'kenji@example.com'],
+      20,
+      false,
+    )
 
     expect(left).toEqual(['maya@example.com', 'kenji@example.com'])
-    expect(share.errors.get('picker')).toBe('Maya Rao: That user is disabled\nkenji@example.com: That user is disabled')
+    expect(share.errors.get('picker')).toBe(
+      'Maya Rao: That user is disabled\nkenji@example.com: That user is disabled',
+    )
   })
 })
 
 describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
   const ME = 'asha@example.com'
-  const row = (node: string, depth: number, principal: string, role: number, held = true): ExplainRow => ({
-    node, depth, principal, role, expires_on: null, pass: principal === '$PUBLIC' || principal.startsWith('$LINK') ? 2 : 1, held, winner: false,
+  const row = (
+    node: string,
+    depth: number,
+    principal: string,
+    role: number,
+    held = true,
+  ): ExplainRow => ({
+    node,
+    depth,
+    principal,
+    role,
+    expires_on: null,
+    pass: principal === '$PUBLIC' || principal.startsWith('$LINK') ? 2 : 1,
+    held,
+    winner: false,
   })
 
   /** A node `doc` under `folder` under `root`, and a caller whose explanation is `rows`. */
   function setup(local: DriveGrant[], rows: ExplainRow[], role = 50) {
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document')
-      if (call.id === 'node_grants' && call.input.principal) return { explain: { role, source: 'grant', rows } }
+      if (call.id === 'node_grants' && call.input.principal)
+        return { explain: { role, source: 'grant', rows } }
       if (call.id === 'node_grants') return { grants: local, inherited: [] }
       if (call.id === 'node_delete_grant') return { count: 3 }
       return { grant: local[0] }
@@ -308,13 +474,17 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
         return answer
       },
     })
-    const writes = () => server.calls.filter((call) => call.id === 'node_put_grant' || call.id === 'node_delete_grant')
+    const writes = () =>
+      server.calls.filter((call) => call.id === 'node_put_grant' || call.id === 'node_delete_grant')
     return { share, asked, writes, agree: () => (answer = true) }
   }
 
   it('asks before removing the group that gives the caller Manage, and writes nothing if they decline', async () => {
     const leads = grant('$GROUP:Leads', 50)
-    const { share, asked, writes, agree } = setup([leads], [row('root', 0, '$GENERAL', 40), row('doc', 2, '$GROUP:Leads', 50)])
+    const { share, asked, writes, agree } = setup(
+      [leads],
+      [row('root', 0, '$GENERAL', 40), row('doc', 2, '$GROUP:Leads', 50)],
+    )
     await share.load()
 
     await share.remove(share.sections.value!.people[0]!)
@@ -361,7 +531,12 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     await share.setGeneral('$GENERAL', 20)
     await share.remove(share.sections.value!.people[0]!, true)
 
-    expect(writes()[0]!.input).toEqual({ node: 'doc', principal: '$GENERAL', role: 20, expires_on: endOfDay(2027, 3, 1) })
+    expect(writes()[0]!.input).toEqual({
+      node: 'doc',
+      principal: '$GENERAL',
+      role: 20,
+      expires_on: endOfDay(2027, 3, 1),
+    })
     expect(share.notice.value).toMatch(/^Removed from 2 items inside\./)
   })
 
@@ -391,7 +566,8 @@ describe('document session share (spec §8.6, §8.8)', () => {
     let role = 50
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document', role)
-      if (call.id === 'node_grants') return { grants: [grant('asha@example.com', 50)], inherited: [] }
+      if (call.id === 'node_grants')
+        return { grants: [grant('asha@example.com', 50)], inherited: [] }
       if (call.id === 'node_put_grant') role = 40
       return grant('asha@example.com', 40)
     })

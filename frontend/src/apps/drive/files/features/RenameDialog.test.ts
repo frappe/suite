@@ -1,7 +1,8 @@
-import { createApp, h, ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, h, ref } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+
 import RenameDialog from './RenameDialog.vue'
 
 vi.mock('frappe-ui', async () => ({
@@ -20,7 +21,12 @@ async function openRename(node: DriveNode) {
   document.body.append(root)
   const open = ref(true)
   const app = createApp({
-    setup: () => () => h(RenameDialog, { node, open: open.value, 'onUpdate:open': (value: boolean) => (open.value = value) }),
+    setup: () => () =>
+      h(RenameDialog, {
+        node,
+        open: open.value,
+        'onUpdate:open': (value: boolean) => (open.value = value),
+      }),
   })
   app.mount(root)
   cleanup = () => {
@@ -36,7 +42,8 @@ async function openRename(node: DriveNode) {
 }
 
 /** The text the field has selected. */
-const selected = (input: HTMLInputElement) => input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)
+const selected = (input: HTMLInputElement) =>
+  input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)
 
 /** Focus leaves the field and comes back, as when a closing menu refocuses its trigger and the dialog takes focus back. */
 async function refocus(input: HTMLInputElement) {

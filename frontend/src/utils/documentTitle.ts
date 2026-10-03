@@ -1,11 +1,11 @@
 import {
-	calendarLogo,
-	driveLogo,
-	mailLogo,
-	meetLogo,
-	sheetsLogo,
-	slidesLogo,
-	writerLogo,
+  calendarLogo,
+  driveLogo,
+  mailLogo,
+  meetLogo,
+  sheetsLogo,
+  slidesLogo,
+  writerLogo,
 } from '@/platform/brand'
 
 const APP_LOGOS: Record<string, string> = {

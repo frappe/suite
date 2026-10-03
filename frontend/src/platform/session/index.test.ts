@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Transport } from '@/platform/transport'
+
 import { ACCOUNT_REQUEST_PATH, createSession, hasCapabilities, missingCapabilities } from './index'
 
 afterEach(() => {
@@ -16,8 +17,11 @@ describe('session', () => {
     const request = vi.fn(async (operation) => {
       expect(operation.path).toBe(ACCOUNT_REQUEST_PATH)
       return {
-        name: 'user@example.com', full_name: 'Server Name', avatar: '/avatar.png',
-        roles: ['System Manager'], is_jmap_configured: true,
+        name: 'user@example.com',
+        full_name: 'Server Name',
+        avatar: '/avatar.png',
+        roles: ['System Manager'],
+        is_jmap_configured: true,
       }
     })
     const session = createSession({ request } as Transport)
@@ -71,9 +75,12 @@ describe('session', () => {
     session.onLogout(async () => {
       order.push('clear')
     })
-    session.onLogout(() => {
-      order.push('unsubscribe')
-    }, { whileSignedIn: true })
+    session.onLogout(
+      () => {
+        order.push('unsubscribe')
+      },
+      { whileSignedIn: true },
+    )
     const removed = vi.fn()
     session.onLogout(removed)()
 

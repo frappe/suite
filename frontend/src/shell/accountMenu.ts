@@ -1,16 +1,16 @@
-import { computed, h, type ComputedRef } from "vue";
-import { ItemListRow, type DropdownOptions } from "frappe-ui";
+import { ItemListRow, type DropdownOptions } from 'frappe-ui'
+import { computed, h, type ComputedRef } from 'vue'
 
-import { useSession } from "@/platform/session";
-import { translate as __ } from "@/platform/translation";
+import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
 // A custom row takes the menu's highlight itself: the menu item renders as
 // the row, not around it.
 const HIGHLIGHT =
-  "cursor-pointer outline-none focus:bg-surface-alpha-gray-2 data-[highlighted]:bg-surface-alpha-gray-2";
+  'cursor-pointer outline-none focus:bg-surface-alpha-gray-2 data-[highlighted]:bg-surface-alpha-gray-2'
 
 function icon(name: string) {
-  return h("span", { class: [name, "size-4 shrink-0 text-ink-gray-6"], "aria-hidden": "true" });
+  return h('span', { class: [name, 'size-4 shrink-0 text-ink-gray-6'], 'aria-hidden': 'true' })
 }
 
 /**
@@ -20,17 +20,17 @@ function icon(name: string) {
  * sits directly above the avatar (spec section 3.5).
  */
 export function useAccountMenu(): ComputedRef<DropdownOptions> {
-  const session = useSession();
+  const session = useSession()
 
   return computed(() => {
-    const user = session.user.value;
-    const name = user?.fullName || user?.id || __("Account");
-    const email = user?.email ?? user?.id ?? "";
-    const systemManager = session.capabilities.value.systemManager;
+    const user = session.user.value
+    const name = user?.fullName || user?.id || __('Account')
+    const email = user?.email ?? user?.id ?? ''
+    const systemManager = session.capabilities.value.systemManager
 
     return [
       {
-        group: __("Account"),
+        group: __('Account'),
         hideLabel: true,
         options: [
           {
@@ -38,10 +38,10 @@ export function useAccountMenu(): ComputedRef<DropdownOptions> {
             disabled: true,
             slots: {
               item: () =>
-                h("div", { class: "flex min-w-0 flex-col px-2 py-1.5" }, [
-                  h("span", { class: "truncate text-base font-medium text-ink-gray-8" }, name),
+                h('div', { class: 'flex min-w-0 flex-col px-2 py-1.5' }, [
+                  h('span', { class: 'truncate text-base font-medium text-ink-gray-8' }, name),
                   email && email !== name
-                    ? h("span", { class: "truncate text-sm text-ink-gray-5" }, email)
+                    ? h('span', { class: 'truncate text-sm text-ink-gray-5' }, email)
                     : null,
                 ]),
             },
@@ -49,19 +49,19 @@ export function useAccountMenu(): ComputedRef<DropdownOptions> {
         ],
       },
       {
-        group: __("Actions"),
+        group: __('Actions'),
         hideLabel: true,
         options: [
           {
             // A full page load in the same tab: Desk is not part of this app.
-            label: __("Open Desk"),
+            label: __('Open Desk'),
             condition: () => systemManager,
             slots: {
               item: () =>
                 h(
                   ItemListRow,
-                  { as: "a", href: "/app", class: HIGHLIGHT },
-                  { prefix: () => icon("lucide-app-window"), label: () => __("Open Desk") },
+                  { as: 'a', href: '/app', class: HIGHLIGHT },
+                  { prefix: () => icon('lucide-app-window'), label: () => __('Open Desk') },
                 ),
             },
           },
@@ -70,16 +70,16 @@ export function useAccountMenu(): ComputedRef<DropdownOptions> {
         ],
       },
       {
-        group: __("Session"),
+        group: __('Session'),
         hideLabel: true,
         options: [
           {
-            label: __("Log out"),
-            icon: "lucide-log-out",
+            label: __('Log out'),
+            icon: 'lucide-log-out',
             onClick: () => void session.logout().then(() => window.location.reload()),
           },
         ],
       },
-    ];
-  });
+    ]
+  })
 }

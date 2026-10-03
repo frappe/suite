@@ -1,5 +1,5 @@
-import { ref } from 'vue'
 import { frappeRequest, setConfig, toast } from 'frappe-ui'
+import { ref } from 'vue'
 
 import { translate } from '@/boot/translation'
 

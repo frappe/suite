@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import { previewKind } from './previewKind'
 
-const file = (title: string, mime: string | null, hasPreview = false) => previewKind({ title, mime, hasPreview })
+const file = (title: string, mime: string | null, hasPreview = false) =>
+  previewKind({ title, mime, hasPreview })
 
 describe('preview kind', () => {
   it('shows an HTML page as source text, never as a page', () => {
@@ -40,7 +41,13 @@ describe('preview kind', () => {
   })
 
   it("shows other files' preview image, or nothing", () => {
-    expect(file('deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', true)).toEqual({ kind: 'image' })
+    expect(
+      file(
+        'deck.pptx',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        true,
+      ),
+    ).toEqual({ kind: 'image' })
     expect(file('archive.zip', 'application/zip')).toEqual({ kind: 'none' })
     expect(file('blob.constructor', 'application/octet-stream')).toEqual({ kind: 'none' })
   })

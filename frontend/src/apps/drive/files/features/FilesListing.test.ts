@@ -1,16 +1,20 @@
-import { createApp, h, nextTick, reactive } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp, h, nextTick, reactive } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
 
 let cleanup: (() => void) | undefined
 beforeEach(() => {
-  vi.stubGlobal('IntersectionObserver', class {
-    observe() {}
-    disconnect() {}
-  })
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  )
 })
 afterEach(() => {
   cleanup?.()
@@ -19,35 +23,73 @@ afterEach(() => {
 
 function file(name: string, title: string, extra: Partial<DriveNode> = {}): DriveNode {
   return {
-    name, title, kind: 'File', parent_node: 'root', root: 'root', state: 'Active', trash_root: null, size: 10,
-    mime: 'image/png', url: null, content_doctype: null, content_docname: null, is_template: 0,
-    owner: { id: 'someone@example.com', full_name: 'Someone Else', user_image: null }, creation: null, modified: null, content_modified: null, ...extra,
+    name,
+    title,
+    kind: 'File',
+    parent_node: 'root',
+    root: 'root',
+    state: 'Active',
+    trash_root: null,
+    size: 10,
+    mime: 'image/png',
+    url: null,
+    content_doctype: null,
+    content_docname: null,
+    is_template: 0,
+    owner: { id: 'someone@example.com', full_name: 'Someone Else', user_image: null },
+    creation: null,
+    modified: null,
+    content_modified: null,
+    ...extra,
   }
 }
 
-function mount(options: { rows: DriveNode[], view?: PresentationState['view'], columns?: string[], selection?: string[], status?: string }) {
+function mount(options: {
+  rows: DriveNode[]
+  view?: PresentationState['view']
+  columns?: string[]
+  selection?: string[]
+  status?: string
+}) {
   const state = reactive({ selection: options.selection ?? [] })
   const events: { previewErrors: string[] } = { previewErrors: [] }
-  const query = reactive({ status: options.status ?? 'success', rows: options.rows, error: null, hasNext: false, isFetchingNext: false, refetch() {}, fetchNext() {} })
+  const query = reactive({
+    status: options.status ?? 'success',
+    rows: options.rows,
+    error: null,
+    hasNext: false,
+    isFetchingNext: false,
+    refetch() {},
+    fetchNext() {},
+  })
   const root = document.createElement('div')
   document.body.appendChild(root)
   const app = createApp({
-    setup: () => () => h(FilesListing, {
-      query: query as never,
-      presentation: { ...DEFAULT_PRESENTATION, view: options.view ?? 'list', columns: options.columns ?? DEFAULT_PRESENTATION.columns },
-      selection: state.selection,
-      selectionMode: state.selection.length > 0,
-      emptyTitle: 'Empty',
-      emptyDescription: '',
-      menuOptions: () => [],
-      'onUpdate:selection': (value: string[]) => { state.selection = value },
-      onSelect: (node: DriveNode) => {
-        state.selection = state.selection.includes(node.name)
-          ? state.selection.filter((name) => name !== node.name)
-          : [...state.selection, node.name]
-      },
-      onPreviewError: (node: DriveNode) => { events.previewErrors.push(node.name) },
-    }),
+    setup: () => () =>
+      h(FilesListing, {
+        query: query as never,
+        presentation: {
+          ...DEFAULT_PRESENTATION,
+          view: options.view ?? 'list',
+          columns: options.columns ?? DEFAULT_PRESENTATION.columns,
+        },
+        selection: state.selection,
+        selectionMode: state.selection.length > 0,
+        emptyTitle: 'Empty',
+        emptyDescription: '',
+        menuOptions: () => [],
+        'onUpdate:selection': (value: string[]) => {
+          state.selection = value
+        },
+        onSelect: (node: DriveNode) => {
+          state.selection = state.selection.includes(node.name)
+            ? state.selection.filter((name) => name !== node.name)
+            : [...state.selection, node.name]
+        },
+        onPreviewError: (node: DriveNode) => {
+          events.previewErrors.push(node.name)
+        },
+      }),
   })
   app.mount(root)
   cleanup = () => {
@@ -113,11 +155,22 @@ describe('FilesListing type column', () => {
       ],
     })
     await nextTick()
-    const type = (name: string) => root.querySelector(`[data-node="${name}"] [data-slot="list-cell"]:nth-child(2)`)?.textContent?.trim()
-    const icon = (name: string) => root.querySelector(`[data-node="${name}"] [aria-hidden="true"]`)?.className
+    const type = (name: string) =>
+      root
+        .querySelector(`[data-node="${name}"] [data-slot="list-cell"]:nth-child(2)`)
+        ?.textContent?.trim()
+    const icon = (name: string) =>
+      root.querySelector(`[data-node="${name}"] [aria-hidden="true"]`)?.className
 
     expect(['md', 'json', 'csv', 'py', 'bin', 'zip', 'png', 'doc'].map(type)).toEqual([
-      'Markdown', 'JSON', 'CSV', 'Python', 'File', 'ZIP', 'Image', 'Writer Document',
+      'Markdown',
+      'JSON',
+      'CSV',
+      'Python',
+      'File',
+      'ZIP',
+      'Image',
+      'Writer Document',
     ])
     expect(icon('md')).toContain('lucide-file-text')
     expect(icon('json')).toContain('lucide-file-code')
@@ -143,13 +196,16 @@ describe('FilesListing grid previews', () => {
 })
 
 describe('FilesListing loading', () => {
-  afterEach(() => { vi.useRealTimers() })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
   it('shows placeholders only when a load is slow, then the files in their place', async () => {
     vi.useFakeTimers()
     const { root, query } = mount({ rows: [], status: 'pending' })
     await nextTick()
-    const placeholders = () => root.querySelectorAll('[data-slot="list-row"][aria-hidden="true"]').length
+    const placeholders = () =>
+      root.querySelectorAll('[data-slot="list-row"][aria-hidden="true"]').length
     expect(placeholders()).toBe(0)
     expect(root.textContent).not.toContain('Empty')
 

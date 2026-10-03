@@ -81,7 +81,11 @@ export function placeFor(root: ParentNode, href: string): HTMLElement | null {
     return null
   }
   const id = PLACE_PREFIX + place
-  return [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')].find((heading) => heading.id === id) ?? null
+  return (
+    [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')].find(
+      (heading) => heading.id === id,
+    ) ?? null
+  )
 }
 
 /** GitHub's slug for a heading: its text in lower case, punctuation dropped, spaces as hyphens. */
@@ -116,13 +120,25 @@ function isRemoteImage(src: string | null): boolean {
   }
 }
 
-const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+const ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+}
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ESCAPES[character] ?? character)
 }
 
-const UNESCAPES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }
+const UNESCAPES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+}
 
 function unescapeHtml(html: string): string {
   return html.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => UNESCAPES[entity] ?? entity)

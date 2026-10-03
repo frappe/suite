@@ -3,8 +3,17 @@ import { ref } from 'vue'
 // getGrid is a getter fn () => grid. onSwitch is called after every sheet switch
 // so the caller can repopulate canvas data for the new sheet.
 // extras: additional engines with renameSheet/duplicateSheet/deleteSheet/reorderSheets
-export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell, formulaValue, refreshActiveFormat, onSwitch }) {
-  const sheetNames   = ref(sheet.getSheetNames())
+export function useSheetTabs({
+  sheet,
+  formats,
+  extras = [],
+  getGrid,
+  activeCell,
+  formulaValue,
+  refreshActiveFormat,
+  onSwitch,
+}) {
+  const sheetNames = ref(sheet.getSheetNames())
   const currentSheet = ref(sheet.getCurrentSheet())
 
   // Per-sheet view-state cache. Freeze, hidden rows/cols, column widths, row
@@ -50,7 +59,7 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
     currentSheet.value = sheet.getCurrentSheet()
     _applyViewFor(currentSheet.value)
     if (!preserveEdit) {
-      activeCell.value   = 'A1'
+      activeCell.value = 'A1'
       formulaValue.value = sheet.getCell('A1')
       getGrid()?.moveTo(0, 0)
     }
@@ -61,7 +70,7 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
   // name is optional: callers normally let us auto-name the next sheet, but
   // undo/redo passes an explicit name to recreate the exact sheet it removed.
   function addSheet(name) {
-    name = name || ('Sheet' + (sheet.getSheetNames().length + 1))
+    name = name || 'Sheet' + (sheet.getSheetNames().length + 1)
     sheet.addSheet(name)
     sheetNames.value = sheet.getSheetNames()
     switchSheet(name)
@@ -80,8 +89,8 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
       delete _viewBySheet[oldName]
     }
     formats?.renameSheet(oldName, newName)
-    extras.forEach(e => e?.renameSheet?.(oldName, newName))
-    sheetNames.value   = sheet.getSheetNames()
+    extras.forEach((e) => e?.renameSheet?.(oldName, newName))
+    sheetNames.value = sheet.getSheetNames()
     currentSheet.value = sheet.getCurrentSheet()
     return true
   }
@@ -90,7 +99,10 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
     const existing = sheet.getSheetNames()
     let copy = `${srcName} copy`
     let n = 1
-    while (existing.includes(copy)) { n++; copy = `${srcName} copy ${n}` }
+    while (existing.includes(copy)) {
+      n++
+      copy = `${srcName} copy ${n}`
+    }
     sheet.duplicateSheet(srcName, copy)
     // Inherit the source's view (freeze, widths, hidden, ...) onto the copy.
     // When srcName is the currently-active sheet, the live grid state is the
@@ -101,7 +113,7 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
       _viewBySheet[copy] = JSON.parse(JSON.stringify(_viewBySheet[srcName]))
     }
     formats?.duplicateSheet(srcName, copy)
-    extras.forEach(e => e?.duplicateSheet?.(srcName, copy))
+    extras.forEach((e) => e?.duplicateSheet?.(srcName, copy))
     sheetNames.value = sheet.getSheetNames()
     switchSheet(copy)
     return copy
@@ -114,22 +126,22 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
     if (!ok) return false
     delete _viewBySheet[name]
     formats?.deleteSheet(name)
-    extras.forEach(e => e?.deleteSheet?.(name))
+    extras.forEach((e) => e?.deleteSheet?.(name))
     sheetNames.value = sheet.getSheetNames()
     if (wasCurrent) switchSheet(sheet.getCurrentSheet())
-    else            currentSheet.value = sheet.getCurrentSheet()
+    else currentSheet.value = sheet.getCurrentSheet()
     return true
   }
 
   function reorderSheets(orderedNames) {
     sheet.reorderSheets(orderedNames)
     formats?.reorderSheets(orderedNames)
-    extras.forEach(e => e?.reorderSheets?.(orderedNames))
+    extras.forEach((e) => e?.reorderSheets?.(orderedNames))
     sheetNames.value = sheet.getSheetNames()
   }
 
   function syncNames() {
-    sheetNames.value   = sheet.getSheetNames()
+    sheetNames.value = sheet.getSheetNames()
     currentSheet.value = sheet.getCurrentSheet()
   }
 
@@ -165,9 +177,16 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
   }
 
   return {
-    sheetNames, currentSheet,
-    switchSheet, addSheet, renameSheet, duplicateSheet, deleteSheet, reorderSheets,
+    sheetNames,
+    currentSheet,
+    switchSheet,
+    addSheet,
+    renameSheet,
+    duplicateSheet,
+    deleteSheet,
+    reorderSheets,
     syncNames,
-    viewSnapshot, viewRestore,
+    viewSnapshot,
+    viewRestore,
   }
 }

@@ -1,15 +1,25 @@
-import { reactive } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { reactive } from 'vue'
 
 import { createPreviewMemory, useNodePreview, type PreviewNode } from './nodePreview'
 
 function image(url: string | null): PreviewNode {
-  return reactive({ name: 'photo', kind: 'File', content_doctype: null, preview: url ? { url, expires: 0 } : null })
+  return reactive({
+    name: 'photo',
+    kind: 'File',
+    content_doctype: null,
+    preview: url ? { url, expires: 0 } : null,
+  })
 }
 
 describe('a card thumbnail', () => {
   it('keeps the icon for a presentation, even when it has a preview', () => {
-    const node = reactive<PreviewNode>({ name: 'deck', kind: 'document', content_doctype: 'Presentation', preview: { url: '/p/deck.webp', expires: 0 } })
+    const node = reactive<PreviewNode>({
+      name: 'deck',
+      kind: 'document',
+      content_doctype: 'Presentation',
+      preview: { url: '/p/deck.webp', expires: 0 },
+    })
     const preview = useNodePreview(() => node, createPreviewMemory())
 
     expect(preview.url.value).toBeUndefined()

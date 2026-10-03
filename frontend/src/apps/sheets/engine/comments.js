@@ -9,9 +9,9 @@
 // The row/col shift + sheet-lifecycle logic is value-type-agnostic (it moves
 // whole values by cell id), so it's unchanged from the flat-note version.
 
-import { parseCellId, colLabel } from '../utils/cells.js'
-import { remapCellKeys } from './ref-remap.js'
+import { colLabel, parseCellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { remapCellKeys } from './ref-remap.js'
 
 // Upgrade a legacy string note to a thread; pass a thread object through.
 // Returns null for an empty/blank note (nothing to keep).
@@ -23,7 +23,7 @@ function _migrate(v) {
   }
   // Only a well-formed thread object survives; a number / array / corrupt value
   // is dropped rather than crashing hasOpenComment's `.thread.length` later.
-  return (v && Array.isArray(v.thread)) ? v : null
+  return v && Array.isArray(v.thread) ? v : null
 }
 
 export function createCommentsEngine() {
@@ -40,7 +40,11 @@ export function createCommentsEngine() {
   function getThread(id, sheet = 'Sheet1') {
     const v = store[sheet]?.[id]
     if (v == null) return null
-    if (typeof v === 'string') { const m = _migrate(v); if (m) store[sheet][id] = m; return m }
+    if (typeof v === 'string') {
+      const m = _migrate(v)
+      if (m) store[sheet][id] = m
+      return m
+    }
     return v
   }
 
@@ -51,7 +55,9 @@ export function createCommentsEngine() {
     return !!(t && !t.resolved && t.thread.length)
   }
 
-  function getAll(sheet = 'Sheet1') { return store[sheet] || {} }
+  function getAll(sheet = 'Sheet1') {
+    return store[sheet] || {}
+  }
 
   // First reply's text — a one-line preview for the all-comments list.
   function preview(id, sheet = 'Sheet1') {
@@ -68,7 +74,11 @@ export function createCommentsEngine() {
 
   // Append a reply, creating the thread if new. A new reply reopens a resolved
   // thread (someone had more to say). `ts` is injectable for deterministic tests.
-  function addReply(id, { author = '', name = '', text, ts = Date.now(), mentions = [] } = {}, sheet = 'Sheet1') {
+  function addReply(
+    id,
+    { author = '', name = '', text, ts = Date.now(), mentions = [] } = {},
+    sheet = 'Sheet1',
+  ) {
     const clean = (text || '').trim()
     if (!clean) return
     ensure(sheet)
@@ -116,7 +126,7 @@ export function createCommentsEngine() {
     const entries = Object.entries(st)
       .map(([id, val]) => ({ id, p: parseCellId(id), val }))
       .filter(({ p }) => p && pred(p))
-    entries.sort((a, b) => descending ? b.p.row - a.p.row : a.p.row - b.p.row)
+    entries.sort((a, b) => (descending ? b.p.row - a.p.row : a.p.row - b.p.row))
     for (const { id, p, val } of entries) {
       delete st[id]
       const nid = newIdFn(p)
@@ -125,7 +135,12 @@ export function createCommentsEngine() {
   }
 
   function insertRow(atRow, sheet = 'Sheet1') {
-    _shift(sheet, p => p.row >= atRow, p => colLabel(p.col) + (p.row + 2), true)
+    _shift(
+      sheet,
+      (p) => p.row >= atRow,
+      (p) => colLabel(p.col) + (p.row + 2),
+      true,
+    )
   }
 
   function deleteRow(atRow, sheet = 'Sheet1') {
@@ -134,7 +149,12 @@ export function createCommentsEngine() {
       const p = parseCellId(id)
       if (p && p.row === atRow) delete store[sheet][id]
     }
-    _shift(sheet, p => p.row > atRow, p => colLabel(p.col) + p.row, false)
+    _shift(
+      sheet,
+      (p) => p.row > atRow,
+      (p) => colLabel(p.col) + p.row,
+      false,
+    )
   }
 
   function insertCol(atCol, sheet = 'Sheet1') {
@@ -188,9 +208,13 @@ export function createCommentsEngine() {
     store[newName] = deepClone(store[srcName] || {})
   }
 
-  function deleteSheet(name) { delete store[name] }
+  function deleteSheet(name) {
+    delete store[name]
+  }
 
-  function snapshot() { return deepClone(store) }
+  function snapshot() {
+    return deepClone(store)
+  }
 
   // Migrate legacy string notes on load so old saved docs upgrade transparently.
   // Deep-clone the incoming snapshot first: threads are mutated in place
@@ -209,11 +233,25 @@ export function createCommentsEngine() {
   }
 
   return {
-    getThread, hasOpenComment, getAll, preview,
-    addReply, removeReply, resolve, clear, setThread,
-    insertRow, deleteRow, insertCol, deleteCol,
-    remapCols, remapRows,
-    renameSheet, duplicateSheet, deleteSheet,
-    snapshot, restore,
+    getThread,
+    hasOpenComment,
+    getAll,
+    preview,
+    addReply,
+    removeReply,
+    resolve,
+    clear,
+    setThread,
+    insertRow,
+    deleteRow,
+    insertCol,
+    deleteCol,
+    remapCols,
+    remapRows,
+    renameSheet,
+    duplicateSheet,
+    deleteSheet,
+    snapshot,
+    restore,
   }
 }

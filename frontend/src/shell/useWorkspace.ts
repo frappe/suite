@@ -1,5 +1,5 @@
-import { ref } from 'vue'
 import { createResource } from 'frappe-ui'
+import { ref } from 'vue'
 
 interface WorkspaceInfo {
   workspace_name: string

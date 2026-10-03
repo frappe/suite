@@ -3,7 +3,11 @@
     <template #trigger>
       <Button icon="lucide-settings-2" aria-label="View settings" />
     </template>
-    <div role="group" aria-label="View settings" class="w-80 max-w-[calc(100vw-20px)] text-ink-gray-8">
+    <div
+      role="group"
+      aria-label="View settings"
+      class="w-80 max-w-[calc(100vw-20px)] text-ink-gray-8"
+    >
       <div class="p-3">
         <TabButtons
           fluid
@@ -26,7 +30,10 @@
           />
         </div>
       </div>
-      <div v-if="presentation.view === 'list' && columns.length" class="border-t border-outline-elevation-2 p-3">
+      <div
+        v-if="presentation.view === 'list' && columns.length"
+        class="border-t border-outline-elevation-2 p-3"
+      >
         <h3 :id="columnsHeading" class="text-sm text-ink-gray-5">Columns</h3>
         <div role="group" :aria-labelledby="columnsHeading" class="mt-2 flex flex-wrap gap-1.5">
           <button
@@ -35,12 +42,16 @@
             type="button"
             :aria-pressed="shown(column)"
             class="h-7 rounded-full border px-2.5 text-sm transition-colors"
-            :class="shown(column)
-              ? 'border-transparent bg-surface-gray-3 text-ink-gray-8 hover:bg-surface-gray-4'
-              : 'border-outline-gray-2 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-7'"
+            :class="
+              shown(column)
+                ? 'border-transparent bg-surface-gray-3 text-ink-gray-8 hover:bg-surface-gray-4'
+                : 'border-outline-gray-2 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-7'
+            "
             @click="emit('toggle-column', column, !shown(column))"
           >
-            {{ column === 'modified' && dateColumn === 'opened' ? 'Opened' : COLUMN_LABELS[column] }}
+            {{
+              column === 'modified' && dateColumn === 'opened' ? 'Opened' : COLUMN_LABELS[column]
+            }}
           </button>
         </div>
       </div>
@@ -49,8 +60,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, useId } from 'vue'
 import { Button, Popover, Select, TabButtons, type SelectOption } from 'frappe-ui'
+import { computed, useId } from 'vue'
+
 import type {
   FilesColumn,
   FilesDateColumn,
@@ -80,8 +92,19 @@ const VIEW_OPTIONS = [
   { value: 'list', label: 'List', iconLeft: 'lucide-list' },
   { value: 'grid', label: 'Grid', iconLeft: 'lucide-layout-grid' },
 ] satisfies Array<{ value: FilesViewMode; label: string; iconLeft: string }>
-const SORT_LABELS: Record<FilesSort, string> = { title: 'Name', modified: 'Modified', owner: 'Owner', kind: 'Type', size: 'Size' }
-const COLUMN_LABELS: Record<FilesColumn, string> = { owner: 'Owner', modified: 'Modified', kind: 'Type', size: 'Size' }
+const SORT_LABELS: Record<FilesSort, string> = {
+  title: 'Name',
+  modified: 'Modified',
+  owner: 'Owner',
+  kind: 'Type',
+  size: 'Size',
+}
+const COLUMN_LABELS: Record<FilesColumn, string> = {
+  owner: 'Owner',
+  modified: 'Modified',
+  kind: 'Type',
+  size: 'Size',
+}
 
 /** Each direction in the words of its field: `A to Z`, `Newest first`. */
 function orderLabel(sort: FilesSort, dir: FilesDirection): string {
@@ -95,7 +118,13 @@ const orderId = useId()
 const columnsHeading = useId()
 
 /** One label-and-select row. `pick` only reports a value the row offers. */
-function row<T extends string>(id: string, label: string, value: T, labels: Record<T, string>, onPick: (value: T) => void) {
+function row<T extends string>(
+  id: string,
+  label: string,
+  value: T,
+  labels: Record<T, string>,
+  onPick: (value: T) => void,
+) {
   const values = Object.keys(labels) as T[]
   return {
     id,
@@ -113,7 +142,13 @@ const rows = computed(() => {
   const { sort, dir } = props.presentation
   return [
     row(sortId, 'Sort by', sort, SORT_LABELS, (next) => emit('change', { sort: next })),
-    row(orderId, 'Order', dir, { asc: orderLabel(sort, 'asc'), desc: orderLabel(sort, 'desc') }, (next) => emit('change', { dir: next })),
+    row(
+      orderId,
+      'Order',
+      dir,
+      { asc: orderLabel(sort, 'asc'), desc: orderLabel(sort, 'desc') },
+      (next) => emit('change', { dir: next }),
+    ),
   ]
 })
 

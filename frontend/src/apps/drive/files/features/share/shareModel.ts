@@ -1,9 +1,9 @@
 import {
   GENERAL,
-  PUBLIC,
   groupName,
   isExpired,
   principalKind,
+  PUBLIC,
   type DriveGrant,
   type GrantExplanation,
   type GrantList,
@@ -96,14 +96,20 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
       !entry.redacted &&
       !(isRoot && kind === 'public') &&
       !localPrincipals.has(entry.grant.principal)
-    const part = parts.get(entry.source_node) ?? { node: entry.source_node, title: entry.source_title, rows: [] }
+    const part = parts.get(entry.source_node) ?? {
+      node: entry.source_node,
+      title: entry.source_title,
+      rows: [],
+    }
     part.rows.push({ entry, kind, deniable })
     parts.set(entry.source_node, part)
   }
 
   return {
     owner: list.owner,
-    people: local.filter((row) => (row.kind === 'user' || row.kind === 'group') && row.grant.principal !== owner),
+    people: local.filter(
+      (row) => (row.kind === 'user' || row.kind === 'group') && row.grant.principal !== owner,
+    ),
     organization: generalAccess(GENERAL, local, list.inherited),
     public: isRoot ? null : generalAccess(PUBLIC, local, list.inherited),
     links: isRoot ? null : local.filter((row) => row.kind === 'link'),
@@ -111,7 +117,11 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
   }
 }
 
-function generalAccess(principal: string, local: LocalRow[], inherited: InheritedGrant[]): GeneralAccess {
+function generalAccess(
+  principal: string,
+  local: LocalRow[],
+  inherited: InheritedGrant[],
+): GeneralAccess {
   const row = local.find((candidate) => candidate.grant.principal === principal)
   // `inherited` is nearest first, and the nearest live row decides.
   const nearest = inherited.find((entry) => entry.grant.principal === principal)
@@ -142,12 +152,22 @@ export interface GrantChange {
  * Group membership is known only for groups that already hold a row on the
  * chain: the explanation marks those `held`.
  */
-export function roleAfter(explanation: GrantExplanation, node: string, change: GrantChange, me: string): number {
+export function roleAfter(
+  explanation: GrantExplanation,
+  node: string,
+  change: GrantChange,
+  me: string,
+): number {
   if (explanation.source === 'site admin') return explanation.role
   const rows = explanation.rows
-  const nodeDepth = rows.find((row) => row.node === node)?.depth ?? Math.max(-1, ...rows.map((row) => row.depth)) + 1
+  const nodeDepth =
+    rows.find((row) => row.node === node)?.depth ??
+    Math.max(-1, ...rows.map((row) => row.depth)) + 1
   const held = (principal: string) =>
-    principal === me || principal === GENERAL || principal === PUBLIC || rows.some((row) => row.principal === principal && row.held)
+    principal === me ||
+    principal === GENERAL ||
+    principal === PUBLIC ||
+    rows.some((row) => row.principal === principal && row.held)
   const after = rows
     .filter((row) => row.held && !(row.node === node && row.principal === change.principal))
     .map(({ principal, role, depth }) => ({ principal, role, depth }))
@@ -193,7 +213,8 @@ export function remainingAccess(
   if (explanation.role <= 0) return null
   const winner = explanation.rows.find((row) => row.winner)
   if (!winner) return `${who} still has access.`
-  if (winner.principal !== principal) return `${who} still has access through ${labelOf(winner.principal)}.`
+  if (winner.principal !== principal)
+    return `${who} still has access through ${labelOf(winner.principal)}.`
   const title = titles.get(winner.node)
   return title ? `${who} still has access from “${title}”.` : `${who} still has access.`
 }
@@ -204,7 +225,11 @@ export function organizationLabel(workspace = ''): string {
 }
 
 /** The words for a principal nobody named: groups, the org, the public. */
-export function principalLabel(principal: string, users: ReadonlyMap<string, string> = new Map(), workspace = ''): string {
+export function principalLabel(
+  principal: string,
+  users: ReadonlyMap<string, string> = new Map(),
+  workspace = '',
+): string {
   switch (principalKind(principal)) {
     case 'general':
       return organizationLabel(workspace)

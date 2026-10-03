@@ -7,10 +7,7 @@
 
 import path from 'node:path'
 import process from 'node:process'
-import {
-  defineConfigWithVueTs,
-  vueTsConfigs,
-} from '@vue/eslint-config-typescript'
+import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
 import { ESLint } from 'eslint'
 import pluginVue from 'eslint-plugin-vue'
 
@@ -55,19 +52,14 @@ const eslint = new ESLint({
 const results = await eslint.lintFiles(['src/**/*.vue'])
 const findings = new Map()
 for (const result of results) {
-  const file = path
-    .relative(frontendRoot, result.filePath)
-    .replaceAll('\\', '/')
+  const file = path.relative(frontendRoot, result.filePath).replaceAll('\\', '/')
   for (const message of result.messages) {
     if (message.ruleId !== RULE) {
-      if (message.fatal)
-        throw new Error(`${file}:${message.line} ${message.message}`)
+      if (message.fatal) throw new Error(`${file}:${message.line} ${message.message}`)
       continue
     }
     if (!findings.has(file)) findings.set(file, [])
-    findings
-      .get(file)
-      .push(`${file}:${message.line}:${message.column} ${message.message}`)
+    findings.get(file).push(`${file}:${message.line}:${message.column} ${message.message}`)
   }
 }
 

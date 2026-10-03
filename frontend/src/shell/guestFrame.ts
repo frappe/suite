@@ -5,6 +5,6 @@
  * redirect would put it in a query string, server logs and referrers.
  */
 export function signInUrl(fullPath: string): string {
-  const [pathAndQuery = ""] = fullPath.split("#");
-  return `/login?redirect-to=${encodeURIComponent(pathAndQuery)}`;
+  const [pathAndQuery = ''] = fullPath.split('#')
+  return `/login?redirect-to=${encodeURIComponent(pathAndQuery)}`
 }

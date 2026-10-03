@@ -1,5 +1,5 @@
-import { effectScope, nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
+import { effectScope, nextTick, ref } from 'vue'
 
 import { applyRouteMeta, installPageMeta, openingTitleState, usePageTitle } from './index'
 
@@ -7,7 +7,9 @@ describe('page meta', () => {
   it('arbitrates title overrides and restores the route fallback', () => {
     applyRouteMeta({ meta: { title: 'Files', favicon: '/files.svg' } } as any)
     expect(document.title).toBe('Files')
-    expect(document.querySelector<HTMLLinkElement>("link[rel='icon']")?.href).toContain('/files.svg')
+    expect(document.querySelector<HTMLLinkElement>("link[rel='icon']")?.href).toContain(
+      '/files.svg',
+    )
 
     const releaseFirst = usePageTitle(() => 'Folder')
     const releaseSecond = usePageTitle(() => 'Document')

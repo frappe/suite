@@ -1,10 +1,10 @@
-import { h } from 'vue'
 import { Avatar } from 'frappe-ui'
 import { Check } from 'lucide-vue-next'
+import { h } from 'vue'
 
 interface Account {
-	id: string
-	_name: string
+  id: string
+  _name: string
 }
 
 /**
@@ -24,18 +24,18 @@ interface Account {
  * costs the row its element on every render.
  */
 export const accountSubmenu = (
-	accounts: Account[] | undefined,
-	activeId: string | undefined,
-	onSelect: (id: string) => void,
+  accounts: Account[] | undefined,
+  activeId: string | undefined,
+  onSelect: (id: string) => void,
 ) =>
-	(accounts ?? []).map((account) => ({
-		label: account._name,
-		onClick: () => onSelect(account.id),
-		slots: {
-			prefix: () => h(Avatar, { label: account._name, size: 'md' }),
-			suffix: () =>
-				account.id === activeId
-					? h(Check, { class: 'icon size-4 shrink-0 text-ink-gray-7' })
-					: null,
-		},
-	}))
+  (accounts ?? []).map((account) => ({
+    label: account._name,
+    onClick: () => onSelect(account.id),
+    slots: {
+      prefix: () => h(Avatar, { label: account._name, size: 'md' }),
+      suffix: () =>
+        account.id === activeId
+          ? h(Check, { class: 'icon size-4 shrink-0 text-ink-gray-7' })
+          : null,
+    },
+  }))

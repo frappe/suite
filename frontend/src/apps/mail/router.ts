@@ -1,9 +1,8 @@
 import type { RouteLocationNormalized } from 'vue-router'
 
-import suiteRouter from '@/router'
-import { useSessionStore } from '@/boot/session'
-
 import { userStore } from '@/apps/mail/stores/user'
+import { useSessionStore } from '@/boot/session'
+import suiteRouter from '@/router'
 
 /**
  * Mail-local guard on the shared suite router: setup-wizard escape, user-data
@@ -18,118 +17,118 @@ import { userStore } from '@/apps/mail/stores/user'
 type Params = Record<string, string | string[]>
 
 const handleSetupWizardEscape = () => {
-	if (document.referrer.includes('/desk/setup-wizard')) window.location.replace('/desk')
+  if (document.referrer.includes('/desk/setup-wizard')) window.location.replace('/desk')
 }
 
 const buildDefaultRoute = (
-	accountId: string,
-	mailboxes: { data?: { id: string }[] },
+  accountId: string,
+  mailboxes: { data?: { id: string }[] },
 ): { name: string; params: Record<string, string> } => {
-	const firstMailbox = mailboxes.data?.[0]?.id
-	if (firstMailbox) return { name: 'mail-mailbox', params: { accountId, mailbox: firstMailbox } }
+  const firstMailbox = mailboxes.data?.[0]?.id
+  if (firstMailbox) return { name: 'mail-mailbox', params: { accountId, mailbox: firstMailbox } }
 
-	return { name: 'mail-address-books', params: { accountId } }
+  return { name: 'mail-address-books', params: { accountId } }
 }
 
 const resolveShortcut = (
-	name: string | symbol | null | undefined,
-	params: Params,
-	accountId: string,
-	defaultRoute: { name: string; params: Record<string, string> },
+  name: string | symbol | null | undefined,
+  params: Params,
+  accountId: string,
+  defaultRoute: { name: string; params: Record<string, string> },
 ) => {
-	switch (name) {
-		case 'mail-mailbox-shortcut':
-			if (params.threadID) return { name: 'mail-mail', params: { accountId, ...params } }
-			if (params.mailbox) return { name: 'mail-mailbox', params: { accountId, ...params } }
-			return defaultRoute
-		case 'mail-address-books-shortcut':
-			if (params.addressBookName)
-				return { name: 'mail-address-book', params: { accountId, ...params } }
-			return { name: 'mail-address-books', params: { accountId } }
-		case 'mail-contacts-shortcut':
-			if (params.contactName) return { name: 'mail-contact', params: { accountId, ...params } }
-			return { name: 'mail-contacts', params: { accountId } }
-		default:
-			return defaultRoute
-	}
+  switch (name) {
+    case 'mail-mailbox-shortcut':
+      if (params.threadID) return { name: 'mail-mail', params: { accountId, ...params } }
+      if (params.mailbox) return { name: 'mail-mailbox', params: { accountId, ...params } }
+      return defaultRoute
+    case 'mail-address-books-shortcut':
+      if (params.addressBookName)
+        return { name: 'mail-address-book', params: { accountId, ...params } }
+      return { name: 'mail-address-books', params: { accountId } }
+    case 'mail-contacts-shortcut':
+      if (params.contactName) return { name: 'mail-contact', params: { accountId, ...params } }
+      return { name: 'mail-contacts', params: { accountId } }
+    default:
+      return defaultRoute
+  }
 }
 
 /** Every route in Mail's route module is named `mail-*`. */
 export const isMailRoute = (route: Pick<RouteLocationNormalized, 'name'>): boolean =>
-	typeof route.name === 'string' && route.name.startsWith('mail-')
+  typeof route.name === 'string' && route.name.startsWith('mail-')
 
 export const mailGuard = async (to: RouteLocationNormalized) => {
-	// Only act on mail routes; let the suite handle everything else.
-	if (!isMailRoute(to)) return
+  // Only act on mail routes; let the suite handle everything else.
+  if (!isMailRoute(to)) return
 
-	handleSetupWizardEscape()
+  handleSetupWizardEscape()
 
-	// Auth: the suite guard already redirects guests on non-public routes,
-	// but public mail routes (login/signup/...) must short-circuit here so
-	// we don't trigger user-data resolution for a guest.
-	const { isLoggedIn } = useSessionStore()
-	if (!isLoggedIn) return
+  // Auth: the suite guard already redirects guests on non-public routes,
+  // but public mail routes (login/signup/...) must short-circuit here so
+  // we don't trigger user-data resolution for a guest.
+  const { isLoggedIn } = useSessionStore()
+  if (!isLoggedIn) return
 
-	// Wait for user data.
-	const { userResource, mailboxes, resolveAccount } = userStore()
-	await userResource.promise
-	const user = userResource.data
+  // Wait for user data.
+  const { userResource, mailboxes, resolveAccount } = userStore()
+  await userResource.promise
+  const user = userResource.data
 
-	// The Admin Dashboard is Suite Cloud's face on the site: it is for admins, and only on a
-	// site connected to one. Mail itself needs neither, just a mailbox.
-	const canAdminister = !!user?.is_suite_admin && !!user?.is_suite_cloud_configured
+  // The Admin Dashboard is Suite Cloud's face on the site: it is for admins, and only on a
+  // site connected to one. Mail itself needs neither, just a mailbox.
+  const canAdminister = !!user?.is_suite_admin && !!user?.is_suite_cloud_configured
 
-	// No mailbox. A MIME page needs none, and the dashboard is all Mail has for them, if they may
-	// have it. Every other Mail page answers with the shell's "Mail is unavailable": the Mail
-	// root does, and the dashboard, which carries no rail context, sends them there.
-	if (!user?.is_jmap_configured) {
-		if (to.name === 'mail-mime-message') return
-		if (canAdminister) return to.meta.isDashboard ? undefined : { name: 'mail-overview' }
-		if (to.meta.isDashboard) return { name: 'mail-root-shortcut' }
-		return
-	}
+  // No mailbox. A MIME page needs none, and the dashboard is all Mail has for them, if they may
+  // have it. Every other Mail page answers with the shell's "Mail is unavailable": the Mail
+  // root does, and the dashboard, which carries no rail context, sends them there.
+  if (!user?.is_jmap_configured) {
+    if (to.name === 'mail-mime-message') return
+    if (canAdminister) return to.meta.isDashboard ? undefined : { name: 'mail-overview' }
+    if (to.meta.isDashboard) return { name: 'mail-root-shortcut' }
+    return
+  }
 
-	// Resolve active account. The merged All Inboxes thread route carries the thread's
-	// owning account purely to scope the pane (see utils/accountScope) — opening a
-	// thread there must not switch the active account out from under the merged list.
-	const routeAccountId =
-		to.name === 'mail-all-inboxes-mail' ? undefined : (to.params.accountId as string | undefined)
-	resolveAccount(user?.accounts, routeAccountId)
-	const accountId = userStore().accountId
+  // Resolve active account. The merged All Inboxes thread route carries the thread's
+  // owning account purely to scope the pane (see utils/accountScope) — opening a
+  // thread there must not switch the active account out from under the merged list.
+  const routeAccountId =
+    to.name === 'mail-all-inboxes-mail' ? undefined : (to.params.accountId as string | undefined)
+  resolveAccount(user?.accounts, routeAccountId)
+  const accountId = userStore().accountId
 
-	// Wait for mailbox list. The fetch rejects when the mail server is temporarily down;
-	// swallow that so navigation still completes — otherwise the initial navigation aborts,
-	// the app never mounts and the user gets a blank page instead of the unavailable banner.
-	await mailboxes.promise?.catch(() => {})
-	const defaultRoute = buildDefaultRoute(accountId, mailboxes)
+  // Wait for mailbox list. The fetch rejects when the mail server is temporarily down;
+  // swallow that so navigation still completes — otherwise the initial navigation aborts,
+  // the app never mounts and the user gets a blank page instead of the unavailable banner.
+  await mailboxes.promise?.catch(() => {})
+  const defaultRoute = buildDefaultRoute(accountId, mailboxes)
 
-	if (to.meta.isDashboard && !canAdminister) return defaultRoute
+  if (to.meta.isDashboard && !canAdminister) return defaultRoute
 
-	// Validate mailbox param for mailbox routes.
-	if (to.name === 'mail-mailbox' || to.name === 'mail-mail') {
-		// The screener mailbox has its own dedicated view (Allow/Block UI). Redirect its
-		// plain mailbox URL to the screener route so direct navigation and reloads land on
-		// the screener view, matching the sidebar link (which already targets 'mail-screener').
-		const screenerId = userStore().mailboxIds.screener
-		if (screenerId && to.params.mailbox === screenerId)
-			return { name: 'mail-screener', params: { accountId } }
+  // Validate mailbox param for mailbox routes.
+  if (to.name === 'mail-mailbox' || to.name === 'mail-mail') {
+    // The screener mailbox has its own dedicated view (Allow/Block UI). Redirect its
+    // plain mailbox URL to the screener route so direct navigation and reloads land on
+    // the screener view, matching the sidebar link (which already targets 'mail-screener').
+    const screenerId = userStore().mailboxIds.screener
+    if (screenerId && to.params.mailbox === screenerId)
+      return { name: 'mail-screener', params: { accountId } }
 
-		// With no mailbox list (fetch failed above) the param can't be validated — keep the
-		// requested route rather than bouncing the user off the URL they asked for.
-		const mailboxExists =
-			!mailboxes.data ||
-			mailboxes.data.some((m: { id: string }) => m.id === to.params.mailbox) ||
-			['starred', 'search'].includes(to.params.mailbox as string)
-		if (!mailboxExists) return defaultRoute
-	}
+    // With no mailbox list (fetch failed above) the param can't be validated — keep the
+    // requested route rather than bouncing the user off the URL they asked for.
+    const mailboxExists =
+      !mailboxes.data ||
+      mailboxes.data.some((m: { id: string }) => m.id === to.params.mailbox) ||
+      ['starred', 'search'].includes(to.params.mailbox as string)
+    if (!mailboxExists) return defaultRoute
+  }
 
-	// Expand shortcut routes to their full account-scoped equivalents. The
-	// query rides along — it can carry a compose deep link (?compose=1&to=).
-	if (to.meta.shortcut)
-		return { ...resolveShortcut(to.name, to.params, accountId, defaultRoute), query: to.query }
+  // Expand shortcut routes to their full account-scoped equivalents. The
+  // query rides along — it can carry a compose deep link (?compose=1&to=).
+  if (to.meta.shortcut)
+    return { ...resolveShortcut(to.name, to.params, accountId, defaultRoute), query: to.query }
 
-	// Login pages redirect already-authenticated users to their mailbox.
-	if (to.meta.isLogin) return defaultRoute
+  // Login pages redirect already-authenticated users to their mailbox.
+  if (to.meta.isLogin) return defaultRoute
 }
 
 export default suiteRouter

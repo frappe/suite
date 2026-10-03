@@ -4,19 +4,26 @@
       <FormControl v-model="title" label="Name" required :error="error" />
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
-        <Button type="submit" variant="solid" theme="gray" label="Rename" :loading="mutation.isPending" />
+        <Button
+          type="submit"
+          variant="solid"
+          theme="gray"
+          label="Rename"
+          :loading="mutation.isPending"
+        />
       </div>
     </form>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, useTemplateRef, watch } from 'vue'
 import { Button, Dialog, FormControl } from 'frappe-ui'
+import { nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import { renameNode } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { useMutation } from '@/platform/server-state'
+
 import { selectStem } from '../internal/filename'
 
 const props = defineProps<{ node: DriveNode | null }>()
@@ -44,27 +51,31 @@ watch(
 // title selected. So until the user clicks or types in the field, each focus
 // selects the name again, after the trap's own selection.
 let selecting: AbortController | undefined
-watch(open, async (isOpen) => {
-  selecting?.abort()
-  if (!isOpen) return
-  const session = (selecting = new AbortController())
-  await nextTick()
-  // After the dialog's own focus on open, as frappe-ui's autofocus does.
-  requestAnimationFrame(() => {
-    const input = form.value?.querySelector('input')
-    if (!input || session.signal.aborted) return
-    const select = () => {
-      if (props.node?.kind === 'file') selectStem(input)
-      else input.select()
-    }
-    const listen = { signal: session.signal }
-    input.addEventListener('focus', () => queueMicrotask(select), listen)
-    input.addEventListener('pointerdown', () => session.abort(), listen)
-    input.addEventListener('keydown', () => session.abort(), listen)
-    input.focus()
-    select()
-  })
-}, { immediate: true })
+watch(
+  open,
+  async (isOpen) => {
+    selecting?.abort()
+    if (!isOpen) return
+    const session = (selecting = new AbortController())
+    await nextTick()
+    // After the dialog's own focus on open, as frappe-ui's autofocus does.
+    requestAnimationFrame(() => {
+      const input = form.value?.querySelector('input')
+      if (!input || session.signal.aborted) return
+      const select = () => {
+        if (props.node?.kind === 'file') selectStem(input)
+        else input.select()
+      }
+      const listen = { signal: session.signal }
+      input.addEventListener('focus', () => queueMicrotask(select), listen)
+      input.addEventListener('pointerdown', () => session.abort(), listen)
+      input.addEventListener('keydown', () => session.abort(), listen)
+      input.focus()
+      select()
+    })
+  },
+  { immediate: true },
+)
 
 async function submit() {
   if (!props.node || !title.value.trim()) return
@@ -78,4 +89,3 @@ async function submit() {
   open.value = false
 }
 </script>
-

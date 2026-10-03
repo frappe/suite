@@ -1,38 +1,38 @@
-import { h, defineAsyncComponent } from 'vue'
-import ManageFont from '@/apps/writer/components/ManageFont.vue'
-import DropdownMenuGroup from '@/apps/writer/components/core-editor/DropdownMenuGroup.vue'
+import LucideAlignLeft from '~icons/lucide/align-left'
+import LucideAlignVerticalSpacingAround from '~icons/lucide/align-vertical-space-around'
+import LucideBrushCleaning from '~icons/lucide/brush-cleaning'
+import LucideHeading from '~icons/lucide/heading'
+import LucidePaintRoller from '~icons/lucide/paint-roller'
+import LucideSeparatorHorizontal from '~icons/lucide/separator-horizontal'
+import LucideSettings from '~icons/lucide/settings'
 import {
-  Bold,
-  Italic,
-  Strike,
-  InsertLink,
-  FontColor,
-  AlignLeft,
   AlignCenter,
+  AlignLeft,
   AlignRight,
-  BulletList,
-  OrderedList,
   Blockquote,
-  InlineCode,
-  InsertImage,
-  InsertVideo,
-  InsertIframe,
-  InsertTable,
-  Paragraph,
+  Bold,
+  BulletList,
+  FontColor,
   H1,
   H2,
   H3,
   H4,
+  InlineCode,
+  InsertIframe,
+  InsertImage,
+  InsertLink,
+  InsertTable,
+  InsertVideo,
+  Italic,
+  OrderedList,
+  Paragraph,
   Separator,
+  Strike,
 } from 'frappe-ui/editor'
+import { defineAsyncComponent, h } from 'vue'
 
-import LucidePaintRoller from '~icons/lucide/paint-roller'
-import LucideBrushCleaning from '~icons/lucide/brush-cleaning'
-import LucideSettings from '~icons/lucide/settings'
-import LucideSeparatorHorizontal from '~icons/lucide/separator-horizontal'
-import LucideAlignVerticalSpacingAround from '~icons/lucide/align-vertical-space-around'
-import LucideHeading from '~icons/lucide/heading'
-import LucideAlignLeft from '~icons/lucide/align-left'
+import DropdownMenuGroup from '@/apps/writer/components/core-editor/DropdownMenuGroup.vue'
+import ManageFont from '@/apps/writer/components/ManageFont.vue'
 
 // frappe-ui's editor commands carry Title Case labels; Writer uses sentence case.
 const relabel = (item, label) => ({ ...item, label })
@@ -41,8 +41,8 @@ export const BulletListItem = relabel(BulletList, 'Bullet list')
 export const OrderedListItem = relabel(OrderedList, 'Numbered list')
 const InsertImageItem = relabel(InsertImage, 'Image')
 
-const SpacingDialogAsync = defineAsyncComponent(() =>
-  import('@/apps/writer/components/SpacingDialog.vue'),
+const SpacingDialogAsync = defineAsyncComponent(
+  () => import('@/apps/writer/components/SpacingDialog.vue'),
 )
 
 const Underline = {
@@ -63,7 +63,10 @@ const TaskListItem = {
 const TableOfContentsItem = {
   label: 'Table of contents',
   icon: 'lucide-table-of-contents',
-  action: (e) => { e.commands.insertTableOfContentsNode(); return true },
+  action: (e) => {
+    e.commands.insertTableOfContentsNode()
+    return true
+  },
   isAvailable: (e) => typeof e.commands.insertTableOfContentsNode === 'function',
 }
 

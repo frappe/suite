@@ -4,20 +4,20 @@
   The tab renders once the user info is in.
 -->
 <template>
-	<slot v-if="userResource.data" />
-	<div
-		v-else
-		class="flex min-h-0 flex-1 items-center justify-center"
-		role="status"
-		:aria-label="__('Loading')"
-	>
-		<LoadingIndicator class="text-ink-gray-5 size-5" />
-	</div>
+  <slot v-if="userResource.data" />
+  <div
+    v-else
+    class="flex min-h-0 flex-1 items-center justify-center"
+    role="status"
+    :aria-label="__('Loading')"
+  >
+    <LoadingIndicator class="text-ink-gray-5 size-5" />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { provide } from 'vue'
 import { LoadingIndicator } from 'frappe-ui'
+import { provide } from 'vue'
 
 import { userStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'

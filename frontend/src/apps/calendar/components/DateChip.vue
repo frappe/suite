@@ -1,5 +1,5 @@
 <template>
-	<!-- Month over day in a bordered box: the date as a glyph, readable at a glance down a list.
+  <!-- Month over day in a bordered box: the date as a glyph, readable at a glance down a list.
 	     Uncoloured, the band takes the sender avatar's fallback ground, so the two filled shapes
 	     flanking a message read as one family.
 
@@ -7,33 +7,33 @@
 	     in dark mode on text this small, where gray-7 on the same ground is 6.6:1. On a tinted
 	     band it holds ~6:1 in both themes, the day above 9:1, because the tint is mixed into
 	     `surface-base` and so is dark where the page is. -->
-	<div
-		class="border-outline-gray-2 bg-surface-base shrink-0 overflow-hidden rounded-4 border text-center"
-		:class="small ? 'w-9' : 'w-10'"
-	>
-		<!-- Both rows are sized by leading rather than by padding around the text's own line box:
+  <div
+    class="border-outline-gray-2 bg-surface-base shrink-0 overflow-hidden rounded-4 border text-center"
+    :class="small ? 'w-9' : 'w-10'"
+  >
+    <!-- Both rows are sized by leading rather than by padding around the text's own line box:
 		     16 + 20, a hairline of breathing room each, and the borders lands the chip at ~43px
 		     against 40px of width — near enough square, and close to the two-line title/subtitle
 		     block it stands beside rather than overhanging it at both ends. `small` is the same
 		     shape a step down, 16 + 16 against 36. -->
-		<div
-			class="border-outline-gray-1 border-b py-px uppercase leading-4"
-			:class="[
-				small ? 'text-[10px]' : 'text-[11px]',
-				'text-ink-gray-7',
-				color ? '' : 'bg-surface-gray-2',
-			]"
-			:style="band"
-		>
-			{{ month }}
-		</div>
-		<div
-			class="text-ink-gray-8 py-px tabular-nums"
-			:class="small ? 'text-sm-semibold leading-4' : 'text-md-semibold leading-5'"
-		>
-			{{ day }}
-		</div>
-	</div>
+    <div
+      class="border-outline-gray-1 border-b py-px uppercase leading-4"
+      :class="[
+        small ? 'text-[10px]' : 'text-[11px]',
+        'text-ink-gray-7',
+        color ? '' : 'bg-surface-gray-2',
+      ]"
+      :style="band"
+    >
+      {{ month }}
+    </div>
+    <div
+      class="text-ink-gray-8 py-px tabular-nums"
+      :class="small ? 'text-sm-semibold leading-4' : 'text-md-semibold leading-5'"
+    >
+      {{ day }}
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -49,14 +49,14 @@ import { computed } from 'vue'
  * tell apart — the band keeps the avatar's gray.
  */
 const props = defineProps<{
-	month: string
-	day: string
-	color?: string
-	/**
-	 * A step down, for a chip standing beside two tight lines rather than the invite strip's
-	 * three: ~38px against ~43px, and 36 wide, which is still the width `JUL '25` needs.
-	 */
-	small?: boolean
+  month: string
+  day: string
+  color?: string
+  /**
+   * A step down, for a chip standing beside two tight lines rather than the invite strip's
+   * three: ~38px against ~43px, and 36 wide, which is still the width `JUL '25` needs.
+   */
+  small?: boolean
 }>()
 
 /**
@@ -72,8 +72,8 @@ const props = defineProps<{
  * band carried while it was `surface-gray-2` washed out.
  */
 const band = computed(() =>
-	props.color
-		? { backgroundColor: `color-mix(in srgb, ${props.color} 20%, var(--surface-base))` }
-		: undefined,
+  props.color
+    ? { backgroundColor: `color-mix(in srgb, ${props.color} 20%, var(--surface-base))` }
+    : undefined,
 )
 </script>

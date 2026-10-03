@@ -1,14 +1,13 @@
-import { COLORS, TOTAL_COLS } from '../constants.js'
-import { cellId } from '../../utils/cells.js'
-import { getTextWrap, isWrapText, wrapLines, lineHeightFor } from '../../utils/text-wrap.js'
-import { CHIP, chipFont, chipColor, chipMetrics } from '../chip-geometry.js'
-import { checkboxRect, CHECKBOX } from '../checkbox-geometry.js'
-import { checkRule } from '../../engine/validation.js'
 import { sparkGeometry } from '../../engine/sparkline.js'
+import { checkRule } from '../../engine/validation.js'
+import { cellId } from '../../utils/cells.js'
 import { prefersLightInk } from '../../utils/contrast.js'
+import { getTextWrap, isWrapText, lineHeightFor, wrapLines } from '../../utils/text-wrap.js'
+import { CHECKBOX, checkboxRect } from '../checkbox-geometry.js'
+import { CHIP, chipColor, chipFont, chipMetrics } from '../chip-geometry.js'
+import { COLORS, TOTAL_COLS } from '../constants.js'
 
 export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
-
   // ── Public API ───────────────────────────────────────────────────────────────
 
   // `getVal(id)` returns a cell's display string. It abstracts over the
@@ -16,7 +15,22 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // engine-backed lookup. The painter only ever touches cells in the visible
   // region, so the lazy path computes display strings for ~hundreds of cells
   // per frame instead of materialising the whole sheet up front.
-  function drawRegionCells(r0, c0, r1, c1, getVal, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getRightInset, getDiffFor, getSparkline) {
+  function drawRegionCells(
+    r0,
+    c0,
+    r1,
+    c1,
+    getVal,
+    getFormat,
+    getMergeInfo,
+    isSlave,
+    getComment,
+    getValidation,
+    getCondFormat,
+    getRightInset,
+    getDiffFor,
+    getSparkline,
+  ) {
     ctx.textBaseline = 'middle'
     // Two-pass paint: every cell's background + decorations first, then
     // every cell's text. Splitting the passes means an upstream cell's
@@ -27,12 +41,34 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     for (let r = r0; r <= r1; r++) {
       if (rh(r) === 0) continue
       for (let c = c0; c <= c1; c++)
-        _paintBgAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getDiffFor)
+        _paintBgAt(
+          r,
+          c,
+          getVal,
+          getFormat,
+          getMergeInfo,
+          isSlave,
+          getComment,
+          getValidation,
+          getCondFormat,
+          getDiffFor,
+        )
     }
     for (let r = r0; r <= r1; r++) {
       if (rh(r) === 0) continue
       for (let c = c0; c <= c1; c++)
-        _paintTextAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat, getRightInset, getValidation, getSparkline)
+        _paintTextAt(
+          r,
+          c,
+          getVal,
+          getFormat,
+          getMergeInfo,
+          isSlave,
+          getCondFormat,
+          getRightInset,
+          getValidation,
+          getSparkline,
+        )
     }
   }
 
@@ -40,8 +76,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     if (!getFormat) return
     for (let r = r0; r <= r1; r++) {
       if (rh(r) === 0) continue
-      for (let c = c0; c <= c1; c++)
-        _drawCellBorders(r, c, getFormat, getMergeInfo, isSlave)
+      for (let c = c0; c <= c1; c++) _drawCellBorders(r, c, getFormat, getMergeInfo, isSlave)
     }
   }
 
@@ -60,17 +95,30 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     const merge = getMergeInfo && getMergeInfo(id)
     const spanC = merge ? merge.colSpan : 1
     const spanR = merge ? merge.rowSpan : 1
-    const val   = getVal(id)
-    const fmt   = getFormat ? getFormat(id) : {}
-    const x = colX(c), y = rowY(r)
-    let w = 0, h = 0
+    const val = getVal(id)
+    const fmt = getFormat ? getFormat(id) : {}
+    const x = colX(c),
+      y = rowY(r)
+    let w = 0,
+      h = 0
     for (let sc = 0; sc < spanC; sc++) w += cw(c + sc)
     for (let sr = 0; sr < spanR; sr++) h += rh(r + sr)
     const condFmt = getCondFormat ? getCondFormat(id, val ?? '') : null
     return { id, val, fmt, condFmt, merge, x, y, w, h }
   }
 
-  function _paintBgAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getDiffFor) {
+  function _paintBgAt(
+    r,
+    c,
+    getVal,
+    getFormat,
+    getMergeInfo,
+    isSlave,
+    getComment,
+    getValidation,
+    getCondFormat,
+    getDiffFor,
+  ) {
     const g = _cellGeom(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat)
     if (!g) return
     const { id, val, fmt, condFmt, merge, x, y, w, h } = g
@@ -88,7 +136,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
         // chip (which owns the cell text — the text pass skips it); empty,
         // it's a plain caret so you know it's a dropdown.
         if (has) _drawValidationChip(x, y, w, h, String(val), fmt, !invalid, rule)
-        else     _drawDropdownArrow(x, y, w, h)
+        else _drawDropdownArrow(x, y, w, h)
       } else if (rule.type === 'checkbox') {
         // Checkbox rule → a tickbox that owns the cell (the text pass skips
         // it). Empty reads as unchecked; a value that isn't TRUE/FALSE still
@@ -107,13 +155,27 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     if (condFmt?.icon) _drawCellIcon(x, y, h, condFmt.icon)
   }
 
-  function _paintTextAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat, getRightInset, getValidation, getSparkline) {
+  function _paintTextAt(
+    r,
+    c,
+    getVal,
+    getFormat,
+    getMergeInfo,
+    isSlave,
+    getCondFormat,
+    getRightInset,
+    getValidation,
+    getSparkline,
+  ) {
     const g = _cellGeom(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat)
     if (!g) return
     const { id, val, fmt, condFmt, x, y, w, h } = g
     // A sparkline cell renders a mini chart in place of text.
     const spark = getSparkline?.(id)
-    if (spark) { _drawSparkline(x, y, w, h, spark); return }
+    if (spark) {
+      _drawSparkline(x, y, w, h, spark)
+      return
+    }
     if (val == null || val === '') return
     // List / checkbox cells render their value as a chip or tickbox in the bg
     // pass — don't paint the raw text a second time on top.
@@ -122,8 +184,8 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     const s = String(val)
     const baseFmt = condFmt ? { ...fmt, ...condFmt } : fmt
     const efmt = { ...baseFmt, align: baseFmt.align || _autoAlign(s) }
-    const rightInset = getRightInset ? (getRightInset(id) || 0) : 0
-    const iconInset  = condFmt?.icon ? ICON_INSET : 0
+    const rightInset = getRightInset ? getRightInset(id) || 0 : 0
+    const iconInset = condFmt?.icon ? ICON_INSET : 0
     _setCellFont(efmt)
     const mode = getTextWrap(efmt)
     // A value with hard newlines (Cmd+Enter) always renders multi-line, even
@@ -143,7 +205,16 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
       const textW = ctx.measureText(s).width + 8
       const inside = drawW - rightInset
       if (textW > inside) {
-        const ext = _overflowExtension(r, c, efmt.align, textW - inside, getVal, getFormat, getMergeInfo, isSlave)
+        const ext = _overflowExtension(
+          r,
+          c,
+          efmt.align,
+          textW - inside,
+          getVal,
+          getFormat,
+          getMergeInfo,
+          isSlave,
+        )
         drawX -= ext.left
         drawW += ext.left + ext.right
       }
@@ -158,20 +229,26 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     if (!geo) return
     const color = spec.color || COLORS.sparkline
     ctx.save()
-    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()   // dense charts can't spill into neighbours
+    ctx.beginPath()
+    ctx.rect(x, y, w, h)
+    ctx.clip() // dense charts can't spill into neighbours
     if (geo.kind === 'bars') {
       ctx.fillStyle = color
       for (const b of geo.bars) ctx.fillRect(x + b.x, y + b.y, b.w, b.h)
     } else if (geo.points.length === 1) {
-      const p = geo.points[0]                            // a lone point renders as a dot, not an empty stroke
+      const p = geo.points[0] // a lone point renders as a dot, not an empty stroke
       ctx.fillStyle = color
-      ctx.beginPath(); ctx.arc(x + p.x, y + p.y, 1.5, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath()
+      ctx.arc(x + p.x, y + p.y, 1.5, 0, Math.PI * 2)
+      ctx.fill()
     } else {
       ctx.strokeStyle = color
       ctx.lineWidth = 1
       ctx.lineJoin = 'round'
       ctx.beginPath()
-      geo.points.forEach((p, i) => (i ? ctx.lineTo(x + p.x, y + p.y) : ctx.moveTo(x + p.x, y + p.y)))
+      geo.points.forEach((p, i) =>
+        i ? ctx.lineTo(x + p.x, y + p.y) : ctx.moveTo(x + p.x, y + p.y),
+      )
       ctx.stroke()
     }
     ctx.restore()
@@ -184,20 +261,23 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   function _overflowExtension(r, c, align, needed, getVal, getFormat, getMergeInfo, isSlave) {
     const out = { left: 0, right: 0 }
     if (align === 'left' || align === 'center') {
-      let nc = c + 1, want = align === 'center' ? needed / 2 : needed
+      let nc = c + 1,
+        want = align === 'center' ? needed / 2 : needed
       while (out.right < want && nc < TOTAL_COLS) {
         if (_blocksOverflow(r, nc, getVal, getFormat, getMergeInfo, isSlave)) break
-        out.right += cw(nc); nc++
+        out.right += cw(nc)
+        nc++
       }
     }
     if (align === 'right' || align === 'center') {
       // For centred text whose right extension hit a block early, pull the
       // shortfall back into the left walk so the text stays visible.
-      const want = align === 'center' ? (needed - out.right) : needed
+      const want = align === 'center' ? needed - out.right : needed
       let nc = c - 1
       while (out.left < want && nc >= 0) {
         if (_blocksOverflow(r, nc, getVal, getFormat, getMergeInfo, isSlave)) break
-        out.left += cw(nc); nc--
+        out.left += cw(nc)
+        nc--
       }
     }
     return out
@@ -243,7 +323,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     const fillW = Math.round(innerW * t)
     if (!fillW) return
     ctx.save()
-    ctx.fillStyle = bar.negative ? (bar.negativeColor || '#dc2626') : (bar.color || '#0E7490')
+    ctx.fillStyle = bar.negative ? bar.negativeColor || '#dc2626' : bar.color || '#0E7490'
     // Faint background channel so partial bars don't look like fixed-width
     // shapes drifting in space.
     ctx.globalAlpha = 0.18
@@ -256,10 +336,10 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // Render the icon at the left edge of the cell. Returns the reserved
   // horizontal space so the text painter can shift right.
   function _drawCellIcon(x, y, h, icon) {
-    const size  = 11
-    const PAD   = 4
-    const cx    = x + PAD + size / 2
-    const cy    = y + h / 2
+    const size = 11
+    const PAD = 4
+    const cx = x + PAD + size / 2
+    const cy = y + h / 2
     ctx.save()
     ctx.fillStyle = icon.color || '#737373'
     switch (icon.shape) {
@@ -327,7 +407,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // keeps the editor in-theme while still signalling "this cell changed".
   function _drawDiffOverlay(x, y, w, h) {
     ctx.save()
-    ctx.fillStyle = 'rgba(14, 116, 144, 0.18)'   // ink-teal-7 at 18 % alpha
+    ctx.fillStyle = 'rgba(14, 116, 144, 0.18)' // ink-teal-7 at 18 % alpha
     ctx.fillRect(x, y, w, h)
     ctx.restore()
   }
@@ -351,8 +431,8 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // chip (see _drawChevron below).
   function _drawDropdownArrow(x, y, w, h) {
     const btn = 18
-    const bh  = Math.min(h - 4, CHIP.maxH)
-    if (bh < CHIP.minH) return   // row too short for a legible affordance
+    const bh = Math.min(h - 4, CHIP.maxH)
+    if (bh < CHIP.minH) return // row too short for a legible affordance
     const bx = x + w - btn - 3
     const by = y + (h - bh) / 2
     ctx.save()
@@ -369,10 +449,10 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.strokeStyle = COLORS.chipCaret
     ctx.lineWidth = 1.5
     ctx.lineJoin = 'round'
-    ctx.lineCap  = 'round'
+    ctx.lineCap = 'round'
     ctx.beginPath()
     ctx.moveTo(cx - 3.5, cy - 1.5)
-    ctx.lineTo(cx,       cy + 2)
+    ctx.lineTo(cx, cy + 2)
     ctx.lineTo(cx + 3.5, cy - 1.5)
     ctx.stroke()
   }
@@ -383,8 +463,9 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // canvas/index.js exactly.
   function _drawCheckbox(x, y, w, h, checked) {
     const { x: ox, y: oy, size } = checkboxRect(w, h)
-    if (size < CHECKBOX.minSize) return   // row too short for a legible box
-    const bx = x + ox, by = y + oy
+    if (size < CHECKBOX.minSize) return // row too short for a legible box
+    const bx = x + ox,
+      by = y + oy
     const grey = '#6b7280'
     ctx.save()
     _roundRectPath(bx, by, size, size, 3)
@@ -398,7 +479,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
       ctx.lineCap = 'round'
       ctx.beginPath()
       ctx.moveTo(bx + size * 0.26, by + size * 0.52)
-      ctx.lineTo(bx + size * 0.44, by + size * 0.70)
+      ctx.lineTo(bx + size * 0.44, by + size * 0.7)
       ctx.lineTo(bx + size * 0.74, by + size * 0.32)
       ctx.stroke()
     } else {
@@ -414,7 +495,10 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // canvas/index.js (both measure through chip-geometry so they stay aligned).
   function _drawValidationChip(x, y, w, h, text, fmt, valid, rule) {
     const chipH = Math.min(h - 4, CHIP.maxH)
-    if (chipH < CHIP.minH) { _drawDropdownArrow(x, y, w, h); return }  // row too short for a pill
+    if (chipH < CHIP.minH) {
+      _drawDropdownArrow(x, y, w, h)
+      return
+    } // row too short for a pill
     ctx.save()
     _setCellFont(fmt)
     const textColor = fmt.color || COLORS.cellText
@@ -428,8 +512,8 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.fill()
     // Value — ellipsised to the room left of the caret so a long option
     // doesn't get hard-clipped mid-glyph.
-    ctx.fillStyle   = textColor
-    ctx.textAlign   = 'left'
+    ctx.fillStyle = textColor
+    ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     const textRoom = chipW - CHIP.innerPad - CHIP.caretW
     ctx.fillText(_ellipsize(text, textRoom), chipX + CHIP.innerPad, chipY + chipH / 2)
@@ -444,7 +528,8 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     if (maxW <= 0) return ''
     if (ctx.measureText(text).width <= maxW) return text
     const ell = '…'
-    let lo = 0, hi = text.length
+    let lo = 0,
+      hi = text.length
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1
       if (ctx.measureText(text.slice(0, mid) + ell).width <= maxW) lo = mid
@@ -456,13 +541,16 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // Rounded-rect path with a roundRect fallback for older canvas engines.
   function _roundRectPath(x, y, w, h, r) {
     ctx.beginPath()
-    if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return }
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, r)
+      return
+    }
     r = Math.min(r, w / 2, h / 2)
     ctx.moveTo(x + r, y)
-    ctx.arcTo(x + w, y,     x + w, y + h, r)
-    ctx.arcTo(x + w, y + h, x,     y + h, r)
-    ctx.arcTo(x,     y + h, x,     y,     r)
-    ctx.arcTo(x,     y,     x + w, y,     r)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
     ctx.closePath()
   }
 
@@ -500,7 +588,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   }
 
   function _setCellFont(fmt) {
-    ctx.font      = chipFont(fmt)
+    ctx.font = chipFont(fmt)
     ctx.fillStyle = _inkFor(fmt)
     ctx.textAlign = fmt.align || 'left'
   }
@@ -509,7 +597,9 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
 
   function _drawCellText(x, y, w, h, val, fmt, rightInset = 0) {
     ctx.save()
-    ctx.beginPath(); ctx.rect(x + 1, y, Math.max(0, w - 2 - rightInset), h); ctx.clip()
+    ctx.beginPath()
+    ctx.rect(x + 1, y, Math.max(0, w - 2 - rightInset), h)
+    ctx.clip()
     const { textX, textY, baseline } = _computeTextAnchor(x, y, w, h, fmt, rightInset)
     ctx.textBaseline = baseline
     ctx.fillText(val, textX, textY)
@@ -520,39 +610,34 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
 
   function _computeTextAnchor(x, y, w, h, fmt, rightInset = 0) {
     const innerW = w - rightInset
-    const textX = fmt.align === 'center' ? x + innerW / 2
-                : fmt.align === 'right'  ? x + innerW - 4
-                : x + 4
-    const textY = fmt.valign === 'top'    ? y + 4
-                : fmt.valign === 'bottom' ? y + h - 4
-                :                           y + h / 2
-    const baseline = fmt.valign === 'top'    ? 'top'
-                   : fmt.valign === 'bottom' ? 'bottom'
-                   :                           'middle'
+    const textX =
+      fmt.align === 'center' ? x + innerW / 2 : fmt.align === 'right' ? x + innerW - 4 : x + 4
+    const textY = fmt.valign === 'top' ? y + 4 : fmt.valign === 'bottom' ? y + h - 4 : y + h / 2
+    const baseline = fmt.valign === 'top' ? 'top' : fmt.valign === 'bottom' ? 'bottom' : 'middle'
     return { textX, textY, baseline }
   }
 
   function _midY(baseline, textY) {
-    if (baseline === 'top')    return textY + 7
+    if (baseline === 'top') return textY + 7
     if (baseline === 'bottom') return textY - 7
     return textY
   }
 
   function _drawTextDecorations(fmt, val, textX, midY) {
-    const tw  = ctx.measureText(val).width
-    const lx0 = fmt.align === 'center' ? textX - tw / 2
-              : fmt.align === 'right'  ? textX - tw
-              : textX
+    const tw = ctx.measureText(val).width
+    const lx0 = fmt.align === 'center' ? textX - tw / 2 : fmt.align === 'right' ? textX - tw : textX
     ctx.strokeStyle = _inkFor(fmt)
     ctx.lineWidth = 1
     if (fmt.underline || fmt.hyperlink) {
       ctx.beginPath()
-      ctx.moveTo(lx0, midY + 8); ctx.lineTo(lx0 + tw, midY + 8)
+      ctx.moveTo(lx0, midY + 8)
+      ctx.lineTo(lx0 + tw, midY + 8)
       ctx.stroke()
     }
     if (fmt.strikethrough) {
       ctx.beginPath()
-      ctx.moveTo(lx0, midY + 1); ctx.lineTo(lx0 + tw, midY + 1)
+      ctx.moveTo(lx0, midY + 1)
+      ctx.lineTo(lx0 + tw, midY + 1)
       ctx.stroke()
     }
   }
@@ -561,20 +646,25 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
 
   function _drawWrappedText(val, x, y, w, h, fmt, rightInset = 0, softWrap = true) {
     const innerW = w - rightInset
-    const lines = softWrap ? wrapLines(val, innerW - 8, t => ctx.measureText(t).width)
-                           : String(val).split('\n')
+    const lines = softWrap
+      ? wrapLines(val, innerW - 8, (t) => ctx.measureText(t).width)
+      : String(val).split('\n')
     if (!lines.length) return
-    const lineH  = lineHeightFor(fmt)
+    const lineH = lineHeightFor(fmt)
     const totalH = lines.length * lineH
-    const startY = fmt.valign === 'top'    ? y + lineH / 2 + 2
-                 : fmt.valign === 'bottom' ? y + h - totalH + lineH / 2 - 2
-                 :                           y + Math.max(lineH / 2, (h - totalH) / 2 + lineH / 2)
-    const textX  = fmt.align === 'center' ? x + innerW / 2
-                 : fmt.align === 'right'  ? x + innerW - 4
-                 : x + 4
+    const startY =
+      fmt.valign === 'top'
+        ? y + lineH / 2 + 2
+        : fmt.valign === 'bottom'
+          ? y + h - totalH + lineH / 2 - 2
+          : y + Math.max(lineH / 2, (h - totalH) / 2 + lineH / 2)
+    const textX =
+      fmt.align === 'center' ? x + innerW / 2 : fmt.align === 'right' ? x + innerW - 4 : x + 4
     ctx.save()
     ctx.textBaseline = 'middle'
-    ctx.beginPath(); ctx.rect(x + 1, y + 1, Math.max(0, w - 2 - rightInset), h - 2); ctx.clip()
+    ctx.beginPath()
+    ctx.rect(x + 1, y + 1, Math.max(0, w - 2 - rightInset), h - 2)
+    ctx.clip()
     for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], textX, startY + i * lineH)
     ctx.restore()
   }
@@ -590,21 +680,23 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     const merge = getMergeInfo ? getMergeInfo(id) : null
     const spanC = merge ? merge.colSpan : 1
     const spanR = merge ? merge.rowSpan : 1
-    let w = 0, h = 0
+    let w = 0,
+      h = 0
     for (let i = 0; i < spanC; i++) w += cw(c + i)
     for (let i = 0; i < spanR; i++) h += rh(r + i)
-    const x = colX(c), y = rowY(r)
+    const x = colX(c),
+      y = rowY(r)
 
-    if (fmt.borderTop)    _drawBorderLine(x,     y,     x + w, y,     fmt.borderTop)
-    if (fmt.borderBottom) _drawBorderLine(x,     y + h, x + w, y + h, fmt.borderBottom)
-    if (fmt.borderLeft)   _drawBorderLine(x,     y,     x,     y + h, fmt.borderLeft)
-    if (fmt.borderRight)  _drawBorderLine(x + w, y,     x + w, y + h, fmt.borderRight)
+    if (fmt.borderTop) _drawBorderLine(x, y, x + w, y, fmt.borderTop)
+    if (fmt.borderBottom) _drawBorderLine(x, y + h, x + w, y + h, fmt.borderBottom)
+    if (fmt.borderLeft) _drawBorderLine(x, y, x, y + h, fmt.borderLeft)
+    if (fmt.borderRight) _drawBorderLine(x + w, y, x + w, y + h, fmt.borderRight)
   }
 
   function _drawBorderLine(x1, y1, x2, y2, border) {
     const { style = 'thin', color = '#000000' } = border
     ctx.strokeStyle = color
-    ctx.lineWidth   = style === 'thick' ? 3 : style === 'medium' ? 2 : 1
+    ctx.lineWidth = style === 'thick' ? 3 : style === 'medium' ? 2 : 1
     ctx.beginPath()
     ctx.moveTo(x1 + 0.5, y1 + 0.5)
     ctx.lineTo(x2 + 0.5, y2 + 0.5)

@@ -11,7 +11,10 @@ import type { QueryResult } from '@/platform/server-state'
  * Only `rows` changes. A window that held only folders adds no rows, and the
  * listing then reads the next window as it does for access-filtered windows.
  */
-export function recentFiles<Page extends { rows: DriveNode[] }>(source: QueryResult<Page>, applies: () => boolean): QueryResult<Page> {
+export function recentFiles<Page extends { rows: DriveNode[] }>(
+  source: QueryResult<Page>,
+  applies: () => boolean,
+): QueryResult<Page> {
   const rows = computed(() => {
     const all = source.rows as DriveNode[]
     return applies() ? all.filter((row) => row.kind !== 'folder') : all

@@ -63,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import { Avatar, SidebarRail as FrappeRail, ScrollArea } from 'frappe-ui'
 import {
   computed,
   nextTick,
@@ -71,81 +72,68 @@ import {
   ref,
   watch,
   type ComponentPublicInstance,
-} from "vue";
-import { Avatar, SidebarRail as FrappeRail, ScrollArea } from "frappe-ui";
+} from 'vue'
 
-import type { AreaDefinition } from "@/platform/contracts";
-import AccountMenu from "@/shell/AccountMenu.vue";
-import RailItem from "@/shell/RailItem.vue";
-import { useAreaProgress } from "@/shell/areaProgress";
-import { openSettings } from "@/shell/settings/useSettingsDialog";
-import { useWorkspace } from "@/shell/useWorkspace";
+import type { AreaDefinition } from '@/platform/contracts'
+import AccountMenu from '@/shell/AccountMenu.vue'
+import { useAreaProgress } from '@/shell/areaProgress'
+import RailItem from '@/shell/RailItem.vue'
+import { openSettings } from '@/shell/settings/useSettingsDialog'
+import { useWorkspace } from '@/shell/useWorkspace'
 
 defineProps<{
-  areas: readonly AreaDefinition[];
-  badges: Readonly<Record<string, number>>;
-}>();
+  areas: readonly AreaDefinition[]
+  badges: Readonly<Record<string, number>>
+}>()
 
-defineSlots<{ bell?: () => unknown }>();
+defineSlots<{ bell?: () => unknown }>()
 
-const suiteLogo = "/assets/suite/frontend/logo.svg";
-const { workspaceName, workspaceLogo } = useWorkspace();
-const workspaceMark = computed(
-  () => workspaceLogo.value || (workspaceName.value ? "" : suiteLogo),
-);
-const areaProgress = useAreaProgress();
+const suiteLogo = '/assets/suite/frontend/logo.svg'
+const { workspaceName, workspaceLogo } = useWorkspace()
+const workspaceMark = computed(() => workspaceLogo.value || (workspaceName.value ? '' : suiteLogo))
+const areaProgress = useAreaProgress()
 
 // The item still navigates to its area. The source opens its own view there.
 function openProgress(area: string) {
-  if (areaProgress?.progress(area)) areaProgress.open(area);
+  if (areaProgress?.progress(area)) areaProgress.open(area)
 }
 
 type ScrollAreaInstance = ComponentPublicInstance & {
-  viewportElement?: HTMLElement | null;
-};
+  viewportElement?: HTMLElement | null
+}
 
-const areaScroll = ref<ScrollAreaInstance | null>(null);
-const fadeTop = ref(false);
-const fadeBottom = ref(false);
-let viewport: HTMLElement | null = null;
-let resizeObserver: ResizeObserver | null = null;
+const areaScroll = ref<ScrollAreaInstance | null>(null)
+const fadeTop = ref(false)
+const fadeBottom = ref(false)
+let viewport: HTMLElement | null = null
+let resizeObserver: ResizeObserver | null = null
 
 function updateFades() {
-  if (!viewport) return;
-  fadeTop.value = viewport.scrollTop > 0;
-  fadeBottom.value =
-    viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1;
+  if (!viewport) return
+  fadeTop.value = viewport.scrollTop > 0
+  fadeBottom.value = viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1
 }
 
 function bindViewport(next: HTMLElement | null) {
-  if (viewport === next) return;
-  viewport?.removeEventListener("scroll", updateFades);
-  resizeObserver?.disconnect();
-  viewport = next;
+  if (viewport === next) return
+  viewport?.removeEventListener('scroll', updateFades)
+  resizeObserver?.disconnect()
+  viewport = next
   if (viewport) {
-    viewport.addEventListener("scroll", updateFades, { passive: true });
-    resizeObserver = new ResizeObserver(updateFades);
-    resizeObserver.observe(viewport);
-    if (viewport.firstElementChild)
-      resizeObserver.observe(viewport.firstElementChild);
+    viewport.addEventListener('scroll', updateFades, { passive: true })
+    resizeObserver = new ResizeObserver(updateFades)
+    resizeObserver.observe(viewport)
+    if (viewport.firstElementChild) resizeObserver.observe(viewport.firstElementChild)
   }
-  updateFades();
+  updateFades()
 }
 
-onMounted(
-  () =>
-    void nextTick(() =>
-      bindViewport(areaScroll.value?.viewportElement ?? null),
-    ),
-);
+onMounted(() => void nextTick(() => bindViewport(areaScroll.value?.viewportElement ?? null)))
 watch(
   areaScroll,
-  () =>
-    void nextTick(() =>
-      bindViewport(areaScroll.value?.viewportElement ?? null),
-    ),
-);
-onBeforeUnmount(() => bindViewport(null));
+  () => void nextTick(() => bindViewport(areaScroll.value?.viewportElement ?? null)),
+)
+onBeforeUnmount(() => bindViewport(null))
 </script>
 
 <style scoped>
@@ -154,17 +142,17 @@ onBeforeUnmount(() => bindViewport(null));
    active item is the only full-strength mark. SidebarRailItem fixes its size
    and ink and takes no class, so both are set here by its data attributes,
    and the bell gets the same treatment. */
-.suite-rail :deep([data-slot="sidebar-rail-item"]),
+.suite-rail :deep([data-slot='sidebar-rail-item']),
 .rail-bell > :deep(button) {
   width: 34px;
   height: 34px;
 }
-.suite-rail :deep([data-slot="sidebar-rail-item"][data-state="inactive"]),
-.rail-bell > :deep(button:not([aria-expanded="true"])) {
+.suite-rail :deep([data-slot='sidebar-rail-item'][data-state='inactive']),
+.rail-bell > :deep(button:not([aria-expanded='true'])) {
   color: var(--ink-gray-5);
 }
-.suite-rail :deep([data-slot="sidebar-rail-item"][data-state="inactive"]:hover),
-.rail-bell > :deep(button:not([aria-expanded="true"]):hover) {
+.suite-rail :deep([data-slot='sidebar-rail-item'][data-state='inactive']:hover),
+.rail-bell > :deep(button:not([aria-expanded='true']):hover) {
   color: var(--ink-gray-7);
 }
 </style>

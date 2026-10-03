@@ -1,8 +1,9 @@
-import { nextTick, ref, watch } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref, watch } from 'vue'
 
 import type { Realtime, Room, SocketLike } from '@/platform/realtime'
 import { TransportError, type Operation, type Transport } from '@/platform/transport'
+
 import { createServerState, infinite, mutation, query, upload } from './index'
 
 type Node = { name: string; title: string; parent: string | null; modified: string; state?: string }
@@ -10,20 +11,46 @@ type Page = { rows: Node[]; next_cursor: string | null }
 
 const entity = { tag: 'Drive Node', id: 'name', version: 'modified' }
 const detailOperation: Operation<{ node: string }, Node> = {
-  id: 'node_get', owner: 'drive', method: 'GET', path: 'nodes/{node}', pathParams: ['node'], nodeParams: ['node'], entity,
+  id: 'node_get',
+  owner: 'drive',
+  method: 'GET',
+  path: 'nodes/{node}',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity,
 }
 const childrenOperation: Operation<{ node: string; cursor?: string | null }, Page> = {
-  id: 'node_children', owner: 'drive', method: 'GET', path: 'nodes/{node}/children', pathParams: ['node'], nodeParams: ['node'], entity,
+  id: 'node_children',
+  owner: 'drive',
+  method: 'GET',
+  path: 'nodes/{node}/children',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity,
 }
 const renameOperation: Operation<{ node: string; title: string }, Node> = {
-  id: 'node_patch.rename', owner: 'drive', method: 'PATCH', path: 'nodes/{node}', pathParams: ['node'], nodeParams: ['node'], entity,
+  id: 'node_patch.rename',
+  owner: 'drive',
+  method: 'PATCH',
+  path: 'nodes/{node}',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity,
 }
 const batchOperation: Operation<{ nodes: string[] }, { accepted: boolean }> = {
-  id: 'node_batch', owner: 'drive', method: 'POST', path: 'nodes/batch', entity,
+  id: 'node_batch',
+  owner: 'drive',
+  method: 'POST',
+  path: 'nodes/batch',
+  entity,
 }
 
 const node = (title = 'Budget', modified = '2026-09-15 01:00:00'): Node => ({
-  name: 'n1', title, parent: 'root', modified, state: 'Active',
+  name: 'n1',
+  title,
+  parent: 'root',
+  modified,
+  state: 'Active',
 })
 
 class FakeRealtime implements Realtime {
@@ -35,18 +62,34 @@ class FakeRealtime implements Realtime {
     this.handlers.set(event, handlers)
     return () => handlers.delete(handler)
   }
-  onReconnect(handler: () => void) { this.reconnect.add(handler); return () => this.reconnect.delete(handler) }
-  join(_room: Room) { return () => {} }
-  joinDoc(_doctype: string, _name: string) { return () => {} }
-  joinDoctype(_doctype: string) { return () => {} }
-  socket(): SocketLike { throw new Error('unused') }
+  onReconnect(handler: () => void) {
+    this.reconnect.add(handler)
+    return () => this.reconnect.delete(handler)
+  }
+  join(_room: Room) {
+    return () => {}
+  }
+  joinDoc(_doctype: string, _name: string) {
+    return () => {}
+  }
+  joinDoctype(_doctype: string) {
+    return () => {}
+  }
+  socket(): SocketLike {
+    throw new Error('unused')
+  }
   close() {}
-  emit(event: string, payload: unknown) { for (const handler of this.handlers.get(event) ?? []) handler(payload) }
+  emit(event: string, payload: unknown) {
+    for (const handler of this.handlers.get(event) ?? []) handler(payload)
+  }
 }
 
-function mockTransport(handler: (operation: Operation<any, any>, input: any, signal?: AbortSignal) => any) {
-  const request = vi.fn(async (operation: Operation<any, any>, input: any, options?: { signal?: AbortSignal }) =>
-    handler(operation, input, options?.signal),
+function mockTransport(
+  handler: (operation: Operation<any, any>, input: any, signal?: AbortSignal) => any,
+) {
+  const request = vi.fn(
+    async (operation: Operation<any, any>, input: any, options?: { signal?: AbortSignal }) =>
+      handler(operation, input, options?.signal),
   )
   return { transport: { request } as Transport, request }
 }
@@ -60,7 +103,11 @@ describe('server state queries', () => {
     let release!: (value: Node) => void
     const deferred = new Promise<Node>((resolve) => (release = resolve))
     const mock = mockTransport(() => deferred)
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const descriptor = query(detailOperation, { node: 'n1' })
     const first = state.useQuery(descriptor)
     const second = state.useQuery(descriptor)
@@ -79,12 +126,19 @@ describe('server state queries', () => {
   it('keeps fields a listing read when a detail read of the same version omits them', async () => {
     type Previewed = Node & { preview?: { url: string } }
     const listOperation: Operation<{ node: string }, { rows: Previewed[]; next_cursor: null }> = {
-      ...childrenOperation, id: 'node_children.preview',
+      ...childrenOperation,
+      id: 'node_children.preview',
     } as Operation<{ node: string }, { rows: Previewed[]; next_cursor: null }>
-    const mock = mockTransport((operation) => operation.id === 'node_get'
-      ? node()
-      : { rows: [{ ...node(), preview: { url: '/thumb.webp' } }], next_cursor: null })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const mock = mockTransport((operation) =>
+      operation.id === 'node_get'
+        ? node()
+        : { rows: [{ ...node(), preview: { url: '/thumb.webp' } }], next_cursor: null },
+    )
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const listing = state.useQuery(query(listOperation, { node: 'root' }))
     await listing.settled()
     await state.useQuery(query(detailOperation, { node: 'n1' })).settled()
@@ -93,11 +147,20 @@ describe('server state queries', () => {
   })
 
   it('replaces fields when a newer version arrives', async () => {
-    const mock = mockTransport((operation) => operation.id === 'node_get'
-      ? { ...node('Renamed', '2026-09-15 02:00:00') }
-      : { rows: [{ ...node(), preview: { url: '/old.webp' } }], next_cursor: null })
-    const listOperation = { ...childrenOperation, id: 'node_children.preview' } as Operation<{ node: string }, { rows: Array<Node & { preview?: { url: string } }>; next_cursor: null }>
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const mock = mockTransport((operation) =>
+      operation.id === 'node_get'
+        ? { ...node('Renamed', '2026-09-15 02:00:00') }
+        : { rows: [{ ...node(), preview: { url: '/old.webp' } }], next_cursor: null },
+    )
+    const listOperation = { ...childrenOperation, id: 'node_children.preview' } as Operation<
+      { node: string },
+      { rows: Array<Node & { preview?: { url: string } }>; next_cursor: null }
+    >
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const listing = state.useQuery(query(listOperation, { node: 'root' }))
     await listing.settled()
     await state.useQuery(query(detailOperation, { node: 'n1' })).settled()
@@ -110,7 +173,11 @@ describe('server state queries', () => {
     let title = 'First'
     let version = 1
     const mock = mockTransport(() => node(title, `2026-09-15 0${version++}:00:00`))
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const descriptor = query(detailOperation, { node: 'n1' }, { staleTime: 0 })
     const result = state.useQuery(descriptor)
     await result.settled()
@@ -130,13 +197,20 @@ describe('server state queries', () => {
 
   it('cancels requests with AbortSignal without storing an error', async () => {
     let aborted = false
-    const mock = mockTransport((_operation, _input, signal) => new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => {
-        aborted = true
-        reject(new DOMException('Aborted', 'AbortError'))
-      })
-    }))
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const mock = mockTransport(
+      (_operation, _input, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            aborted = true
+            reject(new DOMException('Aborted', 'AbortError'))
+          })
+        }),
+    )
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const result = state.useQuery(query(detailOperation, { node: 'n1' }))
     const settled = result.settled()
     result.cancel()
@@ -149,14 +223,21 @@ describe('server state queries', () => {
   it('keeps one in-flight fetch when a function source re-emits an equal descriptor', async () => {
     let release!: (value: Page) => void
     let aborted = false
-    const mock = mockTransport((_operation, _input, signal) => new Promise<Page>((resolve, reject) => {
-      signal?.addEventListener('abort', () => {
-        aborted = true
-        reject(new DOMException('Aborted', 'AbortError'))
-      })
-      release = resolve
-    }))
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const mock = mockTransport(
+      (_operation, _input, signal) =>
+        new Promise<Page>((resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            aborted = true
+            reject(new DOMException('Aborted', 'AbortError'))
+          })
+          release = resolve
+        }),
+    )
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const version = ref(0)
     const result = state.useQuery(() => {
       void version.value
@@ -184,7 +265,11 @@ describe('server state queries', () => {
           ? { rows: [node()], next_cursor: null }
           : { rows: [], next_cursor: 'empty' },
     )
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const result = state.useQuery(infinite(childrenOperation, { node: 'root' }))
     await result.settled()
     expect(result.rows).toEqual([])
@@ -206,12 +291,18 @@ describe('server state queries', () => {
         ? { rows: [third], next_cursor: null, has_next: false }
         : { rows: [node(), second], next_cursor: null, has_next: true },
     )
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
-    const result = state.useQuery(infinite(
-      childrenOperation as Operation<any, any>,
-      { node: 'root', offset: 0, limit: 2 },
-      { paging: 'offset' },
-    ))
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
+    const result = state.useQuery(
+      infinite(
+        childrenOperation as Operation<any, any>,
+        { node: 'root', offset: 0, limit: 2 },
+        { paging: 'offset' },
+      ),
+    )
     await result.settled()
     expect(result.hasNext).toBe(true)
     await result.fetchNext()
@@ -226,17 +317,25 @@ describe('server state queries', () => {
       rows: [{ ...node(input.from), name: input.from }],
       next_cursor: null,
     }))
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
-    const september = state.useQuery(infinite(
-      childrenOperation as Operation<any, any>,
-      { node: 'calendar', from: '2026-09-01', to: '2026-09-30' },
-      { paging: 'window' },
-    ))
-    const october = state.useQuery(infinite(
-      childrenOperation as Operation<any, any>,
-      { node: 'calendar', from: '2026-10-01', to: '2026-10-31' },
-      { paging: 'window' },
-    ))
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
+    const september = state.useQuery(
+      infinite(
+        childrenOperation as Operation<any, any>,
+        { node: 'calendar', from: '2026-09-01', to: '2026-09-30' },
+        { paging: 'window' },
+      ),
+    )
+    const october = state.useQuery(
+      infinite(
+        childrenOperation as Operation<any, any>,
+        { node: 'calendar', from: '2026-10-01', to: '2026-10-31' },
+        { paging: 'window' },
+      ),
+    )
     await Promise.all([september.settled(), october.settled()])
     expect((september.rows[0] as Node | undefined)?.title).toBe('2026-09-01')
     expect((october.rows[0] as Node | undefined)?.title).toBe('2026-10-01')
@@ -249,10 +348,15 @@ describe('server state queries', () => {
   it('returns query failures as values and lets a later refetch recover', async () => {
     let fails = true
     const mock = mockTransport(() => {
-      if (fails) throw new TransportError({ type: 'DriveForbidden', message: 'No access', status: 403 })
+      if (fails)
+        throw new TransportError({ type: 'DriveForbidden', message: 'No access', status: 403 })
       return node()
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const result = state.useQuery(query(detailOperation, { node: 'n1' }))
     await expect(result.settled()).resolves.toBe(result)
     expect(result).toMatchObject({ status: 'error', error: { type: 'DriveForbidden' } })
@@ -268,7 +372,10 @@ describe('server state fresh reads', () => {
    * Each list read takes the server's rows when it is sent, then waits until
    * the test releases it. Writes answer at once.
    */
-  function heldReads(answer: () => Page, write: (input: any) => Node = (input) => node(input.title)) {
+  function heldReads(
+    answer: () => Page,
+    write: (input: any) => Node = (input) => node(input.title),
+  ) {
     const held: Array<() => void> = []
     const mock = mockTransport((operation, input) => {
       if (operation.id !== 'node_children') return write(input)
@@ -279,20 +386,30 @@ describe('server state fresh reads', () => {
       held.shift()?.()
       await tick()
     }
-    const reads = () => mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children').length
+    const reads = () =>
+      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children').length
     return { transport: mock.transport, release, reads }
   }
-  const titled = (...titles: string[]): Page => ({ rows: titles.map((title) => node(title)), next_cursor: null })
+  const titled = (...titles: string[]): Page => ({
+    rows: titles.map((title) => node(title)),
+    next_cursor: null,
+  })
 
   it('answers a refetch during an in-flight read with one more read after it', async () => {
     let titles = ['Old']
     const server = heldReads(() => titled(...titles))
-    const state = createServerState({ transport: server.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: server.transport,
+      realtime: false,
+      persistence: false,
+    })
     const list = state.useQuery(infinite(childrenOperation, { node: 'root' }))
     await tick()
 
     let answered: string[] | null = null
-    const refetched = list.refetch().then((result) => (answered = result.rows.map((row) => row.title)))
+    const refetched = list
+      .refetch()
+      .then((result) => (answered = result.rows.map((row) => row.title)))
     titles = ['New']
     await tick()
     expect(server.reads()).toBe(1)
@@ -309,7 +426,11 @@ describe('server state fresh reads', () => {
   it('shares one follow-up read between fresh requests, while a plain read joins the in-flight one', async () => {
     let titles = ['Old']
     const server = heldReads(() => titled(...titles))
-    const state = createServerState({ transport: server.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: server.transport,
+      realtime: false,
+      persistence: false,
+    })
     const list = state.useQuery(infinite(childrenOperation, { node: 'root' }))
     await tick()
 
@@ -328,13 +449,23 @@ describe('server state fresh reads', () => {
 
   it('moves a renamed row to its sorted place when the list read started before the write', async () => {
     // The server sorts children by title.
-    const titles = new Map([['b', 'b'], ['c', 'c'], ['d', 'd']])
+    const titles = new Map([
+      ['b', 'b'],
+      ['c', 'c'],
+      ['d', 'd'],
+    ])
     const row = (name: string, modified = '2026-09-15 01:00:00'): Node => ({
-      name, title: titles.get(name)!, parent: 'root', modified, state: 'Active',
+      name,
+      title: titles.get(name)!,
+      parent: 'root',
+      modified,
+      state: 'Active',
     })
     const server = heldReads(
       () => ({
-        rows: [...titles.keys()].map((name) => row(name)).sort((left, right) => left.title.localeCompare(right.title)),
+        rows: [...titles.keys()]
+          .map((name) => row(name))
+          .sort((left, right) => left.title.localeCompare(right.title)),
         next_cursor: null,
       }),
       (input) => {
@@ -342,18 +473,30 @@ describe('server state fresh reads', () => {
         return row(input.node, '2026-09-15 02:00:00')
       },
     )
-    const state = createServerState({ transport: server.transport, realtime: false, persistence: false })
-    const list = state.useQuery(infinite(childrenOperation, { node: 'root' }, {
-      member: (row) => row.parent === 'root' && row.state === 'Active',
-    }))
+    const state = createServerState({
+      transport: server.transport,
+      realtime: false,
+      persistence: false,
+    })
+    const list = state.useQuery(
+      infinite(
+        childrenOperation,
+        { node: 'root' },
+        {
+          member: (row) => row.parent === 'root' && row.state === 'Active',
+        },
+      ),
+    )
     await tick()
     await server.release()
     expect(list.rows.map((row) => row.title)).toEqual(['b', 'c', 'd'])
 
-    const rename = state.useMutation(mutation(renameOperation, {
-      optimistic: ({ title }) => ({ title }),
-      invalidates: ['node_children'],
-    }))
+    const rename = state.useMutation(
+      mutation(renameOperation, {
+        optimistic: ({ title }) => ({ title }),
+        invalidates: ['node_children'],
+      }),
+    )
     // The optimistic title starts a list read before the write is sent.
     await rename.run({ node: 'd', title: 'a' })
     expect(server.reads()).toBe(2)
@@ -366,11 +509,27 @@ describe('server state fresh reads', () => {
 })
 
 describe('server state uploads', () => {
-  const create: Operation<{ name: string }, { id: string }> = { id: 'upload_create', owner: 'drive', method: 'POST', path: 'uploads' }
-  const chunk: Operation<any, { received: number }> = {
-    id: 'upload_chunk', owner: 'drive', method: 'PUT', path: 'uploads/{id}/chunk', pathParams: ['id'], body: 'chunk',
+  const create: Operation<{ name: string }, { id: string }> = {
+    id: 'upload_create',
+    owner: 'drive',
+    method: 'POST',
+    path: 'uploads',
   }
-  const finish: Operation<any, { done: boolean }> = { id: 'upload_finish', owner: 'drive', method: 'POST', path: 'uploads/{id}/finish', pathParams: ['id'] }
+  const chunk: Operation<any, { received: number }> = {
+    id: 'upload_chunk',
+    owner: 'drive',
+    method: 'PUT',
+    path: 'uploads/{id}/chunk',
+    pathParams: ['id'],
+    body: 'chunk',
+  }
+  const finish: Operation<any, { done: boolean }> = {
+    id: 'upload_finish',
+    owner: 'drive',
+    method: 'POST',
+    path: 'uploads/{id}/finish',
+    pathParams: ['id'],
+  }
   const descriptor = upload(create, chunk, finish, {
     chunkSize: 4,
     chunkInput: (session, offset) => ({ id: session.id, offset }),
@@ -380,15 +539,24 @@ describe('server state uploads', () => {
   it('continues from a start offset without a new session, and reports progress from what the server holds', async () => {
     const sent: Array<[string, unknown]> = []
     const mock = mockTransport((operation, input) => {
-      sent.push([operation.id, operation.id === 'upload_chunk' ? { ...input, chunk: input.chunk.size } : input])
+      sent.push([
+        operation.id,
+        operation.id === 'upload_chunk' ? { ...input, chunk: input.chunk.size } : input,
+      ])
       if (operation.id === 'upload_chunk') return { received: input.offset + input.chunk.size }
       return operation.id === 'upload_finish' ? { done: true } : { id: 'fresh' }
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const transfer = state.useMutation(descriptor)
 
     const result = await transfer.run({
-      name: 'a.bin', file: new Blob([new Uint8Array(10)]), start: { session: { id: 'held' }, offset: 4 },
+      name: 'a.bin',
+      file: new Blob([new Uint8Array(10)]),
+      start: { session: { id: 'held' }, offset: 4 },
     })
 
     expect(result).toEqual({ done: true })
@@ -404,16 +572,23 @@ describe('server state uploads', () => {
   it('does not wait behind other writes', async () => {
     let releaseRename!: () => void
     const mock = mockTransport((operation, input) => {
-      if (operation.id === 'node_patch.rename') return new Promise((resolve) => (releaseRename = () => resolve(node())))
+      if (operation.id === 'node_patch.rename')
+        return new Promise((resolve) => (releaseRename = () => resolve(node())))
       if (operation.id === 'upload_chunk') return { received: input.offset + input.chunk.size }
       return operation.id === 'upload_finish' ? { done: true } : { id: 'fresh' }
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const rename = state.useMutation(mutation(renameOperation))
     const renaming = rename.run({ node: 'n1', title: 'Slow' })
     await tick()
 
-    await expect(state.useMutation(descriptor).run({ name: 'b.bin', file: new Blob([new Uint8Array(3)]) })).resolves.toEqual({ done: true })
+    await expect(
+      state.useMutation(descriptor).run({ name: 'b.bin', file: new Blob([new Uint8Array(3)]) }),
+    ).resolves.toEqual({ done: true })
     releaseRename()
     await renaming
     state.dispose()
@@ -430,21 +605,29 @@ describe('server state mutations and realtime', () => {
       }
       return current
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
     await detail.settled()
     const rename = state.useMutation(mutation(renameOperation, { invalidates: ['node_get'] }))
     await rename.run({ node: 'n1', title: 'Forecast' })
     await tick()
     expect(detail.data?.title).toBe('Forecast')
-    expect(mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get')).toHaveLength(2)
+    expect(
+      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get'),
+    ).toHaveLength(2)
     state.dispose()
   })
 
   it('applies optimistic patches and rolls them back on failure', async () => {
     let rejectRename!: (error: unknown) => void
     const renameRequest = new Promise((_resolve, reject) => (rejectRename = reject))
-    const mock = mockTransport((operation) => operation.id === 'node_get' ? node() : renameRequest)
+    const mock = mockTransport((operation) =>
+      operation.id === 'node_get' ? node() : renameRequest,
+    )
     const state = createServerState({
       transport: mock.transport,
       realtime: false,
@@ -453,9 +636,11 @@ describe('server state mutations and realtime', () => {
     })
     const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
     await detail.settled()
-    const rename = state.useMutation(mutation(renameOperation, {
-      optimistic: (input, current) => ({ ...current, title: input.title }),
-    }))
+    const rename = state.useMutation(
+      mutation(renameOperation, {
+        optimistic: (input, current) => ({ ...current, title: input.title }),
+      }),
+    )
     const pending = rename.run({ node: 'n1', title: 'Optimistic' })
     await tick()
     expect(detail.data?.title).toBe('Optimistic')
@@ -468,17 +653,23 @@ describe('server state mutations and realtime', () => {
 
   it('writes mutation entities through every query without refetching details', async () => {
     const mock = mockTransport((operation, input) =>
-      operation.id === 'node_patch.rename'
-        ? node(input.title, '2026-09-15 02:00:00')
-        : node(),
+      operation.id === 'node_patch.rename' ? node(input.title, '2026-09-15 02:00:00') : node(),
     )
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
     await detail.settled()
     const rename = state.useMutation(mutation(renameOperation))
-    await expect(rename.run({ node: 'n1', title: 'Forecast' })).resolves.toMatchObject({ title: 'Forecast' })
+    await expect(rename.run({ node: 'n1', title: 'Forecast' })).resolves.toMatchObject({
+      title: 'Forecast',
+    })
     expect(detail.data?.title).toBe('Forecast')
-    expect(mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get')).toHaveLength(1)
+    expect(
+      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get'),
+    ).toHaveLength(1)
     state.dispose()
   })
 
@@ -491,43 +682,81 @@ describe('server state mutations and realtime', () => {
       }
       return { rows: current.state === 'Active' ? [current] : [], next_cursor: null }
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
-    const children = state.useQuery(infinite(childrenOperation, { node: 'root' }, {
-      member: (candidate) => candidate.parent === 'root' && candidate.state === 'Active',
-    }))
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
+    const children = state.useQuery(
+      infinite(
+        childrenOperation,
+        { node: 'root' },
+        {
+          member: (candidate) => candidate.parent === 'root' && candidate.state === 'Active',
+        },
+      ),
+    )
     await children.settled()
     await state.useMutation(mutation(renameOperation)).run({ node: 'n1', title: 'Archived' })
     expect(children.rows).toEqual([])
     await tick()
-    expect(mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children')).toHaveLength(2)
+    expect(
+      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children'),
+    ).toHaveLength(2)
     state.dispose()
   })
 
   it('shows a new row only where the server orders it, never at the end first', async () => {
     const createOperation: Operation<{ parent: string; title: string }, Node> = {
-      id: 'node_create', owner: 'drive', method: 'POST', path: 'nodes', entity,
+      id: 'node_create',
+      owner: 'drive',
+      method: 'POST',
+      path: 'nodes',
+      entity,
     }
     // The server sorts children by title.
-    const rows: Node[] = [{ ...node('Budget'), name: 'b' }, { ...node('Notes'), name: 'n' }]
+    const rows: Node[] = [
+      { ...node('Budget'), name: 'b' },
+      { ...node('Notes'), name: 'n' },
+    ]
     const mock = mockTransport((operation, input) => {
-      if (operation.id !== 'node_create') return { rows: [...rows].sort((a, b) => a.title.localeCompare(b.title)), next_cursor: null }
+      if (operation.id !== 'node_create')
+        return { rows: [...rows].sort((a, b) => a.title.localeCompare(b.title)), next_cursor: null }
       const created = { ...node(input.title), name: 'c' }
       rows.push(created)
       return created
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
-    const children = state.useQuery(infinite(childrenOperation, { node: 'root' }, {
-      member: (candidate) => candidate.parent === 'root' && candidate.state === 'Active',
-    }))
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
+    const children = state.useQuery(
+      infinite(
+        childrenOperation,
+        { node: 'root' },
+        {
+          member: (candidate) => candidate.parent === 'root' && candidate.state === 'Active',
+        },
+      ),
+    )
     await children.settled()
 
     // Each order the list shows on the way.
     const seen = [children.rows.map((row) => row.title).join(', ')]
-    const stop = watch(() => children.rows.map((row) => row.title).join(', '), (titles) => {
-      if (titles !== seen.at(-1)) seen.push(titles)
-    }, { flush: 'sync' })
-    await state.useMutation(mutation(createOperation, { invalidates: ['node_children'] })).run({ parent: 'root', title: 'Forecast' })
-    await vi.waitFor(() => expect(children.rows.map((row) => row.title)).toEqual(['Budget', 'Forecast', 'Notes']))
+    const stop = watch(
+      () => children.rows.map((row) => row.title).join(', '),
+      (titles) => {
+        if (titles !== seen.at(-1)) seen.push(titles)
+      },
+      { flush: 'sync' },
+    )
+    await state
+      .useMutation(mutation(createOperation, { invalidates: ['node_children'] }))
+      .run({ parent: 'root', title: 'Forecast' })
+    await vi.waitFor(() =>
+      expect(children.rows.map((row) => row.title)).toEqual(['Budget', 'Forecast', 'Notes']),
+    )
     expect(seen).toEqual(['Budget, Notes', 'Budget, Forecast, Notes'])
     stop()
     state.dispose()
@@ -542,14 +771,21 @@ describe('server state mutations and realtime', () => {
       }
       return current
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
     await detail.settled()
-    await state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }))
+    await state
+      .useMutation(mutation(batchOperation, { touches: (input) => input.nodes }))
       .run({ nodes: ['n1'] })
     await tick()
     expect(detail.data?.title).toBe('Touched')
-    expect(mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get')).toHaveLength(2)
+    expect(
+      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get'),
+    ).toHaveLength(2)
     state.dispose()
   })
 
@@ -559,11 +795,17 @@ describe('server state mutations and realtime', () => {
       if (fail) throw new TransportError({ status: 409, type: 'DriveConflict', message: 'No' })
       return { accepted: true }
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const heard: string[] = []
     const stop = state.onTouch('n1', () => heard.push('n1'))
     state.onTouch('n2', () => heard.push('n2'))
-    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), { silent: true })
+    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), {
+      silent: true,
+    })
     await batch.run({ nodes: ['n1'] })
     fail = true
     await batch.run({ nodes: ['n1', 'n2'] }).catch(() => {})
@@ -576,7 +818,11 @@ describe('server state mutations and realtime', () => {
 
   it('keeps telling touch listeners when one throws or a stop runs twice', async () => {
     const mock = mockTransport(() => ({ accepted: true }))
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const heard: string[] = []
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     state.onTouch('n1', () => {
@@ -586,7 +832,9 @@ describe('server state mutations and realtime', () => {
     stop()
     state.onTouch('n1', () => heard.push('second'))
     stop()
-    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), { silent: true })
+    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), {
+      silent: true,
+    })
     await expect(batch.run({ nodes: ['n1'] })).resolves.toEqual({ accepted: true })
     expect(heard).toEqual(['second'])
     expect(error).toHaveBeenCalledOnce()
@@ -596,10 +844,16 @@ describe('server state mutations and realtime', () => {
 
   it('stops telling touch listeners once disposed', async () => {
     const mock = mockTransport(() => ({ accepted: true }))
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const heard: string[] = []
     state.onTouch('n1', () => heard.push('n1'))
-    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), { silent: true })
+    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), {
+      silent: true,
+    })
     state.dispose()
     await batch.run({ nodes: ['n1'] }).catch(() => {})
     expect(heard).toEqual([])
@@ -614,12 +868,20 @@ describe('server state mutations and realtime', () => {
       }
       return current
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
     await detail.settled()
-    await state.useMutation(mutation(batchOperation, {
-      invalidates: (input) => input.nodes.includes('n1') ? ['node_get'] : [],
-    })).run({ nodes: ['n1'] })
+    await state
+      .useMutation(
+        mutation(batchOperation, {
+          invalidates: (input) => (input.nodes.includes('n1') ? ['node_get'] : []),
+        }),
+      )
+      .run({ nodes: ['n1'] })
     await tick()
     expect(detail.data?.title).toBe('Invalidated')
     state.dispose()
@@ -646,17 +908,24 @@ describe('server state mutations and realtime', () => {
   it('lets a registered challenge resolve the error and retry the mutation', async () => {
     let locked = true
     const mock = mockTransport((_operation, input) => {
-      if (locked) throw new TransportError({ type: 'DriveLocked', message: 'Password required', status: 403 })
+      if (locked)
+        throw new TransportError({ type: 'DriveLocked', message: 'Password required', status: 403 })
       return node(input.title, '2026-09-15 02:00:00')
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const challenge = vi.fn(async (_error, retry) => {
       locked = false
       return retry()
     })
     const remove = state.onChallenge('DriveLocked', challenge)
     const rename = state.useMutation(mutation(renameOperation))
-    await expect(rename.run({ node: 'n1', title: 'Unlocked' })).resolves.toMatchObject({ title: 'Unlocked' })
+    await expect(rename.run({ node: 'n1', title: 'Unlocked' })).resolves.toMatchObject({
+      title: 'Unlocked',
+    })
     expect(rename.error).toBeNull()
     expect(challenge).toHaveBeenCalledOnce()
     expect(mock.request).toHaveBeenCalledTimes(2)
@@ -689,7 +958,11 @@ describe('server state mutations and realtime', () => {
     const state = createServerState({ transport: mock.transport, realtime, persistence: false })
     const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
     await detail.settled()
-    realtime.emit('doc_update', { doctype: 'Drive Node', name: 'n1', modified: '2026-09-15 02:00:00' })
+    realtime.emit('doc_update', {
+      doctype: 'Drive Node',
+      name: 'n1',
+      modified: '2026-09-15 02:00:00',
+    })
     await tick()
     expect(mock.request).toHaveBeenCalledOnce()
     state.dispose()
@@ -731,7 +1004,11 @@ describe('server state mutations and realtime', () => {
       if (response instanceof Error) throw response
       return response
     })
-    const state = createServerState({ transport: mock.transport, realtime: false, persistence: false })
+    const state = createServerState({
+      transport: mock.transport,
+      realtime: false,
+      persistence: false,
+    })
     const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
     await detail.settled()
     response = new TransportError({ type: 'SessionExpired', message: 'Sign in', status: 401 })
@@ -758,10 +1035,16 @@ describe('server state mutations and realtime', () => {
       transport: mock.transport,
       realtime: false,
       persistence: {
-        load: async () => [{
-          key: 'drivenode:n1', tag: 'Drive Node', id: 'n1', version: '2026-09-14 01:00:00',
-          data: node('Persisted', '2026-09-14 01:00:00'), fetchedAt: 1,
-        }],
+        load: async () => [
+          {
+            key: 'drivenode:n1',
+            tag: 'Drive Node',
+            id: 'n1',
+            version: '2026-09-14 01:00:00',
+            data: node('Persisted', '2026-09-14 01:00:00'),
+            fetchedAt: 1,
+          },
+        ],
         save,
       },
     })

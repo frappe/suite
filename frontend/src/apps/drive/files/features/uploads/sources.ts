@@ -25,7 +25,10 @@ export interface UploadSelection {
 
 /** Folder trees from an `<input webkitdirectory>` selection, by `webkitRelativePath`. */
 export function foldersFromInput(files: readonly File[]): FolderUpload[] {
-  const trees = new Map<string, { folders: Set<string>; files: Array<{ folder: string; file: File }> }>()
+  const trees = new Map<
+    string,
+    { folders: Set<string>; files: Array<{ folder: string; file: File }> }
+  >()
   for (const file of files) {
     const parts = (file.webkitRelativePath || file.name).split('/').filter(Boolean)
     if (parts.length < 2) continue
@@ -33,10 +36,15 @@ export function foldersFromInput(files: readonly File[]): FolderUpload[] {
     const tree = trees.get(top!) ?? { folders: new Set<string>(), files: [] }
     trees.set(top!, tree)
     const folderParts = rest.slice(0, -1)
-    for (let depth = 1; depth <= folderParts.length; depth++) tree.folders.add(folderParts.slice(0, depth).join('/'))
+    for (let depth = 1; depth <= folderParts.length; depth++)
+      tree.folders.add(folderParts.slice(0, depth).join('/'))
     tree.files.push({ folder: folderParts.join('/'), file })
   }
-  return [...trees].map(([title, tree]) => ({ title, folders: orderFolders(tree.folders), files: tree.files }))
+  return [...trees].map(([title, tree]) => ({
+    title,
+    folders: orderFolders(tree.folders),
+    files: tree.files,
+  }))
 }
 
 /**
@@ -44,7 +52,10 @@ export function foldersFromInput(files: readonly File[]): FolderUpload[] {
  * `DataTransfer` once the handler returns, so call this synchronously and
  * await `read()` afterwards.
  */
-export function captureDrop(transfer: DataTransfer): { hasFiles: boolean; read(): Promise<UploadSelection> } {
+export function captureDrop(transfer: DataTransfer): {
+  hasFiles: boolean
+  read(): Promise<UploadSelection>
+} {
   const captured = [...transfer.items]
     .filter((item) => item.kind === 'file')
     .map((item) => ({
@@ -63,7 +74,10 @@ export function captureDrop(transfer: DataTransfer): { hasFiles: boolean; read()
         }
         if (!item.file) continue
         const handle = await item.handle?.catch(() => null)
-        selection.files.push({ file: item.file, handle: handle?.kind === 'file' ? (handle as FileSystemFileHandle) : undefined })
+        selection.files.push({
+          file: item.file,
+          handle: handle?.kind === 'file' ? (handle as FileSystemFileHandle) : undefined,
+        })
       }
       return selection
     },
@@ -75,7 +89,9 @@ export function dragHasFiles(event: DragEvent): boolean {
   return [...(event.dataTransfer?.types ?? [])].includes('Files')
 }
 
-type HandleItem = DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> }
+type HandleItem = DataTransferItem & {
+  getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>
+}
 
 async function readDirectory(root: FileSystemDirectoryEntry): Promise<FolderUpload> {
   const folders = new Set<string>()
@@ -100,7 +116,9 @@ async function readEntries(directory: FileSystemDirectoryEntry): Promise<FileSys
   const reader = directory.createReader()
   const all: FileSystemEntry[] = []
   while (true) {
-    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject))
+    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+      reader.readEntries(resolve, reject),
+    )
     if (!batch.length) return all
     all.push(...batch)
   }
@@ -111,5 +129,7 @@ function readFile(entry: FileSystemFileEntry): Promise<File> {
 }
 
 function orderFolders(folders: Set<string>): string[] {
-  return [...folders].sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))
+  return [...folders].sort(
+    (a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b),
+  )
 }

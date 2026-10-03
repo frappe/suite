@@ -1,5 +1,5 @@
-import { createApp, h } from 'vue'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { createApp, h } from 'vue'
 
 import SharePicker from './SharePicker.vue'
 
@@ -34,7 +34,9 @@ beforeAll(() => {
 function mountPicker() {
   const root = document.createElement('div')
   document.body.append(root)
-  const app = createApp({ setup: () => () => h(SharePicker, { nodeKind: 'file', share: async () => [] }) })
+  const app = createApp({
+    setup: () => () => h(SharePicker, { nodeKind: 'file', share: async () => [] }),
+  })
   app.mount(root)
   cleanup = () => {
     app.unmount()
@@ -62,7 +64,10 @@ function clickRow(options: HTMLElement[], label: string) {
   row.click()
 }
 
-const staged = () => [...document.querySelectorAll('[aria-label="People to add"] li')].map((item) => item.textContent?.trim())
+const staged = () =>
+  [...document.querySelectorAll('[aria-label="People to add"] li')].map((item) =>
+    item.textContent?.trim(),
+  )
 
 describe('Share picker', () => {
   it('keeps the search box focused after a pick, so the next person can be typed', async () => {

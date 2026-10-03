@@ -18,8 +18,8 @@ import type { AreaDefinition } from '@/platform/contracts'
 import { openingTitleState } from '@/platform/page-meta'
 import { useMutation, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
-import { transport } from '@/platform/transport'
 import { translate as __ } from '@/platform/translation'
+import { transport } from '@/platform/transport'
 
 export type {
   CredentialGroup,
@@ -61,7 +61,11 @@ export { default as DriveFileCard } from '@/apps/drive/files/features/FileCard.v
 export function useDrivePreviewRefresh(refresh: () => unknown): void {
   let stop: (() => void) | undefined
   onMounted(() => {
-    stop = observePreviewRefresh({ refresh: async () => { await refresh() } })
+    stop = observePreviewRefresh({
+      refresh: async () => {
+        await refresh()
+      },
+    })
   })
   onBeforeUnmount(() => stop?.())
 }
@@ -90,7 +94,17 @@ export function loadDriveNodeSummary(node: string): Promise<DriveNodeSummary> {
 
 export type DriveNodeSummary = Pick<
   DriveNode,
-  'name' | 'title' | 'kind' | 'mime' | 'content_doctype' | 'content_docname' | 'state' | 'access' | 'preview' | 'opened_at' | 'favourite'
+  | 'name'
+  | 'title'
+  | 'kind'
+  | 'mime'
+  | 'content_doctype'
+  | 'content_docname'
+  | 'state'
+  | 'access'
+  | 'preview'
+  | 'opened_at'
+  | 'favourite'
 >
 
 export const filesArea: AreaDefinition = {
@@ -103,7 +117,9 @@ export const filesArea: AreaDefinition = {
 
 /** Drive's Settings group. Loads when Settings opens. */
 export const loadDriveSettings = () =>
-  import('@/apps/drive/files/features/settings/settingsGroup').then((module) => module.driveSettings())
+  import('@/apps/drive/files/features/settings/settingsGroup').then((module) =>
+    module.driveSettings(),
+  )
 
 /** The caller's recently opened nodes, newest first, with thumbnails for `DriveFileCard`. */
 export function driveRecents(limit = 12) {
@@ -158,7 +174,8 @@ export function driveNodeRoute(
   const label = typeof node === 'string' ? (title ?? '') : node.title
   const nodeKind = typeof node === 'string' ? kind : node.kind
   const slug = slugify(label)
-  const base = nodeKind === 'folder' ? `/drive/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
+  const base =
+    nodeKind === 'folder' ? `/drive/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
   // The history entry carries the title, so the tab names the node before
   // its page loads.
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
@@ -166,7 +183,9 @@ export function driveNodeRoute(
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */
 const OPENING_EXPAND = 'access,preview,breadcrumbs'
-const openingRead = driveOperation<{ node: string; expand: string }, DriveNode>(api.node_get, { entity: true })
+const openingRead = driveOperation<{ node: string; expand: string }, DriveNode>(api.node_get, {
+  entity: true,
+})
 
 export async function openDocumentSession(nodeId: string) {
   // `session.share()` opens its dialog in the app that opened the session.
@@ -174,7 +193,8 @@ export async function openDocumentSession(nodeId: string) {
   // Every surface shows the document header: fetch it while the session opens.
   void loadDocumentHeader()
   const node = await transport.request(openingRead, { node: nodeId, expand: OPENING_EXPAND })
-  if (node.content_doctype && node.content_docname) return openDriveDocumentSession(nodeId, { node })
+  if (node.content_doctype && node.content_docname)
+    return openDriveDocumentSession(nodeId, { node })
   const { openFilePreviewSession } = await import('@/apps/drive/files/features/preview/session')
   return openFilePreviewSession(nodeId, node)
 }
@@ -182,13 +202,20 @@ export async function openDocumentSession(nodeId: string) {
 export { isDriveLocked, isDriveNodeLocked } from '@/apps/drive/client/unlock'
 
 /** The upload queue for the app root: the shell's indicator, the tracker's state and the queue's questions (spec §6.3). */
-export { driveUploadProgress, type DriveUploadProgress } from '@/apps/drive/files/features/uploads/progress'
+export {
+  driveUploadProgress,
+  type DriveUploadProgress,
+} from '@/apps/drive/files/features/uploads/progress'
 
 /** The upload tracker. The app root mounts it while the queue has work, so it outlives the page. */
-export const DriveUploadTracker = defineAsyncComponent(() => import('@/apps/drive/files/features/uploads/UploadTracker.vue'))
+export const DriveUploadTracker = defineAsyncComponent(
+  () => import('@/apps/drive/files/features/uploads/UploadTracker.vue'),
+)
 
 /** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
-export const DriveUnlockScreen = defineAsyncComponent(() => import('@/apps/drive/files/features/UnlockScreen.vue'))
+export const DriveUnlockScreen = defineAsyncComponent(
+  () => import('@/apps/drive/files/features/UnlockScreen.vue'),
+)
 
 const loadDocumentHeader = () => import('@/apps/drive/files/features/document/DocumentHeader.vue')
 
@@ -226,10 +253,20 @@ export function useDriveDialogs(): DriveDialogs {
   if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
   return {
     move: (node) =>
-      presentDialog<DriveNodeSummary>(context, () => import('@/apps/drive/files/features/MoveNodeDialog.vue'), { node }, 'moved'),
+      presentDialog<DriveNodeSummary>(
+        context,
+        () => import('@/apps/drive/files/features/MoveNodeDialog.vue'),
+        { node },
+        'moved',
+      ),
     showDetails: async (node) => {
-      await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), { node })
+      await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), {
+        node,
+      })
     },
-    share: (node) => import('@/apps/drive/files/features/share/present').then((share) => share.presentShareDialog(node, context)),
+    share: (node) =>
+      import('@/apps/drive/files/features/share/present').then((share) =>
+        share.presentShareDialog(node, context),
+      ),
   }
 }

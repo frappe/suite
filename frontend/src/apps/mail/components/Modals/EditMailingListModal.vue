@@ -1,32 +1,35 @@
 <template>
-	<Dialog
-		v-model:open="show"
-	 v-bind="{
-			title: __('Edit Mailing List'),
-			actions: [
-				{
-					label: __('Save'),
-					variant: 'solid',
-					loading: updateList.loading,
-					onClick: updateList.submit,
-				},
-			],
-		}"
-	>
-		<template #default>
-			<div class="space-y-4">
-				<FormControl v-model="description" :label="__('Description')" />
-				<ErrorMessage
-					:message="updateList.error && (updateList.error?.messages?.[0] || updateList.error?.message || __('Request failed.'))"
-				/>
-			</div>
-		</template>
-	</Dialog>
+  <Dialog
+    v-model:open="show"
+    v-bind="{
+      title: __('Edit Mailing List'),
+      actions: [
+        {
+          label: __('Save'),
+          variant: 'solid',
+          loading: updateList.loading,
+          onClick: updateList.submit,
+        },
+      ],
+    }"
+  >
+    <template #default>
+      <div class="space-y-4">
+        <FormControl v-model="description" :label="__('Description')" />
+        <ErrorMessage
+          :message="
+            updateList.error &&
+            (updateList.error?.messages?.[0] || updateList.error?.message || __('Request failed.'))
+          "
+        />
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
+import { createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
-import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 
@@ -39,19 +42,19 @@ const emit = defineEmits(['reload'])
 const description = ref('')
 
 watch(show, () => {
-	if (show.value && list) {
-		description.value = list.description || ''
-		updateList.reset()
-	}
+  if (show.value && list) {
+    description.value = list.description || ''
+    updateList.reset()
+  }
 })
 
 const updateList = createResource({
-	url: 'suite.mail.api.admin.update_mailing_list',
-	makeParams: () => ({ list_id: list.id, description: description.value?.trim() || '' }),
-	onSuccess: () => {
-		show.value = false
-		emit('reload')
-		raiseToast(__('Mailing list updated.'))
-	},
+  url: 'suite.mail.api.admin.update_mailing_list',
+  makeParams: () => ({ list_id: list.id, description: description.value?.trim() || '' }),
+  onSuccess: () => {
+    show.value = false
+    emit('reload')
+    raiseToast(__('Mailing list updated.'))
+  },
 })
 </script>

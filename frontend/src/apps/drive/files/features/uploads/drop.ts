@@ -24,7 +24,9 @@ export interface DropHandlers {
  * as saved views, search and folders without UPLOAD do. A refused drop is
  * still caught, so the browser never opens the file in place of the app.
  */
-export function useUploadDrop(upload: (selection: UploadSelection, target: UploadTarget) => unknown) {
+export function useUploadDrop(
+  upload: (selection: UploadSelection, target: UploadTarget) => unknown,
+) {
   const over = ref<DropZone | null>(null)
 
   function zone(resolve: () => DropZone | null): DropHandlers {

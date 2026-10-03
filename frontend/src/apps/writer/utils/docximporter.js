@@ -1,7 +1,8 @@
+import { toast as nToast, useFileUpload } from 'frappe-ui'
 import { v4 as uuidv4 } from 'uuid'
-import { useFileUpload, toast as nToast } from 'frappe-ui'
+
 import { purgeNodes } from '@/apps/writer/drive'
-import { tabsIn, findTab } from '@/apps/writer/extensions/tabs'
+import { findTab, tabsIn } from '@/apps/writer/extensions/tabs'
 
 const IMAGE_EXTENSIONS = {
   'image/png': 'png',
@@ -143,10 +144,7 @@ function _insertInNewTab(editor, html, label) {
   const tab = findTab(editor.state.doc, id)
   if (!tab) return _insertAtEnd(editor, html) // shouldn't happen; don't lose content
   // createTab() adds an empty paragraph — swap it for the imported content.
-  editor.commands.insertContentAt(
-    { from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 },
-    html,
-  )
+  editor.commands.insertContentAt({ from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 }, html)
 }
 
 /**

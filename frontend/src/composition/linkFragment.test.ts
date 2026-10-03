@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, h } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { splitLinkFragment, takeLinkFragment } from './linkFragment'
 
@@ -32,9 +32,15 @@ describe('the #link= fragment', () => {
     const folder = router.currentRoute.value.fullPath
     await router.push(`/d/doc-1/q3-plan?view=grid#link=${TOKEN}`)
 
-    expect(seeded).toEqual([[TOKEN, 'folder-1'], [TOKEN, 'doc-1']])
+    expect(seeded).toEqual([
+      [TOKEN, 'folder-1'],
+      [TOKEN, 'doc-1'],
+    ])
     expect(resolvedWithSeed.mock.calls.every(([count]) => count > 0)).toBe(true)
-    expect([folder, router.currentRoute.value.fullPath]).toEqual(['/drive/f/folder-1', '/d/doc-1/q3-plan?view=grid'])
+    expect([folder, router.currentRoute.value.fullPath]).toEqual([
+      '/drive/f/folder-1',
+      '/d/doc-1/q3-plan?view=grid',
+    ])
   })
 
   it('removes the link in every form and keeps the other parameters', async () => {
@@ -54,14 +60,29 @@ describe('the #link= fragment', () => {
       landed.push(router.currentRoute.value.fullPath)
     }
 
-    expect(landed).toEqual(['/d/doc-1#x=1', '/d/doc-1#x=1', '/d/doc-1#x=1&y=2', '/d/doc-1', '/d/doc-1', '/d/doc-1#x=1'])
+    expect(landed).toEqual([
+      '/d/doc-1#x=1',
+      '/d/doc-1#x=1',
+      '/d/doc-1#x=1&y=2',
+      '/d/doc-1',
+      '/d/doc-1',
+      '/d/doc-1#x=1',
+    ])
     expect(landed.join(' ')).not.toContain(TOKEN)
     expect(seeded).toEqual(Array.from({ length: 4 }, () => [TOKEN, 'doc-1']))
   })
 
   it('splits a fragment without decoding the parameters it keeps', () => {
-    expect(splitLinkFragment(`#a=%20b&link=${TOKEN}`)).toEqual({ token: TOKEN, hadLink: true, rest: '#a=%20b' })
-    expect(splitLinkFragment('#comment-4')).toEqual({ token: null, hadLink: false, rest: '#comment-4' })
+    expect(splitLinkFragment(`#a=%20b&link=${TOKEN}`)).toEqual({
+      token: TOKEN,
+      hadLink: true,
+      rest: '#a=%20b',
+    })
+    expect(splitLinkFragment('#comment-4')).toEqual({
+      token: null,
+      hadLink: false,
+      rest: '#comment-4',
+    })
   })
 
   it('leaves other fragments alone and strips a link fragment on a route with no node', async () => {

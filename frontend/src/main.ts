@@ -1,44 +1,41 @@
-import "./index.css";
+import './index.css'
 
-import { createApp, type App as VueApp } from "vue";
-import { createPinia } from "pinia";
+import { createPinia } from 'pinia'
+import { createApp, type App as VueApp } from 'vue'
 
-import App from "@/App.vue";
-import router from "@/router";
-import { initSentry } from "@/boot/sentry";
-import { clearSlidesUserData } from "@/apps/slides/utils/serviceWorker";
-import { initializeCursor } from "@/platform/cursor";
-import { useSession } from "@/platform/session";
-import { initializeTheme } from "@/platform/theme";
-import {
-  ready as translationsReady,
-  translationPlugin,
-} from "@/platform/translation";
+import App from '@/App.vue'
+import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
+import { initSentry } from '@/boot/sentry'
+import { initializeCursor } from '@/platform/cursor'
+import { useSession } from '@/platform/session'
+import { initializeTheme } from '@/platform/theme'
+import { translationPlugin, ready as translationsReady } from '@/platform/translation'
+import router from '@/router'
 
-initializeCursor();
+initializeCursor()
 
-const app = createApp(App);
+const app = createApp(App)
 
 // The Slides service worker keeps this user's responses. Every logout path ends
 // in the platform session, so the next user never receives them.
-useSession().onLogout(clearSlidesUserData);
+useSession().onLogout(clearSlidesUserData)
 
 await Promise.all([
   initSentry(app, router),
   translationsReady,
   initializeTheme(),
-  import("@/boot/config").then(({ configureFrappeUI }) => configureFrappeUI()),
-]);
+  import('@/boot/config').then(({ configureFrappeUI }) => configureFrappeUI()),
+])
 
-app.use(createPinia());
-app.use(router);
-app.use(translationPlugin);
+app.use(createPinia())
+app.use(router)
+app.use(translationPlugin)
 
 Promise.all([router.isReady(), installLegacySprite(app)]).then(() => {
-  app.mount("#app");
-});
+  app.mount('#app')
+})
 
 async function installLegacySprite(target: VueApp) {
-  const { spritePlugin } = await import("frappe-ui/experimental");
-  target.use(spritePlugin);
+  const { spritePlugin } = await import('frappe-ui/experimental')
+  target.use(spritePlugin)
 }

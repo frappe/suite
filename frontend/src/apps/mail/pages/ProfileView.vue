@@ -1,5 +1,5 @@
 <template>
-	<!--
+  <!--
 	  Profile as a page rather than a bottom sheet.
 
 	  The sheet made Profile the odd tab out — Inbox, Screener and Search navigate, Profile
@@ -8,33 +8,35 @@
 	  the sheet's Settings row used to lead: one destination instead of two, with the bottom
 	  nav still underneath it.
 	-->
-	<MobileProfilePage
-		:accounts
-		:account-id="store.accountId"
-		always-show-accounts
-		:logout
-		@switch-account="switchAccount"
-	>
-		<!-- Same title row AND the same header box as the other tab destinations — this is
+  <MobileProfilePage
+    :accounts
+    :account-id="store.accountId"
+    always-show-accounts
+    :logout
+    @switch-account="switchAccount"
+  >
+    <!-- Same title row AND the same header box as the other tab destinations — this is
 		     one of the four, not a pushed page. The wrapper's paddings are copied verbatim
 		     from ScreenerView rather than trimmed to what this view needs: the two headers
 		     are reached from the same sheet, so they have to measure the same. Its sub-pages
 		     keep the compact back-chevron bar. -->
-		<template #header>
-			<header class="flex shrink-0 items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5">
-				<MobileTitleHeader class="min-w-0 flex-1" :title="__('Profile')" />
-			</header>
-		</template>
-	</MobileProfilePage>
+    <template #header>
+      <header
+        class="flex shrink-0 items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5"
+      >
+        <MobileTitleHeader class="min-w-0 flex-1" :title="__('Profile')" />
+      </header>
+    </template>
+  </MobileProfilePage>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { useAccountSwitch } from '@/apps/mail/utils/composables'
+import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
-import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import { useAccountSwitch } from '@/apps/mail/utils/composables'
 import MobileProfilePage from '@/components/MobileProfilePage.vue'
 
 const store = userStore()

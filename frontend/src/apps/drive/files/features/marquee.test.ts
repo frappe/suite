@@ -14,8 +14,14 @@ describe('marqueeSelection', () => {
   it('selects every item the box touches, whichever way the drag runs', () => {
     const forward = boxBetween({ x: 50, y: 30 }, { x: 150, y: 40 })
     const backward = boxBetween({ x: 150, y: 40 }, { x: 50, y: 30 })
-    expect(marqueeSelection({ items, box: forward, prior: [], additive: false })).toEqual(['a', 'b'])
-    expect(marqueeSelection({ items, box: backward, prior: [], additive: false })).toEqual(['a', 'b'])
+    expect(marqueeSelection({ items, box: forward, prior: [], additive: false })).toEqual([
+      'a',
+      'b',
+    ])
+    expect(marqueeSelection({ items, box: backward, prior: [], additive: false })).toEqual([
+      'a',
+      'b',
+    ])
   })
 
   it('selects nothing for a box drawn in the gap between items', () => {
@@ -30,9 +36,17 @@ describe('marqueeSelection', () => {
 
   it('adds to the earlier selection on an additive drag, and gives back items the box leaves', () => {
     const wide = boxBetween({ x: 10, y: 10 }, { x: 150, y: 100 })
-    expect(marqueeSelection({ items, box: wide, prior: ['b'], additive: true })).toEqual(['b', 'a', 'c', 'd'])
+    expect(marqueeSelection({ items, box: wide, prior: ['b'], additive: true })).toEqual([
+      'b',
+      'a',
+      'c',
+      'd',
+    ])
     // The pointer comes back: only `a` is under the box now, and `b` stays selected from before.
     const narrow = boxBetween({ x: 10, y: 10 }, { x: 20, y: 20 })
-    expect(marqueeSelection({ items, box: narrow, prior: ['b'], additive: true })).toEqual(['b', 'a'])
+    expect(marqueeSelection({ items, box: narrow, prior: ['b'], additive: true })).toEqual([
+      'b',
+      'a',
+    ])
   })
 })

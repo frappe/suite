@@ -1,10 +1,13 @@
 export const DRIVE_NODE_TAG = 'DriveNode'
 
 /** A `?type=` value that keeps one type of node in a listing (`nodes.LISTING_TYPES`). */
-export type DriveListingType = 'folder' | 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'video' | 'audio'
+export type DriveListingType =
+  'folder' | 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'video' | 'audio'
 
 /** The `?type=` argument for a listing that keeps any of `types`: a comma-separated list, or none. */
-export function listingTypesParam(types: readonly DriveListingType[] | undefined): string | undefined {
+export function listingTypesParam(
+  types: readonly DriveListingType[] | undefined,
+): string | undefined {
   return types?.length ? types.join(',') : undefined
 }
 
@@ -92,4 +95,3 @@ export interface DriveRoots {
 export function hasRole(node: Pick<DriveNode, 'access'> | null | undefined, role: number): boolean {
   return (node?.access?.role ?? 0) >= role
 }
-

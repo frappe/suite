@@ -38,7 +38,9 @@ export function useUnlockForm(node: () => string, options: UnlockFormOptions = {
 
   const waitMs = computed(() => Math.max(0, lockedUntil.value - clock.value))
   const disabled = computed(() => pending.value || waitMs.value > 0)
-  const message = computed(() => (waitMs.value > 0 ? `Try again in ${formatWait(waitMs.value)}` : error.value))
+  const message = computed(() =>
+    waitMs.value > 0 ? `Try again in ${formatWait(waitMs.value)}` : error.value,
+  )
 
   function stopTimer() {
     if (timer !== undefined) clearInterval(timer)
@@ -83,11 +85,15 @@ export function useUnlockForm(node: () => string, options: UnlockFormOptions = {
     }
   }
 
-  watch(node, (key) => {
-    error.value = ''
-    password.value = ''
-    restore(key)
-  }, { immediate: true })
+  watch(
+    node,
+    (key) => {
+      error.value = ''
+      password.value = ''
+      restore(key)
+    },
+    { immediate: true },
+  )
 
   /** Resolves `true` once the node is unlocked. */
   async function submit(): Promise<boolean> {

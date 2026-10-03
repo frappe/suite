@@ -15,9 +15,12 @@ export interface StorageMeter {
 
 const NEAR_FULL = 0.9
 
-export function storageMeter(usage: Pick<RootUsage, 'used_bytes' | 'effective_quota'>): StorageMeter {
+export function storageMeter(
+  usage: Pick<RootUsage, 'used_bytes' | 'effective_quota'>,
+): StorageMeter {
   const used = formatBytes(usage.used_bytes)
-  if (usage.effective_quota <= 0) return { label: __('{0} used', [used]), percent: null, level: 'ok' }
+  if (usage.effective_quota <= 0)
+    return { label: __('{0} used', [used]), percent: null, level: 'ok' }
 
   const share = usage.used_bytes / usage.effective_quota
   // Any use shows at least a sliver, so a nearly empty root does not look unused.

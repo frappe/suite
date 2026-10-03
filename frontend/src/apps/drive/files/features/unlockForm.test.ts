@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
 import type { UnlockOutcome } from '@/apps/drive/client/unlock'
+
 import { formatWait, useUnlockForm } from './unlockForm'
 
 afterEach(() => {
@@ -27,7 +28,13 @@ describe('the unlock form', () => {
     state.password.value = 'open sesame'
     const second = await state.submit()
 
-    expect([first, error, afterWrong, second, state.password.value]).toEqual([false, 'Wrong password', '', true, ''])
+    expect([first, error, afterWrong, second, state.password.value]).toEqual([
+      false,
+      'Wrong password',
+      '',
+      true,
+      '',
+    ])
     expect(unlock).toHaveBeenLastCalledWith('locked-folder', 'open sesame')
   })
 
@@ -62,7 +69,10 @@ describe('the unlock form', () => {
     const reloaded = form([])
     const other = form([], 'another-folder')
 
-    expect([reloaded.state.disabled.value, reloaded.state.message.value]).toEqual([true, 'Try again in 8:20'])
+    expect([reloaded.state.disabled.value, reloaded.state.message.value]).toEqual([
+      true,
+      'Try again in 8:20',
+    ])
     expect(other.state.disabled.value).toBe(false)
     expect(JSON.stringify({ ...sessionStorage })).not.toContain('guess')
     vi.advanceTimersByTime(500_000)
@@ -74,7 +84,10 @@ describe('the unlock form', () => {
 
   it('formats a wait as minutes and seconds, rounding up', () => {
     expect([formatWait(65_000), formatWait(900_000), formatWait(1), formatWait(-5)]).toEqual([
-      '1:05', '15:00', '0:01', '0:00',
+      '1:05',
+      '15:00',
+      '0:01',
+      '0:00',
     ])
   })
 })

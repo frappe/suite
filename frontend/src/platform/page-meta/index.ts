@@ -1,6 +1,6 @@
 import {
-  getCurrentScope,
   getCurrentInstance,
+  getCurrentScope,
   onActivated,
   onDeactivated,
   onScopeDispose,
@@ -94,7 +94,10 @@ export function usePageTitle(source: () => string): () => void {
   return release
 }
 
-export function applyRouteMeta(route: RouteLocationNormalizedLoaded, state: HistoryState = {}): void {
+export function applyRouteMeta(
+  route: RouteLocationNormalizedLoaded,
+  state: HistoryState = {},
+): void {
   routeTitle = openingTitle(state) ?? (typeof route.meta.title === 'string' ? route.meta.title : '')
   setFavicon(typeof route.meta.favicon === 'string' ? route.meta.favicon : null)
   renderTitle()

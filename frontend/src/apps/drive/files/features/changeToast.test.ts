@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { announceCopy, announceMove, announceRestore, announceTrash } from './changeToast'
+
 // A Drive server that records each move and keeps every node's parent.
 const net = vi.hoisted(() => {
   const state = {
@@ -13,9 +15,23 @@ const net = vi.hoisted(() => {
     refuseRestore: null as { node: string; message: string } | null,
   }
   const node = (name: string) => ({
-    name, title: name, kind: 'file', parent_node: state.parents.get(name) ?? null, root: 'root', state: 'Active', trash_root: null,
-    size: 1, mime: 'text/plain', url: null, content_doctype: null, content_docname: null, is_template: 0,
-    owner: { id: 'Administrator', full_name: 'Administrator', user_image: null }, creation: null, modified: `m-${state.requests.length}`, content_modified: null,
+    name,
+    title: name,
+    kind: 'file',
+    parent_node: state.parents.get(name) ?? null,
+    root: 'root',
+    state: 'Active',
+    trash_root: null,
+    size: 1,
+    mime: 'text/plain',
+    url: null,
+    content_doctype: null,
+    content_docname: null,
+    is_template: 0,
+    owner: { id: 'Administrator', full_name: 'Administrator', user_image: null },
+    creation: null,
+    modified: `m-${state.requests.length}`,
+    content_modified: null,
   })
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
   globalThis.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
@@ -23,7 +39,8 @@ const net = vi.hoisted(() => {
     const body = init.body ? JSON.parse(String(init.body)) : null
     state.requests.push({ method: init.method ?? 'GET', path, body })
     // A move that names the folder it expects the node in is refused once the node moved on (Drive spec §8.2).
-    const movedOn = (name: string, expected: string | undefined) => expected !== undefined && state.parents.get(name) !== expected
+    const movedOn = (name: string, expected: string | undefined) =>
+      expected !== undefined && state.parents.get(name) !== expected
     if (init.method === 'PATCH' && path.startsWith('nodes/')) {
       const name = decodeURIComponent(path.slice('nodes/'.length))
       const refuse = state.refuse
@@ -31,7 +48,10 @@ const net = vi.hoisted(() => {
         return json({ errors: [{ type: 'DriveConflict', message: refuse.message }] }, 409)
       }
       if (movedOn(name, body.expect_parent_node)) {
-        return json({ errors: [{ type: 'DriveMoved', message: `${name} has moved since you last saw it` }] }, 409)
+        return json(
+          { errors: [{ type: 'DriveMoved', message: `${name} has moved since you last saw it` }] },
+          409,
+        )
       }
       state.parents.set(name, body.parent_node)
       return json({ data: node(name) })
@@ -41,23 +61,48 @@ const net = vi.hoisted(() => {
       const refused = patch.state === 'Active' ? state.refuseRestore : null
       const failed = refused ? nodes.filter((name) => name === refused.node) : []
       for (const name of nodes) if (!failed.includes(name)) state.states.set(name, patch.state)
-      return json({ data: {
-        ok: nodes.filter((name) => !failed.includes(name)),
-        failed: failed.map((name) => ({ node: name, type: 'DriveConflict', message: refused!.message })),
-      } })
+      return json({
+        data: {
+          ok: nodes.filter((name) => !failed.includes(name)),
+          failed: failed.map((name) => ({
+            node: name,
+            type: 'DriveConflict',
+            message: refused!.message,
+          })),
+        },
+      })
     }
     if (init.method === 'POST' && path === 'nodes/batch') {
-      const { nodes, patch } = body as { nodes: string[]; patch: { parent_node: string; expect_parent_node?: string } }
+      const { nodes, patch } = body as {
+        nodes: string[]
+        patch: { parent_node: string; expect_parent_node?: string }
+      }
       const refuse = state.refuse
       if (refuse && refuse.parent === patch.parent_node) {
-        return json({ data: { ok: [], failed: nodes.map((name) => ({ node: name, type: 'DriveConflict', message: refuse.message })) } })
+        return json({
+          data: {
+            ok: [],
+            failed: nodes.map((name) => ({
+              node: name,
+              type: 'DriveConflict',
+              message: refuse.message,
+            })),
+          },
+        })
       }
       const failed = nodes.filter((name) => movedOn(name, patch.expect_parent_node))
-      for (const name of nodes) if (!failed.includes(name)) state.parents.set(name, patch.parent_node)
-      return json({ data: {
-        ok: nodes.filter((name) => !failed.includes(name)),
-        failed: failed.map((name) => ({ node: name, type: 'DriveMoved', message: `${name} has moved since you last saw it` })),
-      } })
+      for (const name of nodes)
+        if (!failed.includes(name)) state.parents.set(name, patch.parent_node)
+      return json({
+        data: {
+          ok: nodes.filter((name) => !failed.includes(name)),
+          failed: failed.map((name) => ({
+            node: name,
+            type: 'DriveMoved',
+            message: `${name} has moved since you last saw it`,
+          })),
+        },
+      })
     }
     return json({ errors: [{ type: 'NotFound', message: path }] }, 404)
   }
@@ -80,8 +125,6 @@ vi.mock('@/platform/feedback', () => ({
   },
 }))
 
-import { announceCopy, announceMove, announceRestore, announceTrash } from './changeToast'
-
 afterEach(() => {
   feedback.toasts.length = 0
   net.requests.length = 0
@@ -94,7 +137,12 @@ afterEach(() => {
 /** The items as a move left them: in `marketing`, each having come from its own folder. */
 function moved(from: Record<string, string>) {
   for (const name of Object.keys(from)) net.parents.set(name, 'marketing')
-  return Object.entries(from).map(([node, folder]) => ({ node, title: node, from: folder, to: 'marketing' }))
+  return Object.entries(from).map(([node, folder]) => ({
+    node,
+    title: node,
+    from: folder,
+    to: 'marketing',
+  }))
 }
 
 function undo(index = 0) {
@@ -106,12 +154,17 @@ function undo(index = 0) {
 describe('Move toast with Undo', () => {
   it('names the item and the folder, and Undo puts it back in the folder it came from', async () => {
     announceMove(moved({ 'Report.pdf': 'projects' }), 'Marketing')
-    expect(feedback.toasts).toMatchObject([{ kind: 'success', message: 'Moved “Report.pdf” to Marketing' }])
+    expect(feedback.toasts).toMatchObject([
+      { kind: 'success', message: 'Moved “Report.pdf” to Marketing' },
+    ])
 
     undo()
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
     expect(net.parents.get('Report.pdf')).toBe('projects')
-    expect(feedback.toasts[1]).toMatchObject({ kind: 'success', message: 'Moved “Report.pdf” back' })
+    expect(feedback.toasts[1]).toMatchObject({
+      kind: 'success',
+      message: 'Moved “Report.pdf” back',
+    })
   })
 
   it('puts several items back in their own folders, and Undo runs only once', async () => {
@@ -123,12 +176,18 @@ describe('Move toast with Undo', () => {
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
     expect(Object.fromEntries(net.parents)).toEqual({ a: 'projects', b: 'projects', c: 'archive' })
     // The batch route, once for each folder the items came from.
-    expect(net.requests.map((request) => `${request.method} ${request.path}`)).toEqual(['POST nodes/batch', 'POST nodes/batch'])
+    expect(net.requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+      'POST nodes/batch',
+      'POST nodes/batch',
+    ])
     expect(feedback.toasts[1]).toMatchObject({ kind: 'success', message: 'Moved 3 items back' })
   })
 
   it('shows the server’s reason when an item cannot go back', async () => {
-    net.refuse = { parent: 'projects', message: 'A file named “Report.pdf” is already in Projects.' }
+    net.refuse = {
+      parent: 'projects',
+      message: 'A file named “Report.pdf” is already in Projects.',
+    }
     announceMove(moved({ 'Report.pdf': 'projects' }), 'Marketing')
 
     undo()
@@ -180,7 +239,10 @@ describe('Move toast with Undo', () => {
 
     undo()
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
-    expect(net.requests.at(-1)?.body).toEqual({ nodes: ['a', 'b'], patch: { parent_node: 'projects', expect_parent_node: 'marketing' } })
+    expect(net.requests.at(-1)?.body).toEqual({
+      nodes: ['a', 'b'],
+      patch: { parent_node: 'projects', expect_parent_node: 'marketing' },
+    })
     expect(Object.fromEntries(net.parents)).toEqual({ a: 'projects', b: 'archive' })
     expect(feedback.toasts[1]).toMatchObject({
       kind: 'error',
@@ -191,7 +253,9 @@ describe('Move toast with Undo', () => {
 
   it('reports a copy with no Undo, since the copy can be deleted', () => {
     announceCopy({ node: 'copy-1', title: 'Report.pdf' }, 'Archive')
-    expect(feedback.toasts).toEqual([{ kind: 'success', message: 'Copied “Report.pdf” to Archive' }])
+    expect(feedback.toasts).toEqual([
+      { kind: 'success', message: 'Copied “Report.pdf” to Archive' },
+    ])
   })
 
   it('shows a title as typed, not as markup', () => {
@@ -209,7 +273,9 @@ describe('Trash and restore toasts with Undo', () => {
 
   it('reports a move to Trash, and Undo restores the item', async () => {
     announceTrash(changed('Trashed', 'Report.pdf'))
-    expect(feedback.toasts).toMatchObject([{ kind: 'success', message: 'Moved “Report.pdf” to Trash' }])
+    expect(feedback.toasts).toMatchObject([
+      { kind: 'success', message: 'Moved “Report.pdf” to Trash' },
+    ])
 
     undo()
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
@@ -226,7 +292,10 @@ describe('Trash and restore toasts with Undo', () => {
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
     expect(Object.fromEntries(net.states)).toEqual({ a: 'Trashed', b: 'Trashed', c: 'Trashed' })
     expect(net.requests).toHaveLength(1)
-    expect(feedback.toasts[1]).toMatchObject({ kind: 'success', message: 'Moved 3 items back to Trash' })
+    expect(feedback.toasts[1]).toMatchObject({
+      kind: 'success',
+      message: 'Moved 3 items back to Trash',
+    })
   })
 
   it('names the items Undo could not restore, with the server’s reason', async () => {

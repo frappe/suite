@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { api } from './generated'
 
 const connection = {
@@ -37,7 +38,16 @@ describe('GET /roots/<id>/usage output contract', () => {
     const breakdown = {
       ...totals,
       by_type: [{ type: 'PDF', bytes: 900 }],
-      largest: [{ node: 'n1', title: 'a.pdf', size: 900, mime: 'application/pdf', kind: 'file', type: 'PDF' }],
+      largest: [
+        {
+          node: 'n1',
+          title: 'a.pdf',
+          size: 900,
+          mime: 'application/pdf',
+          kind: 'file',
+          type: 'PDF',
+        },
+      ],
     }
     for (const answer of [totals, breakdown]) {
       expect(() => api.root_usage.validateOutput?.(answer)).not.toThrow()
@@ -46,7 +56,9 @@ describe('GET /roots/<id>/usage output contract', () => {
 
   it('refuses a largest entry that is a folder', () => {
     const folder = { node: 'n1', title: 'F', size: 0, mime: null, kind: 'folder', type: 'Folder' }
-    expect(() => api.root_usage.validateOutput?.({ ...totals, by_type: [], largest: [folder] })).toThrow()
+    expect(() =>
+      api.root_usage.validateOutput?.({ ...totals, by_type: [], largest: [folder] }),
+    ).toThrow()
   })
 
   it('sends only the breakdown expansion', () => {

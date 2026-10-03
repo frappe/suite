@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+
 import { formatModified } from './format'
 
 describe('listing dates', () => {
   const now = new Date(2026, 9, 2, 15, 0)
-  const at = (...parts: [number, number, number, number, number]) => new Date(...parts).toISOString()
+  const at = (...parts: [number, number, number, number, number]) =>
+    new Date(...parts).toISOString()
 
   it('reads relative while recent', () => {
     expect(formatModified(at(2026, 9, 2, 14, 59), now)).toBe('1 min ago')

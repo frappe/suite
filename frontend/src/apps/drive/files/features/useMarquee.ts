@@ -11,7 +11,8 @@ const THRESHOLD = 4
 const EDGE = 48
 /** Scroll per frame with the pointer at or past the edge. */
 const MAX_SPEED = 20
-const INTERACTIVE = 'button, a[href], input, select, textarea, [role="checkbox"], [role="button"], [role="menuitem"], [contenteditable="true"]'
+const INTERACTIVE =
+  'button, a[href], input, select, textarea, [role="checkbox"], [role="button"], [role="menuitem"], [contenteditable="true"]'
 /** Controls inside an item that keep their own press, such as its menu button and checkbox. */
 const ITEM_CONTROLS = '[aria-haspopup], [role="checkbox"]'
 
@@ -103,14 +104,16 @@ export function useMarquee(options: {
     const area = options.area.value
     if (!gesture?.active || !area) return
     const { scroller, pointer } = gesture
-    const view = scroller === document.scrollingElement
-      ? { top: 0, bottom: window.innerHeight }
-      : scroller.getBoundingClientRect()
-    const speed = pointer.y < view.top + EDGE
-      ? -Math.min(MAX_SPEED, (view.top + EDGE - pointer.y) / 2)
-      : pointer.y > view.bottom - EDGE
-        ? Math.min(MAX_SPEED, (pointer.y - (view.bottom - EDGE)) / 2)
-        : 0
+    const view =
+      scroller === document.scrollingElement
+        ? { top: 0, bottom: window.innerHeight }
+        : scroller.getBoundingClientRect()
+    const speed =
+      pointer.y < view.top + EDGE
+        ? -Math.min(MAX_SPEED, (view.top + EDGE - pointer.y) / 2)
+        : pointer.y > view.bottom - EDGE
+          ? Math.min(MAX_SPEED, (pointer.y - (view.bottom - EDGE)) / 2)
+          : 0
     if (speed) scroller.scrollTop += speed
 
     const bounds = area.getBoundingClientRect()
@@ -123,7 +126,12 @@ export function useMarquee(options: {
       right: Math.min(bounds.width, drawn.right),
       bottom: Math.min(bounds.height, drawn.bottom),
     }
-    const selected = marqueeSelection({ items: itemsIn(area, bounds), box: drawn, prior: gesture.prior, additive: gesture.additive })
+    const selected = marqueeSelection({
+      items: itemsIn(area, bounds),
+      box: drawn,
+      prior: gesture.prior,
+      additive: gesture.additive,
+    })
     if (!sameIds(selected, last)) {
       last = selected
       options.select(selected)
@@ -156,7 +164,12 @@ function itemsIn(area: HTMLElement, bounds: DOMRect): MarqueeItem[] {
     const rect = element.getBoundingClientRect()
     return {
       id: element.getAttribute(LISTING_ITEM) ?? '',
-      box: { left: rect.left - bounds.left, top: rect.top - bounds.top, right: rect.right - bounds.left, bottom: rect.bottom - bounds.top },
+      box: {
+        left: rect.left - bounds.left,
+        top: rect.top - bounds.top,
+        right: rect.right - bounds.left,
+        bottom: rect.bottom - bounds.top,
+      },
     }
   })
 }

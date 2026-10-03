@@ -1,48 +1,44 @@
 <template>
-	<Dialog
-		v-model:open="show"
-	 v-bind="{
-			title: __('New Address Book'),
-			actions: [
-				{
-					label: __('Save'),
-					variant: 'solid',
-					disabled: !addressBook.name,
-					onClick: createAddressBook.submit,
-				},
-			],
-		}"
-	>
-		<template #default>
-			<div class="space-y-4">
-				<FormControl
-					v-model="addressBook.name"
-					:label="__('Name')"
-					:placeholder="__('Work Contacts')"
-				/>
-				<FormControl
-					v-model="addressBook.description"
-					type="textarea"
-					:label="__('Description')"
-					:placeholder="__('All my work-related contacts')"
-				/>
-				<FormControl
-					v-model="addressBook.default"
-					type="checkbox"
-					:label="__('Set as Default')"
-				/>
-			</div>
-		</template>
-	</Dialog>
+  <Dialog
+    v-model:open="show"
+    v-bind="{
+      title: __('New Address Book'),
+      actions: [
+        {
+          label: __('Save'),
+          variant: 'solid',
+          disabled: !addressBook.name,
+          onClick: createAddressBook.submit,
+        },
+      ],
+    }"
+  >
+    <template #default>
+      <div class="space-y-4">
+        <FormControl
+          v-model="addressBook.name"
+          :label="__('Name')"
+          :placeholder="__('Work Contacts')"
+        />
+        <FormControl
+          v-model="addressBook.description"
+          type="textarea"
+          :label="__('Description')"
+          :placeholder="__('All my work-related contacts')"
+        />
+        <FormControl v-model="addressBook.default" type="checkbox" :label="__('Set as Default')" />
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
+import { createResource, Dialog, FormControl } from 'frappe-ui'
 import { reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, FormControl, createResource } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
+import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
 
@@ -50,27 +46,27 @@ const store = userStore()
 const router = useRouter()
 
 const defaultAddressBook = {
-	account: store.accountId,
-	name: '',
-	description: '',
-	default: false,
+  account: store.accountId,
+  name: '',
+  description: '',
+  default: false,
 }
 
 const addressBook = reactive({ ...defaultAddressBook })
 
 const createAddressBook = createResource({
-	url: 'suite.mail.doctype.address_book.address_book.add_address_book',
-	makeParams: () => addressBook,
-	onSuccess: (data: string) => {
-		raiseToast(__('Address book created.'))
-		show.value = false
-		store.addressBooks.reload()
-		router.push({ name: 'mail-address-book', params: { addressBookName: data } })
-	},
-	onError: (error) => raiseToast(error.message, 'error'),
+  url: 'suite.mail.doctype.address_book.address_book.add_address_book',
+  makeParams: () => addressBook,
+  onSuccess: (data: string) => {
+    raiseToast(__('Address book created.'))
+    show.value = false
+    store.addressBooks.reload()
+    router.push({ name: 'mail-address-book', params: { addressBookName: data } })
+  },
+  onError: (error) => raiseToast(error.message, 'error'),
 })
 
 watch(show, (val) => {
-	if (val) Object.assign(addressBook, defaultAddressBook)
+  if (val) Object.assign(addressBook, defaultAddressBook)
 })
 </script>

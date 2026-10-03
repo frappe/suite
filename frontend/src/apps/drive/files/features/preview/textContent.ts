@@ -13,7 +13,11 @@ export type TextContent =
  * Fetches a file's bytes as text. The bytes become a string and nothing else:
  * no HTML is parsed and no script runs, whatever the file holds.
  */
-export async function loadTextContent(url: string, size: number, signal?: AbortSignal): Promise<TextContent> {
+export async function loadTextContent(
+  url: string,
+  size: number,
+  signal?: AbortSignal,
+): Promise<TextContent> {
   if (size > TEXT_PREVIEW_LIMIT) return { status: 'too-large' }
   // An empty file has no bytes on the server to fetch.
   if (size === 0) return { status: 'ready', text: '' }

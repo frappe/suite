@@ -169,13 +169,17 @@ export function endOfDayStamp(date: string): string {
 }
 
 const listOperation = driveOperation<{ node: string; inherited: true }, GrantList>(api.node_grants)
-const explainOperation = driveOperation<{ node: string; principal: string }, { explain: GrantExplanation }>(
-  api.node_grants,
+const explainOperation = driveOperation<
+  { node: string; principal: string },
+  { explain: GrantExplanation }
+>(api.node_grants)
+const putOperation = driveOperation<{ node: string; principal: string } & GrantWrite, DriveGrant>(
+  api.node_put_grant,
 )
-const putOperation = driveOperation<{ node: string; principal: string } & GrantWrite, DriveGrant>(api.node_put_grant)
-const deleteOperation = driveOperation<{ node: string; principal: string; below?: true }, { count: number }>(
-  api.node_delete_grant,
-)
+const deleteOperation = driveOperation<
+  { node: string; principal: string; below?: true },
+  { count: number }
+>(api.node_delete_grant)
 // The grant routes name a grant, not a node, so they carry the node's link codes themselves.
 const patchOperation = (node: string) =>
   driveOperation<{ grant: string } & GrantPatch, DriveGrant>(api.grant_patch, { covers: [node] })
@@ -189,7 +193,11 @@ export function nodeGrants(node: string, transport: Transport = defaultTransport
   return {
     async list(): Promise<GrantList> {
       const answer = await transport.request(listOperation, { node, inherited: true })
-      return { grants: answer.grants ?? [], inherited: answer.inherited ?? [], owner: answer.owner ?? null }
+      return {
+        grants: answer.grants ?? [],
+        inherited: answer.inherited ?? [],
+        owner: answer.owner ?? null,
+      }
     },
     async explain(principal: string): Promise<GrantExplanation> {
       return (await transport.request(explainOperation, { node, principal })).explain
@@ -200,7 +208,11 @@ export function nodeGrants(node: string, transport: Transport = defaultTransport
     },
     /** Removes a principal's local row. `below` also removes it from every item inside; the answer counts them all. */
     async remove(principal: string, below = false): Promise<number> {
-      const answer = await transport.request(deleteOperation, { node, principal, ...(below ? { below: true as const } : {}) })
+      const answer = await transport.request(deleteOperation, {
+        node,
+        principal,
+        ...(below ? { below: true as const } : {}),
+      })
       return answer.count
     },
     /** Rewrites one existing row by its id: the way to change a link. */

@@ -1,12 +1,11 @@
-import { computed, ref, watch } from 'vue'
 import { createResource } from 'frappe-ui'
-
-import dayjs from '@/apps/calendar/utils/dayjs'
-import { fromEventZone } from '@/apps/calendar/utils/datetime'
-import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
-import { userStore } from '@/apps/calendar/stores/user'
+import { computed, ref, watch } from 'vue'
 
 import type { GridEvent } from '@/apps/calendar/composables/useMonthGrid'
+import { userStore } from '@/apps/calendar/stores/user'
+import { fromEventZone } from '@/apps/calendar/utils/datetime'
+import dayjs from '@/apps/calendar/utils/dayjs'
+import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 
 /**
  * The density behind the sidebar's mini month.
@@ -23,12 +22,12 @@ import type { GridEvent } from '@/apps/calendar/composables/useMonthGrid'
 
 /** What `get_calendar_event_density` returns per event. */
 interface DensityRow {
-	start: string
-	duration?: string
-	time_zone?: string
-	show_without_time?: boolean
-	calendars: string[]
-	is_declined?: boolean
+  start: string
+  duration?: string
+  time_zone?: string
+  show_without_time?: boolean
+  calendars: string[]
+  is_declined?: boolean
 }
 
 /**
@@ -37,18 +36,18 @@ interface DensityRow {
  * reading of all-day-ness and inclusive ends that could disagree with it.
  */
 const toGridEvent = (row: DensityRow, color: (calendar: string) => string): GridEvent => {
-	const isAllDay = isAllDayEvent(row)
-	const start = isAllDay ? dayjs(row.start) : fromEventZone(row.start, row.time_zone)
-	const last = isAllDay
-		? (eventLastDay(start, row.duration, true) ?? start)
-		: start.add(dayjs.duration(row.duration || 'PT0S'))
+  const isAllDay = isAllDayEvent(row)
+  const start = isAllDay ? dayjs(row.start) : fromEventZone(row.start, row.time_zone)
+  const last = isAllDay
+    ? (eventLastDay(start, row.duration, true) ?? start)
+    : start.add(dayjs.duration(row.duration || 'PT0S'))
 
-	return {
-		fromDate: start.format('YYYY-MM-DD'),
-		toDate: last.format('YYYY-MM-DD'),
-		color: color(row.calendars[0] ?? ''),
-		isDeclined: !!row.is_declined,
-	}
+  return {
+    fromDate: start.format('YYYY-MM-DD'),
+    toDate: last.format('YYYY-MM-DD'),
+    color: color(row.calendars[0] ?? ''),
+    isDeclined: !!row.is_declined,
+  }
 }
 
 // Keyed by account and month, so paging back to somewhere already seen redraws
@@ -75,59 +74,59 @@ const stale = ref<Record<string, true>>({})
  * other way to hear about it.
  */
 export const invalidateEventDensity = () => {
-	stale.value = Object.fromEntries(Object.keys(byMonth.value).map((key) => [key, true]))
+  stale.value = Object.fromEntries(Object.keys(byMonth.value).map((key) => [key, true]))
 }
 
 export const useEventDensity = (
-	month: () => number,
-	year: () => number,
-	color: (calendar: string) => string,
+  month: () => number,
+  year: () => number,
+  color: (calendar: string) => string,
 ) => {
-	const store = userStore()
+  const store = userStore()
 
-	const key = computed(() => `${store.accountId}:${year()}-${month() + 1}`)
+  const key = computed(() => `${store.accountId}:${year()}-${month() + 1}`)
 
-	const density = createResource({
-		url: 'suite.calendar.api.get_calendar_event_density_with_shared',
-		makeParams: () => {
-			// The card's own six rows, which reach into the months either side of
-			// the one it names — so the ticks on those spill-over days are real.
-			const first = dayjs(new Date(year(), month(), 1))
-			return {
-				account: store.accountId,
-				from_date: first.subtract(7, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-				to_date: first.endOf('month').add(7, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-				time_zone: dayjs.tz.guess(),
-			}
-		},
-		// Silent: a card that cannot draw its ticks is worth less than a toast over
-		// whatever the reader is actually doing.
-		onError: () => {},
-	})
+  const density = createResource({
+    url: 'suite.calendar.api.get_calendar_event_density_with_shared',
+    makeParams: () => {
+      // The card's own six rows, which reach into the months either side of
+      // the one it names — so the ticks on those spill-over days are real.
+      const first = dayjs(new Date(year(), month(), 1))
+      return {
+        account: store.accountId,
+        from_date: first.subtract(7, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+        to_date: first.endOf('month').add(7, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+        time_zone: dayjs.tz.guess(),
+      }
+    },
+    // Silent: a card that cannot draw its ticks is worth less than a toast over
+    // whatever the reader is actually doing.
+    onError: () => {},
+  })
 
-	const load = () => {
-		const wanted = key.value
-		if (!store.accountId) return
-		if (byMonth.value[wanted] && !stale.value[wanted]) return
-		density.submit(undefined, {
-			onSuccess: (rows: DensityRow[]) => {
-				byMonth.value[wanted] = rows ?? []
-				delete stale.value[wanted]
-			},
-		})
-	}
+  const load = () => {
+    const wanted = key.value
+    if (!store.accountId) return
+    if (byMonth.value[wanted] && !stale.value[wanted]) return
+    density.submit(undefined, {
+      onSuccess: (rows: DensityRow[]) => {
+        byMonth.value[wanted] = rows ?? []
+        delete stale.value[wanted]
+      },
+    })
+  }
 
-	watch(key, load, { immediate: true })
+  watch(key, load, { immediate: true })
 
-	// Marked stale, the displayed month asks again — that month alone, not every
-	// month it happens to have seen. What it is already drawing stays up until
-	// the answer lands.
-	watch(
-		() => stale.value[key.value],
-		(isStale) => isStale && load(),
-	)
+  // Marked stale, the displayed month asks again — that month alone, not every
+  // month it happens to have seen. What it is already drawing stays up until
+  // the answer lands.
+  watch(
+    () => stale.value[key.value],
+    (isStale) => isStale && load(),
+  )
 
-	return {
-		events: computed(() => (byMonth.value[key.value] ?? []).map((row) => toGridEvent(row, color))),
-	}
+  return {
+    events: computed(() => (byMonth.value[key.value] ?? []).map((row) => toGridEvent(row, color))),
+  }
 }

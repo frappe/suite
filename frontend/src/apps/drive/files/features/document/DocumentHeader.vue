@@ -1,5 +1,7 @@
 <template>
-  <header class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5">
+  <header
+    class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5"
+  >
     <div class="flex min-w-0 flex-1 items-center gap-1">
       <template v-if="location">
         <Button
@@ -22,7 +24,11 @@
       <!-- The hidden copy of the title gives the field its width, so the field
         fits its text and a refusal sits right after it. -->
       <div class="document-title relative min-w-0 max-w-md">
-        <span class="invisible block h-7 overflow-hidden whitespace-pre ps-2 pe-2.5 text-base font-medium" aria-hidden="true">{{ titleDraft || ' ' }}</span>
+        <span
+          class="invisible block h-7 overflow-hidden whitespace-pre ps-2 pe-2.5 text-base font-medium"
+          aria-hidden="true"
+          >{{ titleDraft || ' ' }}</span
+        >
         <TextInput
           ref="titleInput"
           v-model="titleDraft"
@@ -40,13 +46,24 @@
           @keydown.escape.prevent="revertTitle"
         />
       </div>
-      <span v-if="titleError" class="title-refusal ms-1 min-w-0 max-w-64 truncate text-sm text-ink-red-7" role="alert" :title="titleError">
+      <span
+        v-if="titleError"
+        class="title-refusal ms-1 min-w-0 max-w-64 truncate text-sm text-ink-red-7"
+        role="alert"
+        :title="titleError"
+      >
         {{ titleError }}
       </span>
       <Badge v-if="trashed" label="Trashed" theme="red" variant="subtle" class="shrink-0">
         <template #prefix><span class="lucide-trash-2 size-2.5" aria-hidden="true" /></template>
       </Badge>
-      <Badge v-else-if="viewOnly" label="View only" theme="gray" variant="subtle" class="shrink-0" />
+      <Badge
+        v-else-if="viewOnly"
+        label="View only"
+        theme="gray"
+        variant="subtle"
+        class="shrink-0"
+      />
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" class="shrink-0" />
       <template v-if="recoverable">
         <Button
@@ -73,7 +90,10 @@
       <span
         v-if="saveState"
         class="mr-1 whitespace-nowrap text-sm"
-        :class="[saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5', saveState !== 'failed' && 'max-md:hidden']"
+        :class="[
+          saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
+          saveState !== 'failed' && 'max-md:hidden',
+        ]"
         aria-live="polite"
       >
         {{ SAVE_LABELS[saveState] }}
@@ -90,8 +110,21 @@
         @click="panel = panel === name ? null : name"
       />
       <template v-if="session.canShare.value">
-        <Button class="ml-1 max-md:hidden" variant="solid" icon-left="lucide-share-2" label="Share" @click="session.share()" />
-        <Button class="md:hidden" variant="ghost" icon="lucide-share-2" tooltip="Share" aria-label="Share" @click="session.share()" />
+        <Button
+          class="ml-1 max-md:hidden"
+          variant="solid"
+          icon-left="lucide-share-2"
+          label="Share"
+          @click="session.share()"
+        />
+        <Button
+          class="md:hidden"
+          variant="ghost"
+          icon="lucide-share-2"
+          tooltip="Share"
+          aria-label="Share"
+          @click="session.share()"
+        />
       </template>
     </div>
   </header>
@@ -105,38 +138,48 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { selectStem } from '@/apps/drive/files/internal/filename'
+
 import { canRename } from '../nodeActions'
-import { PANEL_BUTTONS, SAVE_LABELS, documentTypeIcon, type DocumentPanel, type DocumentSaveState } from './header'
+import {
+  documentTypeIcon,
+  PANEL_BUTTONS,
+  SAVE_LABELS,
+  type DocumentPanel,
+  type DocumentSaveState,
+} from './header'
 
 /**
  * The one header every document surface shows: the Drive type icon, the title
  * (renamed in place), state badges, the recovery download, the save status, the surface's own actions,
  * the side-panel toggles and Share, always in that order.
  */
-const props = withDefaults(defineProps<{
-  session: DocumentSession
-  /** The title field's accessible name, such as "Spreadsheet title". */
-  titleLabel: string
-  /** Omitted for content that has no save state, such as a file preview. */
-  saveState?: DocumentSaveState | null
-  /** The content cannot be edited here. A trashed document says Trashed instead. */
-  viewOnly?: boolean
-  /** A copy of edits that could not be saved is kept on this device. */
-  recoverable?: boolean
-  /** The side panels this surface has, in toggle order. */
-  panels?: readonly DocumentPanel[]
-  /** The folder the document is in, shown as a way back. */
-  location?: { label: string; to: RouteLocationRaw } | null
-  /** A file's MIME type picks its icon. Documents have none. */
-  mime?: string | null
-}>(), {
-  saveState: null,
-  viewOnly: false,
-  recoverable: false,
-  panels: () => [],
-  location: null,
-  mime: null,
-})
+const props = withDefaults(
+  defineProps<{
+    session: DocumentSession
+    /** The title field's accessible name, such as "Spreadsheet title". */
+    titleLabel: string
+    /** Omitted for content that has no save state, such as a file preview. */
+    saveState?: DocumentSaveState | null
+    /** The content cannot be edited here. A trashed document says Trashed instead. */
+    viewOnly?: boolean
+    /** A copy of edits that could not be saved is kept on this device. */
+    recoverable?: boolean
+    /** The side panels this surface has, in toggle order. */
+    panels?: readonly DocumentPanel[]
+    /** The folder the document is in, shown as a way back. */
+    location?: { label: string; to: RouteLocationRaw } | null
+    /** A file's MIME type picks its icon. Documents have none. */
+    mime?: string | null
+  }>(),
+  {
+    saveState: null,
+    viewOnly: false,
+    recoverable: false,
+    panels: () => [],
+    location: null,
+    mime: null,
+  },
+)
 
 const emit = defineEmits<{ downloadChanges: [] }>()
 const panel = defineModel<DocumentPanel | null>('panel', { default: null })
@@ -145,14 +188,29 @@ const online = useOnline()
 const titleInput = ref<InstanceType<typeof TextInput> | null>(null)
 const titleDraft = ref(props.session.title.value)
 const trashed = computed(() => props.session.state.value === 'Trashed')
-const renamable = computed(() => canRename({ state: props.session.state.value, access: props.session.access.value }))
-const typeIcon = computed(() => documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime))
+const renamable = computed(() =>
+  canRename({ state: props.session.state.value, access: props.session.access.value }),
+)
+const typeIcon = computed(() =>
+  documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime),
+)
 
 /** A refused rename, shown beside the title until the title changes. */
 const titleError = ref<string>()
 
-watch(() => props.session.title.value, (title) => { titleDraft.value = title })
-watch(titleDraft, () => { titleError.value = undefined }, { flush: 'sync' })
+watch(
+  () => props.session.title.value,
+  (title) => {
+    titleDraft.value = title
+  },
+)
+watch(
+  titleDraft,
+  () => {
+    titleError.value = undefined
+  },
+  { flush: 'sync' },
+)
 
 function blurTitle() {
   titleInput.value?.inputElement?.blur()

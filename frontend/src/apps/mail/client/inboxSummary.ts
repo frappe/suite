@@ -1,5 +1,5 @@
-import { query } from "@/platform/server-state";
+import { query } from '@/platform/server-state'
 
-import { api } from "./generated";
+import { api } from './generated'
 
-export const inboxSummary = () => query(api.inbox_summary, {});
+export const inboxSummary = () => query(api.inbox_summary, {})

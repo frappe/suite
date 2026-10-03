@@ -97,12 +97,9 @@ describe('suite route table', () => {
     },
   )
 
-  it.each(['suite-start', 'suite-root', 'suite-launcher'])(
-    'sends %s to Home',
-    (name) => {
-      expect(redirectOf(router, name)).toBe('/home')
-    },
-  )
+  it.each(['suite-start', 'suite-root', 'suite-launcher'])('sends %s to Home', (name) => {
+    expect(redirectOf(router, name)).toBe('/home')
+  })
 
   it('lets a guest open a shared folder, and nothing else in the Drive area', async () => {
     state.status = 'guest'

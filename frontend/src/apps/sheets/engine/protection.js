@@ -10,8 +10,8 @@
 // range that collapses to nothing is dropped. This matches Google Sheets and,
 // unlike the cond-format engine, handles ranges that *span* the pivot line.
 
-import { remapRect } from './ref-remap.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { remapRect } from './ref-remap.js'
 
 let _nextId = 1
 
@@ -39,7 +39,7 @@ export function createProtectionEngine() {
     const s = store[sheet]
     if (!s) return false
     if (s.locked) return true
-    return s.ranges.some(r => row >= r.r0 && row <= r.r1 && col >= r.c0 && col <= r.c1)
+    return s.ranges.some((r) => row >= r.r0 && row <= r.r1 && col >= r.c0 && col <= r.c1)
   }
 
   // Does `rect` overlap any protected cell? Used to block a whole block-write
@@ -49,7 +49,7 @@ export function createProtectionEngine() {
     if (!s) return false
     if (s.locked) return true
     const { r0, c0, r1, c1 } = _norm(rect)
-    return s.ranges.some(r => r0 <= r.r1 && r1 >= r.r0 && c0 <= r.c1 && c1 >= r.c0)
+    return s.ranges.some((r) => r0 <= r.r1 && r1 >= r.r0 && c0 <= r.c1 && c1 >= r.c0)
   }
 
   // ── Mutations ────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ export function createProtectionEngine() {
 
   function removeRange(id, sheet = 'Sheet1') {
     const s = store[sheet]
-    if (s) s.ranges = s.ranges.filter(r => r.id !== id)
+    if (s) s.ranges = s.ranges.filter((r) => r.id !== id)
   }
 
   // ── Structural shifts ────────────────────────────────────────────────────────
@@ -85,7 +85,8 @@ export function createProtectionEngine() {
     const hi = axis === 'row' ? 'r1' : 'c1'
     const kept = []
     for (const r of s.ranges) {
-      let a = r[lo], b = r[hi]
+      let a = r[lo],
+        b = r[hi]
       if (delta > 0) {
         if (a >= at) a += 1
         if (b >= at) b += 1
@@ -99,20 +100,35 @@ export function createProtectionEngine() {
     s.ranges = kept
   }
 
-  function insertRow(at, sheet = 'Sheet1') { _shift(sheet, 'row', at, +1) }
-  function deleteRow(at, sheet = 'Sheet1') { _shift(sheet, 'row', at, -1) }
-  function insertCol(at, sheet = 'Sheet1') { _shift(sheet, 'col', at, +1) }
-  function deleteCol(at, sheet = 'Sheet1') { _shift(sheet, 'col', at, -1) }
+  function insertRow(at, sheet = 'Sheet1') {
+    _shift(sheet, 'row', at, +1)
+  }
+  function deleteRow(at, sheet = 'Sheet1') {
+    _shift(sheet, 'row', at, -1)
+  }
+  function insertCol(at, sheet = 'Sheet1') {
+    _shift(sheet, 'col', at, +1)
+  }
+  function deleteCol(at, sheet = 'Sheet1') {
+    _shift(sheet, 'col', at, -1)
+  }
 
   function _remap(sheet, mapCol, mapRow) {
     const s = store[sheet]
     if (!s?.ranges) return
     s.ranges = s.ranges
-      .map(r => { const box = remapRect(r, mapCol, mapRow); return box ? { ...r, ...box } : null })
+      .map((r) => {
+        const box = remapRect(r, mapCol, mapRow)
+        return box ? { ...r, ...box } : null
+      })
       .filter(Boolean)
   }
-  function remapCols(mapCol, sheet = 'Sheet1') { _remap(sheet, mapCol, null) }
-  function remapRows(mapRow, sheet = 'Sheet1') { _remap(sheet, null, mapRow) }
+  function remapCols(mapCol, sheet = 'Sheet1') {
+    _remap(sheet, mapCol, null)
+  }
+  function remapRows(mapRow, sheet = 'Sheet1') {
+    _remap(sheet, null, mapRow)
+  }
 
   // ── Sheet lifecycle ──────────────────────────────────────────────────────────
 
@@ -127,9 +143,13 @@ export function createProtectionEngine() {
     store[newName] = deepClone(store[srcName] || { locked: false, ranges: [] })
   }
 
-  function deleteSheet(name) { delete store[name] }
+  function deleteSheet(name) {
+    delete store[name]
+  }
 
-  function snapshot() { return deepClone(store) }
+  function snapshot() {
+    return deepClone(store)
+  }
 
   function restore(snap) {
     for (const k of Object.keys(store)) delete store[k]
@@ -139,25 +159,39 @@ export function createProtectionEngine() {
     let maxId = 0
     for (const [k, v] of Object.entries(snap)) {
       store[k] = v
-      for (const r of (v?.ranges || [])) if (r.id > maxId) maxId = r.id
+      for (const r of v?.ranges || []) if (r.id > maxId) maxId = r.id
     }
     if (maxId >= _nextId) _nextId = maxId + 1
   }
 
   return {
-    getRanges, isSheetLocked, isProtected, isAnyProtected,
-    setSheetLocked, addRange, removeRange,
-    insertRow, deleteRow, insertCol, deleteCol,
-    remapCols, remapRows,
-    renameSheet, duplicateSheet, deleteSheet,
-    snapshot, restore,
+    getRanges,
+    isSheetLocked,
+    isProtected,
+    isAnyProtected,
+    setSheetLocked,
+    addRange,
+    removeRange,
+    insertRow,
+    deleteRow,
+    insertCol,
+    deleteCol,
+    remapCols,
+    remapRows,
+    renameSheet,
+    duplicateSheet,
+    deleteSheet,
+    snapshot,
+    restore,
   }
 }
 
 // Normalise a rect so r0<=r1 and c0<=c1 regardless of selection direction.
 function _norm({ r0, c0, r1, c1 }) {
   return {
-    r0: Math.min(r0, r1), r1: Math.max(r0, r1),
-    c0: Math.min(c0, c1), c1: Math.max(c0, c1),
+    r0: Math.min(r0, r1),
+    r1: Math.max(r0, r1),
+    c0: Math.min(c0, c1),
+    c1: Math.max(c0, c1),
   }
 }

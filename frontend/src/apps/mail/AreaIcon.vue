@@ -12,5 +12,5 @@
 </template>
 
 <script setup lang="ts">
-import { DuotoneIcon } from "@/platform/duotone-icon";
+import { DuotoneIcon } from '@/platform/duotone-icon'
 </script>

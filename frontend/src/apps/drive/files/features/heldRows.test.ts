@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { nextTick, reactive, ref } from 'vue'
 
 import type { QueryResult, QueryStatus } from '@/platform/server-state'
+
 import { heldWhileRearranging } from './heldRows'
 
 type Page = { rows: string[] }

@@ -1,6 +1,10 @@
 <template>
   <div class="space-y-5 text-base text-ink-gray-8">
-    <div v-if="!state.node.value && !state.loadError.value" class="space-y-3" aria-label="Loading who has access">
+    <div
+      v-if="!state.node.value && !state.loadError.value"
+      class="space-y-3"
+      aria-label="Loading who has access"
+    >
       <Skeleton v-for="index in 4" :key="index" class="h-8 w-full" />
     </div>
 
@@ -20,29 +24,53 @@
           :share="share"
           @send-link="(email, role) => state.sendLink(email, role)"
         />
-        <ErrorMessage v-if="state.errors.get(PICKER)" class="mt-2" :message="state.errors.get(PICKER)" />
+        <ErrorMessage
+          v-if="state.errors.get(PICKER)"
+          class="mt-2"
+          :message="state.errors.get(PICKER)"
+        />
       </div>
 
-      <p v-if="state.notice.value" role="status" class="rounded-4 bg-surface-gray-2 px-3 py-2 text-p-sm text-ink-gray-7">
+      <p
+        v-if="state.notice.value"
+        role="status"
+        class="rounded-4 bg-surface-gray-2 px-3 py-2 text-p-sm text-ink-gray-7"
+      >
         {{ state.notice.value }}
       </p>
 
       <section aria-labelledby="share-people">
         <h3 id="share-people" class="mb-1 text-sm text-ink-gray-5">People</h3>
-        <p v-if="!sections.owner && !sections.people.length" class="py-2 text-p-sm text-ink-gray-5">No one is added here yet.</p>
+        <p v-if="!sections.owner && !sections.people.length" class="py-2 text-p-sm text-ink-gray-5">
+          No one is added here yet.
+        </p>
         <ul>
           <!-- The owner's access cannot be denied or removed here, so their row has no menu. -->
           <li v-if="sections.owner" class="flex min-h-12 items-center gap-3">
-            <Avatar size="md" :image="sections.owner.user_image ?? undefined" :label="sections.owner.full_name" class="shrink-0" />
+            <Avatar
+              size="md"
+              :image="sections.owner.user_image ?? undefined"
+              :label="sections.owner.full_name"
+              class="shrink-0"
+            />
             <div class="min-w-0 flex-1">
               <p class="truncate">{{ sections.owner.full_name }}</p>
-              <p v-if="sections.owner.full_name !== sections.owner.id" class="mt-1 truncate text-sm text-ink-gray-5">
+              <p
+                v-if="sections.owner.full_name !== sections.owner.id"
+                class="mt-1 truncate text-sm text-ink-gray-5"
+              >
                 {{ sections.owner.id }}
               </p>
             </div>
             <span class="shrink-0 px-2 text-base text-ink-gray-5">Owner</span>
           </li>
-          <SharePersonRow v-for="row in sections.people" :key="row.grant.principal" :row="row" :state="state" :node-kind="node.kind" />
+          <SharePersonRow
+            v-for="row in sections.people"
+            :key="row.grant.principal"
+            :row="row"
+            :state="state"
+            :node-kind="node.kind"
+          />
         </ul>
       </section>
 
@@ -50,7 +78,10 @@
         <h3 id="share-general" class="mb-1 text-sm text-ink-gray-5">General access</h3>
         <ul>
           <li v-for="general in generalRows" :key="general.principal">
-            <div class="flex min-h-12 items-center gap-3" :class="{ 'opacity-60': general.access.state === 'expired' }">
+            <div
+              class="flex min-h-12 items-center gap-3"
+              :class="{ 'opacity-60': general.access.state === 'expired' }"
+            >
               <span
                 class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
                 aria-hidden="true"
@@ -59,7 +90,9 @@
               </span>
               <div class="min-w-0 flex-1">
                 <p class="truncate">{{ general.label }}</p>
-                <p v-if="generalMeta(general)" class="mt-1 text-p-sm text-ink-gray-5">{{ generalMeta(general) }}</p>
+                <p v-if="generalMeta(general)" class="mt-1 text-p-sm text-ink-gray-5">
+                  {{ generalMeta(general) }}
+                </p>
               </div>
               <Button
                 v-if="general.access.state === 'denied'"
@@ -88,7 +121,11 @@
                 </Button>
               </Dropdown>
             </div>
-            <ErrorMessage v-if="state.errors.get(general.principal)" class="pb-2" :message="state.errors.get(general.principal)" />
+            <ErrorMessage
+              v-if="state.errors.get(general.principal)"
+              class="pb-2"
+              :message="state.errors.get(general.principal)"
+            />
           </li>
         </ul>
       </section>
@@ -104,14 +141,28 @@
             @click="newLink"
           />
         </div>
-        <ErrorMessage v-if="state.errors.get(NEW_LINK_ROW)" class="pb-2" :message="state.errors.get(NEW_LINK_ROW)" />
+        <ErrorMessage
+          v-if="state.errors.get(NEW_LINK_ROW)"
+          class="pb-2"
+          :message="state.errors.get(NEW_LINK_ROW)"
+        />
         <p v-if="!sections.links.length" class="py-2 text-p-sm text-ink-gray-5">No links yet.</p>
         <ul>
-          <ShareLinkRow v-for="row in sections.links" :key="row.grant.principal" :row="row" :state="state" :node-kind="node.kind" />
+          <ShareLinkRow
+            v-for="row in sections.links"
+            :key="row.grant.principal"
+            :row="row"
+            :state="state"
+            :node-kind="node.kind"
+          />
         </ul>
       </section>
 
-      <section v-for="part in sections.inherited" :key="part.node" :aria-label="`From “${part.title}”`">
+      <section
+        v-for="part in sections.inherited"
+        :key="part.node"
+        :aria-label="`From “${part.title}”`"
+      >
         <button
           type="button"
           class="flex h-8 w-full items-center gap-1.5 rounded-4 text-left text-sm text-ink-gray-5 hover:text-ink-gray-7"
@@ -119,14 +170,20 @@
           @click="toggle(part.node)"
         >
           <span
-            :class="[unfolded.has(part.node) ? 'lucide-chevron-down' : 'lucide-chevron-right', 'size-4']"
+            :class="[
+              unfolded.has(part.node) ? 'lucide-chevron-down' : 'lucide-chevron-right',
+              'size-4',
+            ]"
             aria-hidden="true"
           />
           <span class="truncate">From “{{ part.title }}”</span>
           <span class="shrink-0 text-ink-gray-4">· {{ part.rows.length }}</span>
         </button>
         <ul v-if="unfolded.has(part.node)">
-          <li v-for="(inherited, index) in part.rows" :key="`${inherited.entry.grant.principal}-${index}`">
+          <li
+            v-for="(inherited, index) in part.rows"
+            :key="`${inherited.entry.grant.principal}-${index}`"
+          >
             <div class="flex min-h-12 items-center gap-3">
               <span
                 class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
@@ -159,16 +216,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
 import { Avatar, Button, Dropdown, ErrorMessage, Skeleton, type DropdownItem } from 'frappe-ui'
+import { computed, reactive } from 'vue'
 
-import { GENERAL, PUBLIC, roleLabel, rolesFor, type PrincipalKind } from '@/apps/drive/client/grants'
+import {
+  GENERAL,
+  PUBLIC,
+  roleLabel,
+  rolesFor,
+  type PrincipalKind,
+} from '@/apps/drive/client/grants'
 
+import { copyLink, formatDay } from './shareFormat'
 import ShareLinkRow from './ShareLinkRow.vue'
+import type { GeneralAccess, InheritedRow, PickedPerson } from './shareModel'
 import SharePersonRow from './SharePersonRow.vue'
 import SharePicker from './SharePicker.vue'
-import type { GeneralAccess, InheritedRow, PickedPerson } from './shareModel'
-import { copyLink, formatDay } from './shareFormat'
 import { NEW_LINK_ROW, PICKER, type ShareState } from './useShare'
 
 const props = defineProps<{ state: ShareState; autofocusPicker?: boolean }>()
@@ -221,14 +284,25 @@ function toggle(part: string) {
 }
 
 function kindIcon(kind: PrincipalKind): string {
-  return { user: 'lucide-user', group: 'lucide-users', general: 'lucide-building-2', public: 'lucide-globe', link: 'lucide-link' }[kind]
+  return {
+    user: 'lucide-user',
+    group: 'lucide-users',
+    general: 'lucide-building-2',
+    public: 'lucide-globe',
+    link: 'lucide-link',
+  }[kind]
 }
 
 function generalValue(general: GeneralRow): string {
   const access = general.access
   if (access.state === 'off') return 'Off'
   if (access.state === 'expired') return 'Expired'
-  const role = access.state === 'local' ? access.row.grant.role : access.state === 'inherited' ? access.entry.grant.role : 0
+  const role =
+    access.state === 'local'
+      ? access.row.grant.role
+      : access.state === 'inherited'
+        ? access.entry.grant.role
+        : 0
   return general.kind === 'public' ? 'On' : roleLabel(role)
 }
 
@@ -254,14 +328,21 @@ function generalMeta(general: GeneralRow): string {
 function generalOptions(general: GeneralRow): DropdownItem[] {
   const access = general.access
   if (access.state === 'inherited') {
-    return [{ label: 'Deny access here', icon: 'lucide-ban', onClick: () => void props.state.deny(general.principal) }]
+    return [
+      {
+        label: 'Deny access here',
+        icon: 'lucide-ban',
+        onClick: () => void props.state.deny(general.principal),
+      },
+    ]
   }
   const current = access.state === 'local' ? access.row.grant.role : 0
   // `expired` renders Remove instead of this menu.
   const roles = rolesFor(general.kind, node.value?.kind ?? 'document').map((role) => ({
     label: general.kind === 'public' ? 'On' : role.label,
     selected: role.value === current,
-    onClick: () => void (role.value !== current && props.state.setGeneral(general.principal, role.value)),
+    onClick: () =>
+      void (role.value !== current && props.state.setGeneral(general.principal, role.value)),
   }))
   return [
     {
@@ -274,7 +355,9 @@ function generalOptions(general: GeneralRow): DropdownItem[] {
 }
 
 function inheritedLabel(inherited: InheritedRow): string {
-  return inherited.kind === 'link' ? 'Share link' : props.state.label(inherited.entry.grant.principal)
+  return inherited.kind === 'link'
+    ? 'Share link'
+    : props.state.label(inherited.entry.grant.principal)
 }
 
 function inheritedMeta(inherited: InheritedRow): string {
@@ -286,9 +369,19 @@ function inheritedMeta(inherited: InheritedRow): string {
 }
 
 /** Adds each person picked in turn. Resolves with those not added: a failed write, or a declined confirm. */
-async function share(people: PickedPerson[], role: number, notify: boolean): Promise<PickedPerson[]> {
+async function share(
+  people: PickedPerson[],
+  role: number,
+  notify: boolean,
+): Promise<PickedPerson[]> {
   for (const person of people) props.state.rememberName(person.principal, person.name)
-  const left = new Set(await props.state.add(people.map((person) => person.principal), role, notify))
+  const left = new Set(
+    await props.state.add(
+      people.map((person) => person.principal),
+      role,
+      notify,
+    ),
+  )
   return people.filter((person) => left.has(person.principal))
 }
 

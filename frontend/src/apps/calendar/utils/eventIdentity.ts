@@ -25,7 +25,7 @@ export const eventRowId = (event: { name: string }) => event.name
  * an override, which editing or answering one gives it.
  */
 export const serverEventId = (event: { event_id?: string; master_id?: string }) =>
-	event.master_id || event.event_id
+  event.master_id || event.event_id
 
 /**
  * Whether two rows name one event: the same account, the same event as a link names it, the
@@ -35,15 +35,15 @@ export const serverEventId = (event: { event_id?: string; master_id?: string }) 
  * only unique within one.
  */
 export interface EventIdentity {
-	account?: string
-	event_id?: string
-	master_id?: string
-	recurrence_id?: string | null
+  account?: string
+  event_id?: string
+  master_id?: string
+  recurrence_id?: string | null
 }
 
 export const sameEvent = (a?: EventIdentity | null, b?: EventIdentity | null) =>
-	!!a &&
-	!!b &&
-	a.account === b.account &&
-	serverEventId(a) === serverEventId(b) &&
-	(a.recurrence_id ?? '') === (b.recurrence_id ?? '')
+  !!a &&
+  !!b &&
+  a.account === b.account &&
+  serverEventId(a) === serverEventId(b) &&
+  (a.recurrence_id ?? '') === (b.recurrence_id ?? '')

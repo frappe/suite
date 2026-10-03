@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+
 export function formatDate(date) {
   if (!date) return ''
   const dateObj = new Date(date)

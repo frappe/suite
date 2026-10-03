@@ -10,13 +10,29 @@
       <div class="min-w-0 flex-1">
         <p class="flex items-center gap-1.5 truncate">
           <span>{{ row.denied ? 'Share link' : `${roleLabel(row.grant.role)} link` }}</span>
-          <span v-if="row.grant.has_password" class="lucide-lock size-3.5 text-ink-gray-5" aria-label="Password set" role="img" />
+          <span
+            v-if="row.grant.has_password"
+            class="lucide-lock size-3.5 text-ink-gray-5"
+            aria-label="Password set"
+            role="img"
+          />
         </p>
         <p class="mt-1 truncate text-sm text-ink-gray-5">{{ meta }}</p>
       </div>
-      <Button v-if="row.denied" label="Allow again" :loading="busy" @click="state.allowAgain(row)" />
+      <Button
+        v-if="row.denied"
+        label="Allow again"
+        :loading="busy"
+        @click="state.allowAgain(row)"
+      />
       <template v-else-if="row.expired">
-        <Button label="Delete link" theme="red" variant="ghost" :loading="busy" @click="state.remove(row)" />
+        <Button
+          label="Delete link"
+          theme="red"
+          variant="ghost"
+          :loading="busy"
+          @click="state.remove(row)"
+        />
       </template>
       <template v-else>
         <Button
@@ -28,7 +44,12 @@
           @click="row.grant.url && copyLink(row.grant.url)"
         />
         <Dropdown :options="options" align="end">
-          <Button icon="lucide-ellipsis" variant="ghost" aria-label="Link options" :loading="busy" />
+          <Button
+            icon="lucide-ellipsis"
+            variant="ghost"
+            aria-label="Link options"
+            :loading="busy"
+          />
         </Dropdown>
       </template>
     </div>
@@ -42,7 +63,13 @@
         aria-label="Link password"
         autocomplete="new-password"
       />
-      <DatePicker v-else v-model="day" class="min-w-0 flex-1" placeholder="Expiry date" aria-label="Link expiry date" />
+      <DatePicker
+        v-else
+        v-model="day"
+        class="min-w-0 flex-1"
+        placeholder="Expiry date"
+        aria-label="Link expiry date"
+      />
       <Button type="submit" variant="solid" label="Save" :loading="busy" :disabled="!ready" />
       <Button label="Cancel" @click="close" />
     </form>
@@ -51,14 +78,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Button, DatePicker, Dropdown, ErrorMessage, Password, type DropdownItem } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
 import { roleLabel, rolesFor } from '@/apps/drive/client/grants'
 import { confirm } from '@/platform/feedback'
 
-import type { LocalRow } from './shareModel'
 import { copyLink, formatDay, stampDay } from './shareFormat'
+import type { LocalRow } from './shareModel'
 import type { ShareState } from './useShare'
 
 /** One share link: its role, password and expiry, and the row menu (unified spec §7.7). */
@@ -71,7 +98,9 @@ const day = ref('')
 const principal = computed(() => props.row.grant.principal)
 const busy = computed(() => props.state.isPending(principal.value))
 const error = computed(() => props.state.errors.get(principal.value))
-const ready = computed(() => (editing.value === 'password' ? password.value !== '' : day.value !== ''))
+const ready = computed(() =>
+  editing.value === 'password' ? password.value !== '' : day.value !== '',
+)
 
 const meta = computed(() => {
   const grant = props.row.grant
@@ -93,16 +122,27 @@ const options = computed<DropdownItem[]>(() => {
       submenu: rolesFor('link', props.nodeKind).map((role) => ({
         label: role.label,
         selected: role.value === grant.role,
-        onClick: () => void (role.value !== grant.role && props.state.setRole(props.row, role.value)),
+        onClick: () =>
+          void (role.value !== grant.role && props.state.setRole(props.row, role.value)),
       })),
     },
     {
       group: 'Password',
       hideLabel: true,
       options: [
-        { label: grant.has_password ? 'Change password' : 'Set password', icon: 'lucide-lock', onClick: () => edit('password') },
+        {
+          label: grant.has_password ? 'Change password' : 'Set password',
+          icon: 'lucide-lock',
+          onClick: () => edit('password'),
+        },
         ...(grant.has_password
-          ? [{ label: 'Remove password', icon: 'lucide-lock-open', onClick: () => void props.state.setPassword(props.row, null) }]
+          ? [
+              {
+                label: 'Remove password',
+                icon: 'lucide-lock-open',
+                onClick: () => void props.state.setPassword(props.row, null),
+              },
+            ]
           : []),
       ],
     },
@@ -110,9 +150,19 @@ const options = computed<DropdownItem[]>(() => {
       group: 'Expiry',
       hideLabel: true,
       options: [
-        { label: grant.expires_on ? 'Change expiry' : 'Set expiry', icon: 'lucide-calendar', onClick: () => edit('expiry') },
+        {
+          label: grant.expires_on ? 'Change expiry' : 'Set expiry',
+          icon: 'lucide-calendar',
+          onClick: () => edit('expiry'),
+        },
         ...(grant.expires_on
-          ? [{ label: 'Remove expiry', icon: 'lucide-calendar-x', onClick: () => void props.state.setExpiry(props.row, null) }]
+          ? [
+              {
+                label: 'Remove expiry',
+                icon: 'lucide-calendar-x',
+                onClick: () => void props.state.setExpiry(props.row, null),
+              },
+            ]
           : []),
       ],
     },
@@ -121,7 +171,12 @@ const options = computed<DropdownItem[]>(() => {
       hideLabel: true,
       options: [
         { label: 'Get new URL', icon: 'lucide-refresh-cw', onClick: () => void rotate() },
-        { label: 'Delete link', icon: 'lucide-trash-2', theme: 'red', onClick: () => void props.state.remove(props.row) },
+        {
+          label: 'Delete link',
+          icon: 'lucide-trash-2',
+          theme: 'red',
+          onClick: () => void props.state.remove(props.row),
+        },
       ],
     },
   ]

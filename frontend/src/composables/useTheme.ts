@@ -1,10 +1,10 @@
-import { resolvedTheme, setupTheme, switchTheme, themeMode } from '@/utils/setupTheme'
 import { cycleThemeAndAnnounce } from '@/platform/theme'
+import { resolvedTheme, setupTheme, switchTheme, themeMode } from '@/utils/setupTheme'
 
 export const useTheme = () => {
-	setupTheme()
+  setupTheme()
 
-	const cycleTheme = () => void cycleThemeAndAnnounce()
+  const cycleTheme = () => void cycleThemeAndAnnounce()
 
-	return { dataTheme: resolvedTheme, themeMode, switchTheme, cycleTheme }
+  return { dataTheme: resolvedTheme, themeMode, switchTheme, cycleTheme }
 }

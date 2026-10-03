@@ -65,7 +65,10 @@ async function languageSupport(language: TextLanguage): Promise<Extension | null
     case 'javascript':
       return (await import('@codemirror/lang-javascript')).javascript({ jsx: true })
     case 'typescript':
-      return (await import('@codemirror/lang-javascript')).javascript({ jsx: true, typescript: true })
+      return (await import('@codemirror/lang-javascript')).javascript({
+        jsx: true,
+        typescript: true,
+      })
     case 'plain':
       return null
     default:
@@ -100,9 +103,22 @@ const theme = EditorView.theme({
   '.cm-lineNumbers .cm-gutterElement': { padding: '0 4px 0 16px' },
   '.cm-panels': { backgroundColor: 'var(--surface-gray-1)', color: 'var(--ink-gray-8)' },
   '.cm-panels-top': { borderBottom: '1px solid var(--outline-gray-1)' },
-  '.cm-search': { fontFamily: 'inherit', fontSize: '13px', padding: '6px 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' },
+  '.cm-search': {
+    fontFamily: 'inherit',
+    fontSize: '13px',
+    padding: '6px 12px',
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: '6px',
+  },
   '.cm-search br': { display: 'none' },
-  '.cm-search label': { display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--ink-gray-7)' },
+  '.cm-search label': {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    color: 'var(--ink-gray-7)',
+  },
   '.cm-textfield': {
     margin: '0',
     padding: '2px 8px',
@@ -124,7 +140,12 @@ const theme = EditorView.theme({
     fontSize: '13px',
   },
   '.cm-button:hover': { backgroundColor: 'var(--surface-gray-3)' },
-  '.cm-panel.cm-search [name=close]': { color: 'var(--ink-gray-5)', top: '6px', right: '8px', fontSize: '16px' },
+  '.cm-panel.cm-search [name=close]': {
+    color: 'var(--ink-gray-5)',
+    top: '6px',
+    right: '8px',
+    fontSize: '16px',
+  },
   '.cm-searchMatch': { backgroundColor: 'var(--surface-amber-2)', outline: 'none' },
   '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'var(--surface-amber-3)' },
 })

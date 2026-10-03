@@ -87,6 +87,7 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
 
 function normalizeColumns(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_PRESENTATION.columns]
-  return value.filter((column): column is FilesColumn => (FILES_COLUMNS as readonly unknown[]).includes(column))
+  return value.filter((column): column is FilesColumn =>
+    (FILES_COLUMNS as readonly unknown[]).includes(column),
+  )
 }
-

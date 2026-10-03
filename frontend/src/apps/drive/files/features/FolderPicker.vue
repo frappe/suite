@@ -21,7 +21,11 @@
           :aria-busy="folders.status === 'pending'"
         >
           <div v-if="folders.status === 'pending'" aria-hidden="true">
-            <div v-for="width in SKELETON_WIDTHS" :key="width" class="flex h-11 items-center gap-2.5 px-2 sm:h-9">
+            <div
+              v-for="width in SKELETON_WIDTHS"
+              :key="width"
+              class="flex h-11 items-center gap-2.5 px-2 sm:h-9"
+            >
               <Skeleton class="size-4 shrink-0 rounded-1" :class="SKELETON_BAR" />
               <Skeleton class="h-2 rounded-full" :class="[SKELETON_BAR, width]" />
             </div>
@@ -49,19 +53,37 @@
               >
                 <span
                   class="size-4 shrink-0"
-                  :class="[nodeIcon(folder), canOpenFolder(mode, items, folder.name) ? nodeIconTint(folder) : 'text-ink-gray-4']"
+                  :class="[
+                    nodeIcon(folder),
+                    canOpenFolder(mode, items, folder.name)
+                      ? nodeIconTint(folder)
+                      : 'text-ink-gray-4',
+                  ]"
                   aria-hidden="true"
                 />
-                <span class="min-w-0 flex-1 truncate" :title="folder.title">{{ folder.title }}</span>
-                <span v-if="!canOpenFolder(mode, items, folder.name)" class="shrink-0 text-sm text-ink-gray-4">
+                <span class="min-w-0 flex-1 truncate" :title="folder.title">{{
+                  folder.title
+                }}</span>
+                <span
+                  v-if="!canOpenFolder(mode, items, folder.name)"
+                  class="shrink-0 text-sm text-ink-gray-4"
+                >
                   Being moved
                 </span>
-                <span v-else class="lucide-chevron-right size-4 shrink-0 text-ink-gray-4" aria-hidden="true" />
+                <span
+                  v-else
+                  class="lucide-chevron-right size-4 shrink-0 text-ink-gray-4"
+                  aria-hidden="true"
+                />
               </button>
             </li>
           </ul>
           <div v-if="folders.hasNext" class="flex justify-center p-2">
-            <Button label="Load more folders" :loading="folders.isFetchingNext" @click="folders.fetchNext()" />
+            <Button
+              label="Load more folders"
+              :loading="folders.isFetchingNext"
+              @click="folders.fetchNext()"
+            />
           </div>
         </div>
       </div>
@@ -88,29 +110,40 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { Breadcrumbs, Button, Dialog, ErrorMessage, Skeleton, TabButtons } from 'frappe-ui'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import { children, node } from '@/apps/drive/client/nodes'
 import { roots } from '@/apps/drive/client/roots'
 import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
 import { useQuery } from '@/platform/server-state'
+
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { locationTitle } from '../internal/locations'
-import { canOpenFolder, destination, itemsRoot, startingFolder, type PickedItem, type PickerMode } from './folderPicker'
+import {
+  canOpenFolder,
+  destination,
+  itemsRoot,
+  startingFolder,
+  type PickedItem,
+  type PickerMode,
+} from './folderPicker'
 
-const props = withDefaults(defineProps<{
-  mode: PickerMode
-  /** The items the action places. A folder being moved cannot be opened, and items cannot move to where they are. */
-  items?: readonly PickedItem[]
-  /** Keeps the picker inside one root: its node. A restore must stay in its root. */
-  root?: string
-  /** The folder the user is looking at. The picker opens there when the items are in different folders. */
-  folder?: string
-  description?: string
-  /** The chosen action is running. */
-  busy?: boolean
-}>(), { items: () => [] })
+const props = withDefaults(
+  defineProps<{
+    mode: PickerMode
+    /** The items the action places. A folder being moved cannot be opened, and items cannot move to where they are. */
+    items?: readonly PickedItem[]
+    /** Keeps the picker inside one root: its node. A restore must stay in its root. */
+    root?: string
+    /** The folder the user is looking at. The picker opens there when the items are in different folders. */
+    folder?: string
+    description?: string
+    /** The chosen action is running. */
+    busy?: boolean
+  }>(),
+  { items: () => [] },
+)
 const TITLES = { move: 'Move to', copy: 'Make a copy', restore: 'Restore to' } as const
 const ACTIONS = { move: 'Move here', copy: 'Copy here', restore: 'Restore here' } as const
 // The listing's skeleton look (FilesListing.vue).
@@ -123,20 +156,38 @@ const listElement = useTemplateRef<HTMLElement>('listElement')
 const discovered = useQuery(roots())
 const rootKind = ref<'personal' | 'organization'>('personal')
 const trail = ref<Array<{ node: string; title: string; access?: DriveAccess }>>([])
-const rootOptions = computed(() => [
-  { value: 'personal', label: 'My files' },
-  ...(discovered.data?.organization ? [{ value: 'organization', label: 'Organization files' }] : []),
-].filter((option) => !props.root || discovered.data?.[option.value as 'personal' | 'organization']?.node === props.root))
-watch(rootOptions, (options) => {
-  const only = options.length === 1 ? options[0]!.value : null
-  if (only === 'personal' || only === 'organization') rootKind.value = only
-}, { immediate: true })
+const rootOptions = computed(() =>
+  [
+    { value: 'personal', label: 'My files' },
+    ...(discovered.data?.organization
+      ? [{ value: 'organization', label: 'Organization files' }]
+      : []),
+  ].filter(
+    (option) =>
+      !props.root ||
+      discovered.data?.[option.value as 'personal' | 'organization']?.node === props.root,
+  ),
+)
+watch(
+  rootOptions,
+  (options) => {
+    const only = options.length === 1 ? options[0]!.value : null
+    if (only === 'personal' || only === 'organization') rootKind.value = only
+  },
+  { immediate: true },
+)
 // Each time it opens, the picker shows the root the items are in, whichever
 // view they were picked from. A restore stays in its own root.
-const startingRoot = computed(() => discovered.data ? itemsRoot(props.items, discovered.data) : null)
-watch([open, startingRoot], () => {
-  if (open.value && !props.root) rootKind.value = startingRoot.value ?? 'personal'
-}, { immediate: true })
+const startingRoot = computed(() =>
+  discovered.data ? itemsRoot(props.items, discovered.data) : null,
+)
+watch(
+  [open, startingRoot],
+  () => {
+    if (open.value && !props.root) rootKind.value = startingRoot.value ?? 'personal'
+  },
+  { immediate: true },
+)
 const root = computed(() => discovered.data?.[rootKind.value] ?? null)
 
 // It opens in the folder the items are in, with the path down to it. A
@@ -158,28 +209,53 @@ const startTrail = computed(() => {
 
 // Keyed on the root's node: a refetch of the roots returns a new object, and
 // must not send the user back to the top while they browse.
-watch([() => root.value?.node, open], () => {
-  if (open.value && root.value) trail.value = startTrail.value ?? [{ ...root.value }]
-}, { immediate: true })
+watch(
+  [() => root.value?.node, open],
+  () => {
+    if (open.value && root.value) trail.value = startTrail.value ?? [{ ...root.value }]
+  },
+  { immediate: true },
+)
 // The starting folder can load after the picker opens. It replaces the top of
 // the root only while the user is still there.
-watch(() => startTrail.value?.map((crumb) => crumb.node).join('/'), () => {
-  const path = startTrail.value
-  if (open.value && path && trail.value.length === 1 && trail.value[0]?.node === root.value?.node) trail.value = path
-})
+watch(
+  () => startTrail.value?.map((crumb) => crumb.node).join('/'),
+  () => {
+    const path = startTrail.value
+    if (open.value && path && trail.value.length === 1 && trail.value[0]?.node === root.value?.node)
+      trail.value = path
+  },
+)
 
 const current = computed(() => trail.value.at(-1) ?? null)
-const crumbs = computed(() => trail.value.map((crumb, index) => ({
-  label: locationTitle({ name: crumb.node, title: crumb.title }, discovered.data),
-  onClick: () => openCrumb(index),
-})))
-const folders = useQuery(() => current.value
-  ? children({ node: current.value.node, types: ['folder'], expand: 'access', order_by: 'title', ascending: true })
-  : false)
-const currentDetail = useQuery(() => current.value ? node(current.value.node, 'access') : false)
-const target = computed(() => current.value
-  ? destination(props.mode, props.items, current.value.node, currentDetail.data?.access?.role ?? current.value.access?.role)
-  : { status: 'unknown' as const })
+const crumbs = computed(() =>
+  trail.value.map((crumb, index) => ({
+    label: locationTitle({ name: crumb.node, title: crumb.title }, discovered.data),
+    onClick: () => openCrumb(index),
+  })),
+)
+const folders = useQuery(() =>
+  current.value
+    ? children({
+        node: current.value.node,
+        types: ['folder'],
+        expand: 'access',
+        order_by: 'title',
+        ascending: true,
+      })
+    : false,
+)
+const currentDetail = useQuery(() => (current.value ? node(current.value.node, 'access') : false))
+const target = computed(() =>
+  current.value
+    ? destination(
+        props.mode,
+        props.items,
+        current.value.node,
+        currentDetail.data?.access?.role ?? current.value.access?.role,
+      )
+    : { status: 'unknown' as const },
+)
 
 function openFolder(folder: DriveNode) {
   trail.value.push({ node: folder.name, title: folder.title, access: folder.access })

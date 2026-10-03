@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
-import TextPreview from './TextPreview.vue'
 import type { TextLanguage } from '../../internal/previewKind'
 import { TEXT_PREVIEW_LIMIT } from './textContent'
+import TextPreview from './TextPreview.vue'
 
 const SRC = '/api/suite/drive/nodes/n1/content'
 // The editor loads its language on first use, which takes longer than
@@ -33,7 +33,10 @@ async function mount(props: { size: number; language?: TextLanguage; rendered?: 
   app.mount(root)
   unmount = () => app.unmount()
   // Let the fetch, the editor's import and the render settle.
-  await vi.waitFor(() => expect(root.textContent?.trim() || root.querySelector('.cm-editor')).toBeTruthy(), EDITOR)
+  await vi.waitFor(
+    () => expect(root.textContent?.trim() || root.querySelector('.cm-editor')).toBeTruthy(),
+    EDITOR,
+  )
   return root
 }
 
@@ -53,7 +56,9 @@ describe('text preview', () => {
     const root = await mount({ size: page.length, language: 'html' })
 
     await vi.waitFor(() => expect(root.querySelector('.cm-content')).not.toBeNull(), EDITOR)
-    expect(root.querySelector('.cm-content')?.textContent).toBe('<h1>Hello</h1><script>window.ran = true</script>')
+    expect(root.querySelector('.cm-content')?.textContent).toBe(
+      '<h1>Hello</h1><script>window.ran = true</script>',
+    )
     expect(root.querySelector('h1, script')).toBeNull()
     expect((window as { ran?: boolean }).ran).toBeUndefined()
   })
@@ -80,7 +85,10 @@ describe('text preview', () => {
 
     expect(rendered.querySelector('h1')?.textContent).toBe('Plan')
     expect(rendered.querySelector('h2')?.textContent).toBe('Goals')
-    expect([...rendered.querySelectorAll('li')].map((item) => item.textContent)).toEqual(['Ship the preview', 'Write tests'])
+    expect([...rendered.querySelectorAll('li')].map((item) => item.textContent)).toEqual([
+      'Ship the preview',
+      'Write tests',
+    ])
     expect(rendered.querySelector('td')?.textContent).toBe('Build')
     expect(rendered.querySelector('pre code')?.textContent).toBe('const answer = 42\n')
     expect(rendered.querySelector('.cm-editor')).toBeNull()
@@ -149,7 +157,9 @@ describe('text preview', () => {
     const scrolled: string[] = []
     // jsdom does not scroll, so the test records which heading would come into view.
     Element.prototype.scrollIntoView = function (this: Element) {
-      scrolled.push(`${this.tagName} ${this.textContent} ${[...this.parentElement!.children].indexOf(this)}`)
+      scrolled.push(
+        `${this.tagName} ${this.textContent} ${[...this.parentElement!.children].indexOf(this)}`,
+      )
     }
     onTestFinished(() => {
       delete (Element.prototype as Partial<Element>).scrollIntoView

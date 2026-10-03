@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-
-import { nextTick, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
 
-import type { SessionStatus } from '@/platform/session'
 import { openNotificationTarget, pushNotification } from '@/platform/pwa/notification'
+import type { SessionStatus } from '@/platform/session'
 
 // The FCM client talks to the relay, to Firebase and to Frappe. The fake keeps
 // what the platform asks of it. Its token lives in localStorage, as the real
@@ -70,7 +69,10 @@ beforeEach(() => {
   fcm.relayRequests = []
   window.push_relay_server_url = 'https://relay.test'
   showNotification = vi.fn(async () => {})
-  register = vi.fn(async () => ({ scope: 'http://suite.test/assets/suite/frontend/', showNotification }))
+  register = vi.fn(async () => ({
+    scope: 'http://suite.test/assets/suite/frontend/',
+    showNotification,
+  }))
   Object.defineProperty(navigator, 'serviceWorker', {
     configurable: true,
     value: { register },
@@ -138,7 +140,9 @@ describe('Suite PWA', () => {
     const config = encodeURIComponent(JSON.stringify(fcm.config))
     expect(register).toHaveBeenCalledTimes(1)
     expect(register).toHaveBeenCalledWith(`${WORKER_URL}?config=${config}`, { type: 'module' })
-    expect(fcm.relayRequests).toEqual(['https://relay.test/api/method/notification_relay.api.get_config'])
+    expect(fcm.relayRequests).toEqual([
+      'https://relay.test/api/method/notification_relay.api.get_config',
+    ])
     expect(fcm.initialized).toEqual([await register.mock.results[0]!.value])
 
     // A sign-out and a new sign-in in the same page do not register it twice.
@@ -176,14 +180,22 @@ describe('Suite PWA', () => {
     await install('authenticated')
     expect(fcm.handlers).toHaveLength(2)
 
-    const push = { messageId: 'msg-1', data: { title: 'New mail', body: 'Hello', click_action: '/mail' } }
+    const push = {
+      messageId: 'msg-1',
+      data: { title: 'New mail', body: 'Hello', click_action: '/mail' },
+    }
     for (const handler of fcm.handlers) handler(push)
 
     expect(showNotification).toHaveBeenCalledTimes(2)
-    const tags = showNotification.mock.calls.map(([, options]) => (options as NotificationOptions).tag)
+    const tags = showNotification.mock.calls.map(
+      ([, options]) => (options as NotificationOptions).tag,
+    )
     // The same tag: the second notification replaces the first.
     expect(tags).toEqual(['msg-1', 'msg-1'])
-    expect(showNotification).toHaveBeenCalledWith('New mail', expect.objectContaining({ body: 'Hello' }))
+    expect(showNotification).toHaveBeenCalledWith(
+      'New mail',
+      expect.objectContaining({ body: 'Hello' }),
+    )
   })
 
   it('drops the push token on logout, so the next user in this browser gets none of the mail', async () => {
@@ -231,7 +243,9 @@ describe('push notification click', () => {
   }
 
   it('gives every browser the target in the notification data, not only Chrome', () => {
-    const [, options] = pushNotification({ data: { title: 'New mail', click_action: '/mail/inbox' } })
+    const [, options] = pushNotification({
+      data: { title: 'New mail', click_action: '/mail/inbox' },
+    })
     expect(options.data).toEqual({ url: '/mail/inbox' })
   })
 

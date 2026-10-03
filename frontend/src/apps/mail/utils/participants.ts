@@ -32,46 +32,46 @@ const MAX_PARTICIPANTS_SHOWN = 3
  * own sender rather than anyone here.
  */
 export const threadParticipants = (
-	messages: Mail[] | undefined,
-	ownEmails: Set<string>,
+  messages: Mail[] | undefined,
+  ownEmails: Set<string>,
 ): ThreadParticipant[] => {
-	const participants: ThreadParticipant[] = []
-	const seen = new Set<string>()
-	const addresses = new Set<string>()
+  const participants: ThreadParticipant[] = []
+  const seen = new Set<string>()
+  const addresses = new Set<string>()
 
-	for (const message of messages ?? []) {
-		const email = (message.from_email ?? '').trim()
-		if (!email) continue
+  for (const message of messages ?? []) {
+    const email = (message.from_email ?? '').trim()
+    if (!email) continue
 
-		const address = email.toLowerCase()
-		const name = (message.from_name ?? '').trim()
-		const key = `${address}|${name.toLowerCase()}`
-		if (seen.has(key)) continue
+    const address = email.toLowerCase()
+    const name = (message.from_name ?? '').trim()
+    const key = `${address}|${name.toLowerCase()}`
+    if (seen.has(key)) continue
 
-		if (!name) {
-			if (addresses.has(address)) continue
-		} else {
-			const unnamed = participants.find((p) => !p.name && p.email.toLowerCase() === address)
-			if (unnamed) {
-				unnamed.name = name
-				seen.add(key)
-				continue
-			}
-		}
+    if (!name) {
+      if (addresses.has(address)) continue
+    } else {
+      const unnamed = participants.find((p) => !p.name && p.email.toLowerCase() === address)
+      if (unnamed) {
+        unnamed.name = name
+        seen.add(key)
+        continue
+      }
+    }
 
-		seen.add(key)
-		addresses.add(address)
-		participants.push({ name, email, is_self: ownEmails.has(address) })
-	}
+    seen.add(key)
+    addresses.add(address)
+    participants.push({ name, email, is_self: ownEmails.has(address) })
+  }
 
-	return participants
+  return participants
 }
 
 const getFirstAlphabet = (str?: string) => str?.match(/\p{L}/u)?.[0]
 
 /** The letter on a sender's avatar: their name's first, or their address's when they go by no name. */
 export const getSenderInitial = (sender: { from_name?: string; from_email?: string }) =>
-	getFirstAlphabet(sender.from_name) || getFirstAlphabet(sender.from_email)
+  getFirstAlphabet(sender.from_name) || getFirstAlphabet(sender.from_email)
 
 const capitalizeFirst = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 
@@ -82,8 +82,8 @@ const isInitial = (word: string) => /^\p{L}\.?$/u.test(word)
 // names nobody — "M Umair Sayed" reads as "M Umair". Relay threads (a forum, an issue tracker) made
 // this worth handling: they name several people on rows that used to name one.
 const firstNameOf = (fullName: string) => {
-	const [first, second] = fullName.split(/\s+/)
-	return isInitial(first) && second ? `${first} ${second}` : first
+  const [first, second] = fullName.split(/\s+/)
+  return isInitial(first) && second ? `${first} ${second}` : first
 }
 
 /**
@@ -95,7 +95,7 @@ const firstNameOf = (fullName: string) => {
  * the user on any thread they have answered — puts one person's initial on another's photo.
  */
 const primaryParticipant = (participants: ThreadParticipant[]): ThreadParticipant | undefined =>
-	participants.find((p) => !p.is_self) ?? participants[0]
+  participants.find((p) => !p.is_self) ?? participants[0]
 
 /**
  * The name(s) a thread row goes by: everyone who has written in it, in the order they
@@ -112,28 +112,28 @@ const primaryParticipant = (participants: ThreadParticipant[]): ThreadParticipan
  * their full one.
  */
 export const formatThreadParticipants = (participants: ThreadParticipant[]) => {
-	// The user may have written from more than one of their addresses; they're still one name.
-	const firstSelf = participants.findIndex((p) => p.is_self)
-	const distinct = participants.filter((p, i) => !p.is_self || i === firstSelf)
-	if (!distinct.length) return ''
+  // The user may have written from more than one of their addresses; they're still one name.
+  const firstSelf = participants.findIndex((p) => p.is_self)
+  const distinct = participants.filter((p, i) => !p.is_self || i === firstSelf)
+  if (!distinct.length) return ''
 
-	const nameOf = ({ name, email, is_self }: ThreadParticipant, firstNameOnly: boolean) => {
-		if (is_self) return __('me')
-		const fullName = name.trim()
-		if (!fullName) return email
-		return firstNameOnly ? firstNameOf(fullName) : fullName
-	}
+  const nameOf = ({ name, email, is_self }: ThreadParticipant, firstNameOnly: boolean) => {
+    if (is_self) return __('me')
+    const fullName = name.trim()
+    if (!fullName) return email
+    return firstNameOnly ? firstNameOf(fullName) : fullName
+  }
 
-	// "me" is a word standing in for a name, so it reads lowercase inside the line ("Figma, me")
-	// and is capitalized only where it heads the row. Real names arrive capitalized already, and an
-	// address standing in for a missing name ("noreply@frappe.io") must be left exactly as it is.
-	const names = distinct.map((participant, i) => {
-		const name = nameOf(participant, distinct.length > 1)
-		return i === 0 && participant.is_self ? capitalizeFirst(name) : name
-	})
+  // "me" is a word standing in for a name, so it reads lowercase inside the line ("Figma, me")
+  // and is capitalized only where it heads the row. Real names arrive capitalized already, and an
+  // address standing in for a missing name ("noreply@frappe.io") must be left exactly as it is.
+  const names = distinct.map((participant, i) => {
+    const name = nameOf(participant, distinct.length > 1)
+    return i === 0 && participant.is_self ? capitalizeFirst(name) : name
+  })
 
-	if (names.length <= MAX_PARTICIPANTS_SHOWN) return names.join(', ')
-	return `${names[0]} … ${names.slice(-2).join(', ')}`
+  if (names.length <= MAX_PARTICIPANTS_SHOWN) return names.join(', ')
+  return `${names[0]} … ${names.slice(-2).join(', ')}`
 }
 
 /**
@@ -142,16 +142,16 @@ export const formatThreadParticipants = (participants: ThreadParticipant[]) => {
  * with no conversation behind it to name anybody — a search result.
  */
 export const threadAvatarLabel = (
-	participants: ThreadParticipant[],
-	fallback: { from_name?: string; from_email?: string },
+  participants: ThreadParticipant[],
+  fallback: { from_name?: string; from_email?: string },
 ) => {
-	const primary = primaryParticipant(participants)
-	if (!primary) return getSenderInitial(fallback)
-	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
+  const primary = primaryParticipant(participants)
+  if (!primary) return getSenderInitial(fallback)
+  return getSenderInitial({ from_name: primary.name, from_email: primary.email })
 }
 
 /** The name(s) a thread row goes by, falling back to its own sender when it names nobody. */
 export const threadDisplayName = (
-	participants: ThreadParticipant[],
-	fallback: { from_name?: string; from_email?: string },
+  participants: ThreadParticipant[],
+  fallback: { from_name?: string; from_email?: string },
 ) => formatThreadParticipants(participants) || fallback.from_name || fallback.from_email

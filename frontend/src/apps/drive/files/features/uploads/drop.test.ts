@@ -10,7 +10,9 @@ function fileDrag(type: 'dragover' | 'drop') {
     dropEffect: 'copy',
     items: [{ kind: 'file', webkitGetAsEntry: () => null, getAsFile: () => file }],
   }
-  const event = Object.assign(new Event(type, { bubbles: true, cancelable: true }), { dataTransfer })
+  const event = Object.assign(new Event(type, { bubbles: true, cancelable: true }), {
+    dataTransfer,
+  })
   const stopped = vi.spyOn(event, 'stopPropagation')
   return { event: event as unknown as DragEvent, dataTransfer, stopped }
 }

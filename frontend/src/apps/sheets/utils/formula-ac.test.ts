@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
+
 import {
-  parseAcToken, parseSignatureContext, describeSignature,
-  shouldSuggestRange, detectAdjacentRange, isNumericText,
+  describeSignature,
+  detectAdjacentRange,
+  isNumericText,
+  parseAcToken,
+  parseSignatureContext,
+  shouldSuggestRange,
 } from './formula-ac.js'
 
 describe('parseAcToken', () => {
@@ -24,7 +29,10 @@ describe('parseSignatureContext', () => {
     expect(parseSignatureContext('=VLOOKUP(', 9)).toEqual({ fn: 'VLOOKUP', argIndex: 0 })
   })
   it('counts commas to find the active argument', () => {
-    expect(parseSignatureContext('=VLOOKUP(A1, B1:C3, ', 20)).toEqual({ fn: 'VLOOKUP', argIndex: 2 })
+    expect(parseSignatureContext('=VLOOKUP(A1, B1:C3, ', 20)).toEqual({
+      fn: 'VLOOKUP',
+      argIndex: 2,
+    })
   })
   it('resolves to the innermost nested call', () => {
     const v = '=IF(SUM(A1,'
@@ -49,7 +57,7 @@ describe('describeSignature', () => {
     expect(d.params[d.active]).toBe('table')
   })
   it('keeps the repeating param active past the last index', () => {
-    const d = describeSignature('SUM', 3)   // SUM(number1, ...)
+    const d = describeSignature('SUM', 3) // SUM(number1, ...)
     expect(d.params[d.active]).toBe('number1')
   })
   it('returns no active param past a fixed arg list', () => {
@@ -97,20 +105,20 @@ describe('detectAdjacentRange', () => {
   const grid = (cells) => (r, c) => cells.has(`${r},${c}`)
 
   it('walks up a contiguous column above the active cell', () => {
-    const numeric = grid(new Set(['0,0', '1,0', '2,0']))   // A1:A3 filled, active A4
+    const numeric = grid(new Set(['0,0', '1,0', '2,0'])) // A1:A3 filled, active A4
     expect(detectAdjacentRange(3, 0, numeric)).toEqual({ r0: 0, c0: 0, r1: 2, c1: 0 })
   })
   it('stops at a blank gap', () => {
-    const numeric = grid(new Set(['0,0', '2,0']))          // A2 blank, active A4
+    const numeric = grid(new Set(['0,0', '2,0'])) // A2 blank, active A4
     // Only A3 (row 2) abuts A4 → single cell, below the 2-cell floor.
     expect(detectAdjacentRange(3, 0, numeric)).toBeNull()
   })
   it('falls back to the row on the left when nothing is above', () => {
-    const numeric = grid(new Set(['3,0', '3,1', '3,2']))   // A4:C4 filled, active D4
+    const numeric = grid(new Set(['3,0', '3,1', '3,2'])) // A4:C4 filled, active D4
     expect(detectAdjacentRange(3, 3, numeric)).toEqual({ r0: 3, c0: 0, r1: 3, c1: 2 })
   })
   it('prefers the column above over the row to the left', () => {
-    const numeric = grid(new Set(['1,3', '2,3', '3,0', '3,1', '3,2']))  // above D2:D3, left A4:C4
+    const numeric = grid(new Set(['1,3', '2,3', '3,0', '3,1', '3,2'])) // above D2:D3, left A4:C4
     expect(detectAdjacentRange(3, 3, numeric)).toEqual({ r0: 1, c0: 3, r1: 2, c1: 3 })
   })
   it('returns null with no adjacent numbers', () => {

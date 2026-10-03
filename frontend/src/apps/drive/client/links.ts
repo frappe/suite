@@ -1,7 +1,13 @@
-import { api } from './generated'
 import { useSession, type Session } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { TransportError, transport, type RequestOutcome, type RequestScope } from '@/platform/transport'
+import {
+  transport,
+  TransportError,
+  type RequestOutcome,
+  type RequestScope,
+} from '@/platform/transport'
+
+import { api } from './generated'
 
 /**
  * Share-link codes this browser holds, and which nodes each one opens.
@@ -96,7 +102,10 @@ export class CredentialOverflowError extends TransportError<'DriveLinkLimit'> {
 type KeyValueStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
 /** Reads one link's target with only that link's credential. */
-export type LinkCheck = (target: string, headers: Readonly<Record<string, string>>) => Promise<RequestOutcome>
+export type LinkCheck = (
+  target: string,
+  headers: Readonly<Record<string, string>>,
+) => Promise<RequestOutcome>
 
 export interface LinkStoreOptions {
   storage: KeyValueStorage
@@ -276,7 +285,12 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
     const { status, type } = outcome.error
     if (status === 410 || (status === 404 && scope.subject === entry.target)) {
       forget(state, sent.code)
-    } else if (status === 401 && type === 'DriveLocked' && sent.ticket && entry.ticket === sent.ticket) {
+    } else if (
+      status === 401 &&
+      type === 'DriveLocked' &&
+      sent.ticket &&
+      entry.ticket === sent.ticket
+    ) {
       delete entry.ticket
     }
   }
@@ -325,7 +339,10 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
         if (base.size > LINK_CAP) throw new CredentialOverflowError()
         const others = [...state.links.keys()].filter((code) => !base.has(code))
         // Oldest first, so sending them keeps their least recently used order.
-        return send(state, [...others.slice(Math.max(0, others.length - (LINK_CAP - base.size))), ...base])
+        return send(state, [
+          ...others.slice(Math.max(0, others.length - (LINK_CAP - base.size))),
+          ...base,
+        ])
       })
       return scopeFor({ sent, options: {}, generation })
     },
@@ -387,7 +404,9 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
 }
 
 function header(sent: readonly Sent[]): Record<string, string> {
-  return { [HEADER]: sent.map(({ code, ticket }) => (ticket ? `${code}.${ticket}` : code)).join(',') }
+  return {
+    [HEADER]: sent.map(({ code, ticket }) => (ticket ? `${code}.${ticket}` : code)).join(','),
+  }
 }
 
 /** A refusal that says some link failed, without saying which one. */
@@ -421,7 +440,8 @@ function parse(text: string | null): State {
   for (const pair of Array.isArray(saved.tags) ? saved.tags : []) {
     if (!Array.isArray(pair) || pair.length !== 2) continue
     const [node, code] = pair
-    if (typeof node === 'string' && node && typeof code === 'string' && state.links.has(code)) state.tags.set(node, code)
+    if (typeof node === 'string' && node && typeof code === 'string' && state.links.has(code))
+      state.tags.set(node, code)
   }
   return state
 }
@@ -473,7 +493,10 @@ const checkLink: LinkCheck = (target, headers) =>
     (error: unknown): RequestOutcome =>
       error instanceof TransportError
         ? { ok: false, error }
-        : { ok: false, error: new TransportError({ type: 'RequestError', message: String(error), status: 0 }) },
+        : {
+            ok: false,
+            error: new TransportError({ type: 'RequestError', message: String(error), status: 0 }),
+          },
   )
 
 /** The browser's link store. Sign out clears it, in this tab and in every other. */

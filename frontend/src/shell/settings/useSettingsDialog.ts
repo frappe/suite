@@ -1,7 +1,6 @@
 import { computed, inject, shallowRef, watch, type Ref } from 'vue'
 
 import { useSession } from '@/platform/session'
-
 import {
   SETTINGS_GROUPS_KEY,
   visibleSettingsGroups,

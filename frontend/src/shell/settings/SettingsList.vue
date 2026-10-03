@@ -29,25 +29,26 @@
         </button>
       </div>
     </section>
-    <SettingsLoadFailed
-      v-if="failed"
-      class="rounded-6 bg-surface-gray-1 p-3"
-      :retry="retry"
-    />
+    <SettingsLoadFailed v-if="failed" class="rounded-6 bg-surface-gray-1 p-3" :retry="retry" />
   </template>
-  <div v-else class="flex min-h-0 flex-1 items-center justify-center py-8" role="status" :aria-label="__('Loading')">
+  <div
+    v-else
+    class="flex min-h-0 flex-1 items-center justify-center py-8"
+    role="status"
+    :aria-label="__('Loading')"
+  >
     <LoadingIndicator class="size-5 text-ink-gray-5" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Avatar, LoadingIndicator } from 'frappe-ui'
+import { computed } from 'vue'
 
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import SettingsLoadFailed from '@/shell/settings/SettingsLoadFailed.vue'
 import type { SettingsTab, VisibleSettingsGroup } from '@/shell/settings/settings'
+import SettingsLoadFailed from '@/shell/settings/SettingsLoadFailed.vue'
 
 const PROFILE_TAB = 'account.profile'
 
@@ -66,7 +67,10 @@ const avatar = computed(() => session.user.value?.avatar ?? null)
 
 const shown = computed(() =>
   (props.groups ?? [])
-    .map((group) => ({ ...group, tabs: group.tabs.filter((tab) => !props.exclude?.includes(tab.id)) }))
+    .map((group) => ({
+      ...group,
+      tabs: group.tabs.filter((tab) => !props.exclude?.includes(tab.id)),
+    }))
     .filter((group) => group.tabs.length > 0),
 )
 </script>

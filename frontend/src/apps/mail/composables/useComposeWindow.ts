@@ -17,10 +17,10 @@ let dismiss: (() => void) | null = null
 let heldDraft: (() => string | undefined) | null = null // the draft's server id
 
 const release = (id: symbol) => {
-	if (holder.value !== id) return
-	holder.value = null
-	dismiss = null
-	heldDraft = null
+  if (holder.value !== id) return
+  holder.value = null
+  dismiss = null
+  heldDraft = null
 }
 
 /**
@@ -28,35 +28,35 @@ const release = (id: symbol) => {
  * closing — or unmounting — releases it. Call once per SendMail instance, from setup.
  */
 export const claimComposeWindow = (
-	show: Ref<boolean | undefined>,
-	draftId?: () => string | undefined,
+  show: Ref<boolean | undefined>,
+  draftId?: () => string | undefined,
 ) => {
-	const id = Symbol('compose-window')
+  const id = Symbol('compose-window')
 
-	watch(
-		show,
-		(open) => {
-			if (open) {
-				holder.value = id
-				dismiss = () => (show.value = false)
-				heldDraft = draftId ?? null
-			} else release(id)
-		},
-		// Immediate, because a composer routinely mounts already open: Compose bumps its key and sets
-		// `show` in the same tick so a second request replaces the draft on screen, and a draft
-		// popped out of a thread flips a v-if the same way. On change alone, neither would ever
-		// claim the window — leaving two composers in one corner, each unaware of the other.
-		{ immediate: true },
-	)
+  watch(
+    show,
+    (open) => {
+      if (open) {
+        holder.value = id
+        dismiss = () => (show.value = false)
+        heldDraft = draftId ?? null
+      } else release(id)
+    },
+    // Immediate, because a composer routinely mounts already open: Compose bumps its key and sets
+    // `show` in the same tick so a second request replaces the draft on screen, and a draft
+    // popped out of a thread flips a v-if the same way. On change alone, neither would ever
+    // claim the window — leaving two composers in one corner, each unaware of the other.
+    { immediate: true },
+  )
 
-	watch(holder, (current) => {
-		if (show.value && current !== id) show.value = false
-	})
+  watch(holder, (current) => {
+    if (show.value && current !== id) show.value = false
+  })
 
-	// Unmounting while open has to release too, or the window is held by a component that no
-	// longer exists: Compose would report it handled the request and hand it to a dead closure.
-	// Scope disposal rather than onUnmounted so this is exercisable without mounting anything.
-	onScopeDispose(() => release(id))
+  // Unmounting while open has to release too, or the window is held by a component that no
+  // longer exists: Compose would report it handled the request and hand it to a dead closure.
+  // Scope disposal rather than onUnmounted so this is exercisable without mounting anything.
+  onScopeDispose(() => release(id))
 }
 
 /**
@@ -74,9 +74,9 @@ export const composeWindowDraft = () => heldDraft?.()
  * one draft, each saving over the other.
  */
 export const closeComposeWindow = () => {
-	if (!holder.value) return false
-	dismiss?.()
-	return true
+  if (!holder.value) return false
+  dismiss?.()
+  return true
 }
 
 /**
@@ -89,8 +89,8 @@ export const closeComposeWindow = () => {
  * for a delete it is the last thing that ever happens to it.
  */
 export const closeComposeWindowFor = (mailIds: string[]) => {
-	const held = composeWindowDraft()
-	if (held && mailIds.includes(held)) closeComposeWindow()
+  const held = composeWindowDraft()
+  if (held && mailIds.includes(held)) closeComposeWindow()
 }
 
 /** Whether a composer window is on screen — docked or minimised, it floats over the app. */

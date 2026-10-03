@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { clearSelection, selectAllLoaded, toggleSelection } from './selection'
 
 describe('file selection', () => {
@@ -13,4 +14,3 @@ describe('file selection', () => {
     expect(selectAllLoaded(['a', 'b']).selected).toEqual(['a', 'b'])
   })
 })
-

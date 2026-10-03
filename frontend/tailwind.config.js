@@ -1,4 +1,4 @@
-import frappeUIPreset, { content as frappeUIContent } from "frappe-ui/tailwind";
+import frappeUIPreset, { content as frappeUIContent } from 'frappe-ui/tailwind'
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -16,7 +16,7 @@ export default {
   ],
   variants: {
     extend: {
-      display: ["group-hover"],
+      display: ['group-hover'],
     },
   },
-};
+}

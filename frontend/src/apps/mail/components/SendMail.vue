@@ -1,5 +1,5 @@
 <template>
-	<!-- Desktop's composer window. Mobile composes on a page of its own — see ComposeView — so
+  <!-- Desktop's composer window. Mobile composes on a page of its own — see ComposeView — so
 	     nothing here has a mobile form; the openers navigate there instead of mounting this.
 
 	     Modal is the default, and is the Dialog it always was; docked and minimised are the other
@@ -12,62 +12,57 @@
 
 	     The title is passed as a prop as well as drawn in the slot: the slot is what renders, and
 	     the prop is what the overlay labels itself with (`data-dialog`). -->
-	<Dialog
-		v-if="state === 'modal'"
-		v-model:open="show"
-		:title="__('Compose Mail')"
-		size="5xl"
-		:show-close-button="false"
-		:dismissible="false"
-	>
-		<template #title="{ close }">
-			<div class="flex items-center gap-2">
-				<h3 class="text-ink-gray-8 text-xl-semibold min-w-0 flex-1 truncate leading-6">
-					{{ __('Compose Mail') }}
-				</h3>
-				<Button
-					variant="ghost"
-					:aria-label="__('Minimise')"
-					:tooltip="__('Minimise')"
-					@click="minimise()"
-				>
-					<template #icon><ChevronDown class="icon" /></template>
-				</Button>
-				<Button
-					variant="ghost"
-					:aria-label="__('Dock to corner')"
-					:tooltip="__('Dock to corner')"
-					@click="state = 'dock'"
-				>
-					<template #icon><Minimize2 class="icon" /></template>
-				</Button>
-				<Button
-					variant="ghost"
-					:aria-label="__('Close')"
-					:tooltip="__('Close')"
-					@click="close()"
-				>
-					<template #icon><X class="icon" /></template>
-				</Button>
-			</div>
-		</template>
-		<template #default>
-			<div ref="host" class="flex min-h-0 flex-1 flex-col" />
-		</template>
-	</Dialog>
+  <Dialog
+    v-if="state === 'modal'"
+    v-model:open="show"
+    :title="__('Compose Mail')"
+    size="5xl"
+    :show-close-button="false"
+    :dismissible="false"
+  >
+    <template #title="{ close }">
+      <div class="flex items-center gap-2">
+        <h3 class="text-ink-gray-8 text-xl-semibold min-w-0 flex-1 truncate leading-6">
+          {{ __('Compose Mail') }}
+        </h3>
+        <Button
+          variant="ghost"
+          :aria-label="__('Minimise')"
+          :tooltip="__('Minimise')"
+          @click="minimise()"
+        >
+          <template #icon><ChevronDown class="icon" /></template>
+        </Button>
+        <Button
+          variant="ghost"
+          :aria-label="__('Dock to corner')"
+          :tooltip="__('Dock to corner')"
+          @click="state = 'dock'"
+        >
+          <template #icon><Minimize2 class="icon" /></template>
+        </Button>
+        <Button variant="ghost" :aria-label="__('Close')" :tooltip="__('Close')" @click="close()">
+          <template #icon><X class="icon" /></template>
+        </Button>
+      </div>
+    </template>
+    <template #default>
+      <div ref="host" class="flex min-h-0 flex-1 flex-col" />
+    </template>
+  </Dialog>
 
-	<ComposeDock
-		v-else
-		v-model="show"
-		:title="minimisedTitle"
-		:minimised="state === 'minimised'"
-		@expand="state = 'modal'"
-		@toggle-minimised="minimise()"
-	>
-		<div ref="host" class="flex min-h-0 flex-1 flex-col" />
-	</ComposeDock>
+  <ComposeDock
+    v-else
+    v-model="show"
+    :title="minimisedTitle"
+    :minimised="state === 'minimised'"
+    @expand="state = 'modal'"
+    @toggle-minimised="minimise()"
+  >
+    <div ref="host" class="flex min-h-0 flex-1 flex-col" />
+  </ComposeDock>
 
-	<!-- The editor is rendered once and teleported into whichever container is showing, rather
+  <!-- The editor is rendered once and teleported into whichever container is showing, rather
 	     than sitting in each one's slot: those are different components, so a state change would
 	     remount TipTap and take the draft with it. Moving DOM keeps the instance.
 
@@ -78,30 +73,29 @@
 	     dropping the editor the moment it was closed emptied the modal mid-flight — you saw it
 	     shrink to its own header on the way out. The target outlives `show` by exactly the length
 	     of that transition, then goes with it. -->
-	<Teleport v-if="show || target" :to="target" :disabled="!target">
-		<div :class="target ? 'contents' : 'hidden'">
-			<ComposeMailEditor
-				ref="composeMailEditor"
-				v-model="show"
-				:mail-details
-				:docked="state === 'dock'"
-				:reload-mails="() => emit('reloadMails')"
-				@discard-mail="emit('discardMail')"
-				@discard-started="emit('discardStarted')"
-			/>
-		</div>
-	</Teleport>
+  <Teleport v-if="show || target" :to="target" :disabled="!target">
+    <div :class="target ? 'contents' : 'hidden'">
+      <ComposeMailEditor
+        ref="composeMailEditor"
+        v-model="show"
+        :mail-details
+        :docked="state === 'dock'"
+        :reload-mails="() => emit('reloadMails')"
+        @discard-mail="emit('discardMail')"
+        @discard-started="emit('discardStarted')"
+      />
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
-import { ChevronDown, Minimize2, X } from 'lucide-vue-next'
 import { Button, Dialog } from 'frappe-ui'
+import { ChevronDown, Minimize2, X } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
-import { claimComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import ComposeDock from '@/apps/mail/components/ComposeDock.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
-
+import { claimComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import type { ComposeMailData } from '@/apps/mail/types'
 
 const show = defineModel<boolean>()
@@ -130,22 +124,22 @@ const state = ref<ComposeState>('modal')
 // picking a presentation of its own.
 const restoreTo = ref<ComposeState>('dock')
 const minimise = () => {
-	if (state.value === 'minimised') return (state.value = restoreTo.value)
-	restoreTo.value = state.value
-	state.value = 'minimised'
+  if (state.value === 'minimised') return (state.value = restoreTo.value)
+  restoreTo.value = state.value
+  state.value = 'minimised'
 }
 
 // Each compose starts modal: a request to write is not a request to resume whatever the last
 // draft's window happened to be doing.
 watch(show, (open) => {
-	if (open) state.value = 'modal'
+  if (open) state.value = 'modal'
 })
 
 // Folded away, the bar is all there is to tell one draft from another, so it takes the subject
 // once there is one. Expanded there is a Subject field on screen saying the same thing, and the
 // generic title is the better label for the window itself.
 const minimisedTitle = computed(() =>
-	state.value === 'minimised' ? editor.value?.mail?.subject?.trim() || undefined : undefined,
+  state.value === 'minimised' ? editor.value?.mail?.subject?.trim() || undefined : undefined,
 )
 
 // The container currently holding the editor. Post-flush, so it is read once the DOM has settled
@@ -168,11 +162,11 @@ watch(host, (el) => (target.value = el ?? null), { flush: 'post', immediate: tru
 // portalled to the body and so are outside the panel too. Picking an identity must not fold the
 // window away.
 const onPointerDown = (e: PointerEvent) => {
-	if (!show.value || state.value !== 'modal') return
-	const el = e.target as HTMLElement | null
-	if (!el?.closest) return
-	if (el.closest('.dialog-content') || el.closest('[data-reka-popper-content-wrapper]')) return
-	minimise()
+  if (!show.value || state.value !== 'modal') return
+  const el = e.target as HTMLElement | null
+  if (!el?.closest) return
+  if (el.closest('.dialog-content') || el.closest('[data-reka-popper-content-wrapper]')) return
+  minimise()
 }
 
 // Esc closed the modal before `dismissible: false` took that over, so it is reinstated here.
@@ -184,19 +178,19 @@ const onPointerDown = (e: PointerEvent) => {
 // is what tells them apart — this composer is always one of them, so anything above one belongs to
 // whatever is on top.
 const onEscape = (e: KeyboardEvent) => {
-	if (e.key !== 'Escape' || e.defaultPrevented) return
-	if (!show.value || state.value !== 'modal') return
-	if (document.querySelector('[data-reka-popper-content-wrapper]')) return
-	if (document.querySelectorAll('.dialog-content[data-state="open"]').length > 1) return
-	show.value = false
+  if (e.key !== 'Escape' || e.defaultPrevented) return
+  if (!show.value || state.value !== 'modal') return
+  if (document.querySelector('[data-reka-popper-content-wrapper]')) return
+  if (document.querySelectorAll('.dialog-content[data-state="open"]').length > 1) return
+  show.value = false
 }
 
 onMounted(() => {
-	window.addEventListener('keydown', onEscape)
-	window.addEventListener('pointerdown', onPointerDown, true)
+  window.addEventListener('keydown', onEscape)
+  window.addEventListener('pointerdown', onPointerDown, true)
 })
 onUnmounted(() => {
-	window.removeEventListener('keydown', onEscape)
-	window.removeEventListener('pointerdown', onPointerDown, true)
+  window.removeEventListener('keydown', onEscape)
+  window.removeEventListener('pointerdown', onPointerDown, true)
 })
 </script>

@@ -1,5 +1,5 @@
-import { computed, ref } from 'vue'
 import { createResource } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
 const timezones = ref<string[]>([])
 

@@ -33,6 +33,6 @@ export const mailCopyNames = (mail: Mail): string[] => mailCopies(mail).map((cop
  * the open thread disagreeing about the same message: starred in the list, hollow in the pane.
  */
 export const rowMailIds = (thread: Thread): string[] => {
-	const shown = (thread.messages ?? []).find((mail) => mailCopyIds(mail).includes(thread.id))
-	return shown ? mailCopyIds(shown) : [thread.id]
+  const shown = (thread.messages ?? []).find((mail) => mailCopyIds(mail).includes(thread.id))
+  return shown ? mailCopyIds(shown) : [thread.id]
 }

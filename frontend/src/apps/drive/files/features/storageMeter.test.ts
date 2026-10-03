@@ -17,7 +17,10 @@ describe('storage meter', () => {
     expect(storageMeter({ used_bytes: 8.9 * GB, effective_quota: 10 * GB }).level).toBe('ok')
     expect(storageMeter({ used_bytes: 9 * GB, effective_quota: 10 * GB }).level).toBe('near')
     expect(storageMeter({ used_bytes: 10 * GB, effective_quota: 10 * GB }).level).toBe('full')
-    expect(storageMeter({ used_bytes: 12 * GB, effective_quota: 10 * GB })).toMatchObject({ percent: 100, level: 'full' })
+    expect(storageMeter({ used_bytes: 12 * GB, effective_quota: 10 * GB })).toMatchObject({
+      percent: 100,
+      level: 'full',
+    })
   })
 
   it('shows a sliver for a little use and nothing for none', () => {

@@ -32,7 +32,9 @@
                   aria-hidden="true"
                 />
                 <span class="flex-1 truncate text-base text-ink-gray-8">{{ __(row.type) }}</span>
-                <span class="text-base text-ink-gray-7 tabular-nums">{{ formatBytes(row.bytes) }}</span>
+                <span class="text-base text-ink-gray-7 tabular-nums">{{
+                  formatBytes(row.bytes)
+                }}</span>
               </li>
             </ul>
             <p v-else-if="data" class="py-2 text-p-sm text-ink-gray-5">{{ emptyText }}</p>
@@ -59,7 +61,9 @@
                 <span class="flex-1 truncate text-base text-ink-gray-8" :title="file.title">
                   {{ file.title }}
                 </span>
-                <span class="text-base text-ink-gray-7 tabular-nums">{{ formatBytes(file.size) }}</span>
+                <span class="text-base text-ink-gray-7 tabular-nums">{{
+                  formatBytes(file.size)
+                }}</span>
               </li>
             </ul>
             <p v-else-if="data" class="py-2 text-p-sm text-ink-gray-5">{{ __('No files') }}</p>
@@ -78,14 +82,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Progress, Skeleton } from 'frappe-ui'
+import { computed } from 'vue'
 
 import { roots } from '@/apps/drive/client/roots'
 import { rootStorage } from '@/apps/drive/client/settings'
 import { formatBytes } from '@/apps/drive/files/internal/format'
 import { useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
+
 import SettingsPage from './SettingsPage.vue'
 import { storageTypeIcon, storageTypeTint } from './storageTypes'
 

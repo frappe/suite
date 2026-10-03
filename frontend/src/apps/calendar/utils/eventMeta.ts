@@ -15,30 +15,30 @@ import { getRepeatMessage } from '@/apps/calendar/utils/format'
  */
 
 interface MetaEvent {
-	locations?: Array<{ _name?: string }>
-	links?: Array<{ href?: string }>
-	recurrence_rule?: { frequency?: string }
-	organizer?: string
-	participants?: Array<{
-		participation_status?: string
-		email?: string
-		_name?: string
-		user_image?: string
-	}>
+  locations?: Array<{ _name?: string }>
+  links?: Array<{ href?: string }>
+  recurrence_rule?: { frequency?: string }
+  organizer?: string
+  participants?: Array<{
+    participation_status?: string
+    email?: string
+    _name?: string
+    user_image?: string
+  }>
 }
 
 /** Where it is: the location, else the meeting it happens in. */
 export const eventPlace = (event: MetaEvent): string => {
-	const place = event.locations?.find((l) => l._name)?._name
-	if (place) return place
-	if (event.links?.some((l) => l?.href?.includes('/meet/'))) return __('Frappe Meet')
-	return ''
+  const place = event.locations?.find((l) => l._name)?._name
+  if (place) return place
+  if (event.links?.some((l) => l?.href?.includes('/meet/'))) return __('Frappe Meet')
+  return ''
 }
 
 /** How often it comes round, as the formatter writes it — "Every week on Thursday". */
 const eventRepeat = (event: MetaEvent): string => {
-	if (!event.recurrence_rule?.frequency) return ''
-	return getRepeatMessage(event.recurrence_rule) || ''
+  if (!event.recurrence_rule?.frequency) return ''
+  return getRepeatMessage(event.recurrence_rule) || ''
 }
 
 const people = (event: MetaEvent) => event.participants ?? []
@@ -52,8 +52,8 @@ const people = (event: MetaEvent) => event.participants ?? []
  * competing with the one mark the block is.
  */
 export const eventPeople = (event: MetaEvent): string => {
-	const count = people(event).length
-	return count > 1 ? __('{0} people', [String(count)]) : ''
+  const count = people(event).length
+  return count > 1 ? __('{0} people', [String(count)]) : ''
 }
 
 /**
@@ -67,7 +67,7 @@ export const eventPeople = (event: MetaEvent): string => {
  * it before the calendar's own note about an event running on past the day.
  */
 export const eventDescription = (event: MetaEvent): string =>
-	[eventRepeat(event), eventPlace(event)].filter(Boolean).join(' · ')
+  [eventRepeat(event), eventPlace(event)].filter(Boolean).join(' · ')
 
 /**
  * The whole second line of an agenda row: the description above, then the
@@ -76,4 +76,4 @@ export const eventDescription = (event: MetaEvent): string =>
  * desktop's rows and the phone's read one line, in one order.
  */
 export const eventRowDescription = (event: MetaEvent, daySpan?: string | null): string =>
-	[eventDescription(event), daySpan].filter(Boolean).join(' · ')
+  [eventDescription(event), daySpan].filter(Boolean).join(' · ')

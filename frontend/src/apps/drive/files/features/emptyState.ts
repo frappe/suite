@@ -1,4 +1,5 @@
-export type FilesDestination = 'personal' | 'organization' | 'folder' | 'shared' | 'recent' | 'starred' | 'trash'
+export type FilesDestination =
+  'personal' | 'organization' | 'folder' | 'shared' | 'recent' | 'starred' | 'trash'
 
 export interface EmptyStateInput {
   destination: FilesDestination
@@ -21,14 +22,24 @@ export interface EmptyState {
 const TRASH_RETENTION_DAYS = 30
 
 /** What an empty listing says, per view. */
-export function emptyState({ destination, term, canCreate, typeNoun, inTrash }: EmptyStateInput): EmptyState {
+export function emptyState({
+  destination,
+  term,
+  canCreate,
+  typeNoun,
+  inTrash,
+}: EmptyStateInput): EmptyState {
   // The page offers to clear the filter, so the copy names it.
   if (typeNoun) {
     return term
-      ? { title: `No ${typeNoun} match this search`, description: 'Try a different search term, or clear the filter.' }
+      ? {
+          title: `No ${typeNoun} match this search`,
+          description: 'Try a different search term, or clear the filter.',
+        }
       : { title: `No ${typeNoun} here`, description: 'Try another type, or clear the filter.' }
   }
-  if (term) return { title: 'No files match this search', description: 'Try a different search term.' }
+  if (term)
+    return { title: 'No files match this search', description: 'Try a different search term.' }
   const addHint = canCreate ? 'Use New to add a folder, a document, or files.' : ''
   switch (destination) {
     case 'personal':
@@ -39,14 +50,27 @@ export function emptyState({ destination, term, canCreate, typeNoun, inTrash }: 
         description: addHint || 'Files added for your organization will appear here.',
       }
     case 'folder':
-      if (inTrash) return { title: 'This folder is empty', description: 'It was empty when it was moved to Trash.' }
-      return { title: 'This folder is empty', description: addHint || 'Nothing has been added to this folder yet.' }
+      if (inTrash)
+        return {
+          title: 'This folder is empty',
+          description: 'It was empty when it was moved to Trash.',
+        }
+      return {
+        title: 'This folder is empty',
+        description: addHint || 'Nothing has been added to this folder yet.',
+      }
     case 'shared':
-      return { title: 'Nothing shared with you yet', description: 'Files and folders that people share with you will appear here.' }
+      return {
+        title: 'Nothing shared with you yet',
+        description: 'Files and folders that people share with you will appear here.',
+      }
     case 'recent':
       return { title: 'No recent files', description: 'Files you open will appear here.' }
     case 'starred':
-      return { title: 'No starred files', description: 'Star a file or folder to find it here quickly.' }
+      return {
+        title: 'No starred files',
+        description: 'Star a file or folder to find it here quickly.',
+      }
     case 'trash':
       return {
         title: 'Trash is empty',

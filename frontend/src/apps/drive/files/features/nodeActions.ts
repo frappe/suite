@@ -75,6 +75,10 @@ export function nodeActions(node: ActionNode, signedIn: boolean): NodeActions {
 }
 
 /** Whether every node allows the action, for a selection's bulk bar. An empty selection allows none. */
-export function allAllow(nodes: readonly ActionNode[], action: keyof NodeActions, signedIn: boolean): boolean {
+export function allAllow(
+  nodes: readonly ActionNode[],
+  action: keyof NodeActions,
+  signedIn: boolean,
+): boolean {
   return nodes.length > 0 && nodes.every((node) => nodeActions(node, signedIn)[action])
 }

@@ -1,38 +1,38 @@
 <template>
-	<div
-		v-if="showImagesBanner"
-		class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded-4 border p-2.5 px-4 sm:flex-row sm:items-center"
-	>
-		<div class="flex min-w-0 flex-1 items-start gap-3">
-			<!-- Centered on the FIRST line, not on the block: the label wraps to two lines
+  <div
+    v-if="showImagesBanner"
+    class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded-4 border p-2.5 px-4 sm:flex-row sm:items-center"
+  >
+    <div class="flex min-w-0 flex-1 items-start gap-3">
+      <!-- Centered on the FIRST line, not on the block: the label wraps to two lines
 			     at 393px and a block-centered icon would float between them.
 
 			     leading-5 states the line box instead of leaving it to the preset, whose
 			     18.9px is not a number an icon can be centered on. At a stated 20px the
 			     offset is arithmetic: an 18px glyph, 1px of it either side. -->
-			<ImageOff class="mt-px h-4.5 w-4.5 shrink-0 stroke-1.5" />
-			<span class="text-ink-gray-8 min-w-0 flex-1 leading-5"> {{ blockedLabel }} </span>
-		</div>
-		<!-- On mobile the two answers split the width the row was already spending,
+      <ImageOff class="mt-px h-4.5 w-4.5 shrink-0 stroke-1.5" />
+      <span class="text-ink-gray-8 min-w-0 flex-1 leading-5"> {{ blockedLabel }} </span>
+    </div>
+    <!-- On mobile the two answers split the width the row was already spending,
 		     40px tall — the same treatment the invite strip's RSVP control gets. -->
-		<div class="flex shrink-0 items-center justify-end gap-3 max-sm:w-full">
-			<!-- Outline, not ghost: at full width a borderless button reads as loose
+    <div class="flex shrink-0 items-center justify-end gap-3 max-sm:w-full">
+      <!-- Outline, not ghost: at full width a borderless button reads as loose
 			     text rather than the other half of a pair of answers. -->
-			<Button
-				v-if="canTrust"
-				variant="outline"
-				class="max-sm:!h-10 max-sm:flex-1"
-				:label="__('Mark Sender as Trusted')"
-				@click="handleTrust"
-			/>
-			<Button
-				class="max-sm:!h-10 max-sm:flex-1 sm:w-28"
-				:label="__('Load Images')"
-				@click="imagesLoaded = true"
-			/>
-		</div>
-	</div>
-	<!-- `invisible`, never `v-show`, and the skeleton laid over the frame rather than standing in
+      <Button
+        v-if="canTrust"
+        variant="outline"
+        class="max-sm:!h-10 max-sm:flex-1"
+        :label="__('Mark Sender as Trusted')"
+        @click="handleTrust"
+      />
+      <Button
+        class="max-sm:!h-10 max-sm:flex-1 sm:w-28"
+        :label="__('Load Images')"
+        @click="imagesLoaded = true"
+      />
+    </div>
+  </div>
+  <!-- `invisible`, never `v-show`, and the skeleton laid over the frame rather than standing in
 	     for it. iframe-resizer sizes the frame by asking the document inside it how tall it is, so
 	     the frame has to have a box the whole time it is being measured. Under `display: none` the
 	     document answers with the child's starting 1px; the parent writes that back as the frame's
@@ -41,54 +41,54 @@
 	     and nothing recovers it — not a resize, not content changing inside the frame, not even
 	     being handed a real height. Only reloading the frame does, which is why re-selecting the
 	     mail was the one thing that worked. -->
-	<div class="relative w-full">
-		<IframeResizer
-			ref="frame"
-			class="w-full"
-			:class="{ invisible: !isIframeReady }"
-			license="GPLv3"
-			:scrolling="true"
-			:srcdoc
-			@on-ready="isIframeReady = true"
-		/>
-		<div v-if="!isIframeReady" class="absolute inset-0 animate-pulse space-y-2 py-4">
-			<div
-				v-for="i in 5"
-				:key="i"
-				class="bg-surface-gray-3 h-2"
-				:style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
-			/>
-		</div>
-	</div>
+  <div class="relative w-full">
+    <IframeResizer
+      ref="frame"
+      class="w-full"
+      :class="{ invisible: !isIframeReady }"
+      license="GPLv3"
+      :scrolling="true"
+      :srcdoc
+      @on-ready="isIframeReady = true"
+    />
+    <div v-if="!isIframeReady" class="absolute inset-0 animate-pulse space-y-2 py-4">
+      <div
+        v-for="i in 5"
+        :key="i"
+        class="bg-surface-gray-3 h-2"
+        :style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
+      />
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // The package maps `./sfc` only via its (non-honored) `browser` field under
 // Vite 8/Rolldown, so import the concrete SFC file directly.
 // eslint-disable-next-line import/no-unresolved
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import DOMPurify from 'dompurify'
-import { ImageOff } from 'lucide-vue-next'
 import { Button } from 'frappe-ui'
+import { ImageOff } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
 import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
-import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
+import {
+  declaresFixedPalette,
+  isArtDirected,
+  normalizeToLightScheme,
+  remapEmailForDarkMode,
+} from '@/apps/mail/utils/darkMail'
+import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
-import {
-	declaresFixedPalette,
-	isArtDirected,
-	normalizeToLightScheme,
-	remapEmailForDarkMode,
-} from '@/apps/mail/utils/darkMail'
 
 const {
-	content,
-	blockImages = false,
-	canTrust = true,
+  content,
+  blockImages = false,
+  canTrust = true,
 } = defineProps<{ content: string; blockImages?: boolean; canTrust?: boolean }>()
 const emit = defineEmits<{ trust: [] }>()
 
@@ -110,54 +110,53 @@ const remoteAssets = computed(() => analyzeRemoteAssets(content))
 // The banner is dismissed once the reader loads the images (or trusts the sender) — there's nothing
 // left to act on after that.
 const showImagesBanner = computed(
-	() => blockImages && !imagesLoaded.value && !trusted.value && remoteAssets.value.hasRemote,
+  () => blockImages && !imagesLoaded.value && !trusted.value && remoteAssets.value.hasRemote,
 )
 const blockedLabel = computed(() => {
-	const n = remoteAssets.value.images
-	if (n === 0) return __('Remote content hidden to protect your privacy.')
-	return n === 1
-		? __('1 remote image hidden to protect your privacy.')
-		: __('{0} remote images hidden to protect your privacy.', [String(n)])
+  const n = remoteAssets.value.images
+  if (n === 0) return __('Remote content hidden to protect your privacy.')
+  return n === 1
+    ? __('1 remote image hidden to protect your privacy.')
+    : __('{0} remote images hidden to protect your privacy.', [String(n)])
 })
 
 // Trusting reveals images and dismisses the banner now; the parent accepts the sender for future mail.
 const handleTrust = () => {
-	trusted.value = true
-	emit('trust')
+  trusted.value = true
+  emit('trust')
 }
 
 // Listen for keyboard/swipe events from iframe
 const handleMessage = (event: MessageEvent) => {
-	// Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
-	// swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
-	if (event.data?.type === 'swipe') {
-		window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
-		return
-	}
-	// A `mailto:` the reader clicked inside the message — open our own composer on it.
-	// Only this message's own frame gets to do that: `window` hears every window that
-	// can reach us (an attachment rendered in a frame, an embedder), and this one puts
-	// a stranger's address and body in front of the user as a ready-to-send draft.
-	if (event.data?.type === 'mailto') {
-		if (event.source !== (frame.value?.$el as HTMLIFrameElement | undefined)?.contentWindow)
-			return
+  // Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
+  // swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
+  if (event.data?.type === 'swipe') {
+    window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+    return
+  }
+  // A `mailto:` the reader clicked inside the message — open our own composer on it.
+  // Only this message's own frame gets to do that: `window` hears every window that
+  // can reach us (an attachment rendered in a frame, an embedder), and this one puts
+  // a stranger's address and body in front of the user as a ready-to-send draft.
+  if (event.data?.type === 'mailto') {
+    if (event.source !== (frame.value?.$el as HTMLIFrameElement | undefined)?.contentWindow) return
 
-		const draft = parseMailto(String(event.data.href ?? ''))
-		if (draft) requestCompose(draft)
-		return
-	}
-	if (event.data?.type !== 'keyboard') return
+    const draft = parseMailto(String(event.data.href ?? ''))
+    if (draft) requestCompose(draft)
+    return
+  }
+  if (event.data?.type !== 'keyboard') return
 
-	// Create a synthetic keyboard event in the parent
-	const keyboardEvent = new KeyboardEvent(event.data.eventType, {
-		key: event.data.key,
-		ctrlKey: event.data.ctrlKey,
-		shiftKey: event.data.shiftKey,
-		altKey: event.data.altKey,
-		metaKey: event.data.metaKey,
-		bubbles: true,
-	})
-	document.dispatchEvent(keyboardEvent)
+  // Create a synthetic keyboard event in the parent
+  const keyboardEvent = new KeyboardEvent(event.data.eventType, {
+    key: event.data.key,
+    ctrlKey: event.data.ctrlKey,
+    shiftKey: event.data.shiftKey,
+    altKey: event.data.altKey,
+    metaKey: event.data.metaKey,
+    bubbles: true,
+  })
+  document.dispatchEvent(keyboardEvent)
 }
 
 onMounted(() => window.addEventListener('message', handleMessage))
@@ -167,55 +166,55 @@ onUnmounted(() => window.removeEventListener('message', handleMessage))
 // Outlook, Apple Mail, …) and hands back one outermost element per trail — hiding it hides any quotes
 // nested inside.
 const collapseQuotes = (doc: Document) => {
-	findQuoteRoots(doc).forEach((quote) => {
-		quote.classList.add('quote-hidden')
-		// A labelled control, not a bare '···' chip — unlabelled, it was easy to miss
-		// that a reply hides a whole conversation underneath it.
-		const button = doc.createElement('button')
-		button.innerHTML =
-			'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h10"/></svg>'
-		const label = doc.createElement('span')
-		label.textContent = __('Show trimmed content')
-		// The toggle script runs inside the iframe, where __() doesn't exist — both
-		// translations ride along as data attributes instead.
-		button.dataset.show = __('Show trimmed content')
-		button.dataset.hide = __('Hide trimmed content')
-		button.appendChild(label)
-		// Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
-		// inline styles, so the mobile variant can size the touch target up.
-		button.className = 'quote-toggle'
-		button.setAttribute(
-			'onclick',
-			"var hidden = this.nextElementSibling.classList.toggle('quote-hidden');" +
-				'this.lastElementChild.textContent = hidden ? this.dataset.show : this.dataset.hide;',
-		)
-		quote.parentNode?.insertBefore(button, quote)
-	})
+  findQuoteRoots(doc).forEach((quote) => {
+    quote.classList.add('quote-hidden')
+    // A labelled control, not a bare '···' chip — unlabelled, it was easy to miss
+    // that a reply hides a whole conversation underneath it.
+    const button = doc.createElement('button')
+    button.innerHTML =
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h10"/></svg>'
+    const label = doc.createElement('span')
+    label.textContent = __('Show trimmed content')
+    // The toggle script runs inside the iframe, where __() doesn't exist — both
+    // translations ride along as data attributes instead.
+    button.dataset.show = __('Show trimmed content')
+    button.dataset.hide = __('Hide trimmed content')
+    button.appendChild(label)
+    // Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
+    // inline styles, so the mobile variant can size the touch target up.
+    button.className = 'quote-toggle'
+    button.setAttribute(
+      'onclick',
+      "var hidden = this.nextElementSibling.classList.toggle('quote-hidden');" +
+        'this.lastElementChild.textContent = hidden ? this.dataset.show : this.dataset.hide;',
+    )
+    quote.parentNode?.insertBefore(button, quote)
+  })
 }
 
 const srcdoc = computed(() => {
-	let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
-	if (effectiveBlock.value) sanitized = blockRemoteAssets(sanitized)
-	const doc = new DOMParser().parseFromString(sanitized, 'text/html')
-	// Two kinds of email render exactly as authored, dark theme or not: those
-	// declaring a fixed palette (suite's own templates), and art-directed ones
-	// — the author claimed the full canvas and painted with color — where
-	// remapping would second-guess a deliberate design. Everything else (plain
-	// mail, floating cards, replies quoting either kind) adapts to the dark
-	// canvas. Art direction is a DOM-shape check, not "does it declare dark
-	// support" — the email's own dark-scheme rules are dropped up front
-	// (sanitization guts the selectors they rely on, and half a dark design is
-	// worse than none), so every email is judged and remapped as its
-	// light-scheme self. Remap runs before collapseQuotes so the toggle buttons
-	// it inserts keep their exact theme colors.
-	normalizeToLightScheme(doc)
-	const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
-	if (remapped) remapEmailForDarkMode(doc)
-	collapseQuotes(doc)
-	const transformedContent = doc.documentElement.outerHTML
+  let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
+  if (effectiveBlock.value) sanitized = blockRemoteAssets(sanitized)
+  const doc = new DOMParser().parseFromString(sanitized, 'text/html')
+  // Two kinds of email render exactly as authored, dark theme or not: those
+  // declaring a fixed palette (suite's own templates), and art-directed ones
+  // — the author claimed the full canvas and painted with color — where
+  // remapping would second-guess a deliberate design. Everything else (plain
+  // mail, floating cards, replies quoting either kind) adapts to the dark
+  // canvas. Art direction is a DOM-shape check, not "does it declare dark
+  // support" — the email's own dark-scheme rules are dropped up front
+  // (sanitization guts the selectors they rely on, and half a dark design is
+  // worse than none), so every email is judged and remapped as its
+  // light-scheme self. Remap runs before collapseQuotes so the toggle buttons
+  // it inserts keep their exact theme colors.
+  normalizeToLightScheme(doc)
+  const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
+  if (remapped) remapEmailForDarkMode(doc)
+  collapseQuotes(doc)
+  const transformedContent = doc.documentElement.outerHTML
 
-	/* eslint-disable no-useless-escape */
-	return `
+  /* eslint-disable no-useless-escape */
+  return `
 		<!DOCTYPE html>
 		<html>
 		<head>
@@ -304,8 +303,8 @@ const srcdoc = computed(() => {
 				   not an iframe media query: the iframe only knows the reading pane's
 				   width, and a desktop pane narrowed by the sidebar is not a phone. */
 				${
-					isMobile.value
-						? `.quote-toggle {
+          isMobile.value
+            ? `.quote-toggle {
 						padding: 10px 14px;
 						gap: 8px;
 						border-radius: 10px;
@@ -314,8 +313,8 @@ const srcdoc = computed(() => {
 						width: 14px;
 						height: 14px;
 					}`
-						: ''
-				}
+            : ''
+        }
 
 				.email-pixel {
 					display: none !important;
@@ -534,110 +533,110 @@ const srcdoc = computed(() => {
 const colors = computed(() => THEME_CONFIG[dataTheme.value])
 
 const DOMPURIFY_CONFIG = {
-	ALLOWED_TAGS: [
-		'html',
-		'head',
-		'body',
-		'title',
-		'meta',
-		'style',
-		'table',
-		'tbody',
-		'thead',
-		'tfoot',
-		'tr',
-		'td',
-		'th',
-		'div',
-		'span',
-		'p',
-		'br',
-		'strong',
-		'b',
-		'em',
-		'i',
-		'u',
-		// Highlighted text. Without it KEEP_CONTENT hands the words back unstyled, so a
-		// highlight applied in our own composer came back to the reader as plain text —
-		// while the text colour beside it, which rides a <span>, survived.
-		'mark',
-		'h1',
-		'h2',
-		'h3',
-		'h4',
-		'h5',
-		'h6',
-		'a',
-		'img',
-		'blockquote',
-		'ul',
-		'ol',
-		'li',
-		'pre',
-		'code',
-	],
-	ALLOWED_ATTR: [
-		'style',
-		'class',
-		'id',
-		'width',
-		'height',
-		'align',
-		'valign',
-		'cellpadding',
-		'cellspacing',
-		// Without colspan/rowspan a table email's grid falls apart: rows stop
-		// agreeing on column count, cells get crushed to slivers, and text can
-		// land outside its authored background (seen as invisible/vertical text).
-		'colspan',
-		'rowspan',
-		'border',
-		'bgcolor',
-		'color',
-		'href',
-		'src',
-		'alt',
-		'title',
-		'target',
-		'data-type',
-		'data-id',
-		'data-label',
-		'data-list',
-		'data-email-footer',
-		// Suite's own templates opt out of the dark-mode remap with this (see
-		// declaresFixedPalette); stripping it would silently re-enable remapping.
-		'data-fixed-palette',
-		'xmlns',
-		'content',
-		'name',
-		'http-equiv',
-		'charset',
-	],
-	KEEP_CONTENT: true,
-	ALLOW_UNKNOWN_PROTOCOLS: false,
-	WHOLE_DOCUMENT: true,
-	ADD_TAGS: ['meta', 'style', 'pre', 'code'],
-	ADD_ATTR: ['cellpadding', 'cellspacing', 'border', 'bgcolor', 'xmlns', 'charset'],
-	REMOVE_EMPTY: false,
+  ALLOWED_TAGS: [
+    'html',
+    'head',
+    'body',
+    'title',
+    'meta',
+    'style',
+    'table',
+    'tbody',
+    'thead',
+    'tfoot',
+    'tr',
+    'td',
+    'th',
+    'div',
+    'span',
+    'p',
+    'br',
+    'strong',
+    'b',
+    'em',
+    'i',
+    'u',
+    // Highlighted text. Without it KEEP_CONTENT hands the words back unstyled, so a
+    // highlight applied in our own composer came back to the reader as plain text —
+    // while the text colour beside it, which rides a <span>, survived.
+    'mark',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'a',
+    'img',
+    'blockquote',
+    'ul',
+    'ol',
+    'li',
+    'pre',
+    'code',
+  ],
+  ALLOWED_ATTR: [
+    'style',
+    'class',
+    'id',
+    'width',
+    'height',
+    'align',
+    'valign',
+    'cellpadding',
+    'cellspacing',
+    // Without colspan/rowspan a table email's grid falls apart: rows stop
+    // agreeing on column count, cells get crushed to slivers, and text can
+    // land outside its authored background (seen as invisible/vertical text).
+    'colspan',
+    'rowspan',
+    'border',
+    'bgcolor',
+    'color',
+    'href',
+    'src',
+    'alt',
+    'title',
+    'target',
+    'data-type',
+    'data-id',
+    'data-label',
+    'data-list',
+    'data-email-footer',
+    // Suite's own templates opt out of the dark-mode remap with this (see
+    // declaresFixedPalette); stripping it would silently re-enable remapping.
+    'data-fixed-palette',
+    'xmlns',
+    'content',
+    'name',
+    'http-equiv',
+    'charset',
+  ],
+  KEEP_CONTENT: true,
+  ALLOW_UNKNOWN_PROTOCOLS: false,
+  WHOLE_DOCUMENT: true,
+  ADD_TAGS: ['meta', 'style', 'pre', 'code'],
+  ADD_ATTR: ['cellpadding', 'cellspacing', 'border', 'bgcolor', 'xmlns', 'charset'],
+  REMOVE_EMPTY: false,
 }
 
 const THEME_CONFIG = {
-	light: {
-		background: '#FFFFFF',
-		text: '#383838',
-		button: '#F3F3F3',
-		buttonHover: '#EDEDED',
-		link: '',
-	},
-	dark: {
-		// Match frappe-ui v2's dark `surface-base` (#171717) so the email body doesn't seam against
-		// the reading-pane background. Iframes don't inherit the parent's CSS vars, so it's concrete.
-		// Colors the email itself carries are remapped onto this canvas by remapEmailForDarkMode.
-		background: '#171717',
-		text: '#D4D4D4',
-		button: '#2B2B2B',
-		buttonHover: '#343434',
-		link: '#6CB6FF',
-	},
+  light: {
+    background: '#FFFFFF',
+    text: '#383838',
+    button: '#F3F3F3',
+    buttonHover: '#EDEDED',
+    link: '',
+  },
+  dark: {
+    // Match frappe-ui v2's dark `surface-base` (#171717) so the email body doesn't seam against
+    // the reading-pane background. Iframes don't inherit the parent's CSS vars, so it's concrete.
+    // Colors the email itself carries are remapped onto this canvas by remapEmailForDarkMode.
+    background: '#171717',
+    text: '#D4D4D4',
+    button: '#2B2B2B',
+    buttonHover: '#343434',
+    link: '#6CB6FF',
+  },
 }
 </script>

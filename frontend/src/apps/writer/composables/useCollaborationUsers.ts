@@ -11,10 +11,7 @@ export type CollaborationUser = Record<string, unknown> & {
 type CollaborationAwareness = {
   /** This connection's own client, left out of `peers`. */
   clientID: number
-  getStates: () => Map<
-    number,
-    { user?: Record<string, unknown> } | null | undefined
-  >
+  getStates: () => Map<number, { user?: Record<string, unknown> } | null | undefined>
   on: (event: 'update', listener: () => void) => void
   off: (event: 'update', listener: () => void) => void
 }

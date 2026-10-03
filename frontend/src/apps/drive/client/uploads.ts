@@ -1,5 +1,5 @@
 import { mutation, upload, type UploadDescriptor } from '@/platform/server-state'
-import { TransportError, transport } from '@/platform/transport'
+import { transport, TransportError } from '@/platform/transport'
 
 import { api } from './generated'
 import { driveOperation } from './operation'
@@ -54,11 +54,13 @@ export function openUpload(input: OpenUploadInput, signal?: AbortSignal): Promis
  * start offset, then finish. It carries the link codes for `parent`, because
  * a chunk or finish names no node itself.
  */
-export function uploadTransfer(parent: string): UploadDescriptor<UploadStartInput, DriveNode, UploadSession> {
-  const chunk = driveOperation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }>(
-    api.upload_chunk,
-    { covers: [parent] },
-  )
+export function uploadTransfer(
+  parent: string,
+): UploadDescriptor<UploadStartInput, DriveNode, UploadSession> {
+  const chunk = driveOperation<
+    { upload_id: string; offset: number; chunk: Blob },
+    { received: number }
+  >(api.upload_chunk, { covers: [parent] })
   const finish = driveOperation<Record<string, unknown>, DriveNode>(api.upload_finish, {
     entity: true,
     covers: [parent],
@@ -68,7 +70,9 @@ export function uploadTransfer(parent: string): UploadDescriptor<UploadStartInpu
     chunkInput: (session, offset) => ({ upload_id: session.upload_id, offset }),
     finishInput: (input, session) => ({
       upload_id: session.upload_id,
-      ...(input.replaces ? { replaces: input.replaces } : { parent_node: input.parent_node, title: input.filename }),
+      ...(input.replaces
+        ? { replaces: input.replaces }
+        : { parent_node: input.parent_node, title: input.filename }),
       ...(input.checksum ? { checksum: input.checksum } : {}),
     }),
     invalidates: ['node_children', 'view_list', 'root_usage'],
@@ -80,12 +84,20 @@ export function uploadTransfer(parent: string): UploadDescriptor<UploadStartInpu
  * chunk at offset 0, which the server accepts, writes nothing for, and
  * answers with `received`. A session that is gone refuses it.
  */
-export async function probeUpload(uploadId: string, parent: string, signal?: AbortSignal): Promise<number> {
-  const probe = driveOperation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }>(
-    api.upload_chunk,
-    { covers: [parent] },
+export async function probeUpload(
+  uploadId: string,
+  parent: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const probe = driveOperation<
+    { upload_id: string; offset: number; chunk: Blob },
+    { received: number }
+  >(api.upload_chunk, { covers: [parent] })
+  const reply = await transport.request(
+    probe,
+    { upload_id: uploadId, offset: 0, chunk: new Blob([]) },
+    { signal },
   )
-  const reply = await transport.request(probe, { upload_id: uploadId, offset: 0, chunk: new Blob([]) }, { signal })
   return reply.received
 }
 
@@ -115,9 +127,22 @@ export function sendDirect(
     request.upload.onprogress = (event) => onProgress(Math.min(event.loaded, file.size))
     request.onload = () => {
       if (request.status >= 200 && request.status < 300) return resolve()
-      reject(new TransportError({ type: 'DriveDirectUploadFailed', message: storageMessage(request.responseText), status: request.status }))
+      reject(
+        new TransportError({
+          type: 'DriveDirectUploadFailed',
+          message: storageMessage(request.responseText),
+          status: request.status,
+        }),
+      )
     }
-    request.onerror = () => reject(new TransportError({ type: 'RequestError', message: 'The file could not reach storage.', status: 0 }))
+    request.onerror = () =>
+      reject(
+        new TransportError({
+          type: 'RequestError',
+          message: 'The file could not reach storage.',
+          status: 0,
+        }),
+      )
     request.onabort = () => reject(new DOMException('The upload was stopped', 'AbortError'))
     signal?.addEventListener('abort', () => request.abort(), { once: true })
     request.send(form)
@@ -141,7 +166,10 @@ export interface FinishUploadInput {
 /** Finishes a session whose bytes are already stored, as a direct upload's are. */
 export function finishUpload(parent: string) {
   return mutation(
-    driveOperation<FinishUploadInput, DriveNode>(api.upload_finish, { entity: true, covers: [parent] }),
+    driveOperation<FinishUploadInput, DriveNode>(api.upload_finish, {
+      entity: true,
+      covers: [parent],
+    }),
     { invalidates: ['node_children', 'view_list', 'root_usage'] },
   )
 }

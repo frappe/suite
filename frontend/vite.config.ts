@@ -1,11 +1,9 @@
 import fs from 'fs'
 import path from 'path'
-
 import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
 import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
-
 
 // Local frappe-ui work: when the submodule is checked out, public component
 // imports resolve to its source instead of the pinned package, so edits show up
@@ -39,18 +37,19 @@ const serveNoiseSuppressionAssets = () => {
   return {
     name: 'serve-noise-suppression-assets',
     apply: 'serve' as const,
-    configureServer(server: { middlewares: { use: (path: string, fn: (req: any, res: any, next: () => void) => void) => void } }) {
+    configureServer(server: {
+      middlewares: {
+        use: (path: string, fn: (req: any, res: any, next: () => void) => void) => void
+      }
+    }) {
       server.middlewares.use('/noise-suppression', (req, res, next) => {
-        const rel = (req.url || '/').split('?')[0].replace(/^\//, '') || 'audio-worklet-processor.js'
+        const rel =
+          (req.url || '/').split('?')[0].replace(/^\//, '') || 'audio-worklet-processor.js'
         const filePath = path.resolve(noiseDir, rel)
         // Directory containment (not string prefix): avoid
         // /noise-suppression/../noise-suppression-sibling/secret.js escapes.
         const relative = path.relative(noiseDir, filePath)
-        if (
-          relative.startsWith('..') ||
-          path.isAbsolute(relative) ||
-          !fs.existsSync(filePath)
-        ) {
+        if (relative.startsWith('..') || path.isAbsolute(relative) || !fs.existsSync(filePath)) {
           next()
           return
         }
@@ -81,7 +80,9 @@ const dropFrappeUICodeLanguagesEsbuildPlugin = (): Plugin => ({
   config(config) {
     const esbuildOptions = config.optimizeDeps?.esbuildOptions
     if (esbuildOptions?.plugins) {
-      esbuildOptions.plugins = esbuildOptions.plugins.filter((plugin: { name: string }) => plugin.name !== 'frappeui-code-languages')
+      esbuildOptions.plugins = esbuildOptions.plugins.filter(
+        (plugin: { name: string }) => plugin.name !== 'frappeui-code-languages',
+      )
     }
   },
 })
@@ -205,7 +206,14 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     port: 8085,
-    allowedHosts: [defaultSite, 'suite.localhost', ...(process.env.VITE_ALLOWED_HOSTS || '').split(',').map((host) => host.trim()).filter(Boolean)],
+    allowedHosts: [
+      defaultSite,
+      'suite.localhost',
+      ...(process.env.VITE_ALLOWED_HOSTS || '')
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean),
+    ],
     fs: {
       // Allow the bench + frappe-ui source paths used by the dev proxy/build.
       allow: ['..', 'node_modules', '../../..', '../frappe-ui'],

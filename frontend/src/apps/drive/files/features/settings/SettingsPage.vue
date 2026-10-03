@@ -30,8 +30,8 @@
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue'
 import { SettingsBody, SettingsHeader } from 'frappe-ui'
+import { inject } from 'vue'
 
 defineProps<{ title: string; description?: string }>()
 defineSlots<{ default?: () => unknown; actions?: () => unknown }>()

@@ -7,8 +7,8 @@
 </template>
 
 <script lang="ts">
-import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 import { LoadingIndicator } from 'frappe-ui'
+import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 import type { SettingsTab } from '@/shell/settings/settings'
@@ -33,7 +33,11 @@ const Failed = defineComponent({
     h(
       'div',
       { class: 'flex min-h-0 flex-1 items-center justify-center px-6 text-center' },
-      h('p', { class: 'text-p-base text-ink-gray-6' }, __('This tab could not load. Reload the page and try again.')),
+      h(
+        'p',
+        { class: 'text-p-base text-ink-gray-6' },
+        __('This tab could not load. Reload the page and try again.'),
+      ),
     ),
 })
 

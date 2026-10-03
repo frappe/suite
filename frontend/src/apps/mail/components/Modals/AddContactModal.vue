@@ -1,59 +1,55 @@
 <template>
-	<Dialog
-		v-model:open="show"
-	 v-bind="{
-			title: __('New Contact'),
-			actions: [
-				{
-					label: __('Save'),
-					variant: 'solid',
-					disabled: !(
-						contact.full_name &&
-						contact.kind &&
-						contact.address_book_ids.length
-					),
-					onClick: createContact.submit,
-				},
-			],
-		}"
-	>
-		<template #default>
-			<div class="space-y-4">
-				<FormControl
-					v-model="contact.full_name"
-					:label="__('Name')"
-					:placeholder="__('John Doe')"
-				/>
-				<FormControl
-					v-model="contact.kind"
-					type="select"
-					:label="__('Kind')"
-					:options="KIND_OPTIONS"
-				/>
-				<div class="space-y-1.5">
-					<label class="text-ink-gray-5 block text-xs">{{ __('Address Books') }}</label>
-					<MultiSelect
-						v-model="contact.address_book_ids"
-						:options="
-							store.addressBooks.data.map((ab) => ({
-								label: ab._name,
-								value: ab.id,
-							}))
-						"
-					/>
-				</div>
-			</div>
-		</template>
-	</Dialog>
+  <Dialog
+    v-model:open="show"
+    v-bind="{
+      title: __('New Contact'),
+      actions: [
+        {
+          label: __('Save'),
+          variant: 'solid',
+          disabled: !(contact.full_name && contact.kind && contact.address_book_ids.length),
+          onClick: createContact.submit,
+        },
+      ],
+    }"
+  >
+    <template #default>
+      <div class="space-y-4">
+        <FormControl
+          v-model="contact.full_name"
+          :label="__('Name')"
+          :placeholder="__('John Doe')"
+        />
+        <FormControl
+          v-model="contact.kind"
+          type="select"
+          :label="__('Kind')"
+          :options="KIND_OPTIONS"
+        />
+        <div class="space-y-1.5">
+          <label class="text-ink-gray-5 block text-xs">{{ __('Address Books') }}</label>
+          <MultiSelect
+            v-model="contact.address_book_ids"
+            :options="
+              store.addressBooks.data.map((ab) => ({
+                label: ab._name,
+                value: ab.id,
+              }))
+            "
+          />
+        </div>
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
+import { createResource, Dialog, FormControl, MultiSelect } from 'frappe-ui'
 import { reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, FormControl, MultiSelect, createResource } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
+import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
 
@@ -63,31 +59,31 @@ const router = useRouter()
 const defaultAddressBook = store.addressBooks.data.find((ab) => ab.default)?.id
 
 const defaultContact = {
-	account: store.accountId,
-	address_book_ids: defaultAddressBook ? [defaultAddressBook] : [],
-	full_name: '',
-	kind: 'Individual',
+  account: store.accountId,
+  address_book_ids: defaultAddressBook ? [defaultAddressBook] : [],
+  full_name: '',
+  kind: 'Individual',
 }
 
 const contact = reactive({ ...defaultContact })
 
 const createContact = createResource({
-	url: 'suite.mail.doctype.contact_card.contact_card.add_contact_card',
-	makeParams: () => contact,
-	onSuccess: (data: string) => {
-		raiseToast(__('Contact created.'))
-		show.value = false
-		router.push({ name: 'mail-contact', params: { contactName: data } })
-	},
-	onError: (error) => raiseToast(error.message, 'error'),
+  url: 'suite.mail.doctype.contact_card.contact_card.add_contact_card',
+  makeParams: () => contact,
+  onSuccess: (data: string) => {
+    raiseToast(__('Contact created.'))
+    show.value = false
+    router.push({ name: 'mail-contact', params: { contactName: data } })
+  },
+  onError: (error) => raiseToast(error.message, 'error'),
 })
 
 watch(show, (val) => {
-	if (val) Object.assign(contact, defaultContact)
+  if (val) Object.assign(contact, defaultContact)
 })
 
 const KIND_OPTIONS = [
-	{ label: __('Individual'), value: 'Individual' },
-	{ label: __('Group'), value: 'Group' },
+  { label: __('Individual'), value: 'Individual' },
+  { label: __('Group'), value: 'Group' },
 ]
 </script>

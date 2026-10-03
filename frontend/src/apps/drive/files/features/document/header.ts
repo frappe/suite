@@ -22,10 +22,15 @@ export const SAVE_LABELS: Record<DocumentSaveState, string> = {
  * The Drive file-type icon and tint, the same ones the listing shows. A file's
  * title counts, because its extension can say more than its MIME type.
  */
-export function documentTypeIcon(contentDoctype: string, title: string, mime: string | null = null): string[] {
+export function documentTypeIcon(
+  contentDoctype: string,
+  title: string,
+  mime: string | null = null,
+): string[] {
   // A file preview session names the `File` doctype; every other session is a document.
-  const node = contentDoctype === 'File'
-    ? { kind: 'file', title, mime, content_doctype: null }
-    : { kind: 'document', title, mime: null, content_doctype: contentDoctype }
+  const node =
+    contentDoctype === 'File'
+      ? { kind: 'file', title, mime, content_doctype: null }
+      : { kind: 'document', title, mime: null, content_doctype: contentDoctype }
   return [nodeIcon(node), nodeIconTint(node)]
 }

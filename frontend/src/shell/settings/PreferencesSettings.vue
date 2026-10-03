@@ -15,7 +15,9 @@
       </SettingsRow>
       <SettingsRow
         :title="__('Cursor')"
-        :description="__('Show the hand cursor on every control, or only on links that leave the app')"
+        :description="
+          __('Show the hand cursor on every control, or only on links that leave the app')
+        "
       >
         <Select
           :model-value="cursor.mode.value"
@@ -56,15 +58,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import {
   Combobox,
-  Select,
-  SettingsRow,
   createDocumentResource,
   createResource,
+  Select,
+  SettingsRow,
   toast,
 } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
 import { useCursor, type CursorMode } from '@/platform/cursor'
 import { useSession } from '@/platform/session'

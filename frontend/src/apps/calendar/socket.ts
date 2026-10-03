@@ -1,5 +1,5 @@
-import { onScopeDispose } from 'vue'
 import type { Socket } from 'socket.io-client'
+import { onScopeDispose } from 'vue'
 
 import { createSiteSocket } from '@/realtime'
 
@@ -12,13 +12,13 @@ let holders = 0
  * component that holds it unmounts.
  */
 export function useCalendarSocket(): Socket {
-	socket ??= createSiteSocket()
-	holders += 1
-	onScopeDispose(() => {
-		holders -= 1
-		if (holders > 0) return
-		socket?.disconnect()
-		socket = null
-	})
-	return socket
+  socket ??= createSiteSocket()
+  holders += 1
+  onScopeDispose(() => {
+    holders -= 1
+    if (holders > 0) return
+    socket?.disconnect()
+    socket = null
+  })
+  return socket
 }

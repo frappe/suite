@@ -23,16 +23,19 @@ export function formatModified(value: string | null, now = new Date()): string {
   }
   if (days === 1) return 'Yesterday'
   const sameYear = date.getFullYear() === now.getFullYear()
-  return new Intl.DateTimeFormat(undefined, sameYear
-    ? { month: 'short', day: 'numeric' }
-    : { dateStyle: 'medium' }).format(date)
+  return new Intl.DateTimeFormat(
+    undefined,
+    sameYear ? { month: 'short', day: 'numeric' } : { dateStyle: 'medium' },
+  ).format(date)
 }
 
 /** A full date and time, for details where the exact moment matters. */
 export function formatDate(value: string | null): string {
   const date = parseDate(value)
   if (!date) return value ?? '—'
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+    date,
+  )
 }
 
 /** Whole calendar days from `from` to `to`, in local time. */

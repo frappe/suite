@@ -1,10 +1,11 @@
 import { Node, type Editor } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import TabView from './components/TabView.vue'
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { DOMSerializer, Fragment, Node as PMNode } from '@tiptap/pm/model'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { v4 } from 'uuid'
+
+import TabView from './components/TabView.vue'
 
 type TabMatch = { node: PMNode; pos: number }
 
@@ -40,9 +41,7 @@ const orderedHTML = (doc: PMNode): string => {
   const ordered = orderedTabs(doc)
   let next = 0
   const children: PMNode[] = []
-  doc.forEach((node) =>
-    children.push(node.type.name === 'tab' ? ordered[next++].node : node),
-  )
+  doc.forEach((node) => children.push(node.type.name === 'tab' ? ordered[next++].node : node))
 
   const serializer = DOMSerializer.fromSchema(doc.type.schema)
   const wrapper = document.createElement('div')
@@ -105,8 +104,7 @@ export const TabsExtension = Node.create({
           const order = el.getAttribute('data-tab-order')
           return order === null ? null : Number(order)
         },
-        renderHTML: (attrs) =>
-          attrs.order === null ? {} : { 'data-tab-order': attrs.order },
+        renderHTML: (attrs) => (attrs.order === null ? {} : { 'data-tab-order': attrs.order }),
       },
     }
   },
@@ -216,15 +214,13 @@ export const TabsExtension = Node.create({
 
           return true
         },
-      focusTab:
-        (tabId: string) =>
-        () => {
-          setTimeout(() => {
-            const tab = findTab(this.editor.state.doc, tabId)
-            if (tab) this.editor.commands.focus(tab.pos + 1)
-          }, 0)
-          return true
-        },
+      focusTab: (tabId: string) => () => {
+        setTimeout(() => {
+          const tab = findTab(this.editor.state.doc, tabId)
+          if (tab) this.editor.commands.focus(tab.pos + 1)
+        }, 0)
+        return true
+      },
       renameTab:
         (tabId: string, newLabel: string, refocus: boolean = true) =>
         ({ tr, dispatch, state }) => {
@@ -265,11 +261,7 @@ export const TabsExtension = Node.create({
             if (!attrs?.id) attrs.id = v4()
             if (attrs.order === undefined) attrs.order = 0
             const tabType = this.editor.schema.nodes.tab
-            tr.replaceWith(
-              0,
-              tr.doc.content.size,
-              tabType.create(attrs, tr.doc.content),
-            )
+            tr.replaceWith(0, tr.doc.content.size, tabType.create(attrs, tr.doc.content))
             this.storage.activeTabId = attrs.id
             dispatch(tr)
             return true
@@ -285,10 +277,7 @@ export const TabsExtension = Node.create({
             if (attrs.order === undefined) attrs.order = tabsIn(state.doc).length
 
             const paragraphType = this.editor.schema.nodes.paragraph
-            const tab = this.editor.schema.nodes.tab.create(
-              attrs,
-              paragraphType.create(),
-            )
+            const tab = this.editor.schema.nodes.tab.create(attrs, paragraphType.create())
             tr.insert(state.doc.content.size, tab)
             dispatch(tr)
 
@@ -296,10 +285,7 @@ export const TabsExtension = Node.create({
           }
           return true
         },
-      getCurrentTabHTML:
-        () =>
-        () =>
-          currentTabHTML(this.editor),
+      getCurrentTabHTML: () => () => currentTabHTML(this.editor),
     }
   },
 
@@ -315,11 +301,7 @@ export const TabsExtension = Node.create({
 
         view.dispatch(
           state.tr.setSelection(
-            TextSelection.create(
-              state.doc,
-              tab.pos + 1,
-              tab.pos + tab.node.nodeSize - 1,
-            ),
+            TextSelection.create(state.doc, tab.pos + 1, tab.pos + tab.node.nodeSize - 1),
           ),
         )
         return true
@@ -327,8 +309,7 @@ export const TabsExtension = Node.create({
       Backspace: () => {
         // prevent clearing of document when tab is empty
         const { $to } = this.editor.state.selection
-        if ($to.parent.type.name === 'tab' && $to.parent.content.size == 2)
-          return true
+        if ($to.parent.type.name === 'tab' && $to.parent.content.size == 2) return true
       },
       Enter: () => {
         const { state } = this.editor
@@ -347,11 +328,7 @@ export const TabsExtension = Node.create({
           }
         }
 
-        if (
-          !tabNode ||
-          tabNode.attrs.label !== 'Untitled' ||
-          !tabNode.content.firstChild
-        )
+        if (!tabNode || tabNode.attrs.label !== 'Untitled' || !tabNode.content.firstChild)
           return false
 
         const firstChildStart = tabPos + 1

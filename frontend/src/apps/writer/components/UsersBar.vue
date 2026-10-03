@@ -4,7 +4,9 @@
       <button
         type="button"
         class="ml-2.5 flex items-center rounded-4 cursor-pointer"
-        :aria-label="users.length === 1 ? `${users[0].name} is here` : `${users.length} other people here`"
+        :aria-label="
+          users.length === 1 ? `${users[0].name} is here` : `${users.length} other people here`
+        "
       >
         <div
           v-for="user in users.slice(0, 3)"
@@ -25,15 +27,14 @@
             />
           </Tooltip>
         </div>
-        <Tooltip
-			v-if="users.length > 3"
-			:text="`${users.length - 3} more users`"
-		>
-			<div :style="{ marginLeft: '-0.625rem', fontSize: '10px' }"
-				class="relative inline-block shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-5 text-xs cursor-pointer border-[1.5px] border-gray-300">
-				+{{ users.length - 3 }}
-			</div>
-		</Tooltip>
+        <Tooltip v-if="users.length > 3" :text="`${users.length - 3} more users`">
+          <div
+            :style="{ marginLeft: '-0.625rem', fontSize: '10px' }"
+            class="relative inline-block shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-5 text-xs cursor-pointer border-[1.5px] border-gray-300"
+          >
+            +{{ users.length - 3 }}
+          </div>
+        </Tooltip>
       </button>
     </template>
     <template #item="{ item }">
@@ -57,14 +58,7 @@
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <circle
-            cx="8"
-            cy="8"
-            r="4.5"
-            fill="transparent"
-            :stroke="item.color"
-            stroke-width="3"
-          />
+          <circle cx="8" cy="8" r="4.5" fill="transparent" :stroke="item.color" stroke-width="3" />
         </svg>
       </div>
     </template>

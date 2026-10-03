@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { confirm, hostChallenge, prompt, reportMutationError } from './index'
+
 const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   danger: vi.fn(),
@@ -16,8 +18,6 @@ vi.mock('frappe-ui', async () => {
   }
 })
 
-import { confirm, hostChallenge, prompt, reportMutationError } from './index'
-
 beforeEach(() => vi.clearAllMocks())
 
 describe('feedback', () => {
@@ -29,14 +29,20 @@ describe('feedback', () => {
   })
 
   it('returns prompt values and reports mutation errors as toasts', async () => {
-    mocks.prompt.mockImplementationOnce((options) => options.onConfirm({ values: { password: 'secret' } }))
-    await expect(prompt({ title: 'Unlock', fields: [{ name: 'password', type: 'text' }] })).resolves.toEqual({ password: 'secret' })
+    mocks.prompt.mockImplementationOnce((options) =>
+      options.onConfirm({ values: { password: 'secret' } }),
+    )
+    await expect(
+      prompt({ title: 'Unlock', fields: [{ name: 'password', type: 'text' }] }),
+    ).resolves.toEqual({ password: 'secret' })
     reportMutationError({ type: 'DriveLocked', message: 'Locked', status: 403 })
     expect(mocks.error).toHaveBeenCalledWith('Locked')
   })
 
   it('hosts a challenge, resolves its prompt, and retries the failed action', async () => {
-    mocks.prompt.mockImplementationOnce((options) => options.onConfirm({ values: { password: 'open' } }))
+    mocks.prompt.mockImplementationOnce((options) =>
+      options.onConfirm({ values: { password: 'open' } }),
+    )
     let registered: ((error: any, retry: () => Promise<unknown>) => Promise<unknown>) | undefined
     const cleanup = vi.fn()
     const state = {
@@ -53,11 +59,13 @@ describe('feedback', () => {
       resolve,
     })
     const retry = vi.fn(async () => 'retried')
-    await expect(registered?.(
-      { type: 'DriveLocked', message: 'Locked', status: 403, link: 'link-1' },
-      retry,
-    )).resolves.toBe('retried')
-    expect(resolve).toHaveBeenCalledWith({ password: 'open' }, expect.objectContaining({ link: 'link-1' }))
+    await expect(
+      registered?.({ type: 'DriveLocked', message: 'Locked', status: 403, link: 'link-1' }, retry),
+    ).resolves.toBe('retried')
+    expect(resolve).toHaveBeenCalledWith(
+      { password: 'open' },
+      expect.objectContaining({ link: 'link-1' }),
+    )
     expect(retry).toHaveBeenCalledOnce()
     remove()
     expect(cleanup).toHaveBeenCalledOnce()
@@ -74,7 +82,9 @@ describe('feedback', () => {
     }
     const resolve = vi.fn()
     hostChallenge(state, 'DriveLocked', {
-      title: 'Unlock link', fields: [{ name: 'password', type: 'text' }], resolve,
+      title: 'Unlock link',
+      fields: [{ name: 'password', type: 'text' }],
+      resolve,
     })
     const retry = vi.fn()
     await registered?.({ type: 'DriveLocked', message: 'Locked', status: 403 }, retry)

@@ -1,9 +1,16 @@
-import { createApp, h } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, h } from 'vue'
 
 import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
+
+import {
+  canOpenFolder,
+  destination,
+  itemsRoot,
+  type PickedItem,
+  type PickerMode,
+} from './folderPicker'
 import FolderPicker from './FolderPicker.vue'
-import { canOpenFolder, destination, itemsRoot, type PickedItem, type PickerMode } from './folderPicker'
 
 vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Breadcrumbs')),
@@ -16,27 +23,64 @@ vi.mock('frappe-ui', async () => ({
 
 // My files holds Projects and Archive. Projects holds Launch, where the report is, and Launch holds Assets.
 const net = vi.hoisted(() => {
-  const folder = (name: string, title: string, parent: string | null, breadcrumbs: Array<{ name: string; title: string }>) => ({
-    name, title, kind: 'folder', parent_node: parent, root: 'mine', state: 'Active', trash_root: null, size: 0, mime: null,
-    url: null, content_doctype: null, content_docname: null, is_template: 0, owner: { id: 'me@example.com', full_name: 'Me', user_image: null },
-    creation: null, modified: null, content_modified: null, access: { role: 50 }, breadcrumbs,
+  const folder = (
+    name: string,
+    title: string,
+    parent: string | null,
+    breadcrumbs: Array<{ name: string; title: string }>,
+  ) => ({
+    name,
+    title,
+    kind: 'folder',
+    parent_node: parent,
+    root: 'mine',
+    state: 'Active',
+    trash_root: null,
+    size: 0,
+    mime: null,
+    url: null,
+    content_doctype: null,
+    content_docname: null,
+    is_template: 0,
+    owner: { id: 'me@example.com', full_name: 'Me', user_image: null },
+    creation: null,
+    modified: null,
+    content_modified: null,
+    access: { role: 50 },
+    breadcrumbs,
   })
   const top = { name: 'mine', title: 'Aanya' }
   const nodes = new Map([
     ['mine', folder('mine', 'Aanya', null, [])],
     ['projects', folder('projects', 'Projects', 'mine', [top])],
     ['archive', folder('archive', 'Archive', 'mine', [top])],
-    ['launch', folder('launch', 'Launch', 'projects', [top, { name: 'projects', title: 'Projects' }])],
-    ['assets', folder('assets', 'Assets', 'launch', [top, { name: 'projects', title: 'Projects' }, { name: 'launch', title: 'Launch' }])],
+    [
+      'launch',
+      folder('launch', 'Launch', 'projects', [top, { name: 'projects', title: 'Projects' }]),
+    ],
+    [
+      'assets',
+      folder('assets', 'Assets', 'launch', [
+        top,
+        { name: 'projects', title: 'Projects' },
+        { name: 'launch', title: 'Launch' },
+      ]),
+    ],
   ])
-  const json = (data: unknown, status = 200) => new Response(JSON.stringify(status === 200 ? { data } : data), { status })
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(status === 200 ? { data } : data), { status })
   globalThis.fetch = async (url: RequestInfo | URL) => {
     const path = new URL(String(url), 'http://drive.test').pathname.replace('/api/suite/drive/', '')
-    if (path === 'roots') return json({ personal: { node: 'mine', title: 'Aanya' }, organization: null })
+    if (path === 'roots')
+      return json({ personal: { node: 'mine', title: 'Aanya' }, organization: null })
     const [, name, children] = path.match(/^nodes\/([^/]+)(\/children)?$/) ?? []
     const node = name ? nodes.get(name) : undefined
     if (node && !children) return json(node)
-    if (node) return json({ rows: [...nodes.values()].filter((row) => row.parent_node === name), next_cursor: null })
+    if (node)
+      return json({
+        rows: [...nodes.values()].filter((row) => row.parent_node === name),
+        next_cursor: null,
+      })
     return json({ errors: [{ type: 'NotFound', message: path }] }, 404)
   }
   return { nodes }
@@ -59,15 +103,19 @@ describe('folder picker destinations', () => {
 
   it('refuses to move items into the folder they are already in', () => {
     expect(destination('move', [report], 'root', DRIVE_ROLES.edit)).toEqual({
-      status: 'refused', reason: 'The item is already in this folder.',
+      status: 'refused',
+      reason: 'The item is already in this folder.',
     })
     expect(destination('move', [report, archive], 'root', DRIVE_ROLES.edit)).toEqual({
-      status: 'refused', reason: 'The items are already in this folder.',
+      status: 'refused',
+      reason: 'The items are already in this folder.',
     })
   })
 
   it('moves a mixed selection into the folder one of them is in', () => {
-    expect(destination('move', [report, notes], 'root', DRIVE_ROLES.edit)).toEqual({ status: 'allowed' })
+    expect(destination('move', [report, notes], 'root', DRIVE_ROLES.edit)).toEqual({
+      status: 'allowed',
+    })
   })
 
   it('copies into the folder the item is in', () => {
@@ -76,7 +124,8 @@ describe('folder picker destinations', () => {
 
   it('needs upload access on the folder', () => {
     expect(destination('move', [notes], 'root', DRIVE_ROLES.comment)).toEqual({
-      status: 'refused', reason: 'You cannot add files to this folder.',
+      status: 'refused',
+      reason: 'You cannot add files to this folder.',
     })
     expect(destination('move', [notes], 'root', DRIVE_ROLES.upload)).toEqual({ status: 'allowed' })
   })
@@ -87,7 +136,10 @@ describe('folder picker destinations', () => {
 })
 
 describe('folder picker starting root', () => {
-  const roots = { personal: { node: 'mine', title: 'My files' }, organization: { node: 'org', title: 'Acme' } }
+  const roots = {
+    personal: { node: 'mine', title: 'My files' },
+    organization: { node: 'org', title: 'Acme' },
+  }
   const plan = { name: 'plan', parent_node: 'team', root: 'org' }
   const budget = { name: 'budget', parent_node: 'org', root: 'org' }
   const draft = { name: 'draft', parent_node: 'mine', root: 'mine' }
@@ -97,7 +149,7 @@ describe('folder picker starting root', () => {
     expect(itemsRoot([draft], roots)).toBe('personal')
   })
 
-  it('has no starting root for a mixed selection or items in another user\'s root', () => {
+  it("has no starting root for a mixed selection or items in another user's root", () => {
     expect(itemsRoot([plan, draft], roots)).toBeNull()
     expect(itemsRoot([{ name: 'shared', parent_node: 'theirs', root: 'theirs' }], roots)).toBeNull()
     expect(itemsRoot([plan], { ...roots, organization: null })).toBeNull()
@@ -122,7 +174,10 @@ describe('Folder picker', () => {
 
   /** The folder the picker shows, by the label of its folder list. */
   function shownFolder(): string | undefined {
-    return document.querySelector('ul[aria-label^="Folders in "]')?.getAttribute('aria-label')?.replace('Folders in ', '')
+    return document
+      .querySelector('ul[aria-label^="Folders in "]')
+      ?.getAttribute('aria-label')
+      ?.replace('Folders in ', '')
   }
 
   const report: PickedItem = { name: 'report', parent_node: 'launch', root: 'mine' }

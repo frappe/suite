@@ -1,10 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createSession } from '@/platform/session'
+import { transport, type Transport } from '@/platform/transport'
+
+import { createLinkStore, driveLinks, LINK_CAP } from './links'
+import { batchNodes, children, moveNode, node } from './nodes'
+
 // The Drive server double. Installed before any import, so the platform
 // transport, and the link checks the store sends through it, use it too.
 const net = vi.hoisted(() => {
   const state = {
-    reply: (_path: string, _links: string | null): { status: number; body: unknown } => ({ status: 200, body: {} }),
+    reply: (_path: string, _links: string | null): { status: number; body: unknown } => ({
+      status: 200,
+      body: {},
+    }),
     sent: [] as Array<{ path: string; links: string | null }>,
   }
   globalThis.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -17,33 +26,48 @@ const net = vi.hoisted(() => {
   return state
 })
 
-import { createLinkStore, driveLinks, LINK_CAP } from './links'
-import { batchNodes, children, moveNode, node } from './nodes'
-import { createSession } from '@/platform/session'
-import { transport, type Transport } from '@/platform/transport'
-
 // Share-link tokens are 22 base62 characters (Drive spec §4.7).
 const code = (index: number) => `L${String(index).padStart(21, '0')}`
 const MAC = 'a'.repeat(64)
 
 type Reply = { status: number; body: unknown }
 const ok = (data: unknown): Reply => ({ status: 200, body: { data } })
-const refused = (status: number, type: string): Reply => ({ status, body: { errors: [{ type, message: type }] } })
+const refused = (status: number, type: string): Reply => ({
+  status,
+  body: { errors: [{ type, message: type }] },
+})
 const row = (name: string) => ({
-  name, title: name, kind: 'folder', parent_node: 'p', root: 'r', state: 'Active', trash_root: null, size: 0, mime: null, url: null,
-  content_doctype: null, content_docname: null, is_template: 0, owner: { id: 'owner@example.com', full_name: 'Owner', user_image: null },
-  creation: null, modified: null, content_modified: null,
+  name,
+  title: name,
+  kind: 'folder',
+  parent_node: 'p',
+  root: 'r',
+  state: 'Active',
+  trash_root: null,
+  size: 0,
+  mime: null,
+  url: null,
+  content_doctype: null,
+  content_docname: null,
+  is_template: 0,
+  owner: { id: 'owner@example.com', full_name: 'Owner', user_image: null },
+  creation: null,
+  modified: null,
+  content_modified: null,
 })
 const nodeIn = (path: string) => path.split('/')[5] ?? ''
 
 /** Sets how the server answers. It records the X-Drive-Links header of every request. */
-function server(reply: (path: string, links: string | null) => Reply = (path) => ok(row(nodeIn(path)))) {
+function server(
+  reply: (path: string, links: string | null) => Reply = (path) => ok(row(nodeIn(path))),
+) {
   net.reply = reply
   net.sent = []
   return { transport, sent: net.sent }
 }
 
-const read = (client: Transport, id: string) => client.request(node(id).operation, { node: id }).catch(() => null)
+const read = (client: Transport, id: string) =>
+  client.request(node(id).operation, { node: id }).catch(() => null)
 /** Lets the link checks a failed request started finish. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 const lastLinks = (sent: Array<{ links: string | null }>) => sent.at(-1)?.links ?? null
@@ -54,11 +78,15 @@ afterEach(() => vi.useRealTimers())
 describe('Drive link codes on requests', () => {
   it('sends a code for the link target and the nodes read through it, and none elsewhere', async () => {
     const { transport, sent } = server((path) =>
-      path.endsWith('/children') ? ok({ rows: [row('child-a'), row('child-b')], next_cursor: null }) : ok(row(nodeIn(path))),
+      path.endsWith('/children')
+        ? ok({ rows: [row('child-a'), row('child-b')], next_cursor: null })
+        : ok(row(nodeIn(path))),
     )
     driveLinks.seed(code(1), 'shared-folder')
 
-    await transport.request(children({ node: 'shared-folder' }).operation, { node: 'shared-folder' })
+    await transport.request(children({ node: 'shared-folder' }).operation, {
+      node: 'shared-folder',
+    })
     await read(transport, 'child-b')
     await read(transport, 'my-own-file')
 
@@ -77,7 +105,10 @@ describe('Drive link codes on requests', () => {
     })
     expect(sent).toHaveLength(0)
 
-    await transport.request(batchNodes().operation, { nodes: nodes.slice(1), patch: { state: 'Trashed' } })
+    await transport.request(batchNodes().operation, {
+      nodes: nodes.slice(1),
+      patch: { state: 'Trashed' },
+    })
     expect(sent).toHaveLength(1)
   })
 
@@ -132,7 +163,10 @@ describe('every held code on one request', () => {
     expect(links).toHaveLength(LINK_CAP)
     expect(links).toContain(code(99))
     expect(links.filter((sent) => sent !== code(99)).sort()).toEqual(
-      ids.slice(6).map((_, index) => code(index + 6)).sort(),
+      ids
+        .slice(6)
+        .map((_, index) => code(index + 6))
+        .sort(),
     )
   })
 
@@ -152,7 +186,9 @@ describe('every held code on one request', () => {
 describe('forgetting Drive link codes', () => {
   it('drops a link and its tags when its target answers 404, or any node answers 410', async () => {
     let target = ok({ rows: [row('inside')], next_cursor: null })
-    const { transport, sent } = server((path) => (path.endsWith('/children') ? target : refused(404, 'DriveNotFound')))
+    const { transport, sent } = server((path) =>
+      path.endsWith('/children') ? target : refused(404, 'DriveNotFound'),
+    )
     driveLinks.seed(code(1), 'gone')
     driveLinks.seed(code(2), 'expired')
     await transport.request(children({ node: 'expired' }).operation, { node: 'expired' })
@@ -161,18 +197,26 @@ describe('forgetting Drive link codes', () => {
     await read(transport, 'gone')
 
     target = refused(410, 'DriveLinkExpired')
-    await transport.request(children({ node: 'expired' }).operation, { node: 'expired' }).catch(() => null)
+    await transport
+      .request(children({ node: 'expired' }).operation, { node: 'expired' })
+      .catch(() => null)
     await read(transport, 'inside')
 
     expect(sent.map((request) => request.links)).toEqual([code(2), code(1), null, code(2), null])
   })
 
   it('keeps a link when a request that names its target fails on another resource', async () => {
-    const { transport, sent } = server((path) => (path.endsWith('/shared') ? ok(row('shared')) : refused(404, 'DriveNotFound')))
+    const { transport, sent } = server((path) =>
+      path.endsWith('/shared') ? ok(row('shared')) : refused(404, 'DriveNotFound'),
+    )
     driveLinks.seed(code(1), 'shared')
 
-    await transport.request(moveNode().operation, { node: 'shared', parent_node: 'missing' }).catch(() => null)
-    await transport.request(children({ node: 'shared' }).operation, { node: 'shared' }).catch(() => null)
+    await transport
+      .request(moveNode().operation, { node: 'shared', parent_node: 'missing' })
+      .catch(() => null)
+    await transport
+      .request(children({ node: 'shared' }).operation, { node: 'shared' })
+      .catch(() => null)
     await read(transport, 'shared')
 
     expect(sent.map((request) => request.links)).toEqual([code(1), code(1), code(1)])
@@ -187,13 +231,18 @@ describe('forgetting Drive link codes', () => {
     driveLinks.seed(code(2), 'live-item')
 
     const nodes = ['expired-item', 'live-item']
-    await transport.request(batchNodes().operation, { nodes, patch: { state: 'Trashed' } }).catch(() => null)
+    await transport
+      .request(batchNodes().operation, { nodes, patch: { state: 'Trashed' } })
+      .catch(() => null)
     await settle()
     const checks = sent.slice(1).map((request) => [request.path.split('/').at(-1), request.links])
     await read(transport, 'expired-item')
     await read(transport, 'live-item')
 
-    expect(checks.sort()).toEqual([['expired-item', code(1)], ['live-item', code(2)]])
+    expect(checks.sort()).toEqual([
+      ['expired-item', code(1)],
+      ['live-item', code(2)],
+    ])
     expect(sent.slice(-2).map((request) => request.links)).toEqual([null, code(2)])
   })
 
@@ -201,7 +250,9 @@ describe('forgetting Drive link codes', () => {
     const { transport, sent } = server((path) =>
       path.endsWith('/children')
         ? ok({ rows: [row('deleted-child')], next_cursor: null })
-        : path.includes('deleted-child') ? refused(404, 'DriveNotFound') : ok(row(nodeIn(path))),
+        : path.includes('deleted-child')
+          ? refused(404, 'DriveNotFound')
+          : ok(row(nodeIn(path))),
     )
     driveLinks.seed(code(1), 'folder')
     await transport.request(children({ node: 'folder' }).operation, { node: 'folder' })
@@ -217,7 +268,9 @@ describe('forgetting Drive link codes', () => {
     vi.setSystemTime(new Date('2026-09-29T00:00:00Z'))
     const now = Math.floor(Date.now() / 1000)
     let locked = false
-    const { transport, sent } = server((path) => (locked ? refused(401, 'DriveLocked') : ok(row(nodeIn(path)))))
+    const { transport, sent } = server((path) =>
+      locked ? refused(401, 'DriveLocked') : ok(row(nodeIn(path))),
+    )
     driveLinks.seed(code(1), 'expiring')
     driveLinks.unlock(code(1), `${now + 60}.${MAC}`)
     driveLinks.seed(code(2), 'rotated')
@@ -255,7 +308,13 @@ describe('forgetting Drive link codes', () => {
     await read(transport, 'row0')
     await read(transport, 'row1000')
 
-    expect(sent.slice(1).map((request) => request.links)).toEqual([code(0), null, code(0), null, code(0)])
+    expect(sent.slice(1).map((request) => request.links)).toEqual([
+      code(0),
+      null,
+      code(0),
+      null,
+      code(0),
+    ])
   })
 
   it('keeps links through sign-in, ignores the guest name while signed in, and clears all on sign out', async () => {
@@ -283,18 +342,29 @@ describe('the stored copy', () => {
   const headerFor = (links: ReturnType<typeof createLinkStore>, id: string) =>
     links.scope([id]).headers?.['X-Drive-Links'] ?? null
 
-  it('lets a sign-out in another tab end this tab\'s links, and a late response write nothing back', () => {
+  it("lets a sign-out in another tab end this tab's links, and a late response write nothing back", () => {
     const shared = memoryStorage()
     // This tab could not store its link, so only its working copy holds it.
-    const full = { ...shared, getItem: shared.getItem, removeItem: shared.removeItem, setItem: refuseWrite }
+    const full = {
+      ...shared,
+      getItem: shared.getItem,
+      removeItem: shared.removeItem,
+      setItem: refuseWrite,
+    }
     const events = new EventTarget()
     const tab = createLinkStore({ storage: full, session: session(), events })
-    const otherTab = createLinkStore({ storage: shared, session: session(), events: new EventTarget() })
+    const otherTab = createLinkStore({
+      storage: shared,
+      session: session(),
+      events: new EventTarget(),
+    })
     tab.seed(code(1), 'folder')
     const pending = tab.scope(['folder'], { returnsNodes: true })
 
     otherTab.clear()
-    events.dispatchEvent(Object.assign(new Event('storage'), { key: 'suite:drive-links', newValue: null }))
+    events.dispatchEvent(
+      Object.assign(new Event('storage'), { key: 'suite:drive-links', newValue: null }),
+    )
     pending.settled?.({ ok: true, output: { rows: [row('child')], next_cursor: null } })
 
     expect([headerFor(tab, 'folder'), headerFor(tab, 'child')]).toEqual([null, null])
@@ -303,7 +373,11 @@ describe('the stored copy', () => {
 
   it('ignores a response from before sign out, even when the same link is opened again', async () => {
     const auth = session()
-    const links = createLinkStore({ storage: memoryStorage(), session: auth, events: new EventTarget() })
+    const links = createLinkStore({
+      storage: memoryStorage(),
+      session: auth,
+      events: new EventTarget(),
+    })
     links.seed(code(1), 'folder')
     const pending = links.scope(['folder'], { returnsNodes: true })
 
@@ -317,7 +391,11 @@ describe('the stored copy', () => {
   it('reads links another tab stored', () => {
     const shared = memoryStorage()
     const tab = createLinkStore({ storage: shared, session: session(), events: new EventTarget() })
-    const otherTab = createLinkStore({ storage: shared, session: session(), events: new EventTarget() })
+    const otherTab = createLinkStore({
+      storage: shared,
+      session: session(),
+      events: new EventTarget(),
+    })
     expect(headerFor(tab, 'folder')).toBeNull()
 
     otherTab.seed(code(1), 'folder')
@@ -327,20 +405,25 @@ describe('the stored copy', () => {
 
   it('drops malformed stored entries and keeps the valid ones', () => {
     const storage = memoryStorage()
-    storage.setItem('suite:drive-links', JSON.stringify({
-      links: {
-        [code(1)]: { target: 'good', lastUsed: 1 },
-        [code(2)]: { target: 'bad-ticket', ticket: 5, lastUsed: 1 },
-        [code(3)]: { target: 'bad-time', lastUsed: 'yesterday' },
-        [code(4)]: { target: 7, lastUsed: 1 },
-        [code(5)]: null,
-        'not-a-token': { target: 'bad-code', lastUsed: 1 },
-      },
-      tags: [['child', code(1)], ['orphan', code(9)], ['short'], [1, 2], 'x'],
-    }))
+    storage.setItem(
+      'suite:drive-links',
+      JSON.stringify({
+        links: {
+          [code(1)]: { target: 'good', lastUsed: 1 },
+          [code(2)]: { target: 'bad-ticket', ticket: 5, lastUsed: 1 },
+          [code(3)]: { target: 'bad-time', lastUsed: 'yesterday' },
+          [code(4)]: { target: 7, lastUsed: 1 },
+          [code(5)]: null,
+          'not-a-token': { target: 'bad-code', lastUsed: 1 },
+        },
+        tags: [['child', code(1)], ['orphan', code(9)], ['short'], [1, 2], 'x'],
+      }),
+    )
     const links = createLinkStore({ storage, session: session(), events: new EventTarget() })
 
-    const sent = ['good', 'child', 'bad-ticket', 'bad-time', 'orphan', 'bad-code'].map((id) => headerFor(links, id))
+    const sent = ['good', 'child', 'bad-ticket', 'bad-time', 'orphan', 'bad-code'].map((id) =>
+      headerFor(links, id),
+    )
 
     expect(sent).toEqual([code(1), code(1), null, null, null, null])
   })

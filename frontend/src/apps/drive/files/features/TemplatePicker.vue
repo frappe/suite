@@ -3,7 +3,10 @@
     <form class="space-y-4" @submit.prevent="create">
       <TabButtons v-if="typeOptions.length > 1" v-model="typeKey" :options="typeOptions" />
       <div class="h-72 overflow-y-auto rounded-5 border border-outline-gray-1 p-3">
-        <div v-if="templates.status === 'pending' && !templates.rows.length" class="grid grid-cols-3 gap-3">
+        <div
+          v-if="templates.status === 'pending' && !templates.rows.length"
+          class="grid grid-cols-3 gap-3"
+        >
           <Skeleton v-for="index in 6" :key="index" class="h-30 w-full rounded-5" />
         </div>
         <div
@@ -32,13 +35,17 @@
               role="option"
               :aria-selected="selected?.name === row.name"
               class="flex min-w-0 flex-col items-start gap-2 rounded-5 border p-2 text-start transition-colors focus-visible:focus-ring"
-              :class="selected?.name === row.name
-                ? 'border-outline-gray-3 bg-surface-gray-2'
-                : 'border-outline-gray-1 bg-surface-base hover:bg-surface-gray-1'"
+              :class="
+                selected?.name === row.name
+                  ? 'border-outline-gray-3 bg-surface-gray-2'
+                  : 'border-outline-gray-1 bg-surface-base hover:bg-surface-gray-1'
+              "
               @click="choose(row)"
               @dblclick="chooseAndCreate(row)"
             >
-              <span class="flex h-20 w-full items-center justify-center overflow-hidden rounded-4 bg-surface-gray-1">
+              <span
+                class="flex h-20 w-full items-center justify-center overflow-hidden rounded-4 bg-surface-gray-1"
+              >
                 <img
                   v-if="row.preview?.url && !failedPreviews.has(row.name)"
                   :src="row.preview.url"
@@ -46,13 +53,22 @@
                   class="size-full object-cover"
                   @error="failedPreviews.add(row.name)"
                 />
-                <span v-else class="size-6" :class="[nodeIcon(row), nodeIconTint(row)]" aria-hidden="true" />
+                <span
+                  v-else
+                  class="size-6"
+                  :class="[nodeIcon(row), nodeIconTint(row)]"
+                  aria-hidden="true"
+                />
               </span>
               <span class="w-full truncate text-base text-ink-gray-8">{{ row.title }}</span>
             </button>
           </div>
           <div v-if="templates.hasNext" class="flex justify-center pt-3">
-            <Button label="Load more" :loading="templates.isFetchingNext" @click="templates.fetchNext()" />
+            <Button
+              label="Load more"
+              :loading="templates.isFetchingNext"
+              @click="templates.fetchNext()"
+            />
           </div>
         </template>
       </div>
@@ -73,14 +89,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, reactive, ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, FormControl, Skeleton, TabButtons } from 'frappe-ui'
+import { computed, inject, reactive, ref, watch } from 'vue'
 
 import { copyNode } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { view } from '@/apps/drive/client/views'
 import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
 import { useMutation, useQuery } from '@/platform/server-state'
+
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 
 /**
@@ -93,12 +110,18 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ created: [node: DriveNode] }>()
 
 const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
-const typeOptions = computed(() => documentTypes.map((definition) => ({ value: definition.key, label: definition.newLabel() })))
+const typeOptions = computed(() =>
+  documentTypes.map((definition) => ({ value: definition.key, label: definition.newLabel() })),
+)
 const typeKey = ref(documentTypes[0]?.key ?? '')
-const contentDoctype = computed(() => documentTypes.find((definition) => definition.key === typeKey.value)?.contentDoctype)
-const templates = useQuery(() => open.value && contentDoctype.value
-  ? view({ view: 'templates', content_doctype: contentDoctype.value, expand: 'preview' })
-  : false)
+const contentDoctype = computed(
+  () => documentTypes.find((definition) => definition.key === typeKey.value)?.contentDoctype,
+)
+const templates = useQuery(() =>
+  open.value && contentDoctype.value
+    ? view({ view: 'templates', content_doctype: contentDoctype.value, expand: 'preview' })
+    : false,
+)
 const selected = ref<DriveNode | null>(null)
 const title = ref('')
 const failedPreviews = reactive(new Set<string>())

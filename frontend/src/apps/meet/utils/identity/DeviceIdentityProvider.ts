@@ -22,213 +22,211 @@
 // live here: the production IndexedDB-backed provider and an in-memory
 // provider for tests.
 
-import { ed25519KeyPair, exportEd25519PublicKey } from "../media/e2ee";
-import { readString, writeString } from "@/utils/localStorage";
+import { readString, writeString } from '@/utils/localStorage'
+
+import { ed25519KeyPair, exportEd25519PublicKey } from '../media/e2ee'
 
 export interface DeviceIdentity {
-	deviceId: string;
-	authKeyPair: CryptoKeyPair;
-	authPublicKey: string;
-	signingKeyPair: CryptoKeyPair;
-	signingPublicKey: string;
+  deviceId: string
+  authKeyPair: CryptoKeyPair
+  authPublicKey: string
+  signingKeyPair: CryptoKeyPair
+  signingPublicKey: string
 }
 
 export interface DeviceIdentityProvider {
-	getIdentity(): Promise<DeviceIdentity>;
-	clearCache(): void;
+  getIdentity(): Promise<DeviceIdentity>
+  clearCache(): void
 }
 
-const DB_NAME = "Meet_E2EE";
-const DB_VERSION = 3;
-const STORE_NAME = "identity";
-const DEVICE_ID_STORAGE_KEY = "meet:e2ee:device_id";
+const DB_NAME = 'Meet_E2EE'
+const DB_VERSION = 3
+const STORE_NAME = 'identity'
+const DEVICE_ID_STORAGE_KEY = 'meet:e2ee:device_id'
 
 function openDB(): Promise<IDBDatabase> {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(DB_NAME, DB_VERSION);
-		request.onerror = () => reject(request.error);
-		request.onsuccess = () => resolve(request.result);
-		request.onupgradeneeded = (event) => {
-			const db = (event.target as IDBOpenDBRequest).result;
-			if (!db.objectStoreNames.contains(STORE_NAME)) {
-				db.createObjectStore(STORE_NAME);
-			}
-		};
-	});
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME)
+      }
+    }
+  })
 }
 
-type StoredIdentityKey = CryptoKey | JsonWebKey;
+type StoredIdentityKey = CryptoKey | JsonWebKey
 
 async function idbGet(key: string): Promise<StoredIdentityKey | null> {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(STORE_NAME, "readonly");
-		const store = tx.objectStore(STORE_NAME);
-		const req = store.get(key);
-		req.onerror = () => reject(req.error);
-		req.onsuccess = () => resolve((req.result as StoredIdentityKey) ?? null);
-		tx.oncomplete = () => db.close();
-	});
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly')
+    const store = tx.objectStore(STORE_NAME)
+    const req = store.get(key)
+    req.onerror = () => reject(req.error)
+    req.onsuccess = () => resolve((req.result as StoredIdentityKey) ?? null)
+    tx.oncomplete = () => db.close()
+  })
 }
 
 async function idbPut(key: string, value: StoredIdentityKey): Promise<void> {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(STORE_NAME, "readwrite");
-		const store = tx.objectStore(STORE_NAME);
-		const req = store.put(value, key);
-		req.onerror = () => reject(req.error);
-		req.onsuccess = () => resolve();
-		tx.oncomplete = () => db.close();
-	});
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const req = store.put(value, key)
+    req.onerror = () => reject(req.error)
+    req.onsuccess = () => resolve()
+    tx.oncomplete = () => db.close()
+  })
 }
 
 function isCryptoKey(value: StoredIdentityKey): value is CryptoKey {
-	return typeof CryptoKey !== "undefined" && value instanceof CryptoKey;
+  return typeof CryptoKey !== 'undefined' && value instanceof CryptoKey
 }
 
 async function loadPrivateSigningKey(
-	privateKeyId: string,
-	stored: StoredIdentityKey,
+  privateKeyId: string,
+  stored: StoredIdentityKey,
 ): Promise<CryptoKey> {
-	if (isCryptoKey(stored)) return stored;
-	const privateKey = await globalThis.crypto.subtle.importKey(
-		"jwk",
-		stored,
-		{ name: "Ed25519" },
-		false,
-		["sign"],
-	);
-	await idbPut(privateKeyId, privateKey);
-	return privateKey;
+  if (isCryptoKey(stored)) return stored
+  const privateKey = await globalThis.crypto.subtle.importKey(
+    'jwk',
+    stored,
+    { name: 'Ed25519' },
+    false,
+    ['sign'],
+  )
+  await idbPut(privateKeyId, privateKey)
+  return privateKey
 }
 
 async function loadPublicVerifyKey(
-	publicKeyId: string,
-	stored: StoredIdentityKey,
+  publicKeyId: string,
+  stored: StoredIdentityKey,
 ): Promise<CryptoKey> {
-	if (isCryptoKey(stored)) return stored;
-	const publicKey = await globalThis.crypto.subtle.importKey(
-		"jwk",
-		stored,
-		{ name: "Ed25519" },
-		true,
-		["verify"],
-	);
-	await idbPut(publicKeyId, publicKey);
-	return publicKey;
+  if (isCryptoKey(stored)) return stored
+  const publicKey = await globalThis.crypto.subtle.importKey(
+    'jwk',
+    stored,
+    { name: 'Ed25519' },
+    true,
+    ['verify'],
+  )
+  await idbPut(publicKeyId, publicKey)
+  return publicKey
 }
 
 function generateDeviceId(): string {
-	const bytes = new Uint8Array(12);
-	globalThis.crypto.getRandomValues(bytes);
-	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  const bytes = new Uint8Array(12)
+  globalThis.crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 function getOrCreateDeviceId(): string {
-	const existing = readString(DEVICE_ID_STORAGE_KEY);
-	if (existing && /^[a-zA-Z0-9._-]{1,64}$/.test(existing)) {
-		return existing;
-	}
-	const next = generateDeviceId();
-	writeString(DEVICE_ID_STORAGE_KEY, next);
-	return next;
+  const existing = readString(DEVICE_ID_STORAGE_KEY)
+  if (existing && /^[a-zA-Z0-9._-]{1,64}$/.test(existing)) {
+    return existing
+  }
+  const next = generateDeviceId()
+  writeString(DEVICE_ID_STORAGE_KEY, next)
+  return next
 }
 
 async function loadOrCreateKeyPair(
-	privateKeyId: string,
-	publicKeyId: string,
+  privateKeyId: string,
+  publicKeyId: string,
 ): Promise<CryptoKeyPair> {
-	const privJwk = await idbGet(privateKeyId);
-	const pubJwk = await idbGet(publicKeyId);
-	if (privJwk && pubJwk) {
-		const privateKey = await loadPrivateSigningKey(privateKeyId, privJwk);
-		const publicKey = await loadPublicVerifyKey(publicKeyId, pubJwk);
-		return { privateKey, publicKey };
-	}
-	const kp = await ed25519KeyPair();
-	const privateKey = await globalThis.crypto.subtle.importKey(
-		"jwk",
-		await globalThis.crypto.subtle.exportKey("jwk", kp.privateKey),
-		{ name: "Ed25519" },
-		false,
-		["sign"],
-	);
-	await idbPut(privateKeyId, privateKey);
-	if (kp.publicKey) {
-		await idbPut(publicKeyId, kp.publicKey);
-	}
-	return { privateKey, publicKey: kp.publicKey };
+  const privJwk = await idbGet(privateKeyId)
+  const pubJwk = await idbGet(publicKeyId)
+  if (privJwk && pubJwk) {
+    const privateKey = await loadPrivateSigningKey(privateKeyId, privJwk)
+    const publicKey = await loadPublicVerifyKey(publicKeyId, pubJwk)
+    return { privateKey, publicKey }
+  }
+  const kp = await ed25519KeyPair()
+  const privateKey = await globalThis.crypto.subtle.importKey(
+    'jwk',
+    await globalThis.crypto.subtle.exportKey('jwk', kp.privateKey),
+    { name: 'Ed25519' },
+    false,
+    ['sign'],
+  )
+  await idbPut(privateKeyId, privateKey)
+  if (kp.publicKey) {
+    await idbPut(publicKeyId, kp.publicKey)
+  }
+  return { privateKey, publicKey: kp.publicKey }
 }
 
 export class IndexedDBDeviceIdentityProvider implements DeviceIdentityProvider {
-	#cached: Promise<DeviceIdentity> | null = null;
+  #cached: Promise<DeviceIdentity> | null = null
 
-	async getIdentity(): Promise<DeviceIdentity> {
-		if (!this.#cached) {
-			this.#cached = this.#loadOrCreate();
-		}
-		return this.#cached;
-	}
+  async getIdentity(): Promise<DeviceIdentity> {
+    if (!this.#cached) {
+      this.#cached = this.#loadOrCreate()
+    }
+    return this.#cached
+  }
 
-	clearCache(): void {
-		this.#cached = null;
-	}
+  clearCache(): void {
+    this.#cached = null
+  }
 
-	async #loadOrCreate(): Promise<DeviceIdentity> {
-		const deviceId = getOrCreateDeviceId();
-		const authKeyPair = await loadOrCreateKeyPair("authKey", "authPub");
-		const signingKeyPair = await loadOrCreateKeyPair(
-			"signingKey",
-			"signingPub",
-		);
-		return {
-			deviceId,
-			authKeyPair,
-			authPublicKey: authKeyPair.publicKey
-				? await exportEd25519PublicKey(authKeyPair.publicKey)
-				: "",
-			signingKeyPair,
-			signingPublicKey: await exportEd25519PublicKey(signingKeyPair.publicKey),
-		};
-	}
+  async #loadOrCreate(): Promise<DeviceIdentity> {
+    const deviceId = getOrCreateDeviceId()
+    const authKeyPair = await loadOrCreateKeyPair('authKey', 'authPub')
+    const signingKeyPair = await loadOrCreateKeyPair('signingKey', 'signingPub')
+    return {
+      deviceId,
+      authKeyPair,
+      authPublicKey: authKeyPair.publicKey
+        ? await exportEd25519PublicKey(authKeyPair.publicKey)
+        : '',
+      signingKeyPair,
+      signingPublicKey: await exportEd25519PublicKey(signingKeyPair.publicKey),
+    }
+  }
 }
 
 export class MemoryDeviceIdentityProvider implements DeviceIdentityProvider {
-	#cached: Promise<DeviceIdentity> | null = null;
-	#deviceId: string;
+  #cached: Promise<DeviceIdentity> | null = null
+  #deviceId: string
 
-	constructor(deviceId?: string) {
-		this.#deviceId =
-			deviceId ??
-			`mem-${Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
-				b.toString(16).padStart(2, "0"),
-			).join("")}`;
-	}
+  constructor(deviceId?: string) {
+    this.#deviceId =
+      deviceId ??
+      `mem-${Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
+        b.toString(16).padStart(2, '0'),
+      ).join('')}`
+  }
 
-	async getIdentity(): Promise<DeviceIdentity> {
-		if (!this.#cached) {
-			this.#cached = this.#generate();
-		}
-		return this.#cached;
-	}
+  async getIdentity(): Promise<DeviceIdentity> {
+    if (!this.#cached) {
+      this.#cached = this.#generate()
+    }
+    return this.#cached
+  }
 
-	clearCache(): void {
-		this.#cached = null;
-	}
+  clearCache(): void {
+    this.#cached = null
+  }
 
-	async #generate(): Promise<DeviceIdentity> {
-		const deviceId = this.#deviceId;
-		const authKeyPair = await ed25519KeyPair();
-		const signingKeyPair = await ed25519KeyPair();
-		return {
-			deviceId,
-			authKeyPair,
-			authPublicKey: authKeyPair.publicKey
-				? await exportEd25519PublicKey(authKeyPair.publicKey)
-				: "",
-			signingKeyPair,
-			signingPublicKey: await exportEd25519PublicKey(signingKeyPair.publicKey),
-		};
-	}
+  async #generate(): Promise<DeviceIdentity> {
+    const deviceId = this.#deviceId
+    const authKeyPair = await ed25519KeyPair()
+    const signingKeyPair = await ed25519KeyPair()
+    return {
+      deviceId,
+      authKeyPair,
+      authPublicKey: authKeyPair.publicKey
+        ? await exportEd25519PublicKey(authKeyPair.publicKey)
+        : '',
+      signingKeyPair,
+      signingPublicKey: await exportEd25519PublicKey(signingKeyPair.publicKey),
+    }
+  }
 }

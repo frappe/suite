@@ -1,94 +1,118 @@
-import { createApp, defineComponent, h, nextTick, ref } from "vue";
-import { createMemoryHistory, createRouter } from "vue-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, ref } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
+
+import {
+  AreaSidebar,
+  AreaSidebarFooter,
+  AreaSidebarTarget,
+  hasAreaSidebar,
+} from '@/platform/area-sidebar'
 
 // Unit tests alias frappe-ui to a stub. The sidebar geometry comes from the
 // real components.
-vi.mock("frappe-ui", async () => ({
-  BottomSheet: (await import("../../../../node_modules/frappe-ui/src/components/BottomSheet/BottomSheet.vue")).default,
-  ScrollArea: (await import("../../../../node_modules/frappe-ui/src/components/ScrollArea/ScrollArea.vue")).default,
-  Sidebar: (await import("../../../../node_modules/frappe-ui/src/components/Sidebar/Sidebar.vue")).default,
-  Skeleton: (await import("../../../../node_modules/frappe-ui/src/components/Skeleton/Skeleton.vue")).default,
-}));
+vi.mock('frappe-ui', async () => ({
+  BottomSheet: (
+    await import('../../../../node_modules/frappe-ui/src/components/BottomSheet/BottomSheet.vue')
+  ).default,
+  ScrollArea: (
+    await import('../../../../node_modules/frappe-ui/src/components/ScrollArea/ScrollArea.vue')
+  ).default,
+  Sidebar: (await import('../../../../node_modules/frappe-ui/src/components/Sidebar/Sidebar.vue'))
+    .default,
+  Skeleton: (
+    await import('../../../../node_modules/frappe-ui/src/components/Skeleton/Skeleton.vue')
+  ).default,
+}))
 
-import { AreaSidebar, AreaSidebarFooter, AreaSidebarTarget, hasAreaSidebar } from "@/platform/area-sidebar";
-
-let cleanup: (() => void) | undefined;
-afterEach(() => cleanup?.());
+let cleanup: (() => void) | undefined
+afterEach(() => cleanup?.())
 
 async function mountShell() {
-  const loading = ref(true);
-  const area = ref<"files" | "home" | null>("files");
+  const loading = ref(true)
+  const area = ref<'files' | 'home' | null>('files')
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: "/:any(.*)*", component: { render: () => null } }],
-  });
-  await router.push("/files");
+    routes: [{ path: '/:any(.*)*', component: { render: () => null } }],
+  })
+  await router.push('/files')
   const Page = defineComponent({
     setup: () => () =>
       area.value &&
-      h(AreaSidebar, { area: area.value, title: area.value === "files" ? "Files" : "Home", loading: loading.value }, () =>
-        h("nav", { "data-panel": area.value }, [
-          "Panel",
-          h(AreaSidebarFooter, () => h("button", { "data-footer": area.value }, "Storage")),
-        ]),
+      h(
+        AreaSidebar,
+        {
+          area: area.value,
+          title: area.value === 'files' ? 'Files' : 'Home',
+          loading: loading.value,
+        },
+        () =>
+          h('nav', { 'data-panel': area.value }, [
+            'Panel',
+            h(AreaSidebarFooter, () => h('button', { 'data-footer': area.value }, 'Storage')),
+          ]),
       ),
-  });
-  const root = document.createElement("div");
-  document.body.appendChild(root);
+  })
+  const root = document.createElement('div')
+  document.body.appendChild(root)
   const app = createApp({
-    setup: () => () => h("div", { "data-shell": "" }, [h("div", { "data-rail": "" }), h(AreaSidebarTarget), h("main", [h(Page)])]),
-  });
-  app.use(router);
-  app.mount(root);
-  await nextTick();
+    setup: () => () =>
+      h('div', { 'data-shell': '' }, [
+        h('div', { 'data-rail': '' }),
+        h(AreaSidebarTarget),
+        h('main', [h(Page)]),
+      ]),
+  })
+  app.use(router)
+  app.mount(root)
+  await nextTick()
   cleanup = () => {
-    app.unmount();
-    root.remove();
-  };
-  const sidebar = () => root.querySelector<HTMLElement>("#suite-area-sidebar > [data-area-sidebar]");
-  return { root, loading, area, sidebar };
+    app.unmount()
+    root.remove()
+  }
+  const sidebar = () => root.querySelector<HTMLElement>('#suite-area-sidebar > [data-area-sidebar]')
+  return { root, loading, area, sidebar }
 }
 
-describe("AreaSidebar on desktop", () => {
-  it("draws a fixed-width sidebar in the shell slot, the same width while loading", async () => {
-    const { root, loading, area, sidebar } = await mountShell();
+describe('AreaSidebar on desktop', () => {
+  it('draws a fixed-width sidebar in the shell slot, the same width while loading', async () => {
+    const { root, loading, area, sidebar } = await mountShell()
 
-    expect(sidebar()?.style.width).toBe("14rem");
-    expect(sidebar()?.getAttribute("role")).toBe("complementary");
-    expect(sidebar()?.getAttribute("aria-label")).toBe("Files");
-    expect(sidebar()?.querySelector("[data-area-sidebar-skeleton]")).not.toBeNull();
-    expect(root.querySelector("main [data-area-sidebar]")).toBeNull();
+    expect(sidebar()?.style.width).toBe('14rem')
+    expect(sidebar()?.getAttribute('role')).toBe('complementary')
+    expect(sidebar()?.getAttribute('aria-label')).toBe('Files')
+    expect(sidebar()?.querySelector('[data-area-sidebar-skeleton]')).not.toBeNull()
+    expect(root.querySelector('main [data-area-sidebar]')).toBeNull()
 
-    loading.value = false;
-    await nextTick();
-    expect(sidebar()?.style.width).toBe("14rem");
-    expect(sidebar()?.querySelector("[data-panel='files']")).not.toBeNull();
-    expect(sidebar()?.querySelector("[data-area-sidebar-skeleton]")).toBeNull();
-    expect(hasAreaSidebar("files")).toBe(true);
+    loading.value = false
+    await nextTick()
+    expect(sidebar()?.style.width).toBe('14rem')
+    expect(sidebar()?.querySelector("[data-panel='files']")).not.toBeNull()
+    expect(sidebar()?.querySelector('[data-area-sidebar-skeleton]')).toBeNull()
+    expect(hasAreaSidebar('files')).toBe(true)
 
-    area.value = "home";
-    await nextTick();
-    expect(sidebar()?.getAttribute("aria-label")).toBe("Home");
-    expect(sidebar()?.style.width).toBe("14rem");
-    expect(hasAreaSidebar("files")).toBe(false);
-    expect(hasAreaSidebar("home")).toBe(true);
+    area.value = 'home'
+    await nextTick()
+    expect(sidebar()?.getAttribute('aria-label')).toBe('Home')
+    expect(sidebar()?.style.width).toBe('14rem')
+    expect(hasAreaSidebar('files')).toBe(false)
+    expect(hasAreaSidebar('home')).toBe(true)
 
-    area.value = null;
-    await nextTick();
-    expect(sidebar()).toBeNull();
-    expect(hasAreaSidebar("home")).toBe(false);
-  });
+    area.value = null
+    await nextTick()
+    expect(sidebar()).toBeNull()
+    expect(hasAreaSidebar('home')).toBe(false)
+  })
 
-  it("pins footer content below the body, outside the part that scrolls", async () => {
-    const { loading, sidebar } = await mountShell();
-    loading.value = false;
-    await nextTick();
+  it('pins footer content below the body, outside the part that scrolls', async () => {
+    const { loading, sidebar } = await mountShell()
+    loading.value = false
+    await nextTick()
 
-    const footer = sidebar()?.querySelector("[data-footer='files']");
-    const panel = sidebar()?.querySelector("[data-panel='files']");
-    expect(footer).not.toBeNull();
-    expect(panel?.contains(footer!)).toBe(false);
-    expect(sidebar()?.lastElementChild?.contains(footer!)).toBe(true);
-  });
-});
+    const footer = sidebar()?.querySelector("[data-footer='files']")
+    const panel = sidebar()?.querySelector("[data-panel='files']")
+    expect(footer).not.toBeNull()
+    expect(panel?.contains(footer!)).toBe(false)
+    expect(sidebar()?.lastElementChild?.contains(footer!)).toBe(true)
+  })
+})

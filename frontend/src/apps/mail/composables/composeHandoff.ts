@@ -20,9 +20,9 @@ let pending: ComposeMailData | undefined
 const setPendingCompose = (draft?: ComposeMailData) => (pending = draft)
 
 export const takePendingCompose = () => {
-	const draft = pending
-	pending = undefined
-	return draft
+  const draft = pending
+  pending = undefined
+  return draft
 }
 
 /**
@@ -34,6 +34,6 @@ export const takePendingCompose = () => {
  * happened left behind.
  */
 export const openComposePage = (router: Router, accountId: string, draft?: ComposeMailData) => {
-	setPendingCompose(draft)
-	return router.push({ name: 'mail-compose', params: { accountId } })
+  setPendingCompose(draft)
+  return router.push({ name: 'mail-compose', params: { accountId } })
 }

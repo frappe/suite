@@ -1,5 +1,7 @@
-import { createApp, defineComponent, h } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h } from 'vue'
+
+import { useTrashActions } from './useTrashActions'
 
 // A Drive server that keeps each node's state. Its purge route can fail once.
 const net = vi.hoisted(() => {
@@ -48,8 +50,6 @@ vi.mock('@/platform/feedback', () => ({
   },
 }))
 
-import { useTrashActions } from './useTrashActions'
-
 let unmount: (() => void) | undefined
 afterEach(() => {
   unmount?.()
@@ -82,12 +82,17 @@ describe('Trash actions', () => {
 
     await actions.restore(items('Report.pdf'))
     expect(net.states.get('Report.pdf')).toBe('Active')
-    expect(feedback.toasts).toMatchObject([{ kind: 'success', message: 'Restored “Report.pdf”', action: { label: 'Undo' } }])
+    expect(feedback.toasts).toMatchObject([
+      { kind: 'success', message: 'Restored “Report.pdf”', action: { label: 'Undo' } },
+    ])
 
     feedback.toasts[0]!.action!.onClick()
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
     expect(net.states.get('Report.pdf')).toBe('Trashed')
-    expect(feedback.toasts[1]).toMatchObject({ kind: 'success', message: 'Moved “Report.pdf” back to Trash' })
+    expect(feedback.toasts[1]).toMatchObject({
+      kind: 'success',
+      message: 'Moved “Report.pdf” back to Trash',
+    })
   })
 
   it('reports Delete forever in a toast with no Undo', async () => {
@@ -102,12 +107,17 @@ describe('Trash actions', () => {
     net.failNextPurge = true
 
     expect(await actions.purge(items('a', 'b'))).toBeNull()
-    expect(feedback.toasts).toMatchObject([{ kind: 'error', message: 'Drive is busy', action: { label: 'Retry' } }])
+    expect(feedback.toasts).toMatchObject([
+      { kind: 'error', message: 'Drive is busy', action: { label: 'Retry' } },
+    ])
 
     feedback.toasts[0]!.action!.onClick()
     await vi.waitFor(() => expect(actions.outcome.value).toEqual({ ok: ['a', 'b'], failed: [] }))
     expect(actions.verb.value).toBe('deleted forever')
     expect(net.purges).toBe(2)
-    expect(feedback.toasts[1]).toMatchObject({ kind: 'success', message: 'Deleted 2 items forever' })
+    expect(feedback.toasts[1]).toMatchObject({
+      kind: 'success',
+      message: 'Deleted 2 items forever',
+    })
   })
 })

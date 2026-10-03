@@ -14,9 +14,9 @@ const startOperation = driveOperation<{ node: string }, ArchiveStatus>(api.node_
 const statusOperation = driveOperation<{ node: string }, ArchiveStatus>(api.node_archive_status)
 
 export const startArchive = () => mutation(startOperation, { touches: ({ node }) => [node] })
-export const archiveStatus = (node: string) => query(statusOperation, { node }, { refetchInterval: 2_000 })
+export const archiveStatus = (node: string) =>
+  query(statusOperation, { node }, { refetchInterval: 2_000 })
 
 export function archiveDownloadUrl(node: string): string {
   return `/api/suite/drive/nodes/${encodeURIComponent(node)}/archive/download`
 }
-

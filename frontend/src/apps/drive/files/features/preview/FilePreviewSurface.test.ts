@@ -1,36 +1,71 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref, shallowRef, unref, type PropType, type Ref } from 'vue'
-import { createMemoryHistory, createRouter, RouterLink, RouterView, type RouteLocationRaw, type Router } from 'vue-router'
+import {
+  createMemoryHistory,
+  createRouter,
+  RouterLink,
+  RouterView,
+  type RouteLocationRaw,
+  type Router,
+} from 'vue-router'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
+
 import type { FilePreviewSession } from './session'
 
 vi.mock('frappe-ui', async () => ({
-  Button: (await import('../../../../../../../node_modules/frappe-ui/src/components/Button/Button.vue')).default,
-  TabButtons: (await import('../../../../../../../node_modules/frappe-ui/src/components/TabButtons/TabButtons.vue')).default,
+  Button: (
+    await import('../../../../../../../node_modules/frappe-ui/src/components/Button/Button.vue')
+  ).default,
+  TabButtons: (
+    await import('../../../../../../../node_modules/frappe-ui/src/components/TabButtons/TabButtons.vue')
+  ).default,
   Spinner: defineComponent({ setup: () => () => h('div', { role: 'status' }) }),
-  Dropdown: defineComponent({ setup: (_props, { slots }) => () => h('div', slots.default?.()) }),
+  Dropdown: defineComponent({
+    setup:
+      (_props, { slots }) =>
+      () =>
+        h('div', slots.default?.()),
+  }),
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }))
 
 // The header has its own tests. This one shows its slots and its link back to the folder.
 vi.mock('../document/DocumentHeader.vue', () => ({
   default: defineComponent({
-    props: { location: { type: Object as PropType<{ label: string; to: RouteLocationRaw } | null>, default: null } },
-    setup: (props, { slots }) => () =>
-      h('header', [
-        props.location ? h(RouterLink, { to: props.location.to }, () => props.location?.label) : null,
-        slots.status?.(),
-        slots.actions?.(),
-      ]),
+    props: {
+      location: {
+        type: Object as PropType<{ label: string; to: RouteLocationRaw } | null>,
+        default: null,
+      },
+    },
+    setup:
+      (props, { slots }) =>
+      () =>
+        h('header', [
+          props.location
+            ? h(RouterLink, { to: props.location.to }, () => props.location?.label)
+            : null,
+          slots.status?.(),
+          slots.actions?.(),
+        ]),
   }),
 }))
 
 // A folder of mixed files, and a server that keeps the types `?type=` names, as Drive does.
-type Row = Pick<DriveNode, 'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent_node' | 'modified'>
+type Row = Pick<
+  DriveNode,
+  'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent_node' | 'modified'
+>
 const file = (name: string, title: string, mime: string): Row => ({
-  name, title, kind: 'file', mime, state: 'Active', parent_node: 'folder-1', modified: '2026-10-01 10:00:00',
+  name,
+  title,
+  kind: 'file',
+  mime,
+  state: 'Active',
+  parent_node: 'folder-1',
+  modified: '2026-10-01 10:00:00',
 })
 const FOLDER: Row[] = [
   file('a', 'a.png', 'image/png'),
@@ -63,7 +98,13 @@ vi.mock('@/platform/transport', async (original) => ({
 
 const { default: FilePreviewSurface } = await import('./FilePreviewSurface.vue')
 
-function session(nodeId: string, title: string, mime: string, size = 100, trashRoot: string | null = null): FilePreviewSession {
+function session(
+  nodeId: string,
+  title: string,
+  mime: string,
+  size = 100,
+  trashRoot: string | null = null,
+): FilePreviewSession {
   const fields = {
     nodeId,
     contentDoctype: 'File',
@@ -78,7 +119,9 @@ function session(nodeId: string, title: string, mime: string, size = 100, trashR
     size: ref(size),
     // A trashed folder of its own, so its listing is not the Active one another test read.
     parent: ref(trashRoot ? 'folder-2' : 'folder-1'),
-    folder: ref(trashRoot ? { name: 'folder-2', title: 'Old talks' } : { name: 'folder-1', title: 'Talks' }),
+    folder: ref(
+      trashRoot ? { name: 'folder-2', title: 'Old talks' } : { name: 'folder-1', title: 'Talks' },
+    ),
     preview: ref(null),
     favourite: ref(false),
     refreshPreview: async () => {},
@@ -95,11 +138,17 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-async function mount(opened: FilePreviewSession | Ref<FilePreviewSession>, path: string): Promise<{ root: HTMLElement; router: Router }> {
+async function mount(
+  opened: FilePreviewSession | Ref<FilePreviewSession>,
+  path: string,
+): Promise<{ root: HTMLElement; router: Router }> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/d/:node/:slug?', component: { render: () => h(FilePreviewSurface, { session: unref(opened) }) } },
+      {
+        path: '/d/:node/:slug?',
+        component: { render: () => h(FilePreviewSurface, { session: unref(opened) }) },
+      },
       { path: '/drive/f/:node/:slug?', component: { render: () => null } },
     ],
   })
@@ -118,10 +167,15 @@ const counter = (root: HTMLElement) => root.querySelector('header span.tabular-n
 
 describe('file preview', () => {
   it('steps through only the files the filtered listing showed', async () => {
-    const { root, router } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png?type=image')
+    const { root, router } = await mount(
+      session('c', 'c.png', 'image/png'),
+      '/d/c/c-png?type=image',
+    )
 
     await vi.waitFor(() => expect(counter(root)).toBe('2 of 3'))
-    expect(root.querySelector('header a')?.getAttribute('href')).toBe('/drive/f/folder-1/talks?type=image')
+    expect(root.querySelector('header a')?.getAttribute('href')).toBe(
+      '/drive/f/folder-1/talks?type=image',
+    )
 
     press('ArrowRight')
     await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('e'))
@@ -148,7 +202,10 @@ describe('file preview', () => {
 
   it('steps through the files of a trashed folder, which were trashed with it', async () => {
     folderState = 'Trashed'
-    const { root, router } = await mount(session('c', 'c.png', 'image/png', 100, 'folder-2'), '/d/c/c-png')
+    const { root, router } = await mount(
+      session('c', 'c.png', 'image/png', 100, 'folder-2'),
+      '/d/c/c-png',
+    )
 
     await vi.waitFor(() => expect(counter(root)).toBe('3 of 5'))
     press('ArrowRight')
@@ -156,15 +213,22 @@ describe('file preview', () => {
   })
 
   it('opens a Markdown file rendered, and every next one too', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('# Plan\n\nSome text')))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('# Plan\n\nSome text')),
+    )
     const opened = shallowRef(session('m1', 'plan.md', 'application/octet-stream'))
     const { root } = await mount(opened, '/d/m1/plan-md')
 
     await vi.waitFor(() => expect(root.querySelector('article h1')?.textContent).toBe('Plan'))
     expect(root.querySelector('.cm-content')).toBeNull()
-    const source = [...root.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Source')
+    const source = [...root.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Source',
+    )
     source?.click()
-    await vi.waitFor(() => expect(root.querySelector('.cm-content')?.textContent).toContain('# Plan'))
+    await vi.waitFor(() =>
+      expect(root.querySelector('.cm-content')?.textContent).toContain('# Plan'),
+    )
     expect(root.querySelector('article h1')).toBeNull()
 
     // The next file, as stepping shows it in the same preview.

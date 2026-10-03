@@ -22,15 +22,21 @@
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
-        <Button type="submit" variant="solid" theme="gray" label="Create" :loading="mutation.isPending" />
+        <Button
+          type="submit"
+          variant="solid"
+          theme="gray"
+          label="Create"
+          :loading="mutation.isPending"
+        />
       </div>
     </form>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import { createNode, type CreateNodeInput } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
@@ -67,21 +73,28 @@ const dialogTitle = computed(() => `New ${noun.value}`)
 
 // A fresh request starts from a suggested name. The field opens focused with
 // the name selected, so typing replaces it.
-watch(() => [open.value, props.request] as const, ([isOpen]) => {
-  if (!isOpen) return
-  title.value = props.request?.kind === 'link' ? '' : `Untitled ${noun.value}`
-  url.value = ''
-  titleError.value = undefined
-  urlError.value = undefined
-  error.value = undefined
-}, { immediate: true })
+watch(
+  () => [open.value, props.request] as const,
+  ([isOpen]) => {
+    if (!isOpen) return
+    title.value = props.request?.kind === 'link' ? '' : `Untitled ${noun.value}`
+    url.value = ''
+    titleError.value = undefined
+    urlError.value = undefined
+    error.value = undefined
+  },
+  { immediate: true },
+)
 
 async function submit() {
   const request = props.request
   if (!request || mutation.isPending) return
   error.value = undefined
   titleError.value = title.value.trim() ? undefined : 'Enter a name.'
-  urlError.value = request.kind !== 'link' || validUrl(url.value) ? undefined : 'Enter a full URL, starting with https://.'
+  urlError.value =
+    request.kind !== 'link' || validUrl(url.value)
+      ? undefined
+      : 'Enter a full URL, starting with https://.'
   if (titleError.value || urlError.value) {
     await focusField(titleError.value ? 0 : 1)
     return
@@ -98,7 +111,8 @@ async function submit() {
 function createInput(request: CreateRequest, title: string, url: string): CreateNodeInput {
   const base = { parent_node: request.parent, title }
   if (request.kind === 'link') return { ...base, kind: 'link', url }
-  if (request.kind === 'document') return { ...base, kind: 'document', content_doctype: request.contentDoctype ?? '' }
+  if (request.kind === 'document')
+    return { ...base, kind: 'document', content_doctype: request.contentDoctype ?? '' }
   return { ...base, kind: 'folder' }
 }
 

@@ -19,7 +19,9 @@ export interface PushPayload {
  * open Suite tab receives a foreground push, and a notification with the same
  * tag replaces the one before it, so the user sees one.
  */
-export function pushNotification(payload: PushPayload): [title: string, options: NotificationOptions] {
+export function pushNotification(
+  payload: PushPayload,
+): [title: string, options: NotificationOptions] {
   const options: NotificationOptions = {
     body: payload.data?.body || '',
     badge: '/assets/suite/frontend/logo-96-96.png',
@@ -41,7 +43,10 @@ interface WindowClientLike {
 }
 
 interface ClientsLike {
-  matchAll(options: { type: 'window'; includeUncontrolled: boolean }): Promise<readonly WindowClientLike[]>
+  matchAll(options: {
+    type: 'window'
+    includeUncontrolled: boolean
+  }): Promise<readonly WindowClientLike[]>
   openWindow(url: string): Promise<unknown>
 }
 

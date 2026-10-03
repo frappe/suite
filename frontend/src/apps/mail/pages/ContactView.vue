@@ -1,224 +1,231 @@
 <template>
-	<DashboardLayout v-if="contact?.doc" :breadcrumbs="breadcrumbs">
-		<template #actions>
-			<Dropdown :options="DROPDOWN_OPTIONS">
-				<Button icon="lucide-more-horizontal" class="text-ink-gray-5" />
-			</Dropdown>
-		</template>
-		<template #default>
-			<div class="grid grid-cols-2 gap-5">
-				<DashboardCard
-					:title="__('General Information')"
-					:button-label="__('Edit')"
-					class="h-[14.5rem] max-sm:col-span-2"
-					@action="showEditGeneral = true"
-				>
-					<InformationField :label="__('Name')" :value="contact.doc.full_name" />
-					<InformationField :label="__('Kind')" :value="capitalize(contact.doc.kind)" />
-					<InformationField
-						:label="__('Created On')"
-						:value="dayjs(contact.doc.created_at).format('MMM D YYYY, h:mm A')"
-					/>
-					<InformationField
-						:label="__('Updated On')"
-						:value="dayjs(contact.doc.updated_at).format('MMM D YYYY, h:mm A')"
-					/>
-				</DashboardCard>
+  <DashboardLayout v-if="contact?.doc" :breadcrumbs="breadcrumbs">
+    <template #actions>
+      <Dropdown :options="DROPDOWN_OPTIONS">
+        <Button icon="lucide-more-horizontal" class="text-ink-gray-5" />
+      </Dropdown>
+    </template>
+    <template #default>
+      <div class="grid grid-cols-2 gap-5">
+        <DashboardCard
+          :title="__('General Information')"
+          :button-label="__('Edit')"
+          class="h-[14.5rem] max-sm:col-span-2"
+          @action="showEditGeneral = true"
+        >
+          <InformationField :label="__('Name')" :value="contact.doc.full_name" />
+          <InformationField :label="__('Kind')" :value="capitalize(contact.doc.kind)" />
+          <InformationField
+            :label="__('Created On')"
+            :value="dayjs(contact.doc.created_at).format('MMM D YYYY, h:mm A')"
+          />
+          <InformationField
+            :label="__('Updated On')"
+            :value="dayjs(contact.doc.updated_at).format('MMM D YYYY, h:mm A')"
+          />
+        </DashboardCard>
 
-				<DashboardCard
-					:title="__('Address Books')"
-					class="h-[14.5rem] max-sm:col-span-2"
-					@action="showAddAddressBook = true"
-				>
-					<ListView
-						ref="addressBooksList"
-						:columns="ADDRESS_BOOK_COLUMNS"
-						:rows="contact.doc.address_books"
-						row-key="address_book_id"
-						:options="{
-							emptyState: { title: '', description: __('No address books.') },
-						}"
-						class="flex-1 overflow-auto p-4"
-					>
-						<ListHeader />
-						<ListRows v-if="contact.doc.address_books.length" />
-						<ListEmptyState v-else />
-						<ListSelectBanner>
-							<template #actions>
-								<Button
-									variant="ghost"
-									:label="__('Remove')"
-									theme="red"
-									@click="showRemoveAddressBooks = true"
-								/>
-							</template>
-						</ListSelectBanner>
-					</ListView>
-				</DashboardCard>
+        <DashboardCard
+          :title="__('Address Books')"
+          class="h-[14.5rem] max-sm:col-span-2"
+          @action="showAddAddressBook = true"
+        >
+          <ListView
+            ref="addressBooksList"
+            :columns="ADDRESS_BOOK_COLUMNS"
+            :rows="contact.doc.address_books"
+            row-key="address_book_id"
+            :options="{
+              emptyState: { title: '', description: __('No address books.') },
+            }"
+            class="flex-1 overflow-auto p-4"
+          >
+            <ListHeader />
+            <ListRows v-if="contact.doc.address_books.length" />
+            <ListEmptyState v-else />
+            <ListSelectBanner>
+              <template #actions>
+                <Button
+                  variant="ghost"
+                  :label="__('Remove')"
+                  theme="red"
+                  @click="showRemoveAddressBooks = true"
+                />
+              </template>
+            </ListSelectBanner>
+          </ListView>
+        </DashboardCard>
 
-				<DashboardCard
-					:title="__('Emails')"
-					class="col-span-2 h-[14.5rem]"
-					@action="showAddEmail = true"
-				>
-					<ListView
-						ref="emailsList"
-						:columns="EMAIL_COLUMNS"
-						:rows="contact.doc.emails.map((c) => ({ ...c, type: capitalize(c.type) }))"
-						row-key="address"
-						:options="{ emptyState: { title: '', description: __('No emails.') } }"
-						class="flex-1 overflow-auto p-4"
-					>
-						<ListHeader />
-						<ListRows v-if="contact.doc.emails.length" />
-						<ListEmptyState v-else />
-						<ListSelectBanner>
-							<template #actions>
-								<Button
-									variant="ghost"
-									:label="__('Remove')"
-									theme="red"
-									@click="showRemoveEmails = true"
-								/>
-							</template>
-						</ListSelectBanner>
-					</ListView>
-				</DashboardCard>
+        <DashboardCard
+          :title="__('Emails')"
+          class="col-span-2 h-[14.5rem]"
+          @action="showAddEmail = true"
+        >
+          <ListView
+            ref="emailsList"
+            :columns="EMAIL_COLUMNS"
+            :rows="contact.doc.emails.map((c) => ({ ...c, type: capitalize(c.type) }))"
+            row-key="address"
+            :options="{ emptyState: { title: '', description: __('No emails.') } }"
+            class="flex-1 overflow-auto p-4"
+          >
+            <ListHeader />
+            <ListRows v-if="contact.doc.emails.length" />
+            <ListEmptyState v-else />
+            <ListSelectBanner>
+              <template #actions>
+                <Button
+                  variant="ghost"
+                  :label="__('Remove')"
+                  theme="red"
+                  @click="showRemoveEmails = true"
+                />
+              </template>
+            </ListSelectBanner>
+          </ListView>
+        </DashboardCard>
 
-				<DashboardCard
-					:title="__('Phones')"
-					class="col-span-2 h-[14.5rem]"
-					@action="showAddPhone = true"
-				>
-					<ListView
-						ref="phonesList"
-						:columns="PHONE_COLUMNS"
-						:rows="contact.doc.phones.map((p) => ({ ...p, type: capitalize(p.type) }))"
-						row-key="number"
-						:options="{ emptyState: { title: '', description: __('No phones.') } }"
-						class="flex-1 overflow-auto p-4"
-					>
-						<ListHeader />
-						<ListRows v-if="contact.doc.phones.length" />
-						<ListEmptyState v-else />
-						<ListSelectBanner>
-							<template #actions>
-								<Button
-									variant="ghost"
-									:label="__('Remove')"
-									theme="red"
-									@click="showRemovePhones = true"
-								/>
-							</template>
-						</ListSelectBanner>
-					</ListView>
-				</DashboardCard>
+        <DashboardCard
+          :title="__('Phones')"
+          class="col-span-2 h-[14.5rem]"
+          @action="showAddPhone = true"
+        >
+          <ListView
+            ref="phonesList"
+            :columns="PHONE_COLUMNS"
+            :rows="contact.doc.phones.map((p) => ({ ...p, type: capitalize(p.type) }))"
+            row-key="number"
+            :options="{ emptyState: { title: '', description: __('No phones.') } }"
+            class="flex-1 overflow-auto p-4"
+          >
+            <ListHeader />
+            <ListRows v-if="contact.doc.phones.length" />
+            <ListEmptyState v-else />
+            <ListSelectBanner>
+              <template #actions>
+                <Button
+                  variant="ghost"
+                  :label="__('Remove')"
+                  theme="red"
+                  @click="showRemovePhones = true"
+                />
+              </template>
+            </ListSelectBanner>
+          </ListView>
+        </DashboardCard>
 
-				<DashboardCard
-					:title="__('Addresses')"
-					class="col-span-2 h-[14.5rem]"
-					@action="showAddAddress = true"
-				>
-					<ListView
-						ref="addressesList"
-						:columns="ADDRESS_COLUMNS"
-						:rows="
-							contact.doc.addresses.map((a) => ({ ...a, type: capitalize(a.type) }))
-						"
-						row-key="idx"
-						:options="{ emptyState: { title: '', description: __('No addresses.') } }"
-						class="flex-1 overflow-auto p-4"
-					>
-						<ListHeader />
-						<ListRows v-if="contact.doc.addresses.length" />
-						<ListEmptyState v-else />
-						<ListSelectBanner>
-							<template #actions>
-								<Button
-									variant="ghost"
-									:label="__('Remove')"
-									theme="red"
-									@click="showRemoveAddresses = true"
-								/>
-							</template>
-						</ListSelectBanner>
-					</ListView>
-				</DashboardCard>
-			</div>
-		</template>
-	</DashboardLayout>
+        <DashboardCard
+          :title="__('Addresses')"
+          class="col-span-2 h-[14.5rem]"
+          @action="showAddAddress = true"
+        >
+          <ListView
+            ref="addressesList"
+            :columns="ADDRESS_COLUMNS"
+            :rows="contact.doc.addresses.map((a) => ({ ...a, type: capitalize(a.type) }))"
+            row-key="idx"
+            :options="{ emptyState: { title: '', description: __('No addresses.') } }"
+            class="flex-1 overflow-auto p-4"
+          >
+            <ListHeader />
+            <ListRows v-if="contact.doc.addresses.length" />
+            <ListEmptyState v-else />
+            <ListSelectBanner>
+              <template #actions>
+                <Button
+                  variant="ghost"
+                  :label="__('Remove')"
+                  theme="red"
+                  @click="showRemoveAddresses = true"
+                />
+              </template>
+            </ListSelectBanner>
+          </ListView>
+        </DashboardCard>
+      </div>
+    </template>
+  </DashboardLayout>
 
-	<EditContactModal
-		v-if="contact?.originalDoc"
-		v-model="showEditGeneral"
-		:full-name="contact.doc.full_name"
-		:kind="contact.doc.kind"
-		@save="
-			(val) => {
-				contact.doc.full_name = val.fullName
-				contact.doc.kind = val.kind
-				contact.save.submit()
-			}
-		"
-	/>
-	<AddContactAddressBookModal
-		v-if="contact?.originalDoc"
-		v-model="showAddAddressBook"
-		@add="
-			(val) => {
-				contact.doc.address_books.push(val)
-				contact.save.submit()
-			}
-		"
-	/>
-	<AddContactEmailModal
-		v-if="contact?.originalDoc"
-		v-model="showAddEmail"
-		@add="
-			(val) => {
-				contact.doc.emails.push(val)
-				contact.save.submit()
-			}
-		"
-	/>
-	<AddContactPhoneModal
-		v-if="contact?.originalDoc"
-		v-model="showAddPhone"
-		@add="
-			(val) => {
-				contact.doc.phones.push(val)
-				contact.save.submit()
-			}
-		"
-	/>
-	<AddContactAddressModal
-		v-if="contact?.originalDoc"
-		v-model="showAddAddress"
-		@add="
-			(val) => {
-				contact.doc.addresses.push(val)
-				contact.save.submit()
-			}
-		"
-	/>
-	<Dialog v-model:open="showDeleteContact" v-bind="deleteContactOptions" />
-	<Dialog v-model:open="showRemoveAddressBooks" v-bind="removeAddressBooksOptions" />
-	<Dialog v-model:open="showRemoveEmails" v-bind="removeEmailsOptions" />
-	<Dialog v-model:open="showRemovePhones" v-bind="removePhonesOptions" />
-	<Dialog v-model:open="showRemoveAddresses" v-bind="removeAddressesOptions" />
+  <EditContactModal
+    v-if="contact?.originalDoc"
+    v-model="showEditGeneral"
+    :full-name="contact.doc.full_name"
+    :kind="contact.doc.kind"
+    @save="
+      (val) => {
+        contact.doc.full_name = val.fullName
+        contact.doc.kind = val.kind
+        contact.save.submit()
+      }
+    "
+  />
+  <AddContactAddressBookModal
+    v-if="contact?.originalDoc"
+    v-model="showAddAddressBook"
+    @add="
+      (val) => {
+        contact.doc.address_books.push(val)
+        contact.save.submit()
+      }
+    "
+  />
+  <AddContactEmailModal
+    v-if="contact?.originalDoc"
+    v-model="showAddEmail"
+    @add="
+      (val) => {
+        contact.doc.emails.push(val)
+        contact.save.submit()
+      }
+    "
+  />
+  <AddContactPhoneModal
+    v-if="contact?.originalDoc"
+    v-model="showAddPhone"
+    @add="
+      (val) => {
+        contact.doc.phones.push(val)
+        contact.save.submit()
+      }
+    "
+  />
+  <AddContactAddressModal
+    v-if="contact?.originalDoc"
+    v-model="showAddAddress"
+    @add="
+      (val) => {
+        contact.doc.addresses.push(val)
+        contact.save.submit()
+      }
+    "
+  />
+  <Dialog v-model:open="showDeleteContact" v-bind="deleteContactOptions" />
+  <Dialog v-model:open="showRemoveAddressBooks" v-bind="removeAddressBooksOptions" />
+  <Dialog v-model:open="showRemoveEmails" v-bind="removeEmailsOptions" />
+  <Dialog v-model:open="showRemovePhones" v-bind="removePhonesOptions" />
+  <Dialog v-model:open="showRemoveAddresses" v-bind="removeAddressesOptions" />
 </template>
 
 <script setup lang="ts">
-import { capitalize, computed, inject, ref, useTemplateRef } from 'vue'
-import { appPageMeta } from '@/utils/documentTitle'
-import { useRouter } from 'vue-router'
-import { Trash2 } from 'lucide-vue-next'
 import {
-	Button, Dialog, Dropdown, createDocumentResource, createResource, usePageMeta } from 'frappe-ui'
-import { ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
+  Button,
+  createDocumentResource,
+  createResource,
+  Dialog,
+  Dropdown,
+  usePageMeta,
+} from 'frappe-ui'
+import {
+  ListEmptyState,
+  ListHeader,
+  ListRows,
+  ListSelectBanner,
+  ListView,
+} from 'frappe-ui/experimental'
+import { Trash2 } from 'lucide-vue-next'
+import { capitalize, computed, inject, ref, useTemplateRef } from 'vue'
+import { useRouter } from 'vue-router'
 
-import { raiseToast } from '@/apps/mail/utils'
-import { userStore } from '@/apps/mail/stores/user'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
@@ -227,6 +234,9 @@ import AddContactAddressModal from '@/apps/mail/components/Modals/AddContactAddr
 import AddContactEmailModal from '@/apps/mail/components/Modals/AddContactEmailModal.vue'
 import AddContactPhoneModal from '@/apps/mail/components/Modals/AddContactPhoneModal.vue'
 import EditContactModal from '@/apps/mail/components/Modals/EditContactModal.vue'
+import { userStore } from '@/apps/mail/stores/user'
+import { raiseToast } from '@/apps/mail/utils'
+import { appPageMeta } from '@/utils/documentTitle'
 
 const { accountId, contactName } = defineProps<{ accountId: string; contactName: string }>()
 
@@ -249,162 +259,167 @@ const showDeleteContact = ref(false)
 const store = userStore()
 
 const contact = createDocumentResource({
-	doctype: 'Contact Card',
-	name: `${store.accountId}|${contactName}`,
-	onError: () => router.replace({ name: 'mail-contacts', params: { accountId } }),
-	setValue: {
-		onSuccess: () => raiseToast(__('Contact updated.')),
-		onError: (error) => {
-			contact.reload()
-			raiseToast(error.messages[0], 'error')
-		},
-	},
+  doctype: 'Contact Card',
+  name: `${store.accountId}|${contactName}`,
+  onError: () => router.replace({ name: 'mail-contacts', params: { accountId } }),
+  setValue: {
+    onSuccess: () => raiseToast(__('Contact updated.')),
+    onError: (error) => {
+      contact.reload()
+      raiseToast(error.messages[0], 'error')
+    },
+  },
 })
 
 const deleteContact = createResource({
-	url: 'suite.mail.doctype.contact_card.contact_card.delete_contact_cards',
-	makeParams: () => ({ account: accountId, ids: [contact.doc.id] }),
-	onSuccess: () => {
-		showDeleteContact.value = false
-		raiseToast(__('Contact deleted.'))
-		router.push({ name: 'mail-contacts', params: { accountId } })
-	},
-	onError: (error) => {
-		showDeleteContact.value = false
-		raiseToast(error.messages[0], 'error')
-	},
+  url: 'suite.mail.doctype.contact_card.contact_card.delete_contact_cards',
+  makeParams: () => ({ account: accountId, ids: [contact.doc.id] }),
+  onSuccess: () => {
+    showDeleteContact.value = false
+    raiseToast(__('Contact deleted.'))
+    router.push({ name: 'mail-contacts', params: { accountId } })
+  },
+  onError: (error) => {
+    showDeleteContact.value = false
+    raiseToast(error.messages[0], 'error')
+  },
 })
 
 const deleteContactOptions = computed(() => ({
-	title: __('Delete Contact'),
-	message: __('Are you sure you want to delete the contact for {0}?', [contact.doc?.full_name]),
-	icon: 'lucide-alert-triangle', theme: 'amber',
-	actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteContact.submit }],
+  title: __('Delete Contact'),
+  message: __('Are you sure you want to delete the contact for {0}?', [contact.doc?.full_name]),
+  icon: 'lucide-alert-triangle',
+  theme: 'amber',
+  actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteContact.submit }],
 }))
 
 const addressBooksList = useTemplateRef('addressBooksList')
 const removeAddressBooksOptions = computed(() => ({
-	title: __('Remove from Address Books'),
-	message: __('Are you sure you want to remove this contact from the selected address books?'),
-	icon: 'lucide-alert-triangle', theme: 'amber',
-	actions: [
-		{
-			label: __('Confirm'),
-			variant: 'solid',
-			onClick: () => {
-				contact.doc.address_books = contact.doc.address_books.filter(
-					(ab) => !addressBooksList.value?.selections.has(ab.address_book_id),
-				)
-				contact.save.submit()
-				addressBooksList.value?.toggleAllRows()
-				showRemoveAddressBooks.value = false
-			},
-		},
-	],
+  title: __('Remove from Address Books'),
+  message: __('Are you sure you want to remove this contact from the selected address books?'),
+  icon: 'lucide-alert-triangle',
+  theme: 'amber',
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid',
+      onClick: () => {
+        contact.doc.address_books = contact.doc.address_books.filter(
+          (ab) => !addressBooksList.value?.selections.has(ab.address_book_id),
+        )
+        contact.save.submit()
+        addressBooksList.value?.toggleAllRows()
+        showRemoveAddressBooks.value = false
+      },
+    },
+  ],
 }))
 
 const emailsList = useTemplateRef('emailsList')
 const removeEmailsOptions = computed(() => ({
-	title: __('Remove Emails'),
-	message: __('Are you sure you want to remove the selected emails?'),
-	icon: 'lucide-alert-triangle', theme: 'amber',
-	actions: [
-		{
-			label: __('Confirm'),
-			variant: 'solid',
-			onClick: () => {
-				contact.doc.emails = contact.doc.emails.filter(
-					(e) => !emailsList.value?.selections.has(e.address),
-				)
-				contact.save.submit()
-				emailsList.value?.toggleAllRows()
-				showRemoveEmails.value = false
-			},
-		},
-	],
+  title: __('Remove Emails'),
+  message: __('Are you sure you want to remove the selected emails?'),
+  icon: 'lucide-alert-triangle',
+  theme: 'amber',
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid',
+      onClick: () => {
+        contact.doc.emails = contact.doc.emails.filter(
+          (e) => !emailsList.value?.selections.has(e.address),
+        )
+        contact.save.submit()
+        emailsList.value?.toggleAllRows()
+        showRemoveEmails.value = false
+      },
+    },
+  ],
 }))
 
 const phonesList = useTemplateRef('phonesList')
 const removePhonesOptions = computed(() => ({
-	title: __('Remove Phones'),
-	message: __('Are you sure you want to remove the selected phones?'),
-	icon: 'lucide-alert-triangle', theme: 'amber',
-	actions: [
-		{
-			label: __('Confirm'),
-			variant: 'solid',
-			onClick: () => {
-				contact.doc.phones = contact.doc.phones.filter(
-					(p) => !phonesList.value?.selections.has(p.number),
-				)
-				contact.save.submit()
-				phonesList.value?.toggleAllRows()
-				showRemovePhones.value = false
-			},
-		},
-	],
+  title: __('Remove Phones'),
+  message: __('Are you sure you want to remove the selected phones?'),
+  icon: 'lucide-alert-triangle',
+  theme: 'amber',
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid',
+      onClick: () => {
+        contact.doc.phones = contact.doc.phones.filter(
+          (p) => !phonesList.value?.selections.has(p.number),
+        )
+        contact.save.submit()
+        phonesList.value?.toggleAllRows()
+        showRemovePhones.value = false
+      },
+    },
+  ],
 }))
 
 const addressesList = useTemplateRef('addressesList')
 const removeAddressesOptions = computed(() => ({
-	title: __('Remove Addresses'),
-	message: __('Are you sure you want to remove the selected addresses?'),
-	icon: 'lucide-alert-triangle', theme: 'amber',
-	actions: [
-		{
-			label: __('Confirm'),
-			variant: 'solid',
-			onClick: () => {
-				contact.doc.addresses = contact.doc.addresses.filter(
-					(address) => !addressesList.value?.selections.has(address.idx),
-				)
-				contact.save.submit()
-				addressesList.value?.toggleAllRows()
-				showRemoveAddresses.value = false
-			},
-		},
-	],
+  title: __('Remove Addresses'),
+  message: __('Are you sure you want to remove the selected addresses?'),
+  icon: 'lucide-alert-triangle',
+  theme: 'amber',
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid',
+      onClick: () => {
+        contact.doc.addresses = contact.doc.addresses.filter(
+          (address) => !addressesList.value?.selections.has(address.idx),
+        )
+        contact.save.submit()
+        addressesList.value?.toggleAllRows()
+        showRemoveAddresses.value = false
+      },
+    },
+  ],
 }))
 
 const contactDisplay = computed(
-	() => contact.doc?.full_name || contact.doc?.emails[0]?.address || contactName,
+  () => contact.doc?.full_name || contact.doc?.emails[0]?.address || contactName,
 )
 
 usePageMeta(() => appPageMeta(contactDisplay.value, 'Mail'))
 
 const breadcrumbs = computed(() => [
-	{ label: __('Contacts'), route: '/mail/contacts' },
-	{ label: contactDisplay.value },
+  { label: __('Contacts'), route: '/mail/contacts' },
+  { label: contactDisplay.value },
 ])
 
 const ADDRESS_BOOK_COLUMNS = [{ label: __('Name'), key: 'address_book_name' }]
 
 const EMAIL_COLUMNS = [
-	{ label: __('Address'), key: 'address' },
-	{ label: __('Type'), key: 'type' },
-	{ label: __('Label'), key: 'label' },
+  { label: __('Address'), key: 'address' },
+  { label: __('Type'), key: 'type' },
+  { label: __('Label'), key: 'label' },
 ]
 
 const PHONE_COLUMNS = [
-	{ label: __('Number'), key: 'number' },
-	{ label: __('Type'), key: 'type' },
-	{ label: __('Label'), key: 'label' },
+  { label: __('Number'), key: 'number' },
+  { label: __('Type'), key: 'type' },
+  { label: __('Label'), key: 'label' },
 ]
 
 const ADDRESS_COLUMNS = [
-	{ label: __('Type'), key: 'type', width: '15%' },
-	{ label: __('Street'), key: 'street', width: '20%' },
-	{ label: __('Locality'), key: 'locality', width: '20%' },
-	{ label: __('Region'), key: 'region', width: '15%' },
-	{ label: __('Postcode'), key: 'postcode', width: '15%' },
-	{ label: __('Country'), key: 'country', width: '15%' },
+  { label: __('Type'), key: 'type', width: '15%' },
+  { label: __('Street'), key: 'street', width: '20%' },
+  { label: __('Locality'), key: 'locality', width: '20%' },
+  { label: __('Region'), key: 'region', width: '15%' },
+  { label: __('Postcode'), key: 'postcode', width: '15%' },
+  { label: __('Country'), key: 'country', width: '15%' },
 ]
 
 const DROPDOWN_OPTIONS = [
-	{
-		label: __('Delete'),
-		onClick: () => (showDeleteContact.value = true),
-		icon: Trash2,
-	},
+  {
+    label: __('Delete'),
+    onClick: () => (showDeleteContact.value = true),
+    icon: Trash2,
+  },
 ]
 </script>

@@ -16,22 +16,22 @@
 // zoom already applied). Returns null when the range sits entirely under the
 // header gutter (nothing to draw).
 export function overlayRectStyle(tl, br, { headerX, headerY, viewW, viewH }) {
-  const right  = br.x + br.width
+  const right = br.x + br.width
   const bottom = br.y + br.height
   if (bottom <= headerY || right <= headerX) return null
 
-  const top  = Math.max(tl.y, headerY)
+  const top = Math.max(tl.y, headerY)
   const left = Math.max(tl.x, headerX)
-  const clampedRight  = Math.min(right,  viewW)
+  const clampedRight = Math.min(right, viewW)
   const clampedBottom = Math.min(bottom, viewH)
 
   const style = {
-    top:    top  + 'px',
-    left:   left + 'px',
-    width:  Math.max(0, clampedRight  - left) + 'px',
-    height: Math.max(0, clampedBottom - top)  + 'px',
+    top: top + 'px',
+    left: left + 'px',
+    width: Math.max(0, clampedRight - left) + 'px',
+    height: Math.max(0, clampedBottom - top) + 'px',
   }
-  if (right  > viewW) style.borderRightWidth  = '0'
+  if (right > viewW) style.borderRightWidth = '0'
   if (bottom > viewH) style.borderBottomWidth = '0'
   return style
 }

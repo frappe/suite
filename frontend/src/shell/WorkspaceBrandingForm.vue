@@ -11,14 +11,16 @@
         :placeholder="__('Acme Inc.')"
         @keydown.enter="save"
       />
-      <ErrorMessage :message="saveWorkspace.error instanceof Error ? saveWorkspace.error : undefined" />
+      <ErrorMessage
+        :message="saveWorkspace.error instanceof Error ? saveWorkspace.error : undefined"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { createResource, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { useWorkspace } from '@/shell/useWorkspace'
 import WorkspaceLogoUploader from '@/shell/WorkspaceLogoUploader.vue'

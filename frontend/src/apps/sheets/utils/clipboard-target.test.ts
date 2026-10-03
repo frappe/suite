@@ -1,12 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
+
 import { isCanvasClipboardTarget } from './clipboard-target.js'
 
 describe('isCanvasClipboardTarget', () => {
-  const canvasEl  = { tag: 'canvas' }
+  const canvasEl = { tag: 'canvas' }
   const formulaEl = { tag: 'fx-input' }
-  const inner     = { tag: 'overlay-textarea' }   // lives inside the grid wrapper
-  const outside   = { tag: 'somewhere-else' }
-  const gridWrap  = { contains: (el: unknown) => el === canvasEl || el === inner }
+  const inner = { tag: 'overlay-textarea' } // lives inside the grid wrapper
+  const outside = { tag: 'somewhere-else' }
+  const gridWrap = { contains: (el: unknown) => el === canvasEl || el === inner }
 
   const base = { canvasEl, formulaEl, gridWrap }
 
@@ -35,6 +36,14 @@ describe('isCanvasClipboardTarget', () => {
   })
 
   it('does not throw when the grid wrapper is not mounted yet', () => {
-    expect(isCanvasClipboardTarget({ activeEl: outside, canvasEl: null, formulaEl: null, gridWrap: null, editing: false })).toBe(false)
+    expect(
+      isCanvasClipboardTarget({
+        activeEl: outside,
+        canvasEl: null,
+        formulaEl: null,
+        gridWrap: null,
+        editing: false,
+      }),
+    ).toBe(false)
   })
 })

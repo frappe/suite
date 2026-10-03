@@ -1,11 +1,23 @@
 <template>
-  <input ref="input" data-slot="upload-new-version-input" type="file" class="hidden" @change="take" />
-  <Badge v-if="uploading" label="Uploading new version…" theme="gray" variant="subtle" class="shrink-0" />
+  <input
+    ref="input"
+    data-slot="upload-new-version-input"
+    type="file"
+    class="hidden"
+    @change="take"
+  />
+  <Badge
+    v-if="uploading"
+    label="Uploading new version…"
+    theme="gray"
+    variant="subtle"
+    class="shrink-0"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Badge } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
 import { confirm, toast } from '@/platform/feedback'
 
@@ -20,7 +32,9 @@ const props = defineProps<{ node: string; parent: string; title: string }>()
 const emit = defineEmits<{ replaced: [] }>()
 const input = ref<HTMLInputElement>()
 const entry = ref<UploadEntry | null>(null)
-const uploading = computed(() => !!entry.value && ['queued', 'checking', 'uploading', 'held'].includes(entry.value.state))
+const uploading = computed(
+  () => !!entry.value && ['queued', 'checking', 'uploading', 'held'].includes(entry.value.state),
+)
 
 function pick() {
   if (uploading.value) return
@@ -37,7 +51,10 @@ async function take() {
     confirmLabel: 'Replace',
   })
   if (!agreed) return
-  entry.value = uploadQueue().replaceFile({ node: props.node, parent: props.parent, title: props.title }, { file })
+  entry.value = uploadQueue().replaceFile(
+    { node: props.node, parent: props.parent, title: props.title },
+    { file },
+  )
 }
 
 watch(

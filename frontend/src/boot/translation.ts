@@ -6,8 +6,4 @@ export {
   translate,
   translationPlugin,
 } from '@/platform/translation'
-export type {
-  Replacement,
-  TranslationCatalog,
-  TranslationFunction,
-} from '@/platform/translation'
+export type { Replacement, TranslationCatalog, TranslationFunction } from '@/platform/translation'

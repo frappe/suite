@@ -1,16 +1,17 @@
 import { computed, readonly, ref, type Ref } from 'vue'
 
+import {
+  transport as defaultTransport,
+  TransportError,
+  type RequestScope,
+  type Transport,
+} from '@/platform/transport'
+
 import { onAccessChange } from './accessChanges'
 import { api } from './generated'
 import { driveLinks } from './links'
 import { driveOperation } from './operation'
 import { DRIVE_ROLES, type DriveAccess, type DriveNode } from './types'
-import {
-  TransportError,
-  transport as defaultTransport,
-  type RequestScope,
-  type Transport,
-} from '@/platform/transport'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
@@ -115,11 +116,19 @@ interface SessionDependencies {
 
 type MediaRow = { node: string; url: string; expires: number; blob?: string }
 
-const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, { entity: true })
-const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(api.node_patch.rename, { entity: true })
-const copyNode = driveOperation<{ node: string; parent_node: string; title?: string }, DriveNode>(api.node_copy, {
+const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, {
   entity: true,
 })
+const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(
+  api.node_patch.rename,
+  { entity: true },
+)
+const copyNode = driveOperation<{ node: string; parent_node: string; title?: string }, DriveNode>(
+  api.node_copy,
+  {
+    entity: true,
+  },
+)
 const mediaList = driveOperation<{ node: string }, { media: MediaRow[] }>(api.node_media)
 
 export async function openDriveDocumentSession(
@@ -129,7 +138,12 @@ export async function openDriveDocumentSession(
   const requester = dependencies.transport ?? defaultTransport
   const controller = new AbortController()
   const node =
-    dependencies.node ?? (await requester.request(nodeGet, { node: nodeId, expand: 'access' }, { signal: controller.signal }))
+    dependencies.node ??
+    (await requester.request(
+      nodeGet,
+      { node: nodeId, expand: 'access' },
+      { signal: controller.signal },
+    ))
   if (!node.content_doctype || !node.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a content document`)
   }
@@ -225,11 +239,9 @@ export async function openDriveDocumentSession(
   }
 
   const request = <Input, Output>(operation: any, input: Input) =>
-    requester.request(
-      driveOperation<Input, Output>(operation, { covers: [nodeId] }),
-      input,
-      { signal: controller.signal },
-    )
+    requester.request(driveOperation<Input, Output>(operation, { covers: [nodeId] }), input, {
+      signal: controller.signal,
+    })
 
   const targetWindow = dependencies.window ?? (typeof window === 'undefined' ? undefined : window)
   const setEvery = dependencies.setInterval ?? globalThis.setInterval
@@ -265,11 +277,12 @@ export async function openDriveDocumentSession(
       // A share write can change the caller's own access (spec §8.6).
       await refreshAccess()
     },
-    copy: (parent, nextTitle) => requester.request(
-      copyNode,
-      { node: nodeId, parent_node: parent, title: nextTitle },
-      { signal: controller.signal },
-    ),
+    copy: (parent, nextTitle) =>
+      requester.request(
+        copyNode,
+        { node: nodeId, parent_node: parent, title: nextTitle },
+        { signal: controller.signal },
+      ),
     comments: {
       list: (resolved) => request(api.node_threads, { node: nodeId, resolved }),
       create: (anchor, text, authorName) =>
@@ -317,7 +330,11 @@ export function documentCredentials(nodeId: string): CredentialGrouper {
   }
 }
 
-async function fetchWith(scope: RequestScope, url: string, init: RequestInit = {}): Promise<Response> {
+async function fetchWith(
+  scope: RequestScope,
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
   const headers = new Headers(scope.headers)
   new Headers(init.headers).forEach((value, name) => headers.set(name, value))
   const response = await globalThis.fetch(url, { ...init, headers })
@@ -328,11 +345,22 @@ async function fetchWith(scope: RequestScope, url: string, init: RequestInit = {
 
 /** The error a Frappe response names: the v2 envelope type, or the v1 `exc_type`. */
 async function responseError(response: Response): Promise<TransportError> {
-  const body: unknown = await response.clone().json().catch(() => null)
+  const body: unknown = await response
+    .clone()
+    .json()
+    .catch(() => null)
   const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  const first = Array.isArray(record.errors) ? (record.errors[0] as Record<string, unknown> | undefined) : undefined
-  const type = [first?.type, record.exc_type].find((value): value is string => typeof value === 'string')
-  return new TransportError({ type: type ?? 'RequestError', message: response.statusText, status: response.status })
+  const first = Array.isArray(record.errors)
+    ? (record.errors[0] as Record<string, unknown> | undefined)
+    : undefined
+  const type = [first?.type, record.exc_type].find(
+    (value): value is string => typeof value === 'string',
+  )
+  return new TransportError({
+    type: type ?? 'RequestError',
+    message: response.statusText,
+    status: response.status,
+  })
 }
 
 interface InternalMediaHandle {

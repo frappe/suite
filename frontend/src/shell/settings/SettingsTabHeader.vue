@@ -25,8 +25,8 @@
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue'
 import { SettingsHeader } from 'frappe-ui'
+import { inject } from 'vue'
 
 import { SETTINGS_PAGE_ACTIONS_ID, SETTINGS_PHONE_PAGE } from '@/shell/settings/settings'
 

@@ -8,16 +8,17 @@ export type PickedItem = Pick<DriveNode, 'name' | 'parent_node' | 'root'>
 /** Whether the folder the picker shows can take the items. */
 export type Destination =
   /** The caller's role on the folder has not loaded yet. */
-  | { status: 'unknown' }
-  | { status: 'allowed' }
-  | { status: 'refused'; reason: string }
+  { status: 'unknown' } | { status: 'allowed' } | { status: 'refused'; reason: string }
 
 /**
  * The root the items are in, when they share one of the caller's roots, so the
  * picker opens where the items are. `null` for a mixed selection or items in
  * another user's root.
  */
-export function itemsRoot(items: readonly PickedItem[], roots: DriveRoots): keyof DriveRoots | null {
+export function itemsRoot(
+  items: readonly PickedItem[],
+  roots: DriveRoots,
+): keyof DriveRoots | null {
   const root = items[0]?.root
   if (!root || items.some((item) => item.root !== root)) return null
   if (roots.personal.node === root) return 'personal'
@@ -40,7 +41,11 @@ export function startingFolder(items: readonly PickedItem[], current?: string): 
  * into itself or into a folder inside it, so the picker does not open it, and
  * the folders inside it stay out of reach.
  */
-export function canOpenFolder(mode: PickerMode, items: readonly PickedItem[], folder: string): boolean {
+export function canOpenFolder(
+  mode: PickerMode,
+  items: readonly PickedItem[],
+  folder: string,
+): boolean {
   return mode !== 'move' || !items.some((item) => item.name === folder)
 }
 
@@ -56,9 +61,13 @@ export function destination(
   role: number | undefined,
 ): Destination {
   if (role === undefined) return { status: 'unknown' }
-  if (role < DRIVE_ROLES.upload) return { status: 'refused', reason: 'You cannot add files to this folder.' }
+  if (role < DRIVE_ROLES.upload)
+    return { status: 'refused', reason: 'You cannot add files to this folder.' }
   if (mode === 'move' && items.length && items.every((item) => item.parent_node === folder)) {
-    const reason = items.length === 1 ? 'The item is already in this folder.' : 'The items are already in this folder.'
+    const reason =
+      items.length === 1
+        ? 'The item is already in this folder.'
+        : 'The items are already in this folder.'
     return { status: 'refused', reason }
   }
   return { status: 'allowed' }

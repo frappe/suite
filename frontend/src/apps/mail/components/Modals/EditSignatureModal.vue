@@ -1,33 +1,33 @@
 <template>
-	<Dialog v-if="signature?.doc" v-model:open="show" v-bind="addSignatureOptions">
-		<template #default>
-			<div class="space-y-4">
-				<FormControl
-					v-model="signature.doc.signature_name"
-					:label="__('Signature Name')"
-					:placeholder="__('Work signature')"
-					variant="outline"
-				/>
-				<div class="space-y-1.5">
-					<label class="text-ink-gray-5 block text-xs">{{ __('Signature Body') }}</label>
-					<TextEditor
-						editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
-						:extensions="[CustomParagraphExtension]"
-						:fixed-menu="buttons"
-						:placeholder="__('Write your signature here')"
-						:content="signature.doc.html_body"
-						@change="(val: string) => (signature.doc.html_body = val)"
-					/>
-				</div>
-			</div>
-		</template>
-	</Dialog>
+  <Dialog v-if="signature?.doc" v-model:open="show" v-bind="addSignatureOptions">
+    <template #default>
+      <div class="space-y-4">
+        <FormControl
+          v-model="signature.doc.signature_name"
+          :label="__('Signature Name')"
+          :placeholder="__('Work signature')"
+          variant="outline"
+        />
+        <div class="space-y-1.5">
+          <label class="text-ink-gray-5 block text-xs">{{ __('Signature Body') }}</label>
+          <TextEditor
+            editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
+            :extensions="[CustomParagraphExtension]"
+            :fixed-menu="buttons"
+            :placeholder="__('Write your signature here')"
+            :content="signature.doc.html_body"
+            @change="(val: string) => (signature.doc.html_body = val)"
+          />
+        </div>
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Dialog, FormControl, createDocumentResource } from 'frappe-ui'
+import { createDocumentResource, Dialog, FormControl } from 'frappe-ui'
 import { TextEditor } from 'frappe-ui/experimental'
+import { computed, ref, watch } from 'vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { useTextEditorButtons } from '@/apps/mail/utils/composables'
@@ -44,42 +44,42 @@ const { buttons } = useTextEditorButtons()
 const signature = ref()
 
 const getSignature = () =>
-	createDocumentResource({
-		doctype: 'Mail Signature',
-		name: signatureID,
-		setValue: {
-			onSuccess: () => {
-				show.value = false
-				raiseToast(__('Signature updated.'))
-				emit('reloadSignatures')
-			},
-			onError: (error) => {
-				raiseToast(error.messages[0], 'error')
-				signature.value.reload()
-			},
-		},
-	})
+  createDocumentResource({
+    doctype: 'Mail Signature',
+    name: signatureID,
+    setValue: {
+      onSuccess: () => {
+        show.value = false
+        raiseToast(__('Signature updated.'))
+        emit('reloadSignatures')
+      },
+      onError: (error) => {
+        raiseToast(error.messages[0], 'error')
+        signature.value.reload()
+      },
+    },
+  })
 
 const addSignatureOptions = computed(() => ({
-	title: __('Edit Signature'),
-	actions: [
-		{
-			label: __('Save'),
-			variant: 'solid',
-			disabled: !signature.value.doc.signature_name || !signature.value.doc.html_body,
-			onClick: () => {
-				signature.value.save.submit()
-				show.value = false
-			},
-		},
-	],
+  title: __('Edit Signature'),
+  actions: [
+    {
+      label: __('Save'),
+      variant: 'solid',
+      disabled: !signature.value.doc.signature_name || !signature.value.doc.html_body,
+      onClick: () => {
+        signature.value.save.submit()
+        show.value = false
+      },
+    },
+  ],
 }))
 
 watch(
-	show,
-	(val) => {
-		if (val) signature.value = getSignature()
-	},
-	{ immediate: true },
+  show,
+  (val) => {
+    if (val) signature.value = getSignature()
+  },
+  { immediate: true },
 )
 </script>

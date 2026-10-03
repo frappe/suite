@@ -1,23 +1,15 @@
 import {
-  START_LOCATION,
   createRouter,
   createWebHistory,
+  START_LOCATION,
   type RouteLocationNormalizedLoaded,
   type RouteRecordNormalized,
 } from 'vue-router'
 
-import {
-  areaDefinitions,
-  areaIsAvailable,
-  findArea,
-} from '@/composition/appRegistry'
-import {
-  areaPlaceholderNames,
-  canonicalRoutes,
-  routes,
-} from '@/composition/routes'
+import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appRegistry'
 import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
+import { areaPlaceholderNames, canonicalRoutes, routes } from '@/composition/routes'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
 import { installPwa } from '@/platform/pwa'
 import { installScrollRestoration } from '@/platform/scroll-restoration'
@@ -46,8 +38,7 @@ const registeredAreas = new Set<string>()
 type OnboardingState = { isOnboarded: boolean; canOnboard: boolean }
 
 const hasServerBoot =
-  typeof window !== 'undefined' &&
-  typeof window.suite_is_onboarded !== 'undefined'
+  typeof window !== 'undefined' && typeof window.suite_is_onboarded !== 'undefined'
 const onboardingOperation: Operation<
   Record<string, never>,
   { is_onboarded?: boolean; can_onboard?: boolean }
@@ -71,9 +62,7 @@ function ensureOnboardingState(): OnboardingState | Promise<OnboardingState> {
       .request(onboardingOperation, {})
       .then((response) => {
         const state =
-          'message' in response &&
-          response.message &&
-          typeof response.message === 'object'
+          'message' in response && response.message && typeof response.message === 'object'
             ? (response.message as {
                 is_onboarded?: boolean
                 can_onboard?: boolean
@@ -146,10 +135,7 @@ router.beforeEach(async (to, from) => {
 
   // A guest may join a Meet call. Load Meet's routes first, so the call
   // route's own metadata decides who may enter.
-  if (
-    session.status.value === 'guest' &&
-    areaPlaceholderId(to) === 'meet'
-  ) {
+  if (session.status.value === 'guest' && areaPlaceholderId(to) === 'meet') {
     await ensureAreaRoutesLoaded('meet')
     return to.fullPath
   }
@@ -183,12 +169,7 @@ router.beforeEach(async (to, from) => {
   const areaId = areaPlaceholderId(to)
   if (areaId) {
     const area = findArea(areaId)
-    if (
-      area &&
-      !areaIsAvailable(area, session) &&
-      !isMailPathWithoutAccount(to.path)
-    )
-      return true
+    if (area && !areaIsAvailable(area, session) && !isMailPathWithoutAccount(to.path)) return true
     await ensureAreaRoutesLoaded(areaId)
     return to.fullPath
   }
@@ -204,9 +185,7 @@ function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
   const matched = to.matched.find((record) =>
     String(record.name ?? '').startsWith('area-placeholder-'),
   )
-  return matched && typeof matched.meta.area === 'string'
-    ? matched.meta.area
-    : null
+  return matched && typeof matched.meta.area === 'string' ? matched.meta.area : null
 }
 
 function isServerLinkPath(path: string): boolean {
@@ -214,9 +193,7 @@ function isServerLinkPath(path: string): boolean {
 }
 
 function isMailGuestPath(path: string): boolean {
-  return /^\/mail\/(?:login|signup(?:\/|$)|reset-password(?:\/|$)|mime-message\/)/.test(
-    path,
-  )
+  return /^\/mail\/(?:login|signup(?:\/|$)|reset-password(?:\/|$)|mime-message\/)/.test(path)
 }
 
 // Mail pages that need no mail account: the public MIME view and the Admin

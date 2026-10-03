@@ -63,7 +63,11 @@ function splashCanvases() {
     const [w, h] = [width * dpr, height * dpr]
     const logo = Math.round(Math.min(w, h) * SCALE)
     const canvas = (file, width, height, orientation) => ({
-      file: path.join(SPLASH_DIR, file), width, height, logo, background: BACKGROUND,
+      file: path.join(SPLASH_DIR, file),
+      width,
+      height,
+      logo,
+      background: BACKGROUND,
       label: `${device} (${orientation})`,
     })
     return [
@@ -75,8 +79,12 @@ function splashCanvases() {
 
 function iconCanvases(brandColor) {
   return ICONS.map(({ name, size }) => ({
-    file: path.join(OUT_DIR, name), width: size, height: size, logo: size,
-    background: brandColor, label: 'icon',
+    file: path.join(OUT_DIR, name),
+    width: size,
+    height: size,
+    logo: size,
+    background: brandColor,
+    label: 'icon',
   }))
 }
 
@@ -167,7 +175,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pwa-assets-'))
 fs.mkdirSync(SPLASH_DIR, { recursive: true })
 
 const all = [...iconCanvases(brandColorOf(svg)), ...splashCanvases()]
-console.log(`Rendering ${ICONS.length} icons and ${all.length - ICONS.length} launch screens at scale ${SCALE}...`)
+console.log(
+  `Rendering ${ICONS.length} icons and ${all.length - ICONS.length} launch screens at scale ${SCALE}...`,
+)
 try {
   for (const canvas of all) {
     await render(canvas, svg, tmp)

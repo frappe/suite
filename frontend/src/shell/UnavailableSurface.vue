@@ -21,10 +21,10 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    title?: string;
-    reason: string;
-    nextStep: string;
+    title?: string
+    reason: string
+    nextStep: string
   }>(),
-  { title: "This area is unavailable" },
-);
+  { title: 'This area is unavailable' },
+)
 </script>

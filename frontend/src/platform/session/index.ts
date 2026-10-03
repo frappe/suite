@@ -35,10 +35,7 @@ export interface Session {
    * A cleanup that fails does not stop the logout. Returns a function that
    * removes the cleanup.
    */
-  onLogout(
-    cleanup: () => Promise<void> | void,
-    options?: { whileSignedIn?: boolean },
-  ): () => void
+  onLogout(cleanup: () => Promise<void> | void, options?: { whileSignedIn?: boolean }): () => void
 }
 
 type AccountResponse = Record<string, unknown> & {
@@ -101,7 +98,8 @@ export function createSession(client: Transport = defaultTransport): Session {
     refreshPromise = client
       .request(accountOperation, {})
       .then((account) => {
-        const id = string(account.id) ?? string(account.name) ?? string(account.email) ?? user.value?.id
+        const id =
+          string(account.id) ?? string(account.name) ?? string(account.email) ?? user.value?.id
         if (!id || id === 'Guest') {
           user.value = null
           capabilities.value = { jmap: false, systemManager: false }
@@ -112,8 +110,10 @@ export function createSession(client: Transport = defaultTransport): Session {
           ...account,
           id,
           email: string(account.email) ?? id,
-          fullName: string(account.fullName) ?? string(account.full_name) ?? user.value?.fullName ?? id,
-          avatar: string(account.avatar) ?? string(account.user_image) ?? user.value?.avatar ?? null,
+          fullName:
+            string(account.fullName) ?? string(account.full_name) ?? user.value?.fullName ?? id,
+          avatar:
+            string(account.avatar) ?? string(account.user_image) ?? user.value?.avatar ?? null,
         }
         capabilities.value = {
           jmap: account.capabilities?.jmap ?? !!account.is_jmap_configured,

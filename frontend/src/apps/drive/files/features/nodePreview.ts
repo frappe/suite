@@ -38,7 +38,10 @@ export interface NodePreview {
 }
 
 /** One card's thumbnail. Call it once per card, in the card's setup. */
-export function useNodePreview(node: () => PreviewNode, memory: PreviewMemory = sharedMemory): NodePreview {
+export function useNodePreview(
+  node: () => PreviewNode,
+  memory: PreviewMemory = sharedMemory,
+): NodePreview {
   // This card has shown an image. When a refetch changes the URL, the browser
   // keeps painting the old image while the new one loads, so the card does not
   // blink back to its type icon.

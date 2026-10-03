@@ -6,8 +6,8 @@
  * Every call goes to `/api/suite/drive/` or `/api/suite/`, never to a legacy
  * Drive method.
  */
-import { api as suiteApi } from '@/platform/transport/generated'
 import { transport, type Operation } from '@/platform/transport'
+import { api as suiteApi } from '@/platform/transport/generated'
 
 /** A person on this site, in the shape the mention menu reads. */
 export interface WriterUser {
@@ -35,12 +35,15 @@ interface BatchResult {
   failed: Array<{ node: string; type: string; message: string }>
 }
 
-const nodeBatchTrash = driveOperation<{ nodes: string[]; patch: { state: 'Trashed' } }, BatchResult>(
-  'node_batch',
+const nodeBatchTrash = driveOperation<
+  { nodes: string[]; patch: { state: 'Trashed' } },
+  BatchResult
+>('node_batch', 'POST', 'nodes/batch')
+const nodeBatchPurge = driveOperation<{ nodes: string[] }, BatchResult>(
+  'node_batch_purge',
   'POST',
-  'nodes/batch',
+  'nodes/batch/purge',
 )
-const nodeBatchPurge = driveOperation<{ nodes: string[] }, BatchResult>('node_batch_purge', 'POST', 'nodes/batch/purge')
 /**
  * Delete nodes forever. Used to roll back the pictures a failed import uploaded.
  *
@@ -51,7 +54,10 @@ const nodeBatchPurge = driveOperation<{ nodes: string[] }, BatchResult>('node_ba
  */
 export async function purgeNodes(nodes: readonly string[]): Promise<void> {
   if (!nodes.length) return
-  const trashed = await transport.request(nodeBatchTrash, { nodes: [...nodes], patch: { state: 'Trashed' } })
+  const trashed = await transport.request(nodeBatchTrash, {
+    nodes: [...nodes],
+    patch: { state: 'Trashed' },
+  })
   if (trashed.ok.length) await transport.request(nodeBatchPurge, { nodes: trashed.ok })
 }
 

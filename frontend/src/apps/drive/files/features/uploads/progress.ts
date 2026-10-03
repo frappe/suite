@@ -37,7 +37,8 @@ export function driveUploadProgress(): DriveUploadProgress {
 
 /** The dialogs load on the first question, so they stay out of the initial graph. */
 function appPrompts(context: AppContext): UploadPrompts {
-  const load = () => import('./prompts').then((module) => module.uploadPrompts(context, pickFileAgain))
+  const load = () =>
+    import('./prompts').then((module) => module.uploadPrompts(context, pickFileAgain))
   return {
     collision: async (input) => (await load()).collision(input),
     folderCollision: async (input) => (await load()).folderCollision(input),

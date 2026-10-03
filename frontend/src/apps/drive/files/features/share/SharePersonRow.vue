@@ -19,7 +19,12 @@
         <p class="truncate">{{ state.label(row.grant.principal) }}</p>
         <p v-if="meta" class="mt-1 truncate text-sm text-ink-gray-5">{{ meta }}</p>
       </div>
-      <Button v-if="row.denied" label="Allow again" :loading="busy" @click="state.allowAgain(row)" />
+      <Button
+        v-if="row.denied"
+        label="Allow again"
+        :loading="busy"
+        @click="state.allowAgain(row)"
+      />
       <Dropdown v-else :options="options" align="end">
         <Button
           :aria-label="`Access for ${state.label(principal)}: ${value}`"
@@ -34,7 +39,12 @@
     </div>
 
     <form v-if="editing" class="flex items-center gap-2 pb-3 pl-10" @submit.prevent="save">
-      <DatePicker v-model="day" class="min-w-0 flex-1" placeholder="Expiry date" aria-label="Access expiry date" />
+      <DatePicker
+        v-model="day"
+        class="min-w-0 flex-1"
+        placeholder="Expiry date"
+        aria-label="Access expiry date"
+      />
       <Button type="submit" variant="solid" label="Save" :loading="busy" :disabled="!day" />
       <Button label="Cancel" @click="editing = false" />
     </form>
@@ -43,13 +53,21 @@
 </template>
 
 <script setup lang="ts">
+import {
+  Avatar,
+  Button,
+  DatePicker,
+  Dropdown,
+  ErrorMessage,
+  type DropdownItem,
+  type DropdownOption,
+} from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { Avatar, Button, DatePicker, Dropdown, ErrorMessage, type DropdownItem, type DropdownOption } from 'frappe-ui'
 
 import { roleLabel, rolesFor } from '@/apps/drive/client/grants'
 
-import type { LocalRow } from './shareModel'
 import { formatDay, stampDay } from './shareFormat'
+import type { LocalRow } from './shareModel'
 import type { ShareState } from './useShare'
 
 /** One person or group row: role, expiry and removal (unified spec §7.4, §7.9). */
@@ -69,7 +87,8 @@ const meta = computed(() => {
   if (row.expired && row.grant.expires_on) return `Expired ${formatDay(row.grant.expires_on)}`
   if (row.denied) return 'Denied here'
   // A named person shows their id under the name; a group says it is one.
-  const named = row.kind === 'user' && props.state.label(row.grant.principal) !== row.grant.principal
+  const named =
+    row.kind === 'user' && props.state.label(row.grant.principal) !== row.grant.principal
   const parts = [row.kind === 'group' ? 'Group' : named ? row.grant.principal : '']
   if (row.grant.expires_on) parts.push(`Until ${formatDay(row.grant.expires_on)}`)
   return parts.filter(Boolean).join(' · ')
@@ -81,7 +100,14 @@ const options = computed<DropdownItem[]>(() => {
   const removal: DropdownOption[] = [
     { label: 'Remove', icon: 'lucide-x', theme: 'red', onClick: () => void state.remove(row) },
     ...(holdsItems
-      ? [{ label: 'Remove here and inside', icon: 'lucide-folder-x', theme: 'red' as const, onClick: () => void state.remove(row, true) }]
+      ? [
+          {
+            label: 'Remove here and inside',
+            icon: 'lucide-folder-x',
+            theme: 'red' as const,
+            onClick: () => void state.remove(row, true),
+          },
+        ]
       : []),
   ]
   if (row.expired) return removal
@@ -99,9 +125,19 @@ const options = computed<DropdownItem[]>(() => {
       group: 'Expiry',
       hideLabel: true,
       options: [
-        { label: row.grant.expires_on ? 'Change expiry' : 'Set expiry', icon: 'lucide-calendar', onClick: edit },
+        {
+          label: row.grant.expires_on ? 'Change expiry' : 'Set expiry',
+          icon: 'lucide-calendar',
+          onClick: edit,
+        },
         ...(row.grant.expires_on
-          ? [{ label: 'Remove expiry', icon: 'lucide-calendar-x', onClick: () => void state.setExpiry(row, null) }]
+          ? [
+              {
+                label: 'Remove expiry',
+                icon: 'lucide-calendar-x',
+                onClick: () => void state.setExpiry(row, null),
+              },
+            ]
           : []),
       ],
     },

@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref } from 'vue'
 import { createRouter, createWebHistory, type Router } from 'vue-router'
 
+import { installScrollRestoration, useRestoredScroll } from './index'
+
 const shell = vi.hoisted(() => ({ scroller: null as null | { value: HTMLElement | null } }))
 vi.mock('frappe-ui', async () => {
   const { ref } = await import('vue')
   return { shellScrollContainer: (shell.scroller = ref<HTMLElement | null>(null)) }
 })
-
-import { installScrollRestoration, useRestoredScroll } from './index'
 
 /** A scroll box that clamps like a browser: it cannot scroll past its content. */
 function scrollBox(contentHeight: number) {

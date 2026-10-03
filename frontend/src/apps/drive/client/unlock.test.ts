@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
+import { createSession } from '@/platform/session'
+import { createTransport, TransportError, type Transport } from '@/platform/transport'
+
 import { createLinkStore } from './links'
 import { isDriveLocked, unlockNode } from './unlock'
-import { createSession } from '@/platform/session'
-import { TransportError, createTransport, type Transport } from '@/platform/transport'
 
 const CODE = 'L000000000000000000001'
 const TICKET = `${Math.floor(Date.now() / 1000) + 3600}.${'b'.repeat(64)}`
@@ -18,14 +19,19 @@ function memoryStorage() {
 }
 
 /** A Drive server double that answers the unlock route, and records what it was sent. */
-function unlockServer(answer: (password: string) => { status: number; body: unknown; headers?: HeadersInit }) {
+function unlockServer(
+  answer: (password: string) => { status: number; body: unknown; headers?: HeadersInit },
+) {
   const sent: Array<{ url: string; body: unknown }> = []
   const transport = createTransport({
     fetch: async (url, init) => {
       const body = JSON.parse(String(init?.body ?? '{}')) as { password: string }
       sent.push({ url: String(url), body })
       const reply = answer(body.password)
-      return new Response(JSON.stringify(reply.body), { status: reply.status, headers: reply.headers })
+      return new Response(JSON.stringify(reply.body), {
+        status: reply.status,
+        headers: reply.headers,
+      })
     },
   })
   return { transport, sent }
@@ -46,14 +52,22 @@ describe('unlocking a password link', () => {
     const { transport, sent } = unlockServer((password) =>
       password === 'open sesame'
         ? { status: 200, body: { data: { ticket: TICKET, expires: 0 } } }
-        : { status: 401, body: { errors: [{ type: 'DriveLocked', message: 'The Drive link password is incorrect' }] } },
+        : {
+            status: 401,
+            body: {
+              errors: [{ type: 'DriveLocked', message: 'The Drive link password is incorrect' }],
+            },
+          },
     )
 
     const wrong = await unlockNode('locked-folder', 'guess', { transport, links })
     const right = await unlockNode('locked-folder', 'open sesame', { transport, links })
 
     expect([wrong, right]).toEqual([{ status: 'wrong-password' }, { status: 'unlocked' }])
-    expect(sent[0]).toEqual({ url: '/api/suite/drive/links/unlock', body: { token: CODE, password: 'guess' } })
+    expect(sent[0]).toEqual({
+      url: '/api/suite/drive/links/unlock',
+      body: { token: CODE, password: 'guess' },
+    })
     expect(links.scope(['locked-folder']).headers).toEqual({ 'X-Drive-Links': `${CODE}.${TICKET}` })
   })
 
@@ -64,7 +78,9 @@ describe('unlocking a password link', () => {
       headers: { 'Retry-After': '872' },
     }))
 
-    await expect(unlockNode('locked-folder', 'guess', { transport, links: heldLink() })).resolves.toEqual({
+    await expect(
+      unlockNode('locked-folder', 'guess', { transport, links: heldLink() }),
+    ).resolves.toEqual({
       status: 'locked-out',
       retryAfterMs: 872_000,
     })
@@ -79,7 +95,7 @@ describe('unlocking a password link', () => {
     expect(sent).toHaveLength(0)
   })
 
-  it('reads a locked node from a thrown error and from a query\'s stored error alike', () => {
+  it("reads a locked node from a thrown error and from a query's stored error alike", () => {
     const locked = { type: 'DriveLocked', message: 'Locked', status: 401 }
     expect([
       isDriveLocked(new TransportError(locked)),

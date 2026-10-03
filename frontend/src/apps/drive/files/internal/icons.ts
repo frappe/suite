@@ -1,6 +1,7 @@
 import type { DriveNode } from '@/apps/drive/client/types'
-import { previewKind, type TextLanguage } from './previewKind'
+
 import { titleExtension } from './filename'
+import { previewKind, type TextLanguage } from './previewKind'
 
 /** What the tint reads from: the kind, and a file's MIME type or a document's doctype. */
 type TintedNode = Pick<DriveNode, 'kind' | 'mime' | 'content_doctype'>
@@ -71,11 +72,13 @@ function fileType({ title, mime }: TypedNode): FileType {
   if (preview.kind === 'text') {
     const extension = titleExtension(title)?.toLowerCase()
     if (extension === 'csv' || type === 'text/csv') return { label: 'CSV', icon: TABLE }
-    if (extension === 'tsv' || type === 'text/tab-separated-values') return { label: 'TSV', icon: TABLE }
+    if (extension === 'tsv' || type === 'text/tab-separated-values')
+      return { label: 'TSV', icon: TABLE }
     return TEXT_TYPES[preview.language]
   }
   if (type === 'application/zip') return { label: 'ZIP', icon: 'lucide-file-archive' }
-  if (type.includes('zip') || type.includes('compressed')) return { label: 'Archive', icon: 'lucide-file-archive' }
+  if (type.includes('zip') || type.includes('compressed'))
+    return { label: 'Archive', icon: 'lucide-file-archive' }
   return { label: 'File', icon: 'lucide-file' }
 }
 

@@ -1,12 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { driveLinks } from './links'
-import { MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
+
 import { createTransport, type Transport } from '@/platform/transport'
 
+import { driveLinks } from './links'
+import { MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
+
 const documentNode = (name: string) => ({
-  name, title: name, kind: 'document', parent_node: 'p', root: 'r', state: 'Active', trash_root: null, size: 0, mime: null,
-  url: null, content_doctype: 'Presentation', content_docname: `doc-${name}`, is_template: 0,
-  owner: { id: 'Administrator', full_name: 'Administrator', user_image: null }, creation: null, modified: '2026-09-15', content_modified: null,
+  name,
+  title: name,
+  kind: 'document',
+  parent_node: 'p',
+  root: 'r',
+  state: 'Active',
+  trash_root: null,
+  size: 0,
+  mime: null,
+  url: null,
+  content_doctype: 'Presentation',
+  content_docname: `doc-${name}`,
+  is_template: 0,
+  owner: { id: 'Administrator', full_name: 'Administrator', user_image: null },
+  creation: null,
+  modified: '2026-09-15',
+  content_modified: null,
   access: { role: 40, via_link: null },
 })
 const code = (index: number) => `S${String(index).padStart(21, '0')}`
@@ -23,7 +39,7 @@ afterEach(() => {
 
 describe('document session credentials', () => {
   it('groups references under the 20-code cap, each group with the document code', async () => {
-    const requester = transport((id, input) => id === 'node_get' ? documentNode(input.node) : {})
+    const requester = transport((id, input) => (id === 'node_get' ? documentNode(input.node) : {}))
     driveLinks.seed(code(0), 'deck')
     const ids = Array.from({ length: 21 }, (_, index) => `n${index}`)
     ids.forEach((id, index) => driveLinks.seed(code(index + 1), id))
@@ -32,28 +48,38 @@ describe('document session credentials', () => {
     const groups = session.credentials.group(ids)
 
     const sent: string[][] = []
-    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
-      sent.push(new Headers(init?.headers).get('X-Drive-Links')!.split(','))
-      return new Response('{}', { status: 200 })
-    }))
-    for (const group of groups) await group.fetch('/api/method/suite.slides.api.composite.composite_group')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sent.push(new Headers(init?.headers).get('X-Drive-Links')!.split(','))
+        return new Response('{}', { status: 200 })
+      }),
+    )
+    for (const group of groups)
+      await group.fetch('/api/method/suite.slides.api.composite.composite_group')
 
     expect(groups.map((group) => group.nodeIds)).toEqual([ids.slice(0, 19), ids.slice(19)])
-    expect(sent.map((codes) => [codes[0], codes.length])).toEqual([[code(0), 20], [code(0), 3]])
+    expect(sent.map((codes) => [codes[0], codes.length])).toEqual([
+      [code(0), 20],
+      [code(0), 3],
+    ])
     session.dispose()
   })
 
   it('asks with every held code, the document code among them, for a manifest', async () => {
-    const requester = transport((id, input) => id === 'node_get' ? documentNode(input.node) : {})
+    const requester = transport((id, input) => (id === 'node_get' ? documentNode(input.node) : {}))
     driveLinks.seed(code(0), 'deck')
     driveLinks.seed(code(1), 'part-a')
     driveLinks.seed(code(2), 'part-b')
     const session = await openDriveDocumentSession('deck', { transport: requester })
     const sent: string[] = []
-    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
-      sent.push(new Headers(init?.headers).get('X-Drive-Links')!)
-      return new Response('{}', { status: 200 })
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sent.push(new Headers(init?.headers).get('X-Drive-Links')!)
+        return new Response('{}', { status: 200 })
+      }),
+    )
 
     await session.credentials.fetchHeld('/api/method/suite.slides.api.composite.composite_manifest')
 
@@ -64,9 +90,13 @@ describe('document session credentials', () => {
   it('keeps the document link when a comment is missing, and forgets it when a product request answers 410', async () => {
     const sent: Array<string | null> = []
     const reply = (url: string) => {
-      if (url.includes('/nodes/deck')) return new Response(JSON.stringify({ data: documentNode('deck') }))
+      if (url.includes('/nodes/deck'))
+        return new Response(JSON.stringify({ data: documentNode('deck') }))
       if (url.includes('/threads/')) {
-        return new Response(JSON.stringify({ errors: [{ type: 'DriveNotFound', message: 'Missing' }] }), { status: 404 })
+        return new Response(
+          JSON.stringify({ errors: [{ type: 'DriveNotFound', message: 'Missing' }] }),
+          { status: 404 },
+        )
       }
       return new Response(JSON.stringify({ exc_type: 'DriveLinkExpired' }), { status: 410 })
     }
@@ -76,7 +106,9 @@ describe('document session credentials', () => {
     }
     vi.stubGlobal('fetch', vi.fn(record))
     driveLinks.seed(code(0), 'deck')
-    const session = await openDriveDocumentSession('deck', { transport: createTransport({ fetch: record }) })
+    const session = await openDriveDocumentSession('deck', {
+      transport: createTransport({ fetch: record }),
+    })
 
     await session.comments.reply('missing-thread', 'Hello').catch(() => null)
     await session.credentials.fetch('/api/method/suite.slides.api.composite.composite_manifest')
@@ -94,7 +126,9 @@ describe('document session visits', () => {
       openDriveDocumentSession(viaLink ? 'linked' : 'own', {
         transport: transport((id, input) => {
           if (id === 'node_visit') visits.push(input.node)
-          return id === 'node_get' ? { ...documentNode(input.node), access: { role: 20, via_link: viaLink } } : {}
+          return id === 'node_get'
+            ? { ...documentNode(input.node), access: { role: 20, via_link: viaLink } }
+            : {}
         }),
       })
 

@@ -26,8 +26,10 @@
 
 <script setup>
 import { debounce } from 'frappe-ui'
-import { computed, ref, provide } from 'vue'
+import { computed, provide, ref } from 'vue'
+
 import { useComments } from '@/apps/writer/composables/useYjs'
+
 import CoreEditor from './CoreEditor.vue'
 
 const showSettings = defineModel('showSettings')
@@ -72,10 +74,9 @@ if (props.file.write) {
   request.onsuccess = (event) => {
     const database = event.target.result
     db.value = database
-    database
-      .transaction(['content'])
-      .objectStore('content')
-      .get(props.file.name).onsuccess = (val) => {
+    database.transaction(['content']).objectStore('content').get(props.file.name).onsuccess = (
+      val,
+    ) => {
       if (
         val.target.result?.val?.length > 20 &&
         val.target.result.saved > new Date(props.file.modified)

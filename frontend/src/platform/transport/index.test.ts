@@ -22,7 +22,10 @@ afterEach(() => {
 
 describe('transport', () => {
   it('sends a Blob field as the raw body, with the other fields in the query', async () => {
-    const chunk: Operation<{ upload_id: string; offset: number; chunk: Blob }, { received: number }> = {
+    const chunk: Operation<
+      { upload_id: string; offset: number; chunk: Blob },
+      { received: number }
+    > = {
       id: 'upload_chunk',
       owner: 'drive',
       method: 'PUT',
@@ -34,7 +37,9 @@ describe('transport', () => {
     const client = createTransport({ fetch: fetcher })
     const bytes = new Blob([new Uint8Array([1, 2, 3])])
 
-    await expect(client.request(chunk, { upload_id: 'u1', offset: 0, chunk: bytes })).resolves.toEqual({ received: 3 })
+    await expect(
+      client.request(chunk, { upload_id: 'u1', offset: 0, chunk: bytes }),
+    ).resolves.toEqual({ received: 3 })
     const [url, init] = fetcher.mock.calls[0]!
     expect(url).toBe('/api/suite/drive/uploads/u1/chunk?offset=0')
     expect(init?.body).toBe(bytes)
@@ -51,9 +56,11 @@ describe('transport', () => {
     const fetcher = vi.fn<typeof fetch>(async () => response({ data: { name: 'n1' } }))
     const client = createTransport({ fetch: fetcher })
 
-    await expect(client.request(getNode, { node: 'n1', expand: ['breadcrumbs'] })).resolves.toEqual({
-      name: 'n1',
-    })
+    await expect(client.request(getNode, { node: 'n1', expand: ['breadcrumbs'] })).resolves.toEqual(
+      {
+        name: 'n1',
+      },
+    )
     const [url, init] = fetcher.mock.calls[0]!
     expect(url).toBe('/api/suite/drive/nodes/n1?expand=%5B%22breadcrumbs%22%5D')
     expect(new Headers(init?.headers).get('X-Frappe-CSRF-Token')).toBe('csrf')
@@ -77,17 +84,28 @@ describe('transport', () => {
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new TypeError('offline'))
       .mockResolvedValueOnce(response({ errors: [{ type: 'Busy', message: 'Busy' }] }, 503))
-      .mockResolvedValueOnce(response({ errors: [{ type: 'RateLimitExceededError', message: 'Wait' }] }, 429, { 'Retry-After': '0' }))
+      .mockResolvedValueOnce(
+        response({ errors: [{ type: 'RateLimitExceededError', message: 'Wait' }] }, 429, {
+          'Retry-After': '0',
+        }),
+      )
       .mockResolvedValueOnce(response({ data: { name: 'n1' } }))
     const client = createTransport({ fetch: getFetch, maxRetries: 3, retryBaseMs: 0 })
     await expect(client.request(getNode, { node: 'n1' })).resolves.toEqual({ name: 'n1' })
     expect(getFetch).toHaveBeenCalledTimes(4)
 
     const write: Operation<{ title: string }, unknown> = {
-      id: 'rename', owner: 'drive', method: 'PATCH', path: 'nodes/n1',
+      id: 'rename',
+      owner: 'drive',
+      method: 'PATCH',
+      path: 'nodes/n1',
     }
-    const writeFetch = vi.fn(async () => response({ errors: [{ type: 'Busy', message: 'Busy' }] }, 503))
-    await expect(createTransport({ fetch: writeFetch }).request(write, { title: 'Next' })).rejects.toBeInstanceOf(TransportError)
+    const writeFetch = vi.fn(async () =>
+      response({ errors: [{ type: 'Busy', message: 'Busy' }] }, 503),
+    )
+    await expect(
+      createTransport({ fetch: writeFetch }).request(write, { title: 'Next' }),
+    ).rejects.toBeInstanceOf(TransportError)
     expect(writeFetch).toHaveBeenCalledOnce()
   })
 
@@ -95,14 +113,16 @@ describe('transport', () => {
     vi.useFakeTimers()
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(response(
-        { errors: [{ type: 'RateLimitExceededError', message: 'Wait' }] },
-        429,
-        { 'Retry-After': '2' },
-      ))
+      .mockResolvedValueOnce(
+        response({ errors: [{ type: 'RateLimitExceededError', message: 'Wait' }] }, 429, {
+          'Retry-After': '2',
+        }),
+      )
       .mockResolvedValueOnce(response({ data: { name: 'n1' } }))
-    const pending = createTransport({ fetch: fetcher, maxRetries: 1, retryBaseMs: 1 })
-      .request(getNode, { node: 'n1' })
+    const pending = createTransport({ fetch: fetcher, maxRetries: 1, retryBaseMs: 1 }).request(
+      getNode,
+      { node: 'n1' },
+    )
 
     await vi.advanceTimersByTimeAsync(1_999)
     expect(fetcher).toHaveBeenCalledOnce()
@@ -113,12 +133,19 @@ describe('transport', () => {
 
   it('tells a refused write how long Retry-After asks it to wait', async () => {
     const unlock: Operation<{ password: string }, unknown> = {
-      id: 'link_unlock', owner: 'drive', method: 'POST', path: 'links/t/unlock',
+      id: 'link_unlock',
+      owner: 'drive',
+      method: 'POST',
+      path: 'links/t/unlock',
     }
     const fetcher = vi.fn<typeof fetch>(async () =>
-      response({ errors: [{ type: 'RateLimitExceededError', message: 'Wait' }] }, 429, { 'Retry-After': '872' }),
+      response({ errors: [{ type: 'RateLimitExceededError', message: 'Wait' }] }, 429, {
+        'Retry-After': '872',
+      }),
     )
-    const failure = await createTransport({ fetch: fetcher }).request(unlock, { password: 'x' }).catch((error) => error)
+    const failure = await createTransport({ fetch: fetcher })
+      .request(unlock, { password: 'x' })
+      .catch((error) => error)
     expect(failure).toMatchObject({ status: 429, retryAfterMs: 872_000 })
     expect(fetcher).toHaveBeenCalledOnce()
   })
@@ -137,15 +164,23 @@ describe('transport', () => {
 
   it('reports SessionExpired once and preserves typed error details', async () => {
     const expired = vi.fn()
-    const fetcher = vi.fn<typeof fetch>(async () => response({
-      errors: [{ type: 'SessionExpired', message: 'Sign in again', redirect: '/login' }],
-    }, 401))
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      response(
+        {
+          errors: [{ type: 'SessionExpired', message: 'Sign in again', redirect: '/login' }],
+        },
+        401,
+      ),
+    )
     const client = createTransport({ fetch: fetcher, onSessionExpired: expired })
 
     const failure = await client.request(getNode, { node: 'n1' }).catch((error) => error)
     expect(failure).toBeInstanceOf(TransportError)
     expect(failure).toMatchObject({
-      name: 'TransportError', type: 'SessionExpired', message: 'Sign in again', status: 401,
+      name: 'TransportError',
+      type: 'SessionExpired',
+      message: 'Sign in again',
+      status: 401,
       details: { redirect: '/login' },
     })
     expect(expired).toHaveBeenCalledOnce()
@@ -158,9 +193,14 @@ describe('transport', () => {
     const given = Array.from({ length: 24 }, (_, index) => `c${index}`).join(',')
 
     await client.request(getNode, { node: 'n1' }, { headers: { 'X-Drive-Links': given } })
-    await client.request({ ...getNode, scope: () => ({ headers: { 'X-Drive-Links': 'scoped' } }) }, { node: 'n1' })
+    await client.request(
+      { ...getNode, scope: () => ({ headers: { 'X-Drive-Links': 'scoped' } }) },
+      { node: 'n1' },
+    )
 
-    const sent = fetcher.mock.calls.map(([, init]) => new Headers(init?.headers).get('X-Drive-Links'))
+    const sent = fetcher.mock.calls.map(([, init]) =>
+      new Headers(init?.headers).get('X-Drive-Links'),
+    )
     expect(sent).toEqual([given, 'scoped'])
   })
 
@@ -174,7 +214,9 @@ describe('transport', () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(response({ errors: [{ type: 'Busy', message: 'Busy' }] }, 503))
       .mockResolvedValueOnce(response({ data: { name: 'n1' } }))
-      .mockResolvedValueOnce(response({ errors: [{ type: 'DriveLinkExpired', message: 'Expired' }] }, 410))
+      .mockResolvedValueOnce(
+        response({ errors: [{ type: 'DriveLinkExpired', message: 'Expired' }] }, 410),
+      )
     const client = createTransport({ fetch: fetcher, maxRetries: 1, retryBaseMs: 0 })
 
     await client.request(scoped, { node: 'n1' })
@@ -194,7 +236,9 @@ describe('transport', () => {
         throw new TransportError({ type: 'Refused', message: 'Too many', status: 0 })
       },
     }
-    await expect(createTransport({ fetch: fetcher }).request(refusing, { node: 'n1' })).rejects.toMatchObject({
+    await expect(
+      createTransport({ fetch: fetcher }).request(refusing, { node: 'n1' }),
+    ).rejects.toMatchObject({
       type: 'Refused',
     })
     expect(fetcher).not.toHaveBeenCalled()
@@ -204,7 +248,9 @@ describe('transport', () => {
     const client = createTransport({
       fetch: (_url, init) =>
         new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          )
         }),
     })
     const controller = new AbortController()

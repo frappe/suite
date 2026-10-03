@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createGuestCommentName } from './guestName'
-import { createLinkStore } from './links'
 import { createSession } from '@/platform/session'
 import type { Transport } from '@/platform/transport'
+
+import { createGuestCommentName } from './guestName'
+import { createLinkStore } from './links'
 
 /** A guest's browser: a link store on `localStorage` and a session nobody signed in to. */
 function browser() {

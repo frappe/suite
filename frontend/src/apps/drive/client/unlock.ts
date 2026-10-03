@@ -1,7 +1,13 @@
+import {
+  transport as defaultTransport,
+  TransportError,
+  type PlatformError,
+  type Transport,
+} from '@/platform/transport'
+
 import { api } from './generated'
 import { driveLinks, type LinkStore } from './links'
 import { driveOperation } from './operation'
-import { TransportError, transport as defaultTransport, type PlatformError, type Transport } from '@/platform/transport'
 
 /**
  * Opens a password link for one node (spec §10.2, Drive §6.3).
@@ -40,13 +46,17 @@ export async function unlockNode(
   // Only a link this browser holds can lock a node, so a missing code means it was forgotten.
   if (!token) return { status: 'failed', message: 'Open the share link again.' }
   try {
-    const { ticket } = await (dependencies.transport ?? defaultTransport).request(unlockOperation, { token, password })
+    const { ticket } = await (dependencies.transport ?? defaultTransport).request(unlockOperation, {
+      token,
+      password,
+    })
     links.unlock(token, ticket)
     return { status: 'unlocked' }
   } catch (error) {
     if (!(error instanceof TransportError)) throw error
     if (error.status === 401 && error.type === 'DriveLocked') return { status: 'wrong-password' }
-    if (error.status === 429) return { status: 'locked-out', retryAfterMs: error.retryAfterMs ?? LOCKOUT_MS }
+    if (error.status === 429)
+      return { status: 'locked-out', retryAfterMs: error.retryAfterMs ?? LOCKOUT_MS }
     return { status: 'failed', message: error.message }
   }
 }
@@ -58,7 +68,10 @@ const nodeGet = driveOperation<{ node: string }, unknown>(api.node_get, { entity
  * when an unlock ticket expires while someone browses. Any other answer,
  * success included, is `false`.
  */
-export async function isDriveNodeLocked(node: string, transport: Transport = defaultTransport): Promise<boolean> {
+export async function isDriveNodeLocked(
+  node: string,
+  transport: Transport = defaultTransport,
+): Promise<boolean> {
   try {
     await transport.request(nodeGet, { node })
     return false

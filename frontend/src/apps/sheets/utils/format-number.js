@@ -22,7 +22,8 @@ export function parseNumberFmt(fmt) {
   // Custom patterns carry a raw Excel-style string that may itself contain ':'
   // (e.g. a time mask), so they're kept whole rather than split on ':'.
   const s = String(fmt)
-  if (s.startsWith('custom:')) return { type: 'custom', pattern: s.slice(7), variant: '', decimals: null }
+  if (s.startsWith('custom:'))
+    return { type: 'custom', pattern: s.slice(7), variant: '', decimals: null }
   const parts = s.split(':')
   const type = parts[0]
   let variant = ''
@@ -44,8 +45,8 @@ export function buildNumberFmt(type, variant, decimals) {
   const hasV = !!variant
   const hasD = decimals != null
   if (hasV && hasD) return `${type}:${variant}:${decimals}`
-  if (hasV)        return `${type}:${variant}`
-  if (hasD)        return `${type}:${decimals}`
+  if (hasV) return `${type}:${variant}`
+  if (hasD) return `${type}:${decimals}`
   return type
 }
 
@@ -54,22 +55,22 @@ export function buildNumberFmt(type, variant, decimals) {
 // rest are 2 by default. Keep this list short on purpose; "More currencies"
 // can be a follow-up.
 export const CURRENCIES = {
-  USD: { symbol: '$',  locale: 'en-US', defaultDecimals: 2 },
-  EUR: { symbol: '€',  locale: 'de-DE', defaultDecimals: 2 },
-  GBP: { symbol: '£',  locale: 'en-GB', defaultDecimals: 2 },
-  INR: { symbol: '₹',  locale: 'en-IN', defaultDecimals: 2 },
-  JPY: { symbol: '¥',  locale: 'ja-JP', defaultDecimals: 0 },
+  USD: { symbol: '$', locale: 'en-US', defaultDecimals: 2 },
+  EUR: { symbol: '€', locale: 'de-DE', defaultDecimals: 2 },
+  GBP: { symbol: '£', locale: 'en-GB', defaultDecimals: 2 },
+  INR: { symbol: '₹', locale: 'en-IN', defaultDecimals: 2 },
+  JPY: { symbol: '¥', locale: 'ja-JP', defaultDecimals: 0 },
   CAD: { symbol: 'C$', locale: 'en-CA', defaultDecimals: 2 },
   AUD: { symbol: 'A$', locale: 'en-AU', defaultDecimals: 2 },
-  CNY: { symbol: '¥',  locale: 'zh-CN', defaultDecimals: 2 },
+  CNY: { symbol: '¥', locale: 'zh-CN', defaultDecimals: 2 },
 }
 
 // Number variant → locale used by Intl.NumberFormat. 'in' gives the Indian
 // lakhs/crores grouping (12,34,56,789). '' means user-default locale.
 const NUMBER_LOCALES = {
-  '':   undefined,
-  'us': 'en-US',
-  'in': 'en-IN',
+  '': undefined,
+  us: 'en-US',
+  in: 'en-IN',
 }
 
 // Date variants. Each maps to a (locale, Intl.DateTimeFormat options) pair.
@@ -77,19 +78,19 @@ const NUMBER_LOCALES = {
 // Locales are pinned so the *shape* is stable across machines; users who want
 // browser-locale output can stay on the default.
 const DATE_FORMATTERS = {
-  dmy:  ['en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }],   // 15/01/2025
-  mdy:  ['en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }],   // 01/15/2025
-  ymd:  ['en-CA', { day: '2-digit', month: '2-digit', year: 'numeric' }],   // 2025-01-15
-  long: ['en-GB', { day: 'numeric', month: 'short', year: 'numeric' }],     // 15 Jan 2025
+  dmy: ['en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }], // 15/01/2025
+  mdy: ['en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }], // 01/15/2025
+  ymd: ['en-CA', { day: '2-digit', month: '2-digit', year: 'numeric' }], // 2025-01-15
+  long: ['en-GB', { day: 'numeric', month: 'short', year: 'numeric' }], // 15 Jan 2025
   full: ['en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }], // Mon, 15 Jan 2025
 }
 
 // Time variants. `12` suffix flips to 12-hour clock with AM/PM.
 const TIME_FORMATTERS = {
-  hm:    ['en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }], // 15:30
-  hms:   ['en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }], // 15:30:45
-  hm12:  ['en-US', { hour: 'numeric', minute: '2-digit', hour12: true }],  // 3:30 PM
-  hms12: ['en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }],  // 3:30:45 PM
+  hm: ['en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }], // 15:30
+  hms: ['en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }], // 15:30:45
+  hm12: ['en-US', { hour: 'numeric', minute: '2-digit', hour12: true }], // 3:30 PM
+  hms12: ['en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }], // 3:30:45 PM
 }
 
 // Intl formatters are *expensive* to construct (~1 ms each on V8) and a
@@ -102,7 +103,10 @@ function _numFmt(locale, decimals) {
   const key = `n|${locale ?? '_'}|${decimals ?? '_'}`
   let f = _intlCache.get(key)
   if (!f) {
-    const opts = decimals == null ? undefined : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }
+    const opts =
+      decimals == null
+        ? undefined
+        : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }
     f = new Intl.NumberFormat(locale, opts)
     _intlCache.set(key, f)
   }
@@ -113,7 +117,12 @@ function _curFmt(locale, currency, decimals) {
   const key = `c|${locale}|${currency}|${decimals}`
   let f = _intlCache.get(key)
   if (!f) {
-    f = new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+    f = new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
     _intlCache.set(key, f)
   }
   return f
@@ -177,8 +186,8 @@ export function applyNumberFmt(value, format) {
   }
   if (type === 'currency') {
     const code = CURRENCIES[variant] ? variant : 'USD'
-    const cfg  = CURRENCIES[code]
-    const d    = decimals ?? cfg.defaultDecimals
+    const cfg = CURRENCIES[code]
+    const d = decimals ?? cfg.defaultDecimals
     return _curFmt(cfg.locale, code, d).format(n)
   }
   if (type === 'percentage') return (n * 100).toFixed(decimals ?? 2) + '%'
@@ -232,21 +241,29 @@ function applyCustomFmt(value, pattern) {
 // counting '%' signs (each scales the value by 100). Quotes and `\` escape
 // literals so a stray '0' or '#' inside text isn't treated as a placeholder.
 function _parseCustomPattern(pattern) {
-  let prefix = '', numSpec = '', suffix = '', percent = 0
-  let state = 'pre'   // pre → num → post
+  let prefix = '',
+    numSpec = '',
+    suffix = '',
+    percent = 0
+  let state = 'pre' // pre → num → post
   for (let i = 0; i < pattern.length; i++) {
     const ch = pattern[i]
     let lit
     if (ch === '"') {
-      let s = ''; i++
+      let s = ''
+      i++
       while (i < pattern.length && pattern[i] !== '"') s += pattern[i++]
       lit = s
     } else if (ch === '\\') {
-      lit = pattern[i + 1] ?? ''; i++
+      lit = pattern[i + 1] ?? ''
+      i++
     } else if ('0#,.'.includes(ch) && state !== 'post') {
-      state = 'num'; numSpec += ch; continue
+      state = 'num'
+      numSpec += ch
+      continue
     } else if (ch === '%') {
-      percent++; lit = '%'
+      percent++
+      lit = '%'
     } else {
       lit = ch
     }
@@ -262,18 +279,18 @@ function _parseCustomPattern(pattern) {
 function _renderNumSpec(n, spec) {
   n = Math.abs(n)
   const dot = spec.indexOf('.')
-  const intSpec  = dot === -1 ? spec : spec.slice(0, dot)
-  const fracSpec = dot === -1 ? ''   : spec.slice(dot + 1)
+  const intSpec = dot === -1 ? spec : spec.slice(0, dot)
+  const fracSpec = dot === -1 ? '' : spec.slice(dot + 1)
   const grouping = intSpec.includes(',')
-  const minInt   = (intSpec.match(/0/g) || []).length
-  const minFrac  = (fracSpec.match(/0/g) || []).length
-  const maxFrac  = (fracSpec.match(/[0#]/g) || []).length
+  const minInt = (intSpec.match(/0/g) || []).length
+  const minFrac = (fracSpec.match(/0/g) || []).length
+  const maxFrac = (fracSpec.match(/[0#]/g) || []).length
 
   let [ip, fp = ''] = n.toFixed(maxFrac).split('.')
-  while (fp.length > minFrac && fp.endsWith('0')) fp = fp.slice(0, -1)  // drop optional trailing zeros
+  while (fp.length > minFrac && fp.endsWith('0')) fp = fp.slice(0, -1) // drop optional trailing zeros
   if (fp.length < minFrac) fp = fp.padEnd(minFrac, '0')
   if (ip.length < minInt) ip = ip.padStart(minInt, '0')
-  else if (ip === '0' && minInt === 0) ip = ''                          // `#.##` on 0.5 → ".5"
+  else if (ip === '0' && minInt === 0) ip = '' // `#.##` on 0.5 → ".5"
   if (grouping) ip = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
   return fp.length ? `${ip}.${fp}` : ip

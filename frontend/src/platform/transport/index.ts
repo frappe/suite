@@ -7,7 +7,10 @@ export interface PlatformError<Type extends string = string> {
   [key: string]: unknown
 }
 
-export class TransportError<Type extends string = string> extends Error implements PlatformError<Type> {
+export class TransportError<Type extends string = string>
+  extends Error
+  implements PlatformError<Type>
+{
   [key: string]: unknown
   readonly type: Type
   readonly status: number
@@ -65,8 +68,7 @@ export interface RequestScope<Output = unknown> {
 }
 
 export type RequestOutcome<Output = unknown> =
-  | { ok: true; output: Output }
-  | { ok: false; error: TransportError }
+  { ok: true; output: Output } | { ok: false; error: TransportError }
 
 export interface TransportOptions {
   signal?: AbortSignal
@@ -148,7 +150,13 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         } catch (cause) {
           if (isAbort(cause)) throw cause
           if (operation.method !== 'GET' || attempt >= maxRetries) {
-            throw failed(new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 }))
+            throw failed(
+              new TransportError({
+                type: 'NetworkError',
+                message: networkMessage(cause),
+                status: 0,
+              }),
+            )
           }
           await delay(retryBaseMs * 2 ** attempt, requestOptions.signal)
           attempt += 1
@@ -164,7 +172,8 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         }
 
         const error = decodeError(body, response.status, response.statusText)
-        const retryAfter = response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
+        const retryAfter =
+          response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
         if (retryAfter !== null) error.retryAfterMs = retryAfter
         if (error.type === 'SessionExpired') {
           options.onSessionExpired?.(error as PlatformError<'SessionExpired'>)
@@ -202,7 +211,10 @@ function buildUrl(operation: Operation, input: Record<string, unknown>): string 
   if (!path.startsWith('/')) path = `${operation.prefix ?? `/api/suite/${operation.owner}/`}${path}`
   if (operation.method === 'GET' || operation.body) {
     const query = new URLSearchParams()
-    const omitted = new Set([...(operation.pathParams ?? []), ...(operation.body ? [operation.body] : [])])
+    const omitted = new Set([
+      ...(operation.pathParams ?? []),
+      ...(operation.body ? [operation.body] : []),
+    ])
     for (const [key, value] of Object.entries(input)) appendQuery(query, key, value, omitted)
     const encoded = query.toString()
     if (encoded) path += `${path.includes('?') ? '&' : '?'}${encoded}`
@@ -224,14 +236,18 @@ function appendQuery(
   query.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value))
 }
 
-function withoutPathParams(input: Record<string, unknown>, pathParams: readonly string[]): Record<string, unknown> {
+function withoutPathParams(
+  input: Record<string, unknown>,
+  pathParams: readonly string[],
+): Record<string, unknown> {
   const omitted = new Set(pathParams)
   return Object.fromEntries(Object.entries(input).filter(([key]) => !omitted.has(key)))
 }
 
 function asRecord(input: unknown): Record<string, unknown> {
   if (input === undefined || input === null) return {}
-  if (typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Operation input must be an object')
+  if (typeof input !== 'object' || Array.isArray(input))
+    throw new TypeError('Operation input must be an object')
   return input as Record<string, unknown>
 }
 

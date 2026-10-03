@@ -27,22 +27,13 @@
     </PageHeaderMobile>
 
     <ScrollArea ref="home-scroll" class="min-h-0 flex-1">
-      <div
-        class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6"
-      >
+      <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
         <section aria-labelledby="home-recent-heading">
           <div class="flex items-center justify-between pb-3">
-            <h2
-              id="home-recent-heading"
-              class="text-lg font-medium text-ink-gray-9"
-            >
-              {{ __("Recent") }}
+            <h2 id="home-recent-heading" class="text-lg font-medium text-ink-gray-9">
+              {{ __('Recent') }}
             </h2>
-            <Button
-              :label="__('View all')"
-              route="/drive/recent"
-              variant="ghost"
-            />
+            <Button :label="__('View all')" route="/drive/recent" variant="ghost" />
           </div>
 
           <div
@@ -68,34 +59,20 @@
             data-testid="recent-error"
           >
             <p class="text-p-sm text-ink-red-7">
-              {{
-                recentQuery.error?.message || __("Could not load recent files.")
-              }}
+              {{ recentQuery.error?.message || __('Could not load recent files.') }}
             </p>
-            <Button
-              :label="__('Retry')"
-              variant="ghost"
-              @click="recentQuery.refetch()"
-            />
+            <Button :label="__('Retry')" variant="ghost" @click="recentQuery.refetch()" />
           </div>
           <div
             v-else-if="!recentRows.length"
             class="flex items-center justify-between rounded-5 border border-outline-gray-1 px-3 py-4"
           >
-            <p class="text-p-sm text-ink-gray-5">{{ __("Nothing yet") }}</p>
+            <p class="text-p-sm text-ink-gray-5">{{ __('Nothing yet') }}</p>
             <Dropdown :options="newMenuItems" align="end">
-              <Button
-                :label="__('New')"
-                icon-left="lucide-plus"
-                variant="ghost"
-              />
+              <Button :label="__('New')" icon-left="lucide-plus" variant="ghost" />
             </Dropdown>
           </div>
-          <div
-            v-else
-            class="grid grid-cols-2 gap-3 lg:grid-cols-4"
-            data-testid="recent-rows"
-          >
+          <div v-else class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="recent-rows">
             <DriveFileCard
               v-for="node in recentRows"
               :key="node.name"
@@ -111,7 +88,7 @@
             class="mt-3 flex items-center justify-between rounded-4 bg-surface-red-2 px-3 py-2"
           >
             <p class="text-p-sm text-ink-red-7">
-              {{ __("Recent files could not be refreshed.") }}
+              {{ __('Recent files could not be refreshed.') }}
             </p>
             <Button
               :label="__('Retry')"
@@ -124,11 +101,8 @@
 
         <section aria-labelledby="home-upcoming-heading">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-3">
-            <h2
-              id="home-upcoming-heading"
-              class="text-lg font-medium text-ink-gray-9"
-            >
-              {{ __("Upcoming") }}
+            <h2 id="home-upcoming-heading" class="text-lg font-medium text-ink-gray-9">
+              {{ __('Upcoming') }}
             </h2>
             <div class="flex items-center gap-1">
               <Dropdown :options="meetMenuItems" align="end">
@@ -140,17 +114,9 @@
                 />
               </Dropdown>
               <Dropdown :options="scheduleMenuItems" align="end">
-                <Button
-                  :label="__('Schedule')"
-                  icon-right="lucide-chevron-down"
-                  variant="ghost"
-                />
+                <Button :label="__('Schedule')" icon-right="lucide-chevron-down" variant="ghost" />
               </Dropdown>
-              <Button
-                :label="__('View all')"
-                route="/calendar"
-                variant="ghost"
-              />
+              <Button :label="__('View all')" route="/calendar" variant="ghost" />
             </div>
           </div>
 
@@ -162,46 +128,31 @@
             <Skeleton v-for="index in 3" :key="index" class="h-10 w-full" />
           </div>
           <div
-            v-else-if="
-              upcomingQuery.status === 'error' && !upcomingEvents.length
-            "
+            v-else-if="upcomingQuery.status === 'error' && !upcomingEvents.length"
             class="flex items-center justify-between rounded-5 border border-outline-gray-1 px-3 py-4"
             data-testid="upcoming-error"
           >
             <p class="text-p-sm text-ink-red-7">
-              {{
-                upcomingQuery.error?.message ||
-                __("Could not load upcoming events.")
-              }}
+              {{ upcomingQuery.error?.message || __('Could not load upcoming events.') }}
             </p>
-            <Button
-              :label="__('Retry')"
-              variant="ghost"
-              @click="upcomingQuery.refetch()"
-            />
+            <Button :label="__('Retry')" variant="ghost" @click="upcomingQuery.refetch()" />
           </div>
           <p
             v-else-if="!eventGroups.length"
             class="rounded-5 border border-outline-gray-1 px-3 py-8 text-center text-p-sm text-ink-gray-5"
           >
-            {{ __("Nothing scheduled") }}
+            {{ __('Nothing scheduled') }}
           </p>
           <List
             v-else
             class="-mx-3 list-row-px-3"
             :columns="
-              isMobile
-                ? ['5.5rem', 'minmax(0,1fr)', '4rem']
-                : ['7rem', 'minmax(0,1fr)', '5rem']
+              isMobile ? ['5.5rem', 'minmax(0,1fr)', '4rem'] : ['7rem', 'minmax(0,1fr)', '5rem']
             "
             :row-height="isMobile ? 48 : 40"
             data-testid="upcoming-rows"
           >
-            <ListGroup
-              v-for="group in eventGroups"
-              :key="group.day"
-              :label="__(group.day)"
-            >
+            <ListGroup v-for="group in eventGroups" :key="group.day" :label="__(group.day)">
               <ListRow
                 v-for="event in group.events"
                 :key="eventKey(event)"
@@ -214,7 +165,7 @@
                 </ListCell>
                 <ListCell>
                   <span class="truncate text-base text-ink-gray-8">
-                    {{ event.title || __("Untitled event") }}
+                    {{ event.title || __('Untitled event') }}
                   </span>
                 </ListCell>
                 <ListCell class="justify-end">
@@ -234,7 +185,7 @@
             class="mt-3 flex items-center justify-between rounded-4 bg-surface-red-2 px-3 py-2"
           >
             <p class="text-p-sm text-ink-red-7">
-              {{ __("Upcoming events could not be refreshed.") }}
+              {{ __('Upcoming events could not be refreshed.') }}
             </p>
             <Button
               :label="__('Retry')"
@@ -247,11 +198,7 @@
       </div>
     </ScrollArea>
 
-    <Dialog
-      v-model:open="joinDialogOpen"
-      :title="__('Join with code')"
-      size="sm"
-    >
+    <Dialog v-model:open="joinDialogOpen" :title="__('Join with code')" size="sm">
       <FormControl
         v-model="meetingCode"
         :error="meetingCodeError"
@@ -267,11 +214,7 @@
       </template>
     </Dialog>
 
-    <Dialog
-      v-model:open="scheduleDialogOpen"
-      :title="__('Schedule meeting')"
-      size="md"
-    >
+    <Dialog v-model:open="scheduleDialogOpen" :title="__('Schedule meeting')" size="md">
       <div class="space-y-4">
         <FormControl v-model="meetingTitle" :label="__('Title')" required />
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -281,12 +224,7 @@
             type="datetime-local"
             required
           />
-          <FormControl
-            v-model="meetingEnd"
-            :label="__('Ends')"
-            type="datetime-local"
-            required
-          />
+          <FormControl v-model="meetingEnd" :label="__('Ends')" type="datetime-local" required />
         </div>
         <p v-if="scheduleError" class="text-p-sm text-ink-red-7">
           {{ scheduleError }}
@@ -309,7 +247,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, useTemplateRef } from "vue";
 import {
   Button,
   Dialog,
@@ -321,14 +258,12 @@ import {
   ScrollArea,
   Skeleton,
   toast,
-} from "frappe-ui";
-import { List, ListCell, ListGroup, ListRow } from "frappe-ui/list";
-import { RouterLink, useRouter } from "vue-router";
+} from 'frappe-ui'
+import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
+import { computed, ref, useTemplateRef } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 
-import {
-  upcomingEvents as upcomingEventsDescriptor,
-  type CalendarEvent,
-} from "@/apps/calendar";
+import { upcomingEvents as upcomingEventsDescriptor, type CalendarEvent } from '@/apps/calendar'
 import {
   DriveFileCard,
   driveNodeRoute,
@@ -337,161 +272,147 @@ import {
   useDriveDocumentCreation,
   useDrivePreviewRefresh,
   type DriveNodeSummary,
-} from "@/apps/drive";
-import { createRoom, scheduleMeeting } from "@/apps/meet";
-import { documentTypes } from "@/composition/documentRegistry";
+} from '@/apps/drive'
+import { createRoom, scheduleMeeting } from '@/apps/meet'
+import { documentTypes } from '@/composition/documentRegistry'
 import {
   formatEventTime,
   groupHomeEvents,
   homeEventWindow,
   toLocalDateTimeInput,
-} from "@/composition/home/homeTime";
-import { useRestoredScroll } from "@/platform/scroll-restoration";
-import { useMutation, useQuery } from "@/platform/server-state";
-import { translate as __ } from "@/platform/translation";
-import { isMobile } from "@/shell/useIsMobile";
+} from '@/composition/home/homeTime'
+import { useRestoredScroll } from '@/platform/scroll-restoration'
+import { useMutation, useQuery } from '@/platform/server-state'
+import { translate as __ } from '@/platform/translation'
+import { isMobile } from '@/shell/useIsMobile'
 
-const router = useRouter();
-const scrollArea = useTemplateRef<InstanceType<typeof ScrollArea>>("home-scroll");
-useRestoredScroll(() => scrollArea.value?.viewportElement);
-const homeNow = new Date();
-const eventWindow = homeEventWindow(homeNow);
+const router = useRouter()
+const scrollArea = useTemplateRef<InstanceType<typeof ScrollArea>>('home-scroll')
+useRestoredScroll(() => scrollArea.value?.viewportElement)
+const homeNow = new Date()
+const eventWindow = homeEventWindow(homeNow)
 // Recent shows documents and files, not folders. Recents has no kind filter,
 // so ask for more than the grid holds and keep the first non-folders.
-const RECENT_CARDS = 12;
-const recentQuery = useQuery(driveRecents(RECENT_CARDS * 4));
+const RECENT_CARDS = 12
+const recentQuery = useQuery(driveRecents(RECENT_CARDS * 4))
 // Thumbnail URLs are signed and expire, so Recent refetches them as Drive's grid does.
-useDrivePreviewRefresh(() => recentQuery.refetch());
-const upcomingQuery = useQuery(upcomingEventsDescriptor(eventWindow));
-const createDocumentMutation = useDriveDocumentCreation();
-const createRoomMutation = useMutation(createRoom);
-const scheduleMeetingMutation = useMutation(scheduleMeeting);
+useDrivePreviewRefresh(() => recentQuery.refetch())
+const upcomingQuery = useQuery(upcomingEventsDescriptor(eventWindow))
+const createDocumentMutation = useDriveDocumentCreation()
+const createRoomMutation = useMutation(createRoom)
+const scheduleMeetingMutation = useMutation(scheduleMeeting)
 
 const recentRows = computed(() =>
   (recentQuery.rows as DriveNodeSummary[])
-    .filter((node) => node.kind !== "folder")
+    .filter((node) => node.kind !== 'folder')
     .slice(0, RECENT_CARDS),
-);
-const upcomingEvents = computed(
-  () => (upcomingQuery.data ?? []) as CalendarEvent[],
-);
-const eventGroups = computed(() =>
-  groupHomeEvents(upcomingEvents.value, homeNow),
-);
+)
+const upcomingEvents = computed(() => (upcomingQuery.data ?? []) as CalendarEvent[])
+const eventGroups = computed(() => groupHomeEvents(upcomingEvents.value, homeNow))
 
-const joinDialogOpen = ref(false);
-const meetingCode = ref("");
-const meetingCodeError = ref("");
-const scheduleDialogOpen = ref(false);
-const nextHour = new Date(homeNow);
-nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
-const meetingTitle = ref("");
-const meetingStart = ref(toLocalDateTimeInput(nextHour));
-const meetingEnd = ref(
-  toLocalDateTimeInput(new Date(nextHour.getTime() + 60 * 60_000)),
-);
-const scheduleError = ref("");
+const joinDialogOpen = ref(false)
+const meetingCode = ref('')
+const meetingCodeError = ref('')
+const scheduleDialogOpen = ref(false)
+const nextHour = new Date(homeNow)
+nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0)
+const meetingTitle = ref('')
+const meetingStart = ref(toLocalDateTimeInput(nextHour))
+const meetingEnd = ref(toLocalDateTimeInput(new Date(nextHour.getTime() + 60 * 60_000)))
+const scheduleError = ref('')
 
 const newMenuItems = documentTypes.map((definition) => ({
   label: definition.newLabel(),
   icon: definition.icon,
   onClick: () => createDocument(definition.contentDoctype),
-}));
+}))
 
 const meetMenuItems = [
   {
-    label: __("Start instant meeting"),
-    icon: "lucide-zap",
-    onClick: () => startMeeting("open"),
+    label: __('Start instant meeting'),
+    icon: 'lucide-zap',
+    onClick: () => startMeeting('open'),
   },
   {
-    label: __("Start restricted meeting"),
-    icon: "lucide-lock",
-    onClick: () => startMeeting("restricted"),
+    label: __('Start restricted meeting'),
+    icon: 'lucide-lock',
+    onClick: () => startMeeting('restricted'),
   },
   {
-    label: __("Join with code"),
-    icon: "lucide-log-in",
+    label: __('Join with code'),
+    icon: 'lucide-log-in',
     onClick: () => {
-      meetingCodeError.value = "";
-      joinDialogOpen.value = true;
+      meetingCodeError.value = ''
+      joinDialogOpen.value = true
     },
   },
-];
+]
 
 const scheduleMenuItems = [
   {
-    label: __("Event"),
-    icon: "lucide-calendar-plus",
-    onClick: () => router.push("/calendar"),
+    label: __('Event'),
+    icon: 'lucide-calendar-plus',
+    onClick: () => router.push('/calendar'),
   },
   {
-    label: __("Meeting"),
-    icon: "lucide-video",
+    label: __('Meeting'),
+    icon: 'lucide-video',
     onClick: () => {
-      scheduleError.value = "";
-      scheduleDialogOpen.value = true;
+      scheduleError.value = ''
+      scheduleDialogOpen.value = true
     },
   },
-];
+]
 
 async function createDocument(contentDoctype: string) {
   const node = await createDocumentMutation.run({
     content_doctype: contentDoctype,
-  });
-  if (node) await router.push(driveNodeRoute(node));
+  })
+  if (node) await router.push(driveNodeRoute(node))
 }
 
-async function startMeeting(type: "open" | "restricted") {
-  const room = await createRoomMutation.run({ type });
-  if (room) await router.push(meetRoute(room.code));
+async function startMeeting(type: 'open' | 'restricted') {
+  const room = await createRoomMutation.run({ type })
+  if (room) await router.push(meetRoute(room.code))
 }
 
 function joinWithCode() {
-  const code = meetingCode.value.trim();
-  meetingCodeError.value = "";
+  const code = meetingCode.value.trim()
+  meetingCodeError.value = ''
   if (!/^[a-zA-Z0-9]{4}(?:-[a-zA-Z0-9]{4}){2}$/.test(code)) {
-    meetingCodeError.value = __("Enter a valid meeting code.");
-    return;
+    meetingCodeError.value = __('Enter a valid meeting code.')
+    return
   }
-  joinDialogOpen.value = false;
-  void router.push(meetRoute(code));
+  joinDialogOpen.value = false
+  void router.push(meetRoute(code))
 }
 
 async function submitScheduledMeeting() {
-  scheduleError.value = "";
-  const start = new Date(meetingStart.value);
-  const end = new Date(meetingEnd.value);
-  if (
-    !meetingTitle.value.trim() ||
-    Number.isNaN(start.getTime()) ||
-    end <= start
-  ) {
-    scheduleError.value = __(
-      "Enter a title and an end time after the start time.",
-    );
-    return;
+  scheduleError.value = ''
+  const start = new Date(meetingStart.value)
+  const end = new Date(meetingEnd.value)
+  if (!meetingTitle.value.trim() || Number.isNaN(start.getTime()) || end <= start) {
+    scheduleError.value = __('Enter a title and an end time after the start time.')
+    return
   }
   const result = await scheduleMeetingMutation.run({
     title: meetingTitle.value.trim(),
     start: start.toISOString(),
     end: end.toISOString(),
     attendees: [],
-  });
-  if (!result) return;
-  scheduleDialogOpen.value = false;
-  meetingTitle.value = "";
-  toast.success(__("Meeting scheduled."));
-  await upcomingQuery.refetch();
+  })
+  if (!result) return
+  scheduleDialogOpen.value = false
+  meetingTitle.value = ''
+  toast.success(__('Meeting scheduled.'))
+  await upcomingQuery.refetch()
 }
 
 function meetRoute(code: string): string {
-  return `/meet/${encodeURIComponent(code)}`;
+  return `/meet/${encodeURIComponent(code)}`
 }
 
 function eventKey(event: CalendarEvent): string {
-  return String(
-    event.id ?? event.name ?? event.uid ?? `${event.start}-${event.title}`,
-  );
+  return String(event.id ?? event.name ?? event.uid ?? `${event.start}-${event.title}`)
 }
 </script>

@@ -1,9 +1,11 @@
-import fileSaver from 'file-saver'
 import {
   AlignmentType,
   BorderStyle,
+  convertInchesToTwip,
   Document,
   ExternalHyperlink,
+  HorizontalPositionAlign,
+  HorizontalPositionRelativeFrom,
   ImageRun,
   LevelFormat,
   Packer,
@@ -14,16 +16,15 @@ import {
   TableLayoutType,
   TableRow,
   TextRun,
-  WidthType,
-  convertInchesToTwip,
-  HorizontalPositionAlign,
-  HorizontalPositionRelativeFrom,
+  TextWrappingSide,
+  TextWrappingType,
+  VerticalAlign,
   VerticalPositionAlign,
   VerticalPositionRelativeFrom,
-  TextWrappingType,
-  TextWrappingSide,
-  VerticalAlign,
+  WidthType,
 } from 'docx'
+import fileSaver from 'file-saver'
+
 import { pxToTwips, toDocxLine } from '@/apps/writer/utils/typography'
 
 const CELL_PADDING = 240
@@ -113,8 +114,22 @@ const HEADING_SIZES = { h1: 40, h2: 36, h3: 32, h4: 28, h5: 26, h6: 24 }
 // Block-level tags a generic wrapper (tab/div/section from pasted or future
 // nodes) might contain; anything else is treated as an inline-only leaf.
 const BLOCK_TAGS = new Set([
-  'DIV', 'P', 'UL', 'OL', 'TABLE', 'BLOCKQUOTE', 'PRE',
-  'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'VIDEO', 'IFRAME',
+  'DIV',
+  'P',
+  'UL',
+  'OL',
+  'TABLE',
+  'BLOCKQUOTE',
+  'PRE',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'HR',
+  'VIDEO',
+  'IFRAME',
 ])
 
 export function cssColorToDocx(c) {
@@ -189,7 +204,9 @@ const IMAGE_SIGNATURES = [
 ]
 
 export function imageType(data) {
-  const match = IMAGE_SIGNATURES.find(([, signature]) => signature.every((byte, i) => data[i] === byte))
+  const match = IMAGE_SIGNATURES.find(([, signature]) =>
+    signature.every((byte, i) => data[i] === byte),
+  )
   return match ? match[0] : null
 }
 
@@ -385,7 +402,9 @@ async function headingFromHx(hx, ctx) {
   return new Paragraph({
     alignment: resolveAlignment(hx),
     spacing: { before: 240, after: 120 },
-    children: runs.length ? runs : [new TextRun({ text: '', bold: true, size, font: ctx.defaultFont })],
+    children: runs.length
+      ? runs
+      : [new TextRun({ text: '', bold: true, size, font: ctx.defaultFont })],
   })
 }
 
@@ -402,7 +421,10 @@ export function buildListLevels(reference, kind, defaultFont) {
   const levels = []
   for (let level = 0; level <= MAX_LIST_LEVEL; level++) {
     const indent = { left: 720 * (level + 1), hanging: 360 }
-    const style = { paragraph: { indent, spacing: { before: 0, after: 0 } }, run: { font: defaultFont, size: 28 } }
+    const style = {
+      paragraph: { indent, spacing: { before: 0, after: 0 } },
+      run: { font: defaultFont, size: 28 },
+    }
     if (kind === 'bullets') {
       levels.push({
         level,
@@ -413,7 +435,13 @@ export function buildListLevels(reference, kind, defaultFont) {
       })
     } else {
       const spec = ORDERED_LEVELS[level % ORDERED_LEVELS.length]
-      levels.push({ level, format: spec.format, text: spec.text, alignment: AlignmentType.LEFT, style })
+      levels.push({
+        level,
+        format: spec.format,
+        text: spec.text,
+        alignment: AlignmentType.LEFT,
+        style,
+      })
     }
   }
   return { reference, levels }
@@ -610,7 +638,9 @@ function paragraphFromCodeBlock(el, _ctx) {
 function dividerParagraph(ctx) {
   return new Paragraph({
     spacing: { before: 240, after: 240 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: COLOR_MAP['var(--outline-gray-2)'] } },
+    border: {
+      bottom: { style: BorderStyle.SINGLE, size: 6, color: COLOR_MAP['var(--outline-gray-2)'] },
+    },
     children: [new TextRun({ text: '', font: ctx.defaultFont })],
   })
 }
@@ -653,7 +683,14 @@ function blockForIframe(el, ctx) {
     children: [
       new ExternalHyperlink({
         link: href,
-        children: [new TextRun({ text: title, color: HYPERLINK_COLOR, underline: {}, font: ctx.defaultFont })],
+        children: [
+          new TextRun({
+            text: title,
+            color: HYPERLINK_COLOR,
+            underline: {},
+            font: ctx.defaultFont,
+          }),
+        ],
       }),
     ],
   })
@@ -691,7 +728,8 @@ async function imageParagraph(el, ctx) {
           floating: {
             horizontalPosition: {
               relative: HorizontalPositionRelativeFrom.MARGIN,
-              align: floatAttr === 'left' ? HorizontalPositionAlign.LEFT : HorizontalPositionAlign.RIGHT,
+              align:
+                floatAttr === 'left' ? HorizontalPositionAlign.LEFT : HorizontalPositionAlign.RIGHT,
             },
             verticalPosition: {
               relative: VerticalPositionRelativeFrom.PARAGRAPH,
@@ -700,7 +738,12 @@ async function imageParagraph(el, ctx) {
             wrap: {
               type: TextWrappingType.SQUARE,
               side: TextWrappingSide.BOTH_SIDES,
-              margin: { top: CELL_PADDING, bottom: CELL_PADDING, left: CELL_PADDING, right: CELL_PADDING },
+              margin: {
+                top: CELL_PADDING,
+                bottom: CELL_PADDING,
+                left: CELL_PADDING,
+                right: CELL_PADDING,
+              },
             },
           },
         }),
@@ -710,7 +753,11 @@ async function imageParagraph(el, ctx) {
 
   const alignAttr = (el.getAttribute('data-align') || 'center').toLowerCase()
   const alignment =
-    alignAttr === 'left' ? AlignmentType.LEFT : alignAttr === 'right' ? AlignmentType.RIGHT : AlignmentType.CENTER
+    alignAttr === 'left'
+      ? AlignmentType.LEFT
+      : alignAttr === 'right'
+        ? AlignmentType.RIGHT
+        : AlignmentType.CENTER
 
   return new Paragraph({
     alignment,
@@ -766,7 +813,11 @@ async function blocksForImageGroup(el, ctx) {
     }
     while (cells.length < cols) {
       cells.push(
-        new TableCell({ children: [emptyParagraph(ctx)], borders: noBorders, width: { size: cellDxa, type: WidthType.DXA } }),
+        new TableCell({
+          children: [emptyParagraph(ctx)],
+          borders: noBorders,
+          width: { size: cellDxa, type: WidthType.DXA },
+        }),
       )
     }
     rows.push(new TableRow({ children: cells }))
@@ -838,13 +889,18 @@ async function tableFromTABLE(tbl, ctx) {
   const headerFill = COLOR_MAP['var(--surface-gray-2)']
   const numberingConfigs = []
 
-  const trs = Array.from(tbl.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr'))
+  const trs = Array.from(
+    tbl.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr'),
+  )
   let totalCols = 0
   trs.forEach((tr) => (totalCols = Math.max(totalCols, countCols(tr))))
   if (!totalCols) totalCols = 1
 
   const columnWidths = computeColumnWidths(trs, totalCols, ctx.tableWidthDxa)
-  const cellCtx = { ...ctx, contentWidthPx: Math.max(40, Math.floor(ctx.tableWidthDxa / totalCols / 15) - 20) }
+  const cellCtx = {
+    ...ctx,
+    contentWidthPx: Math.max(40, Math.floor(ctx.tableWidthDxa / totalCols / 15) - 20),
+  }
 
   const borders = {
     top: { style: BorderStyle.SINGLE, size: 8, color: borderColor },
@@ -886,7 +942,12 @@ async function tableFromTABLE(tbl, ctx) {
         new TableCell({
           children: paras,
           borders,
-          margins: { top: CELL_PADDING, bottom: CELL_PADDING, left: CELL_PADDING, right: CELL_PADDING },
+          margins: {
+            top: CELL_PADDING,
+            bottom: CELL_PADDING,
+            left: CELL_PADDING,
+            right: CELL_PADDING,
+          },
           verticalAlign: VerticalAlign.CENTER,
           shading: bg ? { fill: bg } : isHeader ? { fill: headerFill } : undefined,
           columnSpan: colSpan > 1 ? colSpan : undefined,
@@ -981,7 +1042,12 @@ async function blocksFromNodes(nodeList, ctx) {
 /** Without a caller's fetch, a picture is taken from its `src` as the browser would. */
 const fetchBySrc = (img) => fetch(img.getAttribute('src'))
 
-export async function downloadDocxFromHtml(html, filename, settings = {}, fetchPicture = fetchBySrc) {
+export async function downloadDocxFromHtml(
+  html,
+  filename,
+  settings = {},
+  fetchPicture = fetchBySrc,
+) {
   const fontSetting = settings?.font_family || settings?.fontFamily
 
   const fontMap = {
@@ -1040,7 +1106,12 @@ export async function downloadDocxFromHtml(html, filename, settings = {}, fetchP
           pageBreakBefore: index > 0,
           spacing: { before: 0, after: 200 },
           children: [
-            new TextRun({ text: tab.getAttribute('data-tab-label') || 'Untitled', bold: true, size: 40, font: defaultFont }),
+            new TextRun({
+              text: tab.getAttribute('data-tab-label') || 'Untitled',
+              bold: true,
+              size: 40,
+              font: defaultFont,
+            }),
           ],
         }),
       )

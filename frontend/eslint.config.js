@@ -6,10 +6,7 @@
 // runs that one rule on its own against a baseline, so untranslated text is
 // tracked as a shrinking count rather than failing every legacy file at once.
 
-import {
-  defineConfigWithVueTs,
-  vueTsConfigs,
-} from '@vue/eslint-config-typescript'
+import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
 import prettier from 'eslint-config-prettier'
 import pluginVue from 'eslint-plugin-vue'
 import globals from 'globals'

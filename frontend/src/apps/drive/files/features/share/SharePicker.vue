@@ -17,7 +17,12 @@
         @update:open="onOpen"
         @update:model-value="pick"
       />
-      <Select v-model="role" class="w-28 shrink-0" :options="roleOptions" aria-label="Role for people you add" />
+      <Select
+        v-model="role"
+        class="w-28 shrink-0"
+        :options="roleOptions"
+        aria-label="Role for people you add"
+      />
     </div>
 
     <!-- People picked wait here, so Notify can be chosen before anyone is added (§7.8). -->
@@ -28,7 +33,13 @@
           :key="person.principal"
           class="flex h-7 min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-gray-2 pl-2.5 pr-0.5 text-sm text-ink-gray-8"
         >
-          <span :class="[person.kind === 'group' ? 'lucide-users' : 'lucide-user', 'size-3.5 shrink-0 text-ink-gray-5']" aria-hidden="true" />
+          <span
+            :class="[
+              person.kind === 'group' ? 'lucide-users' : 'lucide-user',
+              'size-3.5 shrink-0 text-ink-gray-5',
+            ]"
+            aria-hidden="true"
+          />
           <span class="truncate">{{ person.label }}</span>
           <Button
             icon="lucide-x"
@@ -42,7 +53,13 @@
         </li>
       </ul>
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <Checkbox v-if="staged.some((person) => person.kind === 'user')" v-model="notify" class="mr-auto" label="Notify by email" size="sm" />
+        <Checkbox
+          v-if="staged.some((person) => person.kind === 'user')"
+          v-model="notify"
+          class="mr-auto"
+          label="Notify by email"
+          size="sm"
+        />
         <Button label="Cancel" :disabled="disabled" @click="staged = []" />
         <Button variant="solid" label="Share" :loading="disabled" @click="submit" />
       </div>
@@ -51,9 +68,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
-import { Button, Checkbox, Combobox, Select } from 'frappe-ui'
 import { useDebounceFn } from '@vueuse/core'
+import { Button, Checkbox, Combobox, Select } from 'frappe-ui'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { groupPrincipal, rolesFor } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
@@ -91,14 +108,21 @@ watch(
 )
 onUnmounted(() => (picking.value = false))
 
-const roleOptions = computed(() => rolesFor('user', props.nodeKind).map((option) => ({ label: option.label, value: option.value })))
+const roleOptions = computed(() =>
+  rolesFor('user', props.nodeKind).map((option) => ({ label: option.label, value: option.value })),
+)
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const options = computed(() => [
   ...rows.value.map((person) =>
     person.kind === 'user'
-      ? { label: person.full_name || person.email, value: `user:${person.email}`, description: person.email, icon: 'lucide-user' }
+      ? {
+          label: person.full_name || person.email,
+          value: `user:${person.email}`,
+          description: person.email,
+          icon: 'lucide-user',
+        }
       : {
           label: person.name,
           value: `group:${person.name}`,
@@ -117,7 +141,8 @@ const options = computed(() => [
     // A root holds no links (Drive spec §4.9).
     condition: ({ query: typed }: { query: string }) =>
       props.nodeKind !== 'root' &&
-      EMAIL.test(typed.trim()) && !rows.value.some((person) => person.kind === 'user' && person.email === typed.trim()),
+      EMAIL.test(typed.trim()) &&
+      !rows.value.some((person) => person.kind === 'user' && person.email === typed.trim()),
     onClick: ({ query: typed }: { query: string }) => {
       emit('sendLink', typed.trim(), role.value)
       query.value = ''
@@ -156,9 +181,15 @@ function pick(value: string | number | null | undefined) {
   const person = rows.value.find((row) => (row.kind === 'user' ? row.email : row.name) === id)
   const picked: PickedPerson =
     kind === 'user'
-      ? { principal: id, kind: 'user', label: person?.kind === 'user' ? person.full_name || id : id, name: person?.kind === 'user' ? person.full_name : null }
+      ? {
+          principal: id,
+          kind: 'user',
+          label: person?.kind === 'user' ? person.full_name || id : id,
+          name: person?.kind === 'user' ? person.full_name : null,
+        }
       : { principal: groupPrincipal(id), kind: 'group', label: id, name: null }
-  if (!staged.value.some((entry) => entry.principal === picked.principal)) staged.value = [...staged.value, picked]
+  if (!staged.value.some((entry) => entry.principal === picked.principal))
+    staged.value = [...staged.value, picked]
   // The input shows the picked label first; clear it once the pick settles.
   // A click on a row moves focus into the closing list, so focus comes back
   // to the input and the next person can be typed straight away.

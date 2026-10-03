@@ -78,13 +78,9 @@
         />
       </div>
 
-      <SettingsRow
-        :title="__('Password')"
-        :description="__('Manage password and account access')"
-      >
+      <SettingsRow :title="__('Password')" :description="__('Manage password and account access')">
         <Button :label="__('Update password')" @click="showPasswordDialog = true" />
       </SettingsRow>
-
     </div>
   </SettingsTabContent>
 
@@ -133,20 +129,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import {
   Avatar,
   Button,
+  createDocumentResource,
+  createResource,
   Dialog,
   Dropdown,
   ErrorMessage,
   FileUploader,
   FormControl,
   SettingsRow,
-  createDocumentResource,
-  createResource,
   toast,
 } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -252,7 +248,8 @@ async function removeAvatar() {
 }
 
 const passwordError = computed(() => {
-  if (confirmPassword.value && confirmPassword.value !== newPassword.value) return __('Passwords do not match')
+  if (confirmPassword.value && confirmPassword.value !== newPassword.value)
+    return __('Passwords do not match')
   const error: unknown = updatePassword.error
   return error instanceof Error ? error : undefined
 })

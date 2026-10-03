@@ -21,30 +21,46 @@
 // We lazy-register only the chart types we actually use so the bundle
 // doesn't drag in the full ECharts library.
 
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
+import {
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  TitleComponent,
+  TooltipComponent,
+} from 'echarts/components'
+import { use as echartsUse } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue'
+
+import { buildOption } from '../../engine/chart-data.js'
 
 // Width/height accept either a pixel number (overlay charts get a fixed
 // frame) or the string "auto" (preview / responsive contexts where the
 // parent controls layout via flex/grid). Echarts `autoresize` handles the
 // reflow in both cases.
-const _toCssDim = (v) => (v === 'auto' || v == null) ? '100%' : (typeof v === 'number' ? v + 'px' : v)
-import { use as echartsUse } from 'echarts/core'
-import { CanvasRenderer }    from 'echarts/renderers'
-import {
-  LineChart, BarChart, PieChart, ScatterChart,
-} from 'echarts/charts'
-import {
-  TitleComponent, TooltipComponent, LegendComponent,
-  GridComponent, DataZoomComponent,
-} from 'echarts/components'
-import { buildOption } from '../../engine/chart-data.js'
+const _toCssDim = (v) => (v === 'auto' || v == null ? '100%' : typeof v === 'number' ? v + 'px' : v)
 
 // One-time global registration. Idempotent — repeated calls are no-ops.
 echartsUse([
   CanvasRenderer,
-  LineChart, BarChart, PieChart, ScatterChart,
-  TitleComponent, TooltipComponent, LegendComponent,
-  GridComponent, DataZoomComponent,
+  LineChart,
+  BarChart,
+  PieChart,
+  ScatterChart,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+  DataZoomComponent,
 ])
 
 // `vue-echarts` is itself heavy; lazy-load the component so editor mount
@@ -53,17 +69,19 @@ const VChart = defineAsyncComponent(() => import('vue-echarts'))
 
 const props = defineProps({
   config: { type: Object, required: true },
-  matrix: { type: Array,  default: () => [] },
-  width:  { type: [Number, String], default: 480 },
+  matrix: { type: Array, default: () => [] },
+  width: { type: [Number, String], default: 480 },
   height: { type: [Number, String], default: 320 },
 })
 
 const _wrapStyle = computed(() => ({
-  width:  _toCssDim(props.width),
+  width: _toCssDim(props.width),
   height: _toCssDim(props.height),
 }))
 
-const isDark = ref(typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark')
+const isDark = ref(
+  typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark',
+)
 
 let _themeObserver = null
 
@@ -122,12 +140,22 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   overflow: hidden;
 }
-.cv-chart { width: 100%; height: 100%; }
+.cv-chart {
+  width: 100%;
+  height: 100%;
+}
 .cv-empty {
-  display: flex; align-items: center; justify-content: center;
-  width: 100%; height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   color: var(--ink-gray-4, #a3a3a3);
-  font: 12px/1 InterVar, Inter, ui-sans-serif, system-ui, sans-serif;
+  font:
+    12px/1 InterVar,
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
 }
 </style>
-

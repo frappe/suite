@@ -53,7 +53,9 @@ function generate(contract, source) {
     declarations.push(
       `export type ${inputType} = ${schemaType(inputSchema, inputSchema)}${uploads ? ' & { chunk: Blob }' : ''}`,
     )
-    declarations.push(`export type ${outputType} = ${downloads ? 'Blob' : schemaType(outputSchema, outputSchema)}`)
+    declarations.push(
+      `export type ${outputType} = ${downloads ? 'Blob' : schemaType(outputSchema, outputSchema)}`,
+    )
     declarations.push(
       `export type ${errorType} = ${operation.errors?.length ? operation.errors.map(JSON.stringify).join(' | ') : 'never'}`,
     )
@@ -148,16 +150,22 @@ function schemaType(schema, root) {
   if (!schema || Object.keys(schema).length === 0) return 'unknown'
   if (schema.$ref) return schemaType(resolveSchemaRef(root, schema.$ref), root)
   if (schema.const !== undefined) return JSON.stringify(schema.const)
-  if (Array.isArray(schema.enum)) return schema.enum.map((value) => JSON.stringify(value)).join(' | ') || 'never'
-  if (Array.isArray(schema.anyOf)) return schema.anyOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
-  if (Array.isArray(schema.oneOf)) return schema.oneOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
-  if (Array.isArray(schema.allOf)) return schema.allOf.map((part) => `(${schemaType(part, root)})`).join(' & ')
-  if (Array.isArray(schema.type)) return schema.type.map((type) => schemaType({ ...schema, type }, root)).join(' | ')
+  if (Array.isArray(schema.enum))
+    return schema.enum.map((value) => JSON.stringify(value)).join(' | ') || 'never'
+  if (Array.isArray(schema.anyOf))
+    return schema.anyOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
+  if (Array.isArray(schema.oneOf))
+    return schema.oneOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
+  if (Array.isArray(schema.allOf))
+    return schema.allOf.map((part) => `(${schemaType(part, root)})`).join(' & ')
+  if (Array.isArray(schema.type))
+    return schema.type.map((type) => schemaType({ ...schema, type }, root)).join(' | ')
   if (schema.type === 'array') return `Array<${schemaType(schema.items ?? {}, root)}>`
   if (schema.type === 'object' || schema.properties) {
     const required = new Set(schema.required ?? [])
     const fields = Object.entries(schema.properties ?? {}).map(
-      ([key, child]) => `${JSON.stringify(key)}${required.has(key) ? '' : '?'}: ${schemaType(child, root)}`,
+      ([key, child]) =>
+        `${JSON.stringify(key)}${required.has(key) ? '' : '?'}: ${schemaType(child, root)}`,
     )
     if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
       fields.push(`[key: string]: ${schemaType(schema.additionalProperties, root)}`)
@@ -174,7 +182,12 @@ function schemaType(schema, root) {
 
 function resolveSchemaRef(root, ref) {
   if (!ref.startsWith('#/')) return {}
-  return ref.slice(2).split('/').reduce((value, part) => value?.[part.replace(/~1/g, '/').replace(/~0/g, '~')], root) ?? {}
+  return (
+    ref
+      .slice(2)
+      .split('/')
+      .reduce((value, part) => value?.[part.replace(/~1/g, '/').replace(/~0/g, '~')], root) ?? {}
+  )
 }
 
 function renderApiTree(leaves) {
@@ -205,7 +218,9 @@ function validateOperation(operation, source) {
 }
 
 function pascal(value) {
-  const result = value.replace(/(^|[^a-zA-Z0-9]+)([a-zA-Z0-9])/g, (_match, _separator, letter) => letter.toUpperCase())
+  const result = value.replace(/(^|[^a-zA-Z0-9]+)([a-zA-Z0-9])/g, (_match, _separator, letter) =>
+    letter.toUpperCase(),
+  )
   return result || 'Operation'
 }
 

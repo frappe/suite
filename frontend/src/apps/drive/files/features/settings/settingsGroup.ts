@@ -1,6 +1,6 @@
+import { webdav } from '@/apps/drive/client/settings'
 import { useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
-import { webdav } from '@/apps/drive/client/settings'
 
 // Held for the session: the group condition and the External access body
 // read the same answer.

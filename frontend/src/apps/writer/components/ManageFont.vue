@@ -18,8 +18,10 @@
 <script setup>
 import { FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
+
 import { FONT_FAMILIES } from '@/apps/writer/utils'
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '@/apps/writer/utils/typography'
+
 import FontSelect from './FontSelect.vue'
 
 const props = defineProps({
@@ -34,8 +36,7 @@ const size = ref(props.font_size)
 // The editor is plain @tiptap/core (not reactive), so state reads don't
 // trigger re-runs — sync on transactions instead.
 const sync = () => {
-  selected.value =
-    FONT_FAMILIES.find((opt) => opt.isActive(props.editor))?.key || props.font_family
+  selected.value = FONT_FAMILIES.find((opt) => opt.isActive(props.editor))?.key || props.font_family
   let fontSize = props.editor.getAttributes('textStyle')?.fontSize || props.font_size
   if (typeof fontSize !== 'number') fontSize = parseFloat(fontSize)
   if (!Number.isNaN(fontSize)) size.value = fontSize

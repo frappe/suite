@@ -1,11 +1,18 @@
 <template>
   <!-- A locked link must not leak the item: no title, owner or kind (spec §10.2). -->
-  <section class="flex min-h-full w-full items-center justify-center px-5 py-16" aria-labelledby="drive-unlock-title">
+  <section
+    class="flex min-h-full w-full items-center justify-center px-5 py-16"
+    aria-labelledby="drive-unlock-title"
+  >
     <form class="w-full max-w-sm text-center" @submit.prevent="open">
-      <div class="mx-auto grid size-12 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-5">
+      <div
+        class="mx-auto grid size-12 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-5"
+      >
         <span class="lucide-lock-keyhole size-6" aria-hidden="true" />
       </div>
-      <h1 id="drive-unlock-title" class="mt-4 text-2xl-semibold text-ink-gray-9">Password required</h1>
+      <h1 id="drive-unlock-title" class="mt-4 text-2xl-semibold text-ink-gray-9">
+        Password required
+      </h1>
       <p class="mt-2 text-p-base text-ink-gray-6">Enter the password to open this link.</p>
       <div ref="field" class="mt-6 flex items-start gap-2 text-left">
         <FormControl
@@ -27,7 +34,12 @@
         />
       </div>
       <!-- One reserved line, so the error and the countdown do not move the form. -->
-      <p class="mt-2 h-5 text-left text-p-sm text-ink-red-7" role="status" aria-live="polite" data-testid="drive-unlock-message">
+      <p
+        class="mt-2 h-5 text-left text-p-sm text-ink-red-7"
+        role="status"
+        aria-live="polite"
+        data-testid="drive-unlock-message"
+      >
         {{ form.message.value }}
       </p>
     </form>

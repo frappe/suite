@@ -1,5 +1,5 @@
-import { invalidateAll, type ReadDescriptor } from '@/platform/server-state'
 import { subscribe } from '@/platform/realtime'
+import { invalidateAll, type ReadDescriptor } from '@/platform/server-state'
 
 let observers = 0
 let unsubscribe: (() => void) | null = null

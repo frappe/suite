@@ -68,7 +68,9 @@
                   />
                   <div class="flex flex-col gap-1">
                     <p class="text-base text-ink-gray-8">{{ inviteSummaryLabel }}</p>
-                    <p class="text-sm text-ink-gray-5">{{ __('Invite anyone later from Settings.') }}</p>
+                    <p class="text-sm text-ink-gray-5">
+                      {{ __('Invite anyone later from Settings.') }}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -105,7 +107,12 @@
               @click="goBack"
             />
             <div class="flex items-center gap-2">
-              <Button variant="subtle" :label="__('Skip')" :disabled="inviteStep?.loading" @click="finish" />
+              <Button
+                variant="subtle"
+                :label="__('Skip')"
+                :disabled="inviteStep?.loading"
+                @click="finish"
+              />
               <Button
                 variant="solid"
                 class="!gap-1"
@@ -137,7 +144,9 @@
                 @click="openSuite"
               />
             </div>
-            <ErrorMessage :message="markOnboarded.error instanceof Error ? markOnboarded.error : undefined" />
+            <ErrorMessage
+              :message="markOnboarded.error instanceof Error ? markOnboarded.error : undefined"
+            />
           </div>
         </div>
       </Transition>
@@ -146,10 +155,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
-import { Button, Combobox, ErrorMessage, Tooltip, createResource } from 'frappe-ui'
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
+import { Button, Combobox, createResource, ErrorMessage, Tooltip } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
 
 import {
   calendarLogo,
@@ -161,11 +170,11 @@ import {
   suiteLogo,
   writerLogo,
 } from '@/platform/brand'
-import { setupTheme, switchTheme, systemDark, themeMode } from '@/utils/setupTheme'
-import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
-import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 import InviteStep from '@/shell/InviteStep.vue'
+import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
 import { detectTimezone, useTimezones } from '@/shell/useTimezones'
+import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
+import { setupTheme, switchTheme, systemDark, themeMode } from '@/utils/setupTheme'
 
 // The welcome step's row of product marks.
 const apps = [
@@ -224,10 +233,22 @@ onUnmounted(() => {
 })
 
 const copy: Record<Step, { title: string; subtitle: string }> = {
-  welcome: { title: __('Welcome to Frappe Suite'), subtitle: __('Everything your team needs, all in one place.') },
-  workspace: { title: __('Set up your workspace'), subtitle: __('Make it yours with a name and logo.') },
-  invite: { title: __("Let's invite your team"), subtitle: __('Add teammates and explore Suite together.') },
-  ready: { title: __("You're all set!"), subtitle: __('Your workspace is ready. Time to dive in.') },
+  welcome: {
+    title: __('Welcome to Frappe Suite'),
+    subtitle: __('Everything your team needs, all in one place.'),
+  },
+  workspace: {
+    title: __('Set up your workspace'),
+    subtitle: __('Make it yours with a name and logo.'),
+  },
+  invite: {
+    title: __("Let's invite your team"),
+    subtitle: __('Add teammates and explore Suite together.'),
+  },
+  ready: {
+    title: __("You're all set!"),
+    subtitle: __('Your workspace is ready. Time to dive in.'),
+  },
 }
 const current = computed(() => copy[step.value])
 

@@ -4,12 +4,28 @@
   `session.share()`. On phone it opens as a bottom sheet with the same body.
 -->
 <template>
-  <BottomSheet v-if="isPhone" :open="open" :title="heading" @update:open="open = $event" @after-leave="emit('after-leave')">
+  <BottomSheet
+    v-if="isPhone"
+    :open="open"
+    :title="heading"
+    @update:open="open = $event"
+    @after-leave="emit('after-leave')"
+  >
     <div class="space-y-5 px-4 pb-8">
       <ShareBody v-model:picking="picking" :state="state" />
       <div class="flex items-center gap-2">
-        <Button v-if="address" icon-left="lucide-link" label="Copy link" @click="copyLink(address)" />
-        <Button class="ml-auto" :variant="picking ? 'subtle' : 'solid'" label="Done" @click="open = false" />
+        <Button
+          v-if="address"
+          icon-left="lucide-link"
+          label="Copy link"
+          @click="copyLink(address)"
+        />
+        <Button
+          class="ml-auto"
+          :variant="picking ? 'subtle' : 'solid'"
+          label="Done"
+          @click="open = false"
+        />
       </div>
     </div>
   </BottomSheet>
@@ -20,17 +36,27 @@
     </div>
     <template #actions>
       <div class="flex items-center gap-2">
-        <Button v-if="address" icon-left="lucide-link" label="Copy link" @click="copyLink(address)" />
-        <Button class="ml-auto" :variant="picking ? 'subtle' : 'solid'" label="Done" @click="open = false" />
+        <Button
+          v-if="address"
+          icon-left="lucide-link"
+          label="Copy link"
+          @click="copyLink(address)"
+        />
+        <Button
+          class="ml-auto"
+          :variant="picking ? 'subtle' : 'solid'"
+          label="Done"
+          @click="open = false"
+        />
       </div>
     </template>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { BottomSheet, Button, Dialog } from 'frappe-ui'
 import { useMediaQuery } from '@vueuse/core'
+import { BottomSheet, Button, Dialog } from 'frappe-ui'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import { confirm } from '@/platform/feedback'
 import { query, useQuery } from '@/platform/server-state'
@@ -52,7 +78,9 @@ const isPhone = useMediaQuery('(max-width: 767px)')
 const picking = ref(false)
 const session = useSession()
 // The server page boots the workspace name. The Vite dev page does not, so the dialog asks the site.
-const site = useQuery(() => (window.suite_workspace_name === undefined ? query(suiteApi.site_get, {}) : false))
+const site = useQuery(() =>
+  window.suite_workspace_name === undefined ? query(suiteApi.site_get, {}) : false,
+)
 const state = useShare(props.node, {
   me: session.user.value?.id,
   confirmLoss: () =>

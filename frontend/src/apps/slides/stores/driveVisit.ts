@@ -7,14 +7,14 @@
 import { transport, type Operation } from '@/platform/transport'
 
 const nodeVisit: Operation<{ node: string }, unknown> = {
-	id: 'node_visit',
-	owner: 'drive',
-	method: 'POST',
-	path: 'nodes/{node}/visit',
-	pathParams: ['node'],
-	nodeParams: ['node'],
+  id: 'node_visit',
+  owner: 'drive',
+  method: 'POST',
+  path: 'nodes/{node}/visit',
+  pathParams: ['node'],
+  nodeParams: ['node'],
 }
 
 export async function recordVisit(node: string): Promise<void> {
-	await transport.request(nodeVisit, { node })
+  await transport.request(nodeVisit, { node })
 }

@@ -1,18 +1,34 @@
 <template>
   <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
-    <TextEditorFixedMenu v-if="editable"
+    <TextEditorFixedMenu
+      v-if="editable"
       class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
-      :editor="editor" :items="menuButtons" />
+      :editor="editor"
+      :items="menuButtons"
+    />
     <div class="relative flex flex-1 overflow-hidden">
       <ToC v-if="editor" :editor :anchors />
-      <div id="editor-scroll-container"
-        class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2">
-        <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="gridStyle" @click="onBackgroundClick">
+      <div
+        id="editor-scroll-container"
+        class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
+      >
+        <div
+          class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
+          :style="gridStyle"
+          @click="onBackgroundClick"
+        >
           <div class="hidden md:block" />
           <div class="flex flex-col grow min-w-0">
-            <FTextEditor ref="textEditor" :upload-function="uploadFunction"
-              :autofocus="true" v-model="localContent" placeholder="Start thinking…" :extensions="editorExtensions"
-              :editable @change="handleEditorChange">
+            <FTextEditor
+              ref="textEditor"
+              :upload-function="uploadFunction"
+              :autofocus="true"
+              v-model="localContent"
+              placeholder="Start thinking…"
+              :extensions="editorExtensions"
+              :editable
+              @change="handleEditorChange"
+            >
               <template #default="{ editor }">
                 <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
                 <EditorTableMenu :editor />
@@ -23,20 +39,39 @@
                     aria-label="Document editor"
                     aria-multiline="true"
                     class="grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
-                    :class="isPainting && 'cursor-crosshair'" :style="editorStyle" />
+                    :class="isPainting && 'cursor-crosshair'"
+                    :style="editorStyle"
+                  />
                 </EditorDropZone>
               </template>
             </FTextEditor>
           </div>
           <div class="relative hidden md:block min-w-0">
-            <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments"
-              :file :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
+            <FloatingComments
+              v-if="commentsPainted"
+              v-model:active-comment="activeComment"
+              :y-comments="comments"
+              :file
+              :show-comments
+              :show-resolved
+              :show-unanchored
+              :editor
+              @save="saveComments"
+            />
           </div>
         </div>
       </div>
-      <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
+      <div
+        v-if="commentsPainted && comments._map.size"
+        class="hidden md:block absolute top-4 right-4"
+      >
         <Dropdown :options="commentFilterOptions" align="end">
-          <Button :icon="LucideMessageSquareQuote" variant="outline" label="Comment visibility" tooltip="Comment visibility" />
+          <Button
+            :icon="LucideMessageSquareQuote"
+            variant="outline"
+            label="Comment visibility"
+            tooltip="Comment visibility"
+          />
         </Dropdown>
       </div>
     </div>
@@ -46,63 +81,49 @@
 
 <script setup>
 import {
-  computed,
-  inject,
-  onBeforeUnmount,
-  provide,
-  ref,
-  watch,
-} from 'vue'
-import { TextSelection } from '@tiptap/pm/state'
-import { CharacterCount, Selection } from '@tiptap/extensions'
-import {
-  default as TableOfContents,
   getHierarchicalIndexes,
+  default as TableOfContents,
 } from '@tiptap/extension-table-of-contents'
-import {
-  Editor as FTextEditor,
-  EditorFixedMenu as TextEditorFixedMenu,
-  EditorBubbleMenu,
-  EditorTableMenu,
-  EditorDropZone,
-  EditorContent,
-  RichTextKit,
-} from 'frappe-ui/editor'
-import { Button, toast, useFileUpload, Dropdown } from 'frappe-ui'
+import { CharacterCount, Selection } from '@tiptap/extensions'
+import { TextSelection } from '@tiptap/pm/state'
 import { onKeyDown } from '@vueuse/core'
+import LucideMessageSquareQuote from '~icons/lucide/message-square-quote'
+import { Button, Dropdown, toast, useFileUpload } from 'frappe-ui'
+import {
+  EditorBubbleMenu,
+  EditorContent,
+  EditorDropZone,
+  EditorTableMenu,
+  Editor as FTextEditor,
+  RichTextKit,
+  EditorFixedMenu as TextEditorFixedMenu,
+} from 'frappe-ui/editor'
 import { v4 as uuidv4 } from 'uuid'
+import { computed, inject, onBeforeUnmount, provide, ref, watch } from 'vue'
 
+import { useUsers } from '@/apps/writer/composables/useUsers'
+import emitter from '@/apps/writer/emitter'
+import CleanStyles from '@/apps/writer/extensions/clean-styles'
+import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
+import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
+import { DOCUMENT_MEDIA, DriveMedia } from '@/apps/writer/extensions/drive-media'
+import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
+import MediaDownload from '@/apps/writer/extensions/media-download'
+import OldCommentExtension from '@/apps/writer/extensions/old-comment'
+import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
+import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
+import { TabsExtension } from '@/apps/writer/extensions/tabs'
+import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
+import { COMMON_EXTENSIONS, isModKey, printDoc } from '@/apps/writer/utils'
+import { cssLineHeight } from '@/apps/writer/utils/typography'
+import { useSessionStore } from '@/boot/session'
+import { useRootStore } from '@/stores/root'
+
+import { bubbleMenuOptions } from './core-editor/bubble-menu'
+import { buildMenuButtons } from './core-editor/menu-buttons'
 import FloatingComments from './FloatingComments.vue'
 import ToC from './ToC.vue'
 import ToCMobile from './ToCMobile.vue'
-import { buildMenuButtons } from './core-editor/menu-buttons'
-import { bubbleMenuOptions } from './core-editor/bubble-menu'
-
-import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
-import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
-import CleanStyles from '@/apps/writer/extensions/clean-styles'
-import { cssLineHeight } from '@/apps/writer/utils/typography'
-import MediaDownload from '@/apps/writer/extensions/media-download'
-import { DOCUMENT_MEDIA, DriveMedia } from '@/apps/writer/extensions/drive-media'
-import OldCommentExtension from '@/apps/writer/extensions/old-comment'
-import { TabsExtension } from '@/apps/writer/extensions/tabs'
-import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
-import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
-import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
-import { useUsers } from '@/apps/writer/composables/useUsers'
-import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
-
-
-import { useSessionStore } from '@/boot/session'
-import emitter from '@/apps/writer/emitter'
-import { useRootStore } from '@/stores/root'
-import {
-  COMMON_EXTENSIONS,
-  isModKey,
-  printDoc,
-} from '@/apps/writer/utils'
-
-import LucideMessageSquareQuote from '~icons/lucide/message-square-quote'
 
 const AUTOVERSION_INTERVAL_MS = 10 * 60 * 1000
 
@@ -127,7 +148,9 @@ const root = useRootStore()
 const localContent = ref(props.rawContent ?? '')
 watch(
   () => props.rawContent,
-  (val) => { if (val) localContent.value = val },
+  (val) => {
+    if (val) localContent.value = val
+  },
   { once: true },
 )
 
@@ -139,18 +162,14 @@ defineExpose({ editor })
 const anchors = ref([])
 const activeComment = ref(null)
 const commentsPainted = ref(false)
-const showComments = ref(
-  JSON.parse(localStorage.getItem('show-comments') || 'false'),
-)
+const showComments = ref(JSON.parse(localStorage.getItem('show-comments') || 'false'))
 const showResolved = ref(false)
 const showUnanchored = ref(false)
 
 watch(activeComment, () => rebuild(editor.value))
 watch(showComments, (val) => localStorage.setItem('show-comments', val))
 
-const scrollParent = computed(() =>
-  document.querySelector('#editor-scroll-container'),
-)
+const scrollParent = computed(() => document.querySelector('#editor-scroll-container'))
 
 // The format painter keeps its flag in plain editor storage, which Vue does
 // not track. Read it again after each transaction.
@@ -169,10 +188,7 @@ watch(
 const showUnanchoredButton = computed(() => {
   if (!commentsPainted.value) return false
   return Array.from(props.comments._map).some(
-    ([, value]) =>
-      !document.querySelector(
-        `[data-comment-name='${value.content?.arr?.[0].id}']`,
-      ),
+    ([, value]) => !document.querySelector(`[data-comment-name='${value.content?.arr?.[0].id}']`),
   )
 })
 
@@ -188,19 +204,19 @@ const commentFilterOptions = computed(() => {
       onClick: () => (showComments.value = !showComments.value),
     },
     hasResolved &&
-    showComments.value && {
-      label: 'Resolved',
-      switch: true,
-      switchValue: showResolved.value,
-      onClick: () => (showResolved.value = !showResolved.value),
-    },
+      showComments.value && {
+        label: 'Resolved',
+        switch: true,
+        switchValue: showResolved.value,
+        onClick: () => (showResolved.value = !showResolved.value),
+      },
     showUnanchoredButton.value &&
-    showComments.value && {
-      label: 'Outdated',
-      switch: true,
-      switchValue: showUnanchored.value,
-      onClick: () => (showUnanchored.value = !showUnanchored.value),
-    },
+      showComments.value && {
+        label: 'Outdated',
+        switch: true,
+        switchValue: showUnanchored.value,
+        onClick: () => (showUnanchored.value = !showUnanchored.value),
+      },
   ].filter(Boolean)
 })
 
@@ -289,9 +305,7 @@ const bubbleMenuButtons = [
   },
 ]
 
-const bubbleMenuOpts = computed(() =>
-  bubbleMenuOptions({ editor, comments: props.comments }),
-)
+const bubbleMenuOpts = computed(() => bubbleMenuOptions({ editor, comments: props.comments }))
 
 const gridStyle = computed(() => ({
   gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${
@@ -300,8 +314,7 @@ const gridStyle = computed(() => ({
 }))
 
 const editorStyle = computed(() => ({
-  fontFamily:
-    props.settings?.font_family && `var(--font-${props.settings.font_family})`,
+  fontFamily: props.settings?.font_family && `var(--font-${props.settings.font_family})`,
   '--editor-font-size': `${props.settings?.font_size || 15}px`,
   '--editor-line-height': cssLineHeight(props.settings?.line_height),
   '--paragraph-spacing-before': `${props.settings?.paragraph_spacing_before || 0}px`,
@@ -347,8 +360,7 @@ const autorename = () => {
   const inFirstBlock = $anchor.index(0) === 1 && $anchor.depth === 1
   if (!inFirstBlock) {
     const inLastLine =
-      $anchor.depth === 1 &&
-      editor.value.state.doc.childCount - 1 === $anchor.index(0)
+      $anchor.depth === 1 && editor.value.state.doc.childCount - 1 === $anchor.index(0)
     if (inLastLine) {
       scrollParent.value.scroll(0, scrollParent.value.scrollHeight)
     }
@@ -380,13 +392,7 @@ const addComment = () => {
   if (from === to) return
 
   const id = uuidv4()
-  props.newComment(
-    id,
-    from,
-    to,
-    useSessionStore().user,
-    state.doc.textBetween(from, to, ' '),
-  )
+  props.newComment(id, from, to, useSessionStore().user, state.doc.textBetween(from, to, ' '))
   activeComment.value = id
   const tr = state.tr.setSelection(TextSelection.create(state.doc, from))
   editor.value.view.dispatch(tr)
@@ -401,7 +407,8 @@ const openCommandPalette = (event) => {
     event.shiftKey ||
     event.altKey ||
     event.key.toLowerCase() !== 'k'
-  ) return
+  )
+    return
   event.preventDefault()
   event.stopPropagation()
   root.paletteOpen = true

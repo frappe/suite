@@ -1,7 +1,7 @@
 import {
-  FrappeUIProvider,
   dialog,
   toast as frappeToast,
+  FrappeUIProvider,
   type PromptField as FrappePromptField,
 } from 'frappe-ui'
 import { defineComponent, h, type VNodeChild } from 'vue'

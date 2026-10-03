@@ -37,24 +37,33 @@ export function lineHeightFor(fmt) {
 // `\n\n` renders a gap. Single source of truth for both the painter (what it
 // draws) and the row sizer (how tall it must be).
 export function wrapLines(val, maxW, measure) {
-  return String(val).split('\n').flatMap(par => _wrapParagraph(par, maxW, measure))
+  return String(val)
+    .split('\n')
+    .flatMap((par) => _wrapParagraph(par, maxW, measure))
 }
 
 function _wrapParagraph(par, maxW, measure) {
   const tokens = par.split(/(\s+)/)
-  const lines  = []
+  const lines = []
   let line = ''
   for (const tok of tokens) {
     if (!tok) continue
-    if (measure(line + tok) <= maxW) { line += tok; continue }
+    if (measure(line + tok) <= maxW) {
+      line += tok
+      continue
+    }
     if (/^\s+$/.test(tok)) {
       if (line.trim()) lines.push(line.trimEnd())
-      line = ''; continue
+      line = ''
+      continue
     }
     for (const ch of tok) {
       if (line && measure(line + ch) > maxW) {
-        lines.push(line.trimEnd()); line = ch
-      } else { line += ch }
+        lines.push(line.trimEnd())
+        line = ch
+      } else {
+        line += ch
+      }
     }
   }
   if (line.trim()) lines.push(line.trimEnd())

@@ -1,6 +1,7 @@
 import { watch } from 'vue'
 
 import type { Session } from '@/platform/session'
+
 import { pushNotification } from './notification'
 import SPLASH_DEVICES from './splash-devices.json'
 

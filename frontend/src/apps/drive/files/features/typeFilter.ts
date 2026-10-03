@@ -12,22 +12,43 @@ export interface TypeFilterOption {
   sample: IconNode
 }
 
-const fileOf = (title: string, mime: string): IconNode => ({ kind: 'file', title, mime, content_doctype: null })
-const documentOf = (contentDoctype: string): IconNode => ({ kind: 'document', title: contentDoctype, mime: null, content_doctype: contentDoctype })
+const fileOf = (title: string, mime: string): IconNode => ({
+  kind: 'file',
+  title,
+  mime,
+  content_doctype: null,
+})
+const documentOf = (contentDoctype: string): IconNode => ({
+  kind: 'document',
+  title: contentDoctype,
+  mime: null,
+  content_doctype: contentDoctype,
+})
 
 // In menu order. The server decides which nodes each value keeps.
 const OPTIONS: Record<DriveListingType, Omit<TypeFilterOption, 'value'>> = {
-  folder: { label: 'Folders', noun: 'folders', sample: { kind: 'folder', title: 'Folder', mime: null, content_doctype: null } },
+  folder: {
+    label: 'Folders',
+    noun: 'folders',
+    sample: { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
+  },
   document: { label: 'Documents', noun: 'documents', sample: documentOf('Writer Document') },
   spreadsheet: { label: 'Spreadsheets', noun: 'spreadsheets', sample: documentOf('Sheet') },
-  presentation: { label: 'Presentations', noun: 'presentations', sample: documentOf('Presentation') },
+  presentation: {
+    label: 'Presentations',
+    noun: 'presentations',
+    sample: documentOf('Presentation'),
+  },
   pdf: { label: 'PDFs', noun: 'PDFs', sample: fileOf('file.pdf', 'application/pdf') },
   image: { label: 'Images', noun: 'images', sample: fileOf('image.png', 'image/png') },
   video: { label: 'Videos', noun: 'videos', sample: fileOf('video.mp4', 'video/mp4') },
   audio: { label: 'Audio', noun: 'audio files', sample: fileOf('audio.mp3', 'audio/mpeg') },
 }
 
-const ALL = Object.entries(OPTIONS).map(([value, option]) => ({ value: value as DriveListingType, ...option }))
+const ALL = Object.entries(OPTIONS).map(([value, option]) => ({
+  value: value as DriveListingType,
+  ...option,
+}))
 
 /** The types a listing offers. Recent hides folder rows, so it offers no Folders. */
 export function offeredTypes({ folders }: { folders: boolean }): TypeFilterOption[] {
@@ -38,7 +59,10 @@ export function offeredTypes({ folders }: { folders: boolean }): TypeFilterOptio
  * The offered types a `?type=` value names, in menu order. The value is a
  * comma-separated list, as the Drive API takes it. Any other value is left out.
  */
-export function typesFromQuery(raw: unknown, offered: readonly TypeFilterOption[]): TypeFilterOption[] {
+export function typesFromQuery(
+  raw: unknown,
+  offered: readonly TypeFilterOption[],
+): TypeFilterOption[] {
   if (typeof raw !== 'string') return []
   const named = new Set(raw.split(','))
   return offered.filter((option) => named.has(option.value))

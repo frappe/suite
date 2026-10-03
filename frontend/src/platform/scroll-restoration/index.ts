@@ -133,7 +133,8 @@ function restore(
     frame = requestAnimationFrame(attempt)
   }
 
-  for (const type of SCROLL_INPUT) window.addEventListener(type, stop, { capture: true, passive: true })
+  for (const type of SCROLL_INPUT)
+    window.addEventListener(type, stop, { capture: true, passive: true })
   void nextTick(attempt)
   return { target, cancel: stop }
 }

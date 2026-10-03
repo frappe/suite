@@ -55,7 +55,10 @@ async function upload(selection: UploadSelection, target: UploadTarget) {
 function takeFiles() {
   const files = [...(filesInput.value?.files ?? [])]
   if (!pending || !files.length) return
-  void queue.uploadFiles(files.map((file) => ({ file })), pending)
+  void queue.uploadFiles(
+    files.map((file) => ({ file })),
+    pending,
+  )
 }
 
 function takeFolder() {

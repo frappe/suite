@@ -69,11 +69,12 @@ import {
 import { useRoute } from 'vue-router'
 
 import { showSettings } from '@/platform/settings'
+
 import {
   AREA_SIDEBAR_FOOTER_KEY,
   AREA_SIDEBAR_TARGET_ID,
-  OPEN_AREA_SIDEBAR_EVENT,
   isPhone,
+  OPEN_AREA_SIDEBAR_EVENT,
   trackAreaSidebar,
   type OpenAreaSidebarDetail,
 } from './state'
@@ -163,8 +164,12 @@ function bindViewport(next: HTMLElement | null) {
   updateFades()
 }
 
-watch(scrollArea, () => void nextTick(() => bindViewport(scrollArea.value?.viewportElement ?? null)), {
-  flush: 'post',
-})
+watch(
+  scrollArea,
+  () => void nextTick(() => bindViewport(scrollArea.value?.viewportElement ?? null)),
+  {
+    flush: 'post',
+  },
+)
 onBeforeUnmount(() => bindViewport(null))
 </script>

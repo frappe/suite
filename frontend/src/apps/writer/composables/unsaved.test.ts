@@ -1,5 +1,5 @@
-import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 import * as Y from 'yjs'
 
 import { SERVER_ORIGIN, trackUnsaved } from './unsaved'
@@ -57,7 +57,9 @@ describe('the unsaved flag of a collaborative document', () => {
     await inFlight
     expect(unsaved.value).toBe(true)
 
-    await expect(tracking.storeThrough(() => Promise.reject(new Error('offline')))).rejects.toThrow('offline')
+    await expect(tracking.storeThrough(() => Promise.reject(new Error('offline')))).rejects.toThrow(
+      'offline',
+    )
     expect(unsaved.value).toBe(true)
 
     await tracking.storeThrough(async () => {})

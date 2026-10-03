@@ -1,7 +1,6 @@
 <template>
   <Dialog v-model:open="show" title="Named ranges" size="lg">
     <template #default>
-
       <!-- ── Add new ────────────────────────────────────────────────────── -->
       <div class="nr-section">
         <p class="nr-label">{{ editing ? 'Edit named range' : 'Add named range' }}</p>
@@ -18,7 +17,7 @@
             label="Sheet"
             :model-value="form.sheet"
             :options="sheetOptions"
-            @update:model-value="(v) => form.sheet = v"
+            @update:model-value="(v) => (form.sheet = v)"
             class="nr-form-sheet"
           />
           <FormControl
@@ -37,8 +36,8 @@
         </div>
         <p v-if="formError" class="nr-error">{{ formError }}</p>
         <p class="nr-hint">
-          Names must start with a letter or "_" and contain only letters, digits, and "_".
-          They can't look like cell references or collide with built-in functions.
+          Names must start with a letter or "_" and contain only letters, digits, and "_". They
+          can't look like cell references or collide with built-in functions.
         </p>
       </div>
 
@@ -48,20 +47,41 @@
         <div v-if="!entries.length" class="nr-empty">No named ranges defined yet.</div>
         <div v-else class="nr-list">
           <div class="nr-row nr-row--head">
-            <div>Name</div><div>Sheet</div><div>Range</div><div></div>
+            <div>Name</div>
+            <div>Sheet</div>
+            <div>Range</div>
+            <div></div>
           </div>
           <div v-for="e in entries" :key="e.name" class="nr-row">
-            <div class="nr-name"><code>{{ e.name }}</code></div>
+            <div class="nr-name">
+              <code>{{ e.name }}</code>
+            </div>
             <div class="nr-sheet">{{ e.sheet || '(current)' }}</div>
-            <div class="nr-range"><code>{{ e.range }}</code></div>
+            <div class="nr-range">
+              <code>{{ e.range }}</code>
+            </div>
             <div class="nr-row-actions">
-              <Button :aria-label="`Edit ${e.name}`" size="sm" variant="ghost" icon="lucide-edit-2"  @click="_edit(e)"  tooltip="Edit"   />
-              <Button :aria-label="`Delete ${e.name}`" size="sm" variant="ghost" icon="lucide-trash-2" @click="_delete(e)" theme="red" tooltip="Delete" />
+              <Button
+                :aria-label="`Edit ${e.name}`"
+                size="sm"
+                variant="ghost"
+                icon="lucide-edit-2"
+                @click="_edit(e)"
+                tooltip="Edit"
+              />
+              <Button
+                :aria-label="`Delete ${e.name}`"
+                size="sm"
+                variant="ghost"
+                icon="lucide-trash-2"
+                @click="_delete(e)"
+                theme="red"
+                tooltip="Delete"
+              />
             </div>
           </div>
         </div>
       </div>
-
     </template>
 
     <template #actions>
@@ -73,25 +93,27 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, watch } from 'vue'
 import { Button, Dialog, FormControl } from 'frappe-ui'
+import { computed, reactive, ref, watch } from 'vue'
 
 const props = defineProps({
-  modelValue:    { type: Boolean, default: false },
-  namedRanges:   { type: Object,  required: true },   // engine instance
-  sheetNames:    { type: Array,   default: () => [] },
-  currentSheet:  { type: String,  default: '' },
+  modelValue: { type: Boolean, default: false },
+  namedRanges: { type: Object, required: true }, // engine instance
+  sheetNames: { type: Array, default: () => [] },
+  currentSheet: { type: String, default: '' },
 })
 const emit = defineEmits(['update:modelValue', 'changed'])
 
 const show = computed({
   get: () => props.modelValue,
-  set: v  => emit('update:modelValue', v),
+  set: (v) => emit('update:modelValue', v),
 })
 
 // Local reactive mirror so the dialog updates when the engine mutates.
 const _version = ref(0)
-props.namedRanges.setOnChange?.(() => { _version.value++ })
+props.namedRanges.setOnChange?.(() => {
+  _version.value++
+})
 
 const entries = computed(() => {
   void _version.value
@@ -99,7 +121,7 @@ const entries = computed(() => {
 })
 
 const sheetOptions = computed(() => {
-  const opts = props.sheetNames.map(n => ({ label: n, value: n }))
+  const opts = props.sheetNames.map((n) => ({ label: n, value: n }))
   // First entry represents "current sheet" (empty string) — Sheets behaviour
   // for names with no explicit sheet binding.
   return [{ label: '(current)', value: '' }, ...opts]
@@ -107,8 +129,8 @@ const sheetOptions = computed(() => {
 
 // ── Form state ─────────────────────────────────────────────────────────────
 
-const editing  = ref(null)            // null = add mode; otherwise old entry name
-const form     = reactive({ name: '', sheet: '', range: '' })
+const editing = ref(null) // null = add mode; otherwise old entry name
+const form = reactive({ name: '', sheet: '', range: '' })
 const formError = ref('')
 
 watch(show, (open) => {
@@ -117,22 +139,21 @@ watch(show, (open) => {
   }
 })
 
-const _canSubmit = computed(() =>
-  form.name.trim().length > 0 && form.range.trim().length > 0)
+const _canSubmit = computed(() => form.name.trim().length > 0 && form.range.trim().length > 0)
 
 function _resetForm() {
-  editing.value  = null
-  form.name      = ''
-  form.sheet     = props.currentSheet || ''
-  form.range     = ''
+  editing.value = null
+  form.name = ''
+  form.sheet = props.currentSheet || ''
+  form.range = ''
   formError.value = ''
 }
 
 function _edit(e) {
   editing.value = e.name
-  form.name     = e.name
-  form.sheet    = e.sheet || ''
-  form.range    = e.range
+  form.name = e.name
+  form.sheet = e.sheet || ''
+  form.range = e.range
   formError.value = ''
 }
 
@@ -161,11 +182,36 @@ function _submit() {
 </script>
 
 <style scoped>
-.nr-section { margin-bottom: 20px; }
-.nr-label   { font-size: 11px; font-weight: 600; color: var(--ink-gray-6); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px; }
-.nr-hint    { font-size: 12px; color: var(--ink-gray-5); margin: 8px 0 0; line-height: 1.5; }
-.nr-error   { font-size: 12px; color: var(--ink-red-5); margin: 8px 0 0; }
-.nr-empty   { font-size: 13px; color: var(--ink-gray-5); padding: 16px; text-align: center; background: var(--surface-gray-1); border-radius: 8px; }
+.nr-section {
+  margin-bottom: 20px;
+}
+.nr-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-gray-6);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+}
+.nr-hint {
+  font-size: 12px;
+  color: var(--ink-gray-5);
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.nr-error {
+  font-size: 12px;
+  color: var(--ink-red-5);
+  margin: 8px 0 0;
+}
+.nr-empty {
+  font-size: 13px;
+  color: var(--ink-gray-5);
+  padding: 16px;
+  text-align: center;
+  background: var(--surface-gray-1);
+  border-radius: 8px;
+}
 
 .nr-form {
   display: grid;
@@ -174,7 +220,8 @@ function _submit() {
   align-items: end;
 }
 .nr-form-actions {
-  display: flex; gap: 6px;
+  display: flex;
+  gap: 6px;
 }
 
 .nr-list {
@@ -192,20 +239,29 @@ function _submit() {
   font-size: 13px;
   color: var(--ink-gray-8);
 }
-.nr-row:last-child { border-bottom: 0; }
+.nr-row:last-child {
+  border-bottom: 0;
+}
 .nr-row--head {
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-gray-5);
   text-transform: uppercase;
-  letter-spacing: .04em;
+  letter-spacing: 0.04em;
   background: var(--surface-gray-1);
 }
-.nr-name code, .nr-range code {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+.nr-name code,
+.nr-range code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12.5px;
   color: var(--ink-gray-9);
 }
-.nr-sheet { color: var(--ink-gray-7); }
-.nr-row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.nr-sheet {
+  color: var(--ink-gray-7);
+}
+.nr-row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
 </style>
