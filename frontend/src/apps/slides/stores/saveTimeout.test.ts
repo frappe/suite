@@ -72,7 +72,7 @@ describe('savePresentationDoc', () => {
 	it('adopts the version a push left when the retry finds its own rows there', async () => {
 		presentationDoc.value = { name: 'p1', modified: 'M1' }
 		server.answer = (options) => {
-			if (options.url === 'frappe.client.get') {
+			if (options.url === 'suite.slides.doctype.presentation.presentation.get_public_presentation') {
 				return { modified: 'M2', modified_by: 'me@example.com', slides: [row] }
 			}
 			throw stale()
@@ -105,7 +105,7 @@ describe('savePresentationDoc', () => {
 	it('finds its own rows when the server echoes the advance delay as text', async () => {
 		presentationDoc.value = { name: 'p1', modified: 'M1' }
 		server.answer = (options) => {
-			if (options.url === 'frappe.client.get') {
+			if (options.url === 'suite.slides.doctype.presentation.presentation.get_public_presentation') {
 				return { modified: 'M2', modified_by: 'me@example.com', slides: [{ ...row, advance_after: '5' }] }
 			}
 			throw stale()
@@ -122,7 +122,7 @@ describe('savePresentationDoc', () => {
 	it('stays refused when only the advance delay differs', async () => {
 		presentationDoc.value = { name: 'p1', modified: 'M1' }
 		server.answer = (options) => {
-			if (options.url === 'frappe.client.get') {
+			if (options.url === 'suite.slides.doctype.presentation.presentation.get_public_presentation') {
 				return { modified: 'M2', modified_by: 'me@example.com', slides: [{ ...row, advance_after: '5' }] }
 			}
 			throw stale()
@@ -147,7 +147,7 @@ describe('savePresentationDoc', () => {
 
 		const edited = { ...slide, background: '#00ff00ff' }
 		server.answer = (options) => {
-			if (options.url === 'frappe.client.get') {
+			if (options.url === 'suite.slides.doctype.presentation.presentation.get_public_presentation') {
 				return { modified: 'M2', modified_by: 'me@example.com', slides: [row] }
 			}
 			throw stale()
@@ -165,7 +165,7 @@ describe('savePresentationDoc', () => {
 	it('stays refused when the server holds a different version', async () => {
 		presentationDoc.value = { name: 'p1', modified: 'M1' }
 		server.answer = (options) => {
-			if (options.url === 'frappe.client.get') {
+			if (options.url === 'suite.slides.doctype.presentation.presentation.get_public_presentation') {
 				return { modified: 'M2', modified_by: 'me@example.com', slides: [{ ...row, background: '#00ff00ff' }] }
 			}
 			throw stale()

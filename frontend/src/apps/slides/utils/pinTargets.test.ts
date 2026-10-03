@@ -37,21 +37,16 @@ describe('presentationLoadRequests', () => {
 		params: { doctype: 'Presentation', presentation_id: 'p1' },
 	}
 
-	it('mirrors the editable load path', () => {
-		expect(presentationLoadRequests('p1', { readonly: false, composite: false })).toEqual([
-			access,
-			{ url: 'frappe.client.get', params: { doctype: 'Presentation', name: 'p1' } },
-		])
-	})
-
-	it('mirrors the readonly load path', () => {
-		expect(presentationLoadRequests('p1', { readonly: true, composite: false })).toEqual([
+	it('loads an editable and a readonly deck through the same read', () => {
+		const load = [
 			access,
 			{
 				url: 'suite.slides.doctype.presentation.presentation.get_public_presentation',
 				params: { name: 'p1' },
 			},
-		])
+		]
+		expect(presentationLoadRequests('p1', { readonly: false, composite: false })).toEqual(load)
+		expect(presentationLoadRequests('p1', { readonly: true, composite: false })).toEqual(load)
 	})
 
 	it('adds the composite read after the public one', () => {

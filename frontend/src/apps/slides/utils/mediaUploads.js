@@ -1,28 +1,24 @@
-import { FileUploadHandler, toast, call } from 'frappe-ui'
+import { FileUploadHandler, toast } from 'frappe-ui'
 
 import { presentationId, presentationDoc } from '../stores/presentation'
+import { isMediaNodeId, mediaNodeUrl } from '../stores/documentMedia'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
 import { currentSlide } from '../stores/slide'
 
 import { session } from '@/boot/session'
 import { SLIDES_MEDIA_PARAM, MEDIA_PROXY_PATH } from './slidesRequests'
 
-const fileUploadHandler = new FileUploadHandler()
+export const fileUploadHandler = new FileUploadHandler()
 
 // these users read a file straight from /private/files; everyone else goes through the proxy
-export const isMediaOwner = (owner, user) => !!user && (owner === user || user === 'Administrator')
+const isMediaOwner = (owner, user) => !!user && (owner === user || user === 'Administrator')
 
-// Images are converted to WebP, so the returned doc replaces the uploaded one.
 // Pass targetElement to swap that element's media instead of adding a new element.
 const performPostUploadActions = async (
 	fileDoc,
 	fileType,
 	{ targetElement, targetSlide, localFile },
 ) => {
-	if (fileType === 'image') {
-		fileDoc = await getWebPDoc(fileDoc)
-	}
-
 	if (targetElement) {
 		await replaceMediaElement(targetElement, fileDoc, localFile)
 		return fileDoc
@@ -62,13 +58,6 @@ const getFileObject = (file) => {
 	} else if (isFile(file)) {
 		return file
 	}
-}
-
-const getWebPDoc = async (fileDoc) => {
-	return await call('suite.slides.doctype.presentation.presentation.get_webp_doc', {
-		presentation_name: presentationId.value,
-		file_doc: fileDoc,
-	})
 }
 
 const handleFile = (file, toastProps, targetElement) => {
@@ -114,6 +103,10 @@ export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
 
 	// if starts with data: or /assets return as it is
 	if (fileUrl.startsWith('data:') || fileUrl.startsWith('/assets')) return fileUrl
+
+	// a bare node id names one of the deck's media nodes (spec §14.7, what Build
+	// writes for a migrated deck); Drive signs its url through the deck session
+	if (isMediaNodeId(fileUrl)) return mediaNodeUrl(fileUrl)
 
 	// if it starts with /files add /private prefix
 	if (fileUrl.startsWith('/files')) fileUrl = `/private${fileUrl}`

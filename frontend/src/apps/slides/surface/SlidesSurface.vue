@@ -20,12 +20,14 @@ import {
   type DocumentPanel,
   type DocumentSession,
 } from "@/apps/drive";
+import LayoutDialog from "@/apps/slides/components/LayoutDialog.vue";
 import NavigationPanel from "@/apps/slides/components/NavigationPanel.vue";
 import PropertiesPanel from "@/apps/slides/components/PropertiesPanel.vue";
 import SlideContainer from "@/apps/slides/components/SlideContainer.vue";
 import Toolbar from "@/apps/slides/components/Toolbar.vue";
 import { useCommandHistory } from "@/apps/slides/composables/useCommandHistory";
 import { useShortcuts } from "@/apps/slides/composables/useShortcuts";
+import { setDocumentMedia } from "@/apps/slides/stores/documentMedia";
 import { resetFocus } from "@/apps/slides/stores/element";
 import {
   actionOrder as historyMetaActionOrder,
@@ -35,6 +37,7 @@ import {
 import {
   initPresentationDoc,
   inReadonlyMode,
+  loadTemplates,
   presentationDoc,
   resetEditorState,
   setDocumentFetch,
@@ -53,6 +56,7 @@ import {
 import {
   changeEditorSlide,
   focusedSlide,
+  handleInsertSlide,
   setSlideIndex,
   slideIndex,
   slides,
@@ -147,6 +151,8 @@ const send: Send = async (url, init) => {
   return response;
 };
 const releaseFetch = setDocumentFetch(props.session.contentDocname, send);
+// A migrated deck names its pictures by node id; the session signs their urls.
+const releaseMedia = setDocumentMedia((id) => props.session.media(id));
 
 const history = useCommandHistory(slides, {
   actions: historyMetaActions,
@@ -161,6 +167,17 @@ useShortcuts(canvasReadonly, inSlideShowMode);
 provide("inReadonlyMode", canvasReadonly);
 provide("inSlideShowMode", inSlideShowMode);
 provide("isOnline", online);
+
+// "Add slide" in the navigation panel and the slide context menu pick a layout here.
+const showLayoutDialog = ref(false);
+const insertIndex = ref(0);
+provide("openLayoutDialog", (index: number) => {
+  insertIndex.value = index;
+  showLayoutDialog.value = true;
+});
+function insertLayout(layout: unknown) {
+  handleInsertSlide(insertIndex.value, layout);
+}
 
 // The header renames through the session; the deck keeps its own copy of the title.
 watch(() => props.session.title.value, (title) => {
@@ -289,6 +306,7 @@ async function load() {
     if (run !== latestLoad) return;
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value;
     setSlideIndex(1);
+    loadTemplates();
     composite.value = !!doc?.is_composite;
     if (composite.value) await loadComposite();
   } catch (error) {
@@ -382,6 +400,7 @@ onBeforeUnmount(() => {
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveCurrentState().finally(() => {
     releaseFetch();
+    releaseMedia();
     resumeWrites(props.session.contentDocname);
   });
   resetEditorState();
@@ -529,6 +548,11 @@ onBeforeUnmount(() => {
       :flush="flushEdits"
       :restore="restoreVersion"
       @close="panel = null"
+    />
+
+    <LayoutDialog
+      v-model:open="showLayoutDialog"
+      @insert="insertLayout"
     />
 
     <teleport to="body">

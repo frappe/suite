@@ -45,7 +45,7 @@ describe('where the presentation requests go', () => {
 	it('an old page sends through frappe-ui and records the visit on the node', async () => {
 		await initPresentationDoc('p1')
 
-		expect(frappeRequests.map((request) => request.url)).toEqual(['frappe.client.get'])
+		expect(frappeRequests.map((request) => request.url)).toEqual(['suite.slides.doctype.presentation.presentation.get_public_presentation'])
 		expect(visits).toEqual(['node-1'])
 	})
 
@@ -62,7 +62,7 @@ describe('where the presentation requests go', () => {
 
 		expect(frappeRequests).toEqual([])
 		expect(visits).toEqual([])
-		expect(sent[0].url).toBe('/api/method/frappe.client.get?doctype=Presentation&name=p1')
+		expect(sent[0].url).toBe('/api/method/suite.slides.doctype.presentation.presentation.get_public_presentation?name=p1')
 		expect(sent[0].init?.method).toBe('GET')
 		expect(sent[1].url).toBe('/api/method/suite.slides.api.slides.save_slides')
 		expect(sent[1].init?.method).toBe('POST')

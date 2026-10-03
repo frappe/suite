@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useKeyboardShortcut } from 'frappe-ui'
 
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
@@ -45,8 +45,6 @@ import { inCropMode, commitCrop, cancelCrop } from '@/apps/slides/stores/imageCr
 
 const { toggleNavigationPanel } = useNavigationPanel()
 const { activeEditor, toggleMark } = useTextEditor()
-
-export const showShortcutsModal = ref(false)
 
 export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const inEditMode = () => !inReadonlyMode.value && !inSlideShowMode.value && !inCropMode.value
@@ -211,13 +209,6 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const shortcuts = [
-		{
-			combo: 'Shift+Slash',
-			description: 'Show keyboard shortcuts',
-			group: 'General',
-			allowInDialog: true,
-			handler: () => (showShortcutsModal.value = true),
-		},
 		{
 			combo: 'Mod+B',
 			description: 'Toggle navigation panel',

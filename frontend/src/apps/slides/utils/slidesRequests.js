@@ -14,10 +14,6 @@ const isMedia = (url) =>
 	url.pathname.startsWith(MEDIA_PROXY_PATH) ||
 	(url.pathname.startsWith('/private/files/') && url.searchParams.has(SLIDES_MEDIA_PARAM))
 const isAPI = (url) => url.pathname.startsWith('/api/method/suite.slides.')
-// the owner's editor loads the document itself through the generic client
-const isPresentationDoc = (url) =>
-	url.pathname === '/api/method/frappe.client.get' &&
-	url.searchParams.get('doctype') === 'Presentation'
 
 // every file under the bundle path is content-hashed, so a hit can never be stale
 export const isBundleAsset = (url) =>
@@ -54,7 +50,7 @@ export const getRequestType = (request, clientState) => {
 	if (isMedia(url)) return 'media'
 	if (isSlidesStatic(url)) return 'asset'
 	if (!isSlidesClient(request, clientState)) return 'other'
-	if (isAPI(url) || isPresentationDoc(url)) return 'api'
+	if (isAPI(url)) return 'api'
 	if (isBundleAsset(url)) return 'asset'
 	return 'other'
 }

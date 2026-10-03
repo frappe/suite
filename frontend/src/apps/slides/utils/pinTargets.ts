@@ -41,21 +41,13 @@ export const presentationLoadRequests = (
 			url: `${PRESENTATION_METHOD}.get_editor_access`,
 			params: { doctype: 'Presentation', presentation_id: presentationId },
 		},
+		{
+			url: `${PRESENTATION_METHOD}.get_public_presentation`,
+			params: { name: presentationId },
+		},
 	]
-
-	if (!readonly) {
-		requests.push({
-			url: 'frappe.client.get',
-			params: { doctype: 'Presentation', name: presentationId },
-		})
-		return requests
-	}
-
-	requests.push({
-		url: `${PRESENTATION_METHOD}.get_public_presentation`,
-		params: { name: presentationId },
-	})
-	if (composite) {
+	// an editable deck is never composite; the viewer then renders the referenced decks
+	if (readonly && composite) {
 		requests.push({
 			url: `${PRESENTATION_METHOD}.get_composite_presentation`,
 			params: { name: presentationId },

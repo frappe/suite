@@ -20,7 +20,7 @@ vi.mock('frappe-ui', () => ({
 	call: vi.fn(),
 	frappeRequest: async (options: any) => {
 		requests.push(options)
-		if (options.url !== 'frappe.client.get') return {}
+		if (options.url !== 'suite.slides.doctype.presentation.presentation.get_public_presentation') return {}
 		const held = holds.get(options.params.name)
 		if (held) await held
 		return JSON.parse(JSON.stringify(servedFor(options.params.name)))
@@ -69,12 +69,9 @@ describe('loading a presentation', () => {
 		await initPresentationDoc('p1')
 
 		const [load] = requests
-		expect(load.url).toBe('frappe.client.get')
+		expect(load.url).toBe('suite.slides.doctype.presentation.presentation.get_public_presentation')
 		expect(load.method).toBe('GET')
-		expect(Object.entries(load.params)).toEqual([
-			['doctype', 'Presentation'],
-			['name', 'p1'],
-		])
+		expect(Object.entries(load.params)).toEqual([['name', 'p1']])
 	})
 
 	it('prefers the local copy over a served document older than the last save', async () => {

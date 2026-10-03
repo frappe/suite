@@ -1,9 +1,8 @@
 import { ref, computed } from 'vue'
-import { createResource, call, frappeRequest, toast, dialog } from 'frappe-ui'
+import { createResource, frappeRequest, toast } from 'frappe-ui'
 
 import tinycolor from 'tinycolor2'
 
-import { router } from '@/apps/slides/router'
 import { slides } from './slide'
 import {
 	markClean,
@@ -74,50 +73,6 @@ const request = async ({ doc, url, method = 'GET', params = {}, signal }) => {
 	throw error
 }
 
-const createPresentationResource = createResource({
-	url: 'suite.slides.doctype.presentation.presentation.create_presentation',
-	method: 'POST',
-	makeParams: (args) => {
-		return {
-			duplicate_from: args.duplicateFrom,
-			template: args.template,
-			parent: args.parent,
-		}
-	},
-	transform: (doc) => {
-		return {
-			name: doc.name,
-			title: doc.title,
-			owner: doc.owner,
-			creation: doc.creation,
-			modified_by: doc.modified_by,
-			modified: doc.modified,
-			thumbnail: doc.thumbnail || '',
-			slide_count: doc.slide_count || doc.slides?.length || 0,
-		}
-	},
-})
-
-const updatePresentationTitle = async (id, newTitle) => {
-	const response = await call('suite.slides.doctype.presentation.presentation.update_title', {
-		name: id,
-		title: newTitle,
-	})
-	if (!response) throw new Error('Failed to rename presentation')
-	await adoptServerVersion(id, response)
-	// nothing refetches the doc after a rename, so the header would keep the old name
-	if (presentationDoc.value?.name === id) {
-		presentationDoc.value.title = newTitle
-		presentationDoc.value.slug = response.slug
-	}
-	return response.slug
-}
-
-// adopting a stamp over a stale base would let the next save wipe rows saved elsewhere
-const adoptServerVersion = (id, { modified, base_modified }) => {
-	if (presentationDoc.value?.name !== id) return
-	if (presentationDoc.value.modified === base_modified) presentationDoc.value.modified = modified
-}
 
 const getElementDimensions = async (el) => {
 	let width = 0,
@@ -287,13 +242,14 @@ const startLoad = () => ++latestLoad
 
 const isLatestLoad = (load) => load === latestLoad
 
-// an offline copy warms exactly this url and param order (utils/pinTargets.ts)
+// an offline copy warms exactly this url and param order (utils/pinTargets.ts).
+// Guest-reachable, so a share link's holder loads the deck to edit it too.
 const fetchDoc = (name) =>
 	request({
 		doc: name,
-		url: 'frappe.client.get',
+		url: 'suite.slides.doctype.presentation.presentation.get_public_presentation',
 		method: 'GET',
-		params: { doctype: 'Presentation', name },
+		params: { name },
 	})
 
 // touches no editor state, so a save during the load still targets what is on screen
@@ -497,42 +453,15 @@ const templateListResource = createResource({
 	},
 })
 
+// The layout picker and "add slide" read the open deck's theme layouts from here.
+const loadTemplates = () => {
+	if (templateList.value.length || inReadonlyMode.value) return
+	templateListResource.fetch()
+}
+
 const presentationTheme = computed(() => {
 	return presentationDoc.value?.theme
 })
-
-const deletePresentation = async (presentation) => {
-	await call('suite.slides.doctype.presentation.presentation.delete_presentation', {
-		name: presentation,
-	})
-}
-
-const confirmDeletePresentation = ({ name, title }, onDeleted) =>
-	dialog.confirm({
-		title: 'Delete presentation',
-		message: `"${title}" will be permanently deleted.`,
-		actions: [
-			{ label: 'Cancel', variant: 'outline' },
-			{
-				label: 'Delete',
-				variant: 'solid',
-				theme: 'red',
-				onClick: async () => {
-					await deletePresentation(name)
-					await onDeleted()
-				},
-			},
-		],
-	})
-
-const duplicatePresentation = async (presentation) => {
-	const newPresentation = await createPresentationResource.submit({
-		duplicateFrom: presentation,
-		parent: router.currentRoute.value.query.parent || '',
-	})
-
-	return newPresentation.name
-}
 
 const pageTitle = () => {
 	const title = presentationDoc.value?.title
@@ -555,23 +484,17 @@ const resetEditorState = () => {
 export {
 	presentationId,
 	applyReverseTransition,
-	createPresentationResource,
 	presentationDoc,
 	transformElements,
 	slidesLength,
 	templateList,
-	templateListResource,
+	loadTemplates,
 	presentationTheme,
 	viewOnly,
 	inReadonlyMode,
-	updatePresentationTitle,
-	adoptServerVersion,
 	savePresentationDoc,
 	initPresentationDoc,
 	startLoad,
-	isLatestLoad,
-	confirmDeletePresentation,
-	duplicatePresentation,
 	resetEditorState,
 	pageTitle,
 	setDocumentFetch,

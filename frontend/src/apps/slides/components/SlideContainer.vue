@@ -212,6 +212,8 @@ const fitScale = computed(() => {
 	)
 })
 
+// `fit` alone decides pan and zoom; nothing else writes `allowPanAndZoom`, so
+// fit mode cannot be zoomed out of its centred layout.
 watch(
 	() => props.fit,
 	(fit) => {
@@ -459,10 +461,6 @@ useResizeObserver(activeDiv, (entries) => {
 		top: activeElement.value.top + interactionOffset.top,
 	})
 })
-
-const togglePanZoom = () => {
-	allowPanAndZoom.value = !allowPanAndZoom.value
-}
 
 // selection bounds at drag start — captured synchronously in triggerDrag
 let dragStartBounds = null
@@ -736,10 +734,6 @@ provide('cornerRadius', {
 	isRounding,
 	isHovered,
 	setHovered,
-})
-
-defineExpose({
-	togglePanZoom,
 })
 
 const applyInteractionOffsets = () => {

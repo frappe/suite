@@ -117,7 +117,7 @@ describe('saveOfflineCopy', () => {
 
 		expect(apiCalls).toEqual([
 			'suite.slides.doctype.presentation.presentation.get_editor_access',
-			'frappe.client.get',
+			'suite.slides.doctype.presentation.presentation.get_public_presentation',
 		])
 	})
 

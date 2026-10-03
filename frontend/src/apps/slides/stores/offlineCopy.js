@@ -139,11 +139,6 @@ const warmShellAndApi = async (id, loadOptions, signal) => {
 	}
 }
 
-// after a deploy an online visit refreshes everything a copy needs except this
-const warmOfflineCopyAssets = (id) => {
-	if (readRecord(id)) warmAssets()
-}
-
 // bytes the presentation no longer shows go, and its ledger stops listing them
 const pruneOfflineCopy = async (id, targets = null) => {
 	const record = readRecord(id)
@@ -258,5 +253,4 @@ export {
 	cancelOfflineCopy,
 	removeOfflineCopy,
 	refreshOfflineStatus,
-	warmOfflineCopyAssets,
 }

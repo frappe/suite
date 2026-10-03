@@ -1,5 +1,4 @@
 import { ref, computed, nextTick, watch } from 'vue'
-import { call } from 'frappe-ui'
 
 import {
 	selectionBounds,
@@ -17,7 +16,7 @@ import { generateUniqueId, cloneObj } from '../utils/helpers'
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { getMinSizeForElement } from '../utils/resize'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
-import { getAttachmentUrl } from '../utils/mediaUploads'
+import { fileUploadHandler, getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { shareTableWidth } from '../utils/tableWidths'
 import { presentationId } from './presentation'
@@ -524,15 +523,19 @@ const addTableElement = async (cells, columnRatios) => {
 	)
 }
 
-// createResource hands back the last poster it saved when a request fails, which
-// silently pins the wrong one on a slow network
+// A poster is a frame the browser captured, uploaded like any other picture
+// and attached to the deck. Nothing on the server converts or stores base64.
 const savePoster = async (posterDataUrl) => {
 	try {
-		return await call('suite.slides.doctype.presentation.presentation.save_base64_image', {
-			presentation_name: presentationId.value,
-			base64_data: posterDataUrl,
-			prefix: 'poster',
+		const blob = await (await fetch(posterDataUrl)).blob()
+		const extension = blob.type.split('/')[1] || 'webp'
+		const file = new File([blob], `poster-${generateUniqueId()}.${extension}`, { type: blob.type })
+		const fileDoc = await fileUploadHandler.upload(file, {
+			doctype: 'Presentation',
+			docname: presentationId.value,
+			private: true,
 		})
+		return fileDoc.file_url
 	} catch (error) {
 		// the media is worth keeping without a poster
 		console.error('Could not save poster', error)
