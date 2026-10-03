@@ -676,11 +676,8 @@ jobs:
         if: steps.frontend-changes.outputs.run == '1'
         run: yarn install --frozen-lockfile
 
-      # Phase 2 of the tooling work runs the first `yarn format` over the tree
-      # and removes `continue-on-error` here.
       - name: Check frontend formatting
         if: steps.frontend-changes.outputs.run == '1'
-        continue-on-error: true
         working-directory: frontend
         run: yarn format:check
 
