@@ -385,16 +385,23 @@ class TreeRow:
 
 
 def _tree_rows(rows) -> list[TreeRow]:
-    """Use the stored byte count after backfill, leaving legacy metadata intact."""
+    """Use stored byte metadata after backfill, leaving legacy rows intact."""
     source = [TreeRow.of(row) for row in rows]
     blobs = sorted({row.blob for row in source if row.blob})
     if not blobs:
         return source
-    sizes = {
-        row.name: int(row.file_size or 0)
-        for row in frappe.get_all("File Blob", filters={"name": ["in", blobs]}, fields=["name", "file_size"])
+    facts = {
+        row.name: row
+        for row in frappe.get_all(
+            "File Blob", filters={"name": ["in", blobs]}, fields=["name", "file_size", "mime_type"]
+        )
     }
-    return [replace(row, file_size=sizes[row.blob]) if row.blob else row for row in source]
+    return [
+        replace(row, file_size=int(facts[row.blob].file_size or 0), mime_type=facts[row.blob].mime_type)
+        if row.blob
+        else row
+        for row in source
+    ]
 
 
 @dataclass(frozen=True)
@@ -852,6 +859,9 @@ class ContentTarget(Protocol):
     def read_blob(self, name: str) -> bytes: ...
 
     def put_private_blob(self, data: bytes, filename: str) -> BlobRow: ...
+
+    def private_blob(self, name: str, filename: str) -> str:
+        """A Ready private copy of these bytes, without moving the original."""
 
     def write_root_pair(self, node: dict, metadata: dict, grants: list[dict]) -> None: ...
 
@@ -1870,6 +1880,21 @@ class SiteContentTarget:
 
         blob = put_blob(io.BytesIO(data), is_private=True, filename=filename)
         return self.blob(blob.name)
+
+    def private_blob(self, name: str, filename: str) -> str:
+        from frappe.storage.blob import put_blob
+        from frappe.storage.driver import get_driver
+
+        source = self.blob(name)
+        if source and source.is_private:
+            return name
+        if not source or source.status != "Ready":
+            raise ValueError(f"public blob {name} is not Ready")
+        with get_driver(source.driver).read(source.key, is_private=False) as stream:
+            private = put_blob(stream, is_private=True, filename=filename)
+        if private.checksum != source.checksum or int(private.file_size) != int(source.file_size):
+            raise ValueError(f"private copy of blob {name} changed its bytes")
+        return private.name
 
     def write_root_pair(self, node: dict, metadata: dict, grants: list[dict]) -> None:
         SiteDrive().write_root_pair(node, metadata, grants)

@@ -319,6 +319,9 @@ class SiteLegacyFileRows:
         existing = frappe.db.get_all("File", filters={"name": ["in", list(names)]}, pluck="name")
         if not existing:
             return 0
+        from suite.drive.patches.cleanup.attachments import preserve_attachments
+
+        preserve_attachments(tuple(existing))
         frappe.db.delete("File", {"name": ["in", existing]})
         return len(existing)
 

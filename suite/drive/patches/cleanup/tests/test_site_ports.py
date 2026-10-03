@@ -7,6 +7,7 @@ client, so none of this needs a site.
 """
 
 import gzip
+import hashlib
 import json
 import unittest
 from base64 import b64encode
@@ -69,6 +70,61 @@ class TestSiteLegacyFileRowsBypassesHooks(unittest.TestCase):
         self.assertEqual(count, 2)
         delete_doc.assert_not_called()
         db.delete.assert_called_once_with("File", {"name": ["in", ["a", "b"]]})
+
+    def test_public_urls_and_framework_attachments_survive_as_home_files(self):
+        avatar = frappe._dict(
+            name="avatar",
+            blob="public-avatar",
+            file_url="/files/avatar.png",
+            file_name="avatar.png",
+            is_private=0,
+            blob_private=0,
+            blob_driver="local",
+            attached_to_doctype="User",
+            attached_to_name="person@example.com",
+            attached_to_field="user_image",
+        )
+        video = frappe._dict(
+            name="video",
+            blob="public-video",
+            file_url="/files/video.mp4",
+            blob_private=0,
+            blob_driver="local",
+            attached_to_doctype="Writer Document",
+        )
+        private = frappe._dict(
+            name="private-avatar",
+            blob="private-avatar",
+            file_url="/private/files/avatar.png",
+            blob_private=1,
+            blob_driver="local",
+            attached_to_doctype="User",
+            attached_to_name="person@example.com",
+        )
+        with patch("frappe.db", new=MagicMock()) as db, patch("frappe.delete_doc") as delete_doc:
+            db.get_all.return_value = [row.name for row in (avatar, video, private)]
+            db.sql.return_value = [avatar, video, private]
+            db.exists.return_value = True
+            db.get_value.return_value = None
+            self.assertEqual(SiteLegacyFileRows().delete(tuple(db.get_all.return_value)), 3)
+            copies = [
+                dict(zip(call.kwargs["fields"], call.kwargs["values"][0], strict=True))
+                for call in db.bulk_insert.call_args_list
+            ]
+            self.assertEqual(len(copies), 3)
+            for copy, original in zip(copies, (avatar, video, private), strict=True):
+                self.assertEqual(
+                    copy["name"], "attachment-" + hashlib.sha256(original.name.encode()).hexdigest()
+                )
+                self.assertEqual(copy["folder"], "Home")
+                self.assertEqual(copy["blob"], original.blob)
+                self.assertEqual(copy["file_url"], original.file_url)
+            db.get_value.side_effect = lambda doctype, name, *args, **kwargs: next(
+                (frappe._dict(copy) for copy in copies if copy["name"] == name), None
+            )
+            SiteLegacyFileRows().delete(tuple(row.name for row in (avatar, video, private)))
+            self.assertEqual(db.bulk_insert.call_count, 3)
+            delete_doc.assert_not_called()
 
     def test_returns_the_count_actually_present_not_the_count_requested(self):
         with patch("frappe.db", new=MagicMock()) as db:

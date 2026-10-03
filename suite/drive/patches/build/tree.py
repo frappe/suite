@@ -31,6 +31,8 @@ which is the only direction that can tell a dangling link from a row that
 simply belongs to frappe.
 """
 
+from dataclasses import replace
+
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -204,7 +206,7 @@ def _convert_siblings(env, tree: TreeConversion, parent: _Context, rows: list[Tr
                 tree.record_rename(TitleRename(row.name, title, claimed))
             title = claimed
 
-        node = _node_row(row, parent, title, stamp)
+        node = _node_row(env, row, parent, title, stamp)
         _measure(tree, node)
         if node["kind"] == "file" and not node["blob"]:
             # §14.1: a row whose bytes could not be reached becomes a node
@@ -324,11 +326,16 @@ def _kind(row: TreeRow) -> str:
     return "file"
 
 
-def _node_row(row: TreeRow, parent: _Context, title: str, stamp) -> dict:
+def _node_row(env, row: TreeRow, parent: _Context, title: str, stamp) -> dict:
     """§14.4's column map, as one row ready for a bulk insert."""
     kind = _kind(row)
     is_file = kind == "file"
     blob = row.blob if is_file else None
+    if blob:
+        blob = env.content_target.private_blob(blob, row.file_name or row.name)
+        if blob != row.blob:
+            fact = env.content_target.blob(blob)
+            row = replace(row, file_size=fact.file_size, mime_type=fact.mime_type)
     trash_root, trashed_at = stamp if stamp else (None, None)
     return {
         "name": row.name,
@@ -343,7 +350,7 @@ def _node_row(row: TreeRow, parent: _Context, title: str, stamp) -> dict:
         "path": parent.child_path,
         "kind": kind,
         "blob": blob,
-        # §14.4: the read port takes linked files' sizes from File Blob;
+        # §14.4: linked files take their size and MIME from File Blob;
         # legacy metadata can disagree with the available bytes. A folder's
         # `file_size` is the rolled-up total its ancestors kept
         # (`apply_file_size_delta`), and charging it again would double every

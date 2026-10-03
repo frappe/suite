@@ -4246,10 +4246,14 @@ except Slides media, which §14.7 turns into nodes and Cleanup then removes
 Reachability is the whole rule: `attached_to_*` is not consulted. A
 framework attachment the legacy hooks filed under a Drive root (a user's
 avatar, the Suite Settings logo, a Meet recording) is a Drive row and
-becomes a file node from its own blob like any upload; its `File` row,
-and with it the `attached_to_*` link, leaves in Cleanup step 1, while the
-bytes stay where they are and the URL stored on the attached document is
-not rewritten. Because Build gives every reachable row a node (or reports
+becomes a file node like any upload. Drive nodes require private blobs:
+Build copies public bytes privately without changing the original blob.
+Before deleting a reachable framework attachment, Cleanup preserves a
+stable `File` copy under `Home` with the original attachment link. Public
+originals also keep a `Home` copy so stored public URLs still work and GC
+retains their blobs. Local attachment URLs remain unchanged; S3 framework
+attachment fields naming the old fetch URL move to the canonical blob URL.
+Because Build gives every reachable row a node (or reports
 it as a skip the operator must accept) in the same migrate, Cleanup's gate
 1 never refuses a site because of attachments; it refused the development
 site only because the legacy hooks kept filing new rows for two days after
@@ -4262,9 +4266,9 @@ Build had run.
 | `root` | the root node reached; NULL on the root node itself |
 | `path` | ids of the ancestors below the root |
 | `kind` | `root` for the root folders handled in §14.3; else `folder` if `is_folder`; `link` if `file_type = "Link"` (with `url = file_url`); `document` if `content_doctype` is `Writer Document`, `Presentation`, or `Sheet` (with the content ref); else `file` |
-| `blob` | `File.blob`, file nodes only |
+| `blob` | `File.blob`, file nodes only; a private copy if the original is public |
 | `size` | `File Blob.file_size` for files with a blob; 0 for folders and files whose bytes are missing |
-| `mime` | `mime_type` |
+| `mime` | `File Blob.mime_type` for files with a blob; NULL when bytes are missing |
 | `content_modified` | `file_modified` |
 | `owner`, `creation`, `modified` | copied |
 
@@ -4519,7 +4523,8 @@ bucket access at all: it deletes no bucket object (see the last step).
 Then, in order:
 
 - Delete the Drive-owned `File` rows, the `Drive` and `Users` root rows, and
-  every Removed row. Also delete the Slides media `File` rows Build turned
+  every Removed row. First preserve public originals and valid framework
+  attachments as stable `Home` copies (§14.4). Also delete the Slides media `File` rows Build turned
   into nodes (§14.7): a row goes when a `file` node directly under its
   deck's node holds the row's own blob and no slide body on the site still
   names the row's URL (Build leaves a URL it could not adopt in place). Only

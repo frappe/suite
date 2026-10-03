@@ -760,10 +760,12 @@ class SlidesTest(unittest.TestCase):
 
         borrowed = self.media_children(target, consumer.node)
         self.assertEqual(len(borrowed), 1)
-        # Tier 1: the reference spells the public row's `file_url` exactly.
-        self.assertEqual(borrowed[0]["blob"], "blob-public")
+        self.assertEqual(borrowed[0]["blob"], "blob-private")
+        self.assertEqual(target.read_blob(borrowed[0]["blob"]), private_bytes)
+        self.assertFalse(target.blob("blob-public").is_private)
         self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": borrowed[0]["name"]}])
-        self.assertEqual(result.borrowed_duplicates_collapsed, 1)
+        # The public copy already reuses the private blob before grouping.
+        self.assertEqual(result.borrowed_duplicates_collapsed, 0)
         self.assertEqual(result.issues_total, 0)
 
         again = convert_slides_and_templates(env)

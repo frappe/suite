@@ -123,6 +123,8 @@ class TestBuildThenCleanup(IntegrationTestCase):
             ("Slide", "parent"),
             ("Presentation", "name"),
             ("Drive Settings", "name"),
+            # Cleanup's `Home` copy of the avatar (§14.4).
+            ("File", "attached_to_name"),
             ("User", "name"),
         ):
             if frappe.db.table_exists(doctype):
@@ -181,6 +183,8 @@ class TestBuildThenCleanup(IntegrationTestCase):
 
         # A framework attachment legacy Drive filed under a Drive folder: a
         # user's avatar, uploaded while the legacy hooks were live (B73).
+        avatar = cls.local_bytes(b"not really a png")
+        cls.avatar_url = avatar["file_url"]
         cls.file_row(
             cls.avatar,
             folder=cls.folder,
@@ -189,7 +193,7 @@ class TestBuildThenCleanup(IntegrationTestCase):
             attached_to_doctype="User",
             attached_to_name=cls.owner,
             attached_to_field="user_image",
-            **cls.local_bytes(b"not really a png"),
+            **avatar,
         )
 
         legacy_schema.insert_row(
@@ -336,16 +340,21 @@ class TestBuildThenCleanup(IntegrationTestCase):
         self.assertEqual(trashed.state, "Trashed")
         self.assertTrue(file.blob)
 
+        # §14.4: the type comes from the stored bytes, as for an upload, not
+        # from the legacy row's `text/plain`.
         self.as_user(self.owner)
         stream, mime = drive.read_file(self.file)
-        self.assertEqual((stream.read(), mime), (self.bytes, "text/plain"))
+        stored = frappe.db.get_value("File Blob", file.blob, "mime_type")
+        self.assertEqual((stream.read(), mime), (self.bytes, stored))
 
     def test_a_framework_attachment_under_a_drive_folder_is_a_drive_file(self):
         """§14.4: whatever legacy Drive filed under a Drive root is Drive's, attachment or not.
 
         The avatar becomes a file node from its own bytes, so Cleanup's gate 1
-        (every reachable row has a node) never refuses because of it, and
-        its `File` row leaves with the rest in Cleanup.
+        (every reachable row has a node) never refuses because of it. Its
+        Drive `File` row leaves with the rest in Cleanup, which first keeps a
+        copy under `Home`, so the user's attachment, its URL and the blob's
+        reference all stay.
         """
         avatar = self.node(self.avatar)
         self.assertEqual(
@@ -354,8 +363,14 @@ class TestBuildThenCleanup(IntegrationTestCase):
         )
         self.assertTrue(avatar.blob)
         self.assertIsNone(frappe.db.exists("File", self.avatar))
-        self.assertIsNone(
-            frappe.db.exists("File", {"attached_to_doctype": "User", "attached_to_name": self.owner})
+        kept = frappe.get_all(
+            "File",
+            filters={"attached_to_doctype": "User", "attached_to_name": self.owner},
+            fields=["folder", "attached_to_field", "blob", "file_url"],
+        )
+        self.assertEqual(
+            [(row.folder, row.attached_to_field, row.blob, row.file_url) for row in kept],
+            [("Home", "user_image", avatar.blob, self.avatar_url)],
         )
 
     def test_a_deck_names_its_picture_the_way_the_renderer_resolves_it(self):

@@ -111,6 +111,22 @@ class PairTest(TreeCase):
             self.run_walk()
         self.assertNotIn("child00001", self.drive.node_rows)
 
+    def test_public_file_nodes_use_private_copies_and_resume_with_the_same_blob(self):
+        source = row("publicfile", ROOT, blob="public", file_size=3, mime_type="image/png")
+        self.add(source)
+        env = build_environment(self.path, tree=self.legacy, drive=self.drive)
+        env.content_target.add_blob("public", b"abc", is_private=0, mime_type="image/png")
+        tree_module.convert_trees(env, self.report, [plan()])
+        private = self.node("publicfile")["blob"]
+        self.assertNotEqual(private, "public")
+        self.assertTrue(env.content_target.blob(private).is_private)
+        self.assertEqual(env.content_target.read_blob(private), b"abc")
+        self.assertEqual(source.blob, "public")
+        self.assertFalse(env.content_target.blob("public").is_private)
+        self.assertEqual(env.content_target.read_blob("public"), b"abc")
+        tree_module.convert_trees(env, self.report, [plan()])
+        self.assertEqual(self.node("publicfile")["blob"], private)
+
     def test_a_root_with_no_node_stops_the_walk(self):
         del self.drive.node_rows[ROOT]
         with self.assertRaises(BuildPairError):

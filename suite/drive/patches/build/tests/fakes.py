@@ -982,6 +982,18 @@ class FakeContentTarget:
         )
         return self.add_blob(name, data, mime_type=mime)
 
+    def private_blob(self, name, filename):
+        source = self.blob(name)
+        # Tree fixtures use opaque blob ids unless a test needs byte facts.
+        if source is None or source.is_private:
+            return name
+        data = self.read_blob(name)
+        for blob_name, body in self.blob_bytes.items():
+            row = self.blob_rows[blob_name]
+            if body == data and row.is_private and row.status == "Ready":
+                return blob_name
+        return self.add_blob(f"content-blob-{len(self.blob_rows) + 1}", data, mime_type=source.mime_type).name
+
     def write_root_pair(self, node, metadata, grants):
         self._unit(
             (node or metadata or {}).get("name"),

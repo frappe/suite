@@ -169,6 +169,7 @@ def _convert_deck(env, deck, batch_size, result):
         batch_size,
         lambda row: (str(row.creation or ""), row.name),
     )
+    files = _private_media(env.content_target, files)
     files = _one_blob_per_content(env.content_target, files, host)
     thumbnail, excluded = _thumbnail_file(deck, files, result, host)
     references = _references(parsed, slides)
@@ -569,6 +570,7 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
             continue
         # §3: one unambiguous Ready blob. A reference with none is unresolved
         # evidence, not a reason to refuse a deck that is otherwise convertible.
+        rows = _private_media(env.content_target, rows)
         blobs = {row.blob for row in rows if row.blob and _blob_is_ready(env.content_target, row.blob)}
         if not blobs:
             result.record_issue(
@@ -793,6 +795,15 @@ def _ready_blob(target, name):
     if not blob or blob.status != "Ready":
         raise InvalidLegacyContent(f"blob {name} is not Ready")
     return blob
+
+
+def _private_media(target, files):
+    return [
+        replace(row, blob=target.private_blob(row.blob, row.file_name or row.name))
+        if row.blob and _blob_is_ready(target, row.blob)
+        else row
+        for row in files
+    ]
 
 
 def _aliases(row, host=""):

@@ -7,6 +7,8 @@ the check that it still copies it belongs here too, beside the port it
 stands in for.
 """
 
+import hashlib
+import io
 import json
 import unittest
 from pathlib import Path
@@ -451,17 +453,17 @@ class TestSiteTree(StubbedDatabase):
         query, values = self.db.sql.call_args.args[:2]
         return " ".join(query.split()), values
 
-    def test_linked_files_use_the_blob_size_when_legacy_sizes_are_stale(self):
+    def test_linked_files_use_blob_metadata_when_legacy_metadata_is_stale(self):
         files = [
-            frappe._dict(name="short", blob="b-short", file_size=100),
+            frappe._dict(name="short", blob="b-short", file_size=100, mime_type="text/plain"),
             frappe._dict(name="long", blob="b-long", file_size=1),
             frappe._dict(name="empty", blob="b-empty", file_size=50),
             frappe._dict(name="missing", blob=None, file_size=500),
         ]
         blobs = [
-            frappe._dict(name="b-short", file_size=3),
-            frappe._dict(name="b-long", file_size=20),
-            frappe._dict(name="b-empty", file_size=0),
+            frappe._dict(name="b-short", file_size=3, mime_type="image/png"),
+            frappe._dict(name="b-long", file_size=20, mime_type="video/mp4"),
+            frappe._dict(name="b-empty", file_size=0, mime_type="application/octet-stream"),
         ]
 
         def read(doctype, **kwargs):
@@ -480,8 +482,12 @@ class TestSiteTree(StubbedDatabase):
 
         for rows in (children, content_files, individual):
             self.assertEqual([row.file_size for row in rows], [3, 20, 0, 500])
+            self.assertEqual(
+                [row.mime_type for row in rows[:3]], ["image/png", "video/mp4", "application/octet-stream"]
+            )
             self.assertIsNone(rows[-1].blob)
         self.assertEqual([file.file_size for file in files], [100, 1, 50, 500])
+        self.assertEqual(files[0].mime_type, "text/plain")
         self.db.set_value.assert_not_called()
 
     def test_the_child_page_binds_one_placeholder_per_parent(self):
@@ -895,6 +901,43 @@ class TestSiteContentTarget(StubbedDatabase):
     def setUp(self):
         super().setUp()
         self.target = SiteContentTarget()
+
+    def test_public_bytes_are_copied_privately_without_changing_the_source(self):
+        body = b"existing public bytes"
+        checksum = hashlib.sha256(body).hexdigest()
+        source = frappe._dict(
+            name="public",
+            file_size=len(body),
+            mime_type="image/png",
+            driver="local",
+            is_private=0,
+            status="Ready",
+            key="../avatar.png",
+            checksum=checksum,
+        )
+        copied = frappe._dict(name="private", checksum=checksum, file_size=len(body))
+        self.db.get_value.return_value = source
+        driver = MagicMock()
+        driver.read.side_effect = lambda *args, **kwargs: io.BytesIO(body)
+
+        def put(stream, **kwargs):
+            self.assertEqual(stream.read(), body)
+            self.assertTrue(kwargs["is_private"])
+            return copied
+
+        with (
+            patch("frappe.storage.driver.get_driver", return_value=driver),
+            patch("frappe.storage.blob.put_blob", side_effect=put),
+        ):
+            self.assertEqual(self.target.private_blob("public", "avatar.png"), "private")
+            copied.checksum = "incorrect"
+            with self.assertRaisesRegex(ValueError, "changed its bytes"):
+                self.target.private_blob("public", "avatar.png")
+            source.is_private = 1
+            self.assertEqual(self.target.private_blob("public", "avatar.png"), "public")
+        self.assertEqual(driver.read.call_count, 2)
+        self.assertEqual(source.key, "../avatar.png")
+        self.db.set_value.assert_not_called()
 
     def test_root_metadata_tries_the_primary_key_before_the_node_column(self):
         self.db.get_value.return_value = {"name": "root-1", "node": "root-1"}
