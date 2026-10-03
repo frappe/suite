@@ -66,13 +66,13 @@ export class Room implements CollabRoom {
     this.boxes = [this.own]
   }
 
-  async start(rows: Row[]) {
+  async start(rows: Row[], checkpoint: Uint8Array | null = null) {
     this.doc.on('update', this.capture)
     if (this.device && this.writable && this.bound) {
       await this.device.store.saveSession(this.session()).catch(() => this.lostStore())
     }
     this.own.release = (await holdLock(this.lockName(this.own.sid))) ?? (() => {})
-    this.apply(rows, true)
+    this.apply(rows, true, checkpoint)
     if (this.writable) await this.adopt()
     this.pollTimer = setInterval(() => void this.tick(), this.options.pollMs ?? 2000)
     document.addEventListener('visibilitychange', this.hidden)
@@ -242,7 +242,7 @@ export class Room implements CollabRoom {
   }
 
   // Rows are applied strictly in rev order; a hole waits for the next pull
-  private apply(rows: Row[], opening = false) {
+  private apply(rows: Row[], opening = false, checkpoint: Uint8Array | null = null) {
     const next = rows.filter((row) => row.rev > this.appliedThrough).sort((a, b) => a.rev - b.rev)
     const run: Row[] = []
     for (const row of next) {
@@ -250,7 +250,8 @@ export class Room implements CollabRoom {
       run.push(row)
     }
     if (!run.length && !opening) return
-    const bytes = run.length ? Y.mergeUpdates(run.map((row) => row.bytes)) : null
+    const parts = [...(checkpoint ? [checkpoint] : []), ...run.map((row) => row.bytes)]
+    const bytes = parts.length ? Y.mergeUpdates(parts) : null
     if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)
     if (run.length) this.appliedThrough = run[run.length - 1].rev
     if (this.device) {
@@ -261,7 +262,7 @@ export class Room implements CollabRoom {
       }
       void this.device.store.commit(this.device.doc, copy, bytes).catch(() => {})
     }
-    if (run.length) this.changed()
+    if (bytes) this.changed()
   }
 
   private capture = (update: Uint8Array, origin: unknown) => {

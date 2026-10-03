@@ -39,17 +39,25 @@ def answer(response) -> dict:
 
 
 def read_frame(data: bytes) -> tuple[dict, list[tuple[int, bytes]]]:
+    header, _checkpoint, rows = read_open(data)
+    return header, rows
+
+
+def read_open(data: bytes) -> tuple[dict, bytes, list[tuple[int, bytes]]]:
     (length,) = struct.unpack(">I", data[:4])
     header = json.loads(data[4 : 4 + length])
     at = 4 + length
-    checkpoint, count = struct.unpack(">II", data[at : at + 8])
-    at += 8 + checkpoint
+    (size,) = struct.unpack(">I", data[at : at + 4])
+    checkpoint = data[at + 4 : at + 4 + size]
+    at += 4 + size
+    (count,) = struct.unpack(">I", data[at : at + 4])
+    at += 4
     rows = []
     for _ in range(count):
         rev, size = struct.unpack(">QI", data[at : at + 12])
         rows.append((rev, data[at + 12 : at + 12 + size]))
         at += 12 + size
-    return header, rows
+    return header, checkpoint, rows
 
 
 def push_body(

@@ -20,7 +20,7 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     return { state: 'live', room: await openOffline(copy, options, error) }
   }
   if (opened.status !== 200) throw openError(opened, options)
-  const { header, rows } = decodeFrame(opened.bytes)
+  const { header, checkpoint, rows } = decodeFrame(opened.bytes)
   if (header.state !== 'live') return { state: header.state }
 
   const doc = new Y.Doc()
@@ -33,8 +33,11 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     else if (answer.status === 403 || answer.status === 404) canWrite = false
     else throw openError(answer, options)
   }
-  const room = new Room({ doc, lineage: header.lineage!, canWrite, sid, bound: true }, options)
-  await room.start(rows)
+  const room = new Room(
+    { doc, lineage: header.lineage!, canWrite, sid, bound: true, appliedThrough: header.base ?? 0 },
+    options,
+  )
+  await room.start(rows, checkpoint)
   return { state: 'live', room }
 }
 

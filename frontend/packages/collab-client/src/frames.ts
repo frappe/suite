@@ -7,6 +7,8 @@ export interface FrameHeader {
   lineage?: string
   can_write?: boolean
   pace_ms?: number
+  // The rev the checkpoint covers; rows follow it
+  base?: number
 }
 
 export interface Row {
@@ -15,7 +17,7 @@ export interface Row {
 }
 
 // `u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`
-export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; rows: Row[] } {
+export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; checkpoint: Uint8Array | null; rows: Row[] } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let at = 0
   const need = (length: number) => {
@@ -32,7 +34,7 @@ export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; rows: Row
     return bytes.slice(at - length, at)
   }
   const header = JSON.parse(new TextDecoder().decode(take(u32()))) as FrameHeader
-  take(u32())
+  const checkpoint = take(u32())
   const rows: Row[] = []
   for (let count = u32(); count > 0; count--) {
     need(8)
@@ -40,7 +42,7 @@ export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; rows: Row
     at += 8
     rows.push({ rev, bytes: take(u32()) })
   }
-  return { header, rows }
+  return { header, checkpoint: checkpoint.byteLength ? checkpoint : null, rows }
 }
 
 export function encodePush(header: Record<string, unknown>, update: Uint8Array): Uint8Array<ArrayBuffer> {

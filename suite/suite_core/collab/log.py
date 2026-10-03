@@ -8,6 +8,8 @@ committed gets their original answer back, checked against each seq's sha, so a
 lost answer costs one request and never a second row.
 """
 
+import contextlib
+import gzip
 import hashlib
 import json
 import secrets
@@ -35,6 +37,10 @@ class Refusal(Exception):
 
 def enabled() -> bool:
     return frappe.db.get_single_value("Suite Collab Settings", "mode") == "on"
+
+
+class ChainBroken(Exception):
+    reason = "chain_break"
 
 
 def require_enabled() -> None:
@@ -82,10 +88,17 @@ def rows_after(adapter: str, doc_id: str, since: int) -> list[tuple[int, bytes]]
     ]
 
 
-def frame(header: dict, rows: list[tuple[int, bytes]] = ()) -> bytes:
-    """`u32 hlen | header JSON | u32 checkpoint len (0) | u32 n | (u64 rev | u32 len | bytes)*`"""
+def frame(header: dict, rows: list[tuple[int, bytes]] = (), checkpoint: bytes | None = None) -> bytes:
+    """`u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`"""
     encoded = json.dumps(header, separators=(",", ":")).encode()
-    parts = [struct.pack(">I", len(encoded)), encoded, struct.pack(">II", 0, len(rows))]
+    checkpoint = checkpoint or b""
+    parts = [
+        struct.pack(">I", len(encoded)),
+        encoded,
+        struct.pack(">I", len(checkpoint)),
+        checkpoint,
+        struct.pack(">I", len(rows)),
+    ]
     for rev, payload in rows:
         parts += [struct.pack(">QI", rev, len(payload)), payload]
     return b"".join(parts)
@@ -96,6 +109,7 @@ def open_header(doc: dict, *, can_write: bool) -> dict:
         "state": "live",
         "proto": PROTO,
         "lineage": doc["lineage"],
+        "base": doc["base"],
         "can_write": can_write,
         "pace_ms": PACE_MS,
     }
@@ -309,3 +323,68 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
         frappe.db.rollback()
         raise
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
+
+
+def read(adapter: str, doc_id: str) -> dict | None:
+    """The checkpoint and every row after it through the head, from one snapshot, chain checked.
+
+    Rows are gap-free and commit-ordered, so a break means the store changed under
+    the read or was rewound; the read is tried once more before it gives up.
+    """
+    for _try in range(2):
+        with repeatable_read():
+            doc = frappe.db.sql(
+                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`
+                FROM `{table(adapter, "doc")}` WHERE `id` = %s""",
+                doc_id,
+                as_dict=True,
+            )
+            if not doc:
+                return None
+            doc = doc[0]
+            base = int(doc.checkpoint_rev)
+            checkpoint = None
+            chain = chain_seed(doc.lineage)
+            if base:
+                gz, chain = frappe.db.sql(
+                    f"SELECT `gz`, `chain` FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` = %s",
+                    (doc_id, base),
+                )[0]
+                checkpoint, chain = gzip.decompress(bytes(gz)), bytes(chain)
+            rows = rows_after(adapter, doc_id, base)
+        revs = [rev for rev, _payload in rows]
+        for rev, payload in rows:
+            chain = chain_next(chain, rev, hashlib.sha256(payload).digest())
+        if revs == list(range(base + 1, int(doc.head_rev) + 1)) and chain == bytes(doc.head_chain):
+            return {
+                "lineage": doc.lineage,
+                "head_rev": int(doc.head_rev),
+                "head_chain": chain,
+                "base": base,
+                "checkpoint": checkpoint,
+                "rows": rows,
+            }
+    raise ChainBroken
+
+
+@contextlib.contextmanager
+def repeatable_read():
+    """Run the reads in one REPEATABLE READ snapshot. The level applies from the next transaction."""
+    previous = isolation()
+    frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    try:
+        yield
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    finally:
+        if previous and previous != "REPEATABLE-READ":
+            frappe.db.sql(f"SET SESSION TRANSACTION ISOLATION LEVEL {previous.replace('-', ' ')}")
+
+
+def isolation() -> str | None:
+    for variable in ("@@transaction_isolation", "@@tx_isolation"):
+        try:
+            return frappe.db.sql(f"SELECT {variable}")[0][0]
+        except Exception:
+            continue
+    return None

@@ -75,8 +75,13 @@ def _open(node: str) -> Response:
     doc = collab.find(ADAPTER, node)
     if doc is None:
         return _frame({"state": "unconverted", "proto": collab.PROTO})
-    header = collab.open_header(doc, can_write=frappe.session.user != "Guest" and _can(node, drive.EDIT))
-    return _frame(header, collab.rows_after(ADAPTER, doc.id, 0))
+    can_write = frappe.session.user != "Guest" and _can(node, drive.EDIT)
+    try:
+        snapshot = collab.read(ADAPTER, doc.id)
+    except collab.ChainBroken:
+        frappe.log_error(title="Collab open: chain_break", message=f"{ADAPTER} document {doc.id}")
+        raise collab.Refusal(503, "chain_break") from None
+    return _frame(collab.open_header(snapshot, can_write=can_write), snapshot["rows"], snapshot["checkpoint"])
 
 
 def _pull(node: str, since: str | None) -> Response:
@@ -163,8 +168,8 @@ def _answer(handle) -> Response:
         return _json(refusal.status, refusal.body)
 
 
-def _frame(header: dict, rows=()) -> Response:
-    return Response(collab.frame(header, rows), status=200, mimetype="application/octet-stream")
+def _frame(header: dict, rows=(), checkpoint: bytes | None = None) -> Response:
+    return Response(collab.frame(header, rows, checkpoint), status=200, mimetype="application/octet-stream")
 
 
 def _json(status: int, body: dict) -> Response:

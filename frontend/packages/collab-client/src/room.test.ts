@@ -10,17 +10,19 @@ const reply = (status: number, body: unknown): Answer => ({
   bytes: new TextEncoder().encode(JSON.stringify(body)),
 })
 
-function frame(header: object, rows: { rev: number; bytes: Uint8Array }[] = []): Answer {
+function frame(header: object, rows: { rev: number; bytes: Uint8Array }[] = [], checkpoint = new Uint8Array()): Answer {
   const json = new TextEncoder().encode(JSON.stringify(header))
-  const size = 4 + json.length + 8 + rows.reduce((sum, row) => sum + 12 + row.bytes.length, 0)
+  const size = 4 + json.length + 8 + checkpoint.length + rows.reduce((sum, row) => sum + 12 + row.bytes.length, 0)
   const out = new Uint8Array(size)
   const view = new DataView(out.buffer)
   let at = 0
   view.setUint32(at, json.length)
   out.set(json, (at += 4))
   at += json.length
-  view.setUint32(at, 0)
-  view.setUint32((at += 4), rows.length)
+  view.setUint32(at, checkpoint.length)
+  out.set(checkpoint, (at += 4))
+  at += checkpoint.length
+  view.setUint32(at, rows.length)
   at += 4
   for (const row of rows) {
     view.setBigUint64(at, BigInt(row.rev))
@@ -38,6 +40,9 @@ function fakeServer(state = 'live') {
   const sessions = new Map<string, { cid: number; acked: number; shas: string[] }>()
   const access = { refuse: null as Answer | null, canWrite: true, online: true }
   const calls: string[] = []
+  const pulls: number[] = []
+  // Rows through `base` folded into one state, as a compaction leaves them
+  const checkpoint = { base: 0, bytes: new Uint8Array() }
   let nextClient = 1
   const reach = (call: string) => {
     if (!access.online) throw new TypeError('Failed to fetch')
@@ -46,10 +51,13 @@ function fakeServer(state = 'live') {
   const endpoints = (): CollabEndpoints => ({
     async open() {
       reach('open')
-      return frame({ state, proto: 1, lineage: 'L', can_write: access.canWrite }, state === 'live' ? rows : [])
+      const tail = state === 'live' ? rows.filter((row) => row.rev > checkpoint.base) : []
+      const header = { state, proto: 1, lineage: 'L', can_write: access.canWrite, base: checkpoint.base }
+      return frame(header, tail, checkpoint.bytes)
     },
     async pull(since) {
       reach('pull')
+      pulls.push(since)
       if (access.refuse) return access.refuse
       return frame({ state, proto: 1 }, rows.filter((row) => row.rev > since))
     },
@@ -88,7 +96,11 @@ function fakeServer(state = 'live') {
       return reply(200, { rev: rows.length, head: rows.length, acked: header.to })
     },
   })
-  return { rows, sessions, endpoints, access, calls }
+  const compact = () => {
+    checkpoint.bytes = Y.mergeUpdates(rows.map((row) => row.bytes))
+    checkpoint.base = rows.length
+  }
+  return { rows, sessions, endpoints, access, calls, pulls, compact }
 }
 
 const rooms: CollabRoom[] = []
@@ -126,6 +138,26 @@ async function device() {
 }
 
 describe('collab room', () => {
+  it('opens from the checkpoint plus the rows after it, and pulls on from there', async () => {
+    const server = fakeServer()
+    const a = await join(server.endpoints())
+    a.doc.getText('t').insert(0, 'one ')
+    await a.flush()
+    server.compact()
+    a.doc.getText('t').insert(4, 'two ')
+    await a.flush()
+
+    const b = await join(server.endpoints())
+    expect(text(b)).toBe('one two ')
+
+    a.doc.getText('t').insert(8, 'three')
+    await a.flush()
+    server.pulls.length = 0
+    await b.pull()
+    expect(server.pulls).toEqual([2])
+    expect(text(b)).toBe('one two three')
+  })
+
   it('two writers converge on the server order after a poll', async () => {
     const server = fakeServer()
     const [a, b] = [await join(server.endpoints()), await join(server.endpoints())]

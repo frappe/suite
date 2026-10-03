@@ -2,6 +2,7 @@ import gzip
 import json
 import os
 import signal
+import threading
 import uuid
 from unittest.mock import patch
 
@@ -15,7 +16,7 @@ from suite.suite_core.collab import checkpoints, compaction
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
-from suite.writer.collab.tests.test_collab import answer, call, push_body, read_frame
+from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open
 
 WRITER = "writer-collab-writer@example.com"
 
@@ -65,10 +66,11 @@ class TestWriterCheckpoints(IntegrationTestCase):
         cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
             "client_id"
         ]
-        header, rows = read_frame(call(routes.collab_get, node).get_data())
+        header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
         doc = pycrdt.Doc(client_id=cid)
-        for _rev, payload in rows:
-            doc.apply_update(payload)
+        for payload in [checkpoint, *(payload for _rev, payload in rows)]:
+            if payload:
+                doc.apply_update(payload)
         seen = doc.get_state()
         fragment = doc.get("default", type=pycrdt.XmlFragment)
         text = fragment.children[0] if len(fragment.children) else fragment.children.append(pycrdt.XmlText())
@@ -76,7 +78,7 @@ class TestWriterCheckpoints(IntegrationTestCase):
             text.insert(len(str(text)), word)
             update = doc.get_update(seen)
             seen = doc.get_state()
-            body = push_body(header["lineage"], sid, cid, seq, rows[-1][0] if rows else 0, update)
+            body = push_body(header["lineage"], sid, cid, seq, 0, update)
             self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
         return str(text)
 
@@ -107,14 +109,14 @@ class TestWriterCheckpoints(IntegrationTestCase):
 
     def test_a_compaction_installs_a_checkpoint_of_every_row(self):
         node = self.new_document()
-        typed = self.type_into(node, ["one ", "two ", "three"])
+        self.type_into(node, ["one ", "two ", "three"])
 
         self.compact(node)
 
         doc = self.doc_row(node)
         [(through, state, integrated)] = self.checkpoints_of(node)
         self.assertEqual((through, integrated), (3, 1))
-        self.assertEqual(self.text_of(state), typed)
+        self.assertEqual(self.text_of(state), "one two three")
         self.assertEqual(
             (doc.checkpoint_rev, doc.integrated_rev, doc.tail_rows, doc.tail_bytes), (3, 3, 0, 0)
         )
@@ -125,13 +127,13 @@ class TestWriterCheckpoints(IntegrationTestCase):
         node = self.new_document()
         self.type_into(node, ["one ", "two "])
         self.compact(node)
-        typed = self.type_into(node, ["three"])
+        self.type_into(node, ["three"])
 
         self.compact(node)
 
         [(through, state, _integrated)] = self.checkpoints_of(node)
         self.assertEqual(through, 3)
-        self.assertEqual(self.text_of(state), typed)
+        self.assertEqual(self.text_of(state), "one two three")
 
     def test_a_work_horse_killed_mid_compaction_leaves_every_row_and_commits_nothing(self):
         # A crash, the worker's timeout kill and a memory abort all end the horse with a signal
@@ -206,18 +208,19 @@ class TestWriterCheckpoints(IntegrationTestCase):
         node = self.new_document()
         self.type_into(node, ["one ", "two "])
         doc_id = self.doc_row(node).id
-        older = checkpoints.read("writer", doc_id)
-        typed = self.type_into(node, ["three"])
+        older = routes.collab.read("writer", doc_id)
+        self.type_into(node, ["three"])
         self.compact(node)
 
-        result = compaction.compact(older["checkpoint"], older["rows"], writer_collab.ROOTS)
+        rows = [payload for _rev, payload in older["rows"]]
+        result = compaction.compact(older["checkpoint"], rows, writer_collab.ROOTS)
         report = {"ms": 1}
         checkpoints.store("writer", doc_id, 2, older["head_chain"], result, report, writer_collab.ROOTS)
         checkpoints.install("writer", doc_id, older["lineage"], 2, older["head_chain"], result, report)
 
         [(through, state, _integrated)] = self.checkpoints_of(node)
         self.assertEqual((through, self.doc_row(node).checkpoint_rev), (3, 3))
-        self.assertEqual(self.text_of(state), typed)
+        self.assertEqual(self.text_of(state), "one two three")
 
     def test_with_every_place_taken_a_compaction_waits_without_counting_a_failure(self):
         node = self.new_document()
@@ -244,3 +247,60 @@ class TestWriterCheckpoints(IntegrationTestCase):
         self.assertEqual(doc.checkpoint_rev, 2)
         wait = (doc.next_compaction_at - frappe.utils.now_datetime()).total_seconds()
         self.assertGreater(wait, 50)
+
+    def opened(self, node: str) -> tuple[dict, list[int], str]:
+        """What a tab opening now gets: the header, the revs sent as rows, and the text it shows."""
+        header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        parts = [checkpoint] if checkpoint else []
+        return (
+            header,
+            [rev for rev, _ in rows],
+            self.text_of(compaction.pycrdt.merge_updates(*parts, *(p for _, p in rows))),
+        )
+
+    def test_opening_a_long_edited_document_reads_one_checkpoint_plus_the_tail(self):
+        node = self.new_document()
+        self.type_into(node, [f"{n} " for n in range(2000)])
+        self.compact(node)
+        self.type_into(node, ["and ", "more"])
+
+        header, revs, text = self.opened(node)
+
+        self.assertEqual((header["base"], revs), (2000, [2001, 2002]))
+        self.assertEqual(text, "".join(f"{n} " for n in range(2000)) + "and more")
+
+    def test_an_open_during_a_compaction_install_stays_continuous(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two "])
+        self.compact(node)
+        self.type_into(node, ["three"])
+        typed = "one two three"
+        doc_id, site = self.doc_row(node).id, frappe.local.site
+
+        def compact_elsewhere():
+            frappe.init(site=site)
+            frappe.connect()
+            try:
+                writer_collab.compact(doc_id)
+            finally:
+                frappe.destroy()
+
+        sql, installed = frappe.db.sql, []
+
+        def install_first(query, *args, **kwargs):
+            # The install lands after the open read the control row and before it reads the checkpoint
+            if "_collab_checkpoint` WHERE" in str(query) and not installed:
+                installed.append(True)
+                thread = threading.Thread(target=compact_elsewhere)
+                thread.start()
+                thread.join()
+            return sql(query, *args, **kwargs)
+
+        with patch.object(frappe.db, "sql", install_first):
+            header, revs, text = self.opened(node)
+
+        self.assertEqual(installed, [True])
+        self.assertEqual((header["base"], revs, text), (2, [3], typed))
+        self.assertEqual(self.doc_row(node).checkpoint_rev, 3)
+        header, revs, text = self.opened(node)
+        self.assertEqual((header["base"], revs, text), (3, [], typed))

@@ -8,6 +8,7 @@ itself, because `suite_core` never imports Drive or a product.
 
 from suite.suite_core.collab.log import (
     PROTO,
+    ChainBroken,
     Refusal,
     claim_session,
     create,
@@ -18,6 +19,7 @@ from suite.suite_core.collab.log import (
     open_header,
     parse_push,
     push,
+    read,
     require_enabled,
     rows_after,
 )
@@ -25,6 +27,7 @@ from suite.suite_core.collab.tables import ensure_tables
 
 __all__ = [
     "PROTO",
+    "ChainBroken",
     "Refusal",
     "claim_session",
     "create",
@@ -36,6 +39,7 @@ __all__ = [
     "open_header",
     "parse_push",
     "push",
+    "read",
     "require_enabled",
     "rows_after",
 ]

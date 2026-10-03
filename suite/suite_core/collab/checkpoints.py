@@ -7,7 +7,6 @@ leaves every row and a retry time, never a loop. At most `PLACES` compactions
 run at once on a bench, because RQ's Redis is shared by every site on it.
 """
 
-import contextlib
 import gzip
 import hashlib
 import json
@@ -21,7 +20,7 @@ from frappe.utils import now_datetime, sbool
 from frappe.utils.background_jobs import get_redis_conn
 
 from suite.suite_core.collab import compaction
-from suite.suite_core.collab.log import chain_next, chain_seed
+from suite.suite_core.collab.log import ChainBroken, read
 from suite.suite_core.collab.tables import table
 
 TIMEOUT = 120
@@ -56,8 +55,11 @@ def attempt(adapter: str, doc_id: str, roots: dict[str, type]) -> None:
             raise compaction.CompactionFailed("insufficient_memory")
         limit_memory()
         snapshot = read(adapter, doc_id)
+        if snapshot is None or snapshot["head_rev"] == snapshot["base"]:
+            raise Skipped
         through = snapshot["head_rev"]
-        result = compaction.compact(snapshot["checkpoint"], snapshot["rows"], roots)
+        rows = [payload for _rev, payload in snapshot["rows"]]
+        result = compaction.compact(snapshot["checkpoint"], rows, roots)
         report = {**result.report, "ms": int((time.monotonic() - started) * 1000)}
         store(adapter, doc_id, through, snapshot["head_chain"], result, report, roots)
         install(adapter, doc_id, snapshot["lineage"], through, snapshot["head_chain"], result, report)
@@ -66,7 +68,11 @@ def attempt(adapter: str, doc_id: str, roots: dict[str, type]) -> None:
         settle(adapter, doc_id)
     except Exception as error:
         frappe.db.rollback()
-        reason = error.reason if isinstance(error, compaction.CompactionFailed) else type(error).__name__
+        reason = (
+            error.reason
+            if isinstance(error, compaction.CompactionFailed | ChainBroken)
+            else type(error).__name__
+        )
         failed(adapter, doc_id, through, reason, error)
 
 
@@ -81,75 +87,6 @@ def request(adapter: str, doc_id: str, method: str) -> None:
         deduplicate=True,
         doc_id=doc_id,
     )
-
-
-def read(adapter: str, doc_id: str) -> dict:
-    """Checkpoint plus the rows after it through the head, in one snapshot, chain checked."""
-    for _try in range(2):
-        with repeatable_read():
-            doc = frappe.db.sql(
-                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `checkpoint_chain`
-                FROM `{table(adapter, "doc")}` WHERE `id` = %s""",
-                doc_id,
-                as_dict=True,
-            )
-            if not doc:
-                raise Skipped
-            doc = doc[0]
-            base = int(doc.checkpoint_rev)
-            if int(doc.head_rev) == base:
-                raise Skipped
-            checkpoint = None
-            chain = chain_seed(doc.lineage)
-            if base:
-                stored = frappe.db.sql(
-                    f"SELECT `gz`, `chain` FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` = %s",
-                    (doc_id, base),
-                )
-                checkpoint, chain = gzip.decompress(bytes(stored[0][0])), bytes(stored[0][1])
-            rows = frappe.db.sql(
-                f"""SELECT `rev`, `payload` FROM `{table(adapter, "update")}`
-                WHERE `doc_id` = %s AND `rev` > %s AND `rev` <= %s ORDER BY `rev`""",
-                (doc_id, base, doc.head_rev),
-            )
-        expected = base + 1
-        for rev, payload in rows:
-            if int(rev) != expected:
-                break
-            chain = chain_next(chain, int(rev), hashlib.sha256(bytes(payload)).digest())
-            expected += 1
-        if expected == int(doc.head_rev) + 1 and chain == bytes(doc.head_chain):
-            return {
-                "lineage": doc.lineage,
-                "head_rev": int(doc.head_rev),
-                "head_chain": chain,
-                "checkpoint": checkpoint,
-                "rows": [bytes(payload) for _rev, payload in rows],
-            }
-    raise compaction.CompactionFailed("chain_break")
-
-
-@contextlib.contextmanager
-def repeatable_read():
-    """Run the reads in one REPEATABLE READ snapshot. The level applies from the next transaction."""
-    previous = isolation()
-    frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-    frappe.db.commit()  # nosemgrep: frappe-manual-commit
-    try:
-        yield
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit
-    finally:
-        if previous and previous != "REPEATABLE-READ":
-            frappe.db.sql(f"SET SESSION TRANSACTION ISOLATION LEVEL {previous.replace('-', ' ')}")
-
-
-def isolation() -> str | None:
-    for variable in ("@@transaction_isolation", "@@tx_isolation"):
-        try:
-            return frappe.db.sql(f"SELECT {variable}")[0][0]
-        except Exception:
-            continue
-    return None
 
 
 def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report: dict, roots) -> None:
