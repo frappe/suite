@@ -1,7 +1,7 @@
 """§14.6: make one legacy Writer body readable by the new Writer.
 
 Step 7 calls `convert_writer_body` once per Writer document, before its
-history. It changes the live body in one way and touches nothing else:
+history. It changes the live body in two ways and touches nothing else:
 
 - **Pictures another document owns** (B112). A legacy body can show a
   picture stored under a different document: the legacy embed URL served
@@ -10,11 +10,19 @@ history. It changes the live body in one way and touches nothing else:
   which holds that document's children and nothing else, so the picture
   would disappear. Build gives the document its own media node for the
   same `File Blob` (no bytes are copied) and points the body at it.
+- **Pictures that sit directly inside a list item** (B113). The editor's
+  `image` node is inline, and `listItem`, `taskItem`, `blockquote`, table
+  cells, and the document root accept only blocks, so the editor drops an
+  image found directly inside one. ProseMirror cannot mix inline and block
+  content in one content expression, so the schema cannot accept it.
+  Build wraps each such image in its own paragraph instead.
 
 Version snapshots are not rewritten. §14.6 copies each `Writer Version`
 byte for byte, and Build rewrites no version anywhere else, so an old
 version that showed a borrowed picture still names the other document's
-node.
+node. Version bytes are HTML, which the editor parses with ProseMirror's
+`DOMParser`; that wraps loose inline content itself, so B113 needs no
+rewrite there.
 
 ## Why this module reads Writer bodies itself
 
@@ -33,6 +41,7 @@ import base64
 import binascii
 import re
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 import pycrdt
 
@@ -52,18 +61,33 @@ MEDIA_PATTERNS = (
 )
 BARE_MEDIA_ID = re.compile(MEDIA_ID)
 
+IMAGE = "image"
+PARAGRAPH = "paragraph"
+# The parents an image may sit in directly. `paragraph` and `heading` hold
+# inline content and `imageGroup` holds `image+`. A `codeBlock` holds only
+# text, so a paragraph inside it would be just as invalid, and an image there
+# is left alone. Every other parent, the root fragment included, accepts only
+# blocks.
+IMAGE_PARENTS = frozenset({"paragraph", "heading", "imageGroup", "codeBlock"})
+
 
 class UnreadableBody(Exception):
     """One Writer body pycrdt refused to read."""
 
 
+@dataclass(frozen=True)
+class _Rewrite:
+    body: WriterBody
+    images_wrapped: int
+
+
 def convert_writer_body(env, content, document, node: str) -> None:
     """Copy borrowed pictures under `node` and rewrite the body to use them.
 
-    Rerunnable at any point. A copy is found again by its blob among the
-    document's children, so a run killed between the insert and the body
-    write reuses it, and a rewritten body names only the document's own
-    children, so the next pass finds nothing to copy.
+    Rerunnable at any point. A rewritten body names only the document's own
+    children and holds no loose image, so the next pass finds nothing to
+    copy and nothing to wrap. A document that already holds a node for the
+    same blob reuses it instead of gaining a second one.
     """
     source, target = env.content, env.content_target
     # §14.7 converts templates and validates their body against the source
@@ -92,12 +116,14 @@ def convert_writer_body(env, content, document, node: str) -> None:
         return
     target.insert_nodes(copies)
     if rewrite is not None:
-        target.update_writer_body(document.name, rewrite.content, rewrite.html)
+        target.update_writer_body(document.name, rewrite.body.content, rewrite.body.html)
     # One commit for both, so the copies and the body that names them land
     # together. A kill before it loses both, and the rerun redoes both.
     target.commit()
     content.writer_media_copied += len(copies)
-    content.writer_bodies_rewritten += int(rewrite is not None)
+    if rewrite is not None:
+        content.writer_bodies_rewritten += 1
+        content.writer_images_wrapped += rewrite.images_wrapped
 
 
 def _borrowed_pictures(env, content, document, node, children, foreign, label):
@@ -190,38 +216,77 @@ def _copy_node(env, document, parent: dict, picture: dict, title: str) -> dict:
     }
 
 
-def _rewritten(body: WriterBody, mapping: dict[str, str]) -> WriterBody | None:
-    """The body with `mapping` applied, or None when nothing changed."""
-    if not mapping:
-        return None
-    html = _remap_text(body.html, mapping) if body.html else body.html
-    content = _rewritten_content(body.content, mapping)
+def _rewritten(body: WriterBody, mapping: dict[str, str]) -> _Rewrite | None:
+    """The body with `mapping` applied and loose images wrapped, or None.
+
+    None means nothing changed, so a body that is already valid and names
+    only its own pictures is never written.
+    """
+    html = _remap_text(body.html, mapping) if body.html and mapping else body.html
+    content, wrapped = _rewritten_content(body.content, mapping)
     if content == body.content and html == body.html:
         return None
-    return WriterBody(content=content, html=html)
+    return _Rewrite(WriterBody(content=content, html=html), wrapped)
 
 
-def _rewritten_content(content: str | None, mapping: dict[str, str]) -> str | None:
+def _rewritten_content(content: str | None, mapping: dict[str, str]) -> tuple[str | None, int]:
     raw = _decoded(content)
     if raw is None:
-        return content
+        return content, 0
     with _readable():
         document, fragment = _loaded(raw)
         changed = False
         with document.transaction():
-            for element in _elements(fragment):
-                for key, value in dict(element.attributes).items():
-                    if not isinstance(value, str):
-                        continue
-                    rewritten = (
-                        mapping.get(value, value) if key == NODE_ATTRIBUTE else _remap_text(value, mapping)
-                    )
-                    if rewritten != value:
-                        element.attributes[key] = rewritten
-                        changed = True
-        if not changed:
-            return content
-        return base64.b64encode(document.get_update()).decode("ascii")
+            if mapping:
+                for element in _elements(fragment):
+                    for key, value in dict(element.attributes).items():
+                        if not isinstance(value, str):
+                            continue
+                        rewritten = (
+                            mapping.get(value, value)
+                            if key == NODE_ATTRIBUTE
+                            else _remap_text(value, mapping)
+                        )
+                        if rewritten != value:
+                            element.attributes[key] = rewritten
+                            changed = True
+            wrapped = _wrap_loose_images(fragment)
+        if not changed and not wrapped:
+            return content, 0
+        return base64.b64encode(document.get_update()).decode("ascii"), wrapped
+
+
+def _wrap_loose_images(fragment) -> int:
+    """Put every image whose parent accepts only blocks in its own paragraph.
+
+    One paragraph per image, so pictures that stood one under another still
+    do. The replacement carries every attribute the image had. Yjs has no
+    move, so the image is deleted and an equal one inserted at its index.
+    """
+    wrapped = 0
+    stack = [fragment]
+    while stack:
+        parent = stack.pop()
+        tag = parent.tag if isinstance(parent, pycrdt.XmlElement) else None
+        children = list(parent.children)
+        if tag not in IMAGE_PARENTS:
+            for index, child in enumerate(children):
+                if not _loose_image(child):
+                    continue
+                attributes = dict(child.attributes)
+                del parent.children[index]
+                parent.children.insert(
+                    index, pycrdt.XmlElement(PARAGRAPH, None, [pycrdt.XmlElement(IMAGE, attributes)])
+                )
+                wrapped += 1
+        stack.extend(child for child in parent.children if isinstance(child, pycrdt.XmlElement))
+    return wrapped
+
+
+def _loose_image(child) -> bool:
+    # An image is an atom. One with children is not the editor's image, and
+    # copying only its attributes would lose them.
+    return isinstance(child, pycrdt.XmlElement) and child.tag == IMAGE and not list(child.children)
 
 
 def _html_ids(text: str) -> set[str]:

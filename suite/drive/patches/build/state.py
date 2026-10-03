@@ -69,10 +69,11 @@ CUMULATIVE_FIELDS = frozenset(
         "personal_roots_created_for_reservations",
         "pending_reservation_roots",
         # A Writer body is rewritten once: the next history pass reads a body
-        # that names only the document's own pictures and writes nothing, so
-        # neither count could be derived again.
+        # that names only the document's own pictures, wrapped, and writes
+        # nothing, so none of the three could be derived again.
         "writer_media_copied",
         "writer_bodies_rewritten",
+        "writer_images_wrapped",
     }
 )
 
@@ -438,12 +439,14 @@ class ContentConversion:
     comments_renamed: int = 0
     # Not in §14.9, and owned by the history phase. §14.6's Writer body pass
     # (`writer_bodies`): pictures another document owned that now have a node
-    # of their own under the document showing them, and the bodies rewritten
-    # to name them. Those two are cumulative. The last two are recounted every
-    # pass: a reference that names no copyable picture stays in the body, and
-    # a body pycrdt cannot read stays as it is.
+    # of their own under the document showing them, the bodies rewritten to
+    # name them or to wrap a loose image, and the images wrapped. The first
+    # three are cumulative. The last two are recounted every pass: a
+    # reference that names no copyable picture stays in the body, and a body
+    # pycrdt cannot read stays as it is.
     writer_media_copied: int = 0
     writer_bodies_rewritten: int = 0
+    writer_images_wrapped: int = 0
     writer_media_references_missing: int = 0
     writer_bodies_unreadable: int = 0
     trash_disagreements: int = 0

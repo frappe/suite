@@ -1015,6 +1015,54 @@ class WriterBodyTest(unittest.TestCase):
             self.assertEqual(content.writer_bodies_rewritten, 1)
             self.assertEqual(content.writer_media_references_missing, 1)
 
+    def test_a_picture_directly_inside_a_list_item_is_wrapped_in_a_paragraph(self):
+        # B113: the editor's image is inline and a list item holds only
+        # blocks, so the editor dropped this picture. After Build it sits in
+        # a paragraph inside the same list item, with every attribute kept.
+        attributes = {"src": embed("own-1"), "alt": "chart", "title": None, "width": 320}
+        valid = paragraph(image(src=embed("own-1"), alt="already fine"))
+        self.add_document(
+            "listed-doc",
+            "node-l",
+            body=WriterBody(
+                content=yjs_body(
+                    pycrdt.XmlElement(
+                        "bulletList",
+                        None,
+                        [pycrdt.XmlElement("listItem", None, [image(**attributes)])],
+                    ),
+                    valid,
+                ),
+                html=f'<ul><li><img src="{embed("own-1")}"></li></ul>',
+            ),
+        )
+        self.add_picture("own-1", "node-l", "blob-own", "chart.png")
+
+        first = convert_history_and_comments(self.env)
+        body = self.source.writer_bodies["listed-doc"]
+        second = convert_history_and_comments(self.env)
+
+        bullet_list, kept = list(body_fragment(body.content).children)
+        (item,) = list(bullet_list.children)
+        (wrapper,) = list(item.children)
+        (picture,) = list(wrapper.children)
+        self.assertEqual((item.tag, wrapper.tag, picture.tag), ("listItem", "paragraph", "image"))
+        self.assertEqual(dict(picture.attributes), attributes)
+        # A picture already inside a paragraph is left alone.
+        (kept_picture,) = list(kept.children)
+        self.assertEqual(
+            (kept.tag, kept_picture.tag, dict(kept_picture.attributes)),
+            ("paragraph", "image", {"src": embed("own-1"), "alt": "already fine"}),
+        )
+        # The HTML copy needs no wrap: the editor's HTML parser wraps it.
+        self.assertEqual(body.html, f'<ul><li><img src="{embed("own-1")}"></li></ul>')
+        # A rerun wraps nothing again.
+        self.assertEqual(self.source.writer_bodies["listed-doc"], body)
+        self.assertEqual(self.children("node-l").keys(), {"own-1"})
+        for content in (first, second):
+            self.assertEqual(content.writer_images_wrapped, 1)
+            self.assertEqual(content.writer_bodies_rewritten, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

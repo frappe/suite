@@ -33,6 +33,7 @@ HISTORY_FIELDS = (
     "comments_renamed",
     "writer_media_copied",
     "writer_bodies_rewritten",
+    "writer_images_wrapped",
     "writer_media_references_missing",
     "writer_bodies_unreadable",
 )

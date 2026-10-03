@@ -4448,6 +4448,17 @@ From the [012] amendment to [011]:
   in `html`. Writer versions and Writer templates are not rewritten: §14.6
   copies version bytes exactly, and step 8 validates a template against its
   source. A Writer body pycrdt cannot read is left as it is and reported.
+- **Pictures directly inside a list item.** The Writer image node is inline,
+  and a list item, a task item, a blockquote, a table cell, and the
+  document root accept only blocks, so the editor drops an image that sits
+  directly inside one. ProseMirror cannot mix inline and block content in
+  one content expression, so the schema cannot accept it. In the same pass
+  as the picture copy above, Build wraps each such image in the Yjs
+  `content` in its own paragraph, with every attribute kept. An image inside
+  a paragraph, a heading, an image group, or a code block is left alone, so
+  valid content is not rewritten and a rerun changes nothing. The `html`
+  copy and Writer versions are not rewritten: they are HTML, and the
+  editor's HTML parser wraps loose inline content itself.
 - `Presentation.thumbnail` Files become `Drive Node Preview` rows on the
   deck node. The field and its `attached_to_field` handling go.
 - Template decks (`is_template = 1`) gain nodes in Administrator's Personal
