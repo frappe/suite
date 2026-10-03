@@ -68,7 +68,7 @@ from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.delivery_status import parse_delivery_status
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
-from suite.mail.utils.user import get_account_emails, get_undo_send_period, is_jmap_configured
+from suite.mail.utils.user import can_use_mail, get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.validation import JSONList
@@ -487,6 +487,9 @@ def get_all_inbox_unread_count() -> int:
     filter. Each account's Inbox unread count is fetched live (a fresh Mailbox/get, bypassing the
     1-hour mailboxes cache) — the same source the per-account inbox badge uses — and summed.
     """
+
+    if not can_use_mail(frappe.session.user):
+        return 0
 
     total = 0
     for account in get_user_jmap_accounts():
