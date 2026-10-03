@@ -1,21 +1,21 @@
 <template>
-	<Dialog v-model:open="model" :title="`Edit history for ${cellRef}`" size="sm">
+	<Dialog v-model:open="open" :title="__('Edit history for {0}', [cellRef])" size="sm">
 		<template #default>
-			<div v-if="loading" class="sn-ch-empty">Loading…</div>
+			<div v-if="loading" class="sn-ch-empty">{{ __('Loading…') }}</div>
 			<div v-else-if="error" class="sn-ch-empty sn-ch-error">{{ error }}</div>
 			<div v-else-if="!entries.length" class="sn-ch-empty">
-				No edits recorded for this cell yet.
+				{{ __('No edits recorded for this cell yet.') }}
 			</div>
 			<ul v-else class="sn-ch-list">
-				<li v-for="e in entries" :key="e.version" class="sn-ch-item">
+				<li v-for="entry in entries" :key="entry.version" class="sn-ch-item">
 					<div class="sn-ch-meta">
-						<span class="sn-ch-time">{{ formatTimestamp(e.timestamp) }}</span>
-						<span class="sn-ch-user">{{ shortUser(e.user) }}</span>
+						<span class="sn-ch-time">{{ formatDriveDateTime(entry.timestamp) }}</span>
+						<span class="sn-ch-user">{{ shortUser(entry.user) }}</span>
 					</div>
 					<div class="sn-ch-change">
-						<span class="sn-ch-before">{{ displayValue(e.before) }}</span>
-						<span class="sn-ch-arrow">→</span>
-						<span class="sn-ch-after">{{ displayValue(e.after) }}</span>
+						<span class="sn-ch-before">{{ displayValue(entry.before) }}</span>
+						<span class="sn-ch-arrow lucide-arrow-right" aria-hidden="true" />
+						<span class="sn-ch-after">{{ displayValue(entry.after) }}</span>
 					</div>
 				</li>
 			</ul>
@@ -23,41 +23,42 @@
 	</Dialog>
 </template>
 
-<script setup>
-import { computed } from 'vue'
+<script setup lang="ts">
 import { Dialog } from 'frappe-ui'
 
-const props = defineProps({
-	modelValue: { type: Boolean, default: false },
-	cellRef:    { type: String,  default: '' },
-	entries:    { type: Array,   default: () => [] },
-	loading:    { type: Boolean, default: false },
-	error:      { type: String,  default: '' },
-})
-const emit = defineEmits(['update:modelValue'])
+import { formatDriveDateTime } from '@/apps/drive'
+import { translate as __ } from '@/platform/translation'
 
-const model = computed({
-	get() { return props.modelValue },
-	set(v) { emit('update:modelValue', v) },
-})
-
-function formatTimestamp(ts) {
-	if (!ts) return ''
-	const d = new Date(String(ts).replace(' ', 'T'))
-	return d.toLocaleString(undefined, {
-		month: 'short', day: 'numeric',
-		hour: 'numeric', minute: '2-digit',
-	})
+/** One change to the cell, as `services/versions.js` shapes an op-log row. */
+export interface CellHistoryEntry {
+	version: string
+	/** RFC 3339 in UTC, the form every Suite API publishes a stamp in. */
+	timestamp: string | null
+	user: string | null
+	before: unknown
+	after: unknown
 }
 
-function shortUser(u) {
-	if (!u) return ''
-	return u.includes('@') ? u.split('@')[0] : u
+withDefaults(
+	defineProps<{
+		cellRef?: string
+		entries?: readonly CellHistoryEntry[]
+		loading?: boolean
+		error?: string
+	}>(),
+	{ cellRef: '', entries: () => [], loading: false, error: '' },
+)
+
+const open = defineModel<boolean>({ default: false })
+
+function shortUser(user: string | null): string {
+	if (!user) return ''
+	return user.includes('@') ? user.split('@')[0] : user
 }
 
-function displayValue(v) {
-	if (v === null || v === undefined || v === '') return '(empty)'
-	return String(v)
+function displayValue(value: unknown): string {
+	if (value === null || value === undefined || value === '') return __('(empty)')
+	return String(value)
 }
 </script>
 
@@ -84,7 +85,7 @@ function displayValue(v) {
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .sn-ch-after  { background: var(--surface-gray-3); }
-.sn-ch-arrow  { color: var(--ink-gray-5); }
+.sn-ch-arrow  { color: var(--ink-gray-5); width: 12px; height: 12px; flex: none; }
 .sn-ch-empty  { padding: 24px 8px; text-align: center; color: var(--ink-gray-5); font-size: 13px; }
 .sn-ch-error  { color: var(--ink-red-5); }
 </style>

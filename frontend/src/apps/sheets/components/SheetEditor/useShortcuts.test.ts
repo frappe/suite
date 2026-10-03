@@ -29,7 +29,6 @@ function makeActions(overrides = {}) {
     repeatLast:             vi.fn(),
     toggleShowFormulas:     vi.fn(),
     showFindReplace:        ref(false),
-    openVersionHistory:     vi.fn(),
     openHyperlinkDialog:    vi.fn(),
     openCommentPanel:       vi.fn(),
     openQuickFilterForActive: vi.fn(),
@@ -128,10 +127,6 @@ describe('registered shortcuts', () => {
     fire({ key: 'l', ctrl: true });        expect(a.openHyperlinkDialog).toHaveBeenCalled()
     fire({ key: 'F2', shift: true });       expect(a.openCommentPanel).toHaveBeenCalled()
     fire({ key: 'ArrowDown', alt: true });  expect(a.openQuickFilterForActive).toHaveBeenCalled()
-  })
-  it('Mod+Alt+Shift+H registers version history', () => {
-    const a = makeActions(); useShortcuts(a)
-    fire({ key: 'h', ctrl: true, alt: true, shift: true }); expect(a.openVersionHistory).toHaveBeenCalled()
   })
   it('Mod+D / Mod+R / Mod+E register fill + smart-fill', () => {
     const a = makeActions(); useShortcuts(a)

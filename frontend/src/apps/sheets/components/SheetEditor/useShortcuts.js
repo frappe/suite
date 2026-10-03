@@ -20,7 +20,7 @@ import { useKeyboardShortcut } from 'frappe-ui'
  *   toggleFmt: (fmt: string) => void, repeatLast: () => void,
  *   toggleShowFormulas: () => void,
  *   showFindReplace: import('vue').Ref<boolean>,
- *   openVersionHistory: () => void, openHyperlinkDialog: () => void,
+ *   openHyperlinkDialog: () => void,
  *   openCommentPanel: () => void, openQuickFilterForActive: () => void,
  *   zoomBy: (d: number) => void, resetZoom: () => void,
  *   commentPanel: { open: boolean },
@@ -54,7 +54,7 @@ export function useShortcuts(actions) {
   const {
     formulaInputEl, undo, redo, onSave, toggleFmt, repeatLast,
     toggleShowFormulas, showFindReplace, openFindReplace,
-    openVersionHistory, openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
+    openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
     zoomBy, resetZoom,
     commentPanel, dropdownPanel, splitText, revertSplitPreview, closeSplit,
     clipboard, clipboardHas, setMarchingAnts,
@@ -106,9 +106,8 @@ export function useShortcuts(actions) {
     { combo: 'Mod+E', description: 'Smart Fill from examples', group: 'Editing', enabled: notReadOnly, handler: () => runSmartFill?.() },
     { combo: 'Mod+Shift+V', description: 'Paste values only',       group: 'Editing', enabled: notReadOnly, handler: () => pasteValues?.() },
     { combo: 'Mod+L', description: 'Insert hyperlink',        group: 'Editing', enabled: notReadOnly, handler: openHyperlinkDialog },
-    { combo: 'Shift+F2', description: 'Add / edit comment',      group: 'Editing', enabled: notReadOnly, handler: openCommentPanel },
+    { combo: 'Shift+F2', description: 'Add / edit note',         group: 'Editing', enabled: notReadOnly, handler: openCommentPanel },
     { combo: 'Alt+ArrowDown', description: 'Quick filter on column',  group: 'Editing', enabled: notReadOnly, handler: openQuickFilterForActive },
-    { combo: 'Mod+Alt+Shift+H', description: 'Version history', group: 'Editing', enabled: notReadOnly, handler: openVersionHistory },
 
     // Formatting — mutating.
     { combo: 'Mod+B', description: 'Bold',          group: 'Formatting', enabled: notReadOnly, handler: () => toggleFmt('bold') },

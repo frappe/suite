@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 
 // Estimated rendered heights per menu mode (px). Used to pre-flip before first paint.
-const MENU_HEIGHT_EST = { cell: 620, colHeader: 240, rowHeader: 240 }
+const MENU_HEIGHT_EST = { cell: 660, colHeader: 240, rowHeader: 240 }
 
 /**
  * @param {{ getGrid: () => object, getViewport?: () => { width: number, height: number } }} opts

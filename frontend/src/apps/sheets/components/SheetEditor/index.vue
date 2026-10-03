@@ -96,13 +96,6 @@
                 @click="toggleNotesPanel" />
         <span v-if="allNotes.length" class="sn-notes-badge">{{ allNotes.length > 9 ? '9+' : allNotes.length }}</span>
       </span>
-      <!-- Variant flips to "subtle" while the panel is open so the trigger
-           reads as toggled, matching Frappe UI's standard toggle pattern. -->
-      <Button v-if="!embedded" aria-label="Version history" :aria-pressed="vhOpen"
-              :variant="vhOpen ? 'subtle' : 'ghost'"
-              size="sm" icon="lucide-clock"
-              tooltip="Version history"
-              @click="vhOpen ? closeVersionHistory() : (notesPanel.open = false, openVersionHistory())" />
       <span class="sn-wide-only">
         <Button aria-label="Keyboard shortcuts" variant="ghost" size="sm" icon="lucide-help-circle" tooltip="Keyboard shortcuts" @click="showShortcutsHelp = true" />
       </span>
@@ -196,16 +189,6 @@
       </div>
       <div class="sn-topbar-right">
         <ReuseTopbarActions />
-        <!-- Share -->
-        <Button
-          variant="ghost"
-          size="sm"
-          icon="lucide-share-2"
-          :label="shareCount > 0 ? `Share · ${shareCount}` : 'Share'"
-          tooltip="Share this sheet"
-          @click="shareOpen = true"
-        />
-        <span class="sn-topbar-divider" aria-hidden="true" />
         <Avatar
           :label="userInitial"
           :image="userImage || undefined"
@@ -393,24 +376,11 @@
       </div>
     </div>
 
-    <!-- Version preview banner — only when previewing -->
-    <VersionPreviewBanner
-      :open="!!vhActive"
-      :version="vhVersions.find(v => v.name === vhActive)"
-      :restoring="vhRestoring"
-      :diff="vhDiff"
-      :step-index="vhStepIdx"
-      @restore="restorePreview"
-      @exit="exitPreview"
-      @name="nameCurrentPreview"
-      @step="stepPreviewDiff"
-    />
-
     <!-- Canvas grid + filter overlay -->
     <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
          which any scroll invalidates — hide it rather than let it float. -->
     <div ref="gridWrapRef" class="sn-grid-wrap"
-         :class="{ 'sn-painting-format': isPaintingFormat, 'sn-preview-locked': !!vhActive }"
+         :class="{ 'sn-painting-format': isPaintingFormat }"
          @wheel.capture.passive="linkCard.open = false">
       <canvas ref="canvasRef" />
 
@@ -442,19 +412,6 @@
         @refresh="onChartRefresh"
         @move="onChartMove"
         @resize="onChartResize"
-      />
-
-      <VersionHistory
-        :open="vhOpen"
-        :versions="vhVersions"
-        :loading="vhLoading"
-        :error="vhError"
-        :active-version="vhActive"
-        @close="closeVersionHistory"
-        @select="previewVersion"
-        @name="nameVersionInline"
-        @copy="makeACopyInline"
-        @restore="restoreVersionInline"
       />
 
       <!-- The surface's Drive panels (comments, versions) dock the same edge. -->
@@ -871,6 +828,8 @@
         <Button variant="ghost" size="sm" iconLeft="lucide-layout"         label="Insert pivot table…"   @click="openPivotDialog()" />
         <Button variant="ghost" size="sm" iconLeft="lucide-chart-bar"    label="Insert chart…"          @click="openChartDialog()" />
         <Button variant="ghost" size="sm" iconLeft="lucide-filter"         label="Insert slicer"          @click="insertSlicer()" />
+        <hr v-if="props.id !== 'new'" class="sn-ctx-sep" />
+        <Button v-if="props.id !== 'new'" variant="ghost" size="sm" iconLeft="lucide-history" :label="`Cell history for ${activeCell}`" @click="openCellHistory()" />
       </template>
 
     </div>
@@ -906,15 +865,7 @@
       @changed="_onNamedRangesChanged"
     />
 
-    <!-- Share dialog -->
-    <ShareDialog
-      v-if="!embedded"
-      v-model="shareOpen"
-      :sheet-id="props.id"
-      :sheet-title="currentTitle"
-      :owner-id="sheetOwner || userEmail"
-      @shares-changed="shareCount = $event"
-    />
+
 
     <!-- AI Assist settings (in-app, never the desk form) -->
     <AISettingsDialog v-model="aiSettingsOpen" @saved="onAiSettingsSaved" />
@@ -1145,7 +1096,7 @@
          :style="{ left: commentPanel.x + 'px', top: commentPanel.y + 'px' }">
       <div class="sn-comment-header">
         <span class="sn-comment-title">
-          Comment
+          Note
           <span v-if="commentPanel.resolved" class="sn-comment-resolved">Resolved</span>
         </span>
         <div class="sn-comment-hactions">
@@ -1154,7 +1105,7 @@
                   :tooltip="commentPanel.resolved ? 'Reopen' : 'Mark resolved'"
                   :aria-label="commentPanel.resolved ? 'Reopen' : 'Mark resolved'"
                   @click="toggleResolveComment" />
-          <Button variant="ghost" size="sm" icon="lucide-x" aria-label="Close comment" @click="commentPanel.open = false" />
+          <Button variant="ghost" size="sm" icon="lucide-x" aria-label="Close note" @click="commentPanel.open = false" />
         </div>
       </div>
 
@@ -1171,11 +1122,11 @@
       </div>
 
       <textarea class="sn-comment-ta" v-model="commentPanel.draft" rows="2"
-                :placeholder="commentPanel.thread.length ? 'Reply…' : 'Add a comment…'"
+                :placeholder="commentPanel.thread.length ? 'Reply…' : 'Add a note…'"
                 @keydown.enter.exact.prevent="addCommentReply" />
       <div class="sn-comment-actions">
         <Button size="sm" variant="solid" :disabled="!commentPanel.draft.trim()" @click="addCommentReply">
-          {{ commentPanel.thread.length ? 'Reply' : 'Comment' }}
+          {{ commentPanel.thread.length ? 'Reply' : 'Add note' }}
         </Button>
         <Button v-if="commentPanel.thread.length" size="sm" variant="ghost" theme="red" @click="deleteComment">Delete all</Button>
       </div>
@@ -1315,7 +1266,6 @@ import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
 import { call } from '../../utils/api.js'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
-import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
@@ -1358,15 +1308,11 @@ import { usePivotIntegration } from './usePivotIntegration.js'
 import { useShortcuts } from './useShortcuts.js'
 import { useCollaboration }    from './useCollaboration.js'
 import { useExportImport }     from './useExportImport.js'
-import { useVersionHistory }   from './useVersionHistory.js'
 import { useSplitText }        from './useSplitText.js'
 import FindReplace             from './FindReplace.vue'
-import VersionHistory          from './VersionHistory.vue'
-import VersionPreviewBanner    from './VersionPreviewBanner.vue'
 import CellHistoryPopover      from './CellHistoryPopover.vue'
 import SplitTextPopover        from './SplitTextPopover.vue'
 import LinkPreviewCard         from './LinkPreviewCard.vue'
-import ShareDialog             from './ShareDialog.vue'
 import AISettingsDialog        from './AISettingsDialog.vue'
 import AskBar                  from './AskBar.vue'
 import PivotDialog             from './PivotDialog.vue'
@@ -1413,10 +1359,6 @@ const emit  = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
 const [DefineTopbarStatus, ReuseTopbarStatus] = createReusableTemplate()
 const [DefineTopbarActions, ReuseTopbarActions] = createReusableTemplate()
 const sessionStore = useSessionStore()
-const appsMenuOption = useAppSwitcher('sheets', async () => {
-  await flushSave()
-  return !saveError.value
-})
 const themeMenuOption = useThemeMenuOption()
 const settingsMenuOption = useSettingsMenuOption()
 const isTitleEditing = ref(false)
@@ -1430,10 +1372,6 @@ const sheetBreadcrumbs = computed(() => [
   { label: currentTitle.value || 'Untitled Sheet', onClick: startTitleEditing },
 ])
 const brandMenuOptions = computed(() => [
-  {
-    group: '',
-    options: [appsMenuOption.value],
-  },
   {
     group: '',
     options: [
@@ -2159,9 +2097,7 @@ const hAlignIcon = computed(() => {
 const { user: userEmail, fullName: userFullName, imageURL: userImage } = useCurrentUser()
 const userInitial = computed(() => userInitials(userFullName.value, userEmail.value))
 
-// Collaboration — presence + sharing
-const shareOpen   = ref(false)
-const shareCount  = ref(0)   // explicit share count (excluding owner); updated by ShareDialog
+// Collaboration — presence
 const aiSettingsOpen = ref(false)
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('sheets-editor-settings', () => {
   if (!window.frappe?.boot?.ai_assist_can_configure) return []
@@ -2553,7 +2489,7 @@ const textWrapDropdownOptions = computed(() => [
 // fallbacks only cover the impossible window where someone saves before
 // useSheetTabs has finished initializing.
 let _sheetTabs = null
-const { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave, workbookJson } =
+const { isSaving, saveError, canWrite, loadError, loadSheet, autoCreate, saveExisting, retrySave, workbookJson } =
   usePersistence({
     sheet, formats, merge, comments, validation, protection, condFormat, sortFilter, slicers, pivot,
     charts, namedRanges,
@@ -2608,9 +2544,6 @@ _sheetTabs = useSheetTabs({ sheet, formats, extras: [merge, comments, validation
     _repopulateGrid()
     grid?.setMarchingAnts(null); clipboard.clear(); clipboardHas.value = false
     _applyHiddenRows()           // refresh filter-driven row hides for the new sheet
-    // Diff overlay is keyed by sub-sheet name — re-point at the new sheet
-    // so the highlight follows the user across tabs in preview mode.
-    if (vhActive.value) grid?.setActiveDiffSheet?.(sheet.getCurrentSheet())
     // Re-mirror freeze / hidden refs into the Vue state so the context-menu
     // predicates and toolbar reflect the new sheet's restored view.
     _syncViewMirrors()
@@ -2708,35 +2641,6 @@ const { presentUsers, remoteCursors, broadcastCellChange, broadcastBatchChange, 
 // up top — undo() will now revert only this client's writes from the undone
 // segment, leaving any remote-applied cells alone.
 _collabDrainLocalTouches = drainLocalTouches
-
-// Version history — placed after usePersistence (loadSheet) and useSheetTabs (switchSheet/syncNames).
-const {
-  vhOpen, vhVersions, vhLoading, vhError, vhActive, vhRestoring, vhDiff, vhStepIdx,
-  openVersionHistory, closeVersionHistory,
-  previewVersion, exitPreview, stepPreviewDiff,
-  restorePreview, nameCurrentPreview, nameVersionInline,
-  makeACopyInline, restoreVersionInline,
-} = useVersionHistory({
-  sheetId:        computed(() => props.id),
-  getSheet:       () => sheet,
-  getFormats:     () => formats,
-  getMerge:       () => merge,
-  getComments:    () => comments,
-  getValidation:  () => validation,
-  getProtection:  () => protection,
-  getCondFormat:  () => condFormat,
-  getSortFilter:  () => sortFilter,
-  getSlicers:     () => slicers,
-  getGrid:        () => grid,
-  currentTitle,
-  switchSheet,
-  syncNames,
-  repopulateGrid: _repopulateGrid,
-  syncViewMirrors: _syncViewMirrors,
-  loadSheet,
-  history,
-  activeCell,
-})
 
 // Split text — placed after currentSheet from useSheetTabs.
 const {
@@ -4218,7 +4122,7 @@ const { onGlobalKey } = useShortcuts({
   formulaInputEl:           () => formulaInputRef.value,
   undo, redo, onSave, toggleFmt, repeatLast, toggleShowFormulas,
   showFindReplace, openFindReplace,
-  openVersionHistory, openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
+  openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
   zoomBy, resetZoom,
   commentPanel, dropdownPanel, splitText,
   revertSplitPreview: _revertSplitPreview, closeSplit: _closeSplit,
@@ -4675,8 +4579,6 @@ const notesGrouped = computed(() => {
 
 function toggleNotesPanel() {
   if (notesPanel.open) { notesPanel.open = false; return }
-  // Notes and version history dock the same right edge — keep one open at a time.
-  if (vhOpen.value) closeVersionHistory()
   notesPanel.rev++  // force-refresh on open
   notesPanel.open = true
   emit('notes-opened')
@@ -5082,7 +4984,7 @@ async function openCellHistory() {
   cellHistory.entries = []
   try {
     cellHistory.entries = await fetchCellHistory(
-      props.id, id, sheet.getCurrentSheet(),
+      props.id, id, sheet.getCurrentSheet(), { fetch: props.credentialFetch },
     )
   } catch (err) {
     cellHistory.error = err.message || 'Failed to load cell history'
@@ -6487,11 +6389,6 @@ function toggleShowFormulas() {
 .sn-grid-wrap canvas { display:block; outline:none; }
 
 .sn-painting-format canvas { cursor: crosshair; }
-/* Lock canvas interactions while a past version is being previewed.  The
-   side panel + banner stay clickable because they live inside the same
-   wrap but are absolutely positioned with pointer-events: auto restored. */
-.sn-preview-locked canvas { pointer-events: none; opacity: 0.95; }
-.sn-preview-locked .sn-vh-panel { pointer-events: auto; }
 
 /* ── Filter overlay (chevrons sit on row 0 of data — the user's header row) ── */
 /* Covers the full canvas; button positions come from grid.colX() which already
