@@ -1,8 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
 
-const baseURL = process.env.BASE_URL ?? "http://suite.local:8098";
+const baseURL = process.env.BASE_URL ?? "http://drive-layer.localhost:8084";
 const isCI = !!process.env.CI;
+// Google Chrome on macOS does not exit when Playwright closes it (its updater keeps running), so every
+// worker hangs for five minutes at the end of a run. Point this at a Chrome for Testing binary there.
+const chromeExecutable = process.env.E2E_CHROME_PATH;
 
 export default defineConfig({
 	testDir: "./specs",
@@ -36,7 +39,12 @@ export default defineConfig({
 	projects: [
 		{
 			name: "chromium",
-			use: { ...devices["Desktop Chrome"], channel: "chrome" },
+			use: {
+				...devices["Desktop Chrome"],
+				...(chromeExecutable
+					? { launchOptions: { executablePath: chromeExecutable } }
+					: { channel: "chrome" }),
+			},
 		},
 	],
 	globalSetup: "./global-setup.ts",

@@ -45,7 +45,7 @@ export function serverURL(path: string): string {
  * redirects the journeys check, so a broken redirect hook cannot turn the
  * flip-on journeys into skips. The probe signs in with a session of its own.
  */
-export function siteFilesFlip(): Promise<boolean> {
+function siteFilesFlip(): Promise<boolean> {
 	siteFlip ??= (async () => {
 		const server = await request.newContext({ baseURL: SERVER, extraHTTPHeaders: { Host: SITE } });
 		await loginViaApi(server);

@@ -142,10 +142,6 @@ export async function purge(api: APIRequestContext, node: string): Promise<void>
 	}
 }
 
-export async function purgeAll(api: APIRequestContext, nodes: string[]): Promise<void> {
-	for (const node of nodes) await purge(api, node);
-}
-
 /** A unique title fragment so parallel workers never collide. */
 export function runTag(prefix: string): string {
 	return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
