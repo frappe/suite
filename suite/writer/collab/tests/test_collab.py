@@ -7,7 +7,6 @@ import uuid
 from unittest.mock import patch
 
 import frappe
-from frappe.deferred_insert import save_to_db
 from frappe.tests import IntegrationTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
@@ -480,7 +479,6 @@ class TestWriterCollab(IntegrationTestCase):
         response = call(routes.collab_get, node)
         # The request is a GET, so frappe rolls back what it wrote
         frappe.db.rollback()
-        save_to_db("Error Log")
 
         self.assertEqual((response.status_code, answer(response)), (503, {"collab": "chain_break"}))
         self.assertEqual(frappe.db.count("Error Log", logged), 1)
