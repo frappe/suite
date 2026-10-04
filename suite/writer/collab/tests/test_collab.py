@@ -7,6 +7,7 @@ import uuid
 from unittest.mock import patch
 
 import frappe
+from frappe.deferred_insert import save_to_db
 from frappe.tests import IntegrationTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
@@ -462,3 +463,24 @@ class TestWriterCollab(IntegrationTestCase):
 
         self.assertEqual(failures, [])
         self.assert_one_order(node, writers * pushes)
+
+    def test_an_open_on_a_broken_chain_is_refused_and_logged(self):
+        self.set_mode("on")
+        node = self.new_document()
+        self.push(node, *self.session(node), 1)
+        doc_id = routes.collab.find(routes.ADAPTER, node).id
+        frappe.db.sql(
+            "UPDATE `__writer_collab_doc` SET `head_chain` = %s WHERE `id` = %s", (b"\x00" * 32, doc_id)
+        )
+        frappe.db.commit()
+        self.addCleanup(frappe.db.commit)
+        logged = {"method": "Collab open: chain_break", "error": f"{routes.ADAPTER} document {doc_id}"}
+        self.addCleanup(frappe.db.delete, "Error Log", logged)
+
+        response = call(routes.collab_get, node)
+        # The request is a GET, so frappe rolls back what it wrote
+        frappe.db.rollback()
+        save_to_db("Error Log")
+
+        self.assertEqual((response.status_code, answer(response)), (503, {"collab": "chain_break"}))
+        self.assertEqual(frappe.db.count("Error Log", logged), 1)
