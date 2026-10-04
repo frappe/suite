@@ -35,7 +35,6 @@ PLACES = 2
 PER_COMPACTION = 240 * 2**20
 LEASE = TIMEOUT + 90
 PACED_FROM = 512 * 2**10
-GZ_PART = 2**20
 ALERT_AT = 3
 CGROUP = "/sys/fs/cgroup"
 
@@ -206,13 +205,14 @@ def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report:
             now_datetime(),
         ),
     )
-    # In parts, so no statement nears max_allowed_packet; hex doubles each one
+    # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
     gz = gzip.compress(result.state)
-    for start in range(0, len(gz), GZ_PART):
+    part = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0]) // 4
+    for start in range(0, len(gz), part):
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "checkpoint")}` SET `gz` = CONCAT(`gz`, UNHEX(%s))
             WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = UNHEX(%s)""",
-            (gz[start : start + GZ_PART].hex(), doc_id, through, sha.hex()),
+            (gz[start : start + part].hex(), doc_id, through, sha.hex()),
         )
     # A server not in strict mode empties a CONCAT past max_allowed_packet with only a warning
     stored = frappe.db.sql(
