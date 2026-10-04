@@ -4867,6 +4867,9 @@ function _setupGridInstance() {
     // (grid.setLazyValues(true)), the grid pulls this per visible cell instead
     // of materialising every cell up front.
     getDisplay: _cellDisplay,
+    // The in-cell editor opens with the raw input (the formula, not its
+    // result), matching the formula bar set in onSelect.
+    getEditValue: (id) => sheet.getCell(id),
     // Non-empty cell ids for the current sheet — the lazy path's source for
     // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
     // own `data` keys.

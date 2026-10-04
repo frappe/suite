@@ -59,6 +59,7 @@ export function createGrid(
     getEditingHomeSheet,
     getDisplay,
     getCellIds,
+    getEditValue,
     lazyValues = false,
     canEdit = () => true,
     isCellEditable,
@@ -87,6 +88,14 @@ export function createGrid(
   const getValue = (id) => (_lazyValues ? getDisplay(id) : data[id])
   const hasVal = (id) => !!getValue(id)
   const cellIds = () => (_lazyValues ? (getCellIds ? getCellIds() : []) : Object.keys(data))
+  // What the in-cell editor opens with: the cell's input (a formula keeps
+  // its `=…` text), not its display. Seeding the editor with the display
+  // and committing on blur would overwrite a formula with its result.
+  // Hosts without getEditValue keep the display, as before.
+  const editValue = (id) => {
+    const v = getEditValue ? getEditValue(id) : getValue(id)
+    return v == null ? '' : String(v)
+  }
   function setLazyValues(on) {
     _lazyValues = !!on && typeof getDisplay === 'function'
     render()
@@ -1707,7 +1716,7 @@ export function createGrid(
     // instead of editing the (regenerated) cell. The handler returns true
     // when it took over.
     if (onPivotDrill?.(h.r, h.c)) return
-    showEditor(getValue(cellId(h.r, h.c)) ?? '', 'edit')
+    showEditor(editValue(cellId(h.r, h.c)), 'edit')
   })
 
   let _lastLinkHover = null // 'r,c' of the linked cell the pointer is on
@@ -2005,7 +2014,7 @@ export function createGrid(
 
     if (e.key === 'F2') {
       e.preventDefault()
-      showEditor(getValue(cellId(r, c)) ?? '', 'edit')
+      showEditor(editValue(cellId(r, c)), 'edit')
       return
     }
 
@@ -2113,7 +2122,7 @@ export function createGrid(
       const { r0, c0, r1, c1 } = getSelRange()
       const singleCell = r0 === r1 && c0 === c1
       if (singleCell && !e.shiftKey && !mod && !e.altKey && canEdit()) {
-        showEditor(getValue(cellId(r, c)) ?? '', 'edit')
+        showEditor(editValue(cellId(r, c)), 'edit')
         return
       }
       const anchorC = _tabAnchorCol ?? c
