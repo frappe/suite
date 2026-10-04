@@ -48,6 +48,13 @@ export interface ClientOptions {
 	echo?: EchoTarget
 }
 
+interface InitPayload {
+	snapshotBytes: Uint8Array | null
+	name?: string
+	locale?: string
+	timezone?: string
+}
+
 export interface ViewportArgs {
 	sheet: string
 	r1: number
@@ -132,10 +139,10 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
 
 	// --- init --------------------------------------------------------------
 
-	const initPayload: Record<string, unknown> = { snapshotBytes: options.snapshotBytes ?? null }
-	if (options.name !== undefined) initPayload['name'] = options.name
-	if (options.locale !== undefined) initPayload['locale'] = options.locale
-	if (options.timezone !== undefined) initPayload['timezone'] = options.timezone
+	const initPayload: InitPayload = { snapshotBytes: options.snapshotBytes ?? null }
+	if (options.name !== undefined) initPayload.name = options.name
+	if (options.locale !== undefined) initPayload.locale = options.locale
+	if (options.timezone !== undefined) initPayload.timezone = options.timezone
 	const init = await request<{ version: number; sheets: string[] }>('init', initPayload)
 
 	let version = init.version

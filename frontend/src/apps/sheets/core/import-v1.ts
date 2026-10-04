@@ -11,9 +11,12 @@
 import { CommandTypes } from './commands.js'
 import type { NonBatchCommand, BatchCommand } from './commands.js'
 
+/** A v1 cell value: input text or a number; feature layers may leave objects. */
+export type V1Value = string | number | boolean | null | object
+
 export interface V1Sheet {
 	name: string
-	cells: Record<string, unknown>
+	cells: { readonly [cellId: string]: V1Value }
 }
 
 const CELL_ID = /^([A-Z]+)([1-9]\d*)$/
@@ -29,7 +32,7 @@ export function parseA1(id: string): { row: number; col: number } | null {
 
 // v1 values are strings or numbers. Anything else (an empty value, an
 // object left by a feature layer) has no cell input to import.
-function inputOf(raw: unknown): string | null {
+function inputOf(raw: V1Value): string | null {
 	if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
 	if (typeof raw === 'string' && raw !== '') return raw
 	return null

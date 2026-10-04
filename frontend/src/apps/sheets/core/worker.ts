@@ -219,8 +219,8 @@ export function createWorkerHost(): WorkerHost {
 
 // Worker entry. Skipped under tests and on the main thread, where
 // WorkerGlobalScope does not exist.
-if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
-	const scope = self as unknown as DedicatedWorkerGlobalScope
+if (typeof DedicatedWorkerGlobalScope !== 'undefined' && self instanceof DedicatedWorkerGlobalScope) {
+	const scope = self
 	const host = createWorkerHost()
 	// Messages that arrive while wasm loads wait on this promise, so they
 	// are still handled in the order they were sent.
