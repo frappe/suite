@@ -584,9 +584,16 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.assertIn(self.doc_row(waited).id, self.requested)
         self.assertNotIn(self.doc_row(fresh).id, self.requested)
 
-    def test_a_job_queue_outage_leaves_open_and_push_working(self):
-        node = self.new_document()
+    def test_a_job_queue_outage_leaves_open_and_push_working_and_is_logged_once(self):
+        node, other = self.new_document(), self.new_document()
         refused = []
+        logged = {
+            "method": "Collab compaction: request failed",
+            "creation": (">=", frappe.utils.now_datetime()),
+        }
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(frappe.db.delete, "Error Log", logged)
+        self.addCleanup(frappe.cache.delete_value, "suite-collab-queue-down")
 
         def down(method, **kwargs):
             refused.append(kwargs["doc_id"])
@@ -595,6 +602,12 @@ class TestWriterCompactionTriggers(CheckpointCase):
         with patch.object(frappe, "enqueue", down):
             self.push_bytes(node, [300 * 1024], final=True)
             self.assertEqual(call(routes.collab_get, node).status_code, 200)
+            self.assertEqual(call(routes.collab_updates_get, node).status_code, 200)
+            self.push_bytes(other, [300 * 1024], final=True)
 
-        self.assertEqual(refused, [self.doc_row(node).id] * 2)
-        self.assertEqual(self.row_count(node), 1)
+        doc_id = self.doc_row(node).id
+        self.assertEqual(refused, [doc_id])
+        self.assertEqual((self.row_count(node), self.row_count(other)), (1, 1))
+        errors = frappe.get_all("Error Log", logged, pluck="error")
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(errors[0].startswith(f"writer document {doc_id}\n"), errors[0])

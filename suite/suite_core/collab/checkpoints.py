@@ -30,6 +30,7 @@ TAIL_ROWS = 2000
 AGE = timedelta(minutes=10)
 QUIET = timedelta(seconds=30)
 SWEEP_AGE = timedelta(minutes=30)
+QUEUE_PAUSE = timedelta(minutes=1)
 TIMEOUT = 120
 PLACES = 2
 PER_COMPACTION = 240 * 2**20
@@ -145,6 +146,8 @@ def sweep(adapter: str, method: str, limit: int = 100) -> None:
 
 def request(adapter: str, doc_id: str, method: str) -> None:
     """Enqueue `method(doc_id)` once per document; it runs `run` with the product's roots."""
+    if frappe.cache.get_value("suite-collab-queue-down", expires=True):
+        return
     queue = "collab" if "collab" in frappe.conf.get("workers", {}) else "default"
     try:
         frappe.enqueue(
@@ -155,12 +158,15 @@ def request(adapter: str, doc_id: str, method: str) -> None:
             deduplicate=True,
             doc_id=doc_id,
         )
-    except Exception:
-        # A request is only a hint, so the open or push that made it carries on
+    except Exception as error:
+        # A request is only a hint, so the open or push that made it carries on and the queue rests a while
+        frappe.cache.set_value(
+            "suite-collab-queue-down", True, expires_in_sec=int(QUEUE_PAUSE.total_seconds())
+        )
         frappe.log_error(
             title="Collab compaction: request failed",
+            message=f"{adapter} document {doc_id}\n{error!r}",
             reference_doctype="Suite Collab Settings",
-            defer_insert=True,
         )
 
 
