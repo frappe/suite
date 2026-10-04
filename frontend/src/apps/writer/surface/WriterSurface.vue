@@ -30,6 +30,7 @@ import type { CollaborationUser } from '@/apps/writer/composables/useCollaborati
 import emitter from '@/apps/writer/emitter'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
+import { belowMinBuild } from '@/platform/build'
 
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
@@ -152,7 +153,12 @@ const saveState = computed<DocumentSaveState>(
 const savingPaused = computed(() => !!roomPaused.value && saveState.value !== 'failed')
 const settings = computed(() => documentResource.doc?.settings ?? {})
 const editable = computed(
-  () => readable.value && writes.writable.value && !isLocked(settings.value) && allowsEditing.value,
+  () =>
+    readable.value &&
+    writes.writable.value &&
+    !isLocked(settings.value) &&
+    allowsEditing.value &&
+    !belowMinBuild('writer'),
 )
 const showEditingPaused = computed(
   () => !editable.value && editingPaused.value && writes.writable.value,
