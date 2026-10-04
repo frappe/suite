@@ -14,11 +14,7 @@ import init from '@ironcalc/wasm'
 import type { ExtendedCellStyle } from '@ironcalc/wasm'
 import { createWorkbook, WorkbookError } from './workbook.js'
 import type { Workbook } from './workbook.js'
-
-// Upper bound for one readViewport. A screen plus overscan is a few
-// thousand cells; anything near this limit is a caller bug, and the
-// per-cell loop would stall the worker.
-export const MAX_VIEWPORT_CELLS = 100_000
+import { MAX_VIEWPORT_CELLS } from './limits.js'
 
 export type ReadWhat = 'display' | 'input' | 'style'
 

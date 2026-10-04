@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { initSync } from '@ironcalc/wasm'
-import { createWorkerHost, MAX_VIEWPORT_CELLS } from './worker.js'
+import { createWorkerHost } from './worker.js'
+import { MAX_VIEWPORT_CELLS } from './limits.js'
 import { CommandTypes } from './commands.js'
 
 const require = createRequire(import.meta.url)
