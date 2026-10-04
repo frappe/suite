@@ -34,6 +34,7 @@
     "src/apps/sheets/canvas/render-loop.ts",
     "src/apps/sheets/canvas/viewport.ts",
     "src/apps/sheets/canvas/selection.ts",
-    "src/apps/sheets/canvas/input/hit-test.ts"
+    "src/apps/sheets/canvas/input/hit-test.ts",
+    "src/apps/sheets/canvas/input/range-picker.ts"
   ]
 }
