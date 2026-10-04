@@ -275,6 +275,25 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
 
+    def test_a_state_too_large_to_store_whole_is_refused(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        mode = frappe.db.sql("SELECT @@SESSION.sql_mode")[0][0]
+        frappe.db.sql("SET SESSION sql_mode = ''")
+        self.addCleanup(frappe.db.sql, "SET SESSION sql_mode = %s", mode)
+        packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
+        result = compaction.Compacted(state=os.urandom(packet + 2**20), integrated=True, report={})
+        snapshot = routes.collab.read("writer", self.doc_row(node).id)
+
+        with self.assertRaises(compaction.CompactionFailed) as failed:
+            checkpoints.store(
+                "writer", self.doc_row(node).id, 1, snapshot["head_chain"], result, {}, writer_collab.ROOTS
+            )
+        frappe.db.rollback()
+
+        self.assertEqual(failed.exception.reason, "too_large")
+        self.assertEqual(self.checkpoints_of(node), [])
+
     def stored(self, node: str, *, integrated: bool = True) -> tuple[dict, object, bytes]:
         """A compaction of the document through its head, stored as T2 leaves it, not yet installed."""
         doc_id = self.doc_row(node).id

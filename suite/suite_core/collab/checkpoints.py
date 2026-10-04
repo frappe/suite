@@ -214,6 +214,13 @@ def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report:
             WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = UNHEX(%s)""",
             (gz[start : start + GZ_PART].hex(), doc_id, through, sha.hex()),
         )
+    # A server not in strict mode empties a CONCAT past max_allowed_packet with only a warning
+    stored = frappe.db.sql(
+        f"SELECT LENGTH(`gz`) FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` = %s",
+        (doc_id, through),
+    )[0][0]
+    if stored != len(gz):
+        raise compaction.CompactionFailed("too_large")
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     return sha
 
