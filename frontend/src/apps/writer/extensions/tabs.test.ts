@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
+import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import Collaboration from '@tiptap/extension-collaboration'
+import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { TabsExtension, listTabs, orderedTabs, tabsIn } from './tabs'
+
+import { listTabs, orderedTabs, TabsExtension, tabsIn } from './tabs'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -27,8 +28,7 @@ const makeEditor = (labels: string[]) =>
 const labelsOf = (editor: Editor) =>
   orderedTabs(editor.state.doc).map(({ node }) => node.attrs.label)
 
-const idsOf = (editor: Editor) =>
-  tabsIn(editor.state.doc).map(({ node }) => node.attrs.id)
+const idsOf = (editor: Editor) => tabsIn(editor.state.doc).map(({ node }) => node.attrs.id)
 
 describe('tab reordering', () => {
   it('reorders without moving nodes', () => {
@@ -50,9 +50,7 @@ describe('tab reordering', () => {
 
     expect(idsOf(editor).sort()).toEqual([...ids].sort())
     expect(labelsOf(editor).sort()).toEqual(['a', 'b', 'c', 'd'])
-    expect(
-      orderedTabs(editor.state.doc).map(({ node }) => node.attrs.order),
-    ).toEqual([0, 1, 2, 3])
+    expect(orderedTabs(editor.state.doc).map(({ node }) => node.attrs.order)).toEqual([0, 1, 2, 3])
   })
 
   it('rejects out-of-range and no-op moves', () => {
@@ -84,10 +82,7 @@ describe('tab id integrity', () => {
 
     tr.insert(
       editor.state.doc.content.size,
-      editor.schema.nodes.tab.create(
-        first.node.attrs,
-        editor.schema.nodes.paragraph.create(),
-      ),
+      editor.schema.nodes.tab.create(first.node.attrs, editor.schema.nodes.paragraph.create()),
     )
     editor.view.dispatch(tr)
 
@@ -193,7 +188,9 @@ describe('the first tab', () => {
     editor.commands.createTab({ id: 'second', label: 'Second' })
 
     const html = editor.getHTML()
-    expect(html).toMatch(/^<div data-tab-id="first-tab" data-tab-label="Notes"><p>Hello<\/p><\/div>/)
+    expect(html).toMatch(
+      /^<div data-tab-id="first-tab" data-tab-label="Notes"><p>Hello<\/p><\/div>/,
+    )
     expect(html).toContain('data-tab-id="second"')
 
     const reloaded = makeEditor([])

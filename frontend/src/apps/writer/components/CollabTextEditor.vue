@@ -13,25 +13,28 @@
   />
 </template>
 
-<script setup>
-import { computed, provide, ref } from 'vue'
-import { toast } from 'frappe-ui'
+<script setup lang="ts">
+import type { CollabRoom } from '@suite/collab-client'
 import Collaboration from '@tiptap/extension-collaboration'
+import { toast } from 'frappe-ui'
+import { computed, provide, ref } from 'vue'
 import * as Y from 'yjs'
+
 import { FIELD, withinTenSeconds } from '@/apps/writer/collab'
+
 import CoreEditor from './CoreEditor.vue'
 
-const props = defineProps({
-  room: Object,
-  file: Object,
-  document: Object,
-  settings: Object,
-  editable: Boolean,
-})
+const props = defineProps<{
+  room: CollabRoom
+  file: object
+  document: object
+  settings: object
+  editable: boolean
+}>()
 
 const showSettings = defineModel('showSettings')
 const edited = ref(false)
-const textEditor = ref(null)
+const textEditor = ref<InstanceType<typeof CoreEditor> | null>(null)
 const editor = computed(() => textEditor.value?.editor)
 provide('editor', editor)
 defineExpose({ editor })
@@ -40,7 +43,7 @@ defineExpose({ editor })
 const comments = new Y.Doc().getMap('comments')
 const extensions = [Collaboration.configure({ document: props.room.doc, field: FIELD })]
 
-async function save(_manual, _html, done) {
+async function save(_manual: boolean, _html: string | null, done?: () => void) {
   await withinTenSeconds(props.room.flush())
   if (props.room.saveState === 'clean') done?.()
   else if (done) toast.warning('Not saved yet. Your changes are kept in this tab.')

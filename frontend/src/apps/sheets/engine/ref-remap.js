@@ -25,7 +25,7 @@
 //   sheetOfFormula  : the sheet the formula itself lives on, so bare (un-
 //                     qualified) references can be scoped to the right sheet.
 
-import { colLabel, parseCellId, cellId } from '../utils/cells.js'
+import { cellId, colLabel, parseCellId } from '../utils/cells.js'
 
 const REF_ERROR = '#REF!'
 
@@ -45,10 +45,10 @@ const STRING = String.raw`"(?:\\.|[^"\\])*"`
 // look like refs (e.g. `LOG10(`).
 const MASTER = new RegExp(
   `(${STRING})|` +
-  String.raw`(?<![A-Za-z0-9_$'!])` +
-  String.raw`(${SHEET_PREFIX})?(${REF})` +
-  String.raw`(?:\s*:\s*(${SHEET_PREFIX})?(${REF}))?` +
-  String.raw`(?![A-Za-z0-9_(])`,
+    String.raw`(?<![A-Za-z0-9_$'!])` +
+    String.raw`(${SHEET_PREFIX})?(${REF})` +
+    String.raw`(?:\s*:\s*(${SHEET_PREFIX})?(${REF}))?` +
+    String.raw`(?![A-Za-z0-9_(])`,
   'g',
 )
 
@@ -89,7 +89,8 @@ function isColOnly(ref) {
 // index in the span was deleted. A null map leaves the axis untouched.
 function boxAxis(lo, hi, map) {
   if (!map) return [lo, hi]
-  let mn = Infinity, mx = -Infinity
+  let mn = Infinity,
+    mx = -Infinity
   for (let i = lo; i <= hi; i++) {
     const v = map(i)
     if (v == null || v < 0) continue
@@ -113,7 +114,7 @@ function buildRef(e) {
 // new start is `to` (an index in the ORIGINAL space, as the drop target). The
 // indices between shift to fill the gap; everything else is identity.
 export function moveMap(from, to, count = 1) {
-  const end = from + count            // block is [from, end)
+  const end = from + count // block is [from, end)
   return (i) => {
     if (i >= from && i < end) {
       // Where the block lands: `to` is the pre-move index it should sit before.
@@ -158,11 +159,17 @@ export function remapCellKeys(obj, mapCol, mapRow) {
   const out = {}
   for (const id of Object.keys(obj)) {
     const p = parseCellId(id)
-    if (!p) { out[id] = obj[id]; continue }
+    if (!p) {
+      out[id] = obj[id]
+      continue
+    }
     const nc = mapCol ? mapCol(p.col) : p.col
     if (nc == null || nc < 0) continue
     let nr = p.row
-    if (mapRow) { nr = mapRow(p.row); if (nr == null || nr < 0) continue }
+    if (mapRow) {
+      nr = mapRow(p.row)
+      if (nr == null || nr < 0) continue
+    }
     out[cellId(nr, nc)] = obj[id]
   }
   return out
@@ -184,10 +191,12 @@ export function remapIndexKeys(obj, map) {
 export function parseA1Range(range) {
   if (typeof range !== 'string') return null
   const [a, b] = range.includes(':') ? range.split(':') : [range, range]
-  const pa = parseRef(a), pb = parseRef(b)
+  const pa = parseRef(a),
+    pb = parseRef(b)
   if (!pa || !pb) return null
   return {
-    c0: Math.min(pa.col, pb.col), c1: Math.max(pa.col, pb.col),
+    c0: Math.min(pa.col, pb.col),
+    c1: Math.max(pa.col, pb.col),
     r0: pa.row == null || pb.row == null ? null : Math.min(pa.row, pb.row),
     r1: pa.row == null || pb.row == null ? null : Math.max(pa.row, pb.row),
   }
@@ -210,14 +219,17 @@ export function remapRect(rect, mapCol, mapRow) {
   return { r0: rbox[0], c0: cbox[0], r1: rbox[1], c1: cbox[1] }
 }
 
-export function remapRefs(formula, { sheetOfFormula = null, opSheet = null, mapCol = null, mapRow = null } = {}) {
+export function remapRefs(
+  formula,
+  { sheetOfFormula = null, opSheet = null, mapCol = null, mapRow = null } = {},
+) {
   if (typeof formula !== 'string' || !formula.startsWith('=')) return formula
   if (opSheet == null) return formula
   const opLc = String(opSheet).toLowerCase()
   const fmLc = sheetOfFormula == null ? null : String(sheetOfFormula).toLowerCase()
 
   return formula.replace(MASTER, (match, str, sPrefix, sRef, ePrefix, eRef) => {
-    if (str !== undefined) return match   // string literal — never a reference
+    if (str !== undefined) return match // string literal — never a reference
     const isRange = eRef !== undefined
     // A lone whole-column token (`A`, not `A:A`) is a named range / column word,
     // never a cell reference — leave it alone.
@@ -246,7 +258,8 @@ export function remapRefs(formula, { sheetOfFormula = null, opSheet = null, mapC
     // Range → per-axis bounding box of where its cells land.
     const cbox = boxAxis(Math.min(s.col, e.col), Math.max(s.col, e.col), mapCol)
     if (cbox === null) return REF_ERROR
-    let rlo = null, rhi = null
+    let rlo = null,
+      rhi = null
     if (s.row != null && e.row != null) {
       const rbox = boxAxis(Math.min(s.row, e.row), Math.max(s.row, e.row), mapRow)
       if (rbox === null) return REF_ERROR

@@ -42,7 +42,7 @@ LINK_FIELDS = (
 ORPHAN_FIELDS = (
     "name",
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "kind",
@@ -374,7 +374,7 @@ def _ensure_personal_root(env, user: str, reserve=lambda _rows: None) -> str:
     node = {
         "name": name,
         "title": user,
-        "parent": None,
+        "parent_node": None,
         "root": None,
         "path": "",
         "kind": "root",
@@ -404,7 +404,6 @@ def _ensure_personal_root(env, user: str, reserve=lambda _rows: None) -> str:
         "state": ACTIVE if enabled else ARCHIVED,
         "quota_bytes": 0,
         "used_bytes": 0,
-        "acl_generation": 0,
         "owner": user,
         "creation": stamp,
         "modified": stamp,

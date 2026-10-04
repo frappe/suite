@@ -1,212 +1,202 @@
 <template>
-	<Teleport to="body">
-		<Transition
-			enter-active-class="transition-opacity duration-200"
-			enter-from-class="opacity-0"
-			enter-to-class="opacity-100"
-			leave-active-class="transition-opacity duration-200"
-			leave-from-class="opacity-100"
-			leave-to-class="opacity-0"
-		>
-			<div
-				v-if="show"
-				data-attachment-viewer
-				class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-2 text-gray-300 sm:p-4"
-				@click.self="closeViewer"
-			>
-				<div class="flex w-full justify-between">
-					<div class="flex max-w-2xl items-center space-x-2 truncate rounded-4">
-						<component
-							:is="getFileIcon(currentAttachment?.type)"
-							class="h-4 w-4 shrink-0"
-						/>
-						<span class="truncate text-base-medium">
-							{{ currentAttachment?.filename }}
-						</span>
-					</div>
-					<div class="shrink-0 space-x-2 sm:space-x-4">
-						<button
-							v-if="previewUrl && !fetchAttachment.loading && canPrint"
-							class="rounded-4 p-1.5 hover:bg-white/20"
-							@click="printAttachment"
-						>
-							<Printer class="h-4 w-4" />
-						</button>
-						<button
-							v-if="previewUrl && !fetchAttachment.loading"
-							:disabled="isDownloading"
-							class="rounded-4 p-1.5 hover:bg-white/20 disabled:opacity-50"
-							@click="downloadAttachment"
-						>
-							<Download class="h-4 w-4" />
-						</button>
-						<button class="rounded-4 p-1.5 hover:bg-white/20" @click="closeViewer">
-							<X class="h-4 w-4" />
-						</button>
-					</div>
-				</div>
+  <Teleport :to="overlayLayer ?? 'body'">
+    <Transition
+      enter-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-200"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <!-- Teleported to Mail's overlay layer, so it sits outside DefaultLayout's
+			     pt-[env(safe-area-inset-top)] and has to state the insets itself: in iOS
+			     standalone the header would otherwise sit under the status bar and the
+			     dynamic island, the pager under the home indicator, and — in landscape,
+			     where the cutout moves to a side — the edge buttons under the cutout. -->
+      <div
+        v-if="show"
+        data-attachment-viewer
+        class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pl-[calc(0.5rem+env(safe-area-inset-left))] pr-[calc(0.5rem+env(safe-area-inset-right))] pt-[calc(0.5rem+env(safe-area-inset-top))] text-gray-300 sm:pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pl-[calc(1rem+env(safe-area-inset-left))] sm:pr-[calc(1rem+env(safe-area-inset-right))] sm:pt-[calc(1rem+env(safe-area-inset-top))]"
+        @click.self="closeViewer"
+      >
+        <div class="flex w-full justify-between">
+          <div class="flex max-w-2xl items-center space-x-2 truncate rounded-4">
+            <component :is="getFileIcon(currentAttachment?.type)" class="h-4 w-4 shrink-0" />
+            <span class="truncate text-base-medium">
+              {{ currentAttachment?.filename }}
+            </span>
+          </div>
+          <div class="shrink-0 space-x-2 sm:space-x-4">
+            <button
+              v-if="previewUrl && !fetchAttachment.loading && canPrint"
+              class="rounded-4 p-1.5 hover:bg-white/20"
+              @click="printAttachment"
+            >
+              <Printer class="h-4 w-4" />
+            </button>
+            <button
+              v-if="previewUrl && !fetchAttachment.loading"
+              :disabled="isDownloading"
+              class="rounded-4 p-1.5 hover:bg-white/20 disabled:opacity-50"
+              @click="downloadAttachment"
+            >
+              <Download class="h-4 w-4" />
+            </button>
+            <button class="rounded-4 p-1.5 hover:bg-white/20" @click="closeViewer">
+              <X class="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
-				<!-- Content area -->
-				<div
-					class="flex h-full w-full items-center justify-center"
-					@click.self="closeViewer"
-				>
-					<LoaderCircle v-if="fetchAttachment.loading" class="h-8 w-8 animate-spin" />
-					<div
-						v-else-if="previewUrl"
-						class="flex h-full w-full items-center justify-center"
-						@click.self="closeViewer"
-					>
-						<!-- Image Preview -->
-						<img
-							v-if="isImage"
-							:src="previewUrl"
-							:alt="currentAttachment?.filename"
-							class="max-h-[85vh] max-w-full object-contain"
-						/>
-						<!--
+        <!-- Content area -->
+        <div class="flex h-full w-full items-center justify-center" @click.self="closeViewer">
+          <LoaderCircle v-if="fetchAttachment.loading" class="h-8 w-8 animate-spin" />
+          <div
+            v-else-if="previewUrl"
+            class="flex h-full w-full items-center justify-center"
+            @click.self="closeViewer"
+          >
+            <!-- Image Preview -->
+            <img
+              v-if="isImage"
+              :src="previewUrl"
+              :alt="currentAttachment?.filename"
+              class="max-h-[85vh] max-w-full object-contain"
+            />
+            <!--
 							PDF Preview. iOS renders nothing for an <embed>ed PDF — in a PWA
 							least of all — so the mobile tree draws the pages itself with pdf.js
 							rather than sending the reader out to a browser tab.
 						-->
-						<template v-else-if="isPDF && !pdfFailed">
-							<div
-								v-if="isMobile"
-								class="relative flex h-[85vh] w-full max-w-6xl justify-center"
-							>
-								<LoaderCircle
-									v-if="!pdfLoaded"
-									class="absolute top-1/2 h-8 w-8 animate-spin"
-								/>
-								<VuePdfEmbed
-									annotation-layer
-									text-layer
-									:source="previewUrl"
-									class="h-full w-full space-y-2 overflow-auto"
-									@loaded="pdfLoaded = true"
-									@loading-failed="onPdfError"
-									@rendering-failed="onPdfError"
-								/>
-							</div>
-							<embed
-								v-else
-								:src="previewUrl"
-								type="application/pdf"
-								class="h-[85vh] w-full max-w-6xl"
-							/>
-						</template>
+            <template v-else-if="isPDF && !pdfFailed">
+              <div v-if="isMobile" class="relative flex h-[85vh] w-full max-w-6xl justify-center">
+                <LoaderCircle v-if="!pdfLoaded" class="absolute top-1/2 h-8 w-8 animate-spin" />
+                <VuePdfEmbed
+                  annotation-layer
+                  text-layer
+                  :source="previewUrl"
+                  class="h-full w-full space-y-2 overflow-auto"
+                  @loaded="pdfLoaded = true"
+                  @loading-failed="onPdfError"
+                  @rendering-failed="onPdfError"
+                />
+              </div>
+              <embed
+                v-else
+                :src="previewUrl"
+                type="application/pdf"
+                class="h-[85vh] w-full max-w-6xl"
+              />
+            </template>
 
-						<!-- Video Preview -->
-						<video
-							v-else-if="isVideo"
-							:src="previewUrl"
-							:title="__('Video Preview')"
-							controls
-							class="max-h-[85vh] max-w-full"
-						/>
-						<!-- Audio Preview -->
-						<audio
-							v-else-if="isAudio"
-							:src="previewUrl"
-							:title="__('Audio Preview')"
-							controls
-							class="w-full max-w-2xl"
-						/>
-						<!-- Unsupported Preview, and the PDF renderer's fallback -->
-						<div v-else class="flex flex-col items-center justify-center space-y-4">
-							<FileIcon class="h-16 w-16" />
-							<p class="text-sm">
-								{{
-									pdfFailed
-										? __('This PDF could not be displayed here.')
-										: __('Preview not available for this file type')
-								}}
-							</p>
-							<Button
-								:label="__('Download')"
-								:icon-left="Download"
-								:disabled="isDownloading"
-								@click="downloadAttachment"
-							/>
-						</div>
-					</div>
-					<div v-else class="flex flex-col items-center justify-center space-y-4">
-						<FileIcon class="h-16 w-16" />
-						<p class="text-sm">{{ __('Failed to load attachment') }}</p>
-					</div>
-				</div>
+            <!-- Video Preview -->
+            <video
+              v-else-if="isVideo"
+              :src="previewUrl"
+              :title="__('Video Preview')"
+              controls
+              class="max-h-[85vh] max-w-full"
+            />
+            <!-- Audio Preview -->
+            <audio
+              v-else-if="isAudio"
+              :src="previewUrl"
+              :title="__('Audio Preview')"
+              controls
+              class="w-full max-w-2xl"
+            />
+            <!-- Unsupported Preview, and the PDF renderer's fallback -->
+            <div v-else class="flex flex-col items-center justify-center space-y-4">
+              <FileIcon class="h-16 w-16" />
+              <p class="text-sm">
+                {{
+                  pdfFailed
+                    ? __('This PDF could not be displayed here.')
+                    : __('Preview not available for this file type')
+                }}
+              </p>
+              <Button
+                :label="__('Download')"
+                :icon-left="Download"
+                :disabled="isDownloading"
+                @click="downloadAttachment"
+              />
+            </div>
+          </div>
+          <div v-else class="flex flex-col items-center justify-center space-y-4">
+            <FileIcon class="h-16 w-16" />
+            <p class="text-sm">{{ __('Failed to load attachment') }}</p>
+          </div>
+        </div>
 
-				<div
-					v-if="attachments && attachments.length > 1"
-					class="flex items-center max-sm:w-full max-sm:justify-between sm:space-x-4"
-				>
-					<button
-						:disabled="currentIndex === 0"
-						class="rounded-4 p-1.5 disabled:opacity-50"
-						:class="{ 'hover:bg-white/20': currentIndex !== 0 }"
-						@click="previousAttachment"
-					>
-						<ChevronLeft class="h-4 w-4" />
-					</button>
-					<span class="text-sm">
-						{{
-							__('{0} of {1}', [
-								(currentIndex + 1).toString(),
-								attachments.length.toString(),
-							])
-						}}
-					</span>
-					<button
-						:disabled="currentIndex === attachments.length - 1"
-						class="rounded-4 p-1.5 disabled:opacity-50"
-						:class="{ 'hover:bg-white/20': currentIndex !== attachments.length - 1 }"
-						@click="nextAttachment"
-					>
-						<ChevronRight class="h-4 w-4" />
-					</button>
-				</div>
-			</div>
-		</Transition>
-	</Teleport>
+        <div
+          v-if="attachments && attachments.length > 1"
+          class="flex items-center max-sm:w-full max-sm:justify-between sm:space-x-4"
+        >
+          <button
+            :disabled="currentIndex === 0"
+            class="rounded-4 p-1.5 disabled:opacity-50"
+            :class="{ 'hover:bg-white/20': currentIndex !== 0 }"
+            @click="previousAttachment"
+          >
+            <ChevronLeft class="h-4 w-4" />
+          </button>
+          <span class="text-sm">
+            {{ __('{0} of {1}', [(currentIndex + 1).toString(), attachments.length.toString()]) }}
+          </span>
+          <button
+            :disabled="currentIndex === attachments.length - 1"
+            class="rounded-4 p-1.5 disabled:opacity-50"
+            :class="{ 'hover:bg-white/20': currentIndex !== attachments.length - 1 }"
+            @click="nextAttachment"
+          >
+            <ChevronRight class="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import 'vue-pdf-embed/dist/styles/annotationLayer.css'
 import 'vue-pdf-embed/dist/styles/textLayer.css'
 
+import { Button, usePortalTarget } from 'frappe-ui'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileIcon,
+  LoaderCircle,
+  Printer,
+  X,
+} from 'lucide-vue-next'
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+
+import { fetchAttachment, getAttachmentUrl } from '@/apps/mail/resources'
+import type { Attachment } from '@/apps/mail/types'
+import { getFileIcon, revokeObjectUrlAfterDownload } from '@/apps/mail/utils'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 
 // pdf.js is megabytes — keep it lazy/code-split so it does not bloat the MailboxView route chunk
 // (only loaded when a PDF attachment is opened). The "essential" entry is the build that imports
 // pdf.js rather than inlining its own copy, which is what lets @/utils/pdfjs point the worker at an
 // asset the bundle actually emits; without that the render fails and the viewer shows a black box.
 const VuePdfEmbed = defineAsyncComponent(async () => {
-	await import('@/utils/pdfjs')
-	return import('vue-pdf-embed/dist/index.essential.mjs')
+  await import('@/utils/pdfjs')
+  return import('vue-pdf-embed/dist/index.essential.mjs')
 })
-import {
-	ChevronLeft,
-	ChevronRight,
-	Download,
-	FileIcon,
-	LoaderCircle,
-	Printer,
-	X,
-} from 'lucide-vue-next'
-import { Button } from 'frappe-ui'
-
-import { fetchAttachment, getAttachmentUrl } from '@/apps/mail/resources'
-import { getFileIcon, revokeObjectUrlAfterDownload } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
-
-import type { Attachment } from '@/apps/mail/types'
 
 const { attachments, initialIndex, account } = defineProps<{
-	attachments?: Attachment[]
-	initialIndex?: number
-	// The blobs' owning account (merged lists / cross-account panes); active when unset.
-	account?: string
+  attachments?: Attachment[]
+  initialIndex?: number
+  // The blobs' owning account (merged lists / cross-account panes); active when unset.
+  account?: string
 }>()
+
+// MailLayout's overlay layer; see the Teleport above.
+const overlayLayer = usePortalTarget()
 
 const { isMobile } = useScreenSize()
 
@@ -220,9 +210,9 @@ const pdfLoaded = ref(false)
 const pdfFailed = ref(false)
 
 const onPdfError = (error: unknown) => {
-	pdfFailed.value = true
-	// The reader gets the download fallback; the reason only exists here.
-	console.error('[mail] PDF preview failed', error)
+  pdfFailed.value = true
+  // The reader gets the download fallback; the reason only exists here.
+  console.error('[mail] PDF preview failed', error)
 }
 
 const currentAttachment = computed(() => attachments?.[currentIndex.value])
@@ -237,90 +227,90 @@ const canPrint = computed(() => isImage.value || isPDF.value)
 const downloadedUrl = ref<string | null>(null)
 
 const releasePreview = () => {
-	if (!previewUrl.value) return
+  if (!previewUrl.value) return
 
-	if (previewUrl.value === downloadedUrl.value) revokeObjectUrlAfterDownload(previewUrl.value)
-	else URL.revokeObjectURL(previewUrl.value)
+  if (previewUrl.value === downloadedUrl.value) revokeObjectUrlAfterDownload(previewUrl.value)
+  else URL.revokeObjectURL(previewUrl.value)
 
-	downloadedUrl.value = null
-	previewUrl.value = null
+  downloadedUrl.value = null
+  previewUrl.value = null
 }
 
 const closeViewer = () => {
-	show.value = false
-	releasePreview()
+  show.value = false
+  releasePreview()
 }
 
 const previousAttachment = () => {
-	if (currentIndex.value > 0) currentIndex.value--
+  if (currentIndex.value > 0) currentIndex.value--
 }
 
 const nextAttachment = () => {
-	if (attachments && currentIndex.value < attachments.length - 1) currentIndex.value++
+  if (attachments && currentIndex.value < attachments.length - 1) currentIndex.value++
 }
 
 const loadAttachment = async () => {
-	if (!currentAttachment.value?.blob_id) return
+  if (!currentAttachment.value?.blob_id) return
 
-	releasePreview()
-	pdfLoaded.value = false
-	pdfFailed.value = false
+  releasePreview()
+  pdfLoaded.value = false
+  pdfFailed.value = false
 
-	try {
-		previewUrl.value = await getAttachmentUrl(
-			currentAttachment.value.blob_id,
-			currentAttachment.value.type,
-			account,
-		)
-	} catch {
-		// the resource's onError already raised a toast; the viewer falls back to
-		// its "Failed to load attachment" state
-	}
+  try {
+    previewUrl.value = await getAttachmentUrl(
+      currentAttachment.value.blob_id,
+      currentAttachment.value.type,
+      account,
+    )
+  } catch {
+    // the resource's onError already raised a toast; the viewer falls back to
+    // its "Failed to load attachment" state
+  }
 }
 
 const downloadAttachment = () => {
-	if (!currentAttachment.value?.blob_id || !previewUrl.value) return
+  if (!currentAttachment.value?.blob_id || !previewUrl.value) return
 
-	isDownloading.value = true
-	// Not downloadUrlAsFile(): this URL is still bound to the <img>/<embed> on screen,
-	// so releasePreview() owns revoking it.
-	downloadedUrl.value = previewUrl.value
-	const link = document.createElement('a')
-	link.href = previewUrl.value
-	link.download = currentAttachment.value?.filename || 'attachment'
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	isDownloading.value = false
+  isDownloading.value = true
+  // Not downloadUrlAsFile(): this URL is still bound to the <img>/<embed> on screen,
+  // so releasePreview() owns revoking it.
+  downloadedUrl.value = previewUrl.value
+  const link = document.createElement('a')
+  link.href = previewUrl.value
+  link.download = currentAttachment.value?.filename || 'attachment'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  isDownloading.value = false
 }
 
 const printAttachment = () => {
-	if (!previewUrl.value || !canPrint.value) return
+  if (!previewUrl.value || !canPrint.value) return
 
-	const iframe = document.createElement('iframe')
-	iframe.style.position = 'fixed'
-	iframe.style.right = '0'
-	iframe.style.bottom = '0'
-	iframe.style.width = '0'
-	iframe.style.height = '0'
-	iframe.style.border = 'none'
-	document.body.appendChild(iframe)
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '0'
+  iframe.style.bottom = '0'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = 'none'
+  document.body.appendChild(iframe)
 
-	const iframeDoc = iframe.contentWindow?.document
-	if (!iframeDoc) return document.body.removeChild(iframe)
+  const iframeDoc = iframe.contentWindow?.document
+  if (!iframeDoc) return document.body.removeChild(iframe)
 
-	if (isPDF.value) {
-		iframe.style.width = '100%'
-		iframe.style.height = '100%'
-		iframe.src = previewUrl.value
-		iframe.onload = () => {
-			iframe.contentWindow?.print()
-			setTimeout(() => document.body.removeChild(iframe), 1000)
-		}
-		return
-	}
+  if (isPDF.value) {
+    iframe.style.width = '100%'
+    iframe.style.height = '100%'
+    iframe.src = previewUrl.value
+    iframe.onload = () => {
+      iframe.contentWindow?.print()
+      setTimeout(() => document.body.removeChild(iframe), 1000)
+    }
+    return
+  }
 
-	iframe.srcdoc = `
+  iframe.srcdoc = `
 			<html>
 				<head>
 					<title>${currentAttachment.value?.filename || 'Print'}</title>
@@ -336,34 +326,34 @@ const printAttachment = () => {
 			</html>
 		`
 
-	iframe.onload = () => {
-		iframe.contentWindow?.print()
-		setTimeout(() => document.body.removeChild(iframe), 1000)
-	}
+  iframe.onload = () => {
+    iframe.contentWindow?.print()
+    setTimeout(() => document.body.removeChild(iframe), 1000)
+  }
 }
 
 watch(show, (val) => {
-	if (!val) return
+  if (!val) return
 
-	if (currentIndex.value === initialIndex) loadAttachment()
-	else currentIndex.value = initialIndex || 0
+  if (currentIndex.value === initialIndex) loadAttachment()
+  else currentIndex.value = initialIndex || 0
 })
 
 watch(currentIndex, () => {
-	if (show.value) loadAttachment()
+  if (show.value) loadAttachment()
 })
 
 const handleKeyDown = (event: KeyboardEvent) => {
-	if (!show.value) return
+  if (!show.value) return
 
-	if (event.key === 'ArrowLeft') return previousAttachment()
-	if (event.key === 'ArrowRight') return nextAttachment()
-	if (event.key === 'Escape') return closeViewer()
+  if (event.key === 'ArrowLeft') return previousAttachment()
+  if (event.key === 'ArrowRight') return nextAttachment()
+  if (event.key === 'Escape') return closeViewer()
 }
 
 onMounted(() => window.addEventListener('keydown', handleKeyDown))
 onUnmounted(() => {
-	window.removeEventListener('keydown', handleKeyDown)
-	releasePreview()
+  window.removeEventListener('keydown', handleKeyDown)
+  releasePreview()
 })
 </script>

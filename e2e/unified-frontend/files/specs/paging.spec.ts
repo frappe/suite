@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import { adminApi, children, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
@@ -45,7 +47,7 @@ test("the server answers a 60-row window with a cursor", async () => {
 });
 
 test("the listing loads the next window when the sentinel becomes visible", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
 	const rows = page.locator("[data-node]");
 	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 
@@ -55,7 +57,7 @@ test("the listing loads the next window when the sentinel becomes visible", asyn
 });
 
 test("changing the sort restarts the listing without a cursor", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
 	const rows = page.locator("[data-node]");
 	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 	await rows.last().scrollIntoViewIfNeeded();
@@ -75,7 +77,7 @@ test("changing the sort restarts the listing without a cursor", async ({ page })
 });
 
 test("changing the group restarts the listing without a cursor", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
 	const rows = page.locator("[data-node]");
 	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 	await rows.last().scrollIntoViewIfNeeded();
@@ -87,7 +89,8 @@ test("changing the group restarts the listing without a cursor", async ({ page }
 	});
 
 	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("menuitem", { name: "Owner" }).click();
+	await page.getByRole("combobox", { name: "Group by" }).click();
+	await page.getByRole("option", { name: "Owner" }).click();
 	await expect(page).toHaveURL(/group=owner/);
 	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 	expect(requests.filter((url) => url.includes("cursor="))).toEqual([]);
@@ -97,7 +100,7 @@ test("changing the group restarts the listing without a cursor", async ({ page }
 // The walk stops at the first failed window (fixed here). Before the fix it
 // retried the same cursor at 46 requests per 5 seconds.
 test("a failed next window keeps the loaded rows and offers a retry", async ({ page }) => {
-	await page.goto(`/files/f/${folder.name}?view=list&sort=title&dir=asc`);
+	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
 	const rows = page.locator("[data-node]");
 	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 

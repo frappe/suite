@@ -20,13 +20,15 @@ from frappe.storage.tests import reset_file_controller
 from frappe.tests import IntegrationTestCase
 from frappe.utils import cint, get_files_path, now_datetime
 
+from suite.drive.patches.build.copy_ledger import LEDGER_FILENAME, CopyLedger
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.layout import blob_key, object_key
+from suite.drive.patches.build.legacy import S3_URL_PREFIX, get_s3_url
 from suite.drive.patches.build.legacy_bytes import prepare_legacy_bytes
 from suite.drive.patches.build.ports import SiteFiles, SiteStorage
 from suite.drive.patches.build.state import STATE_FILENAME, BuildState
+from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.build.tests.fakes import FakeBucket
-from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
 BUCKET = "drive-build-test-bucket"
 
@@ -70,6 +72,18 @@ class ScopedStorage(SiteStorage):
 
 
 class TestBuildStoragePreparation(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        # The `File` columns the storage step reads are legacy; put them back
+        # for the class and drop them after.
+        super().setUpClass()
+        cls.legacy = legacy_schema.install()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.legacy.remove()
+        super().tearDownClass()
+
     def setUp(self):
         super().setUp()
         self.prefix = "bldut" + frappe.generate_hash(length=8)
@@ -142,6 +156,7 @@ class TestBuildStoragePreparation(IntegrationTestCase):
             state=self.state,
             legacy_s3=legacy_s3,
             open_bucket=lambda: self.bucket,
+            copy_ledger=CopyLedger(Path(self.tmp.name) / LEDGER_FILENAME),
         )
 
     def prepare_local(self):

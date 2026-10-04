@@ -14,7 +14,7 @@ from suite.mail.doctype.sieve_script.sieve_script import (
     set_last_active_sieve_script_id,
 )
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_vacation_response_service
+from suite.mail.jmap import JMAP_REFUSALS, format_method_error, format_set_error, get_account_client
 from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.html_to_text import html_to_text
 
@@ -85,9 +85,19 @@ class VacationResponse(Document):
 def get_vacation_response(account: str) -> dict:
     """Returns the vacation response settings for the given account."""
 
-    service = get_vacation_response_service(account)
-    vr = service.get()
+    vr = _fetch_vacation_response(account)
     return format_vacation_response(account, vr)
+
+
+def _fetch_vacation_response(account: str) -> dict:
+    """Returns the raw VacationResponse object for the account (a singleton), or {}."""
+
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.vacation.vacation_response.get()
+
+    items = h.result.items
+    return items[0].to_wire() if items else {}
 
 
 @frappe.whitelist()
@@ -120,25 +130,37 @@ def update_vacation_response(
 
     current_active_sieve_script_id = get_active_sieve_script_id(account)
 
-    service = get_vacation_response_service(account)
-    previous_vacation_response = service.get()
-    vacation_update_result = service.update(
-        {
-            "is_enabled": bool(enabled),
-            "from_date": from_date,
-            "to_date": to_date,
-            "subject": subject,
-            "text_body": text_body,
-            "html_body": html_body,
-        }
-    )
+    previous_vacation_response = _fetch_vacation_response(account)
 
-    if vacation_update_result.get("updated"):
-        if enabled:
-            if not previous_vacation_response.get("isEnabled"):
-                set_last_active_sieve_script_id(account, current_active_sieve_script_id)
-        else:
-            activate_last_active_sieve_script(account)
+    client = get_account_client(account)
+    title = _("Vacation Response Update Error")
+    try:
+        with client.batch() as b:
+            h = b.vacation.vacation_response.set(
+                update={
+                    "singleton": {
+                        "isEnabled": enabled,
+                        "fromDate": from_date,
+                        "toDate": to_date,
+                        "subject": subject,
+                        "textBody": text_body,
+                        "htmlBody": html_body,
+                    }
+                }
+            )
+        response = h.result
+    except JMAP_REFUSALS as e:
+        frappe.throw(format_method_error(e), title=title)
+
+    if "singleton" not in response.updated:
+        # Refused as an object rather than as a call: not a success to report.
+        frappe.throw(format_set_error(response.not_updated.get("singleton")), title=title)
+
+    if enabled:
+        if not previous_vacation_response.get("isEnabled"):
+            set_last_active_sieve_script_id(account, current_active_sieve_script_id)
+    else:
+        activate_last_active_sieve_script(account)
 
 
 def format_vacation_response(account: str, vr: dict) -> dict:

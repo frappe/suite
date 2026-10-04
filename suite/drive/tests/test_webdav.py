@@ -68,7 +68,7 @@ def node(name: str, **overrides) -> frappe._dict:
     """One `Drive Node` row in the shape every read path receives it."""
     row = frappe._dict(
         name=name,
-        parent="root1",
+        parent_node="root1",
         root="root1",
         path="",
         title=name,
@@ -94,7 +94,7 @@ def node(name: str, **overrides) -> frappe._dict:
 
 
 def root_node(name: str = "root1") -> frappe._dict:
-    return node(name, parent=None, root=None, path="", title="My Drive", kind="root", mime=None)
+    return node(name, parent_node=None, root=None, path="", title="My Drive", kind="root", mime=None)
 
 
 def grant_row(node_id: str, role: int = READ, principal: str = USER) -> frappe._dict:
@@ -121,32 +121,6 @@ def resolved(node_row=None, *, segments=None, parent=None, is_mount=False) -> pa
         parent=parent,
         is_mount=is_mount,
     )
-
-
-class _GroupCache:
-    """The one cache key the principal path reads, answered from memory.
-
-    Everything else stays on the real cache. `frappe.cache` is one object and
-    `frappe._` reads the merged translation dict off it, so replacing the whole
-    object with a `MagicMock` makes every translated string a mock. A
-    `frappe.throw` under that patch then raises `TypeError` out of
-    `strip_html_tags` on a run that has a terminal.
-    """
-
-    def __init__(self, real):
-        self.real = real
-
-    def __call__(self):
-        """`framework.principals_for` reaches the cache as `frappe.cache()`."""
-        return self
-
-    def __getattr__(self, name):
-        return getattr(self.real, name)
-
-    def hget(self, key, name, generator=None, **kwargs):
-        if key == "drive_user_groups":
-            return generator()
-        return self.real.hget(key, name, generator=generator, **kwargs)
 
 
 class _Stdin:
@@ -428,19 +402,19 @@ class TestSingleMount(DavCase):
         self.assertIsNotNone(answer.parent)
         self.assertEqual(answer.parent.name, "root1")
         child_query = self.db.sql.call_args_list[1]
-        self.assertIn("parent = %(parent)s", child_query.args[0])
-        self.assertEqual(child_query.kwargs["values"]["parent"], "root1")
+        self.assertIn("parent_node = %(parent_node)s", child_query.args[0])
+        self.assertEqual(child_query.kwargs["values"]["parent_node"], "root1")
         self.assertEqual(child_query.kwargs["values"]["segment"], "Everyone")
 
     def test_every_walk_stays_inside_the_callers_own_root(self):
         folder = node("folder1", title="Reports", kind="folder")
-        leaf = node("file1", parent="folder1", title="q3.txt")
+        leaf = node("file1", parent_node="folder1", title="q3.txt")
         self.db.sql.side_effect = [[root_node()], [folder], [leaf]]
         with patch.object(pathmap, "personal_root_for", return_value="root1"):
             answer = pathmap.resolve(["Reports", "q3.txt"], USER)
 
         self.assertEqual(answer.node.name, "file1")
-        parents = [call.kwargs["values"]["parent"] for call in self.db.sql.call_args_list[1:]]
+        parents = [call.kwargs["values"]["parent_node"] for call in self.db.sql.call_args_list[1:]]
         self.assertEqual(parents, ["root1", "folder1"])
         self.assertEqual(self.db.sql.call_args_list[0].kwargs["values"], {"name": "root1"})
 
@@ -1208,7 +1182,6 @@ class TestDavPrincipals(DavCase):
 
     def setUp(self):
         super().setUp()
-        self.start(patch.object(frappe, "cache", _GroupCache(frappe.cache)))
         self.start(patch.object(framework, "_user_groups", return_value=("team",)))
         self.start(patch.object(framework, "is_drive_admin", return_value=False))
 

@@ -1,9 +1,10 @@
-import frappe
-from frappe.tests import UnitTestCase
 from unittest.mock import patch
 
-from suite.api.framework import HTTP
+import frappe
+from frappe.tests import UnitTestCase
+
 from suite.api import routes
+from suite.api.framework import HTTP
 from suite.composition.tests.http_conformance import HttpConformanceMixin
 
 

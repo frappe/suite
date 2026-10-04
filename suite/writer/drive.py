@@ -100,13 +100,14 @@ VERSION_MIME = "application/json"
 # own. `Writer Document.content` and `.html` are both LONGTEXT.
 MAX_VERSION_BYTES = 64 * 1024 * 1024
 
-# A media reference inside a body is a node id carried in an attribute. Both
-# spellings are read: the embed URL Writer has always written, with and without
-# the `suite.` prefix the standalone app used, and the plain node attribute the
-# Drive media route uses.
+# A media reference inside a body is a node id carried in an attribute. Three
+# spellings are read: the embed URL Writer writes, the old Drive embed URL
+# (`embed_name=`, relative or absolute), both with and without the `suite.`
+# prefix the standalone apps used, and the plain node attribute the Drive
+# media route uses.
 #
-# The two spellings are not symmetrical. In `html` an attribute is text, so
-# both patterns read it. In the Yjs body an attribute is a name and a value
+# The URLs and the plain attribute are not symmetrical. In `html` an attribute
+# is text, so every pattern reads it. In the Yjs body an attribute is a name and a value
 # held apart, and the plain spelling puts the bare id in the value with
 # `data-node` nowhere in it, so the pattern alone would never see it. That is
 # what `_attribute_ids` and `_remapped_attribute` are for.
@@ -114,6 +115,7 @@ NODE_ATTRIBUTE = "data-node"
 MEDIA_ID = r"[A-Za-z0-9_-]{1,140}"
 MEDIA_PATTERNS = (
     re.compile(rf"(?:suite\.)?writer\.api\.embed\.get\?id=({MEDIA_ID})"),
+    re.compile(rf"(?:suite\.)?drive\.api\.embed\.get_file_content\?[^\"'<>\s]*?\bembed_name=({MEDIA_ID})"),
     re.compile(rf'{NODE_ATTRIBUTE}="({MEDIA_ID})"'),
 )
 BARE_MEDIA_ID = re.compile(MEDIA_ID)
@@ -202,24 +204,12 @@ def restore_version(docname: str, stream) -> None:
     )
 
 
-def version_html(stream) -> str:
-    """Answer the rendered HTML one stored version carries.
-
-    Writer wrote the bytes with `version_bytes`, so Writer is the only reader
-    that can turn them back into a snapshot. `suite.writer.api.general.
-    get_versions` publishes the legacy history shape from them; the migrated
-    HTML form §14.6 copies is read by the same fork `restore_version` uses.
-    """
-    return _version_payload(_read_bounded(stream))["html"]
-
-
 def on_purge(docname: str) -> None:
     """Delete the document and the app-owned rows behind it.
 
-    `delete_doc` runs the controller's `on_trash`, which clears the legacy
-    `Writer Version` rows. §9.1 sends a purged node's history with it, and
-    `force=1` already skips the link check, so the cascade is what the rows
-    are for, not a way around a refusal.
+    §9.1 sends a purged node's history (`Drive Node Version`) with it, so
+    there is nothing of the document's own to cascade; `force=1` skips the
+    link check because Drive has already decided the purge.
 
     `delete_permanently` is what makes a purge a purge. Without it Frappe keeps
     the whole row as JSON in `Deleted Document`
@@ -263,6 +253,7 @@ SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
+    listing_type="document",
     # §10.7, accepted 2026-09-05: Writer stays hidden over WebDAV, and the
     # explicit HTML export stays available through the content API's format.
     default_export=None,
@@ -367,7 +358,12 @@ def _remap_text(text: str, mapping: dict[str, str]) -> str:
     def swap(match: re.Match) -> str:
         found = match.group(1)
         replacement = mapping.get(found)
-        return match.group(0) if replacement is None else match.group(0).replace(found, replacement)
+        if replacement is None:
+            return match.group(0)
+        start, end = match.span(1)
+        start -= match.start()
+        end -= match.start()
+        return match.group(0)[:start] + replacement + match.group(0)[end:]
 
     for pattern in MEDIA_PATTERNS:
         text = pattern.sub(swap, text)
@@ -455,7 +451,7 @@ def _raw_text(content: str | None) -> str:
         return ""
     try:
         decoded = base64.b64decode(content, validate=True).decode("utf-8", "ignore")
-    except (ValueError, binascii.Error):
+    except ValueError, binascii.Error:
         return content
     return f"{content}{decoded}"
 
@@ -477,7 +473,7 @@ def _readable_body():
     """
     try:
         yield
-    except (KeyboardInterrupt, SystemExit, UnreadableBody):
+    except KeyboardInterrupt, SystemExit, UnreadableBody:
         raise
     except BaseException as unreadable:
         raise UnreadableBody(_("This Writer document body cannot be read")) from unreadable

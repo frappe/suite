@@ -21,7 +21,6 @@ from frappe.core.doctype.permission_type.permission_type import get_doctype_ptyp
 from frappe.utils import now, validate_email_address
 
 from suite.composition.http import HttpOwner
-
 from suite.drive._core import content
 from suite.drive._core.access import check
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
@@ -84,6 +83,67 @@ def handle_http_request() -> None:
     handle_before_request()
 
 
+# A Drive request with one of these methods writes. GET and HEAD keep the
+# framework's REPEATABLE READ snapshot.
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# Where a Drive handler sits once the `/api/suite/drive/` translator has run,
+# and where a direct method call names it.
+DRIVE_METHOD_PREFIX = "/api/v2/method/suite.drive."
+
+
+def isolate_drive_writes() -> None:
+    """Run every Drive HTTP write at READ COMMITTED (`before_request`).
+
+    It runs after `suite.composition.http`, so a translated request already
+    carries its handler's path.
+    """
+    request = getattr(frappe.local, "request", None)
+    if request is None or request.method not in WRITE_METHODS:
+        return
+    if request.path.startswith(DRIVE_METHOD_PREFIX):
+        begin_drive_write()
+
+
+def begin_drive_write() -> None:
+    """Make the rest of this request one READ COMMITTED transaction.
+
+    The `suite.drive` docstring says why a Drive write needs it. Whatever the
+    request did before this (the session lookup) is committed first, as the
+    framework would at the end of a write. `SET TRANSACTION` names only the
+    next transaction, so it goes between that commit and the new
+    `START TRANSACTION`; once the request commits, the connection is back at
+    the site's default level.
+    """
+    frappe.db.commit()
+    frappe.db.sql("COMMIT")
+    frappe.db.sql("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+    frappe.db.begin()
+
+
+# The sites that may embed a Drive page or call its API from an iframe.
+EMBED_FRAME_ANCESTORS = (
+    "https://gameplan.frappe.cloud",
+    "https://frappecloud.com",
+    "https://frappe.io",
+    "https://cloud.frappe.io",
+)
+EMBEDDABLE_PREFIXES = ("/drive/", "/api/method/")
+
+
+def allow_embedding(request) -> None:
+    """Let the listed sites frame Drive pages and API answers (`after_request`).
+
+    Frappe sends `X-Frame-Options: SAMEORIGIN` on every response. For a Drive
+    page or a method call this replaces it with a `frame-ancestors` policy that
+    names the embedding sites and the site itself.
+    """
+    if not request.path.startswith(EMBEDDABLE_PREFIXES):
+        return
+    headers = frappe.local.response_headers
+    headers["Content-Security-Policy"] = f"frame-ancestors {' '.join(EMBED_FRAME_ANCESTORS)} 'self'"
+    headers.pop("X-Frame-Options", None)
+
+
 def is_drive_admin(user: str | None = None) -> bool:
     user = user or frappe.session.user
     return user == "Administrator" or "Suite Admin" in frappe.get_roles(user)
@@ -119,8 +179,9 @@ def principals_for(user: str | None = None) -> Principals:
             link_tickets=tickets,
         )
 
-    groups = frappe.cache().hget("drive_user_groups", user, generator=lambda: _user_groups(user))
-    own = (user, *(f"$GROUP:{group}" for group in groups), "$GENERAL")
+    # Read on every call, never cached: a member added to or removed from a
+    # group, or a group deleted, decides the very next request.
+    own = (user, *(f"$GROUP:{group}" for group in _user_groups(user)), "$GENERAL")
     return Principals(
         user=user,
         own=own,
@@ -510,10 +571,9 @@ def _parent_allows(node: str, role: int, user: str | None) -> bool:
 
     This is the shape the framework and Drive already use for a row that takes
     its rights from a link: core's `File` answers write, create, and delete
-    against `attached_to_name` (`frappe/core/doctype/file/file.py:897`), core's
-    tree check resolves create through the parent field
-    (`frappe/permissions.py:396`), and Drive's own legacy adapter answered
-    create against the folder (`suite/drive/api/permissions.py:308`).
+    against `attached_to_name` (`frappe/core/doctype/file/file.py:897`), and
+    core's tree check resolves create through the parent field
+    (`frappe/permissions.py:396`).
 
     Fail closed on anything else. A node that is gone, or one with no parent,
     is a root or a broken tree, and neither can hold a content document. A
@@ -521,10 +581,10 @@ def _parent_allows(node: str, role: int, user: str | None) -> bool:
     `create` is not a `DocShare` right, so nothing re-grants it (§10.3 note on
     `false_if_not_shared`).
     """
-    row = frappe.db.get_value("Drive Node", node, ("name", "parent"), as_dict=True)
-    if not row or not row.parent:
+    row = frappe.db.get_value("Drive Node", node, ("name", "parent_node"), as_dict=True)
+    if not row or not row.parent_node:
         return False
-    return _node_allows(row.parent, role, user)
+    return _node_allows(row.parent_node, role, user)
 
 
 def _document_node_of(doc, spec) -> str:
@@ -566,6 +626,7 @@ def _list_predicate(node_column: str, user: str | None) -> str:
     SQL and both refuse more than the engine, never less: grants at the same
     depth are not ordered by own tier, and a password-protected link grant is
     skipped because a list caller presents no unlock ticket.
+    `tests/test_predicate_agreement.py` checks both claims against the engine.
     """
     principals = principals_for(user)
     if principals.is_admin:
@@ -573,8 +634,8 @@ def _list_predicate(node_column: str, user: str | None) -> str:
     if not principals.all():
         return "1=0"
 
-    own = _nearest_role("drive_own", principals.own, skip_locked=False)
-    other = _nearest_role("drive_open", principals.open, skip_locked=True)
+    own = _nearest_role("drive_own", principals.own, skip_locked=False, deny_wins=True)
+    other = _nearest_role("drive_open", principals.open, skip_locked=True, deny_wins=False)
     return (
         "EXISTS (SELECT 1 FROM `tabDrive Node` `drive_node` "
         f"WHERE `drive_node`.`name` = {node_column} "
@@ -584,14 +645,24 @@ def _list_predicate(node_column: str, user: str | None) -> str:
     )
 
 
-def _nearest_role(alias: str, principals: tuple[str, ...], *, skip_locked: bool) -> str:
-    """Return a scalar subquery giving the role the nearest grants decide."""
+def _nearest_role(alias: str, principals: tuple[str, ...], *, skip_locked: bool, deny_wins: bool) -> str:
+    """Return a scalar subquery giving the role the nearest grants decide.
+
+    `deny_wins` is `Acc.offer`'s own-tier rule: a deny among the deepest own
+    grants answers 0. An open deny at the deepest open depth is outranked by
+    an open grant beside it, so the open arm takes the plain maximum.
+    """
     if not principals:
         return "NULL"
     live = _live_grants(alias, principals, skip_locked=skip_locked)
     deepest = _live_grants(f"{alias}_deep", principals, skip_locked=skip_locked)
+    role = (
+        "CASE WHEN MIN(`{a}`.`role`) = 0 THEN 0 ELSE MAX(`{a}`.`role`) END"
+        if deny_wins
+        else "MAX(`{a}`.`role`)"
+    )
     return (
-        "(SELECT CASE WHEN MIN(`{a}`.`role`) = 0 THEN 0 ELSE MAX(`{a}`.`role`) END "
+        f"(SELECT {role} "
         "FROM `tabDrive Grant` `{a}` WHERE {live} AND {depth} = "
         "(SELECT MAX({deep_depth}) FROM `tabDrive Grant` `{d}` WHERE {deepest}))"
     ).format(

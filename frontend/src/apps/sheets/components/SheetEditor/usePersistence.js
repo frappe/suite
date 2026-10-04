@@ -1,19 +1,54 @@
 import { ref } from 'vue'
-import { frappeRequest } from 'frappe-ui'
-import { call }                  from '../../utils/api.js'
-import { encodeForUpload, isDecompressionSupported, decodeFromDownload } from '../../utils/compress.js'
-import { packSheet, packSheetChunked, unpackSheet, boundsOf } from '../../utils/sheet-codec.js'
+
+import { call, isRefusal } from '../../utils/api.js'
+import {
+  decodeFromDownload,
+  encodeForUpload,
+  isDecompressionSupported,
+} from '../../utils/compress.js'
+import { boundsOf, packSheet, packSheetChunked, unpackSheet } from '../../utils/sheet-codec.js'
+import { recordVisit } from './driveVisit'
 
 // `merge` and the view-state getters/setters are optional — they were missing
 // from earlier versions and their absence caused merged cells / column widths /
 // freeze panes / hidden cols/rows to silently disappear after every save.
-export function usePersistence({ sheet, formats, merge, comments, validation, protection, condFormat, sortFilter, slicers, pivot, charts, namedRanges, getViewState, applyViewState, currentTitle, emit }) {
-  const isSaving  = ref(false)
+//
+// Access options, all optional:
+//   - `isWritable()` — checked before every save attempt, retries included. While
+//     it answers false a save sends nothing, so a pending save is cancelled.
+//   - `onRefused()` — the server refused a save for lack of access.
+//   - `recordVisits` — record a Drive visit when a linked sheet loads. The `/d/`
+//     surface passes false: its Drive session records the visit itself.
+//   - `credentialFetch` — send load and save through this fetch. The `/d/`
+//     surface passes the Drive session's, which adds its link credentials.
+export function usePersistence({
+  sheet,
+  formats,
+  merge,
+  comments,
+  validation,
+  protection,
+  condFormat,
+  sortFilter,
+  slicers,
+  pivot,
+  charts,
+  namedRanges,
+  getViewState,
+  applyViewState,
+  currentTitle,
+  emit,
+  isWritable = () => true,
+  onRefused = () => {},
+  recordVisits = true,
+  credentialFetch,
+}) {
+  const isSaving = ref(false)
   const saveError = ref('')
   // Write permission for the currently-loaded sheet, from get_sheet's `can_write`.
   // Defaults to true so a brand-new (autoCreate) doc — which the creator always
   // owns — never flashes read-only before the first load resolves.
-  const canWrite  = ref(true)
+  const canWrite = ref(true)
   // The sheet's true owner (creator's user id), surfaced by get_sheet so the
   // Share dialog can name the real owner rather than the current viewer. Empty
   // until the first load resolves; for a brand-new sheet the editor falls back
@@ -27,29 +62,31 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
   async function loadSheet(name) {
     loadError.value = null
     try {
-      const canGz  = isDecompressionSupported()
-      const doc    = await call('suite.sheets.api.get_sheet', { name, compressed: canGz ? 1 : 0 })
-      frappeRequest({
-        url: 'suite.drive.api.files.track_visit',
-        params: { doctype: 'Sheet', docname: name },
-      }).catch(() => {})
-      const plain  = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
-      const saved  = JSON.parse(plain || '{}')
-      if (saved.formats)    formats.restore(saved.formats)
+      const canGz = isDecompressionSupported()
+      const doc = await call(
+        'suite.sheets.api.get_sheet',
+        { name, compressed: canGz ? 1 : 0 },
+        { fetch: credentialFetch },
+      )
+      // A sheet Drive owns has a node; a legacy sheet has none and no Recents row.
+      if (recordVisits && doc.node) recordVisit(doc.node).catch(() => {})
+      const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
+      const saved = JSON.parse(plain || '{}')
+      if (saved.formats) formats.restore(saved.formats)
       sheet.restore(
         unpackSheet(saved.sheet) ?? { sheets: { Sheet1: {} }, current: 'Sheet1' },
         boundsOf(saved.sheet),
       )
-      if (saved.merge      && merge?.restore)      merge.restore(saved.merge)
-      if (saved.comments   && comments?.restore)   comments.restore(saved.comments)
+      if (saved.merge && merge?.restore) merge.restore(saved.merge)
+      if (saved.comments && comments?.restore) comments.restore(saved.comments)
       if (saved.validation && validation?.restore) validation.restore(saved.validation)
       if (saved.protection && protection?.restore) protection.restore(saved.protection)
       if (saved.condFormat && condFormat?.restore) condFormat.restore(saved.condFormat)
       if (saved.sortFilter && sortFilter?.restore) sortFilter.restore(saved.sortFilter)
-      if (saved.slicers    && slicers?.restore)    slicers.restore(saved.slicers)
-      if (saved.view       && applyViewState)      applyViewState(saved.view)
-      if (saved.pivot      && pivot?.restore)      pivot.restore(saved.pivot)
-      if (saved.charts     && charts?.restore)     charts.restore(saved.charts)
+      if (saved.slicers && slicers?.restore) slicers.restore(saved.slicers)
+      if (saved.view && applyViewState) applyViewState(saved.view)
+      if (saved.pivot && pivot?.restore) pivot.restore(saved.pivot)
+      if (saved.charts && charts?.restore) charts.restore(saved.charts)
       if (saved.namedRanges && namedRanges?.restore) namedRanges.restore(saved.namedRanges)
       currentTitle.value = doc.title
       // Older backends predate `can_write`; treat its absence as writable so we
@@ -60,9 +97,11 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
       console.error('Load failed:', err)
       const t = err?.excType || ''
       const kind =
-        t === 'PermissionError'    ? 'denied'  :
-        t === 'DoesNotExistError'  ? 'missing' :
-                                     'other'
+        t === 'DoesNotExistError' || t === 'DriveNotFound'
+          ? 'missing'
+          : isRefusal(err)
+            ? 'denied'
+            : 'other'
       loadError.value = { kind, message: err?.message || 'Could not open this sheet' }
     }
   }
@@ -121,23 +160,9 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
       // deepClone. The chunked packer yields to the event loop so a 2M-cell
       // pack doesn't block input for seconds; the keepalive/unmount save can't
       // afford to yield (the page may die first), so it packs synchronously.
-      const live   = { sheets: sheet.getAllRaw(), current: sheet.getCurrentSheet() }
+      const live = { sheets: sheet.getAllRaw(), current: sheet.getCurrentSheet() }
       const packed = keepalive ? packSheet(live) : await packSheetChunked(live)
-      const sheetsData = JSON.stringify({
-        sheet:      packed,
-        formats:    formats.snapshot(),
-        merge:      merge?.snapshot?.()      ?? null,
-        comments:   comments?.snapshot?.()   ?? null,
-        validation: validation?.snapshot?.() ?? null,
-        protection: protection?.snapshot?.() ?? null,
-        condFormat: condFormat?.snapshot?.() ?? null,
-        sortFilter: sortFilter?.snapshot?.() ?? null,
-        slicers:    slicers?.snapshot?.()    ?? null,
-        pivot:      pivot?.snapshot?.()      ?? null,
-        charts:     charts?.snapshot?.()     ?? null,
-        namedRanges: namedRanges?.snapshot?.() ?? null,
-        view:       getViewState?.()         ?? null,
-      })
+      const sheetsData = _workbookJson(packed)
       const payload = await encodeForUpload(sheetsData)
       args = {
         title,
@@ -156,6 +181,35 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     return _send(args, keepalive)
   }
 
+  // The whole workbook as the JSON `sheets_data` stores, packed synchronously.
+  // The surface keeps it as the local recovery copy when access narrows.
+  // `draft` is a cell edit still in progress ({ sheet, cell, value }); the copy
+  // holds it in its cell. The live workbook is not changed.
+  function workbookJson(draft = null) {
+    let sheets = sheet.getAllRaw()
+    if (draft)
+      sheets = { ...sheets, [draft.sheet]: { ...sheets[draft.sheet], [draft.cell]: draft.value } }
+    return _workbookJson(packSheet({ sheets, current: sheet.getCurrentSheet() }))
+  }
+
+  function _workbookJson(packed) {
+    return JSON.stringify({
+      sheet: packed,
+      formats: formats.snapshot(),
+      merge: merge?.snapshot?.() ?? null,
+      comments: comments?.snapshot?.() ?? null,
+      validation: validation?.snapshot?.() ?? null,
+      protection: protection?.snapshot?.() ?? null,
+      condFormat: condFormat?.snapshot?.() ?? null,
+      sortFilter: sortFilter?.snapshot?.() ?? null,
+      slicers: slicers?.snapshot?.() ?? null,
+      pivot: pivot?.snapshot?.() ?? null,
+      charts: charts?.snapshot?.() ?? null,
+      namedRanges: namedRanges?.snapshot?.() ?? null,
+      view: getViewState?.() ?? null,
+    })
+  }
+
   async function _send(args, keepalive) {
     isSaving.value = true
     // keepalive saves fire from onBeforeUnmount — the browser may kill
@@ -165,10 +219,17 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     try {
       for (let attempt = 0; attempt < backoffMs.length; attempt++) {
         if (backoffMs[attempt] > 0) {
-          await new Promise(r => setTimeout(r, backoffMs[attempt]))
+          await new Promise((r) => setTimeout(r, backoffMs[attempt]))
+        }
+        if (!isWritable()) {
+          saveError.value = 'Not saved: you can no longer edit this sheet.'
+          return null
         }
         try {
-          const result = await call('suite.sheets.api.save_sheet', args, { keepalive })
+          const result = await call('suite.sheets.api.save_sheet', args, {
+            keepalive,
+            fetch: credentialFetch,
+          })
           // Deliberately DON'T write `title` back into currentTitle here.
           // `title` is a snapshot captured when this save was queued (up to
           // the 2s debounce + network round-trip ago), and the server echoes
@@ -178,10 +239,11 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
           // local source of truth; leave it alone.
           // First success clears any sticky error from a previous failure.
           saveError.value = ''
-          _lastSaveArgs   = null
+          _lastSaveArgs = null
           return typeof result === 'string' ? result : result?.name
         } catch (err) {
           lastErr = err
+          if (isRefusal(err)) onRefused()
           if (!_isTransientSaveError(err)) break
         }
       }
@@ -198,5 +260,16 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     }
   }
 
-  return { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave }
+  return {
+    isSaving,
+    saveError,
+    canWrite,
+    sheetOwner,
+    loadError,
+    loadSheet,
+    autoCreate,
+    saveExisting,
+    retrySave,
+    workbookJson,
+  }
 }

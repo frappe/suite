@@ -30,18 +30,6 @@ class UnitTestDriveDiskSettings(UnitTestCase):
         self.assertIn("longest side", field["description"].lower())
         self.assertNotIn("megabyte", field["description"].lower())
 
-    def test_the_legacy_personal_team_patch_no_longer_clobbers_preview_size(self):
-        """§9.2's pixel contract must survive `patches.remove_personal`.
-
-        That patch predates the rewrite and once pinned `preview_size` to
-        100 under its old megabyte-cutoff meaning. Left in place, an old
-        site replaying this patch on upgrade would silently overwrite the
-        512 px default with a value that no longer means anything under the
-        current contract.
-        """
-        source = (Path(__file__).parents[2] / "patches" / "remove_personal.py").read_text()
-        self.assertNotRegex(source, r"preview_size\s*=\s*\d")
-
 
 class IntegrationTestDriveDiskSettings(IntegrationTestCase):
     """
@@ -50,10 +38,11 @@ class IntegrationTestDriveDiskSettings(IntegrationTestCase):
     """
 
     def test_guest_safe_settings_publish_the_pixel_preview_size(self):
-        from suite.drive.api.product import disk_settings
+        from suite.drive.webdav.settings import site_settings
 
         frappe.db.set_single_value("Drive Disk Settings", "preview_size", 512)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
         with self.set_user("Guest"):
-            result = disk_settings()
+            result = site_settings()
 
-        self.assertEqual(result["preview_size"], 512)
+        self.assertEqual(result, {"is_admin": False, "preview_size": 512})

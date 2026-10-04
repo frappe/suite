@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
 import { Editor, getSchema } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
 import type { Schema } from '@tiptap/pm/model'
+import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import * as Y from 'yjs'
+
 import { writerEditorExtensions } from './editor-extensions'
 import { writerSchema } from './schema'
 
@@ -17,9 +18,11 @@ const editorSchema = (collaborative: boolean) => {
       ...writerEditorExtensions({
         collaborative,
         mentionItems: () => [],
+        onMentionQuery: () => {},
         onCommentActivated: () => {},
         onAnchors: () => {},
         scrollParent: () => null,
+        media: null,
         comments: ydoc.getMap('comments'),
         ydoc,
         activeComment: ref(null),

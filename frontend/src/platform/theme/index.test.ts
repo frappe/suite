@@ -1,8 +1,9 @@
-import { ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 import type { Session } from '@/platform/session'
 import type { Transport } from '@/platform/transport'
+
 import { createTheme } from './index'
 
 afterEach(() => {
@@ -48,12 +49,18 @@ describe('theme', () => {
 
   it('resolves automatic mode when the system appearance changes', async () => {
     let listener: ((event: MediaQueryListEvent) => void) | undefined
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: false,
-      addEventListener: (_event: string, handler: EventListenerOrEventListenerObject) => {
-        listener = handler as (event: MediaQueryListEvent) => void
-      },
-    } as MediaQueryList)))
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(
+        () =>
+          ({
+            matches: false,
+            addEventListener: (_event: string, handler: EventListenerOrEventListenerObject) => {
+              listener = handler as (event: MediaQueryListEvent) => void
+            },
+          }) as MediaQueryList,
+      ),
+    )
     document.documentElement.setAttribute('data-theme-mode', 'automatic')
     const theme = createTheme()
     expect(theme.resolvedMode.value).toBe('light')
@@ -75,7 +82,9 @@ describe('theme', () => {
   })
 
   it('rolls back a saved preference when the server rejects it', async () => {
-    const request = vi.fn(async () => { throw new Error('offline') })
+    const request = vi.fn(async () => {
+      throw new Error('offline')
+    })
     const session = {
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
     } as unknown as Session

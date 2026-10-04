@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+
 import { changedRanges, touches } from './received-content-guard'
 
 const TabTrailingNode = Extension.create({

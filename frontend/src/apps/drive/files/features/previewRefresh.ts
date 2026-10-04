@@ -43,4 +43,3 @@ export function observePreviewRefresh(options: PreviewRefreshOptions): () => voi
     targetWindow.removeEventListener('focus', focus)
   }
 }
-

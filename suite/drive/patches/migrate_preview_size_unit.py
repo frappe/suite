@@ -1,7 +1,8 @@
 import frappe
 
 # `preview_size` used to mean a megabyte in-browser preview cutoff, and
-# `patches.remove_personal` pinned every site to 100 under that contract.
+# the since-deleted `remove_personal` patch pinned every site to 100 under
+# that contract.
 # §9.2 redefined the same field as the generated preview's longest side in
 # pixels, `reqd: 1`, `default: 512` (see `_core/previews.py`). A site whose
 # stored value is still exactly this legacy sentinel has not been touched

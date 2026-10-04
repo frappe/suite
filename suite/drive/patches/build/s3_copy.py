@@ -12,11 +12,18 @@ For each Drive `File` row whose `file_url` is a
 3. Otherwise server-side copy it to `private/<ab>/<cd>/<sha256>[.ext]` in
    the same bucket, single-part below 5 GB and boto3's managed multipart
    copy above it.
-4. Insert one `File Blob` with `driver = "s3"` and set `File.blob`.
+4. Record the legacy key, destination, size and checksum in the copy
+   ledger (`copy_ledger.py`), then insert one `File Blob` with
+   `driver = "s3"` and set `File.blob`.
 
-Nothing is deleted. The legacy object stays where it is until Cleanup
-(§14.10) removes Drive's prefix, so a rollback is still "truncate the new
-tables and ship the old code".
+Nothing is deleted. The legacy object stays where it is through Build and
+Cleanup; only the manual `cleanup.delete_legacy_objects` command removes it,
+reading this ledger, so restoring the pre-migration backup stays a complete
+rollback until an operator runs that command.
+
+Legacy keys are used exactly as `storage_key` decodes them. The production
+bucket holds keys with a leading slash, bare keys at the root and keys in
+per-user folders, and none of them is normalised here or in `BotoBucket`.
 
 Resumability has three layers, cheapest first: a linked `File.blob` keeps
 the row out of the query; a matching blob row skips the copy; an object
@@ -35,6 +42,7 @@ from contextlib import closing
 
 from frappe.storage.blob import sniff_mime
 
+from suite.drive.patches.build.copy_ledger import CopiedObject
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.layout import (
     blob_key,
@@ -42,9 +50,9 @@ from suite.drive.patches.build.layout import (
     object_key,
     private_key,
 )
+from suite.drive.patches.build.legacy import S3_URL_PREFIX, storage_key
 from suite.drive.patches.build.ports import BlobConflict
 from suite.drive.patches.build.state import MissingBytes, StoragePreparation
-from suite.drive.utils.files import S3_URL_PREFIX, storage_key
 
 # Read size while hashing a legacy object. Big enough that a multi-GB object
 # is not a million round trips through botocore's stream.
@@ -103,12 +111,14 @@ def _copy_one(env, bucket, prep: StoragePreparation, row) -> None:
         # Ready blob with nothing behind it. Linking to that would hand
         # Cleanup a File pointing at no bytes at all.
         _place_object(bucket, legacy_key, private_key(claimed.key), digest.size)
+        _record_copy(env, bucket, row, legacy_key, private_key(claimed.key), digest)
         env.files.link_blob(row.name, claimed.name)
         prep.s3_objects_reused += 1
         return
 
     destination = object_key(digest.checksum, row.file_name)
     _place_object(bucket, legacy_key, destination, digest.size)
+    _record_copy(env, bucket, row, legacy_key, destination, digest)
 
     try:
         blob = env.storage.insert_blob(
@@ -133,6 +143,22 @@ def _copy_one(env, bucket, prep: StoragePreparation, row) -> None:
     prep.s3_bytes_copied += digest.size
 
 
+def _record_copy(env, bucket, row, legacy_key: str, destination: str, digest) -> None:
+    """Ledger first, link second: a kill between the two leaves a recorded
+    legacy key whose object is still in place, which the delete command
+    re-verifies against the destination before it acts."""
+    env.ledger().record(
+        CopiedObject(
+            file=row.name,
+            legacy_key=legacy_key,
+            destination=destination,
+            size=digest.size,
+            checksum=digest.checksum,
+            bucket=bucket.bucket,
+        )
+    )
+
+
 def _place_object(bucket, legacy_key: str, destination: str, size: int) -> None:
     """Make sure the destination key holds the whole object, copying if not.
 
@@ -142,7 +168,7 @@ def _place_object(bucket, legacy_key: str, destination: str, size: int) -> None:
     if bucket.size(destination) == size:
         return
     copy_in_bucket(bucket, legacy_key, destination, size)
-    # Verify by size, the way `remove_teams._copy` does. A Ready blob over a
+    # Verify by size, as the legacy backend's own copies did. A Ready blob over a
     # truncated object is worse than a stopped Build: nothing downstream
     # would ever look at those bytes again.
     if bucket.size(destination) != size:

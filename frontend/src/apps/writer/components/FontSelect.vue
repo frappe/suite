@@ -11,6 +11,7 @@
     "
     :placeholder="options.find((k) => k.key === font_family)?.label"
     :open-on-click="true"
+    aria-label="Font"
     class="min-w-[10rem]"
     variant="outline"
     @update:model-value="onSelect"
@@ -24,6 +25,7 @@
 </template>
 <script setup>
 import { Combobox } from 'frappe-ui'
+
 import { FONT_FAMILIES } from '@/apps/writer/utils'
 
 const selected = defineModel()

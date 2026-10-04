@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { direction, normalizeDisconnectReason, Telemetry } from '../Telemetry';
 
 describe('Telemetry', () => {
+	it('counts forwarded STT audio without participant labels', async () => {
+		const telemetry = new Telemetry();
+		telemetry.sttAudioSeconds.inc(0.3);
+		const output = await telemetry.registry.metrics();
+		expect(output).toContain('meet_sfu_stt_audio_sent_seconds_total 0.3');
+		expect(output).not.toContain('participantId');
+	});
 	it('exports bounded room and transport labels', async () => {
 		const telemetry = new Telemetry();
 		telemetry.recordRoomJoin(

@@ -13,28 +13,28 @@ const slideId = 'c1'
 const element = { id: 1, type: 'image', left: 64, top: 378, width: 620, height: 132 }
 
 describe('selection after an element disappears', () => {
-	beforeEach(() => {
-		slides.value = [{ clientId: slideId, elements: [] }] as any
-		slideIndex.value = 0
-		activeElementIds.value = []
-		focusElementId.value = null
-	})
+  beforeEach(() => {
+    slides.value = [{ clientId: slideId, elements: [] }] as any
+    slideIndex.value = 0
+    activeElementIds.value = []
+    focusElementId.value = null
+  })
 
-	it('drops the selection when undo removes the element it names', async () => {
-		const history = useCommandHistory(slides, { actionOrder, actions })
+  it('drops the selection when undo removes the element it names', async () => {
+    const history = useCommandHistory(slides, { actionOrder, actions })
 
-		await history.execute(addElementCommand({ slideId, element }))
-		await nextTick()
+    await history.execute(addElementCommand({ slideId, element }))
+    await nextTick()
 
-		expect(activeElementIds.value).toEqual([1])
+    expect(activeElementIds.value).toEqual([1])
 
-		// adding a text element focuses it, which its own editor teardown covers
-		focusElementId.value = 1
+    // adding a text element focuses it, which its own editor teardown covers
+    focusElementId.value = 1
 
-		await history.undo()
-		await nextTick()
+    await history.undo()
+    await nextTick()
 
-		expect(activeElementIds.value).toEqual([])
-		expect(focusElementId.value).toBe(null)
-	})
+    expect(activeElementIds.value).toEqual([])
+    expect(focusElementId.value).toBe(null)
+  })
 })

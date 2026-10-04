@@ -3,12 +3,35 @@
   "prefix": "/api/suite/drive/",
   "operations": [
     {
-      "id": "node_create",
+      "id": "node_create.create_folder",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
       "query": null,
-      "body": null,
+      "body": {
+        "properties": {
+          "kind": {
+            "const": "folder",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "parent_node",
+          "title"
+        ],
+        "title": "CreateFolder",
+        "type": "object"
+      },
       "output": {
         "$defs": {
           "AccessShape": {
@@ -63,13 +86,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -104,7 +162,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -113,7 +171,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -122,6 +180,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -176,8 +245,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -242,15 +310,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -265,9 +338,1088 @@
         "title": "NodeShape",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "node_create.create_file",
+      "method": "POST",
+      "path": "nodes",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "description": "A file from a blob the caller already owns. `size` and `mime` are claims\n`create_file` checks against the stored row (\u00a78.4).",
+        "properties": {
+          "kind": {
+            "const": "file",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "blob": {
+            "title": "Blob",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "title": "Mime",
+            "type": "string"
+          },
+          "content_modified": {
+            "title": "Content Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "parent_node",
+          "title",
+          "blob",
+          "size",
+          "mime"
+        ],
+        "title": "CreateFile",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Node"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "$ref": "#/$defs/Person"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent_node",
+          "root",
+          "state",
+          "trash_root",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "node_create.create_link",
+      "method": "POST",
+      "path": "nodes",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "kind": {
+            "const": "link",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "parent_node",
+          "title",
+          "url"
+        ],
+        "title": "CreateLink",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Node"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "$ref": "#/$defs/Person"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent_node",
+          "root",
+          "state",
+          "trash_root",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "node_create.create_document",
+      "method": "POST",
+      "path": "nodes",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "description": "A content document of `content_doctype`, blank or from a template node.",
+        "properties": {
+          "kind": {
+            "const": "document",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "content_doctype": {
+            "title": "Content Doctype",
+            "type": "string"
+          },
+          "from_node": {
+            "title": "From Node",
+            "type": "string"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "parent_node",
+          "title",
+          "content_doctype"
+        ],
+        "title": "CreateDocument",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Node"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "$ref": "#/$defs/Person"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent_node",
+          "root",
+          "state",
+          "trash_root",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "node_batch",
@@ -283,8 +1435,12 @@
                 "title": "Title",
                 "type": "string"
               },
-              "parent": {
-                "title": "Parent",
+              "parent_node": {
+                "title": "Parent Node",
+                "type": "string"
+              },
+              "expect_parent_node": {
+                "title": "Expect Parent Node",
                 "type": "string"
               },
               "state": {
@@ -374,7 +1530,84 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "node_batch_purge",
+      "method": "POST",
+      "path": "nodes/batch/purge",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes"
+        ],
+        "title": "BatchPurge",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "BatchFailure": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              },
+              "message": {
+                "title": "Message",
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "type",
+              "message"
+            ],
+            "title": "BatchFailure",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "ok": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ok",
+            "type": "array"
+          },
+          "failed": {
+            "items": {
+              "$ref": "#/$defs/BatchFailure"
+            },
+            "title": "Failed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok",
+          "failed"
+        ],
+        "title": "BatchResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "node_get",
@@ -448,13 +1681,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -489,7 +1757,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -498,7 +1766,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -507,6 +1775,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -561,8 +1840,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -627,15 +1905,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -662,7 +1945,8 @@
       },
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_patch.rename",
@@ -739,13 +2023,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -780,7 +2099,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -789,7 +2108,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -798,6 +2117,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -852,8 +2182,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -918,15 +2247,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -942,8 +2276,13 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveForbidden",
         "DriveConflict",
+        "DriveMoved",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -953,7 +2292,8 @@
       },
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_patch.move",
@@ -965,13 +2305,17 @@
       "query": null,
       "body": {
         "properties": {
-          "parent": {
-            "title": "Parent",
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          },
+          "expect_parent_node": {
+            "title": "Expect Parent Node",
             "type": "string"
           }
         },
         "required": [
-          "parent"
+          "parent_node"
         ],
         "title": "Move",
         "type": "object"
@@ -1030,13 +2374,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -1071,7 +2450,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -1080,7 +2459,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -1089,6 +2468,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -1143,8 +2533,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -1209,15 +2598,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -1233,8 +2627,13 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveForbidden",
         "DriveConflict",
+        "DriveMoved",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -1244,7 +2643,8 @@
       },
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_patch.trash",
@@ -1322,13 +2722,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -1363,7 +2798,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -1372,7 +2807,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -1381,6 +2816,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -1435,8 +2881,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -1501,15 +2946,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -1525,8 +2975,13 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveForbidden",
         "DriveConflict",
+        "DriveMoved",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -1536,7 +2991,8 @@
       },
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_patch.restore",
@@ -1553,8 +3009,8 @@
             "title": "State",
             "type": "string"
           },
-          "parent": {
-            "title": "Parent",
+          "parent_node": {
+            "title": "Parent Node",
             "type": "string"
           }
         },
@@ -1618,13 +3074,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -1659,7 +3150,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -1668,7 +3159,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -1677,6 +3168,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -1731,8 +3233,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -1797,15 +3298,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -1821,8 +3327,13 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveForbidden",
         "DriveConflict",
+        "DriveMoved",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -1832,7 +3343,8 @@
       },
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_patch.stamp",
@@ -1909,13 +3421,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -1950,7 +3497,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -1959,7 +3506,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -1968,6 +3515,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -2022,8 +3580,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -2088,15 +3645,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -2112,8 +3674,13 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveForbidden",
         "DriveConflict",
+        "DriveMoved",
+        "DriveRestoreDestinationRequired",
         "DriveOverQuota"
       ],
       "entity": {
@@ -2123,7 +3690,8 @@
       },
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_purge",
@@ -2135,14 +3703,31 @@
       "query": null,
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_children",
@@ -2169,22 +3754,8 @@
             "title": "Ascending",
             "type": "boolean"
           },
-          "mime_prefix": {
-            "title": "Mime Prefix",
-            "type": "string"
-          },
-          "kind": {
-            "const": "folder",
-            "title": "Kind",
-            "type": "string"
-          },
-          "group_by": {
-            "enum": [
-              "type",
-              "owner",
-              "modified"
-            ],
-            "title": "Group By",
+          "type": {
+            "title": "Type",
             "type": "string"
           },
           "expand": {
@@ -2250,11 +3821,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -2273,7 +3849,7 @@
                 "title": "Kind",
                 "type": "string"
               },
-              "parent": {
+              "parent_node": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -2282,7 +3858,7 @@
                     "type": "null"
                   }
                 ],
-                "title": "Parent"
+                "title": "Parent Node"
               },
               "root": {
                 "title": "Root",
@@ -2291,6 +3867,17 @@
               "state": {
                 "title": "State",
                 "type": "string"
+              },
+              "trash_root": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Trash Root"
               },
               "size": {
                 "title": "Size",
@@ -2345,8 +3932,7 @@
                 "type": "integer"
               },
               "owner": {
-                "title": "Owner",
-                "type": "string"
+                "$ref": "#/$defs/Person"
               },
               "creation": {
                 "anyOf": [
@@ -2411,15 +3997,20 @@
                   }
                 ],
                 "title": "Opened At"
+              },
+              "favourite": {
+                "title": "Favourite",
+                "type": "boolean"
               }
             },
             "required": [
               "name",
               "title",
               "kind",
-              "parent",
+              "parent_node",
               "root",
               "state",
+              "trash_root",
               "size",
               "mime",
               "url",
@@ -2432,6 +4023,36 @@
               "content_modified"
             ],
             "title": "NodeShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -2481,12 +4102,16 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveConflict"
       ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_copy",
@@ -2498,8 +4123,8 @@
       "query": null,
       "body": {
         "properties": {
-          "parent": {
-            "title": "Parent",
+          "parent_node": {
+            "title": "Parent Node",
             "type": "string"
           },
           "title": {
@@ -2508,7 +4133,7 @@
           }
         },
         "required": [
-          "parent"
+          "parent_node"
         ],
         "title": "CopyNode",
         "type": "object"
@@ -2567,13 +4192,48 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -2608,7 +4268,7 @@
             "title": "Kind",
             "type": "string"
           },
-          "parent": {
+          "parent_node": {
             "anyOf": [
               {
                 "type": "string"
@@ -2617,7 +4277,7 @@
                 "type": "null"
               }
             ],
-            "title": "Parent"
+            "title": "Parent Node"
           },
           "root": {
             "title": "Root",
@@ -2626,6 +4286,17 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
           },
           "size": {
             "title": "Size",
@@ -2680,8 +4351,7 @@
             "type": "integer"
           },
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "$ref": "#/$defs/Person"
           },
           "creation": {
             "anyOf": [
@@ -2746,15 +4416,20 @@
               }
             ],
             "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "title",
           "kind",
-          "parent",
+          "parent_node",
           "root",
           "state",
+          "trash_root",
           "size",
           "mime",
           "url",
@@ -2770,6 +4445,9 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveForbidden",
         "DriveConflict",
         "DriveOverQuota"
@@ -2777,7 +4455,8 @@
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_archive_start",
@@ -2787,7 +4466,13 @@
         "node"
       ],
       "query": null,
-      "body": null,
+      "body": {
+        "additionalProperties": false,
+        "description": "The body of a write that takes nothing but its path: `{}`.",
+        "properties": {},
+        "title": "Empty",
+        "type": "object"
+      },
       "output": {
         "properties": {
           "status": {
@@ -2843,12 +4528,16 @@
         "type": "object"
       },
       "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveConflict"
       ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_archive_status",
@@ -2915,12 +4604,15 @@
       },
       "errors": [
         "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
         "DriveConflict"
       ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_archive_download",
@@ -2932,11 +4624,17 @@
       "query": null,
       "body": null,
       "output": null,
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": true
     },
     {
       "id": "node_put_content",
@@ -2946,16 +4644,348 @@
         "node"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "description": "`PUT /nodes/<id>/content`: a new head from the caller's finished session.",
+        "properties": {
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "content_modified": {
+            "title": "Content Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id"
+        ],
+        "title": "ReplaceContent",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Node"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "$ref": "#/$defs/Person"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent_node",
+          "root",
+          "state",
+          "trash_root",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota",
+        "DriveFileTooLarge"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_get_content",
@@ -2964,14 +4994,34 @@
       "pathParams": [
         "node"
       ],
-      "query": null,
+      "query": {
+        "properties": {
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "download": {
+            "title": "Download",
+            "type": "boolean"
+          }
+        },
+        "title": "ContentQuery",
+        "type": "object"
+      },
       "body": null,
       "output": null,
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": true
     },
     {
       "id": "node_media",
@@ -2983,14 +5033,79 @@
       "query": null,
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "$defs": {
+          "MediaItem": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "mime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mime"
+              },
+              "size": {
+                "title": "Size",
+                "type": "integer"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "node",
+              "title",
+              "mime",
+              "size",
+              "url",
+              "expires"
+            ],
+            "title": "MediaItem",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "media": {
+            "items": {
+              "$ref": "#/$defs/MediaItem"
+            },
+            "title": "Media",
+            "type": "array"
+          }
+        },
+        "required": [
+          "media"
+        ],
+        "title": "MediaList",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_preview",
@@ -3000,16 +5115,75 @@
         "node"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "description": "`POST /nodes/<id>/preview`: the rendered image, base64, and its MIME type.",
+        "properties": {
+          "image": {
+            "title": "Image",
+            "type": "string"
+          },
+          "mime": {
+            "title": "Mime",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image",
+          "mime"
+        ],
+        "title": "PreviewPush",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "preview"
+        ],
+        "title": "PreviewAnswer",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "upload_create",
@@ -3017,14 +5191,112 @@
       "path": "uploads",
       "pathParams": [],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "properties": {
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "title": "Mime",
+            "type": "string"
+          },
+          "replaces": {
+            "title": "Replaces",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_node",
+          "filename",
+          "size"
+        ],
+        "title": "OpenUpload",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "ChunkedUpload": {
+            "description": "A session that takes its bytes through `PUT /uploads/<id>/chunk`.",
+            "properties": {
+              "upload_id": {
+                "title": "Upload Id",
+                "type": "string"
+              },
+              "mode": {
+                "const": "chunked",
+                "title": "Mode",
+                "type": "string"
+              }
+            },
+            "required": [
+              "upload_id",
+              "mode"
+            ],
+            "title": "ChunkedUpload",
+            "type": "object"
+          },
+          "DirectUpload": {
+            "description": "A session that takes its bytes at the storage `url`, `fields` first.",
+            "properties": {
+              "upload_id": {
+                "title": "Upload Id",
+                "type": "string"
+              },
+              "mode": {
+                "const": "direct",
+                "title": "Mode",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "fields": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Fields",
+                "type": "object"
+              }
+            },
+            "required": [
+              "upload_id",
+              "mode",
+              "url",
+              "fields"
+            ],
+            "title": "DirectUpload",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ChunkedUpload"
+          },
+          {
+            "$ref": "#/$defs/DirectUpload"
+          }
+        ]
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota",
+        "DriveFileTooLarge"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "upload_chunk",
@@ -3033,15 +5305,47 @@
       "pathParams": [
         "upload_id"
       ],
-      "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "query": {
+        "properties": {
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset"
+        ],
+        "title": "ChunkQuery",
         "type": "object"
       },
-      "errors": [],
+      "body": null,
+      "output": {
+        "properties": {
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "upload_id",
+          "received"
+        ],
+        "title": "UploadProgress",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveFileTooLarge"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": true
     },
     {
       "id": "upload_finish",
@@ -3051,14 +5355,349 @@
         "upload_id"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "description": "`POST /uploads/<id>/finish`: `parent_node` and `title` for a new file, or\n`replaces` for a new head; the session binds which.",
+        "properties": {
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "replaces": {
+            "title": "Replaces",
+            "type": "string"
+          },
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "content_modified": {
+            "title": "Content Modified",
+            "type": "string"
+          }
+        },
+        "title": "FinishUpload",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Node"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "$ref": "#/$defs/Person"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent_node",
+          "root",
+          "state",
+          "trash_root",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified"
+        ],
+        "title": "NodeShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict",
+        "DriveOverQuota",
+        "DriveFileTooLarge"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "node_activity",
@@ -3067,17 +5706,133 @@
       "pathParams": [
         "node"
       ],
-      "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "query": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          }
+        },
+        "title": "PageQuery",
         "type": "object"
       },
-      "errors": [],
+      "body": null,
+      "output": {
+        "$defs": {
+          "ActivityShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "action": {
+                "title": "Action",
+                "type": "string"
+              },
+              "actor": {
+                "title": "Actor",
+                "type": "string"
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "At"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "client": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Client"
+              },
+              "detail": {
+                "additionalProperties": true,
+                "title": "Detail",
+                "type": "object"
+              }
+            },
+            "required": [
+              "name",
+              "node",
+              "action",
+              "actor",
+              "at",
+              "via_link",
+              "client",
+              "detail"
+            ],
+            "title": "ActivityShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/$defs/ActivityShape"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_visit",
@@ -3087,17 +5842,38 @@
         "node"
       ],
       "query": null,
-      "body": null,
-      "output": {
+      "body": {
+        "additionalProperties": false,
+        "description": "The body of a write that takes nothing but its path: `{}`.",
         "properties": {},
         "title": "Empty",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_put_favourite",
@@ -3107,17 +5883,38 @@
         "node"
       ],
       "query": null,
-      "body": null,
-      "output": {
+      "body": {
+        "additionalProperties": false,
+        "description": "The body of a write that takes nothing but its path: `{}`.",
         "properties": {},
         "title": "Empty",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_delete_favourite",
@@ -3129,15 +5926,29 @@
       "query": null,
       "body": null,
       "output": {
-        "properties": {},
-        "title": "Empty",
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_grants",
@@ -3146,17 +5957,324 @@
       "pathParams": [
         "node"
       ],
-      "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "query": {
+        "properties": {
+          "inherited": {
+            "title": "Inherited",
+            "type": "boolean"
+          },
+          "principal": {
+            "title": "Principal",
+            "type": "string"
+          }
+        },
+        "title": "GrantsQuery",
         "type": "object"
       },
-      "errors": [],
+      "body": null,
+      "output": {
+        "$defs": {
+          "ExplainRowShape": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "depth": {
+                "title": "Depth",
+                "type": "integer"
+              },
+              "principal": {
+                "title": "Principal",
+                "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "expires_on": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Expires On"
+              },
+              "pass": {
+                "title": "Pass",
+                "type": "integer"
+              },
+              "held": {
+                "title": "Held",
+                "type": "boolean"
+              },
+              "winner": {
+                "title": "Winner",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "node",
+              "depth",
+              "principal",
+              "role",
+              "expires_on",
+              "pass",
+              "held",
+              "winner"
+            ],
+            "title": "ExplainRowShape",
+            "type": "object"
+          },
+          "ExplainShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "source": {
+                "title": "Source",
+                "type": "string"
+              },
+              "rows": {
+                "items": {
+                  "$ref": "#/$defs/ExplainRowShape"
+                },
+                "title": "Rows",
+                "type": "array"
+              }
+            },
+            "required": [
+              "role",
+              "source",
+              "rows"
+            ],
+            "title": "ExplainShape",
+            "type": "object"
+          },
+          "GrantShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "principal": {
+                "title": "Principal",
+                "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
+              "expires_on": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Expires On"
+              },
+              "has_password": {
+                "title": "Has Password",
+                "type": "boolean"
+              },
+              "sent_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Sent To"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "node",
+              "principal",
+              "role",
+              "expires_on",
+              "has_password",
+              "sent_to"
+            ],
+            "title": "GrantShape",
+            "type": "object"
+          },
+          "InheritedGrantShape": {
+            "properties": {
+              "grant": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/GrantShape"
+                  },
+                  {
+                    "$ref": "#/$defs/RedactedGrantShape"
+                  }
+                ],
+                "title": "Grant"
+              },
+              "redacted": {
+                "title": "Redacted",
+                "type": "boolean"
+              },
+              "source_node": {
+                "title": "Source Node",
+                "type": "string"
+              },
+              "source_title": {
+                "title": "Source Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "grant",
+              "redacted",
+              "source_node",
+              "source_title"
+            ],
+            "title": "InheritedGrantShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "RedactedGrantShape": {
+            "description": "An ancestor's link the caller does not manage: no name, URL, or recipient.",
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "principal": {
+                "const": "$LINK",
+                "title": "Principal",
+                "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "expires_on": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Expires On"
+              },
+              "has_password": {
+                "title": "Has Password",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "node",
+              "principal",
+              "role",
+              "expires_on",
+              "has_password"
+            ],
+            "title": "RedactedGrantShape",
+            "type": "object"
+          }
+        },
+        "description": "`GET /nodes/<id>/grants`: the local rows, who owns the tree, and the asked-for extras.",
+        "properties": {
+          "grants": {
+            "items": {
+              "$ref": "#/$defs/GrantShape"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Person"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inherited": {
+            "items": {
+              "$ref": "#/$defs/InheritedGrantShape"
+            },
+            "title": "Inherited",
+            "type": "array"
+          },
+          "explain": {
+            "$ref": "#/$defs/ExplainShape"
+          }
+        },
+        "required": [
+          "grants",
+          "owner"
+        ],
+        "title": "GrantsShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_put_grant",
@@ -3167,16 +6285,157 @@
         "principal"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "description": "`PUT /nodes/<id>/grants/<principal>`: `role` and `expires_on` replace; `password` patches.",
+        "properties": {
+          "role": {
+            "title": "Role",
+            "type": "integer"
+          },
+          "expires_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires On"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "send_to": {
+            "title": "Send To",
+            "type": "string"
+          },
+          "notify": {
+            "title": "Notify",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "GrantWrite",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "principal": {
+            "title": "Principal",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "integer"
+          },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
+          "expires_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires On"
+          },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "sent_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent To"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "principal",
+          "role",
+          "expires_on",
+          "has_password",
+          "sent_to"
+        ],
+        "title": "GrantShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_delete_grant",
@@ -3186,17 +6445,221 @@
         "node",
         "principal"
       ],
-      "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "query": {
+        "properties": {
+          "below": {
+            "title": "Below",
+            "type": "boolean"
+          }
+        },
+        "title": "RevokeQuery",
         "type": "object"
       },
-      "errors": [],
+      "body": null,
+      "output": {
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
+    },
+    {
+      "id": "grant_patch",
+      "method": "PATCH",
+      "path": "grants/{grant}",
+      "pathParams": [
+        "grant"
+      ],
+      "query": null,
+      "body": {
+        "description": "`PATCH /grants/<id>`: the same write on a row named by its id.",
+        "properties": {
+          "role": {
+            "title": "Role",
+            "type": "integer"
+          },
+          "expires_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires On"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "GrantPatch",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "principal": {
+            "title": "Principal",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "integer"
+          },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
+          "expires_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires On"
+          },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "sent_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent To"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "principal",
+          "role",
+          "expires_on",
+          "has_password",
+          "sent_to"
+        ],
+        "title": "GrantShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "grant_delete",
+      "method": "DELETE",
+      "path": "grants/{grant}",
+      "pathParams": [
+        "grant"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "grant_rotate",
@@ -3206,46 +6669,207 @@
         "grant"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "additionalProperties": false,
+        "description": "The body of a write that takes nothing but its path: `{}`.",
+        "properties": {},
+        "title": "Empty",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "principal": {
+            "title": "Principal",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "integer"
+          },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
+          "expires_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires On"
+          },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "sent_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent To"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "principal",
+          "role",
+          "expires_on",
+          "has_password",
+          "sent_to"
+        ],
+        "title": "GrantShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "link_unlock",
       "method": "POST",
-      "path": "links/{token}/unlock",
-      "pathParams": [
-        "token"
-      ],
+      "path": "links/unlock",
+      "pathParams": [],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "Unlock",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "properties": {
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          },
+          "expires": {
+            "title": "Expires",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires"
+        ],
+        "title": "UnlockTicket",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "RateLimitExceededError"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "view_clear_recents",
       "method": "DELETE",
       "path": "views/recents",
       "pathParams": [],
-      "query": null,
+      "query": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "title": "ClearRecents",
+        "type": "object"
+      },
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
         "type": "object"
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "view_list",
@@ -3274,6 +6898,10 @@
           },
           "term": {
             "title": "Term",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
             "type": "string"
           },
           "expand": {
@@ -3374,11 +7002,16 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
               }
             },
             "required": [
               "name",
-              "title"
+              "title",
+              "kind"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -3397,7 +7030,7 @@
                 "title": "Kind",
                 "type": "string"
               },
-              "parent": {
+              "parent_node": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -3406,7 +7039,7 @@
                     "type": "null"
                   }
                 ],
-                "title": "Parent"
+                "title": "Parent Node"
               },
               "root": {
                 "title": "Root",
@@ -3415,6 +7048,17 @@
               "state": {
                 "title": "State",
                 "type": "string"
+              },
+              "trash_root": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Trash Root"
               },
               "size": {
                 "title": "Size",
@@ -3469,8 +7113,7 @@
                 "type": "integer"
               },
               "owner": {
-                "title": "Owner",
-                "type": "string"
+                "$ref": "#/$defs/Person"
               },
               "creation": {
                 "anyOf": [
@@ -3535,15 +7178,20 @@
                   }
                 ],
                 "title": "Opened At"
+              },
+              "favourite": {
+                "title": "Favourite",
+                "type": "boolean"
               }
             },
             "required": [
               "name",
               "title",
               "kind",
-              "parent",
+              "parent_node",
               "root",
               "state",
+              "trash_root",
               "size",
               "mime",
               "url",
@@ -3556,6 +7204,36 @@
               "content_modified"
             ],
             "title": "NodeShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           },
           "PreviewShape": {
@@ -3611,9 +7289,13 @@
         "title": "Page",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "node_versions",
@@ -3622,17 +7304,129 @@
       "pathParams": [
         "node"
       ],
-      "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "query": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          }
+        },
+        "title": "PageQuery",
         "type": "object"
       },
-      "errors": [],
+      "body": null,
+      "output": {
+        "$defs": {
+          "VersionShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "seq": {
+                "title": "Seq",
+                "type": "integer"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Label"
+              },
+              "pinned": {
+                "title": "Pinned",
+                "type": "integer"
+              },
+              "actor": {
+                "title": "Actor",
+                "type": "string"
+              },
+              "size": {
+                "title": "Size",
+                "type": "integer"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              }
+            },
+            "required": [
+              "name",
+              "node",
+              "seq",
+              "kind",
+              "label",
+              "pinned",
+              "actor",
+              "size",
+              "creation"
+            ],
+            "title": "VersionShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/$defs/VersionShape"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_version_create",
@@ -3642,16 +7436,104 @@
         "node"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "auto",
+              "named",
+              "milestone"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "title": "VersionTake",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "integer"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "seq",
+          "kind",
+          "label",
+          "pinned",
+          "actor",
+          "size",
+          "creation"
+        ],
+        "title": "VersionShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_version_patch",
@@ -3662,16 +7544,100 @@
         "seq"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "description": "Either field; an empty `label` clears it (\u00a79.1).",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          }
+        },
+        "title": "VersionPatch",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "integer"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "seq",
+          "kind",
+          "label",
+          "pinned",
+          "actor",
+          "size",
+          "creation"
+        ],
+        "title": "VersionShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_version_delete",
@@ -3684,14 +7650,31 @@
       "query": null,
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_version_content",
@@ -3704,11 +7687,17 @@
       "query": null,
       "body": null,
       "output": null,
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": true
     },
     {
       "id": "node_version_restore",
@@ -3719,16 +7708,104 @@
         "seq"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "additionalProperties": false,
+        "description": "The body of a write that takes nothing but its path: `{}`.",
+        "properties": {},
+        "title": "Empty",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "VersionShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "seq": {
+                "title": "Seq",
+                "type": "integer"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Label"
+              },
+              "pinned": {
+                "title": "Pinned",
+                "type": "integer"
+              },
+              "actor": {
+                "title": "Actor",
+                "type": "string"
+              },
+              "size": {
+                "title": "Size",
+                "type": "integer"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              }
+            },
+            "required": [
+              "name",
+              "node",
+              "seq",
+              "kind",
+              "label",
+              "pinned",
+              "actor",
+              "size",
+              "creation"
+            ],
+            "title": "VersionShape",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/VersionShape"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_threads",
@@ -3737,17 +7814,228 @@
       "pathParams": [
         "node"
       ],
-      "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "query": {
+        "properties": {
+          "resolved": {
+            "title": "Resolved",
+            "type": "boolean"
+          }
+        },
+        "title": "ThreadsQuery",
         "type": "object"
       },
-      "errors": [],
+      "body": null,
+      "output": {
+        "$defs": {
+          "CommentShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "thread": {
+                "title": "Thread",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "content": {
+                "title": "Content",
+                "type": "string"
+              },
+              "author": {
+                "title": "Author",
+                "type": "string"
+              },
+              "author_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Author Name"
+              },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
+              "mentions": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Mentions",
+                "type": "array"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "modified": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Modified"
+              }
+            },
+            "required": [
+              "name",
+              "thread",
+              "node",
+              "content",
+              "author",
+              "author_name",
+              "mentions",
+              "creation",
+              "modified"
+            ],
+            "title": "CommentShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "ThreadShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "anchor": {
+                "title": "Anchor",
+                "type": "string"
+              },
+              "resolved": {
+                "title": "Resolved",
+                "type": "boolean"
+              },
+              "resolved_by": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Resolved By"
+              },
+              "resolved_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Resolved At"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "comments": {
+                "items": {
+                  "$ref": "#/$defs/CommentShape"
+                },
+                "title": "Comments",
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "node",
+              "anchor",
+              "resolved",
+              "resolved_by",
+              "resolved_at",
+              "creation",
+              "comments"
+            ],
+            "title": "ThreadShape",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "threads": {
+            "items": {
+              "$ref": "#/$defs/ThreadShape"
+            },
+            "title": "Threads",
+            "type": "array"
+          }
+        },
+        "required": [
+          "threads"
+        ],
+        "title": "ThreadList",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "node_thread_create",
@@ -3757,16 +8045,225 @@
         "node"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "description": "`POST /nodes/<id>/threads`: the anchor is the content app's to resolve.",
+        "properties": {
+          "anchor": {
+            "title": "Anchor",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "author_name": {
+            "title": "Author Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor",
+          "text"
+        ],
+        "title": "ThreadOpen",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "CommentShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "thread": {
+                "title": "Thread",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "content": {
+                "title": "Content",
+                "type": "string"
+              },
+              "author": {
+                "title": "Author",
+                "type": "string"
+              },
+              "author_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Author Name"
+              },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
+              "mentions": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Mentions",
+                "type": "array"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "modified": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Modified"
+              }
+            },
+            "required": [
+              "name",
+              "thread",
+              "node",
+              "content",
+              "author",
+              "author_name",
+              "mentions",
+              "creation",
+              "modified"
+            ],
+            "title": "CommentShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "anchor": {
+            "title": "Anchor",
+            "type": "string"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "boolean"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/$defs/CommentShape"
+            },
+            "title": "Comments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "anchor",
+          "resolved",
+          "resolved_by",
+          "resolved_at",
+          "creation",
+          "comments"
+        ],
+        "title": "ThreadShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
       "nodeParams": [
         "node"
-      ]
+      ],
+      "stream": false
     },
     {
       "id": "thread_patch",
@@ -3776,14 +8273,211 @@
         "thread"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "properties": {
+          "resolved": {
+            "title": "Resolved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resolved"
+        ],
+        "title": "ThreadResolve",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "CommentShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "thread": {
+                "title": "Thread",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "content": {
+                "title": "Content",
+                "type": "string"
+              },
+              "author": {
+                "title": "Author",
+                "type": "string"
+              },
+              "author_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Author Name"
+              },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
+              "mentions": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Mentions",
+                "type": "array"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "modified": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Modified"
+              }
+            },
+            "required": [
+              "name",
+              "thread",
+              "node",
+              "content",
+              "author",
+              "author_name",
+              "mentions",
+              "creation",
+              "modified"
+            ],
+            "title": "CommentShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "anchor": {
+            "title": "Anchor",
+            "type": "string"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "boolean"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/$defs/CommentShape"
+            },
+            "title": "Comments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "anchor",
+          "resolved",
+          "resolved_by",
+          "resolved_at",
+          "creation",
+          "comments"
+        ],
+        "title": "ThreadShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "thread_comment_create",
@@ -3793,14 +8487,143 @@
         "thread"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "author_name": {
+            "title": "Author Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "CommentWrite",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thread": {
+            "title": "Thread",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
+          "mentions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mentions",
+            "type": "array"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          }
+        },
+        "required": [
+          "name",
+          "thread",
+          "node",
+          "content",
+          "author",
+          "author_name",
+          "mentions",
+          "creation",
+          "modified"
+        ],
+        "title": "CommentShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "comment_patch",
@@ -3810,14 +8633,139 @@
         "comment"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "CommentEdit",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thread": {
+            "title": "Thread",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
+          "mentions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mentions",
+            "type": "array"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          }
+        },
+        "required": [
+          "name",
+          "thread",
+          "node",
+          "content",
+          "author",
+          "author_name",
+          "mentions",
+          "creation",
+          "modified"
+        ],
+        "title": "CommentShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "comment_delete",
@@ -3829,12 +8777,27 @@
       "query": null,
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "notifications_list",
@@ -3996,7 +8959,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "notifications_unread_count",
@@ -4020,7 +8984,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "notifications_read.notification_names",
@@ -4045,21 +9010,23 @@
         "type": "object"
       },
       "output": {
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
         "properties": {
-          "read": {
-            "title": "Read",
+          "count": {
+            "title": "Count",
             "type": "integer"
           }
         },
         "required": [
-          "read"
+          "count"
         ],
-        "title": "ReadResult",
+        "title": "Count",
         "type": "object"
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "notifications_read.all_notifications",
@@ -4082,21 +9049,23 @@
         "type": "object"
       },
       "output": {
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
         "properties": {
-          "read": {
-            "title": "Read",
+          "count": {
+            "title": "Count",
             "type": "integer"
           }
         },
         "required": [
-          "read"
+          "count"
         ],
-        "title": "ReadResult",
+        "title": "Count",
         "type": "object"
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "roots_discover",
@@ -4150,7 +9119,8 @@
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "root_usage",
@@ -4159,9 +9129,88 @@
       "pathParams": [
         "root"
       ],
-      "query": null,
+      "query": {
+        "properties": {
+          "expand": {
+            "const": "breakdown",
+            "title": "Expand",
+            "type": "string"
+          }
+        },
+        "title": "RootUsageQuery",
+        "type": "object"
+      },
       "body": null,
       "output": {
+        "$defs": {
+          "LargestNode": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "size": {
+                "title": "Size",
+                "type": "integer"
+              },
+              "mime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mime"
+              },
+              "kind": {
+                "enum": [
+                  "file",
+                  "document"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "type": {
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "title",
+              "size",
+              "mime",
+              "kind",
+              "type"
+            ],
+            "title": "LargestNode",
+            "type": "object"
+          },
+          "TypeBytes": {
+            "properties": {
+              "type": {
+                "title": "Type",
+                "type": "string"
+              },
+              "bytes": {
+                "title": "Bytes",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "type",
+              "bytes"
+            ],
+            "title": "TypeBytes",
+            "type": "object"
+          }
+        },
         "properties": {
           "used_bytes": {
             "title": "Used Bytes",
@@ -4185,6 +9234,20 @@
           "effective_quota": {
             "title": "Effective Quota",
             "type": "integer"
+          },
+          "by_type": {
+            "items": {
+              "$ref": "#/$defs/TypeBytes"
+            },
+            "title": "By Type",
+            "type": "array"
+          },
+          "largest": {
+            "items": {
+              "$ref": "#/$defs/LargestNode"
+            },
+            "title": "Largest",
+            "type": "array"
           }
         },
         "required": [
@@ -4196,26 +9259,186 @@
         "title": "RootUsage",
         "type": "object"
       },
-      "errors": [],
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     },
     {
-      "id": "root_patch",
+      "id": "root_patch.root_quota",
       "method": "PATCH",
       "path": "roots/{root}",
       "pathParams": [
         "root"
       ],
       "query": null,
-      "body": null,
-      "output": {
-        "additionalProperties": true,
+      "body": {
+        "properties": {
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "quota_bytes"
+        ],
+        "title": "RootQuota",
         "type": "object"
       },
-      "errors": [],
+      "output": {
+        "description": "One `Drive Root` with its node's title, as `PATCH /roots/<id>` answers it.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "kind",
+          "user",
+          "state",
+          "quota_bytes",
+          "used_bytes",
+          "title"
+        ],
+        "title": "RootShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "root_patch.root_archive",
+      "method": "PATCH",
+      "path": "roots/{root}",
+      "pathParams": [
+        "root"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "state": {
+            "const": "Archived",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "RootArchive",
+        "type": "object"
+      },
+      "output": {
+        "description": "One `Drive Root` with its node's title, as `PATCH /roots/<id>` answers it.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "kind",
+          "user",
+          "state",
+          "quota_bytes",
+          "used_bytes",
+          "title"
+        ],
+        "title": "RootShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
     },
     {
       "id": "root_purge",
@@ -4227,12 +9450,396 @@
       "query": null,
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "root_empty_trash",
+      "method": "POST",
+      "path": "roots/{root}/trash/empty",
+      "pathParams": [
+        "root"
+      ],
+      "query": null,
+      "body": {
+        "additionalProperties": false,
+        "description": "The body of a write that takes nothing but its path: `{}`.",
+        "properties": {},
+        "title": "Empty",
+        "type": "object"
+      },
+      "output": {
+        "description": "The answer to a write that removes or touches rows rather than shaping one.\n\nEvery delete answers it, and so does a write whose only result is a\nnumber of rows: a visit, a star, a read receipt (`http/__init__.py`).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "Count",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "settings_get",
+      "method": "GET",
+      "path": "settings",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "description": "The caller's own `Drive Settings` row (\u00a73.14), or its field defaults.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          },
+          "writer_settings": {
+            "additionalProperties": true,
+            "title": "Writer Settings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "webdav_enabled",
+          "writer_settings"
+        ],
+        "title": "UserSettings",
         "type": "object"
       },
       "errors": [],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "settings_patch",
+      "method": "PATCH",
+      "path": "settings",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "description": "The one field `PATCH /settings` and `PATCH /site-settings` write.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "webdav_enabled"
+        ],
+        "title": "WebdavSwitch",
+        "type": "object"
+      },
+      "output": {
+        "description": "The caller's own `Drive Settings` row (\u00a73.14), or its field defaults.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          },
+          "writer_settings": {
+            "additionalProperties": true,
+            "title": "Writer Settings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "webdav_enabled",
+          "writer_settings"
+        ],
+        "title": "UserSettings",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "site_settings_get",
+      "method": "GET",
+      "path": "site-settings",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "AdminSiteSettings": {
+            "description": "What a Drive admin reads. Quotas are bytes, and 0 is unlimited.",
+            "properties": {
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "preview_size": {
+                "title": "Preview Size",
+                "type": "integer"
+              },
+              "webdav_enabled": {
+                "title": "Webdav Enabled",
+                "type": "boolean"
+              },
+              "webdav_allowed_methods": {
+                "title": "Webdav Allowed Methods",
+                "type": "string"
+              },
+              "default_personal_quota": {
+                "title": "Default Personal Quota",
+                "type": "integer"
+              },
+              "shared_quota": {
+                "title": "Shared Quota",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "is_admin",
+              "preview_size",
+              "webdav_enabled",
+              "webdav_allowed_methods",
+              "default_personal_quota",
+              "shared_quota"
+            ],
+            "title": "AdminSiteSettings",
+            "type": "object"
+          },
+          "SiteSettings": {
+            "description": "What every signed-in caller reads from `Drive Disk Settings` (\u00a73.13).",
+            "properties": {
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "preview_size": {
+                "title": "Preview Size",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "is_admin",
+              "preview_size"
+            ],
+            "title": "SiteSettings",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SiteSettings"
+          },
+          {
+            "$ref": "#/$defs/AdminSiteSettings"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "site_settings_patch",
+      "method": "PATCH",
+      "path": "site-settings",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "description": "The one field `PATCH /settings` and `PATCH /site-settings` write.",
+        "properties": {
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "webdav_enabled"
+        ],
+        "title": "WebdavSwitch",
+        "type": "object"
+      },
+      "output": {
+        "description": "What a Drive admin reads. Quotas are bytes, and 0 is unlimited.",
+        "properties": {
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "preview_size": {
+            "title": "Preview Size",
+            "type": "integer"
+          },
+          "webdav_enabled": {
+            "title": "Webdav Enabled",
+            "type": "boolean"
+          },
+          "webdav_allowed_methods": {
+            "title": "Webdav Allowed Methods",
+            "type": "string"
+          },
+          "default_personal_quota": {
+            "title": "Default Personal Quota",
+            "type": "integer"
+          },
+          "shared_quota": {
+            "title": "Shared Quota",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "is_admin",
+          "preview_size",
+          "webdav_enabled",
+          "webdav_allowed_methods",
+          "default_personal_quota",
+          "shared_quota"
+        ],
+        "title": "AdminSiteSettings",
+        "type": "object"
+      },
+      "errors": [
+        "DriveForbidden"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
+    },
+    {
+      "id": "webdav_get",
+      "method": "GET",
+      "path": "webdav",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "WebdavConnection": {
+            "additionalProperties": false,
+            "description": "How to mount `/dav/` while the site switch is on. Closed, as `WebdavOff`.\n\n`api_key` doubles as the DAV username for key-based sign-in. The secret is\nminted once by `suite.utils.user.generate_user_keys` and never read back.",
+            "properties": {
+              "globally_enabled": {
+                "title": "Globally Enabled",
+                "type": "boolean"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "server_url": {
+                "title": "Server Url",
+                "type": "string"
+              },
+              "username": {
+                "title": "Username",
+                "type": "string"
+              },
+              "enabled_for_user": {
+                "title": "Enabled For User",
+                "type": "boolean"
+              },
+              "two_factor_blocked": {
+                "title": "Two Factor Blocked",
+                "type": "boolean"
+              },
+              "api_key": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Api Key"
+              }
+            },
+            "required": [
+              "globally_enabled",
+              "is_admin",
+              "server_url",
+              "username",
+              "enabled_for_user",
+              "two_factor_blocked",
+              "api_key"
+            ],
+            "title": "WebdavConnection",
+            "type": "object"
+          },
+          "WebdavHidden": {
+            "additionalProperties": false,
+            "description": "WebDAV is off for the site and the caller is no admin: nothing to show.",
+            "properties": {},
+            "title": "WebdavHidden",
+            "type": "object"
+          },
+          "WebdavOff": {
+            "additionalProperties": false,
+            "description": "The site switch, shown to an admin while it is off.",
+            "properties": {
+              "globally_enabled": {
+                "title": "Globally Enabled",
+                "type": "boolean"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "globally_enabled",
+              "is_admin"
+            ],
+            "title": "WebdavOff",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/WebdavHidden"
+          },
+          {
+            "$ref": "#/$defs/WebdavOff"
+          },
+          {
+            "$ref": "#/$defs/WebdavConnection"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false
     }
   ]
 }

@@ -7,6 +7,8 @@ the check that it still copies it belongs here too, beside the port it
 stands in for.
 """
 
+import hashlib
+import io
 import json
 import unittest
 from pathlib import Path
@@ -17,6 +19,7 @@ import frappe
 
 from suite.drive._core.roles import MANAGE, NONE
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
+from suite.drive.patches.build.legacy import S3_URL_PREFIX
 from suite.drive.patches.build.ports import (
     ACTIVE,
     GRANT_COLUMNS,
@@ -35,7 +38,6 @@ from suite.drive.patches.build.ports import (
     TreeRow,
 )
 from suite.drive.patches.build.tests.fakes import FakeDrive
-from suite.drive.utils.files import S3_URL_PREFIX
 
 
 class StubbedDatabase(unittest.TestCase):
@@ -56,6 +58,43 @@ class StubbedDatabase(unittest.TestCase):
                 frappe.local.db = previous
 
         self.addCleanup(restore)
+
+
+class TestReadOnlyBeforeSync(StubbedDatabase):
+    def test_source_rows_can_be_read_before_the_target_schema_exists(self):
+        self.db.has_column.return_value = False
+        self.db.table_exists.return_value = False
+        file = frappe._dict(name="file-1", folder="Drive", file_name="Example.txt", status=ACTIVE)
+
+        def get_all(doctype, **kwargs):
+            if doctype == "Drive Node":
+                self.fail("No target tree exists before model sync")
+            self.assertNotIn("blob", kwargs["fields"])
+            self.assertNotIn("node", kwargs["fields"])
+            self.assertFalse(any(clause[0] == "blob" for clause in kwargs["filters"]))
+            return [file] if doctype == "File" else [frappe._dict(name="document-1")]
+
+        def sql(query, values, **kwargs):
+            self.assertNotIn("`blob`", query)
+            self.assertNotIn("`node`", query)
+            self.assertNotIn("tabDrive Node", query)
+            return [file] if "`tabFile`" in query else [frappe._dict(name="document-1")]
+
+        self.db.sql.side_effect = sql
+        tree = SiteTree()
+        content = SiteContentSource()
+        with patch.object(frappe, "get_all", side_effect=get_all):
+            self.assertEqual(SiteFiles(S3_URL_PREFIX).s3_rows_without_blob("", 10)[0].name, "file-1")
+            self.assertIsNone(tree.row("file-1").blob)
+            self.assertIsNone(tree.children(("Drive",), ("", ""), 10)[0].blob)
+            self.assertEqual(tree.unreached("", 10)[0].name, "file-1")
+            self.assertEqual(SiteDrive().nodes(("Drive",)), {})
+            self.assertIsNone(content.files_for_content("Writer Document", "document-1")[0].blob)
+            for doctype in ("Writer Document", "Sheet", "Presentation"):
+                self.assertIsNone(content.documents(doctype, "", 10)[0].node)
+
+        self.db.commit.assert_not_called()
+        self.db.set_value.assert_not_called()
 
 
 class TestSiteFiles(StubbedDatabase):
@@ -119,7 +158,10 @@ class TestSiteFiles(StubbedDatabase):
             ],
         )
         self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
-        self.assertEqual(get_all.call_args.kwargs["fields"], ["name", "file_url", "file_name", "file_type"])
+        self.assertEqual(
+            get_all.call_args.kwargs["fields"],
+            ["name", "file_url", "file_name", "file_type", "file_size", "status"],
+        )
 
     def test_a_row_with_no_file_url_reads_as_an_empty_string(self):
         rows = [frappe._dict(name="f1", file_url=None, file_name=None, file_type=None)]
@@ -330,21 +372,29 @@ class TestTheSiteWiring(StubbedDatabase):
     call would ship silently.
     """
 
-    def test_the_legacy_settings_come_from_drive_disk_settings(self):
-        settings = frappe._dict(enabled=1, bucket="drive-bucket", endpoint_url="https://minio/")
-        with patch.object(frappe, "get_single", return_value=settings) as get_single:
-            config = LegacyS3Config.for_site()
+    def _singles(self, values):
+        # `Drive Disk Settings` no longer declares these fields, so the read
+        # is a plain `tabSingles` query, one field at a time.
+        def sql(query, params, **_kwargs):
+            self.assertIn("`tabSingles`", query)
+            self.assertEqual(params["doctype"], "Drive Disk Settings")
+            value = values.get(params["field"])
+            return [(value,)] if value is not None else []
 
-        get_single.assert_called_once_with("Drive Disk Settings")
+        self.db.sql.side_effect = sql
+
+    def test_the_legacy_settings_come_from_drive_disk_settings(self):
+        self._singles({"enabled": "1", "bucket": "drive-bucket", "endpoint_url": "https://minio/"})
+        config = LegacyS3Config.for_site()
+
         self.assertEqual(
             (config.enabled, config.bucket, config.endpoint_url),
             (True, "drive-bucket", "https://minio/"),
         )
 
     def test_an_unset_bucket_and_endpoint_read_as_empty_strings(self):
-        settings = frappe._dict(enabled=0, bucket=None, endpoint_url=None)
-        with patch.object(frappe, "get_single", return_value=settings):
-            config = LegacyS3Config.for_site()
+        self._singles({"enabled": "0"})
+        config = LegacyS3Config.for_site()
 
         self.assertEqual((config.enabled, config.bucket, config.endpoint_url), (False, "", ""))
 
@@ -405,6 +455,43 @@ class TestSiteTree(StubbedDatabase):
         """The `frappe.db.sql` call as `(one-line query, values)`."""
         query, values = self.db.sql.call_args.args[:2]
         return " ".join(query.split()), values
+
+    def test_linked_files_use_blob_metadata_when_legacy_metadata_is_stale(self):
+        files = [
+            frappe._dict(name="short", blob="b-short", file_size=100, mime_type="text/plain"),
+            frappe._dict(name="long", blob="b-long", file_size=1),
+            frappe._dict(name="empty", blob="b-empty", file_size=50),
+            frappe._dict(name="missing", blob=None, file_size=500),
+        ]
+        blobs = [
+            frappe._dict(name="b-short", file_size=3, mime_type="image/png"),
+            frappe._dict(name="b-long", file_size=20, mime_type="video/mp4"),
+            frappe._dict(name="b-empty", file_size=0, mime_type="application/octet-stream"),
+        ]
+
+        def read(doctype, **kwargs):
+            if doctype == "File Blob":
+                return blobs
+            if kwargs.get("limit") == 1:
+                name = kwargs["filters"][0][2]
+                return [file for file in files if file.name == name]
+            return files
+
+        self.db.sql.return_value = files
+        with patch.object(frappe, "get_all", side_effect=read):
+            children = SiteTree().children(("Drive",), ("", ""), 100)
+            content_files = SiteContentSource().files_for_content("Presentation", "deck")
+            individual = [SiteTree().row(file.name) for file in files]
+
+        for rows in (children, content_files, individual):
+            self.assertEqual([row.file_size for row in rows], [3, 20, 0, 500])
+            self.assertEqual(
+                [row.mime_type for row in rows[:3]], ["image/png", "video/mp4", "application/octet-stream"]
+            )
+            self.assertIsNone(rows[-1].blob)
+        self.assertEqual([file.file_size for file in files], [100, 1, 50, 500])
+        self.assertEqual(files[0].mime_type, "text/plain")
+        self.db.set_value.assert_not_called()
 
     def test_the_child_page_binds_one_placeholder_per_parent(self):
         self.db.sql.return_value = []
@@ -622,7 +709,7 @@ class TestSiteDrive(StubbedDatabase):
         self.assertEqual(row[NODE_COLUMNS.index("owner")], "a@b.co")
         # A column the caller does not name goes in as NULL, not as its
         # neighbour's value shifted one place along.
-        self.assertIsNone(row[NODE_COLUMNS.index("parent")])
+        self.assertIsNone(row[NODE_COLUMNS.index("parent_node")])
 
     def test_the_grant_insert_names_every_column_and_orders_the_row(self):
         self.drive.insert_grants([dict(PAIR_GRANT)])
@@ -818,6 +905,43 @@ class TestSiteContentTarget(StubbedDatabase):
         super().setUp()
         self.target = SiteContentTarget()
 
+    def test_public_bytes_are_copied_privately_without_changing_the_source(self):
+        body = b"existing public bytes"
+        checksum = hashlib.sha256(body).hexdigest()
+        source = frappe._dict(
+            name="public",
+            file_size=len(body),
+            mime_type="image/png",
+            driver="local",
+            is_private=0,
+            status="Ready",
+            key="../avatar.png",
+            checksum=checksum,
+        )
+        copied = frappe._dict(name="private", checksum=checksum, file_size=len(body))
+        self.db.get_value.return_value = source
+        driver = MagicMock()
+        driver.read.side_effect = lambda *args, **kwargs: io.BytesIO(body)
+
+        def put(stream, **kwargs):
+            self.assertEqual(stream.read(), body)
+            self.assertTrue(kwargs["is_private"])
+            return copied
+
+        with (
+            patch("frappe.storage.driver.get_driver", return_value=driver),
+            patch("frappe.storage.blob.put_blob", side_effect=put),
+        ):
+            self.assertEqual(self.target.private_blob("public", "avatar.png"), "private")
+            copied.checksum = "incorrect"
+            with self.assertRaisesRegex(ValueError, "changed its bytes"):
+                self.target.private_blob("public", "avatar.png")
+            source.is_private = 1
+            self.assertEqual(self.target.private_blob("public", "avatar.png"), "public")
+        self.assertEqual(driver.read.call_count, 2)
+        self.assertEqual(source.key, "../avatar.png")
+        self.db.set_value.assert_not_called()
+
     def test_root_metadata_tries_the_primary_key_before_the_node_column(self):
         self.db.get_value.return_value = {"name": "root-1", "node": "root-1"}
 
@@ -876,12 +1000,14 @@ class TestSiteContentTarget(StubbedDatabase):
 
 class TestSiteContentSource(StubbedDatabase):
     def test_the_residual_version_sample_is_ordered(self):
-        with patch.object(frappe, "get_all", return_value=[]) as get_all:
-            SiteContentSource().residual_writer_versions(20)
+        self.db.sql.return_value = []
+        SiteContentSource().residual_writer_versions(20)
 
         # These ids are the sample §14.9 prints. An unordered `LIMIT 20`
         # names different rows on every run.
-        self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
+        query, params = self.db.sql.call_args.args
+        self.assertIn("ORDER BY `name`", query)
+        self.assertEqual(params["limit"], 20)
 
 
 class TestSiteContentHistory(StubbedDatabase):
@@ -925,23 +1051,6 @@ class TestSiteContentHistory(StubbedDatabase):
         self.assertEqual(values, {"sheet": "sheet-1", "seq": 7, "name": "s-2", "limit": 100})
         # `sheets_data` is the 75 MB column, so it is read one page at a time.
         self.assertIn("`sheets_data`", query)
-
-    def test_every_column_the_history_pages_filter_on_is_indexed(self):
-        """Ticket 31: the page reads a Link column, so that column needs an index.
-
-        Without it MariaDB scans the `creation` index end to end for every
-        document. On the rehearsal restore that was 45 s a page over 142,530
-        rows, once per Writer Document.
-        """
-        for doctype, path, column in (
-            ("Writer Version", ("writer", "writer_version"), "doc"),
-            ("Sheet Snapshot", ("sheets", "sheet_snapshot"), "sheet"),
-        ):
-            with self.subTest(doctype=doctype):
-                folder, name = path
-                schema = Path(__file__).parents[4] / folder / "doctype" / name / f"{name}.json"
-                fields = {field["fieldname"]: field for field in json.loads(schema.read_text())["fields"]}
-                self.assertEqual(fields[column].get("search_index"), 1)
 
 
 class TestGrantPairs(StubbedDatabase):

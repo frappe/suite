@@ -28,7 +28,8 @@
   },
   {
    "fieldname": "seq",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Op-log sequence",
    "description": "Monotonic per-sheet sequence number.",
    "search_index": 1

@@ -90,8 +90,16 @@
                 "title": "Recurrence Id"
               },
               "recurrence_rule": {
-                "title": "Recurrence Rule",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Rule"
               },
               "master_id": {
                 "title": "Master Id",
@@ -200,7 +208,8 @@
         "PermissionError"
       ],
       "entity": null,
-      "nodeParams": []
+      "nodeParams": [],
+      "stream": false
     }
   ]
 }

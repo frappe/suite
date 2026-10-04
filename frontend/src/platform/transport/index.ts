@@ -7,11 +7,16 @@ export interface PlatformError<Type extends string = string> {
   [key: string]: unknown
 }
 
-export class TransportError<Type extends string = string> extends Error implements PlatformError<Type> {
+export class TransportError<Type extends string = string>
+  extends Error
+  implements PlatformError<Type>
+{
   [key: string]: unknown
   readonly type: Type
   readonly status: number
   readonly details: Record<string, unknown>
+  /** How long the server asked the caller to wait, from a 429's `Retry-After`. */
+  readonly retryAfterMs?: number
 
   constructor(error: PlatformError<Type>) {
     super(error.message)
@@ -19,6 +24,7 @@ export class TransportError<Type extends string = string> extends Error implemen
     this.type = error.type
     this.status = error.status
     this.details = { ...error }
+    if (typeof error.retryAfterMs === 'number') this.retryAfterMs = error.retryAfterMs
   }
 }
 
@@ -38,14 +44,31 @@ export interface Operation<Input = unknown, Output = unknown, ErrorType extends 
   pathParams?: readonly string[]
   nodeParams?: readonly string[]
   entity?: EntityDeclaration | null
+  /**
+   * Names the input field whose `Blob` is the raw request body, such as an
+   * upload chunk. The other fields then go in the query string.
+   */
+  body?: string
   errors?: readonly ErrorType[]
   validateInput?: (input: unknown) => asserts input is Input
   validateOutput?: (output: unknown) => asserts output is Output
+  /**
+   * Lets the module that owns the operation add headers to one request and
+   * see how it ended. Runs once per call, before the first attempt. It may
+   * throw to refuse the call, and then nothing is sent.
+   */
+  scope?(input: Input): RequestScope<Output>
 }
 
-export interface LinkStore {
-  codesFor(nodeIds: readonly string[]): readonly string[] | Promise<readonly string[]>
+export interface RequestScope<Output = unknown> {
+  /** Sent as given. Transport does not read, cut or merge them. */
+  headers?: Readonly<Record<string, string>>
+  /** Runs once after the final attempt. It does not run when the call is aborted. */
+  settled?(outcome: RequestOutcome<Output>): void
 }
+
+export type RequestOutcome<Output = unknown> =
+  { ok: true; output: Output } | { ok: false; error: TransportError }
 
 export interface TransportOptions {
   signal?: AbortSignal
@@ -69,14 +92,10 @@ export interface Transport {
     input: Input,
     options?: TransportOptions,
   ): Promise<Output>
-  // Answers every status as it came: the caller reads its own verdicts. Only a
-  // network failure throws, and nothing is retried
-  requestBytes(operation: Operation, input: Record<string, unknown>, options?: BytesOptions): Promise<BytesResponse>
 }
 
 export interface CreateTransportOptions {
   fetch?: typeof fetch
-  linkStore?: LinkStore
   maxRetries?: number
   retryBaseMs?: number
   onSessionExpired?: (error: PlatformError<'SessionExpired'>) => void
@@ -89,9 +108,16 @@ type ErrorEnvelope = {
 }
 
 const DEFAULT_RETRIES = 2
-const LINK_HEADER_CAP = 20
 
-export function createTransport(options: CreateTransportOptions = {}): Transport {
+export function createTransport(options: CreateTransportOptions = {}): Transport & {
+  // Answers every status as it came: the caller reads its own verdicts. Only a
+  // network failure throws, and nothing is retried
+  requestBytes(
+    operation: Operation,
+    input: Record<string, unknown>,
+    options?: BytesOptions,
+  ): Promise<BytesResponse>
+} {
   const fetcher = options.fetch ?? globalThis.fetch
   const maxRetries = options.maxRetries ?? DEFAULT_RETRIES
   const retryBaseMs = options.retryBaseMs ?? 100
@@ -104,10 +130,17 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
       operation.validateInput?.(input)
 
       const pathInput = asRecord(input)
+      const rawBody = operation.body ? pathInput[operation.body] : undefined
+      if (operation.body && !(rawBody instanceof Blob)) {
+        throw new TypeError(`Operation input field ${operation.body} must be a Blob`)
+      }
       const url = buildUrl(operation, pathInput)
-      const headers = requestHeaders(requestOptions, 'application/json')
-      const links = linkCodes(operation, pathInput)
-      if (links) setLinkCodes(headers, await links)
+      const scope = operation.scope?.(input)
+      const headers = new Headers(scope?.headers)
+      new Headers(requestOptions.headers).forEach((value, name) => headers.set(name, value))
+      headers.set('Accept', 'application/json')
+      const csrf = readCsrfToken()
+      if (csrf) headers.set('X-Frappe-CSRF-Token', csrf)
 
       const init: RequestInit = {
         method: operation.method,
@@ -115,9 +148,17 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         credentials: 'same-origin',
         signal: requestOptions.signal,
       }
-      if (operation.method !== 'GET') {
+      if (rawBody instanceof Blob) {
+        headers.set('Content-Type', 'application/octet-stream')
+        init.body = rawBody
+      } else if (operation.method !== 'GET') {
         headers.set('Content-Type', 'application/json; charset=utf-8')
         init.body = JSON.stringify(withoutPathParams(pathInput, operation.pathParams ?? []))
+      }
+
+      const failed = (error: TransportError): TransportError => {
+        scope?.settled?.({ ok: false, error })
+        return error
       }
 
       let attempt = 0
@@ -127,7 +168,15 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
           response = await fetcher(url, init)
         } catch (cause) {
           if (isAbort(cause)) throw cause
-          if (operation.method !== 'GET' || attempt >= maxRetries) throw networkError(cause)
+          if (operation.method !== 'GET' || attempt >= maxRetries) {
+            throw failed(
+              new TransportError({
+                type: 'NetworkError',
+                message: networkMessage(cause),
+                status: 0,
+              }),
+            )
+          }
           await delay(retryBaseMs * 2 ** attempt, requestOptions.signal)
           attempt += 1
           continue
@@ -137,10 +186,14 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         if (response.ok) {
           const output = decodeSuccess(body)
           if (import.meta.env.DEV) operation.validateOutput?.(output)
+          scope?.settled?.({ ok: true, output: output as never })
           return output as never
         }
 
         const error = decodeError(body, response.status, response.statusText)
+        const retryAfter =
+          response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
+        if (retryAfter !== null) error.retryAfterMs = retryAfter
         if (error.type === 'SessionExpired') {
           options.onSessionExpired?.(error as PlatformError<'SessionExpired'>)
         }
@@ -149,9 +202,8 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
           operation.method === 'GET' &&
           attempt < maxRetries &&
           (response.status >= 500 || response.status === 429)
-        if (!retryable) throw new TransportError(error)
+        if (!retryable) throw failed(new TransportError(error))
 
-        const retryAfter = response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
         await delay(retryAfter ?? retryBaseMs * 2 ** attempt, requestOptions.signal)
         attempt += 1
       }
@@ -160,9 +212,10 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
     async requestBytes(operation, input, requestOptions = {}) {
       validateOperation(operation)
       const url = buildUrl(operation, input)
-      const headers = requestHeaders(requestOptions, 'application/octet-stream, application/json')
-      const links = linkCodes(operation, input)
-      if (links) setLinkCodes(headers, await links)
+      const headers = new Headers(requestOptions.headers)
+      headers.set('Accept', 'application/octet-stream, application/json')
+      const csrf = readCsrfToken()
+      if (csrf) headers.set('X-Frappe-CSRF-Token', csrf)
       const init: RequestInit = {
         method: operation.method,
         headers,
@@ -179,42 +232,27 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         response = await fetcher(url, init)
       } catch (cause) {
         if (isAbort(cause)) throw cause
-        throw networkError(cause)
+        throw new TransportError({
+          type: 'NetworkError',
+          message: networkMessage(cause),
+          status: 0,
+        })
       }
-      return { status: response.status, headers: response.headers, bytes: new Uint8Array(await response.arrayBuffer()) }
+      return {
+        status: response.status,
+        headers: response.headers,
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      }
     },
   }
-
-  function linkCodes(operation: Operation, input: Record<string, unknown>) {
-    const nodeIds = (operation.nodeParams ?? [])
-      .map((name) => input[name])
-      .filter((value): value is string => typeof value === 'string')
-    return nodeIds.length && options.linkStore ? options.linkStore.codesFor(nodeIds) : null
-  }
-}
-
-function setLinkCodes(headers: Headers, codes: readonly string[]): void {
-  const selected = [...new Set(codes)].slice(0, LINK_HEADER_CAP)
-  if (selected.length) headers.set('X-Drive-Links', selected.join(','))
-}
-
-function networkError(cause: unknown) {
-  return new TransportError({ type: 'NetworkError', message: networkMessage(cause), status: 0 })
-}
-
-function requestHeaders(requestOptions: TransportOptions, accept: string): Headers {
-  const headers = new Headers(requestOptions.headers)
-  headers.set('Accept', accept)
-  const csrf = readCsrfToken()
-  if (csrf) headers.set('X-Frappe-CSRF-Token', csrf)
-  return headers
 }
 
 // What to tell a person when a request failed before the server could answer it properly; null for any other status
 export function describeFailure(status: number | null): string | null {
   if (status === 0) return "Couldn't reach the server. Check your connection and try again."
   if (status === 408 || status === 429) return 'The server is busy. Try again in a moment.'
-  if (status !== null && status >= 500) return 'The server had a problem opening this document. Try again in a moment.'
+  if (status !== null && status >= 500)
+    return 'The server had a problem opening this document. Try again in a moment.'
   return null
 }
 
@@ -235,10 +273,13 @@ function buildUrl(operation: Operation, input: Record<string, unknown>): string 
     return encodeURIComponent(String(value))
   })
   if (!path.startsWith('/')) path = `${operation.prefix ?? `/api/suite/${operation.owner}/`}${path}`
-  if (operation.method === 'GET') {
+  if (operation.method === 'GET' || operation.body) {
     const query = new URLSearchParams()
-    const pathParams = new Set(operation.pathParams ?? [])
-    for (const [key, value] of Object.entries(input)) appendQuery(query, key, value, pathParams)
+    const omitted = new Set([
+      ...(operation.pathParams ?? []),
+      ...(operation.body ? [operation.body] : []),
+    ])
+    for (const [key, value] of Object.entries(input)) appendQuery(query, key, value, omitted)
     const encoded = query.toString()
     if (encoded) path += `${path.includes('?') ? '&' : '?'}${encoded}`
   }
@@ -249,9 +290,9 @@ function appendQuery(
   query: URLSearchParams,
   key: string,
   value: unknown,
-  pathParams: ReadonlySet<string>,
+  omitted: ReadonlySet<string>,
 ): void {
-  if (pathParams.has(key) || value === undefined || value === null) return
+  if (omitted.has(key) || value === undefined || value === null) return
   if (Array.isArray(value)) {
     query.append(key, JSON.stringify(value))
     return
@@ -259,14 +300,18 @@ function appendQuery(
   query.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value))
 }
 
-function withoutPathParams(input: Record<string, unknown>, pathParams: readonly string[]): Record<string, unknown> {
+function withoutPathParams(
+  input: Record<string, unknown>,
+  pathParams: readonly string[],
+): Record<string, unknown> {
   const omitted = new Set(pathParams)
   return Object.fromEntries(Object.entries(input).filter(([key]) => !omitted.has(key)))
 }
 
 function asRecord(input: unknown): Record<string, unknown> {
   if (input === undefined || input === null) return {}
-  if (typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Operation input must be an object')
+  if (typeof input !== 'object' || Array.isArray(input))
+    throw new TypeError('Operation input must be an object')
   return input as Record<string, unknown>
 }
 

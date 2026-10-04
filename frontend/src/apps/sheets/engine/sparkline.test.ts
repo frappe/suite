@@ -1,11 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { sparkType, sparkSpec, isSparkSpec, sparkGeometry } from './sparkline.js'
+import { describe, expect, it } from 'vitest'
+
+import { isSparkSpec, sparkGeometry, sparkSpec, sparkType } from './sparkline.js'
 
 describe('sparkType', () => {
   it('accepts known types, defaults to line', () => {
     expect(sparkType('column')).toBe('column')
     expect(sparkType('COLUMN')).toBe('column')
-    expect(sparkType('bar')).toBe('line')     // unimplemented → falls back to line
+    expect(sparkType('bar')).toBe('line') // unimplemented → falls back to line
     expect(sparkType('pie')).toBe('line')
     expect(sparkType(undefined)).toBe('line')
   })
@@ -23,8 +24,8 @@ describe('sparkSpec', () => {
     expect(sparkSpec([1], 'line', '  #f00 ').color).toBe('#f00')
     expect(sparkSpec([1], 'line', 'red').color).toBe('red')
     expect(sparkSpec([1], 'line', 'steelblue').color).toBe('steelblue')
-    expect(sparkSpec([1], 'line', 'bluee').color).toBe(null)   // typo → default, not a leftover colour
-    expect(sparkSpec([1], 'line', '#REF!').color).toBe(null)   // stray error text, not a colour
+    expect(sparkSpec([1], 'line', 'bluee').color).toBe(null) // typo → default, not a leftover colour
+    expect(sparkSpec([1], 'line', '#REF!').color).toBe(null) // stray error text, not a colour
     expect(sparkSpec([1], 'line', '').color).toBe(null)
     expect(sparkSpec([1], 'line', 5).color).toBe(null)
   })
@@ -41,9 +42,9 @@ describe('sparkGeometry — line', () => {
     const g = sparkGeometry(sparkSpec([0, 10], 'line'), 26, 20, 3)
     expect(g.kind).toBe('line')
     expect(g.points).toHaveLength(2)
-    expect(g.points[0].x).toBe(3)             // left inset
-    expect(g.points[1].x).toBe(23)            // right inset (26 - 3)
-    expect(g.points[0].y).toBeGreaterThan(g.points[1].y)  // 0 is lower (bigger y) than 10
+    expect(g.points[0].x).toBe(3) // left inset
+    expect(g.points[1].x).toBe(23) // right inset (26 - 3)
+    expect(g.points[0].y).toBeGreaterThan(g.points[1].y) // 0 is lower (bigger y) than 10
   })
   it('a single point sits at the left', () => {
     const g = sparkGeometry(sparkSpec([5], 'line'), 26, 20)

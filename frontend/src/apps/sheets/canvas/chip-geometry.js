@@ -5,18 +5,24 @@
 // chip measurement through here.
 
 export const CHIP = {
-  padX:     4,   // gap from the cell's edge to the pill
-  innerPad: 8,   // text padding inside the pill
-  caretW:   16,  // room reserved on the pill's right for the caret + its click zone
-  maxH:     22,  // the pill never grows taller than this
-  minH:     13,  // below this the row is too short for a pill — fall back to a plain arrow
+  padX: 4, // gap from the cell's edge to the pill
+  innerPad: 8, // text padding inside the pill
+  caretW: 16, // room reserved on the pill's right for the caret + its click zone
+  maxH: 22, // the pill never grows taller than this
+  minH: 13, // below this the row is too short for a pill — fall back to a plain arrow
 }
 
 // Soft pastel chip backgrounds, à la Sheets. Used as the *auto* colour when an
 // option has no colour of its own. Dark cell text stays readable on all of them.
 const CHIP_PALETTE = [
-  '#FCE8E6', '#FEF7E0', '#E6F4EA', '#E8F0FE',
-  '#F3E8FD', '#FEEFE3', '#E4F7FB', '#FDE7F3',
+  '#FCE8E6',
+  '#FEF7E0',
+  '#E6F4EA',
+  '#E8F0FE',
+  '#F3E8FD',
+  '#FEEFE3',
+  '#E4F7FB',
+  '#FDE7F3',
 ]
 
 // The auto colour for the i-th option in a list, cycling the palette. Slotting
@@ -29,9 +35,9 @@ export function chipPaletteColor(i) {
 // Canvas font string for a cell format. Mirrors the cell painter exactly so
 // text measured here for hit-testing matches what gets drawn.
 export function chipFont(fmt = {}) {
-  const weight = fmt.bold   ? 'bold'   : 'normal'
-  const style  = fmt.italic ? 'italic' : 'normal'
-  const px     = Math.max(8, Math.min(72, fmt.fontSize || 13))
+  const weight = fmt.bold ? 'bold' : 'normal'
+  const style = fmt.italic ? 'italic' : 'normal'
+  const px = Math.max(8, Math.min(72, fmt.fontSize || 13))
   const family = fmt.fontFamily || 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
   return `${style} ${weight} ${px}px ${family}`
 }
@@ -62,8 +68,11 @@ export function chipMetrics(ctx, text, fmt, cellW) {
   ctx.restore()
   const chipW = Math.min(cellW - CHIP.padX * 2, CHIP.innerPad + tw + CHIP.caretW)
   const align = fmt.align || 'left'
-  const offsetX = align === 'right'  ? cellW - CHIP.padX - chipW
-                : align === 'center' ? (cellW - chipW) / 2
-                :                      CHIP.padX
+  const offsetX =
+    align === 'right'
+      ? cellW - CHIP.padX - chipW
+      : align === 'center'
+        ? (cellW - chipW) / 2
+        : CHIP.padX
   return { offsetX, chipW }
 }

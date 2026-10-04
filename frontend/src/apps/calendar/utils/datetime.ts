@@ -1,5 +1,5 @@
-import dayjs from '@/apps/calendar/utils/dayjs'
 import { userStore } from '@/apps/calendar/stores/user'
+import dayjs from '@/apps/calendar/utils/dayjs'
 
 /**
  * Timestamps on the wire are always UTC, spelled the way Stalwart spells them:
@@ -19,8 +19,8 @@ type Dayjs = ReturnType<typeof dayjs>
  * that to the site's zone when unset, completing the browser → user → system fallback chain).
  */
 export const userTimeZone = (): string => {
-	const { userResource } = userStore()
-	return dayjs.tz.guess() || userResource.data?.time_zone
+  const { userResource } = userStore()
+  return dayjs.tz.guess() || userResource.data?.time_zone
 }
 
 /** Reads a UTC timestamp from an API into the user's zone. */
@@ -28,7 +28,7 @@ export const inUserTimeZone = (value: string) => dayjs.utc(value).tz(userTimeZon
 
 /** Formats a UTC timestamp from an API for display in the user's zone. */
 export const formatDateTime = (value?: string | null, format = 'MMM D YYYY, h:mm A'): string =>
-	value ? inUserTimeZone(value).format(format) : ''
+  value ? inUserTimeZone(value).format(format) : ''
 
 /**
  * Turns a wall-clock reading in the user's zone (e.g. an alert's date + time inputs, carrying
@@ -36,7 +36,7 @@ export const formatDateTime = (value?: string | null, format = 'MMM D YYYY, h:mm
  * "unset" from a time.
  */
 export const fromWallClock = (value?: string | null): string =>
-	value ? dayjs.tz(value, userTimeZone()).utc().format(UTC_FORMAT) : ''
+  value ? dayjs.tz(value, userTimeZone()).utc().format(UTC_FORMAT) : ''
 
 /**
  * Reads a JSCalendar `start` — a wall clock in the event's own IANA zone — into the user's
@@ -44,15 +44,15 @@ export const fromWallClock = (value?: string | null): string =>
  * is floating and stays wherever the viewer is.
  */
 export const fromEventZone = (start: string, eventTimeZone?: string | null) =>
-	eventTimeZone ? dayjs.tz(start, eventTimeZone).tz(userTimeZone()) : dayjs(start)
+  eventTimeZone ? dayjs.tz(start, eventTimeZone).tz(userTimeZone()) : dayjs(start)
 
 /** The start of a `YYYY-MM-DD` day in the user's zone, as a UTC timestamp the APIs take. */
 export const utcDayStart = (date?: string | null): string =>
-	date ? dayjs.tz(date, userTimeZone()).startOf('day').utc().format(UTC_FORMAT) : ''
+  date ? dayjs.tz(date, userTimeZone()).startOf('day').utc().format(UTC_FORMAT) : ''
 
 /** The end of a `YYYY-MM-DD` day in the user's zone, as a UTC timestamp the APIs take. */
 export const utcDayEnd = (date?: string | null): string =>
-	date ? dayjs.tz(date, userTimeZone()).endOf('day').utc().format(UTC_FORMAT) : ''
+  date ? dayjs.tz(date, userTimeZone()).endOf('day').utc().format(UTC_FORMAT) : ''
 
 const WALL_FORMAT = 'YYYY-MM-DD[T]HH:mm:ss'
 
@@ -80,7 +80,7 @@ const asWallClock = (moment: Dayjs) => dayjs.utc(moment.format(WALL_FORMAT))
  * an hour is always an hour.
  */
 export const shiftedMasterStart = (masterStart: string, opened: Dayjs, edited: Dayjs): string =>
-	dayjs
-		.utc(masterStart)
-		.add(asWallClock(edited).diff(asWallClock(opened), 'minute'), 'minute')
-		.format(WALL_FORMAT)
+  dayjs
+    .utc(masterStart)
+    .add(asWallClock(edited).diff(asWallClock(opened), 'minute'), 'minute')
+    .format(WALL_FORMAT)

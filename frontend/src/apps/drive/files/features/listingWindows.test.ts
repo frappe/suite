@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { loadUntilVisible, type WindowResult } from './listingWindows'
 
 function windows(pages: Array<{ rows: string[]; hasNext: boolean }>) {
@@ -6,8 +7,12 @@ function windows(pages: Array<{ rows: string[]; hasNext: boolean }>) {
   let accumulated: string[] = []
   let hasNext = true
   const result: WindowResult = {
-    get rows() { return accumulated },
-    get hasNext() { return hasNext },
+    get rows() {
+      return accumulated
+    },
+    get hasNext() {
+      return hasNext
+    },
     async fetchNext() {
       const page = pages[index++]!
       accumulated = [...accumulated, ...page.rows]

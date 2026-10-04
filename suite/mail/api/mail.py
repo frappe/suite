@@ -10,6 +10,7 @@ import requests
 from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.utils import add_to_date, cint, now, random_string
+from jmap import MethodError
 
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
@@ -52,14 +53,16 @@ from suite.mail.doctype.sieve_script.sieve_script import (
     pause_automation_sieve_build,
 )
 from suite.mail.doctype.user_account.user_account import (
+    get_account_apps,
     get_user_for_jmap_account,
+    get_user_personal_jmap_account,
     is_jmap_account_belongs_to_user,
 )
 from suite.mail.jmap import (
-    get_email_service,
+    get_account_client,
+    get_cached_mailboxes,
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
-    get_mailbox_service,
 )
 from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
@@ -68,6 +71,7 @@ from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, t
 from suite.mail.utils.user import get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import JSONList
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
@@ -271,12 +275,13 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
     conversations = fetch_threads(account, filter, start, limit)
 
     # Four roles are needed below, so they come off one cached mailbox list rather than a lookup each:
-    # every `get_mailbox_id_by_role` resolves the account's user and connection again on the way in.
-    ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_mailbox_service(account).mailboxes}
+    # every `get_mailbox_id_by_role` resolves the account's user and client again on the way in.
+    ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_cached_mailboxes(account)}
     trash_mailbox = ids_by_role.get("trash")
     junk_mailbox = ids_by_role.get("junk")
-    # Sent and Drafts are about the message you wrote, so their rows follow the latest message in the
-    # folder itself; every other view follows the conversation's most recent activity.
+    # Sent and Drafts are about the message you wrote, so their rows describe the latest message in
+    # the folder itself; every other view describes the conversation's most recent activity. What the
+    # row is dated by is a separate question, answered per mailbox in serialize_thread.
     outgoing_mailboxes = {ids_by_role[role] for role in ("sent", "drafts") if role in ids_by_role}
 
     threads = []
@@ -292,10 +297,10 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
             m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
         ] or visible
 
-        # The preview/date reflect the latest message in the conversation (the most recent activity)
-        # everywhere except Sent and Drafts, which show the latest message in the folder itself: a
-        # draft reply must keep its own recipients and its "Draft" badge when the thread it answers
-        # receives a newer mail.
+        # The preview and sender reflect the latest message in the conversation (the most recent
+        # activity) everywhere except Sent and Drafts, which show the latest message in the folder
+        # itself: a draft reply must keep its own recipients and its "Draft" badge when the thread it
+        # answers receives a newer mail. The row's date is not read off this message.
         latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else visible[-1]
         threads.append(
             serialize_thread(
@@ -410,16 +415,19 @@ def get_user_jmap_accounts() -> list[dict]:
     two accounts have threads at the same timestamp.
     """
 
-    account_names = frappe.db.get_all("User Account", {"user": frappe.session.user}, pluck="account")
+    # Only the accounts with mail for the user: one that shares just a calendar has no inbox.
+    apps = get_account_apps()
+    account_names = [account for account, has in apps.items() if has["mail"]]
     if not account_names:
         return []
 
     accounts = frappe.db.get_all(
         "JMAP Account",
         filters={"name": ["in", account_names]},
-        fields=["name", "_name", "is_personal"],
+        fields=["name", "_name"],
     )
-    accounts.sort(key=lambda a: (not a["is_personal"], a["_name"] or ""))
+    personal = get_user_personal_jmap_account()
+    accounts.sort(key=lambda a: (a["name"] != personal, a["_name"] or ""))
     return accounts
 
 
@@ -476,16 +484,25 @@ def get_all_inbox_unread_count() -> int:
     """Returns the total unread Inbox thread count across all of the user's accounts (sidebar badge).
 
     Mailbox is a JMAP-backed virtual DocType, so it can't be queried across accounts with a table
-    filter. Each account's Inbox unread count is fetched live via the mailbox service (a fresh
-    Mailbox/get, bypassing the 1-hour `.mailboxes` cache) — the same source the per-account inbox
-    badge uses — and summed.
+    filter. Each account's Inbox unread count is fetched live (a fresh Mailbox/get, bypassing the
+    1-hour mailboxes cache) — the same source the per-account inbox badge uses — and summed.
     """
 
     total = 0
     for account in get_user_jmap_accounts():
-        for mailbox in get_mailbox_service(account["name"]).get():
-            if (mailbox.get("role") or "").lower() == "inbox":
-                total += cint(mailbox.get("unreadThreads"))
+        client = get_account_client(account["name"])
+        try:
+            with client.batch() as b:
+                h = b.mail.mailbox.get()
+            mailboxes = h.result.items
+        except MethodError:
+            # A stale/revoked account answers with a method-level error; the old client
+            # treated that as "no mailboxes" — keep the badge working for the rest.
+            continue
+        for mailbox in mailboxes:
+            wire = mailbox.to_wire()
+            if (wire.get("role") or "").lower() == "inbox":
+                total += cint(wire.get("unreadThreads"))
                 break
 
     return total
@@ -529,31 +546,36 @@ def serialize_thread(
     Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the
     conversation this view can show — see `visible_in_mailbox`) are expected ordered oldest to newest.
     The list-view summary fields are derived from `latest` (defaulting to the latest of `messages`),
-    except `subject` which comes from `first`, the conversation's opening message (the thread's
+    except `subject`, which comes from `first`, the conversation's opening message (the thread's
     original subject, without the "Re:" its replies carry — it defaults to the earliest message given,
-    which is only the true first when nothing has been filtered out). The conversation is serialized
-    under `messages` so the whole thread can be rendered without a separate fetch. The row's cast is
-    read off that same list in the frontend (see utils/participants), which is why nothing here names
-    the thread's senders.
+    which is only the true first when nothing has been filtered out), and the row's date, which comes
+    from the latest of `messages` so that a mailbox dates a thread by its own newest message. The
+    conversation is serialized under `messages` so the whole thread can be rendered without a separate
+    fetch. The row's cast is read off that same list in the frontend (see utils/participants), which
+    is why nothing here names the thread's senders.
     """
 
     first = first or thread_messages[0]
     latest = latest or messages[-1]
-    # The row's identity + state come from the thread's representative message in the CURRENT mailbox
-    # (`messages` is scoped to it), so its folder tags and junk/flag/seen reflect THIS view — not a
-    # sibling message that was moved to Junk/Trash/Sent. The activity fields (preview/date/sender) still
-    # come from `latest` (most recent activity across the whole conversation). For single-mailbox threads
-    # `current` and `latest` are the same message, so nothing changes.
+    # The row's identity, state and date come from the thread's representative message in the CURRENT
+    # mailbox (`messages` is scoped to it), so its folder tags, junk/flag/seen and its place in the list
+    # reflect THIS view — not a sibling message that was moved to Junk/Trash/Sent. The remaining display
+    # fields (preview/sender) come from `latest` (most recent activity across the whole conversation).
+    # For single-mailbox threads `current` and `latest` are the same message, so nothing changes.
     current = messages[-1]
 
-    # From the current-mailbox message: identity + state (so star/junk actions target the right mail).
-    current_fields = ["name", "id", "mailboxes", "seen", "junk", "flagged"]
-    # From the most recent activity: what the row displays.
+    # From the current-mailbox message: identity + state (so star/junk actions target the right mail),
+    # and the date. Dating a row by the whole conversation moved a thread the moment you answered it:
+    # the reply lands in Sent, never in the Inbox, yet it redated the Inbox row to now and carried it
+    # out of the day the mail it answers arrived on. A mailbox orders its rows by this date — the server
+    # pages them mailbox-scoped and the client re-sorts by the same field — so it has to be the newest
+    # message the mailbox itself holds.
+    current_fields = ["name", "id", "mailboxes", "seen", "junk", "flagged", "received_at"]
+    # From the most recent activity: what the row says the conversation is about.
     activity_fields = [
         "thread_id",
         "from_name",
         "from_email",
-        "received_at",
         "recipients",
         "draft",
         "preview",
@@ -646,13 +668,10 @@ def fetch_attachment(account: str, blob_id: str) -> bytes:
 
 
 @frappe.whitelist()
-def fetch_attachments_as_zip(account: str, attachments: list[dict] | str) -> bytes:
+def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> bytes:
     """Returns the provided attachments bundled into a ZIP archive."""
 
-    if isinstance(attachments, str):
-        attachments = frappe.parse_json(attachments)
-
-    attachments = [a for a in (attachments or []) if a.get("blob_id")]
+    attachments = [a for a in attachments if a.get("blob_id")]
     if not attachments:
         frappe.throw(_("No attachments to download."))
 
@@ -1232,13 +1251,51 @@ def get_email_suggestions(account: str, text: str, limit: int = 10) -> list[dict
 
     if not suggestions:
         suggestions = [
-            {"name": None, "email": email}
-            for email in get_email_service(account).get_email_suggestions(text, limit=limit)
+            {"name": None, "email": email} for email in _email_address_suggestions(account, text, limit)
         ]
 
     suggestions = suggestions[:limit]
     enrich_contacts_with_user_images(suggestions)
     return suggestions
+
+
+def _email_address_suggestions(account: str, text: str, limit: int = 5) -> list[str]:
+    """Returns email addresses matching ``text`` in from/to/cc/bcc of recent mails.
+
+    One request carries all four queries; the matching mails are then read once and their
+    address fields scanned for the text.
+    """
+
+    client = get_account_client(account)
+    sort = [{"property": "receivedAt", "isAscending": False}]
+
+    with client.batch() as b:
+        handles = [
+            b.mail.email.query(filter=f, position=0, limit=limit, sort=sort, calculate_total=False)
+            for f in ({"from": text}, {"to": text}, {"cc": text}, {"bcc": text})
+        ]
+
+    ids: list[str] = []
+    for handle in handles:
+        for id in handle.result.ids:
+            if id not in ids:
+                ids.append(id)
+
+    if not ids:
+        return []
+
+    with client.batch() as b:
+        h = b.mail.email.get(ids=ids, properties=["from", "to", "cc", "bcc"])
+
+    addresses: list[str] = []
+    for email in (e.to_wire() for e in h.result.items):
+        for field in ("from", "to", "cc", "bcc"):
+            for addr in email.get(field) or []:
+                email_address = addr.get("email")
+                if email_address and text.lower() in email_address.lower() and email_address not in addresses:
+                    addresses.append(email_address)
+
+    return addresses[:limit]
 
 
 @frappe.whitelist()
@@ -1506,9 +1563,51 @@ def _screening_message_ids(account: str, from_email: str | None = None) -> list[
         conditions.append({"from": from_email})
     filter = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
 
-    service = get_email_service(account)
+    client = get_account_client(account)
 
-    return service.query(filter, limit=service.max_objects_in_get).get("ids", [])
+    return _query_email_ids(account, filter, limit=client.capabilities.limits.max_objects_in_get)["ids"]
+
+
+def _query_email_ids(
+    account: str,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    sort: list[dict] | None = None,
+) -> dict:
+    """Pages Email/query until ``limit`` ids are collected; the total rides on the first page."""
+
+    client = get_account_client(account)
+
+    ids: list[str] = []
+    total = None
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+    sort = sort or [{"property": "receivedAt", "isAscending": False}]
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+
+        with client.batch() as b:
+            h = b.mail.email.query(
+                filter=filter or {},
+                position=position,
+                limit=current_batch_size,
+                sort=sort,
+                calculate_total=total is None,
+            )
+
+        result = h.result
+        ids.extend(result.ids)
+
+        if total is None:
+            total = result.total
+
+        if len(result.ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(result.ids)
+
+    return {"ids": ids[:limit], "total": total}
 
 
 @frappe.whitelist()
@@ -1674,6 +1773,27 @@ def undo_screening_verdict(account: str, from_emails: list[str], ids: list[str])
     move_mails(account, ids, screening_id, clear_junk=True)
 
 
+# B25: Mail compose attaches files through `upload_file` below. Frappe reads the
+# whole form into memory before any Suite hook runs, and the site-wide
+# `max_file_size` is 1 GB so Drive can take large files (`suite_core/file_size.py`;
+# Drive uploads stream instead). A mail attachment has no reason to be that big:
+# 25 MB is the common provider limit. `account.get_user_info` sends this value to
+# the compose UI, which refuses a larger file before it uploads; this route
+# refuses it again.
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024
+
+
+def _refuse_oversized_attachment(filename: str) -> None:
+    from frappe.core.doctype.file.exceptions import MaxFileSizeReachedError
+
+    frappe.throw(
+        _("{0} is larger than {1} MB, the largest file Mail can attach.").format(
+            filename, MAX_ATTACHMENT_SIZE // (1024 * 1024)
+        ),
+        MaxFileSizeReachedError,
+    )
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @dynamic_rate_limit()
 def upload_file():
@@ -1748,11 +1868,15 @@ def upload_file():
             total_chunks = 1
 
         temp_path = Path(get_files_path(".temp-" + get_safe_file_name(filename), is_private=is_private))
+        total_file_size = cint(frappe.form_dict.total_file_size)
+        chunk = file.stream.read()
+        if max(total_file_size, offset + len(chunk)) > MAX_ATTACHMENT_SIZE:
+            temp_path.unlink(missing_ok=True)
+            _refuse_oversized_attachment(filename)
         with temp_path.open("ab" if current_chunk > 0 else "wb") as f:
-            total_file_size = frappe.form_dict.total_file_size or 0
             f.seek(offset)
-            f.write(file.stream.read())
-            if not f.tell() >= int(total_file_size) or current_chunk != total_chunks - 1:
+            f.write(chunk)
+            if not f.tell() >= total_file_size or current_chunk != total_chunks - 1:
                 return
 
         content = temp_path.read_bytes()

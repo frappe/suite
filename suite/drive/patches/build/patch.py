@@ -39,6 +39,7 @@ from suite.drive.patches.build.records import convert_records
 from suite.drive.patches.build.report import produce_report
 from suite.drive.patches.build.root_pairs import convert_root_pairs
 from suite.drive.patches.build.settings import convert_settings
+from suite.drive.patches.build.skips import report_skips
 from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.patches.build.tree import convert_trees
 from suite.drive.patches.build.usage import recompute_usage
@@ -65,6 +66,8 @@ def run_build(env, *, batch_size: int = BUILD_BATCH_SIZE) -> dict:
     the source rows, so a run that resumes after a kill reports the same
     numbers as one that was never interrupted.
     """
+    _refuse_record_without_target(env)
+
     # Step 1 is the gate, and step 2 and 3 are the byte preparation. The
     # gate runs inside `prepare_legacy_bytes`: it has to be the first thing
     # that touches the bucket, before the backfill commits anything.
@@ -79,7 +82,34 @@ def run_build(env, *, batch_size: int = BUILD_BATCH_SIZE) -> dict:
     recompute_usage(env, batch_size=batch_size)
 
     report, _path = produce_report(env)
+    # After the report, so the operator has §14.9's numbers even when this
+    # refuses. It raises while a reachable row has no node and nobody has
+    # accepted that in site config.
+    report_skips(env)
     return report
+
+
+def _refuse_record_without_target(env) -> None:
+    """A finished record over an empty target is a restored database.
+
+    §14.11's rollback restores the database and `private/` together. Restore
+    only the database and the Build record still says the tree is complete,
+    so every step would skip its inserts and the site would come out of the
+    migrate with no Drive tables filled and a report that says otherwise.
+    `roots_seen` is recomputed from the legacy rows on every run, so a
+    record that saw roots over a target with none is that case exactly.
+    """
+    tree = env.state.tree()
+    if not tree.completed or not tree.roots_seen or env.drive is None:
+        return
+    if env.drive.root_count():
+        return
+    raise BuildPatchError(
+        f"The Build record at {env.state.path} says the tree conversion completed over "
+        f"{tree.roots_seen} legacy roots, but this site holds no Drive Root row. The database was "
+        "restored without the site's private directory. Restore both from the same backup, or move "
+        "the Build record (and the journals beside it) aside to start Build over on this database."
+    )
 
 
 def _convert_tree(env, *, batch_size: int):

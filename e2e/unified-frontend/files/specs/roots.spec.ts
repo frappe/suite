@@ -1,11 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../../helpers/flips";
 
 import { adminApi, createFolder, purge, roots, runTag } from "../../helpers/drive";
 
 /** Ticket 006: Locations and Views, both roots on a business site. */
 
 test("a business site lists both roots in the Locations section", async ({ page }) => {
-	await page.goto("/files");
+	await page.goto("/drive");
 	const locations = page.getByRole("navigation", { name: "File locations" });
 	await expect(locations.getByRole("link", { name: "My files" })).toBeVisible();
 	await expect(locations.getByRole("link", { name: "Organization files" })).toBeVisible();
@@ -24,7 +24,7 @@ test("Organization files opens the site's shared root", async ({ page, baseURL }
 	const folder = await createFolder(api, discovered.organization!.node, runTag("w4-org"));
 
 	try {
-		await page.goto("/files/organization");
+		await page.goto("/drive/organization");
 		await expect(page).toHaveTitle("Organization files");
 		await expect(page.getByText(folder.title, { exact: true })).toBeVisible();
 	} finally {
@@ -46,18 +46,18 @@ test("a personal-only site hides Organization files and its Trash tabs", async (
 		}),
 	);
 
-	await page.goto("/files");
+	await page.goto("/drive");
 	const locations = page.getByRole("navigation", { name: "File locations" });
 	await expect(locations.getByRole("link", { name: "My files" })).toBeVisible();
 	await expect(locations.getByRole("link", { name: "Organization files" })).toHaveCount(0);
 
-	await page.goto("/files/trash");
+	await page.goto("/drive/trash");
 	await expect(page.getByText("Trash is empty")).toBeVisible();
 	await expect(page.getByRole("radio", { name: "Organization files" })).toHaveCount(0);
 });
 
 test("Trash shows one root at a time through its tabs", async ({ page }) => {
-	await page.goto("/files/trash");
+	await page.goto("/drive/trash");
 	await expect(page.getByRole("radio", { name: "My files" })).toBeChecked();
 	await expect(page.getByRole("radio", { name: "Organization files" })).toBeVisible();
 

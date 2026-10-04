@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { slugify } from './slugify'
 
 describe('slugify', () => {
@@ -11,4 +12,3 @@ describe('slugify', () => {
     expect(Array.from(slugify(`文${'a'.repeat(100)}`))).toHaveLength(80)
   })
 })
-

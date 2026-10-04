@@ -219,11 +219,12 @@ def _refuse_a_site_that_cannot_build() -> None:
     only the storage settings and the legacy bucket.
     """
     from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
-    from suite.drive.patches.build.gate import check_gate
+    from suite.drive.patches.build.gate import check_gate, refuse_below_upgrade_floor
+    from suite.drive.patches.build.legacy import S3_URL_PREFIX
     from suite.drive.patches.build.ports import BotoBucket, SiteFiles, SiteStorage
     from suite.drive.patches.build.state import BuildState
-    from suite.drive.utils.files import S3_URL_PREFIX
 
+    refuse_below_upgrade_floor()
     check_gate(
         BuildEnvironment(
             storage=SiteStorage(),

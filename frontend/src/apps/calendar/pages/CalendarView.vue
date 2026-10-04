@@ -1,39 +1,65 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { useNow } from '@vueuse/core'
-import { Button, Dialog, TabButtons, createResource, usePageMeta } from 'frappe-ui'
+import {
+  Button,
+  createResource,
+  Dialog,
+  TabButtons,
+  toast,
+  useKeyboardShortcut,
+  usePageMeta,
+} from 'frappe-ui'
 import { Calendar, CalendarActiveEvent, calendarDaySpan } from 'frappe-ui/experimental'
+import {
+  computed,
+  inject,
+  nextTick,
+  onMounted,
+  onScopeDispose,
+  reactive,
+  ref,
+  useTemplateRef,
+  watch,
+} from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
-import { useScreenSize } from '@/composables/useScreenSize'
-import { appPageMeta } from '@/utils/documentTitle'
-import { raiseToast } from '@/apps/calendar/utils'
-import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
-import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
-import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
-import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
-import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
-import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
-import { weekSpanLabel } from '@/apps/calendar/utils/format'
-import { userStore } from '@/apps/calendar/stores/user'
-import { invalidateEventDensity } from '@/apps/calendar/composables/useEventDensity'
-import { rememberCalendarView } from '@/apps/calendar/utils/lastView'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetail from '@/apps/calendar/components/EventDetail.vue'
 import EventPopover from '@/apps/calendar/components/EventPopover.vue'
-import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
-import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import EventDetailSheet from '@/apps/calendar/components/mobile/EventDetailSheet.vue'
 import MobileCalendar from '@/apps/calendar/components/mobile/MobileCalendar.vue'
+import MobileSearch from '@/apps/calendar/components/mobile/MobileSearch.vue'
+import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
+import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
+import { invalidateEventDensity } from '@/apps/calendar/composables/useEventDensity'
+import { userStore } from '@/apps/calendar/stores/user'
+import { raiseToast } from '@/apps/calendar/utils'
+import { canEditEvent, calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
+import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
+import { eventRowId, sameEvent, serverEventId } from '@/apps/calendar/utils/eventIdentity'
+import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
+import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { weekSpanLabel } from '@/apps/calendar/utils/format'
+import { rememberCalendarView } from '@/apps/calendar/utils/lastView'
 import {
-	modeForRoute,
-	routeDate,
-	routeForMode,
-	routeForView,
-	viewForRoute,
+  isViewRoute,
+  modeForRoute,
+  routeDate,
+  routeForMode,
+  routeForView,
+  viewForRoute,
+  type MobileView,
 } from '@/apps/calendar/utils/mobileView'
-
-import type { MobileView } from '@/apps/calendar/utils/mobileView'
+import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
+import {
+  isFirstOccurrence,
+  scopeOptions,
+  type RecurringScope,
+} from '@/apps/calendar/utils/recurringScope'
+import { useScreenSize } from '@/composables/useScreenSize'
+import { useRootStore } from '@/stores/root'
+import { appPageMeta } from '@/utils/documentTitle'
 
 const dayjs = inject('$dayjs')
 
@@ -69,13 +95,13 @@ const now = useNow({ interval: 30_000 })
 // day's on the phone. Without this the phone asked for `dayjs().year(undefined)`
 // — the Calendar that answers those questions is not mounted there.
 const anchorMonth = computed(() => {
-	if (isMobile.value) return dayjs(mobileDate.value)
-	return dayjs().year(calendarRef.value?.currentYear).month(calendarRef.value?.currentMonth)
+  if (isMobile.value) return dayjs(mobileDate.value)
+  return dayjs().year(calendarRef.value?.currentYear).month(calendarRef.value?.currentMonth)
 })
 
 const pageTitle = computed(() => {
-	if (isMobile.value) return dayjs(mobileDate.value).format('MMMM YYYY')
-	return calendarRef.value?.currentMonthYear || __('Frappe Calendar')
+  if (isMobile.value) return dayjs(mobileDate.value).format('MMMM YYYY')
+  return calendarRef.value?.currentMonthYear || __('Frappe Calendar')
 })
 
 usePageMeta(() => appPageMeta(pageTitle.value, 'Calendar'))
@@ -84,112 +110,103 @@ usePageMeta(() => appPageMeta(pageTitle.value, 'Calendar'))
 // a deep link opens on it and Back walks the days visited. The view rides along,
 // each on the route it is named after.
 watch([mobileDate, mobileView], ([date, view], [previousDate]) => {
-	if (!isMobile.value) return
+  // Only a view route is somewhere the date and view belong. On the search page — or
+  // Profile — writing them would carry the reader off the page they just opened.
+  if (!isMobile.value || !isViewRoute(route.name)) return
 
-	const day = dayjs(date)
-	const name = routeForView(view)
-	const params = {
-		accountId: store.accountId,
-		year: String(day.year()),
-		month: String(day.month() + 1),
-		day: String(day.date()),
-	}
-	if (route.name !== name || route.params.day !== params.day || route.params.month !== params.month)
-		router.replace({ name, params, query: route.query })
+  const day = dayjs(date)
+  const name = routeForView(view)
+  const params = {
+    accountId: store.accountId,
+    year: String(day.year()),
+    month: String(day.month() + 1),
+    day: String(day.date()),
+  }
+  if (route.name !== name || route.params.day !== params.day || route.params.month !== params.month)
+    router.replace({ name, params, query: route.query })
 
-	// A new month is outside the window that was fetched for the old one.
-	if (previousDate && !day.isSame(dayjs(previousDate), 'month')) events.reload()
+  // A new month is outside the window that was fetched for the old one.
+  if (previousDate && !day.isSame(dayjs(previousDate), 'month')) events.reload()
 })
-
-// The tab bar's FAB lives outside this view, so it asks for a new event through the
-// URL (?new=1) and this answers — then drops the flag, so a reload or a Back does not
-// reopen the modal.
-watch(
-	() => route.query.new,
-	(flag) => {
-		if (!flag || !isMobile.value) return
-		const { new: _new, ...query } = route.query
-		router.replace({ query })
-		handleOpenEvent({ date: dayjs(mobileDate.value).toDate() })
-	},
-	{ immediate: true },
-)
 
 // Back/Forward and the account switch write the route; the phone follows it,
 // the way applyRoute has the desktop calendar follow it.
 // One string rather than a rebuilt array, for the reason applyRoute's watcher
 // below gives: an array getter fires on every route change, this one included.
 watch(
-	() => `${String(route.name)}|${route.params.year}|${route.params.month}|${route.params.day}`,
-	() => {
-		if (!isMobile.value) return
-		const date = routeDate(route.params).format('YYYY-MM-DD')
-		if (date !== mobileDate.value) mobileDate.value = date
-		mobileView.value = viewForRoute(route.name)
-	},
+  () => `${String(route.name)}|${route.params.year}|${route.params.month}|${route.params.day}`,
+  () => {
+    // A page that is not a view says nothing about the date or the view: the last real
+    // ones are kept, so the Calendar tab still names where a tap would land and going
+    // back lands there.
+    if (!isMobile.value || !isViewRoute(route.name)) return
+    const date = routeDate(route.params).format('YYYY-MM-DD')
+    if (date !== mobileDate.value) mobileDate.value = date
+    mobileView.value = viewForRoute(route.name)
+  },
 )
 
 watch(
-	() => [
-		calendarRef.value?.currentYear,
-		calendarRef.value?.currentMonth,
-		calendarRef.value?.currentDay,
-	],
-	([year, month]) => {
-		// Nothing to write while the calendar is not mounted (a hot reload unmounts it).
-		if (year == null || month == null) return
-		// Refetching is the range watcher's job — a month change reports a new range
-		// too, and reloading here as well fetched the same window twice.
-		setRoute()
-	},
+  () => [
+    calendarRef.value?.currentYear,
+    calendarRef.value?.currentMonth,
+    calendarRef.value?.currentDay,
+  ],
+  ([year, month]) => {
+    // Nothing to write while the calendar is not mounted (a hot reload unmounts it).
+    if (year == null || month == null) return
+    // Refetching is the range watcher's job — a month change reports a new range
+    // too, and reloading here as well fetched the same window twice.
+    setRoute()
+  },
 )
 
 watch(
-	() => calendarRef.value?.activeView,
-	(view) => {
-		if (view && routeForMode(view) !== route.name) setRoute()
-	},
+  () => calendarRef.value?.activeView,
+  (view) => {
+    if (view && routeForMode(view) !== route.name) setRoute()
+  },
 )
 
 watch(
-	() => store.accountId,
-	() => {
-		calendars.reload()
-		reloadEvents()
-	},
+  () => store.accountId,
+  () => {
+    // The store fetches the account's calendars itself when it switches.
+    reloadEvents()
+  },
 )
 
 const setRoute = () => {
-	const year = calendarRef.value?.currentYear
-	const month = calendarRef.value?.currentMonth
-	const day = calendarRef.value?.currentDay
+  const year = calendarRef.value?.currentYear
+  const month = calendarRef.value?.currentMonth
+  const day = calendarRef.value?.currentDay
 
-	const target = dayjs().year(year).month(month).date(day)
-	const view = calendarRef.value?.activeView as 'Month' | 'Week' | 'Day' | 'Agenda'
-	const name = routeForMode(view)
-	const accountId = route.params.accountId
+  const target = dayjs().year(year).month(month).date(day)
+  const view = calendarRef.value?.activeView as 'Month' | 'Week' | 'Day' | 'Agenda'
+  const name = routeForMode(view)
+  const accountId = route.params.accountId
 
-	// The other three view names double as dayjs units; Agenda does not, and an
-	// unknown unit quietly turns isSame into a millisecond comparison — never
-	// true, so today's agenda would refuse the bare URL and every step would
-	// push a history entry instead of replacing one. It lists a month, so that
-	// is the unit it is compared by.
-	const unit = view === 'Agenda' ? 'month' : view
+  // The other three view names double as dayjs units; Agenda does not, and an
+  // unknown unit quietly turns isSame into a millisecond comparison — never
+  // true, so today's agenda would refuse the bare URL and every step would
+  // push a history entry instead of replacing one. It lists a month, so that
+  // is the unit it is compared by.
+  const unit = view === 'Agenda' ? 'month' : view
 
-	// Today's period gets the bare URL. Query carries the open event's deep
-	// link; date/view navigation keeps it.
-	const location = dayjs().isSame(target, unit)
-		? { name, params: { accountId }, query: route.query }
-		: { name, params: { accountId, year, month: month + 1, day }, query: route.query }
+  // Today's period gets the bare URL. Query carries the open event's deep
+  // link; date/view navigation keeps it.
+  const location = dayjs().isSame(target, unit)
+    ? { name, params: { accountId }, query: route.query }
+    : { name, params: { accountId, year, month: month + 1, day }, query: route.query }
 
-	// Every change of view or period is a history entry, so Back retraces it.
-	// The one exception is when the URL already shows this view and period —
-	// e.g. a dated URL for today's month collapsing to the bare one — which
-	// only re-forms the current entry rather than adding a copy of it.
-	const { year: y, month: m, day: d } = route.params
-	const current = y && m && d ? dayjs(`${y}-${m}-${d}`, 'YYYY-M-D') : dayjs()
-	if (modeForRoute(route.name) === view && current.isSame(target, unit)) router.replace(location)
-	else router.push(location)
+  // Every change of view or period is a history entry, so Back retraces it.
+  // The one exception is when the URL already shows this view and period —
+  // e.g. a dated URL for today's month collapsing to the bare one — which
+  // only re-forms the current entry rather than adding a copy of it.
+  const { year: y, month: m, day: d } = route.params
+  const current = y && m && d ? dayjs(`${y}-${m}-${d}`, 'YYYY-M-D') : dayjs()
+  if (modeForRoute(route.name) === view && current.isSame(target, unit)) router.replace(location)
+  else router.push(location)
 }
 
 // The URL is the source of truth for view and date. All three view routes
@@ -198,29 +215,30 @@ const setRoute = () => {
 // what differs is written, which is what keeps this and setRoute (which
 // writes the route from the calendar) from chasing each other.
 const applyRoute = () => {
-	const calendar = calendarRef.value
-	if (!calendar) return
+  const calendar = calendarRef.value
+  if (!calendar) return
 
-	const view = modeForRoute(route.name)
-	if (view && calendar.activeView !== view) calendar.activeView = view
+  const view = modeForRoute(route.name)
+  if (view && calendar.activeView !== view) calendar.activeView = view
 
-	// A route without a date is today's, the way setRoute writes it.
-	const { year, month, day } = route.params
-	const date = year && month && day ? dayjs(`${year}-${month}-${day}`, 'YYYY-M-D') : dayjs()
-	if (!date.isValid()) return
-	if (
-		date.year() !== calendar.currentYear ||
-		date.month() !== calendar.currentMonth ||
-		date.date() !== calendar.currentDay
-	)
-		calendar.setCalendarDate(date)
+  // A route without a date is today's, the way setRoute writes it.
+  const { year, month, day } = route.params
+  const date = year && month && day ? dayjs(`${year}-${month}-${day}`, 'YYYY-M-D') : dayjs()
+  if (!date.isValid()) return
+  if (
+    date.year() !== calendar.currentYear ||
+    date.month() !== calendar.currentMonth ||
+    date.date() !== calendar.currentDay
+  )
+    calendar.setCalendarDate(date)
 }
 
 onMounted(() => {
-	applyRoute()
-	// The desktop's first fetch is a side effect of the fui Calendar mounting and
-	// announcing its month; the phone has no such component, so it asks itself.
-	if (isMobile.value) events.fetch()
+  applyRoute()
+  // The desktop's first fetch is a side effect of the fui Calendar mounting and
+  // announcing its month; the phone has no such component, so it asks itself.
+  if (isMobile.value) events.fetch()
+  openNewEventFromRoute(route.query.new)
 })
 
 // Watched as one string, not as an array the getter rebuilds: a getter returning
@@ -231,8 +249,8 @@ onMounted(() => {
 // they differed, and sent the calendar to today — which scrolled the agenda
 // back there from wherever the reader had got to.
 watch(
-	() => `${String(route.name)}|${route.params.year}|${route.params.month}|${route.params.day}`,
-	() => applyRoute(),
+  () => `${String(route.name)}|${route.params.year}|${route.params.month}|${route.params.day}`,
+  () => applyRoute(),
 )
 
 // Whichever way the view was reached — the switcher, a deep link, Back — the
@@ -242,85 +260,82 @@ watch(
 watch(() => route.name, rememberCalendarView, { immediate: true })
 
 const transformEvent = (event) => {
-	// All-day-ness is the event's own flag, or the midnight-to-midnight shape of an invite
-	// that arrived without one; either way it is read off the stored wall clock.
-	const isAllDay = isAllDayEvent(event)
+  // All-day-ness is the event's own flag, or the midnight-to-midnight shape of an invite
+  // that arrived without one; either way it is read off the stored wall clock.
+  const isAllDay = isAllDayEvent(event)
 
-	// Timed events are placed in the viewer's zone; all-day events keep their calendar date.
-	const start = isAllDay ? dayjs(event.start) : fromEventZone(event.start, event.time_zone)
-	const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-	// The calendar reads `toDate` inclusively, so an all-day event hands over its last day
-	// rather than the midnight after it that the stored end points at.
-	const lastDay = isAllDay ? (eventLastDay(start, event.duration, true) ?? start) : end
+  // Timed events are placed in the viewer's zone; all-day events keep their calendar date.
+  const start = isAllDay ? dayjs(event.start) : fromEventZone(event.start, event.time_zone)
+  const end = start.add(dayjs.duration(event.duration || 'PT0S'))
+  // The calendar reads `toDate` inclusively, so an all-day event hands over its last day
+  // rather than the midnight after it that the stored end points at.
+  const lastDay = isAllDay ? (eventLastDay(start, event.duration, true) ?? start) : end
 
-	return {
-		...event,
-		// The calendar pills render `title` verbatim (frappe-ui hardcodes an italic
-		// '[No title]' fallback), so untitled events get their placeholder here.
-		// actualTitle keeps the raw value; every path that writes back to the
-		// server must restore it (withActualTitle) or the placeholder gets saved.
-		title: event.title || __('Untitled event'),
-		actualTitle: event.title,
-		fromDate: start.format('YYYY-MM-DD'),
-		toDate: lastDay.format('YYYY-MM-DD'),
-		fromTime: start.format('HH:mm'),
-		toTime: end.format('HH:mm'),
-		role: getEventRole(event),
-		isAllDay,
-		isFullDay: isAllDay,
-		// The server's `draft` (JMAP isDraft): saved, but nothing sent. The pill draws it
-		// as an outline.
-		isDraft: !!event.draft,
-		// frappe-ui's own generic fields, which its event popover and the default
-		// row description read. Suite keeps the arrays these come from, so without
-		// this the library has nothing to say about where an event is or who is in
-		// it — and the popover's venue and participant lines never appear.
-		venue: eventPlace(event),
-		participant: eventPeople(event),
-		// The viewer declined: struck through in the grid.
-		isDeclined: !!event.participants?.some(
-			(p) => p.participation_status === 'DECLINED' && isOwnEmail(p.email),
-		),
-	}
+  return {
+    ...event,
+    // frappe-ui identifies a pill by `id` alone — its `:key`, and the active mark it
+    // draws from `CalendarActiveEvent` — so it is given the one that is unique across
+    // every account on the grid. The server's own id stays under `event_id`, which is
+    // what `serverEventId` reads and every call that writes an event back names it by.
+    // See utils/eventIdentity.
+    id: eventRowId(event),
+    event_id: event.id,
+    // The calendar pills render `title` verbatim (frappe-ui hardcodes an italic
+    // '[No title]' fallback), so untitled events get their placeholder here.
+    // actualTitle keeps the raw value; every path that writes back to the
+    // server must restore it (withActualTitle) or the placeholder gets saved.
+    title: event.title || __('Untitled event'),
+    actualTitle: event.title,
+    fromDate: start.format('YYYY-MM-DD'),
+    toDate: lastDay.format('YYYY-MM-DD'),
+    fromTime: start.format('HH:mm'),
+    toTime: end.format('HH:mm'),
+    role: getEventRole(event),
+    isAllDay,
+    isFullDay: isAllDay,
+    // The server's `draft` (JMAP isDraft): saved, but nothing sent. The pill draws it
+    // as an outline.
+    isDraft: !!event.draft,
+    // frappe-ui's own generic fields, which its event popover and the default
+    // row description read. Suite keeps the arrays these come from, so without
+    // this the library has nothing to say about where an event is or who is in
+    // it — and the popover's venue and participant lines never appear.
+    venue: eventPlace(event),
+    participant: eventPeople(event),
+    // The viewer declined: struck through in the grid.
+    isDeclined: !!event.participants?.some(
+      (p) => p.participation_status === 'DECLINED' && isOwnEmail(p.email),
+    ),
+  }
 }
 
 const isOwnEmail = (email: string) =>
-	!!participantIdentities.data?.some((id) => id.email === email?.replace('mailto:', ''))
+  !!participantIdentities.data?.some((id) => id.email === email?.replace('mailto:', ''))
 
 const getEventRole = (event) => {
-	if (participantIdentities.data?.some((id) => id.email === event.organizer.replace('mailto:', '')))
-		return 'Organizer'
-	if (
-		participantIdentities.data?.some((id) =>
-			event.participants?.some((p) => p.email.replace('mailto:', '') === id.email),
-		)
-	)
-		return 'Attendee'
-	return 'Viewer'
+  if (participantIdentities.data?.some((id) => id.email === event.organizer.replace('mailto:', '')))
+    return 'Organizer'
+  if (
+    participantIdentities.data?.some((id) =>
+      event.participants?.some((p) => p.email.replace('mailto:', '') === id.email),
+    )
+  )
+    return 'Attendee'
+  return 'Viewer'
 }
 
-const calendars = createResource({
-	url: 'suite.calendar.api.get_calendars',
-	makeParams: () => ({ account: store.accountId }),
-	auto: true,
-	onSuccess: (data) => (visibleCalendars.value = data.map((cal) => cal.name)),
-	onError: (error) => raiseToast(error.message, 'error'),
-})
+const { calendars } = store
 
-const visibleCalendars = ref<string[]>([])
-
-// A calendar's colour is its own — set wherever its owner set it, and sent with
-// the calendar. Only where it has none does one come from the palette by
-// position, which is what every calendar used to get; its events and its dot in
-// the sidebar share whichever it is.
-const PALETTE = ['green', 'blue', 'violet', 'amber', 'pink', 'cyan', 'orange']
-const calendarColor = (name: string) => {
-	const index = calendars.data?.findIndex((cal) => cal.name === name) ?? -1
-	return calendars.data?.[index]?.color || PALETTE[Math.max(index, 0) % PALETTE.length]
-}
-const coloredCalendars = computed(
-	() => calendars.data?.map((cal) => ({ ...cal, color: calendarColor(cal.name) })) || [],
+// Which calendars are drawn is the calendar's own `visible`, set from the sidebar.
+const visibleCalendars = computed(
+  () => new Set(calendars.data?.filter((cal) => cal.visible).map((cal) => cal.name)),
 )
+watch(
+  () => calendars.error,
+  (error) => error && raiseToast(error.message, 'error'),
+)
+
+const calendarColor = (name: string) => colorOf(calendars.data, name)
 
 // The period the calendar is showing, as it reports it on every change of view or
 // date. Declared above the resource that reads it: makeParams runs late enough
@@ -353,27 +368,27 @@ let fetchedRange: { from: string; to: string } | null = null
  * at the far end, where the span runs a few days past the month it ends in.
  */
 const windowFor = (anchor: dayjs.Dayjs) => {
-	const first = anchor.startOf('month')
-	return {
-		from: first.subtract(1, 'month').subtract(1, 'week'),
-		to: first.add(AGENDA_MONTHS, 'month').endOf('month').add(1, 'week'),
-	}
+  const first = anchor.startOf('month')
+  return {
+    from: first.subtract(1, 'month').subtract(1, 'week'),
+    to: first.add(AGENDA_MONTHS, 'month').endOf('month').add(1, 'week'),
+  }
 }
 
 const events = createResource({
-	url: 'suite.calendar.api.get_calendar_events',
-	makeParams: () => {
-		const { from, to } = windowFor(anchorMonth.value)
-		fetchedRange = { from: from.format('YYYY-MM-DD'), to: to.format('YYYY-MM-DD') }
-		return {
-			account: store.accountId,
-			from_date: from.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-			to_date: to.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-			time_zone: dayjs.tz.guess(),
-		}
-	},
-	transform: (data) => data.map(transformEvent),
-	onError: (error) => raiseToast(error.message, 'error'),
+  url: 'suite.calendar.api.get_calendar_events_with_shared',
+  makeParams: () => {
+    const { from, to } = windowFor(anchorMonth.value)
+    fetchedRange = { from: from.format('YYYY-MM-DD'), to: to.format('YYYY-MM-DD') }
+    return {
+      account: store.accountId,
+      from_date: from.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+      to_date: to.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+      time_zone: dayjs.tz.guess(),
+    }
+  },
+  transform: (data) => data.map(transformEvent),
+  onError: (error) => raiseToast(error.message, 'error'),
 })
 
 // Today's events, for the sidebar's upcoming list. Its own fetch rather than a
@@ -383,35 +398,35 @@ const events = createResource({
 // the sidebar is on screen from the start, and the same shape as the grid's rows
 // so the list and the card it opens read it the same way.
 const todayEvents = createResource({
-	url: 'suite.calendar.api.get_calendar_events',
-	makeParams: () => {
-		const start = dayjs().startOf('day')
-		return {
-			account: store.accountId,
-			from_date: start.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-			to_date: start.endOf('day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-			time_zone: dayjs.tz.guess(),
-		}
-	},
-	auto: true,
-	transform: (data) => data.map(transformEvent),
-	onError: (error) => raiseToast(error.message, 'error'),
+  url: 'suite.calendar.api.get_calendar_events_with_shared',
+  makeParams: () => {
+    const start = dayjs().startOf('day')
+    return {
+      account: store.accountId,
+      from_date: start.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+      to_date: start.endOf('day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+      time_zone: dayjs.tz.guess(),
+    }
+  },
+  auto: true,
+  transform: (data) => data.map(transformEvent),
+  onError: (error) => raiseToast(error.message, 'error'),
 })
 
 // Asked again as the date turns: a list of today's events fetched yesterday is
 // yesterday's, and the clock the list already runs on says when.
 watch(
-	() => dayjs(now.value).format('YYYY-MM-DD'),
-	() => todayEvents.reload(),
+  () => dayjs(now.value).format('YYYY-MM-DD'),
+  () => todayEvents.reload(),
 )
 
 // The events themselves changed, as opposed to the window over them moving. The
 // sidebar's mini month draws from its own density call, so it has no way to hear
 // about a save or a delete unless it is told to forget what it has.
 const reloadEvents = () => {
-	events.reload()
-	todayEvents.reload()
-	invalidateEventDensity()
+  events.reload()
+  todayEvents.reload()
+  invalidateEventDensity()
 }
 
 // The palette colour an event is drawn in, put on the event itself. Every
@@ -420,8 +435,8 @@ const reloadEvents = () => {
 // to miss out and fall back to the colour the server carries, which had one
 // event green in the list and blue in the card beside it.
 const withCalendarColor = (event) => ({
-	...event,
-	color: calendarColor(event.calendars[0]?.calendar),
+  ...event,
+  color: calendarColor(event.calendars[0]?.calendar),
 })
 
 /**
@@ -433,19 +448,95 @@ const withCalendarColor = (event) => ({
  * same not-knowing, so it counts too. An error does not: the toast has said what
  * happened, and a list waiting forever says nothing.
  */
-const eventsPending = computed(
-	() => events.loading || (!events.data && !events.error),
-)
+const eventsPending = computed(() => events.loading || (!events.data && !events.error))
 
 const onVisibleCalendar = (event) =>
-	event.calendars.map((c) => c.calendar).some((cal) => visibleCalendars.value.includes(cal))
+  event.calendars.some((c) => visibleCalendars.value.has(c.calendar))
+
+// --- The phone's search page ---
+
+// A page of its own (`calendar-search`), not the palette raised over the calendar. The
+// words live in the URL so Back restores them; the filters live with the page. The view
+// runs the search because the view owns the sheet: a result is resolved through the same
+// `findLinkedEvent` a grid row is, and opens over the results rather than by leaving for
+// a view.
+const isSearchRoute = computed(() => route.name === 'calendar-search')
+const searchText = computed(() => String(route.query.q ?? '').trim())
+const searchFilters = useCalendarSearchFilters()
+
+// Events, not rows: a recurring event answers as its next few occurrences, and the server
+// counts this before expanding them. Fifty where the palette shows ten: the palette is a
+// dialog under a query line, a page is a list to scroll. Expansion is a query per recurring
+// event, batched sixteen to a request, so fifty events is at most four requests behind a
+// keystroke — bounded, and the server's own cap stands above it at two hundred.
+const SEARCH_RESULT_LIMIT = 50
+
+const eventSearch = createResource({
+  url: 'suite.calendar.api.search_calendar_events_with_shared',
+  debounce: 180,
+  // The same transform the grid's rows go through, so a result resolves on the same fields.
+  transform: (data) => (Array.isArray(data) ? data.map(transformEvent) : []),
+  onSuccess: () => (searchSettled.value = true),
+  onError: (error) => {
+    searchSettled.value = true
+    raiseToast(error.message, 'error')
+  },
+})
+
+// The words as the search reads them; the field keeps them as typed, trailing space and all —
+// a space written to the URL trimmed came straight back into the field without it.
+const searchWords = computed(() => searchText.value.trim())
+const searchAsked = computed(() => !!searchWords.value || searchFilters.isNarrowed.value)
+// Whether what is asked has been answered. Not the resource's `loading`: that is false for the
+// 180ms a keystroke waits before its request goes out, and a page with nothing on it yet read
+// that as "no results" before it read "searching". Asked is unsettled from the keystroke on.
+const searchSettled = ref(true)
+
+watch(
+  // One string, for the reason the route watchers give: a rebuilt array is new every run.
+  () =>
+    JSON.stringify([
+      isSearchRoute.value,
+      searchWords.value,
+      searchFilters.params.value,
+      store.accountId,
+    ]),
+  () => {
+    if (!isSearchRoute.value) return
+    eventSearch.submit.cancel?.()
+    if (!searchAsked.value) {
+      eventSearch.reset()
+      searchSettled.value = true
+      return
+    }
+    searchSettled.value = false
+    eventSearch.submit({
+      account: store.accountId,
+      text: searchWords.value,
+      limit: SEARCH_RESULT_LIMIT,
+      time_zone: dayjs.tz.guess(),
+      filters: searchFilters.params.value,
+    })
+  },
+  { immediate: true },
+)
+
+const searchRows = computed(() =>
+  isSearchRoute.value && Array.isArray(eventSearch.data) ? eventSearch.data : [],
+)
+
+const setSearchText = (q: string) =>
+  router.replace({ query: { ...route.query, q: q || undefined } })
+
+const searchCalendarLabel = (value: string) =>
+  store.calendarOptions.find((option) => option.value === value)?.label || value
 
 const visibleEvents = computed(
-	() => events.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+  () => events.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
 )
 
 const visibleTodayEvents = computed(
-	() => todayEvents.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+  () => todayEvents.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
 )
 
 const showEditEvent = ref(false)
@@ -455,38 +546,41 @@ const event = reactive({})
 const withActualTitle = (event) => ({ ...event, title: event.actualTitle })
 
 const handleOpenEvent = async (e) => {
-	// Cleared on the way in rather than on the way out. Emptying it when the modal closed
-	// re-rendered the modal while it was still fading: with no calendarEvent left it read
-	// as a new event mid-animation, which enabled Save and put a remove button on every
-	// participant. What the clearing is for is not leaking one event's keys into the next,
-	// and doing it here is the same guarantee without the audience.
-	Object.keys(event).forEach((key) => delete event[key])
-	Object.assign(event, e, e.calendarEvent && { calendarEvent: withActualTitle(e.calendarEvent) })
-	showEditEvent.value = true
+  // A calendar shared read-only has nothing to open a form on; its events open as a card.
+  if (e.calendarEvent && !canEditEvent(e.calendarEvent, calendars.data)) return
+  // Cleared on the way in rather than on the way out. Emptying it when the modal closed
+  // re-rendered the modal while it was still fading: with no calendarEvent left it read
+  // as a new event mid-animation, which enabled Save and put a remove button on every
+  // participant. What the clearing is for is not leaking one event's keys into the next,
+  // and doing it here is the same guarantee without the audience.
+  Object.keys(event).forEach((key) => delete event[key])
+  Object.assign(event, e, e.calendarEvent && { calendarEvent: withActualTitle(e.calendarEvent) })
+  showEditEvent.value = true
 
-	// The detail card goes, whatever it was showing: it is drawn over the form rather
-	// than under it, so left open it puts the thing being edited behind a panel — one
-	// describing it, from the card's own edit button or a double click on its pill, or
-	// another event's, from a double click elsewhere. Awaited rather than run together:
-	// the edit is written onto the query below, and until the close has landed that
-	// query still carries the `?event=` this just dropped.
-	await closeEventDetail()
+  // The detail card goes, whatever it was showing: it is drawn over the form rather
+  // than under it, so left open it puts the thing being edited behind a panel — one
+  // describing it, from the card's own edit button or a double click on its pill, or
+  // another event's, from a double click elsewhere. Awaited rather than run together:
+  // the edit is written onto the query below, and until the close has landed that
+  // query still carries the `?event=` this just dropped.
+  await closeEventDetail()
 
-	// Editing an existing event is addressable: ?edit=<id> (never for new-event
-	// drafts, which have no id and no restorable form state). Its own key, apart
-	// from the detail card's ?event=: the card is derived from that one,
-	// so sharing it would open the sidebar under every double-clicked pill.
-	const opened = e.calendarEvent
-	const editing = opened?.master_id || opened?.id
-	if (editing && route.query.edit !== editing)
-		router.replace({
-			query: {
-				...route.query,
-				// The master's id, for the same reason as the event link above.
-				edit: editing,
-				editRecurrence: opened.recurrence_id || undefined,
-			},
-		})
+  // Editing an existing event is addressable: ?edit=<id> (never for new-event
+  // drafts, which have no id and no restorable form state). Its own key, apart
+  // from the detail card's ?event=: the card is derived from that one,
+  // so sharing it would open the sidebar under every double-clicked pill.
+  const opened = e.calendarEvent
+  const editing = opened && serverEventId(opened)
+  if (editing && route.query.edit !== editing)
+    router.replace({
+      query: {
+        ...route.query,
+        // The master's id, for the same reason as the event link above.
+        edit: editing,
+        editRecurrence: opened.recurrence_id || undefined,
+        account: opened.account,
+      },
+    })
 }
 
 // --- Event detail card ---
@@ -500,19 +594,21 @@ const selectedCalendarEvent = ref(null)
 // keeps the sidebar in sync after edits/RSVPs (fresh copy swapped in, closed
 // while the event is deleted or outside the fetched range).
 const handleEventClick = ({ calendarEvent }) =>
-	router.replace({
-		query: {
-			...route.query,
-			// The master's id, not the row's. A row's id is synthetic — the server derives it
-			// from the occurrence's position in the expansion — and it changes the moment that
-			// occurrence gains an override, which editing or answering one gives it. A link
-			// built from it stops resolving as soon as it is acted on, and the card loses the
-			// event it is showing. The master's id does not move, and the recurrence id beside
-			// it names the occurrence.
-			event: calendarEvent.master_id || calendarEvent.id,
-			recurrence: calendarEvent.recurrence_id || undefined,
-		},
-	})
+  router.replace({
+    query: {
+      ...route.query,
+      // The master's id, not the row's. A row's id is synthetic — the server derives it
+      // from the occurrence's position in the expansion — and it changes the moment that
+      // occurrence gains an override, which editing or answering one gives it. A link
+      // built from it stops resolving as soon as it is acted on, and the card loses the
+      // event it is showing. The master's id does not move, and the recurrence id beside
+      // it names the occurrence.
+      event: serverEventId(calendarEvent),
+      recurrence: calendarEvent.recurrence_id || undefined,
+      // Ids are only unique within an account, and shared calendars bring in another's.
+      account: calendarEvent.account,
+    },
+  })
 
 // --- The rail's own open event (desktop) ---
 
@@ -522,14 +618,13 @@ const handleEventClick = ({ calendarEvent }) =>
 // after an RSVP swaps in the fresh copy and a delete closes it. Today's list first,
 // since that is where the rows come from, and it holds today when the grid's
 // window has been paged away from it.
-const railOpen = ref<{ id: string; recurrence?: string } | null>(null)
+const railOpen = ref<{ id: string; recurrence?: string; account: string } | null>(null)
 
 const railEvent = computed(() => {
-	if (!railOpen.value) return null
-	const { id, recurrence } = railOpen.value
-	const linked =
-		findLinkedEvent(todayEvents.data, id, recurrence) ?? findLinkedEvent(events.data, id, recurrence)
-	return linked && withCalendarColor(linked)
+  if (!railOpen.value) return null
+  const { id, recurrence, account } = railOpen.value
+  const linked = findLinkedEvent([todayEvents.data, events.data], id, recurrence, account)
+  return linked && withCalendarColor(linked)
 })
 
 // What the card shows: the URL's event, or the rail's. Opening either closes the
@@ -537,20 +632,19 @@ const railEvent = computed(() => {
 const openEvent = computed(() => selectedCalendarEvent.value ?? railEvent.value)
 
 const closeEventDetail = () => {
-	railOpen.value = null
-	if (!route.query.event) return Promise.resolve()
-	const { event: _event, recurrence: _recurrence, ...query } = route.query
-	return router.replace({ query })
+  railOpen.value = null
+  if (!route.query.event) return Promise.resolve()
+  const { event: _event, recurrence: _recurrence, account: _account, ...query } = route.query
+  return router.replace({ query })
 }
-
 
 /** Edit, from the detail card or sheet — which handleOpenEvent closes on the way. */
 const editFromDetail = () => handleOpenEvent({ calendarEvent: openEvent.value })
 
 /** "August 2026" → the month and its year apart, so the year can be set in a lighter ink. */
 const splitYear = (title: string) => {
-	const match = /^(.*?)[,\s]*(\d{4})$/.exec(title || '')
-	return match ? { label: match[1], year: match[2] } : { label: title, year: '' }
+  const match = /^(.*?)[,\s]*(\d{4})$/.exec(title || '')
+  return match ? { label: match[1], year: match[2] } : { label: title, year: '' }
 }
 
 // The window follows the anchor: every page moves it, so the span that lands is
@@ -565,25 +659,25 @@ const splitYear = (title: string) => {
 let rangeSettle: ReturnType<typeof setTimeout> | null = null
 
 watch(visibleRange, (range) => {
-	if (!range) return
-	if (rangeSettle) clearTimeout(rangeSettle)
-	rangeSettle = setTimeout(() => {
-		rangeSettle = null
-		if (!visibleRange.value) return
+  if (!range) return
+  if (rangeSettle) clearTimeout(rangeSettle)
+  rangeSettle = setTimeout(() => {
+    rangeSettle = null
+    if (!visibleRange.value) return
 
-		// Keyed on the window this anchor wants, not on whether the span on screen
-		// is covered. Covered was enough to avoid a wasted fetch, but it also meant
-		// the window only moved when the reader had already run past its edge — so
-		// every other press of next paid for a round trip and reflowed the list as
-		// it landed. Moving the window on every page keeps it one page ahead, and
-		// the fetch happens behind a view that is already complete.
-		const wanted = windowFor(anchorMonth.value)
-		const from = wanted.from.format('YYYY-MM-DD')
-		const to = wanted.to.format('YYYY-MM-DD')
-		if (fetchedRange && fetchedRange.from === from && fetchedRange.to === to) return
+    // Keyed on the window this anchor wants, not on whether the span on screen
+    // is covered. Covered was enough to avoid a wasted fetch, but it also meant
+    // the window only moved when the reader had already run past its edge — so
+    // every other press of next paid for a round trip and reflowed the list as
+    // it landed. Moving the window on every page keeps it one page ahead, and
+    // the fetch happens behind a view that is already complete.
+    const wanted = windowFor(anchorMonth.value)
+    const from = wanted.from.format('YYYY-MM-DD')
+    const to = wanted.to.format('YYYY-MM-DD')
+    if (fetchedRange && fetchedRange.from === from && fetchedRange.to === to) return
 
-		events.reload()
-	})
+    events.reload()
+  })
 })
 
 // The header names the period in view: the month for Month, the day for Day (the
@@ -591,49 +685,93 @@ watch(visibleRange, (range) => {
 // or "Aug 30 – Sep 5" when the week straddles two months — rather than a month the
 // week only partly belongs to.
 const headerTitle = (title: string) => {
-	const range = visibleRange.value
-	if (range?.view !== 'Week') return splitYear(title)
-	return weekSpanLabel(range.startDate, range.endDate)
+  const range = visibleRange.value
+  if (range?.view !== 'Week') return splitYear(title)
+  return weekSpanLabel(range.startDate, range.endDate)
 }
 
 // The header's "+ Event" opens on the period in view: starting an event while
 // looking at next week should land in next week. Today wins whenever it is on
 // screen, so the ordinary case still gets the modal's next-hour default.
 const newEventDate = () => {
-	const range = visibleRange.value
-	if (!range) return new Date()
+  const range = visibleRange.value
+  if (!range) return new Date()
 
-	const today = dayjs().format('YYYY-MM-DD')
-	if (today >= range.startDate && today <= range.endDate) return new Date()
+  const today = dayjs().format('YYYY-MM-DD')
+  if (today >= range.startDate && today <= range.endDate) return new Date()
 
-	// The Month strip's first week reaches back into the month before it, so a
-	// month in view opens on its own 1st rather than on the strip's first day.
-	const start = dayjs(range.startDate)
-	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
+  // The Month strip's first week reaches back into the month before it, so a
+  // month in view opens on its own 1st rather than on the strip's first day.
+  const start = dayjs(range.startDate)
+  return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
 }
+
+// The phone's new-event button (CalendarLayout) and other areas ask for a new event through the URL
+// (?new=1). Consume the flag so reload or Back does not reopen the modal.
+const openNewEventFromRoute = (flag) => {
+  if (!flag) return
+  const { new: _new, ...query } = route.query
+  router.replace({ query })
+  handleOpenEvent({
+    date: isMobile.value ? dayjs(mobileDate.value).toDate() : newEventDate(),
+  })
+}
+
+watch(() => route.query.new, openNewEventFromRoute)
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-view', [
+  {
+    commands: [
+      {
+        id: 'calendar-new-event',
+        label: 'New event',
+        enterHint: 'create event',
+        icon: 'lucide-calendar-plus',
+        keywords: ['create', 'add'],
+        run: () => handleOpenEvent({ date: newEventDate() }),
+      },
+    ],
+  },
+])
+onScopeDispose(unregisterPaletteGroups)
+
+// The grid's own keys are switched off (`enableShortcuts`) and registered here instead, with
+// frappe-ui's shortcut registry, so the shortcuts dialog lists them beside the app's own.
+const calendarShortcut = (combo: string, description: string, handler: () => void) => ({
+  combo,
+  description: __(description),
+  group: __('Calendar'),
+  enabled: () => !isMobile.value && !!calendarRef.value,
+  handler,
+})
+useKeyboardShortcut([
+  calendarShortcut('E', 'New Event', () => handleOpenEvent({ date: newEventDate() })),
+  calendarShortcut('T', 'Go to Today', () => calendarRef.value.setCalendarDate()),
+  calendarShortcut('ArrowLeft', 'Previous', () => calendarRef.value.decrement()),
+  calendarShortcut('ArrowRight', 'Next', () => calendarRef.value.increment()),
+  calendarShortcut('D', 'Day View', () => (calendarRef.value.activeView = 'Day')),
+  calendarShortcut('W', 'Week View', () => (calendarRef.value.activeView = 'Week')),
+  calendarShortcut('M', 'Month View', () => (calendarRef.value.activeView = 'Month')),
+  calendarShortcut('A', 'Agenda View', () => (calendarRef.value.activeView = 'Agenda')),
+])
 
 // A pill in the grid and a row in the sidebar's upcoming list toggle the open
 // event the way mail's list does: a second click on the open one closes it. The
 // element clicked is kept, since on desktop the event opens as a card hung on it
 // — see `cardAnchor` below. A pill's event goes in the URL; a row's stays here.
 const toggleEventDetail = (calendarEvent, anchor: Element | null = null, viaRail = false) => {
-	const open = openEvent.value
-	clickedAnchor.value = anchor
-	if (
-		open &&
-		open.id === calendarEvent.id &&
-		(open.recurrence_id ?? '') === (calendarEvent.recurrence_id ?? '')
-	)
-		return closeEventDetail()
-	if (!viaRail) return handleEventClick({ calendarEvent })
-	// Whatever the URL had open goes first — closeEventDetail clears the rail's
-	// too, which is why the row's is set after.
-	closeEventDetail()
-	railOpen.value = {
-		// The master's id, as the URL carries it — see handleEventClick.
-		id: calendarEvent.master_id || calendarEvent.id,
-		recurrence: calendarEvent.recurrence_id || undefined,
-	}
+  clickedAnchor.value = anchor
+  if (sameEvent(openEvent.value, calendarEvent)) return closeEventDetail()
+  if (!viaRail) return handleEventClick({ calendarEvent })
+  // Whatever the URL had open goes first — closeEventDetail clears the rail's
+  // too, which is why the row's is set after.
+  closeEventDetail()
+  railOpen.value = {
+    // The master's id, as the URL carries it — see handleEventClick.
+    id: serverEventId(calendarEvent),
+    recurrence: calendarEvent.recurrence_id || undefined,
+    account: calendarEvent.account,
+  }
 }
 
 // --- The card (desktop) ---
@@ -664,24 +802,58 @@ const pillOf = (e: Event) => (e.target instanceof Element ? e.target.closest(PIL
 // A row of the rail hands its click over as it happens, so currentTarget is still the row.
 const rowOf = (e: Event) => (e.currentTarget instanceof Element ? e.currentTarget : null)
 
-const activePill = () =>
-	gridRef.value?.querySelector('.event.active, .calendar-row.active') ?? null
+const activePill = () => gridRef.value?.querySelector('.event.active, .calendar-row.active') ?? null
+
+/**
+ * How long the card waits for its pill.
+ *
+ * The grid draws a view's pills a beat after the route moves — opening a search result in
+ * Week found two pills of the nine the week holds — so a single look finds nothing and the
+ * event is dropped as soon as it is opened. `ANCHOR_FRAMES` is the ordinary wait; the
+ * ceiling is what a result in another month needs, where the window it belongs to is still
+ * being fetched and no pill can exist for it until that lands.
+ */
+const ANCHOR_FRAMES = 20
+const ANCHOR_FRAME_CEILING = 180
+
+/** Every frame up to the budget, so the search ends as soon as the pill lands. */
+const settledPill = async () => {
+  for (let frame = 0; frame < ANCHOR_FRAME_CEILING; frame += 1) {
+    const pill = activePill()
+    if (pill) return pill
+    // Past the ordinary budget the wait goes on only while the window the grid draws
+    // from is still arriving: there is no pill to find for events not yet fetched, and
+    // nothing else worth waiting on once they are.
+    if (frame >= ANCHOR_FRAMES && !events.loading) break
+    await new Promise(requestAnimationFrame)
+    if (!openEvent.value) return null
+  }
+  return activePill()
+}
+
+// Which run of the watcher is current: the wait above is asynchronous, so a run that
+// started before a newer one must not write the anchor the newer one is finding.
+let anchorRun = 0
 
 watch([openEvent, visibleRange], async ([open]) => {
-	// The phone has no card: its open event is the sheet's, which hangs on
-	// nothing, and a search for a pill there would find none and close it.
-	if (!open || isMobile.value) {
-		clickedAnchor.value = null
-		cardAnchor.value = null
-		return
-	}
-	// After the flush, so the redrawn grid — and the active mark on it — is there
-	// to be asked. What was showing keeps showing until then, so a reload does not
-	// blink the card.
-	await nextTick()
-	if (!openEvent.value) return
-	cardAnchor.value = clickedAnchor.value?.isConnected ? clickedAnchor.value : activePill()
-	if (!cardAnchor.value) closeEventDetail()
+  const run = (anchorRun += 1)
+  // The phone has no card: its open event is the sheet's, which hangs on
+  // nothing, and a search for a pill there would find none and close it.
+  if (!open || isMobile.value) {
+    clickedAnchor.value = null
+    cardAnchor.value = null
+    return
+  }
+  // After the flush, so the redrawn grid — and the active mark on it — is there
+  // to be asked. What was showing keeps showing until then, so a reload does not
+  // blink the card.
+  await nextTick()
+  if (!openEvent.value) return
+  const settled = clickedAnchor.value?.isConnected ? clickedAnchor.value : await settledPill()
+  // A newer run of this watcher has taken over, or the event went while we waited.
+  if (run !== anchorRun || !openEvent.value) return
+  cardAnchor.value = settled
+  if (!cardAnchor.value) closeEventDetail()
 })
 
 // A row's card opens to the right of the rail; a pill's beside it in the grids,
@@ -690,16 +862,16 @@ watch([openEvent, visibleRange], async ([open]) => {
 const cardInGrid = computed(() => !!cardAnchor.value && !!gridRef.value?.contains(cardAnchor.value))
 
 const cardSide = computed(() => {
-	if (!cardInGrid.value) return 'right'
-	const view = visibleRange.value?.view
-	return view === 'Month' || view === 'Week' ? 'left' : 'bottom'
+  if (!cardInGrid.value) return 'right'
+  const view = visibleRange.value?.view
+  return view === 'Month' || view === 'Week' ? 'left' : 'bottom'
 })
 
 // The calendar draws the open event's pill raised. Set from here rather than left
 // to the click: closing clears the mark, and a grid click — which the calendar
 // uses to let go of the mark — is put right by the next change.
 watch(openEvent, (open) => {
-	CalendarActiveEvent.value = open?.id ?? ''
+  CalendarActiveEvent.value = open?.id ?? ''
 })
 
 // Which row the sheet was opened from. An event spanning several days has a row on
@@ -708,18 +880,28 @@ watch(openEvent, (open) => {
 // does not inherit a stale row.
 const openRow = ref('')
 
+/**
+ * A result opens over the results. The URL still names it the way every other link does —
+ * the series' id, the occurrence beside it, the account it belongs to — so the sheet resolves
+ * it as it resolves anything; only the page stays put. A second tap on the open one closes it.
+ */
+const openSearchResult = (row: any) => {
+  if (sameEvent(openEvent.value, row)) return closeEventDetail()
+  handleEventClick({ calendarEvent: row })
+}
+
 const openEventRow = (event: any, date: string) => {
-	const key = `${event.id + (event.recurrence_id ?? '')}@${date}`
-	// The row is what toggles, not the event behind it: tapping the row whose sheet is
-	// open closes it, and tapping another day of the same multi-day event moves to that
-	// day rather than reading as "the open event again" and closing.
-	if (key === openRow.value) return closeEventDetail()
-	openRow.value = key
-	handleEventClick({ calendarEvent: event })
+  const key = `${event.id + (event.recurrence_id ?? '')}@${date}`
+  // The row is what toggles, not the event behind it: tapping the row whose sheet is
+  // open closes it, and tapping another day of the same multi-day event moves to that
+  // day rather than reading as "the open event again" and closing.
+  if (key === openRow.value) return closeEventDetail()
+  openRow.value = key
+  handleEventClick({ calendarEvent: event })
 }
 
 watch(selectedCalendarEvent, (open) => {
-	if (!open) openRow.value = ''
+  if (!open) openRow.value = ''
 })
 
 // The calendar app has no compose surface of its own — hand over to mail's
@@ -727,7 +909,7 @@ watch(selectedCalendarEvent, (open) => {
 // mail handler; the suite IS the mail client). Path, not route name: mail's
 // routes register lazily on first navigation into /mail.
 const emailParticipants = (emails: string[]) => {
-	router.push({ path: '/mail', query: { compose: '1', to: emails.join(',') } })
+  router.push({ path: '/mail', query: { compose: '1', to: emails.join(',') } })
 }
 
 // A deep link can only be built from the ids its author has. The grid's own
@@ -736,51 +918,86 @@ const emailParticipants = (emails: string[]) => {
 // invite strip resolves an invite's UID to that master id, which matches
 // nothing here. So a link that misses on id falls back to the master, narrowed
 // to the instance covering the routed day (the day the link itself picked).
-const findLinkedEvent = (data, id, recurrence) => {
-	if (!data || !id) return null
+//
+// Ids are only unique within an account, and shared calendars bring another account's events
+// in, so a link looks among its own account's events first: the one it names, else the account
+// the calendar is switched to, which is where mail's links come from. Only then anywhere.
+// The account asked for is looked for in every list before any list is read without it: ids
+// are unique per account and no further, so a grid holding another account's event under the
+// same id would otherwise answer for a search hit that sits, unlooked-at, in the list after it.
+const findLinkedEvent = (
+  sources: any[][],
+  id,
+  recurrence,
+  account = (route.query.account || route.params.accountId) as string,
+) => {
+  if (!id) return null
+  const lists = sources.filter((data) => Array.isArray(data) && data.length)
+  for (const data of lists) {
+    const own = matchLinkedEvent(
+      data.filter((e) => e.account === account),
+      id,
+      recurrence,
+    )
+    if (own) return own
+  }
+  for (const data of lists) {
+    const any = matchLinkedEvent(data, id, recurrence)
+    if (any) return any
+  }
+  return null
+}
 
-	const rec = (recurrence as string) ?? ''
-	const exact = data.find((e) => e.id === id && (e.recurrence_id ?? '') === rec)
-	if (exact) return exact
+const matchLinkedEvent = (data, id, recurrence) => {
+  const rec = (recurrence as string) ?? ''
+  const exact = data.find((e) => e.event_id === id && (e.recurrence_id ?? '') === rec)
+  if (exact) return exact
 
-	const instances = data.filter((e) => e.master_id === id)
-	if (!instances.length) return null
-	if (rec) return instances.find((e) => (e.recurrence_id ?? '') === rec) ?? null
+  const instances = data.filter((e) => e.master_id === id)
+  if (!instances.length) return null
+  if (rec) return instances.find((e) => (e.recurrence_id ?? '') === rec) ?? null
 
-	const { year, month, day } = route.params
-	const routed = year && month && day ? dayjs(`${year}-${month}-${day}`, 'YYYY-M-D') : null
-	if (!routed?.isValid()) return instances[0]
+  const { year, month, day } = route.params
+  const routed = year && month && day ? dayjs(`${year}-${month}-${day}`, 'YYYY-M-D') : null
+  if (!routed?.isValid()) return instances[0]
 
-	const routedDay = routed.format('YYYY-MM-DD')
-	return instances.find((e) => e.fromDate <= routedDay && routedDay <= e.toDate) ?? instances[0]
+  const routedDay = routed.format('YYYY-MM-DD')
+  return instances.find((e) => e.fromDate <= routedDay && routedDay <= e.toDate) ?? instances[0]
 }
 
 watch(
-	[() => events.data, () => todayEvents.data, () => route.query.event, () => route.query.recurrence],
-	([data, today, id, recurrence]) => {
-		// Resolved against every event, not just the visible ones: a link to an
-		// event in a calendar the reader has unticked still opens it. The colour
-		// goes on here, since this list has not been through `visibleEvents`.
-		// Today's list as well as the grid's: a row of the rail opens its event
-		// wherever the grid has been paged to, and today may be outside its window.
-		const linked = findLinkedEvent(data, id, recurrence) ?? findLinkedEvent(today, id, recurrence)
-		selectedCalendarEvent.value = linked && withCalendarColor(linked)
-	},
-	{ immediate: true },
+  [
+    () => events.data,
+    () => todayEvents.data,
+    () => searchRows.value,
+    () => route.query.event,
+    () => route.query.recurrence,
+  ],
+  ([data, today, search, id, recurrence]) => {
+    // Resolved against every event, not just the visible ones: a link to an
+    // event in a calendar the reader has unticked still opens it. The colour
+    // goes on here, since this list has not been through `visibleEvents`.
+    // Today's list as well as the grid's: a row of the rail opens its event
+    // wherever the grid has been paged to, and today may be outside its window. And the
+    // search's own rows: a result can be years outside the window the grid fetched.
+    const linked = findLinkedEvent([data, today, search], id, recurrence)
+    selectedCalendarEvent.value = linked && withCalendarColor(linked)
+  },
+  { immediate: true },
 )
 
 watch(
-	() => showEditEvent.value,
-	(val) => {
-		if (val) return
-		// The form state stays until the next open clears it, so the modal has something
-		// to draw while it fades. Closing the modal drops only its own keys — the detail
-		// sidebar (?event=) stays.
-		if (route.query.edit) {
-			const { edit: _edit, editRecurrence: _rec, ...query } = route.query
-			router.replace({ query })
-		}
-	},
+  () => showEditEvent.value,
+  (val) => {
+    if (val) return
+    // The form state stays until the next open clears it, so the modal has something
+    // to draw while it fades. Closing the modal drops only its own keys — the detail
+    // sidebar (?event=) stays.
+    if (route.query.edit) {
+      const { edit: _edit, editRecurrence: _rec, account: _account, ...query } = route.query
+      router.replace({ query })
+    }
+  },
 )
 
 // Restore the edit modal from ?edit=<id> (reload, shared link), and close it
@@ -788,17 +1005,17 @@ watch(
 // modal (events reloading in the background must not stomp form state), and
 // never close a NEW-event draft (those carry no calendarEvent and own no query).
 watch(
-	[() => events.data, () => route.query.edit, () => route.query.editRecurrence],
-	([data, id, recurrence]) => {
-		if (!id) {
-			if (showEditEvent.value && event.calendarEvent) showEditEvent.value = false
-			return
-		}
-		if (showEditEvent.value) return
-		const match = findLinkedEvent(data, id, recurrence)
-		if (match) handleOpenEvent({ calendarEvent: match })
-	},
-	{ immediate: true },
+  [() => events.data, () => route.query.edit, () => route.query.editRecurrence],
+  ([data, id, recurrence]) => {
+    if (!id) {
+      if (showEditEvent.value && event.calendarEvent) showEditEvent.value = false
+      return
+    }
+    if (showEditEvent.value) return
+    const match = findLinkedEvent([data], id, recurrence)
+    if (match) handleOpenEvent({ calendarEvent: match })
+  },
+  { immediate: true },
 )
 
 const eventToBeUpdated = reactive({})
@@ -814,359 +1031,402 @@ let confirmed = false
 const revertUpdate = () => calendarRef.value?.reloadEvents()
 
 watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
-	if (!recurring && !notify && !confirmed) revertUpdate()
+  if (!recurring && !notify && !confirmed) revertUpdate()
 })
 
 const handleUpdate = (e) => {
-	Object.assign(eventToBeUpdated, withActualTitle(e))
-	// Both remembered before the drag overwrites them: an occurrence's override has to keep the
-	// zone the event arrived with, and saving the whole series needs the start the reader was
-	// looking at to measure what they changed.
-	eventToBeUpdated.masterTimeZone = e.time_zone
-	eventToBeUpdated.startBeforeDrag = e.start
-	confirmed = false
-	// Each drag asks again. Left standing, the last drag's answer would decide this one — and a
-	// one-off event dragged after an instance edit would be written as an override of a series
-	// it isn't part of.
-	updateScope.value = 'series'
-	if (e.recurrence_id) showRecurringEventModal.value = true
-	else handleUpdateEvent()
+  // The grid lets every pill be dragged; one on a calendar shared read-only goes back, with
+  // word of why, or it reads as the drag not taking.
+  if (!canEditEvent(e, calendars.data)) {
+    revertUpdate()
+    return toast.info(__("This event can't be edited."))
+  }
+  Object.assign(eventToBeUpdated, withActualTitle(e))
+  // Both remembered before the drag overwrites them: an occurrence's override has to keep the
+  // zone the event arrived with, and saving the whole series needs the start the reader was
+  // looking at to measure what they changed.
+  eventToBeUpdated.masterTimeZone = e.time_zone
+  eventToBeUpdated.startBeforeDrag = e.start
+  confirmed = false
+  // Each drag asks again. Left standing, the last drag's answer would decide this one — and a
+  // one-off event dragged after an instance edit would be written as an override of a series
+  // it isn't part of.
+  updateScope.value = 'series'
+  if (e.recurrence_id) showRecurringEventModal.value = true
+  else handleUpdateEvent()
 }
 
 const handleUpdateRecurringEvent = (scope: RecurringScope) => {
-	updateScope.value = scope
-	showRecurringEventModal.value = false
-	handleUpdateEvent()
+  updateScope.value = scope
+  showRecurringEventModal.value = false
+  handleUpdateEvent()
 }
 
 const handleUpdateEvent = () => {
-	// A draft has sent nothing, so there is no one to notify of a move.
-	if (hasParticipantsOtherThanUser.value && !eventToBeUpdated.isDraft) showNotifyModal.value = true
-	else submitEvent(false)
+  // A draft has sent nothing, so there is no one to notify of a move.
+  if (hasParticipantsOtherThanUser.value && !eventToBeUpdated.isDraft) showNotifyModal.value = true
+  else submitEvent(false)
 }
 
 const hasParticipantsOtherThanUser = computed(
-	() =>
-		eventToBeUpdated.participants?.some((p) =>
-			participantIdentities.data.every((i) => i.email !== p.email),
-		) ?? false,
+  () =>
+    eventToBeUpdated.participants?.some((p) =>
+      participantIdentities.data.every((i) => i.email !== p.email),
+    ) ?? false,
 )
 
 const submitEvent = (sendEmail: boolean) => {
-	confirmed = true
-	showNotifyModal.value = false
-	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
-	if (!eventToBeUpdated.isAllDay) {
-		// The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
-		// same numbers would be reinterpreted in the event's original zone.
-		eventToBeUpdated.time_zone = dayjs.tz.guess()
-		const start = dayjs(eventToBeUpdated.fromDateTime)
-		const end = dayjs(eventToBeUpdated.toDateTime)
-		const diff = dayjs.duration(end.diff(start))
-		const hours = Math.floor(diff.asHours())
-		const minutes = diff.minutes()
-		eventToBeUpdated.duration = dayjs.duration({ hours, minutes }).toISOString()
-	}
+  confirmed = true
+  showNotifyModal.value = false
+  eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
+  if (!eventToBeUpdated.isAllDay) {
+    // The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
+    // same numbers would be reinterpreted in the event's original zone.
+    eventToBeUpdated.time_zone = dayjs.tz.guess()
+    const start = dayjs(eventToBeUpdated.fromDateTime)
+    const end = dayjs(eventToBeUpdated.toDateTime)
+    const diff = dayjs.duration(end.diff(start))
+    const hours = Math.floor(diff.asHours())
+    const minutes = diff.minutes()
+    eventToBeUpdated.duration = dayjs.duration({ hours, minutes }).toISOString()
+  }
 
-	// One occurrence moved on its own: the series keeps its rule and this date gets an
-	// override. The series is addressed by master_id and the occurrence within it by its
-	// recurrence id — the start it was expanded at, which the drag leaves alone. The id the
-	// grid holds is no use for that: the server derives it from the occurrence's position in
-	// the expansion, and a later override renumbers it onto a different date.
-	if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+  // One occurrence moved on its own: the series keeps its rule and this date gets an
+  // override. The series is addressed by master_id and the occurrence within it by its
+  // recurrence id — the start it was expanded at, which the drag leaves alone. The id the
+  // grid holds is no use for that: the server derives it from the occurrence's position in
+  // the expansion, and a later override renumbers it onto a different date.
+  if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
 
-	// Saving the whole series from one of its occurrences. The grid is showing one occurrence,
-	// so its start is that occurrence's — sending it as the master's drags the anchor onto this
-	// week and drops every occurrence before it, which is the first one vanishing when the
-	// second is moved. What carries over is the difference the reader made, applied to the
-	// master's own start, and the master keeps its own zone: pairing its wall clock with the
-	// viewer's would move the series again on its own.
-	if (updateScope.value === 'series' && eventToBeUpdated.master_start) {
-		eventToBeUpdated.start = shiftedMasterStart(
-			eventToBeUpdated.master_start,
-			shownStart(eventToBeUpdated.startBeforeDrag),
-			dayjs(eventToBeUpdated.fromDateTime),
-		)
-		eventToBeUpdated.time_zone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
-	}
+  // Saving the whole series from one of its occurrences. The grid is showing one occurrence,
+  // so its start is that occurrence's — sending it as the master's drags the anchor onto this
+  // week and drops every occurrence before it, which is the first one vanishing when the
+  // second is moved. What carries over is the difference the reader made, applied to the
+  // master's own start, and the master keeps its own zone: pairing its wall clock with the
+  // viewer's would move the series again on its own.
+  if (updateScope.value === 'series' && eventToBeUpdated.master_start) {
+    eventToBeUpdated.start = shiftedMasterStart(
+      eventToBeUpdated.master_start,
+      shownStart(eventToBeUpdated.startBeforeDrag),
+      dayjs(eventToBeUpdated.fromDateTime),
+    )
+    eventToBeUpdated.time_zone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
+  }
 
-	// A rule reads its days off the start once and never again, so an anchor dragged onto
-	// another weekday leaves the series repeating on the old one — and the occurrence just
-	// dragged matches nothing the rule generates, so it is not drawn at all. The selectors
-	// follow the anchor, and which start was the anchor depends on what is being written: the
-	// whole series is anchored at the master's start, while the half a split begins is
-	// anchored at the occurrence the reader dragged.
-	// Both ends of the move read in the same zone. The recurrence id and the master start are
-	// wall clocks in the event's; the dragged start has just been written in the viewer's for
-	// the series path, and left in the event's for a split.
-	// The half a split begins is anchored where the reader saw this occurrence, and starts at
-	// the clock they dragged it to — both the viewer's. The whole series is anchored at the
-	// master's start and moves to the shifted one — both the event's. Reading one of each would
-	// measure a change nobody made.
-	const anchorWas =
-		updateScope.value === 'following'
-			? shownStart(eventToBeUpdated.startBeforeDrag)
-			: dayjs(eventToBeUpdated.master_start)
-	if (
-		anchorWas?.isValid() &&
-		eventToBeUpdated.recurrence_rule &&
-		!anchorWas.isSame(dayjs(eventToBeUpdated.start), 'day')
-	)
-		eventToBeUpdated.recurrence_rule = reanchoredRule(
-			eventToBeUpdated.recurrence_rule,
-			anchorWas,
-			dayjs(eventToBeUpdated.start),
-		)
+  // A rule reads its days off the start once and never again, so an anchor dragged onto
+  // another weekday leaves the series repeating on the old one — and the occurrence just
+  // dragged matches nothing the rule generates, so it is not drawn at all. The selectors
+  // follow the anchor, and which start was the anchor depends on what is being written: the
+  // whole series is anchored at the master's start, while the half a split begins is
+  // anchored at the occurrence the reader dragged.
+  // Both ends of the move read in the same zone. The recurrence id and the master start are
+  // wall clocks in the event's; the dragged start has just been written in the viewer's for
+  // the series path, and left in the event's for a split.
+  // The half a split begins is anchored where the reader saw this occurrence, and starts at
+  // the clock they dragged it to — both the viewer's. The whole series is anchored at the
+  // master's start and moves to the shifted one — both the event's. Reading one of each would
+  // measure a change nobody made.
+  const anchorWas =
+    updateScope.value === 'following'
+      ? shownStart(eventToBeUpdated.startBeforeDrag)
+      : dayjs(eventToBeUpdated.master_start)
+  if (
+    anchorWas?.isValid() &&
+    eventToBeUpdated.recurrence_rule &&
+    !anchorWas.isSame(dayjs(eventToBeUpdated.start), 'day')
+  )
+    eventToBeUpdated.recurrence_rule = reanchoredRule(
+      eventToBeUpdated.recurrence_rule,
+      anchorWas,
+      dayjs(eventToBeUpdated.start),
+    )
 
-	// This occurrence and the ones after it: the series is cut here and the move starts its
-	// second half, since a rule has no way to change partway through. The new half is a new
-	// event, so unlike an override it carries the zone the drag was made in.
-	if (updateScope.value === 'following') return splitSeries.submit({ sendEmail })
+  // This occurrence and the ones after it: the series is cut here and the move starts its
+  // second half, since a rule has no way to change partway through. The new half is a new
+  // event, so unlike an override it carries the zone the drag was made in.
+  if (updateScope.value === 'following') return splitSeries.submit({ sendEmail })
 
-	editEvent.submit({ sendEmail })
+  editEvent.submit({ sendEmail })
 }
 
 // The clock the grid was showing for a start it holds. An all-day event is drawn on its stored
 // date without being re-read in the viewer's zone, so re-reading one here would measure a change
 // against a time nobody saw — and move the event by the zone's offset.
 const shownStart = (start: string) =>
-	eventToBeUpdated.isAllDay ? dayjs(start) : fromEventZone(start, eventToBeUpdated.masterTimeZone)
+  eventToBeUpdated.isAllDay ? dayjs(start) : fromEventZone(start, eventToBeUpdated.masterTimeZone)
 
 // The dragged numbers are a wall clock in the viewer's zone; an occurrence keeps the series'
 // zone, so the instant is re-expressed in it. An all-day occurrence has no clock to convert.
 const instanceStart = () => {
-	const eventZone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
-	if (eventToBeUpdated.isAllDay || !eventZone || !dayjs?.tz) return eventToBeUpdated.start
-	return dayjs
-		.tz(eventToBeUpdated.fromDateTime, dayjs.tz.guess())
-		.tz(eventZone)
-		.format('YYYY-MM-DD[T]HH:mm:ss')
+  const eventZone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
+  if (eventToBeUpdated.isAllDay || !eventZone || !dayjs?.tz) return eventToBeUpdated.start
+  return dayjs
+    .tz(eventToBeUpdated.fromDateTime, dayjs.tz.guess())
+    .tz(eventZone)
+    .format('YYYY-MM-DD[T]HH:mm:ss')
 }
 
 // Both writes land the same way: the calendar has already drawn the move, so success only has
 // to confirm it and refresh, and a failure has to put the pill back where it was.
 const onEventSaved = {
-	onSuccess: () => {
-		raiseToast(__('Event updated.'), 'success')
-		reloadEvents()
-	},
-	onError: (error) => {
-		revertUpdate()
-		raiseToast(error.message, 'error')
-	},
+  onSuccess: () => {
+    raiseToast(__('Event updated.'), 'success')
+    reloadEvents()
+  },
+  onError: (error) => {
+    revertUpdate()
+    raiseToast(error.message, 'error')
+  },
 }
 
 const editEventInstance = createResource({
-	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
-	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: eventToBeUpdated.account,
-		master_id: eventToBeUpdated.master_id,
-		recurrence_id: eventToBeUpdated.recurrence_id,
-		// Only what a drag can change, and never the zone: an occurrence is keyed by the start
-		// it was expanded at, and a zone here makes the server re-key it into that zone while
-		// the override stays under the old key — the two stop matching and the occurrence
-		// keeps nothing the series says. The dragged wall clock is converted instead.
-		patch: {
-			start: instanceStart(),
-			duration: eventToBeUpdated.duration,
-		},
-		send_scheduling_messages: sendEmail,
-	}),
-	...onEventSaved,
+  url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+    account: eventToBeUpdated.account,
+    master_id: eventToBeUpdated.master_id,
+    recurrence_id: eventToBeUpdated.recurrence_id,
+    // Only what a drag can change, and never the zone: an occurrence is keyed by the start
+    // it was expanded at, and a zone here makes the server re-key it into that zone while
+    // the override stays under the old key — the two stop matching and the occurrence
+    // keeps nothing the series says. The dragged wall clock is converted instead.
+    patch: {
+      start: instanceStart(),
+      duration: eventToBeUpdated.duration,
+    },
+    send_scheduling_messages: sendEmail,
+  }),
+  ...onEventSaved,
 })
 
 const splitSeries = createResource({
-	url: 'suite.calendar.api.split_calendar_event_series',
-	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		...eventToBeUpdated,
-		master_id: eventToBeUpdated.master_id,
-		recurrence_id: eventToBeUpdated.recurrence_id,
-		send_scheduling_messages: sendEmail,
-	}),
-	...onEventSaved,
+  url: 'suite.calendar.api.split_calendar_event_series',
+  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+    ...eventToBeUpdated,
+    master_id: eventToBeUpdated.master_id,
+    recurrence_id: eventToBeUpdated.recurrence_id,
+    send_scheduling_messages: sendEmail,
+  }),
+  ...onEventSaved,
 })
 
 const editEvent = createResource({
-	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
-	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		...eventToBeUpdated,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: eventToBeUpdated.master_id || eventToBeUpdated.id,
-		send_scheduling_messages: sendEmail,
-	}),
-	...onEventSaved,
+  url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
+  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+    ...eventToBeUpdated,
+    id: serverEventId(eventToBeUpdated),
+    send_scheduling_messages: sendEmail,
+  }),
+  ...onEventSaved,
 })
 
 const recurringScopeModalProps = computed(() => ({
-	title: __('Update repeating event'),
-	// See the event modal: nothing precedes the first occurrence, so the narrower answer
-	// there is the wider one.
-	options: scopeOptions({ isFirst: isFirstOccurrence(eventToBeUpdated) }),
-	confirmLabel: __('Update'),
-	loading: editEvent.loading || editEventInstance.loading || splitSeries.loading,
+  title: __('Update repeating event'),
+  // See the event modal: nothing precedes the first occurrence, so the narrower answer
+  // there is the wider one.
+  options: scopeOptions({ isFirst: isFirstOccurrence(eventToBeUpdated) }),
+  confirmLabel: __('Update'),
+  loading: editEvent.loading || editEventInstance.loading || splitSeries.loading,
 }))
 
 const NOTIFY_MODAL_OPTIONS = {
-	title: __('Notify Participants'),
-	icon: 'lucide-bell',
-	message: __('Send an email to let attendees know this event has been updated?'),
+  title: __('Notify Participants'),
+  icon: 'lucide-bell',
+  message: __('Send an email to let attendees know this event has been updated?'),
 }
 </script>
 
 <template>
-	<!-- h-full, not a viewport unit: on a phone the layout owns the height and hands
-	     this view what is left above the tab bar; on a desktop it is the page. A dvh
-	     here made the view a whole viewport tall inside a box that was a tab bar
-	     shorter, so its last 60px sat under the bar — which in the day grid is where
-	     11 pm is, scrolled to and never arriving. -->
-	<div class="flex h-full min-h-0 w-full min-w-0 flex-col sm:h-screen">
-		<div v-if="!isMobile" class="flex min-h-0 min-w-0 flex-1">
-			<AppSidebar
-				:calendars="coloredCalendars"
-				:calendar-color="calendarColor"
-				:visible-calendars
-				:month="calendarRef?.currentMonth"
-				:year="calendarRef?.currentYear"
-				:day="calendarRef?.currentDay"
-				:events="visibleTodayEvents"
-				:selected-event="openEvent"
-				@update:visible-calendars="
-					(name) =>
-						visibleCalendars.includes(name)
-							? visibleCalendars.splice(visibleCalendars.indexOf(name), 1)
-							: visibleCalendars.push(name)
-				"
-				@select-date="(date) => calendarRef?.setCalendarDate(date)"
-				@select-event="(event, e) => toggleEventDetail(event, rowOf(e), true)"
-			/>
-			<div ref="grid" class="min-h-0 min-w-0 flex-1 p-4">
-				<Calendar
-					ref="calendar"
-					:events="visibleEvents"
-					:loading="eventsPending"
-					:config="{ isEditMode: true }"
-					:on-click="({ e, calendarEvent }) => toggleEventDetail(calendarEvent, pillOf(e))"
-					:on-dbl-click="(event) => handleOpenEvent(event)"
-					:on-cell-click="(event) => handleOpenEvent(event)"
-					@update="handleUpdate"
-					@range-change="(range) => (visibleRange = range)"
-				>
-					<!-- The month is a label, not a picker: the sidebar's mini month is
+  <!-- h-full, not a viewport unit: the shell owns the height and hands this view
+	     the box above the phone's bottom nav. A dvh here made the view a whole
+	     viewport tall inside a shorter box, so its last 60px sat under the nav —
+	     which in the day grid is where 11 pm is, scrolled to and never arriving. -->
+  <div class="flex h-full min-h-0 w-full min-w-0 flex-col">
+    <!-- The sidebar sits in the shell's sidebar slot on a desktop and in the
+		     bottom nav's sheet on a phone, so it is mounted once, outside the two
+		     trees. The month card and the upcoming list read the desktop grid;
+		     the phone has neither. -->
+    <AppSidebar
+      :is-mobile="isMobile"
+      :calendar-color="calendarColor"
+      :month="calendarRef?.currentMonth"
+      :year="calendarRef?.currentYear"
+      :day="calendarRef?.currentDay"
+      :events="visibleTodayEvents"
+      :selected-event="openEvent"
+      @select-date="(date) => calendarRef?.setCalendarDate(date)"
+      @select-event="(event, e) => toggleEventDetail(event, rowOf(e), true)"
+    />
+    <div v-if="!isMobile" class="flex min-h-0 min-w-0 flex-1">
+      <div ref="grid" class="min-h-0 min-w-0 flex-1 p-4">
+        <Calendar
+          ref="calendar"
+          :events="visibleEvents"
+          :loading="eventsPending"
+          :config="{ isEditMode: true, enableShortcuts: false }"
+          :on-click="({ e, calendarEvent }) => toggleEventDetail(calendarEvent, pillOf(e))"
+          :on-dbl-click="(event) => handleOpenEvent(event)"
+          :on-cell-click="(event) => handleOpenEvent(event)"
+          @update="handleUpdate"
+          @range-change="(range) => (visibleRange = range)"
+        >
+          <!-- The month is a label, not a picker: the sidebar's mini month is
 					     where a date gets chosen. The year sits beside it, muted. -->
-					<template
-						#header="{ currentMonthYear, enabledModes, activeView, decrement, increment, updateActiveView, setCalendarDate }"
-					>
-						<!-- Navigation leads: back, Today, forward, then the title they change,
+          <template
+            #header="{
+              currentMonthYear,
+              enabledModes,
+              activeView,
+              decrement,
+              increment,
+              updateActiveView,
+              setCalendarDate,
+            }"
+          >
+            <!-- Navigation leads: back, Today, forward, then the title they change,
 						     so the title's length moves nothing. New event sits at the far
 						     right, past the view switcher. -->
-						<div class="mb-4 flex items-center justify-between">
-							<div class="flex items-center gap-x-1">
-								<Button variant="ghost" icon="lucide-chevron-left" @click="decrement" />
-								<Button variant="ghost" :label="__('Today')" @click="setCalendarDate()" />
-								<Button variant="ghost" icon="lucide-chevron-right" @click="increment" />
-								<div class="flex items-baseline gap-1.5 px-2 text-lg leading-5">
-									<span class="font-medium text-ink-gray-9">{{ headerTitle(currentMonthYear).label }}</span>
-									<span v-if="headerTitle(currentMonthYear).year" class="text-ink-gray-4">
-										{{ headerTitle(currentMonthYear).year }}
-									</span>
-								</div>
-							</div>
-							<div class="flex items-center gap-x-2">
-								<!-- md, like the buttons either side of it: at the default sm the
+            <div class="mb-4 flex items-center justify-between">
+              <div class="flex items-center gap-x-1">
+                <Button
+                  variant="ghost"
+                  icon="lucide-chevron-left"
+                  :tooltip="__('Previous (←)')"
+                  @click="decrement"
+                />
+                <Button
+                  variant="ghost"
+                  :label="__('Today')"
+                  :tooltip="__('Go to Today (T)')"
+                  @click="setCalendarDate()"
+                />
+                <Button
+                  variant="ghost"
+                  icon="lucide-chevron-right"
+                  :tooltip="__('Next (→)')"
+                  @click="increment"
+                />
+                <div class="flex items-baseline gap-1.5 px-2 text-lg leading-5">
+                  <span class="font-medium text-ink-gray-9">{{
+                    headerTitle(currentMonthYear).label
+                  }}</span>
+                  <span v-if="headerTitle(currentMonthYear).year" class="text-ink-gray-4">
+                    {{ headerTitle(currentMonthYear).year }}
+                  </span>
+                </div>
+              </div>
+              <div class="flex items-center gap-x-2">
+                <!-- md, like the buttons either side of it: at the default sm the
 								     switcher sat 4px shorter than the Event button beside it. -->
-								<TabButtons
-									size="md"
-									:options="enabledModes"
-									:model-value="activeView"
-									@update:model-value="(view) => updateActiveView(view)"
-								/>
-								<Button
-									variant="solid"
-									icon-left="lucide-calendar-plus"
-									:label="__('Event')"
-									@click="handleOpenEvent({ date: newEventDate() })"
-								/>
-							</div>
-						</div>
-					</template>
+                <TabButtons
+                  size="md"
+                  :options="enabledModes"
+                  :model-value="activeView"
+                  @update:model-value="(view) => updateActiveView(view)"
+                />
+                <Button
+                  variant="solid"
+                  icon-left="lucide-calendar-plus"
+                  :label="__('Event')"
+                  :tooltip="__('New Event (E)')"
+                  @click="handleOpenEvent({ date: newEventDate() })"
+                />
+              </div>
+            </div>
+          </template>
 
-					<!-- The rail's and agenda's rows have room for what a pill does
+          <!-- The rail's and agenda's rows have room for what a pill does
 					     not: where the event is, and how often it repeats. Who is
 					     coming is the row's own far end, from `participant`. frappe-ui
 					     hands back what it worked out itself, so this adds to it
 					     rather than deriving it twice — the same line the phone's
 					     agenda shows, from the same helper. -->
-					<template #event-description="{ calendarEvent, date }">
-						{{ eventRowDescription(calendarEvent, calendarDaySpan(calendarEvent, date)) }}
-					</template>
-				</Calendar>
-			</div>
-			<!-- The open event, as a card hung on its pill, or on its row in the rail.
+          <template #event-description="{ calendarEvent, date }">
+            {{ eventRowDescription(calendarEvent, calendarDaySpan(calendarEvent, date)) }}
+          </template>
+        </Calendar>
+      </div>
+      <!-- The open event, as a card hung on its pill, or on its row in the rail.
 			     Its own popover rather than the calendar's: that one opens and closes
 			     on the pill's own say-so, where this one is the URL's — ?event= opens
 			     it, closing clears it, and a link or a reload lands on the same card.
 			     Not keyed on the event: the popover stays up while the event under it
 			     changes, and only what is in it is rebuilt, so moving from one pill to
 			     the next does not blink. -->
-			<EventPopover
-				:open="!!cardAnchor"
-				:anchor="cardAnchor"
-				:anchor-moves="cardInGrid"
-				:side="cardSide"
-				@close="closeEventDetail"
-			>
-				<EventDetail
-					v-if="openEvent"
-					:key="openEvent.id + (openEvent.recurrence_id ?? '')"
-					variant="popover"
-					:calendar-event="openEvent"
-					@close="closeEventDetail"
-					@edit="editFromDetail"
-					@reload-events="reloadEvents"
-					@email-participants="emailParticipants"
-				/>
-			</EventPopover>
-		</div>
+      <EventPopover
+        :open="!!cardAnchor"
+        :anchor="cardAnchor"
+        :anchor-moves="cardInGrid"
+        :side="cardSide"
+        @close="closeEventDetail"
+      >
+        <EventDetail
+          v-if="openEvent"
+          :key="openEvent.id + (openEvent.recurrence_id ?? '')"
+          variant="popover"
+          :calendar-event="openEvent"
+          @close="closeEventDetail"
+          @edit="editFromDetail"
+          @reload-events="reloadEvents"
+          @email-participants="emailParticipants"
+        />
+      </EventPopover>
+    </div>
 
-		<!-- The phone. Agenda is home — a week strip for orientation and the list of
+    <!-- The phone. Agenda is home — a week strip for orientation and the list of
 		     what is coming — with the month a tap away and the same events under it.
-		     The tab bar and its FAB are the app's own chrome here, as mail's are. -->
-		<MobileCalendar
-			v-else
-			:view="mobileView"
-			:events="visibleEvents"
-			:selected="mobileDate"
-			:now="now"
-			:loading="eventsPending"
-			:calendar-color="calendarColor"
-			@select-date="(date) => (mobileDate = date)"
-			@select-view="(view) => (mobileView = view)"
-			@select-event="openEventRow"
-			@select-slot="handleOpenEvent"
-		/>
-	</div>
-	<EventDetailSheet
-		v-if="isMobile"
-		:calendar-event="selectedCalendarEvent"
-		@close="closeEventDetail"
-		@edit="editFromDetail"
-		@reload-events="reloadEvents"
-		@email-participants="emailParticipants"
-	/>
-	<EventModal v-model="showEditEvent" :selected-event="event" @reload-events="reloadEvents" />
-	<RecurringScopeModal
-		v-model="showRecurringEventModal"
-		v-bind="recurringScopeModalProps"
-		@confirm="handleUpdateRecurringEvent"
-	/>
-	<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_MODAL_OPTIONS">
-		<template #actions>
-			<div class="flex justify-end space-x-2">
-				<Button variant="outline" @click="submitEvent(false)"> {{ __('Skip') }} </Button>
-				<Button variant="solid" @click="submitEvent(true)">
-					{{ __('Send Email') }}
-				</Button>
-			</div>
-		</template>
-	</Dialog>
+		     The bottom nav is the shell's; the new-event button is the layout's. -->
+    <MobileSearch
+      v-else-if="isSearchRoute"
+      :query="searchText"
+      :rows="searchRows"
+      :searching="!searchSettled"
+      :asked="searchAsked"
+      :filter="searchFilters.filter"
+      :badges="searchFilters.badges(searchCalendarLabel)"
+      :account="store.accountId"
+      :calendar-options="store.calendarOptions"
+      :open-event="openEvent"
+      @update:query="setSearchText"
+      @remove-filter="searchFilters.removeFilter"
+      @clear-filters="searchFilters.reset"
+      @select="openSearchResult"
+    />
+    <MobileCalendar
+      v-else
+      :view="mobileView"
+      :events="visibleEvents"
+      :selected="mobileDate"
+      :now="now"
+      :loading="eventsPending"
+      :calendar-color="calendarColor"
+      @select-date="(date) => (mobileDate = date)"
+      @select-view="(view) => (mobileView = view)"
+      @select-event="openEventRow"
+      @select-slot="handleOpenEvent"
+    />
+  </div>
+  <EventDetailSheet
+    v-if="isMobile"
+    :calendar-event="selectedCalendarEvent"
+    @close="closeEventDetail"
+    @edit="editFromDetail"
+    @reload-events="reloadEvents"
+    @email-participants="emailParticipants"
+  />
+  <EventModal v-model="showEditEvent" :selected-event="event" @reload-events="reloadEvents" />
+  <RecurringScopeModal
+    v-model="showRecurringEventModal"
+    v-bind="recurringScopeModalProps"
+    @confirm="handleUpdateRecurringEvent"
+  />
+  <Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_MODAL_OPTIONS">
+    <template #actions>
+      <div class="flex justify-end space-x-2">
+        <Button variant="outline" @click="submitEvent(false)"> {{ __('Skip') }} </Button>
+        <Button variant="solid" @click="submitEvent(true)">
+          {{ __('Send Email') }}
+        </Button>
+      </div>
+    </template>
+  </Dialog>
 </template>

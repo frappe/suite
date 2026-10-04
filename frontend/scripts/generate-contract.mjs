@@ -38,12 +38,24 @@ function generate(contract, source) {
     const name = uniqueName(pascal(operation.id), names)
     const inputSchema = combineInputSchemas(operation)
     const outputSchema = operation.output ?? {}
+    // A stream row moves raw bytes: a PUT takes them in the input's `chunk`
+    // field, the one the platform upload helper fills, and a GET answers them.
+    const uploads = operation.stream === true && operation.method !== 'GET'
+    const downloads = operation.stream === true && operation.method === 'GET'
+    if (uploads) {
+      inputSchema.properties.chunk = {}
+      inputSchema.required.push('chunk')
+    }
     const inputType = `${name}Input`
     const outputType = `${name}Output`
     const errorType = `${name}Error`
     const variable = `operation${name}`
-    declarations.push(`export type ${inputType} = ${schemaType(inputSchema, inputSchema)}`)
-    declarations.push(`export type ${outputType} = ${schemaType(outputSchema, outputSchema)}`)
+    declarations.push(
+      `export type ${inputType} = ${schemaType(inputSchema, inputSchema)}${uploads ? ' & { chunk: Blob }' : ''}`,
+    )
+    declarations.push(
+      `export type ${outputType} = ${downloads ? 'Blob' : schemaType(outputSchema, outputSchema)}`,
+    )
     declarations.push(
       `export type ${errorType} = ${operation.errors?.length ? operation.errors.map(JSON.stringify).join(' | ') : 'never'}`,
     )
@@ -56,9 +68,9 @@ function generate(contract, source) {
   pathParams: ${JSON.stringify(operation.pathParams ?? [])},
   nodeParams: ${JSON.stringify(operation.nodeParams ?? [])},
   entity: ${JSON.stringify(operation.entity ?? null)},
-  errors: ${JSON.stringify(operation.errors ?? [])},
+  errors: ${JSON.stringify(operation.errors ?? [])},${uploads ? "\n  body: 'chunk'," : ''}
   validateInput(value): asserts value is ${inputType} { assertSchema(value, ${JSON.stringify(inputSchema)}, '${operation.id} input') },
-  validateOutput(value): asserts value is ${outputType} { assertSchema(value, ${JSON.stringify(outputSchema)}, '${operation.id} output') },
+  validateOutput(value): asserts value is ${outputType} { ${downloads ? 'void value' : `assertSchema(value, ${JSON.stringify(outputSchema)}, '${operation.id} output')`} },
 }`)
     leaves.push({ path: operation.id.split('.'), variable })
   }
@@ -138,16 +150,22 @@ function schemaType(schema, root) {
   if (!schema || Object.keys(schema).length === 0) return 'unknown'
   if (schema.$ref) return schemaType(resolveSchemaRef(root, schema.$ref), root)
   if (schema.const !== undefined) return JSON.stringify(schema.const)
-  if (Array.isArray(schema.enum)) return schema.enum.map((value) => JSON.stringify(value)).join(' | ') || 'never'
-  if (Array.isArray(schema.anyOf)) return schema.anyOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
-  if (Array.isArray(schema.oneOf)) return schema.oneOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
-  if (Array.isArray(schema.allOf)) return schema.allOf.map((part) => `(${schemaType(part, root)})`).join(' & ')
-  if (Array.isArray(schema.type)) return schema.type.map((type) => schemaType({ ...schema, type }, root)).join(' | ')
+  if (Array.isArray(schema.enum))
+    return schema.enum.map((value) => JSON.stringify(value)).join(' | ') || 'never'
+  if (Array.isArray(schema.anyOf))
+    return schema.anyOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
+  if (Array.isArray(schema.oneOf))
+    return schema.oneOf.map((part) => `(${schemaType(part, root)})`).join(' | ')
+  if (Array.isArray(schema.allOf))
+    return schema.allOf.map((part) => `(${schemaType(part, root)})`).join(' & ')
+  if (Array.isArray(schema.type))
+    return schema.type.map((type) => schemaType({ ...schema, type }, root)).join(' | ')
   if (schema.type === 'array') return `Array<${schemaType(schema.items ?? {}, root)}>`
   if (schema.type === 'object' || schema.properties) {
     const required = new Set(schema.required ?? [])
     const fields = Object.entries(schema.properties ?? {}).map(
-      ([key, child]) => `${JSON.stringify(key)}${required.has(key) ? '' : '?'}: ${schemaType(child, root)}`,
+      ([key, child]) =>
+        `${JSON.stringify(key)}${required.has(key) ? '' : '?'}: ${schemaType(child, root)}`,
     )
     if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
       fields.push(`[key: string]: ${schemaType(schema.additionalProperties, root)}`)
@@ -164,7 +182,12 @@ function schemaType(schema, root) {
 
 function resolveSchemaRef(root, ref) {
   if (!ref.startsWith('#/')) return {}
-  return ref.slice(2).split('/').reduce((value, part) => value?.[part.replace(/~1/g, '/').replace(/~0/g, '~')], root) ?? {}
+  return (
+    ref
+      .slice(2)
+      .split('/')
+      .reduce((value, part) => value?.[part.replace(/~1/g, '/').replace(/~0/g, '~')], root) ?? {}
+  )
 }
 
 function renderApiTree(leaves) {
@@ -195,7 +218,9 @@ function validateOperation(operation, source) {
 }
 
 function pascal(value) {
-  const result = value.replace(/(^|[^a-zA-Z0-9]+)([a-zA-Z0-9])/g, (_match, _separator, letter) => letter.toUpperCase())
+  const result = value.replace(/(^|[^a-zA-Z0-9]+)([a-zA-Z0-9])/g, (_match, _separator, letter) =>
+    letter.toUpperCase(),
+  )
   return result || 'Operation'
 }
 

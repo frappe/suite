@@ -2,11 +2,11 @@ import FileUploaderComponent from './FileUploader.vue'
 import { createApp } from 'vue'
 
 // The stock "Library" tab of `frappe.ui.FileUploader` browses framework File
-// records. We replace it with a richer picker that adds Drive (Home/Teams) on
-// top of the same framework "Site" files, and can upload a new file straight
-// into a Drive folder. Either way the file is handed to the framework engine via
-// `library_file_name`, so the caller's on_success (form field + attachments)
-// fires exactly as before — no framework files are patched.
+// records. We replace it with a Drive picker over My files and, on a business
+// site, Organization files. It can also upload a new file straight into a Drive
+// folder. Either way the file's bytes are handed to the framework engine, so the
+// caller's on_success (form field + attachments) fires exactly as for a file
+// from the device. No framework files are patched.
 
 // Inner SVG content of frappe's stock "Library" icon. The framework template
 // renders this inside its own `<svg width=30 height=30>`, so supply children only.

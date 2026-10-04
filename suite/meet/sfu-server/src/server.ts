@@ -14,6 +14,7 @@ import { RecordingGrantManager } from './server/RecordingGrantManager';
 import { RecordingGrantPersistenceFile } from './server/RecordingGrantPersistenceFile';
 import { RouteManager } from './server/RouteManager';
 import { SocketHandlerManager } from './server/SocketHandlerManager';
+import { SttManager } from './stt/SttManager';
 import { Telemetry } from './telemetry/Telemetry';
 import { configureLogging, loggers } from './utils/logger';
 import { captureException, flushSentry, initSentry } from './utils/sentry';
@@ -28,6 +29,7 @@ export class SFUServer {
 	private authManager: AuthManager;
 	private routeManager: RouteManager;
 	private socketHandlerManager: SocketHandlerManager;
+	private sttManager: SttManager;
 	private config: SFUConfig['server'];
 	private telemetry: Telemetry;
 	private recordingGrantPersistence?: RecordingGrantPersistenceFile;
@@ -65,6 +67,13 @@ export class SFUServer {
 		this.mediasoup.onMediaScore((direction, media, score) =>
 			this.telemetry.mediaScore.observe({ direction, media }, score),
 		);
+		this.sttManager = new SttManager({
+			sttServerUrl: config.stt.serverUrl,
+			sttApiKey: config.stt.apiKey,
+			allowMockFallback: config.stt.allowMockFallback,
+			onAudioSent: (seconds) => this.telemetry.sttAudioSeconds.inc(seconds),
+		});
+		this.mediasoup.setSttManager(this.sttManager);
 		const recordingPersistencePath = config.persistence.recordingGrantFile;
 		this.recordingGrantPersistence = recordingPersistencePath
 			? new RecordingGrantPersistenceFile(recordingPersistencePath)
@@ -103,6 +112,7 @@ export class SFUServer {
 			config.runtime,
 			e2eeCoordinatorPersistence,
 			recordingGrantManager,
+			this.sttManager,
 		);
 
 		this.setupMiddleware();
@@ -150,6 +160,7 @@ export class SFUServer {
 			loggers.server.info('Starting SFU Server');
 
 			await this.mediasoup.init();
+			await this.sttManager.prepareSpeechDetection();
 			await this.initializeRecordingAuthorization();
 			if (this.recordingGrantPersistence) {
 				this.recordingGrantRetry = setInterval(
@@ -185,6 +196,7 @@ export class SFUServer {
 		try {
 			this.socketHandlerManager.stop();
 			await this.mediasoup.cleanup();
+			this.sttManager.destroy();
 
 			this.server.close(() => {
 				loggers.server.info('SFU Server stopped');
@@ -195,6 +207,7 @@ export class SFUServer {
 				(error as Error).message,
 			);
 			this.socketHandlerManager.stop();
+			this.sttManager.destroy();
 			this.server.close(() => {
 				loggers.server.info('SFU Server force stopped');
 			});

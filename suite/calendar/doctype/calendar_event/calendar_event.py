@@ -14,8 +14,11 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.push_notification import PushNotification
 from frappe.utils import cint, get_system_timezone
+from jmap import MethodError
 
+from suite.calendar import jmap_events
 from suite.calendar.doctype.calendar.calendar import validate_calendar_name_format
+from suite.calendar.doctype.calendar_event.fields import EventFields
 from suite.calendar.doctype.calendar_event.invitations import (
     acting_as_organizer,
     custom_event_invites_enabled,
@@ -23,14 +26,24 @@ from suite.calendar.doctype.calendar_event.invitations import (
 )
 from suite.calendar.doctype.calendar_event.mailing_lists import expand_mailing_list_participants
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_event_service, get_jmap_connection
-from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
+from suite.mail.jmap import (
+    SetResult,
+    SuiteJMAPClient,
+    account_view,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+    get_cached_calendars,
+    get_jmap_client,
+    get_set_error_message,
+)
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.logger import get_push_logger
 from suite.utils import enqueue_job, parse_filters, user_context
 from suite.utils.dt import utcnow
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import JSONList, parse
 
 
 class CalendarEvent(Document):
@@ -229,7 +242,7 @@ class CalendarEvent(Document):
         if self.get("recurrence_id") and self.get("uid"):
             # delete_instance needs the master event's JMAP id. uid is the iCalendar UID, which
             # the server never resolves, so passing it made every instance delete raise.
-            master_id = get_calendar_event_service(account).get_base_event_ids([id]).get(id, id)
+            master_id = jmap_events.get_base_event_ids(get_account_client(account), [id]).get(id, id)
             delete_calendar_event_instance(account, master_id, self.recurrence_id)
         else:
             delete_calendar_events(account, [id])
@@ -330,11 +343,8 @@ def parse_calendar_event_name(name: str) -> tuple[str, str]:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes calendar events for the given list of names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
@@ -375,29 +385,30 @@ def add_calendar_event(
 
     uid = uuid7().hex
     creation_id = str(uuid7())
-    participants = expand_mailing_list_participants(participants)
-    event = {
-        "creation_id": creation_id,
-        "uid": uid,
-        "organizer": organizer,
-        "calendar_ids": calendar_ids,
-        "status": status.lower(),
-        "is_draft": draft,
-        "title": title,
-        "start": start,
-        "duration": duration,
-        "time_zone": time_zone,
-        "recurrence_rule": recurrence_rule,
-        "show_without_time": show_without_time,
-        "privacy": privacy.lower() if privacy else None,
-        "free_busy_status": free_busy_status.lower() if free_busy_status else None,
-        "description": description,
-        "locations": locations,
-        "links": links,
-        "participants": participants,
-        "alerts": alerts,
-        "use_default_alerts": use_default_alerts,
-    }
+    fields = parse(
+        EventFields,
+        {
+            "organizer": organizer,
+            "calendar_ids": calendar_ids,
+            "status": status,
+            "draft": draft,
+            "title": title,
+            "start": start,
+            "duration": duration,
+            "time_zone": time_zone,
+            "recurrence_rule": recurrence_rule,
+            "show_without_time": show_without_time,
+            "privacy": privacy,
+            "free_busy_status": free_busy_status,
+            "description": description,
+            "locations": locations,
+            "links": links,
+            "participants": expand_mailing_list_participants(participants),
+            "alerts": alerts,
+            "use_default_alerts": use_default_alerts,
+        },
+    )
+    event = {"creation_id": creation_id, "uid": uid, **fields.for_service()}
 
     use_custom_invites = (
         send_scheduling_messages
@@ -405,21 +416,22 @@ def add_calendar_event(
         and acting_as_organizer(account, organizer)
     )
 
-    service = get_calendar_event_service(account)
-    response = service.create(
-        [event], send_scheduling_messages=send_scheduling_messages and not use_custom_invites
-    )
-
+    client = get_account_client(account)
     title = _("Calendar Event Creation Error")
-    if response.get("created"):
-        event_id = response["created"][creation_id]["id"]
+    try:
+        response = jmap_events.create_events(
+            client, account, [event], send_scheduling_messages and not use_custom_invites
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if created := response.created.get(creation_id):
+        event_id = str(created.id)
         if use_custom_invites:
             _enqueue_event_notification(account, "invite", event_id=event_id)
         return event_id
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+
+    frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
@@ -434,27 +446,25 @@ def fetch_calendar_events(
 ) -> list:
     """Returns a list of calendar events for the given account based on the provided filters."""
 
-    calendar_events = []
-    service = get_calendar_event_service(account)
-    data = service.query(filter, position, limit, sort, time_zone, expand_recurrences)
+    client = get_account_client(account)
+    try:
+        data = jmap_events.query_events(client, filter, position, limit, sort, time_zone, expand_recurrences)
+        calendar_events = get_calendar_events(account, data.get("ids", []))
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Events Fetch Error"))
 
-    ids = data.get("ids", [])
-    total = data.get("total", 0)
-
-    calendar_events.extend(get_calendar_events(account, ids))
-
-    return calendar_events[:limit], total
+    return calendar_events[:limit], data.get("total", 0)
 
 
 @frappe.whitelist()
 def get_calendar_events(account: str, ids: list[str]) -> list[dict]:
     """Returns a list of calendar events for the specified account and IDs."""
 
-    service = get_calendar_event_service(account)
-    calendar_map = {c["id"]: c for c in service.calendars}
+    client = get_account_client(account)
+    calendar_map = {c["id"]: c for c in get_cached_calendars(account)}
 
     events = {}
-    for event in service.get(ids):
+    for event in jmap_events.get_events(client, ids):
         event = format_calendar_event(account, calendar_map, event)
         events[event["id"]] = event
 
@@ -489,29 +499,30 @@ def update_calendar_event(
 ) -> None:
     """Updates a calendar event for the given account and event ID."""
 
-    participants = expand_mailing_list_participants(participants)
-    event = {
-        "id": id,
-        "uid": uid,
-        "organizer": organizer,
-        "calendar_ids": calendar_ids,
-        "status": status.lower(),
-        "is_draft": draft,
-        "title": title,
-        "start": start,
-        "duration": duration,
-        "time_zone": time_zone,
-        "recurrence_rule": recurrence_rule,
-        "show_without_time": show_without_time,
-        "privacy": privacy.lower() if privacy else None,
-        "free_busy_status": free_busy_status.lower() if free_busy_status else None,
-        "description": description,
-        "locations": locations,
-        "links": links,
-        "participants": participants,
-        "alerts": alerts,
-        "use_default_alerts": use_default_alerts,
-    }
+    fields = parse(
+        EventFields,
+        {
+            "organizer": organizer,
+            "calendar_ids": calendar_ids,
+            "status": status,
+            "draft": draft,
+            "title": title,
+            "start": start,
+            "duration": duration,
+            "time_zone": time_zone,
+            "recurrence_rule": recurrence_rule,
+            "show_without_time": show_without_time,
+            "privacy": privacy,
+            "free_busy_status": free_busy_status,
+            "description": description,
+            "locations": locations,
+            "links": links,
+            "participants": expand_mailing_list_participants(participants),
+            "alerts": alerts,
+            "use_default_alerts": use_default_alerts,
+        },
+    )
+    event = {"id": id, "uid": uid, **fields.for_service()}
 
     use_custom_invites = (
         send_scheduling_messages
@@ -523,27 +534,29 @@ def update_calendar_event(
     if use_custom_invites:
         previous_attendees, event["sequence"] = _previous_invite_state(account, id)
 
-    service = get_calendar_event_service(account)
+    client = get_account_client(account)
     # Read before the write: moving a series moves the occurrences its overrides are keyed by.
-    stored = (service.get([id]) or [{}])[0]
-    response = service.update(
-        [event], send_scheduling_messages=send_scheduling_messages and not use_custom_invites
-    )
-
+    stored = (jmap_events.get_events(client, [id]) or [{}])[0]
     title = _("Calendar Event Update Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        response = jmap_events.update_events(
+            client, account, [event], send_scheduling_messages and not use_custom_invites
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
-    _reanchor_overrides(service, id, stored, start, recurrence_rule)
+    if id not in response.updated:
+        frappe.throw(_(format_set_error(response.not_updated.get(id))), title=title)
+
+    _reanchor_overrides(client, id, stored, fields.start, fields.recurrence_rule)
 
     if use_custom_invites:
         _enqueue_event_notification(account, "update", event_id=id, previous_attendees=previous_attendees)
 
 
-def _reanchor_overrides(service, id: str, stored: dict, start: str | None, rule: dict | None) -> None:
+def _reanchor_overrides(
+    client: SuiteJMAPClient, id: str, stored: dict, start: str | None, rule: dict | None
+) -> None:
     """Moves an edited series' overrides along with the occurrences they belong to.
 
     An override is keyed by the start its occurrence was expanded at. Move the series and every
@@ -593,7 +606,7 @@ def _reanchor_overrides(service, id: str, stored: dict, start: str | None, rule:
     except ValueError:
         return
 
-    service.set_overrides(id, reanchored)
+    jmap_events.set_overrides(client, id, reanchored)
 
 
 @frappe.whitelist()
@@ -620,24 +633,27 @@ def update_calendar_event_instance(
         if use_custom_invites:
             next_sequence = cint(event.get("sequence") if event else 0) + 1
 
-    service = get_calendar_event_service(account)
-    response = service.update_instance(
-        master_id,
-        recurrence_id,
-        patch,
-        send_scheduling_messages=send_scheduling_messages and not use_custom_invites,
-        sequence=next_sequence,
-    )
-
+    client = get_account_client(account)
     title = _("Calendar Event Instance Update Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][master_id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        response = jmap_events.update_instance(
+            client,
+            master_id,
+            recurrence_id,
+            patch,
+            send_scheduling_messages=send_scheduling_messages and not use_custom_invites,
+            sequence=next_sequence,
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if master_id not in response.updated:
+        frappe.throw(_(get_set_error_message(response, "update", master_id)), title=title)
 
     if use_custom_invites:
-        _enqueue_event_notification(account, "update", event_id=master_id)
+        # Named, or the mail would be the series' own: its start is where the occurrence used to
+        # be, and the edit that just moved it lives on the occurrence alone.
+        _enqueue_event_notification(account, "update", event_id=master_id, recurrence_id=recurrence_id)
 
 
 @frappe.whitelist()
@@ -645,26 +661,35 @@ def update_calendar_event_instance(
 def delete_calendar_events(account: str, ids: list[str], send_scheduling_messages: bool = False) -> None:
     """Deletes a calendar event for the given account by its ID."""
 
-    service = get_calendar_event_service(account)
+    client = get_account_client(account)
 
     use_custom_invites = send_scheduling_messages and custom_event_invites_enabled()
 
     # Snapshot organizer-owned events (with other participants) before deletion so we can send our
     # own cancellations for them.
-    snapshots = _cancellable_snapshots(account, service, ids) if use_custom_invites else []
+    snapshots = _cancellable_snapshots(account, client, ids) if use_custom_invites else []
     custom_ids = {snapshot["id"] for snapshot in snapshots}
 
     # Suppress the JMAP server's own scheduling ONLY for the events we cancel ourselves. Anything
     # the acting account does not organize keeps server scheduling on, so a non-organizer's delete
     # still notifies the organizer instead of being silently dropped.
-    if custom_ids:
-        _raise_if_not_destroyed(service.delete(list(custom_ids), send_scheduling_messages=False))
-        if remaining := [id for id in ids if id not in custom_ids]:
+    try:
+        if custom_ids:
             _raise_if_not_destroyed(
-                service.delete(remaining, send_scheduling_messages=send_scheduling_messages)
+                jmap_events.delete_events(client, list(custom_ids), send_scheduling_messages=False)
             )
-    else:
-        _raise_if_not_destroyed(service.delete(ids, send_scheduling_messages=send_scheduling_messages))
+            if remaining := [id for id in ids if id not in custom_ids]:
+                _raise_if_not_destroyed(
+                    jmap_events.delete_events(
+                        client, remaining, send_scheduling_messages=send_scheduling_messages
+                    )
+                )
+        else:
+            _raise_if_not_destroyed(
+                jmap_events.delete_events(client, ids, send_scheduling_messages=send_scheduling_messages)
+            )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Event Deletion Error"))
 
     for snapshot in snapshots:
         _enqueue_event_notification(account, "cancel", event_snapshot=snapshot)
@@ -677,25 +702,28 @@ def delete_calendar_event_instance(
 ) -> None:
     """Deletes a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
 
-    service = get_calendar_event_service(account)
+    client = get_account_client(account)
 
     snapshot = None
     if send_scheduling_messages and custom_event_invites_enabled():
-        if snapshots := _cancellable_snapshots(account, service, [master_id]):
+        if snapshots := _cancellable_snapshots(account, client, [master_id]):
             snapshot = snapshots[0]
 
     # Suppress the server's own scheduling only when we send a custom cancel for this
     # (organizer-owned) instance; otherwise let the server notify so nothing is dropped.
-    response = service.delete_instance(
-        master_id, recurrence_id, send_scheduling_messages=send_scheduling_messages and snapshot is None
-    )
-
     title = _("Calendar Event Instance Deletion Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][master_id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        response = jmap_events.delete_instance(
+            client,
+            master_id,
+            recurrence_id,
+            send_scheduling_messages=send_scheduling_messages and snapshot is None,
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if master_id not in response.updated:
+        frappe.throw(_(get_set_error_message(response, "update", master_id)), title=title)
 
     if snapshot:
         _enqueue_event_notification(account, "cancel", event_snapshot=snapshot, recurrence_id=recurrence_id)
@@ -845,9 +873,9 @@ def send_event_alert_notification(user: str, alert: dict, ctx: dict | None = Non
         return
 
     try:
-        service = CalendarEventService(account, get_jmap_connection(user))
+        client = account_view(get_jmap_client(user), account)
 
-        events = service.get([event_id])
+        events = jmap_events.get_events(client, [event_id])
         if not events:
             logger.warning("calendar-alert-event-not-found")
             return
@@ -951,7 +979,7 @@ def _previous_invite_state(account: str, id: str) -> tuple[dict[str, dict], int]
     diff.
     """
 
-    events = get_calendar_event_service(account).get([id])
+    events = jmap_events.get_events(get_account_client(account), [id])
     if not events:
         return {}, 1
 
@@ -960,7 +988,7 @@ def _previous_invite_state(account: str, id: str) -> tuple[dict[str, dict], int]
     return mail_attendees(event, organizer), cint(event.get("sequence")) + 1
 
 
-def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:
+def _cancellable_snapshots(account: str, client, ids: list[str]) -> list[dict]:
     """Returns raw event snapshots the acting organizer should send cancellations for.
 
     Skips events the acting account doesn't organize, and events with no participants other
@@ -971,7 +999,7 @@ def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:
         return []
 
     snapshots = []
-    for event in service.get(ids):
+    for event in jmap_events.get_events(client, ids):
         organizer = (event.get("organizerCalendarAddress") or "").lower().replace("mailto:", "")
         if not acting_as_organizer(account, organizer):
             continue
@@ -986,13 +1014,13 @@ def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:
     return snapshots
 
 
-def _raise_if_not_destroyed(response: dict) -> None:
+def _raise_if_not_destroyed(response: SetResult) -> None:
     """Raises a user-facing error listing any events the JMAP server refused to destroy."""
 
-    if not response.get("notDestroyed"):
+    if not response.not_destroyed:
         return
 
-    messages = [f"{id}: {error['description']}" for id, error in response["notDestroyed"].items()]
+    messages = [f"{id}: {format_set_error(error)}" for id, error in response.not_destroyed.items()]
     frappe.throw(
         _("Calendar Event Deletion Error(s):<br>{0}").format("<br>".join(messages)),
         title=_("Calendar Event Deletion Error"),

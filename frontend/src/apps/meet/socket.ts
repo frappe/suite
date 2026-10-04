@@ -1,14 +1,20 @@
-import { type Socket } from "socket.io-client";
+import { type Socket } from 'socket.io-client'
 
-import { createSiteSocket } from "@/realtime";
+import { createSiteSocket } from '@/realtime'
 
-let socket: Socket | null = null;
+let socket: Socket | null = null
 
 export function initSocket(): Socket {
-	socket = createSiteSocket({ transports: ["websocket", "polling"] });
-	return socket;
+  socket = createSiteSocket({ transports: ['websocket', 'polling'] })
+  return socket
 }
 
 export function useSocket(): Socket | null {
-	return socket;
+  return socket
+}
+
+/** Close the socket `initSocket` opened. MeetLayout calls it on unmount. */
+export function disposeSocket(): void {
+  socket?.disconnect()
+  socket = null
 }

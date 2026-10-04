@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
+import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import * as Y from 'yjs'
+
 import { writerEditorExtensions } from './editor-extensions'
 
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
@@ -14,9 +15,11 @@ const writerEditor = (content: string) => {
     extensions: writerEditorExtensions({
       collaborative: false,
       mentionItems: () => [],
+      onMentionQuery: () => {},
       onCommentActivated: () => {},
       onAnchors: () => {},
       scrollParent: () => null,
+      media: null,
       comments: ydoc.getMap('comments'),
       ydoc,
       activeComment: ref(null),

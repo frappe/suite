@@ -1,5 +1,5 @@
-export const COL_HEADER_H  = 24
-export const ROW_HEADER_W  = 50
+export const COL_HEADER_H = 24
+export const ROW_HEADER_W = 50
 export const DEFAULT_COL_W = 100
 export const DEFAULT_ROW_H = 24
 // Thickness of the overlay scrollbars (see canvas/scrollbars.js). Shared so DOM
@@ -17,8 +17,12 @@ export const DEFAULT_TOTAL_COLS = 26
 // importers always see the current value.
 export let TOTAL_ROWS
 export let TOTAL_COLS
-export function setTotalRows(n) { TOTAL_ROWS = Math.max(1, Math.floor(n)) }
-export function setTotalCols(n) { TOTAL_COLS = Math.max(1, Math.floor(n)) }
+export function setTotalRows(n) {
+  TOTAL_ROWS = Math.max(1, Math.floor(n))
+}
+export function setTotalCols(n) {
+  TOTAL_COLS = Math.max(1, Math.floor(n))
+}
 setTotalRows(DEFAULT_TOTAL_ROWS)
 setTotalCols(DEFAULT_TOTAL_COLS)
 
@@ -39,21 +43,66 @@ function _token(name, fallback) {
 }
 
 export const COLORS = {
-  get white()        { return _token('--surface-base', '#FFFFFF') },
-  get gridLine()     { return _token('--outline-gray-2', '#E2E2E2') },
-  get headerBg()     { return _token('--surface-sidebar', '#F8F8F8') },
-  get headerText()   { return _token('--ink-gray-5', '#7C7C7C') },
-  get cellText()     { return _token('--ink-gray-9', '#171717') },
-  get sparkline()    { return _token('--ink-teal-7', '#0F766E') },
-  get selFill()      { return _token('--surface-gray-3', 'rgba(23, 23, 23, 0.06)') },
-  get selBorder()    { return _token('--ink-gray-9', '#171717') },
-  get selHandle()    { return _token('--ink-gray-9', '#171717') },
-  get activeHeader() { return _token('--surface-gray-4', '#E2E2E2') },
-  get rangeHeader()  { return _token('--surface-gray-3', '#EDEDED') },
-  get freezeLine()   { return _token('--ink-gray-7', '#525252') },
-  get pickerFill()   { return _token('--surface-gray-2', 'rgba(23, 23, 23, 0.05)') },
-  get pickerBorder() { return _token('--ink-gray-7', '#525252') },
-  get chipFill()     { return _token('--surface-gray-3', '#EDEDED') },
-  get chipCaret()    { return _token('--ink-gray-7', '#525252') },
-  get invalidMark()  { return _token('--ink-red-5', '#D93025') },
+  get white() {
+    return _token('--surface-base', '#FFFFFF')
+  },
+  get gridLine() {
+    return _token('--outline-gray-2', '#E2E2E2')
+  },
+  get headerBg() {
+    return _token('--surface-sidebar', '#F8F8F8')
+  },
+  get headerText() {
+    return _token('--ink-gray-5', '#7C7C7C')
+  },
+  get cellText() {
+    return _token('--ink-gray-9', '#171717')
+  },
+  // Ink for text sitting on a cell fill. A fill stores a literal colour and
+  // ignores the theme, so these must not flip with it either — they read the
+  // raw palette scale, which is fixed in both themes. They are the two values
+  // --ink-gray-9 itself resolves to, so a filled cell keeps the ink it already
+  // had in each theme. utils/contrast.js decides which one a fill gets.
+  get inkOnLight() {
+    return _token('--gray-950', '#171717')
+  },
+  get inkOnDark() {
+    return _token('--gray-50', '#FAFAFA')
+  },
+  get sparkline() {
+    return _token('--ink-teal-7', '#0F766E')
+  },
+  get selFill() {
+    return _token('--surface-gray-3', 'rgba(23, 23, 23, 0.06)')
+  },
+  get selBorder() {
+    return _token('--ink-gray-9', '#171717')
+  },
+  get selHandle() {
+    return _token('--ink-gray-9', '#171717')
+  },
+  get activeHeader() {
+    return _token('--surface-gray-4', '#E2E2E2')
+  },
+  get rangeHeader() {
+    return _token('--surface-gray-3', '#EDEDED')
+  },
+  get freezeLine() {
+    return _token('--ink-gray-7', '#525252')
+  },
+  get pickerFill() {
+    return _token('--surface-gray-2', 'rgba(23, 23, 23, 0.05)')
+  },
+  get pickerBorder() {
+    return _token('--ink-gray-7', '#525252')
+  },
+  get chipFill() {
+    return _token('--surface-gray-3', '#EDEDED')
+  },
+  get chipCaret() {
+    return _token('--ink-gray-7', '#525252')
+  },
+  get invalidMark() {
+    return _token('--ink-red-5', '#D93025')
+  },
 }

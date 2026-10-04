@@ -3,21 +3,27 @@ import type { LocationQuery, Router } from 'vue-router'
 export type FilesViewMode = 'list' | 'grid'
 export type FilesSort = 'title' | 'owner' | 'modified' | 'kind' | 'size'
 export type FilesDirection = 'asc' | 'desc'
-export type FilesGroup = 'none' | 'type' | 'owner' | 'modified'
+/** The optional list columns, in the order the list shows them. Name is always shown. */
+export const FILES_COLUMNS = ['owner', 'modified', 'kind', 'size'] as const
+export type FilesColumn = (typeof FILES_COLUMNS)[number]
+/** The date the date column shows. Recent shows when the user opened each file. */
+export type FilesDateColumn = 'modified' | 'opened'
 
+/** How the listing shows its rows: what the user chose, and what folder links and the saved preference carry. */
 export interface PresentationState {
   view: FilesViewMode
   sort: FilesSort
   dir: FilesDirection
-  group: FilesGroup
   columns: string[]
 }
+
+/** A change the View settings menu or a sortable header asks for. Columns change on their own. */
+export type PresentationChange = Partial<Pick<PresentationState, 'view' | 'sort' | 'dir'>>
 
 export const DEFAULT_PRESENTATION: PresentationState = {
   view: 'list',
   sort: 'title',
   dir: 'asc',
-  group: 'none',
   columns: ['owner', 'modified'],
 }
 
@@ -34,7 +40,6 @@ export function resolvePresentation(
     view: oneOf(query.view, ['list', 'grid']) ?? viewOverride ?? saved.view,
     sort: oneOf(query.sort, ['title', 'owner', 'modified', 'kind', 'size']) ?? saved.sort,
     dir: oneOf(query.dir, ['asc', 'desc']) ?? saved.dir,
-    group: oneOf(query.group, ['none', 'type', 'owner', 'modified']) ?? saved.group,
     columns: normalizeColumns(saved.columns),
   }
 }
@@ -42,7 +47,7 @@ export function resolvePresentation(
 export async function replacePresentation(
   router: Router,
   state: PresentationState,
-  change: Partial<Pick<PresentationState, 'view' | 'sort' | 'dir' | 'group'>>,
+  change: PresentationChange,
 ): Promise<void> {
   const next = { ...state, ...change }
   writePresentationPreference(next)
@@ -52,14 +57,17 @@ export async function replacePresentation(
       view: next.view,
       sort: next.sort,
       dir: next.dir,
-      group: next.group === 'none' ? undefined : next.group,
     },
   })
 }
 
-export function writePresentationPreference(value: PresentationState): void {
+export function writePresentationPreference({ view, sort, dir, columns }: PresentationState): void {
   if (typeof localStorage === 'undefined') return
-  localStorage.setItem(KEY, JSON.stringify(value))
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ view, sort, dir, columns }))
+  } catch {
+    // Storage blocked or full (private windows): the choice still applies through the URL.
+  }
 }
 
 export function readPresentationPreference(): Partial<PresentationState> | null {
@@ -79,6 +87,7 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
 
 function normalizeColumns(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_PRESENTATION.columns]
-  return value.filter((column): column is string => ['owner', 'modified', 'kind', 'size'].includes(column))
+  return value.filter((column): column is FilesColumn =>
+    (FILES_COLUMNS as readonly unknown[]).includes(column),
+  )
 }
-

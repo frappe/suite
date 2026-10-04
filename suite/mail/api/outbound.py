@@ -271,7 +271,7 @@ def _normalize_recipients(
     result = []
     for recipient in recipients:
         name, email = parseaddr(recipient)
-        recipient_dict = {"name": name, "email": email}
+        recipient_dict = {"display_name": name, "email": email}
         if recipient_type:
             recipient_dict["type"] = recipient_type
         result.append(recipient_dict)

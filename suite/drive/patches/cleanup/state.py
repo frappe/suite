@@ -4,7 +4,7 @@ Mirrors `suite.drive.patches.build.state`'s atomic-write discipline: a
 temp file, `fsync`, `os.replace`, and a directory `fsync`, so a run killed
 mid-write leaves the previous version readable, and an unreadable file is
 quarantined rather than silently overwritten. Cleanup's phases are far
-smaller than Build's, so one shared `PhaseResult` shape covers all eight
+smaller than Build's, so one shared `PhaseResult` shape covers all seven
 instead of one dataclass per phase.
 """
 
@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 STATE_FILENAME = "drive-cleanup-state.json"
@@ -66,6 +66,7 @@ class PhaseResult:
 
     completed: bool = False
     rows_deleted: int = 0
+    media_rows_kept: int = 0
     fields_dropped: int = 0
     property_setters_dropped: int = 0
     doctypes_dropped: int = 0
@@ -73,18 +74,15 @@ class PhaseResult:
     single_values_dropped: int = 0
     ycomments_cleared: int = 0
     sheet_comments_stripped: int = 0
-    forwarders_removed: int = 0
-    wildcard_prefix_removed: bool = False
     sidecars_deleted: int = 0
-    candidates_found: int = 0
-    referenced_excluded: int = 0
-    job_ids: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> PhaseResult:
+        # Unknown keys are dropped, so a state file written while Cleanup
+        # still had an `s3_prefix` phase (with its own counters) loads.
         known = cls.__dataclass_fields__
         return cls(**{key: value for key, value in (data or {}).items() if key in known})
 
@@ -122,7 +120,7 @@ class CleanupState:
             if markers:
                 raise CorruptCleanupStateError(_marker_message(self.path, markers))
             return {"version": STATE_VERSION}
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             data = None
         if not isinstance(data, dict):
             spoiled = self._quarantine()
@@ -165,10 +163,19 @@ class CleanupState:
     def put_census(self, names: list[str]) -> None:
         self.save({**self.load(), "census": list(names)})
 
+    def get_backup(self) -> str | None:
+        """The backup the operator named before the run that reached phase 1."""
+        backup = self.load().get("backup")
+        return backup if isinstance(backup, str) else None
+
+    def put_backup(self, backup: str) -> None:
+        self.save({**self.load(), "backup": backup})
+
     def get_settings_snapshot(self) -> dict | None:
         """The `DISK_SETTINGS_FIELDS` snapshot `phase_file_rows` persists
         before step 5 drops the live columns, read by `phase_thumbnails` and
-        `phase_s3_prefix`. `None` means no run has reached phase 1 yet."""
+        the manual `delete_legacy_objects` command. `None` means no run has
+        reached phase 1 yet."""
         snapshot = self.load().get("disk_settings_snapshot")
         return dict(snapshot) if isinstance(snapshot, dict) else None
 

@@ -14,10 +14,14 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.mapping import GENERAL
-from suite.drive.patches.build.ports import ACTIVE
+from suite.drive.patches.build.ports import ACTIVE, WriterBody
 from suite.drive.patches.build.titles import SiblingTitles
+from suite.drive.patches.build.writer_bodies import convert_template_body
 
 ADMINISTRATOR = "Administrator"
+# `Writer Document.content`'s own default: one empty Yjs update, base64. A
+# legacy template has only HTML.
+EMPTY_BODY = "AAA="
 # The counters this phase owns. Every other value in `ContentConversion`
 # belongs to the links or slides phase and must survive a template rerun.
 TEMPLATE_FIELDS = (
@@ -25,11 +29,14 @@ TEMPLATE_FIELDS = (
     "template_nodes_adopted",
     "writer_templates_converted",
     "template_title_renames",
+    "template_media_copied",
+    "template_bodies_rewritten",
+    "template_media_references_missing",
 )
 NODE_FIELDS = (
     "name",
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "kind",
@@ -122,7 +129,7 @@ def convert_templates(env, *, batch_size: int = BUILD_BATCH_SIZE, result=None) -
         renamed += int(title != source_title)
         if kind == "writer":
             seen += 1
-            created += _writer_template(env, place, row, title)
+            created += _writer_template(env, place, row, title, result)
         else:
             created += _presentation_template(env, place, row, title)
         target.commit()
@@ -154,7 +161,7 @@ def _templates_folder(env) -> str:
         row = exact[0]
         expected = {
             "title": "Templates",
-            "parent": root,
+            "parent_node": root,
             "root": root,
             "path": "",
             "kind": "folder",
@@ -177,7 +184,7 @@ def _templates_folder(env) -> str:
     node = {
         "name": name,
         "title": "Templates",
-        "parent": root,
+        "parent_node": root,
         "root": root,
         "path": "",
         "kind": "folder",
@@ -204,22 +211,13 @@ def _templates_folder(env) -> str:
     return name
 
 
-def _writer_template(env, place, row, title) -> int:
+def _writer_template(env, place, row, title, result) -> int:
     target = env.content_target
     _valid_owner(env, row.owner)
-    document = {
-        "name": row.name,
-        "node": row.name,
-        "content": "AAA=",
-        "html": row.content or "",
-        "settings": compact_settings(row.keymap),
-        "collab": 0,
-        **standard_fields(row),
-    }
     node = {
         "name": row.name,
         "title": title,
-        "parent": place.folder,
+        "parent_node": place.folder,
         "root": place.root,
         "path": place.path,
         "kind": "document",
@@ -234,6 +232,20 @@ def _writer_template(env, place, row, title) -> int:
         "trash_root": None,
         "content_modified": row.modified,
         "is_template": 1,
+        **standard_fields(row),
+    }
+    # The source body with every borrowed picture pointed at a copy under the
+    # template node (§14.7). It is what a stored document must match, so a
+    # rerun that finds the copies derives the same body and passes.
+    source = WriterBody(content=EMPTY_BODY, html=row.content or "")
+    body, copies = convert_template_body(env, result, row, node, source)
+    document = {
+        "name": row.name,
+        "node": row.name,
+        "content": body.content,
+        "html": body.html,
+        "settings": compact_settings(row.keymap),
+        "collab": 0,
         **standard_fields(row),
     }
     found_doc = target.writer_document(row.name)
@@ -255,6 +267,10 @@ def _writer_template(env, place, row, title) -> int:
         grants,
         link=repair,
     )
+    # In the caller's commit, with the document that names them.
+    target.insert_nodes(copies)
+    result.template_media_copied += len(copies)
+    result.template_bodies_rewritten += int(body != source)
     return 1
 
 

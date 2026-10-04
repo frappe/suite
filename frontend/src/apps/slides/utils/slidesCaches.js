@@ -17,8 +17,8 @@ export const draftsDbName = (user) => `${DRAFTS_DB_NAME}:${user}`
 
 // everything but the bundle, which is public and identical for every user
 export const USER_CACHE_NAMES = [
-	SHELL_CACHE_NAME,
-	API_CACHE_NAME,
-	MEDIA_CACHE_NAME,
-	PINNED_CACHE_NAME,
+  SHELL_CACHE_NAME,
+  API_CACHE_NAME,
+  MEDIA_CACHE_NAME,
+  PINNED_CACHE_NAME,
 ]

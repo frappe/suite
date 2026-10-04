@@ -12,7 +12,5 @@ class DriveGrant(Document):
 
 
 def on_doctype_update() -> None:
-    frappe.db.add_unique(
-        "Drive Grant", ["node", "principal"], constraint_name="grant_node_principal"
-    )
+    frappe.db.add_unique("Drive Grant", ["node", "principal"], constraint_name="grant_node_principal")
     frappe.db.add_index("Drive Grant", ["principal", "node"], "grant_principal")

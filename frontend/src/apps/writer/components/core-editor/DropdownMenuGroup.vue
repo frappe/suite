@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { Popover, Button } from 'frappe-ui'
+import { Button, Popover } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   // Passed by MenuItems.vue for all component items

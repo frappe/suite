@@ -8,6 +8,7 @@ talking to a bucket or to a dictionary.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from suite.drive.patches.build.copy_ledger import CopyLedger
 from suite.drive.patches.build.ports import (
     ContentTarget,
     DriveTarget,
@@ -30,6 +31,10 @@ BUILD_BATCH_SIZE = 1000
 # The framework backfill pages at 500 by default and commits per page.
 BACKFILL_BATCH_SIZE = 500
 
+# Site config key an operator sets after reading `private/drive-build-skipped.json`
+# to let Build finish with rows it could not convert (§14.9).
+ACCEPT_SKIPS_CONFIG_KEY = "drive_build_accept_skips"
+
 
 @dataclass(frozen=True)
 class LegacyS3Config:
@@ -41,13 +46,16 @@ class LegacyS3Config:
 
     @classmethod
     def for_site(cls) -> LegacyS3Config:
-        import frappe
+        from frappe.utils import cint
 
-        settings = frappe.get_single("Drive Disk Settings")
+        from suite.drive.patches.build.ports import legacy_single_value
+
+        # Plain `tabSingles` reads: the meta no longer declares these fields
+        # by the time Build runs, so `frappe.get_single` would not carry them.
         return cls(
-            enabled=bool(settings.enabled),
-            bucket=settings.bucket or "",
-            endpoint_url=settings.endpoint_url or "",
+            enabled=bool(cint(legacy_single_value("Drive Disk Settings", "enabled"))),
+            bucket=legacy_single_value("Drive Disk Settings", "bucket") or "",
+            endpoint_url=legacy_single_value("Drive Disk Settings", "endpoint_url") or "",
         )
 
 
@@ -58,6 +66,12 @@ class BuildEnvironment:
     state: BuildState
     legacy_s3: LegacyS3Config = field(default_factory=LegacyS3Config)
     open_bucket: Callable[[], S3Bucket] | None = None
+    # Every legacy S3 object the copy step placed, by key, for the manual
+    # legacy-object delete. `None` only in a test of a step that never copies.
+    copy_ledger: CopyLedger | None = None
+    # Whether an operator has accepted this run's skipped rows in site config
+    # (`drive_build_accept_skips`). Unset, Build refuses to finish with any.
+    accept_skips: bool = False
     # Steps 4 to 6. Left optional so the storage step, and every test of it,
     # keeps building the same environment it always did.
     tree: LegacyTree | None = None
@@ -84,7 +98,11 @@ class BuildEnvironment:
 
     @classmethod
     def for_site(cls) -> BuildEnvironment:
+        import frappe
+
         from suite.drive.patches.build.docshare_journal import DocSharePreimageJournal
+        from suite.drive.patches.build.gate import refuse_below_upgrade_floor
+        from suite.drive.patches.build.legacy import S3_URL_PREFIX
         from suite.drive.patches.build.ports import (
             BotoBucket,
             SiteContentSource,
@@ -100,13 +118,15 @@ class BuildEnvironment:
             SiteUsage,
         )
         from suite.drive.patches.build.slide_journal import SlidePreimageJournal
-        from suite.drive.utils.files import S3_URL_PREFIX
 
+        refuse_below_upgrade_floor()
         return cls(
             storage=SiteStorage(),
             files=SiteFiles(S3_URL_PREFIX),
             state=BuildState.for_site(),
             legacy_s3=LegacyS3Config.for_site(),
+            copy_ledger=CopyLedger.for_site(),
+            accept_skips=bool(frappe.conf.get(ACCEPT_SKIPS_CONFIG_KEY)),
             # Deferred: building the driver constructs a boto3 client, and the
             # gate must be able to refuse a misconfigured site first.
             open_bucket=BotoBucket.from_site,
@@ -127,6 +147,11 @@ class BuildEnvironment:
         if self.open_bucket is None:
             raise RuntimeError("Build has no S3 bucket, but the legacy S3 copy step needs one")
         return self.open_bucket()
+
+    def ledger(self) -> CopyLedger:
+        if self.copy_ledger is None:
+            raise RuntimeError("Build has no copy ledger, but the legacy S3 copy step records every copy")
+        return self.copy_ledger
 
     def now(self) -> str:
         """The stamp Build puts on a row it authored, not one it copied."""

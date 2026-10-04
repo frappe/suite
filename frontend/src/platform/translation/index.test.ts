@@ -55,7 +55,9 @@ describe('translation', () => {
       },
     }
     let installed = false
-    const pending = installTranslation(app as any).then(() => { installed = true })
+    const pending = installTranslation(app as any).then(() => {
+      installed = true
+    })
     expect(typeof app.config.globalProperties.__).toBe('function')
     expect(window.__).toBe(app.config.globalProperties.__)
     expect(installed).toBe(false)

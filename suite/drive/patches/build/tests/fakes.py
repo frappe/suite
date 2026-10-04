@@ -18,11 +18,13 @@ import hashlib
 from copy import deepcopy
 from dataclasses import replace
 
+from suite.drive.patches.build.copy_ledger import CopyLedger
 from suite.drive.patches.build.docshare_journal import DOCSHARE_COLUMNS, row_values
 from suite.drive.patches.build.docshare_journal import (
     JournalConflictError as DocShareJournalConflictError,
 )
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
+from suite.drive.patches.build.legacy import S3_URL_PREFIX, get_s3_url
 from suite.drive.patches.build.ports import (
     ACTIVE,
     PERSONAL,
@@ -38,6 +40,7 @@ from suite.drive.patches.build.ports import (
     SheetSnapshotRow,
     SlideRow,
     TreeRow,
+    WriterBody,
     WriterTemplateRow,
     WriterVersionRow,
 )
@@ -47,7 +50,6 @@ from suite.drive.patches.build.slide_journal import (
     UnknownBodyState,
 )
 from suite.drive.patches.build.state import BuildState
-from suite.drive.utils.files import S3_URL_PREFIX, get_s3_url
 
 # S3's own `CopyObject` source ceiling, an inclusive maximum
 # (`s3transfer.utils.MAX_SINGLE_UPLOAD_SIZE`). Spelled out rather than
@@ -150,13 +152,15 @@ class FakeFiles:
             ]
         )
 
-    def add(self, name, file_url, file_name=None, blob=None, file_type=None):
+    def add(self, name, file_url, file_name=None, blob=None, file_type=None, *, status=None, file_size=None):
         self.rows[name] = {
             "name": name,
             "file_url": file_url,
             "file_name": file_name,
             "blob": blob,
             "file_type": file_type,
+            "status": status,
+            "file_size": file_size,
         }
         self.committed[name] = dict(self.rows[name])
         return self
@@ -169,7 +173,14 @@ class FakeFiles:
 
     def _page(self, after, limit, matches):
         found = [
-            LegacyRow(row["name"], row["file_url"], row["file_name"], row.get("file_type"))
+            LegacyRow(
+                row["name"],
+                row["file_url"],
+                row["file_name"],
+                row.get("file_type"),
+                status=row.get("status"),
+                file_size=row.get("file_size"),
+            )
             for name, row in sorted(self.rows.items())
             if name > after and not row["blob"] and matches(row)
         ]
@@ -325,8 +336,9 @@ def build_environment(
     clock=None,
     make_id=None,
     make_token=None,
+    accept_skips=False,
 ):
-    """A `BuildEnvironment` wired to fakes, with its state file in `tmp_path`."""
+    """A `BuildEnvironment` wired to fakes, with its state file and copy ledger in `tmp_path`."""
     bucket = bucket if bucket is not None else FakeBucket()
     if legacy_s3 is None:
         legacy_s3 = LegacyS3Config(enabled=True, bucket=bucket.bucket)
@@ -374,6 +386,8 @@ def build_environment(
         state=BuildState(tmp_path / "drive-build-state.json"),
         legacy_s3=legacy_s3,
         open_bucket=lambda: bucket,
+        copy_ledger=CopyLedger(tmp_path / "drive-build-copied-objects.jsonl"),
+        accept_skips=accept_skips,
         tree=tree,
         drive=drive,
         content=content,
@@ -530,6 +544,9 @@ class FakeDrive:
     def node_ids(self):
         return set(self.node_rows)
 
+    def root_count(self):
+        return len(self.root_rows)
+
     def nodes(self, names):
         return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
 
@@ -573,6 +590,38 @@ class FakeDrive:
             row["node"] == node and row["principal"].startswith("$LINK:") and row["role"] > 0
             for row in self.grant_rows.values()
         )
+
+    def owned_nodes(self, after, limit):
+        rows = sorted(
+            (
+                row
+                for row in self.node_rows.values()
+                if row.get("kind") != "root"
+                and row.get("owner") not in (None, "", "Administrator", "Guest")
+                and row["name"] > after
+            ),
+            key=lambda row: row["name"],
+        )
+        return [dict(row) for row in rows[:limit]]
+
+    def effective_role(self, node, user):
+        """Nearest grant wins, the user's own row before `$GENERAL`.
+
+        Enough of §4 for the creator rule: a deny is NONE, nothing is 0,
+        and links and groups do not come up in these fixtures."""
+        chain = [node["name"]] if node.get("kind") == "root" else [node.get("root")]
+        if node.get("kind") != "root":
+            chain.extend(part for part in (node.get("path") or "").strip("/").split("/") if part)
+            chain.append(node["name"])
+        for node_id in reversed(chain):
+            roles = {
+                row["principal"]: row["role"] for row in self.grant_rows.values() if row["node"] == node_id
+            }
+            if user in roles:
+                return roles[user]
+            if "$GENERAL" in roles:
+                return roles["$GENERAL"]
+        return 0
 
     # -- writes
 
@@ -674,10 +723,12 @@ class FakeContent:
         slides=(),
         media=(),
         shares=(),
+        writer_bodies=None,
         users=None,
         timezone="UTC",
         host="site.example",
     ):
+        self.writer_bodies = dict(writer_bodies or {})
         self.document_rows = {(row.doctype, row.name): row for row in documents}
         self.file_rows = list(files)
         self.writer_version_rows = list(writer_versions)
@@ -691,6 +742,10 @@ class FakeContent:
         self.host = host
         self.op_stamps = {}
         self.residual_versions = []
+
+    def index_document_reads(self):
+        # An index changes how fast a read is, not what it answers.
+        pass
 
     def documents(self, doctype, after, limit):
         rows = [
@@ -715,12 +770,16 @@ class FakeContent:
     def sheet_snapshots(self, sheet, after, limit):
         rows = sorted(
             (row for row in self.sheet_snapshot_rows if row.sheet == sheet),
-            key=lambda row: (int(row.seq), row.name),
+            # `ORDER BY seq` puts a NULL first; the rule under test refuses it.
+            key=lambda row: (row.seq is not None, int(row.seq or 0), row.name),
         )
-        return [row for row in rows if (int(row.seq), row.name) > after][:limit]
+        return [row for row in rows if (int(row.seq or 0), row.name) > after][:limit]
 
     def residual_writer_versions(self, limit):
         return sorted(self.residual_versions)[:limit]
+
+    def sheet_snapshot_exists(self, sheet, snapshot):
+        return any(row.sheet == sheet and row.name == snapshot for row in self.sheet_snapshot_rows)
 
     def sheet_op_stamp(self, sheet, seq):
         return self.op_stamps.get((sheet, seq))
@@ -748,9 +807,14 @@ class FakeContent:
         wanted = set(urls)
         return [row for row in self.media_rows if row.file_url in wanted]
 
-    def presentation_is_template(self, deck):
-        row = self.document_rows.get(("Presentation", deck))
-        return bool(row and row.is_template)
+    def writer_document_is_template(self, name):
+        return any(row.name == name for row in self.writer_template_rows)
+
+    def writer_body(self, name):
+        return self.writer_bodies.get(name)
+
+    def update_writer_body(self, name, content, html):
+        self.writer_bodies[name] = WriterBody(content=content, html=html)
 
     def content_shares(self, after, limit):
         return [row for row in sorted(self.share_rows, key=lambda row: row.name) if row.name > after][:limit]
@@ -835,7 +899,7 @@ class FakeContentTarget:
         ]
 
     def child_nodes(self, parent):
-        return [dict(row) for row in self.node_rows.values() if row.get("parent") == parent]
+        return [dict(row) for row in self.node_rows.values() if row.get("parent_node") == parent]
 
     def root_metadata(self, node):
         return self.drive.root_metadata(node)
@@ -935,6 +999,18 @@ class FakeContentTarget:
             suffix, "application/octet-stream"
         )
         return self.add_blob(name, data, mime_type=mime)
+
+    def private_blob(self, name, filename):
+        source = self.blob(name)
+        # Tree fixtures use opaque blob ids unless a test needs byte facts.
+        if source is None or source.is_private:
+            return name
+        data = self.read_blob(name)
+        for blob_name, body in self.blob_bytes.items():
+            row = self.blob_rows[blob_name]
+            if body == data and row.is_private and row.status == "Ready":
+                return blob_name
+        return self.add_blob(f"content-blob-{len(self.blob_rows) + 1}", data, mime_type=source.mime_type).name
 
     def write_root_pair(self, node, metadata, grants):
         self._unit(
@@ -1087,6 +1163,9 @@ class FakeContentTarget:
 
     def update_slides(self, rows):
         self.content.update_slides(rows)
+
+    def update_writer_body(self, name, content, html):
+        self.content.update_writer_body(name, content, html)
 
     def versions_to_thin(self, report_at):
         return self.thin_count

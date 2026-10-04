@@ -31,6 +31,8 @@ which is the only direction that can tell a dangling link from a row that
 simply belongs to frappe.
 """
 
+from dataclasses import replace
+
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -99,7 +101,18 @@ def convert_trees(env, tree: TreeConversion, plans, *, batch_size: int = BUILD_B
 
 
 def _walk_root(env, tree: TreeConversion, plan: RootPlan, batch_size: int) -> None:
-    """Breadth-first from one root node, one level per pass."""
+    """Breadth-first from one root node, one level per pass.
+
+    Every row the walk reaches is Drive's, whatever else it was: `folder`
+    is the only thing read to decide that, and `attached_to_*` is not
+    read at all. A framework attachment the legacy hooks filed under a
+    Drive root (a user's avatar, the Suite Settings logo, a Meet
+    recording) becomes a file node from its own bytes like any upload
+    (§14.4), which is also what keeps Cleanup's gate 1 honest: the gate
+    counts reachable rows without a node, and this walk leaves none it did
+    not report as a skip. Attachments under frappe's `Home` are never
+    reached and stay `File` rows.
+    """
     # A root node contributes no id to `path` (§3.1: "The root id stays
     # outside `path`"), so its children start at depth 1 with an empty path.
     level = {plan.node: _Context(plan.node, plan.node, "", 0, "root")}
@@ -193,7 +206,7 @@ def _convert_siblings(env, tree: TreeConversion, parent: _Context, rows: list[Tr
                 tree.record_rename(TitleRename(row.name, title, claimed))
             title = claimed
 
-        node = _node_row(row, parent, title, stamp)
+        node = _node_row(env, row, parent, title, stamp)
         _measure(tree, node)
         if node["kind"] == "file" and not node["blob"]:
             # §14.1: a row whose bytes could not be reached becomes a node
@@ -313,18 +326,23 @@ def _kind(row: TreeRow) -> str:
     return "file"
 
 
-def _node_row(row: TreeRow, parent: _Context, title: str, stamp) -> dict:
+def _node_row(env, row: TreeRow, parent: _Context, title: str, stamp) -> dict:
     """§14.4's column map, as one row ready for a bulk insert."""
     kind = _kind(row)
     is_file = kind == "file"
     blob = row.blob if is_file else None
+    if blob:
+        blob = env.content_target.private_blob(blob, row.file_name or row.name)
+        if blob != row.blob:
+            fact = env.content_target.blob(blob)
+            row = replace(row, file_size=fact.file_size, mime_type=fact.mime_type)
     trash_root, trashed_at = stamp if stamp else (None, None)
     return {
         "name": row.name,
         "title": title,
         # §14.3: a direct child of a root points at the root node, and only
         # a root node has no parent at all.
-        "parent": parent.node,
+        "parent_node": parent.node,
         "root": parent.root,
         # `DriveNode._validate_tree_position` computes the same string as
         # `parent.path + parent.name + "/"`, and "" under a root. That is
@@ -332,7 +350,8 @@ def _node_row(row: TreeRow, parent: _Context, title: str, stamp) -> dict:
         "path": parent.child_path,
         "kind": kind,
         "blob": blob,
-        # §14.4: `file_size` for files, 0 for folders. A folder's legacy
+        # §14.4: linked files take their size and MIME from File Blob;
+        # legacy metadata can disagree with the available bytes. A folder's
         # `file_size` is the rolled-up total its ancestors kept
         # (`apply_file_size_delta`), and charging it again would double every
         # byte under it in the §14.2 step 12 recompute.

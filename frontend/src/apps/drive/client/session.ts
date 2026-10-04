@@ -1,14 +1,21 @@
-import { readonly, ref, type Ref } from 'vue'
+import { computed, readonly, ref, type Ref } from 'vue'
 
-import { api } from './generated'
-import { driveOperation } from './operation'
-import type { DriveAccess, DriveNode } from './types'
 import { getCookieSessionUser } from '@/platform/session'
-import { transport as defaultTransport, TransportError, type Transport } from '@/platform/transport'
+import {
+  transport as defaultTransport,
+  TransportError,
+  type RequestScope,
+  type Transport,
+} from '@/platform/transport'
+
+import { onAccessChange } from './accessChanges'
+import { api } from './generated'
+import { driveLinks } from './links'
+import { driveOperation } from './operation'
+import { DRIVE_ROLES, type DriveAccess, type DriveNode } from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
-export const CREDENTIAL_CAP = 20
 
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
 export type MediaStatus = 'loading' | 'ready' | 'refused'
@@ -21,29 +28,35 @@ export interface MediaHandle {
   refresh(): Promise<void>
 }
 
+export { CredentialOverflowError } from './links'
+
+/**
+ * `fetch` with the share-link credentials of one request. The response
+ * updates the link store, as a Drive request's does.
+ */
+export type CredentialFetch = (url: string, init?: RequestInit) => Promise<Response>
+
 export interface CredentialGroup {
   nodeIds: string[]
-  /** For product-private connection payloads. Do not render or persist. */
-  codes: string[]
+  fetch: CredentialFetch
 }
 
-export class CredentialOverflowError extends Error {
-  readonly type = 'DriveCredentialOverflow'
-
-  constructor(readonly nodeId: string, readonly count: number) {
-    super(`Drive node ${nodeId} needs ${count} link codes. The limit is ${CREDENTIAL_CAP}.`)
-  }
-}
-
+/**
+ * Share-link credentials for requests a product sends itself. Each one
+ * includes the document's own code. The Drive client selects the codes; the
+ * product never sees them.
+ */
 export interface CredentialGrouper {
-  group(nodeIds: readonly string[]): Promise<CredentialGroup[]>
-  codesFor(nodeIds: readonly string[]): Promise<readonly string[]>
-}
-
-export interface UnavailableShare {
-  available: false
-  title: string
-  reason: string
+  /** Splits node ids into ordered groups that each fit one request. */
+  group(nodeIds: readonly string[]): CredentialGroup[]
+  /** Sends one request about the document itself. */
+  fetch: CredentialFetch
+  /**
+   * Sends one request with every held link code, at most 20, the document's
+   * own always among them. For a request that asks the server which nodes the
+   * caller can open, such as a composite's manifest.
+   */
+  fetchHeld: CredentialFetch
 }
 
 export interface DocumentSession {
@@ -53,8 +66,14 @@ export interface DocumentSession {
   readonly title: Readonly<Ref<string>>
   readonly state: Readonly<Ref<SessionState>>
   readonly access: Readonly<Ref<DriveAccess>>
+  /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
+  readonly canShare: Readonly<Ref<boolean>>
   rename(title: string): Promise<DriveNode>
-  share(): Promise<UnavailableShare>
+  /**
+   * Opens the Drive share dialog. Access is read again after each write in
+   * it, and once more when it closes.
+   */
+  share(): Promise<void>
   copy(parent: string, title?: string): Promise<DriveNode>
   comments: {
     list(resolved?: boolean): Promise<unknown>
@@ -78,8 +97,19 @@ export interface DocumentSession {
   dispose(): void
 }
 
+/** Opens the share dialog for a node. Resolves when it closes. */
+export type ShareOpener = (node: string) => Promise<void>
+
+const openShareDialog: ShareOpener = async (node) => {
+  const { presentShareDialog } = await import('@/apps/drive/files/features/share/present')
+  await presentShareDialog(node)
+}
+
 interface SessionDependencies {
+  /** The node, when the caller has read it with `access` expanded. The session then opens without reading it again. */
+  node?: DriveNode
   transport?: Transport
+  share?: ShareOpener
   window?: Window
   signedIn?: () => string | null
   setInterval?: typeof globalThis.setInterval
@@ -88,11 +118,19 @@ interface SessionDependencies {
 
 type MediaRow = { node: string; url: string; expires: number; blob?: string }
 
-const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, { entity: true })
-const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(api.node_patch.rename, { entity: true })
-const copyNode = driveOperation<{ node: string; parent: string; title?: string }, DriveNode>(api.node_copy, {
+const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, {
   entity: true,
 })
+const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(
+  api.node_patch.rename,
+  { entity: true },
+)
+const copyNode = driveOperation<{ node: string; parent_node: string; title?: string }, DriveNode>(
+  api.node_copy,
+  {
+    entity: true,
+  },
+)
 const mediaList = driveOperation<{ node: string }, { media: MediaRow[] }>(api.node_media)
 
 export async function openDriveDocumentSession(
@@ -102,27 +140,35 @@ export async function openDriveDocumentSession(
   const requester = dependencies.transport ?? defaultTransport
   const signedIn = dependencies.signedIn ?? getCookieSessionUser
   const controller = new AbortController()
-  const node = await requester.request(nodeGet, { node: nodeId, expand: 'access' }, { signal: controller.signal })
+  const node =
+    dependencies.node ??
+    (await requester.request(
+      nodeGet,
+      { node: nodeId, expand: 'access' },
+      { signal: controller.signal },
+    ))
   if (!node.content_doctype || !node.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a content document`)
   }
-  void requester
-    .request(
-      driveOperation<{ node: string }, Record<string, never>>(api.node_visit),
-      { node: nodeId },
-      { signal: controller.signal },
-    )
-    .catch(() => {})
+  // A node reached through a share link records no visit: Recent sends no link
+  // codes, so it could never show it (spec §10.13). The same rule as
+  // `isLinkOnly` in `files/features/linkAccess.ts`.
+  if (!node.access?.via_link) {
+    void requester
+      .request(
+        driveOperation<{ node: string }, Record<string, never>>(api.node_visit),
+        { node: nodeId },
+        { signal: controller.signal },
+      )
+      .catch(() => {})
+  }
 
   const title = ref(node.title)
   const state = ref<SessionState>(toSessionState(node))
   const access = ref<DriveAccess>(node.access ?? {})
   const handles = new Map<string, InternalMediaHandle>()
-  const credentialsByNode = new Map<string, string[]>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
-
-  rememberCredential(node)
 
   const refreshAccess = async () => {
     if (disposed) return
@@ -135,7 +181,6 @@ export async function openDriveDocumentSession(
       title.value = fresh.title
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
-      rememberCredential(fresh)
     } catch (error) {
       const status = error instanceof TransportError ? error.status : 0
       if (status < 400 || status >= 500 || status === 408 || status === 429) return
@@ -200,52 +245,10 @@ export async function openDriveDocumentSession(
     return handle
   }
 
-  function rememberCredential(value: DriveNode): void {
-    const held = value.access?.via_link
-    credentialsByNode.set(value.name, held && held.startsWith('$LINK:') ? [held.slice(6)] : [])
-  }
-
-  const credentials: CredentialGrouper = {
-    async group(nodeIds) {
-      for (const id of new Set(nodeIds)) {
-        if (credentialsByNode.has(id)) continue
-        try {
-          rememberCredential(
-            await requester.request(nodeGet, { node: id, expand: 'access' }, { signal: controller.signal }),
-          )
-        } catch {
-          credentialsByNode.set(id, [])
-        }
-      }
-      const groups: CredentialGroup[] = []
-      let current: CredentialGroup = { nodeIds: [], codes: [] }
-      for (const id of nodeIds) {
-        const codes = credentialsByNode.get(id) ?? []
-        if (codes.length > CREDENTIAL_CAP) throw new CredentialOverflowError(id, codes.length)
-        const combined = [...new Set([...current.codes, ...codes])]
-        if (current.nodeIds.length && combined.length > CREDENTIAL_CAP) {
-          groups.push(current)
-          current = { nodeIds: [], codes: [] }
-        }
-        current.nodeIds.push(id)
-        current.codes = [...new Set([...current.codes, ...codes])]
-      }
-      if (current.nodeIds.length) groups.push(current)
-      return groups
-    },
-    async codesFor(nodeIds) {
-      const groups = await this.group(nodeIds)
-      if (groups.length > 1) throw new CredentialOverflowError(nodeIds.join(','), groups.flatMap((g) => g.codes).length)
-      return groups[0]?.codes ?? []
-    },
-  }
-
   const request = <Input, Output>(operation: any, input: Input) =>
-    requester.request(
-      driveOperation<Input, Output>(operation, { looseInput: true }),
-      input,
-      { signal: controller.signal },
-    )
+    requester.request(driveOperation<Input, Output>(operation, { covers: [nodeId] }), input, {
+      signal: controller.signal,
+    })
 
   const targetWindow = dependencies.window ?? (typeof window === 'undefined' ? undefined : window)
   const setEvery = dependencies.setInterval ?? globalThis.setInterval
@@ -256,6 +259,8 @@ export async function openDriveDocumentSession(
   }, MEDIA_REFRESH_MS)
   const onFocus = () => void refreshAccess()
   targetWindow?.addEventListener('focus', onFocus)
+  // A share write can lower the caller's own access: react before the dialog closes.
+  const stopAccessChanges = onAccessChange(nodeId, () => void refreshAccess())
 
   return {
     nodeId,
@@ -264,6 +269,7 @@ export async function openDriveDocumentSession(
     title: readonly(title),
     state: readonly(state),
     access: readonly(access),
+    canShare: computed(() => canShare(state.value, access.value)),
     async rename(nextTitle) {
       const updated = await requester.request(
         renameNode,
@@ -274,18 +280,16 @@ export async function openDriveDocumentSession(
       return updated
     },
     async share() {
+      await (dependencies.share ?? openShareDialog)(nodeId)
+      // A share write can change the caller's own access (spec §8.6).
       await refreshAccess()
-      return {
-        available: false,
-        title: 'Sharing is unavailable',
-        reason: 'The Drive sharing workflow is coming in ticket 008.',
-      }
     },
-    copy: (parent, nextTitle) => requester.request(
-      copyNode,
-      { node: nodeId, parent, title: nextTitle },
-      { signal: controller.signal },
-    ),
+    copy: (parent, nextTitle) =>
+      requester.request(
+        copyNode,
+        { node: nodeId, parent_node: parent, title: nextTitle },
+        { signal: controller.signal },
+      ),
     comments: {
       list: (resolved) => request(api.node_threads, { node: nodeId, resolved }),
       create: (anchor, text, authorName) =>
@@ -306,7 +310,7 @@ export async function openDriveDocumentSession(
       restore: (seq) => request(api.node_version_restore, { node: nodeId, seq }),
     },
     media: (id) => getHandle(id).public,
-    credentials,
+    credentials: documentCredentials(nodeId),
     refreshAccess,
     dispose() {
       if (disposed) return
@@ -315,8 +319,55 @@ export async function openDriveDocumentSession(
       clearEvery(accessTimer)
       clearEvery(mediaTimer)
       targetWindow?.removeEventListener('focus', onFocus)
+      stopAccessChanges()
     },
   }
+}
+
+/** The credentials of one open document. */
+export function documentCredentials(nodeId: string): CredentialGrouper {
+  return {
+    group: (nodeIds) =>
+      driveLinks.group(nodeIds, [nodeId]).map((group) => ({
+        nodeIds: group.nodeIds,
+        fetch: (url, init) => fetchWith(group.scope, url, init),
+      })),
+    fetch: (url, init) => fetchWith(driveLinks.scope([nodeId]), url, init),
+    fetchHeld: (url, init) => fetchWith(driveLinks.scopeHeld([nodeId]), url, init),
+  }
+}
+
+async function fetchWith(
+  scope: RequestScope,
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const headers = new Headers(scope.headers)
+  new Headers(init.headers).forEach((value, name) => headers.set(name, value))
+  const response = await globalThis.fetch(url, { ...init, headers })
+  if (response.ok) scope.settled?.({ ok: true, output: undefined })
+  else scope.settled?.({ ok: false, error: await responseError(response) })
+  return response
+}
+
+/** The error a Frappe response names: the v2 envelope type, or the v1 `exc_type`. */
+async function responseError(response: Response): Promise<TransportError> {
+  const body: unknown = await response
+    .clone()
+    .json()
+    .catch(() => null)
+  const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+  const first = Array.isArray(record.errors)
+    ? (record.errors[0] as Record<string, unknown> | undefined)
+    : undefined
+  const type = [first?.type, record.exc_type].find(
+    (value): value is string => typeof value === 'string',
+  )
+  return new TransportError({
+    type: type ?? 'RequestError',
+    message: response.statusText,
+    status: response.status,
+  })
 }
 
 interface InternalMediaHandle {
@@ -325,6 +376,11 @@ interface InternalMediaHandle {
   cacheKey: Ref<string>
   status: Ref<MediaStatus>
   public: MediaHandle
+}
+
+/** Share needs MANAGE on an Active node. The server refuses a grant on a trashed one. */
+export function canShare(state: SessionState, access: DriveAccess): boolean {
+  return state === 'Active' && (access.role ?? 0) >= DRIVE_ROLES.manage
 }
 
 function toSessionState(node: DriveNode): SessionState {

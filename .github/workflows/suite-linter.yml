@@ -27,6 +27,7 @@ jobs:
   linter:
     name: Frappe Linter
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -43,9 +44,10 @@ jobs:
           pip install semgrep
           semgrep scan --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness .
 
-  ruff-format:
-    name: Ruff Format Check
+  python-checks:
+    name: Ruff Format and Vulnerable Dependency Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +55,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-          cache: pip
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
 
       - name: Install Ruff
         run: pip install ruff==0.12.3
@@ -64,15 +74,19 @@ jobs:
       - name: Check formatting
         run: ruff format --check .
 
-      # Existing lint findings make this evidence-only until the baseline is clean.
-      - name: Check lint baseline
-        continue-on-error: true
+      - name: Lint
+        run: ruff check .
+
+      - name: Install and run pip-audit
+        if: ${{ !cancelled() }}
         run: |
-          ruff check .
+          pip install pip-audit
+          pip-audit --desc on .
 
   javascript-health:
     name: JavaScript Health Baseline
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -86,11 +100,19 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      # Existing findings make these evidence-only until their baselines are clean.
+      # Unused files, dependencies, unresolved imports and duplicate exports fail.
+      # Phase 2 of the tooling work fixes the current findings and removes
+      # `continue-on-error` here.
       - name: Check frontend dead code
         continue-on-error: true
-        run: yarn knip:frontend
+        run: yarn knip:frontend --exclude exports,types
 
+      # Unused exports and types are evidence-only until that baseline is clean.
+      - name: Report frontend unused exports
+        continue-on-error: true
+        run: yarn knip:frontend --include exports,types
+
+      # Existing findings make these evidence-only until their baselines are clean.
       - name: Check E2E dead code
         continue-on-error: true
         run: yarn knip:e2e
@@ -121,28 +143,3 @@ jobs:
           path: test-results/yarn-audit.txt
           if-no-files-found: warn
           retention-days: 30
-
-  deps-vulnerable-check:
-    name: Vulnerable Dependency Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - uses: actions/checkout@v4
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-            ${{ runner.os }}-
-
-      - name: Install and run pip-audit
-        run: |
-          pip install pip-audit
-          pip-audit --desc on .

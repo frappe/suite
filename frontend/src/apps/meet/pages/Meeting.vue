@@ -1,1288 +1,1305 @@
 <template>
-	<div
-		class="fixed inset-0 h-[100dvh] flex flex-col overflow-hidden bg-surface-base text-ink-gray-9"
-		data-meeting-component
-		data-theme="dark"
-	>
-		<div
-			v-if="!hasConnectionError && !connectionState.connectionMoved"
-			class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
-			:class="headerVisible ? 'h-11' : 'h-0'"
-		>
-			<MeetingHeader
-				:meetingId="meetingId"
-				:meetingTitle="previewTitle"
-			>
-				<template #right>
-					<RecordingIndicator
-						v-if="!showPreview && recording.isLive.value && recording.state.value"
-						:recording="recording.state.value"
-						:can-stop="isCurrentUserHost || isCurrentUserCohost"
-						@click="handleRecordingAction"
-					/>
-					<Button
-						v-if="showPreview"
-						size="sm"
-						icon-left="lucide-link-2"
-						label="Copy link"
-						@click="copyMeetingLink"
-					/>
-					<Button
-						v-if="showPreview && !session.isLoggedIn"
-						variant="ghost"
-						size="sm"
-						@click="redirectToLogin"
-					>
-						Sign In
-					</Button>
-				</template>
-			</MeetingHeader>
-		</div>
+  <div
+    class="fixed inset-0 h-[100dvh] flex flex-col overflow-hidden bg-surface-base text-ink-gray-9"
+    data-meeting-component
+    data-theme="dark"
+  >
+    <div
+      v-if="!hasConnectionError && !connectionState.connectionMoved"
+      class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
+      :class="headerVisible ? 'h-11' : 'h-0'"
+    >
+      <MeetingHeader :meetingId="meetingId" :meetingTitle="previewTitle">
+        <template #right>
+          <RecordingIndicator
+            v-if="!showPreview && recording.isLive.value && recording.state.value"
+            :recording="recording.state.value"
+            :can-stop="isCurrentUserHost || isCurrentUserCohost"
+            @click="handleRecordingAction"
+          />
+          <Button
+            v-if="showPreview"
+            size="sm"
+            icon-left="lucide-link-2"
+            label="Copy link"
+            @click="copyMeetingLink"
+          />
+          <Button
+            v-if="showPreview && !session.isLoggedIn"
+            variant="ghost"
+            size="sm"
+            @click="redirectToLogin"
+          >
+            Sign In
+          </Button>
+        </template>
+      </MeetingHeader>
+    </div>
 
-		<div
-			v-if="connectionState.connectionMoved"
-			class="grid flex-1 place-items-center px-5 py-16"
-		>
-			<div class="flex w-full max-w-sm flex-col items-center text-center">
-				<div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
-					<span class="lucide-monitor-smartphone block size-6" aria-hidden="true" />
-				</div>
-				<h1 class="mt-4 text-2xl-semibold text-ink-gray-9">
-					Meeting moved to another device
-				</h1>
-				<p class="mt-2 text-p-base text-ink-gray-6">
-					Your audio and video have stopped here because you joined from another device.
-				</p>
-				<Button
-					class="mt-6"
-					variant="solid"
-					theme="gray"
-					icon-left="lucide-arrow-left"
-					label="Back to Meet"
-					@click="router.push('/meet')"
-				/>
-			</div>
-		</div>
+    <div v-if="connectionState.connectionMoved" class="grid flex-1 place-items-center px-5 py-16">
+      <div class="flex w-full max-w-sm flex-col items-center text-center">
+        <div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
+          <span class="lucide-monitor-smartphone block size-6" aria-hidden="true" />
+        </div>
+        <h1 class="mt-4 text-2xl-semibold text-ink-gray-9">Meeting moved to another device</h1>
+        <p class="mt-2 text-p-base text-ink-gray-6">
+          Your audio and video have stopped here because you joined from another device.
+        </p>
+        <Button
+          class="mt-6"
+          variant="solid"
+          theme="gray"
+          icon-left="lucide-arrow-left"
+          label="Back to Meet"
+          @click="router.push('/meet')"
+        />
+      </div>
+    </div>
 
-		<!-- Error state -->
-		<div v-else-if="hasConnectionError" class="flex-1 flex items-center justify-center">
-			<div class="text-center text-white">
-				<div class="text-red-500 mb-4">
-					<lucide-alert-circle class="w-12 h-12 mx-auto" />
-				</div>
-				<p class="text-lg mb-4">{{ connectionState.connectionError }}</p>
-				<Button @click="resetToPreview" variant="outline" theme="red">Try Again</Button>
-			</div>
-		</div>
+    <!-- Error state -->
+    <div v-else-if="hasConnectionError" class="flex-1 flex items-center justify-center">
+      <div class="text-center text-white">
+        <div class="text-red-500 mb-4">
+          <lucide-alert-circle class="w-12 h-12 mx-auto" />
+        </div>
+        <p class="text-lg mb-4">{{ connectionState.connectionError }}</p>
+        <Button @click="resetToPreview" variant="outline" theme="red">Try Again</Button>
+      </div>
+    </div>
 
-		<template v-else>
-			<!-- Preview mode -->
-			<MeetingPreview
-				v-if="showPreview"
-				:meetingId="meetingId"
-				:meetingTitle="previewTitle"
-				:isCameraOn="mediaState.isCameraOn"
-				:isMicOn="mediaState.isMicOn"
-				:mediaStream="mediaState.localStream"
-				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
-				:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-				:isConnecting="isInitializingPreview || sfuConnection.isConnecting.value"
-				:userInitials="currentUser.userInitials.value"
-				:userAvatar="currentUser.userAvatar.value"
-				:currentUserName="
-					currentUser.currentUser.value?.full_name ||
-					currentUser.currentUser.value?.name ||
-					'You'
-				"
-				:guestAuthToken="connectionState.guestAuthToken"
-				:isWaitingForApproval="lobbyStore.isWaitingForApproval"
-				:setLocalVideoRef="mediaControls.setLocalVideoRef"
-				@toggle-microphone="mediaControls.toggleMicrophone()"
-				@toggle-camera="mediaControls.toggleCamera()"
-				@join-from-preview="joinMeetingFromPreview"
-				@guest-join-complete="handleGuestJoinComplete"
-				@leave-waiting-room="leaveWaitingRoom"
-				@try-join-again="tryJoinAgain"
-				@device-changed="handleDeviceChanged"
-			/>
+    <template v-else>
+      <!-- Preview mode -->
+      <MeetingPreview
+        v-if="showPreview"
+        :meetingId="meetingId"
+        :meetingTitle="previewTitle"
+        :isCameraOn="mediaState.isCameraOn"
+        :isMicOn="mediaState.isMicOn"
+        :mediaStream="mediaState.localStream"
+        :cameraPermissionGranted="mediaState.cameraPermissionGranted"
+        :microphonePermissionGranted="mediaState.microphonePermissionGranted"
+        :isConnecting="isInitializingPreview || sfuConnection.isConnecting.value"
+        :userInitials="currentUser.userInitials.value"
+        :userAvatar="currentUser.userAvatar.value"
+        :currentUserName="
+          currentUser.currentUser.value?.full_name || currentUser.currentUser.value?.name || 'You'
+        "
+        :guestAuthToken="connectionState.guestAuthToken"
+        :isWaitingForApproval="lobbyStore.isWaitingForApproval"
+        :setLocalVideoRef="mediaControls.setLocalVideoRef"
+        @toggle-microphone="mediaControls.toggleMicrophone()"
+        @toggle-camera="mediaControls.toggleCamera()"
+        @join-from-preview="joinMeetingFromPreview"
+        @guest-join-complete="handleGuestJoinComplete"
+        @leave-waiting-room="leaveWaitingRoom"
+        @try-join-again="tryJoinAgain"
+        @device-changed="handleDeviceChanged"
+      />
 
-			<!-- Main meeting interface -->
-			<template v-else>
-			<div class="relative grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
-				<div
-					class="grid flex-1 min-h-0 transition-[grid-template-columns] duration-300 ease-out relative"
-					:style="{
-						'--panel-width': panelWidth,
-						gridTemplateColumns: 'minmax(0, 1fr) var(--panel-width)',
-					}"
-				>
-					<div class="flex flex-col min-h-0 relative">
-						<!-- Video area -->
-						<div class="p-2.5 flex flex-col flex-1 min-h-0 text-white">
-							<div
-								v-if="e2eeJoinPendingMessage"
-								class="flex h-full flex-col items-center justify-center px-4 py-12 text-center"
-								role="status"
-								aria-live="polite"
-								data-testid="e2ee-join-pending-state"
-							>
-								<h1 class="text-md-medium text-ink-gray-8">
-									{{ e2eeJoinTitle }}
-								</h1>
-								<p class="mt-1 max-w-sm text-p-base text-ink-gray-7">
-									{{ e2eeJoinPendingMessage }}
-								</p>
-								<Badge class="mt-3" variant="subtle" theme="gray">
-									<template #prefix>
-										<span class="lucide-lock size-3.5" aria-hidden="true" />
-									</template>
-									End-to-end encrypted
-								</Badge>
-							</div>
-							<MeetingLayout v-else @open-people-panel="togglePeople" />
-						</div>
-					</div>
+      <!-- Main meeting interface -->
+      <template v-else>
+        <div class="relative grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+          <div
+            class="grid flex-1 min-h-0 transition-[grid-template-columns] duration-300 ease-out relative"
+            :style="{
+              '--panel-width': panelWidth,
+              gridTemplateColumns: 'minmax(0, 1fr) var(--panel-width)',
+            }"
+          >
+            <div class="flex flex-col min-h-0 relative">
+              <!-- Video area -->
+              <div class="p-2.5 flex flex-col flex-1 min-h-0 text-white relative">
+                <div
+                  v-if="e2eeJoinPendingMessage"
+                  class="flex h-full flex-col items-center justify-center px-4 py-12 text-center"
+                  role="status"
+                  aria-live="polite"
+                  data-testid="e2ee-join-pending-state"
+                >
+                  <h1 class="text-md-medium text-ink-gray-8">
+                    {{ e2eeJoinTitle }}
+                  </h1>
+                  <p class="mt-1 max-w-sm text-p-base text-ink-gray-7">
+                    {{ e2eeJoinPendingMessage }}
+                  </p>
+                  <Badge class="mt-3" variant="subtle" theme="gray">
+                    <template #prefix>
+                      <span class="lucide-lock size-3.5" aria-hidden="true" />
+                    </template>
+                    End-to-end encrypted
+                  </Badge>
+                </div>
+                <MeetingLayout v-else @open-people-panel="togglePeople" />
+                <CaptionOverlay
+                  v-if="!e2eeJoinPendingMessage"
+                  :is-captions-enabled="isCaptionsEnabled"
+                  :lines="captionLines"
+                  :participants="participantStore.participants"
+                  :current-user="currentUser.currentUser.value"
+                />
+              </div>
+            </div>
 
-					<!-- Panel Container -->
-					<Transition
-						enter-active-class="transition-opacity duration-300 ease-out"
-						enter-from-class="opacity-0"
-						enter-to-class="opacity-100"
-						leave-active-class="transition-opacity duration-300 ease-in"
-						leave-from-class="opacity-100"
-						leave-to-class="opacity-0"
-					>
-					<div
-						v-if="activePanel"
-						class="h-full overflow-hidden z-50 md:z-auto bg-surface-base/50 backdrop-blur-sm md:bg-transparent"
-						:class="{
-							'absolute inset-0 w-full': isMobile,
-							relative: !isMobile,
-							'md:relative': true,
-						}"
-						:style="{ width: isMobile ? '100%' : '24rem' }"
-					>
-							<!-- Chat Panel -->
-							<ChatPanel
-								v-if="activePanel === 'chat'"
-								:open="true"
-								:messages="chatStore.chatMessages"
-								:avatar-by-user="participantAvatars"
-								:user-id="(currentUser.currentUser.value?.user_id as string) || ''"
-								:user-name="
-									(currentUser.currentUser.value?.full_name as string) ||
-									(currentUser.currentUser.value?.name as string) ||
-									'You'
-								"
-								:isHost="isCurrentUserHost"
-								:isCohost="isCurrentUserCohost"
-								:isGuest="isGuestSession"
-								:hostOnlyChat="chatStore.hostOnlyChat"
-								:pinned-message="chatStore.pinnedMessage"
-								@close="toggleChat"
-								@send="chat.onSendChat"
-								@pin="chat.pinMessage"
-								@unpin="unpinChatMessage"
-							/>
+            <!-- Panel Container -->
+            <Transition
+              enter-active-class="transition-opacity duration-300 ease-out"
+              enter-from-class="opacity-0"
+              enter-to-class="opacity-100"
+              leave-active-class="transition-opacity duration-300 ease-in"
+              leave-from-class="opacity-100"
+              leave-to-class="opacity-0"
+            >
+              <div
+                v-if="activePanel"
+                class="h-full overflow-hidden z-50 md:z-auto bg-surface-base/50 backdrop-blur-sm md:bg-transparent"
+                :class="{
+                  'absolute inset-0 w-full': isMobile,
+                  relative: !isMobile,
+                  'md:relative': true,
+                }"
+                :style="{ width: isMobile ? '100%' : '24rem' }"
+              >
+                <!-- Chat Panel -->
+                <ChatPanel
+                  v-if="activePanel === 'chat'"
+                  :open="true"
+                  :messages="chatStore.chatMessages"
+                  :avatar-by-user="participantAvatars"
+                  :user-id="(currentUser.currentUser.value?.user_id as string) || ''"
+                  :user-name="
+                    (currentUser.currentUser.value?.full_name as string) ||
+                    (currentUser.currentUser.value?.name as string) ||
+                    'You'
+                  "
+                  :isHost="isCurrentUserHost"
+                  :isCohost="isCurrentUserCohost"
+                  :isGuest="isGuestSession"
+                  :hostOnlyChat="chatStore.hostOnlyChat"
+                  :pinned-message="chatStore.pinnedMessage"
+                  @close="toggleChat"
+                  @send="chat.onSendChat"
+                  @pin="chat.pinMessage"
+                  @unpin="unpinChatMessage"
+                />
 
-							<!-- People Panel -->
-							<PeoplePanel
-								v-if="activePanel === 'people'"
-								:open="true"
-								:currentUser="currentUser.currentUser.value"
-								:participants="participantsForPeoplePanel"
-								:isMicOn="mediaState.isMicOn"
-								:isCameraOn="mediaState.isCameraOn"
-								:creatorUserId="meetingOwner"
-								:coHosts="meetingCoHosts"
-								:lobbyUsers="lobbyStore.lobbyUsers"
-								@close="togglePeople"
-								@muteParticipant="handleMuteParticipant"
-								@kickParticipant="handleKickParticipant"
-								@lowerHand="handleLowerHand"
-								@promoteToCohost="handlePromoteToCohost"
-								@approveLobbyUser="handleApproveLobbyUser"
-								@approveAllLobbyUsers="handleApproveAllLobbyUsers"
-								@rejectLobbyUser="handleRejectLobbyUser"
-							/>
-						</div>
-					</Transition>
-				</div>
+                <!-- People Panel -->
+                <PeoplePanel
+                  v-if="activePanel === 'people'"
+                  :open="true"
+                  :currentUser="currentUser.currentUser.value"
+                  :participants="participantsForPeoplePanel"
+                  :isMicOn="mediaState.isMicOn"
+                  :isCameraOn="mediaState.isCameraOn"
+                  :creatorUserId="meetingOwner"
+                  :coHosts="meetingCoHosts"
+                  :lobbyUsers="lobbyStore.lobbyUsers"
+                  @close="togglePeople"
+                  @muteParticipant="handleMuteParticipant"
+                  @kickParticipant="handleKickParticipant"
+                  @lowerHand="handleLowerHand"
+                  @promoteToCohost="handlePromoteToCohost"
+                  @approveLobbyUser="handleApproveLobbyUser"
+                  @approveAllLobbyUsers="handleApproveAllLobbyUsers"
+                  @rejectLobbyUser="handleRejectLobbyUser"
+                />
+              </div>
+            </Transition>
+          </div>
 
-				<!-- Meeting controls live in their own row so tiles resize without JS padding -->
-				<div class="pointer-events-none min-h-0">
-					<!-- Meeting controls -->
-					<MeetingToolbar
-						:isChatOpen="chatStore.isChatOpen"
-						:isPeopleOpen="isPeopleOpen"
-						:hasUnread="chatStore.hasUnreadMessages"
-						:lobbyUserCount="lobbyStore.lobbyUsers?.length || 0"
-						:isMicOn="mediaState.isMicOn"
-						:isCameraOn="mediaState.isCameraOn"
-						:isScreenSharing="mediaState.isScreenSharing"
-						:isFullscreen="isFullscreen"
-						:statsVisible="showStatsForNerds"
-						:isHandRaised="isHandRaised"
-						:isReactionPickerOpen="isReactionPickerOpen"
-						@update:isReactionPickerOpen="isReactionPickerOpen = $event"
-						:meetingId="meetingId"
-						:meetingTitle="meetingTitle"
-						:currentUser="currentUser.currentUser.value"
-						:cameraPermissionGranted="mediaState.cameraPermissionGranted"
-						:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-						:canManageRecording="recording.globalEnabled.value && (isCurrentUserHost || isCurrentUserCohost)"
-						:recordingStatus="recording.state.value?.status"
-						:recordingLoading="recording.startLoading.value || recording.stopLoading.value"
-						@toggle-chat="toggleChat"
-						@toggle-people="togglePeople"
-						@toggle-reactions="toggleReactions($event)"
-						@toggle-microphone="mediaControls.toggleMicrophone()"
-						@toggle-camera="mediaControls.toggleCamera()"
-						@toggle-screen-share="mediaControls.toggleScreenShare()"
-						@toggle-fullscreen="toggleFullscreen"
-						@toggle-raise-hand="raiseHand.toggleRaiseHand()"
-						@report-problem="handleReportProblem"
-						@toggle-stats="toggleStatsForNerds"
-						@end-call="sfuConnection.endCall()"
-						@device-changed="handleDeviceChanged"
-						@visibility-change="isToolbarVisible = $event"
-						@manage-recording="handleRecordingAction"
-					/>
-				</div>
-			</div>
+          <!-- Meeting controls live in their own row so tiles resize without JS padding -->
+          <div class="pointer-events-none min-h-0">
+            <!-- Meeting controls -->
+            <MeetingToolbar
+              :isChatOpen="chatStore.isChatOpen"
+              :isPeopleOpen="isPeopleOpen"
+              :hasUnread="chatStore.hasUnreadMessages"
+              :lobbyUserCount="lobbyStore.lobbyUsers?.length || 0"
+              :isMicOn="mediaState.isMicOn"
+              :isCameraOn="mediaState.isCameraOn"
+              :isScreenSharing="mediaState.isScreenSharing"
+              :isFullscreen="isFullscreen"
+              :statsVisible="showStatsForNerds"
+              :isHandRaised="isHandRaised"
+              :isReactionPickerOpen="isReactionPickerOpen"
+              :isCaptionsEnabled="isCaptionsEnabled"
+              :areCaptionsAvailable="areCaptionsAvailable"
+              @update:isReactionPickerOpen="isReactionPickerOpen = $event"
+              :meetingId="meetingId"
+              :meetingTitle="meetingTitle"
+              :currentUser="currentUser.currentUser.value"
+              :cameraPermissionGranted="mediaState.cameraPermissionGranted"
+              :microphonePermissionGranted="mediaState.microphonePermissionGranted"
+              :canManageRecording="
+                recording.globalEnabled.value && (isCurrentUserHost || isCurrentUserCohost)
+              "
+              :recordingStatus="recording.state.value?.status"
+              :recordingLoading="recording.startLoading.value || recording.stopLoading.value"
+              @toggle-chat="toggleChat"
+              @toggle-people="togglePeople"
+              @toggle-reactions="toggleReactions($event)"
+              @toggle-microphone="mediaControls.toggleMicrophone()"
+              @toggle-camera="mediaControls.toggleCamera()"
+              @toggle-screen-share="mediaControls.toggleScreenShare()"
+              @toggle-fullscreen="toggleFullscreen"
+              @toggle-raise-hand="raiseHand.toggleRaiseHand()"
+              @toggle-captions="toggleCaptions"
+              @report-problem="handleReportProblem"
+              @toggle-stats="toggleStatsForNerds"
+              @end-call="confirmAndEndCall"
+              @device-changed="handleDeviceChanged"
+              @visibility-change="isToolbarVisible = $event"
+              @manage-recording="handleRecordingAction"
+            />
+          </div>
+        </div>
 
-			<StatsForNerdsOverlay v-if="showStatsForNerds" />
+        <StatsForNerdsOverlay v-if="showStatsForNerds" />
 
-			<LobbyOverlay
-				v-if="(isInLobby || isWaitingForApproval) && !isRejected"
-				@leave="leaveLobby"
-			/>
+        <LobbyOverlay
+          v-if="(isInLobby || isWaitingForApproval) && !isRejected"
+          @leave="leaveLobby"
+        />
 
-			<RejectionOverlay v-if="isRejected && isGuestSession" @leave="goHome" />
-			</template>
-		</template>
+        <RejectionOverlay v-if="isRejected && isGuestSession" @leave="goHome" />
+      </template>
+    </template>
 
-		<!-- Join request notifications -->
-		<JoinRequestNotifications
-			:waitingUsers="lobbyUsersForNotifications"
-			@approve-user="lobby.approveUser"
-			@reject-user="lobby.rejectUser"
-		/>
+    <!-- Join request notifications -->
+    <JoinRequestNotifications
+      :waitingUsers="lobbyUsersForNotifications"
+      @approve-user="lobby.approveUser"
+      @reject-user="lobby.rejectUser"
+    />
 
-		<RecordingPreflightDialog
-			v-model:open="recordingDialogOpen"
-			:preflight="recordingPreflight"
-			:confirm="confirmRecordingStart"
-		/>
-		<RecordingStopDialog
-			v-model="recordingStopDialogOpen"
-			:loading="recording.stopLoading.value"
-			@confirm="confirmRecordingStop"
-		/>
-	</div>
+    <RecordingPreflightDialog
+      v-model:open="recordingDialogOpen"
+      :preflight="recordingPreflight"
+      :confirm="confirmRecordingStart"
+    />
+    <RecordingStopDialog
+      v-model="recordingStopDialogOpen"
+      :loading="recording.stopLoading.value"
+      @confirm="confirmRecordingStop"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, toast, useCall, useDoc, usePageMeta } from "frappe-ui";
-import { computed, h, onMounted, onUnmounted, provide, ref, toRef, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { submit } from "../utils/request";
+import { Badge, Button, toast, useCall, useDoc, usePageMeta } from 'frappe-ui'
+import {
+  computed,
+  h,
+  onMounted,
+  onScopeDispose,
+  onUnmounted,
+  provide,
+  ref,
+  toRef,
+  watch,
+} from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
-import ChatPanel from "../components/ChatPanel.vue";
-import JoinRequestNotifications from "../components/JoinRequestNotifications.vue";
-import LobbyOverlay from "../components/LobbyOverlay.vue";
-import MeetAvatar from "../components/MeetAvatar.vue";
-import MeetingLayout from "../components/MeetingLayout.vue";
-import MeetingPreview from "../components/MeetingPreview.vue";
-import MeetingHeader from "../components/MeetingHeader.vue";
-import RecordingIndicator from "../components/RecordingIndicator.vue";
-import RecordingPreflightDialog from "../components/RecordingPreflightDialog.vue";
-import RecordingStopDialog from "../components/RecordingStopDialog.vue";
-import MeetingToolbar from "../components/MeetingToolbar.vue";
-import PeoplePanel from "../components/PeoplePanel.vue";
-import RejectionOverlay from "../components/RejectionOverlay.vue";
-import StatsForNerdsOverlay from "../components/StatsForNerdsOverlay.vue";
-import { useBackgroundEffects } from "../composables/useBackgroundEffects";
-import { useChat } from "../composables/useChat";
-import { useChatStore } from "../composables/useChatStore";
-import { useConnectionState } from "../composables/useConnectionState";
-import { useCurrentUser } from "../composables/useCurrentUser";
-import { useE2EEState } from "../composables/useE2EEState";
-import { useGridLayout } from "../composables/useGridLayout";
-import { useLobby } from "../composables/useLobby";
-import { useLobbyStore } from "../composables/useLobbyStore";
-import { useMediaControls } from "../composables/useMediaControls";
+import { session, userResource } from '@/boot/session'
+import { useRootStore } from '@/stores/root'
+import { confirmLeave } from '@/utils/confirmLeave'
+import { appPageMeta } from '@/utils/documentTitle'
+
+import CaptionOverlay from '../components/CaptionOverlay.vue'
+import ChatPanel from '../components/ChatPanel.vue'
+import JoinRequestNotifications from '../components/JoinRequestNotifications.vue'
+import LobbyOverlay from '../components/LobbyOverlay.vue'
+import MeetAvatar from '../components/MeetAvatar.vue'
+import MeetingHeader from '../components/MeetingHeader.vue'
+import MeetingLayout from '../components/MeetingLayout.vue'
+import MeetingPreview from '../components/MeetingPreview.vue'
+import MeetingToolbar from '../components/MeetingToolbar.vue'
+import PeoplePanel from '../components/PeoplePanel.vue'
+import RecordingIndicator from '../components/RecordingIndicator.vue'
+import RecordingPreflightDialog from '../components/RecordingPreflightDialog.vue'
+import RecordingStopDialog from '../components/RecordingStopDialog.vue'
+import RejectionOverlay from '../components/RejectionOverlay.vue'
+import StatsForNerdsOverlay from '../components/StatsForNerdsOverlay.vue'
+import { useBackgroundEffects } from '../composables/useBackgroundEffects'
+import { useCaptions } from '../composables/useCaptions'
+import { useChat } from '../composables/useChat'
+import { useChatStore } from '../composables/useChatStore'
+import { useConnectionState } from '../composables/useConnectionState'
+import { useCurrentUser } from '../composables/useCurrentUser'
+import { useE2EEState } from '../composables/useE2EEState'
+import { useGridLayout } from '../composables/useGridLayout'
+import { meetingControls } from '../composables/useKeyboardShortcuts'
+import { useLobby } from '../composables/useLobby'
+import { useLobbyStore } from '../composables/useLobbyStore'
+import { useMediaControls } from '../composables/useMediaControls'
 import {
-	findActiveScreenShare,
-	replaceActiveScreenShare,
-	useMediaState,
-} from "../composables/useMediaState";
-import { provideMeetingContext } from "../composables/useMeetingContext";
-import {
-	useMeetingHandlers,
-} from "../composables/useMeetingHandlers";
-import { useNoiseCancellation } from "../composables/useNoiseCancellation";
-import { useNetworkQuality } from "../composables/useNetworkQuality";
-import { useParticipantStore } from "../composables/useParticipantStore";
-import { useRaiseHand } from "../composables/useRaiseHand";
-import { useRaiseHandStore } from "../composables/useRaiseHandStore";
-import {
-	type RecordingPreflight,
-	useRecording,
-} from "../composables/useRecording";
-import { useReactionStore } from "../composables/useReactionStore";
-import { useReactions } from "../composables/useReactions";
-import { useResponsiveGrid } from "../composables/useResponsiveGrid";
-import {
-	type SFUScreenShareData,
-	useSFUConnection,
-} from "../composables/useSFUConnection";
-import {
-	autoHideToolbar,
-	selectedSpeakerId,
-} from "../data/mediaPreferences";
-import {
-	setShowStatsForNerds,
-	showStatsForNerds,
-} from "../data/statsPreferences";
-import { session, userResource } from "@/boot/session";
-import { appPageMeta } from "@/utils/documentTitle";
-import { useSocket } from "../socket";
-import { deviceManager } from "../utils/media/DeviceManager";
-import type { Participant } from "../utils/media/ParticipantManager";
-import { pollKey, usePoll } from "../composables/usePoll.js";
-import { usePollStore } from "../composables/usePollStore.js";
+  findActiveScreenShare,
+  replaceActiveScreenShare,
+  useMediaState,
+} from '../composables/useMediaState'
+import { provideMeetingContext } from '../composables/useMeetingContext'
+import { useMeetingHandlers } from '../composables/useMeetingHandlers'
+import { useNetworkQuality } from '../composables/useNetworkQuality'
+import { useNoiseCancellation } from '../composables/useNoiseCancellation'
+import { useParticipantStore } from '../composables/useParticipantStore'
+import { pollKey, usePoll } from '../composables/usePoll.js'
+import { usePollStore } from '../composables/usePollStore.js'
+import { useRaiseHand } from '../composables/useRaiseHand'
+import { useRaiseHandStore } from '../composables/useRaiseHandStore'
+import { useReactions } from '../composables/useReactions'
+import { useReactionStore } from '../composables/useReactionStore'
+import { useRecording, type RecordingPreflight } from '../composables/useRecording'
+import { useResponsiveGrid } from '../composables/useResponsiveGrid'
+import { useSFUConnection, type SFUScreenShareData } from '../composables/useSFUConnection'
+import { autoHideToolbar, selectedSpeakerId } from '../data/mediaPreferences'
+import { setShowStatsForNerds, showStatsForNerds } from '../data/statsPreferences'
+import { useSocket } from '../socket'
+import { deviceManager } from '../utils/media/DeviceManager'
+import type { Participant } from '../utils/media/ParticipantManager'
+import { submit } from '../utils/request'
 
 // Router
-const route = useRoute();
-const router = useRouter();
-const meetingId = computed(() => route.params.meetingId as string);
+const route = useRoute()
+const router = useRouter()
+const meetingId = computed(() => route.params.meetingId as string)
 
 interface MeetingDocument {
-	name: string;
-	title?: string;
-	owner?: string;
-	co_hosts?: { user: string }[];
+  name: string
+  title?: string
+  owner?: string
+  co_hosts?: { user: string }[]
 }
 
 function redirectToLogin() {
-	const path = window.location.pathname.startsWith("/meet")
-		? window.location.pathname
-		: `/meet${window.location.pathname}`;
-	window.location.href = `/login?redirect-to=${encodeURIComponent(path)}`;
+  const path = window.location.pathname.startsWith('/meet')
+    ? window.location.pathname
+    : `/meet${window.location.pathname}`
+  window.location.href = `/login?redirect-to=${encodeURIComponent(path)}`
 }
 
 async function copyMeetingLink() {
-	try {
-		await navigator.clipboard.writeText(window.location.href);
-		toast.success("Meeting link copied");
-	} catch {
-		toast.error("Could not copy meeting link");
-	}
+  try {
+    await navigator.clipboard.writeText(window.location.href)
+    toast.success('Meeting link copied')
+  } catch {
+    toast.error('Could not copy meeting link')
+  }
 }
 
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeting', [
+  {
+    commands: [
+      {
+        id: 'meet-copy-link',
+        label: 'Copy meeting link',
+        enterHint: 'copy meeting link',
+        icon: 'lucide-link-2',
+        keywords: ['share', 'url'],
+        run: copyMeetingLink,
+      },
+    ],
+  },
+])
+onScopeDispose(unregisterPaletteGroups)
+
 // --- Stores (singletons) ---
-const connectionState = useConnectionState();
-const currentUser = useCurrentUser();
-const mediaState = useMediaState();
-const participantStore = useParticipantStore();
-const chatStore = useChatStore();
-const pollStore = usePollStore();
-const lobbyStore = useLobbyStore();
-const reactionStore = useReactionStore();
-const raiseHandStore = useRaiseHandStore();
-const gridLayout = useGridLayout(mediaState);
+const connectionState = useConnectionState()
+const currentUser = useCurrentUser()
+const mediaState = useMediaState()
+const participantStore = useParticipantStore()
+const chatStore = useChatStore()
+const pollStore = usePollStore()
+const lobbyStore = useLobbyStore()
+const reactionStore = useReactionStore()
+const raiseHandStore = useRaiseHandStore()
+const gridLayout = useGridLayout(mediaState)
 
 // --- Lobby notification tracking ---
-const notifiedLobbyUsers = ref(new Set<string>());
+const notifiedLobbyUsers = ref(new Set<string>())
 
 // --- Meeting doc ---
-const meetingDoc = useDoc<MeetingDocument, {
-	approveJoinRequest: (params: { user_id: string }) => unknown;
-	approveAllJoinRequests: () => unknown;
-	rejectJoinRequest: (params: { user_id: string }) => unknown;
-	getWaitingRoomDetails: () => unknown;
-	banGuest: (params: { guest_id: string }) => unknown;
-	promoteToCohost: (params: { user_id: string }) => unknown;
-}>({
-	doctype: "Meet Room",
-	name: meetingId,
-	immediate: session.isLoggedIn,
-	methods: {
-		approveJoinRequest: "approve_join_request",
-		approveAllJoinRequests: "approve_all_join_requests",
-		rejectJoinRequest: "reject_join_request",
-		getWaitingRoomDetails: "get_waiting_room_details",
-		banGuest: "ban_guest",
-		promoteToCohost: "promote_to_cohost",
-	},
-});
+const meetingDoc = useDoc<
+  MeetingDocument,
+  {
+    approveJoinRequest: (params: { user_id: string }) => unknown
+    approveAllJoinRequests: () => unknown
+    rejectJoinRequest: (params: { user_id: string }) => unknown
+    getWaitingRoomDetails: () => unknown
+    banGuest: (params: { guest_id: string }) => unknown
+    promoteToCohost: (params: { user_id: string }) => unknown
+  }
+>({
+  doctype: 'Meet Room',
+  name: meetingId,
+  immediate: session.isLoggedIn,
+  methods: {
+    approveJoinRequest: 'approve_join_request',
+    approveAllJoinRequests: 'approve_all_join_requests',
+    rejectJoinRequest: 'reject_join_request',
+    getWaitingRoomDetails: 'get_waiting_room_details',
+    banGuest: 'ban_guest',
+    promoteToCohost: 'promote_to_cohost',
+  },
+})
 const meetingTitle = computed(
-	() => meetingDoc.doc?.title || meetingDoc.doc?.name || meetingId.value,
-);
-const meetingOwner = computed(() => meetingDoc.doc?.owner || "");
-const meetingCoHosts = computed(
-	() => meetingDoc.doc?.co_hosts?.map((row) => row.user) || [],
-);
-const isCurrentUserHost = computed(
-	() => Boolean(session.user?.sessionUser && session.user.sessionUser === meetingOwner.value),
-);
-const isCurrentUserCohost = computed(
-	() => Boolean(session.user?.sessionUser && meetingCoHosts.value.includes(session.user.sessionUser)),
-);
-const recording = useRecording(meetingId.value);
-const recordingDialogOpen = ref(false);
-const recordingStopDialogOpen = ref(false);
-const recordingPreflight = ref<RecordingPreflight | null>(null);
+  () => meetingDoc.doc?.title || meetingDoc.doc?.name || meetingId.value,
+)
+const meetingOwner = computed(() => meetingDoc.doc?.owner || '')
+const meetingCoHosts = computed(() => meetingDoc.doc?.co_hosts?.map((row) => row.user) || [])
+const isCurrentUserHost = computed(() =>
+  Boolean(session.user?.sessionUser && session.user.sessionUser === meetingOwner.value),
+)
+const isCurrentUserCohost = computed(() =>
+  Boolean(session.user?.sessionUser && meetingCoHosts.value.includes(session.user.sessionUser)),
+)
+const recording = useRecording(meetingId.value)
+const recordingDialogOpen = ref(false)
+const recordingStopDialogOpen = ref(false)
+const recordingPreflight = ref<RecordingPreflight | null>(null)
 
 async function handleRecordingAction() {
-	try {
-		if (recording.isStarting.value) return;
-		if (recording.isLive.value) {
-			if (!isCurrentUserHost.value && !isCurrentUserCohost.value) return;
-			if (recording.state.value?.status !== "Stopping") recordingStopDialogOpen.value = true;
-			return;
-		}
-		recordingPreflight.value = await recording.getPreflight();
-		recordingDialogOpen.value = true;
-	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not manage recording");
-	}
+  try {
+    if (recording.isStarting.value) return
+    if (recording.isLive.value) {
+      if (!isCurrentUserHost.value && !isCurrentUserCohost.value) return
+      if (recording.state.value?.status !== 'Stopping') recordingStopDialogOpen.value = true
+      return
+    }
+    recordingPreflight.value = await recording.getPreflight()
+    recordingDialogOpen.value = true
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Could not manage recording')
+  }
 }
 
 async function confirmRecordingStop() {
-	try {
-		await recording.stop();
-		recordingStopDialogOpen.value = false;
-	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not stop recording");
-	}
+  try {
+    await recording.stop()
+    recordingStopDialogOpen.value = false
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Could not stop recording')
+  }
 }
 
 async function confirmRecordingStart() {
-	try {
-		await recording.start();
-	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not start recording");
-		throw error;
-	}
+  try {
+    await recording.start()
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Could not start recording')
+    throw error
+  }
 }
 const previewDetails = useCall<{ title?: string }, { meeting_id: string }>({
-	url: "/api/suite/meet/rooms/preview",
-	params: { meeting_id: meetingId.value },
-	immediate: !session.isLoggedIn,
-});
+  url: '/api/suite/meet/rooms/preview',
+  params: { meeting_id: meetingId.value },
+  immediate: !session.isLoggedIn,
+})
 const checkMeetingAccess = useCall<AccessData, { meeting_id: string }>({
-	url: "/api/suite/meet/rooms/access",
-	immediate: false,
-});
+  url: '/api/suite/meet/rooms/access',
+  immediate: false,
+})
 const previewTitle = computed(
-	() => meetingDoc.doc?.title || previewDetails.data?.title || meetingId.value,
-);
-usePageMeta(() => appPageMeta(previewTitle.value, "Meet"));
+  () => meetingDoc.doc?.title || previewDetails.data?.title || meetingId.value,
+)
+usePageMeta(() => appPageMeta(previewTitle.value, 'Meet'))
 
 watch(
-	() => meetingDoc.error,
-	(error) => {
-		if (error && !previewDetails.data && !previewDetails.loading) {
-			void previewDetails.reload();
-		}
-	},
-);
+  () => meetingDoc.error,
+  (error) => {
+    if (error && !previewDetails.data && !previewDetails.loading) {
+      void previewDetails.reload()
+    }
+  },
+)
 
 // --- Lobby notification conversion ---
 const lobbyUsersForNotifications = computed(() => {
-	return lobbyStore.lobbyUsers
-		.filter((user) => !notifiedLobbyUsers.value.has(user.userId))
-		.map((user) => ({
-			user_id: user.userId,
-			user_name: user.name,
-			user_image: user.avatar,
-		}));
-});
+  return lobbyStore.lobbyUsers
+    .filter((user) => !notifiedLobbyUsers.value.has(user.userId))
+    .map((user) => ({
+      user_id: user.userId,
+      user_name: user.name,
+      user_image: user.avatar,
+    }))
+})
 
-const e2eeJoinPendingMessage = ref("");
-const e2eeJoinStatus = ref<"pending" | "failed" | "">("");
-const e2eeJoinReason = ref("");
-const e2eeState = useE2EEState();
+const e2eeJoinPendingMessage = ref('')
+const e2eeJoinStatus = ref<'pending' | 'failed' | ''>('')
+const e2eeJoinReason = ref('')
+const e2eeState = useE2EEState()
 const e2eeJoinTitle = computed(() => {
-	if (e2eeJoinStatus.value === "failed") return "Could not join encrypted meeting";
-	if (e2eeJoinReason.value === "waiting-for-host") {
-		return "Waiting for the host to join";
-	}
-	return "Joining encrypted meeting";
-});
+  if (e2eeJoinStatus.value === 'failed') return 'Could not join encrypted meeting'
+  if (e2eeJoinReason.value === 'waiting-for-host') {
+    return 'Waiting for the host to join'
+  }
+  return 'Joining encrypted meeting'
+})
 
 function handleE2EEJoinStatus(event: Event): void {
-	const detail = (event as CustomEvent).detail as
-		| { status?: string; reason?: string; message?: string }
-		| undefined;
-	if (detail?.status === "pending") {
-		e2eeJoinStatus.value = "pending";
-		e2eeJoinReason.value = detail.reason || "";
-		e2eeJoinPendingMessage.value = getE2EEJoinPendingMessage(detail);
-		return;
-	}
-	if (detail?.status === "failed") {
-		e2eeJoinStatus.value = "failed";
-		e2eeJoinReason.value = detail.reason || "";
-		e2eeJoinPendingMessage.value =
-			detail.message ||
-			"Could not set up encryption for this meeting. Please leave and try again.";
-		return;
-	}
-	e2eeJoinStatus.value = "";
-	e2eeJoinReason.value = "";
-	e2eeJoinPendingMessage.value = "";
+  const detail = (event as CustomEvent).detail as
+    { status?: string; reason?: string; message?: string } | undefined
+  if (detail?.status === 'pending') {
+    e2eeJoinStatus.value = 'pending'
+    e2eeJoinReason.value = detail.reason || ''
+    e2eeJoinPendingMessage.value = getE2EEJoinPendingMessage(detail)
+    return
+  }
+  if (detail?.status === 'failed') {
+    e2eeJoinStatus.value = 'failed'
+    e2eeJoinReason.value = detail.reason || ''
+    e2eeJoinPendingMessage.value =
+      detail.message || 'Could not set up encryption for this meeting. Please leave and try again.'
+    return
+  }
+  e2eeJoinStatus.value = ''
+  e2eeJoinReason.value = ''
+  e2eeJoinPendingMessage.value = ''
 }
 
-function getE2EEJoinPendingMessage(detail: {
-	reason?: string;
-	message?: string;
-}): string {
-	if (detail.reason === "waiting-for-host") {
-		return "You'll join automatically when the host arrives.";
-	}
-	return (
-		detail.message ||
-		"Waiting for someone already in the encrypted meeting to let you in."
-	);
+function getE2EEJoinPendingMessage(detail: { reason?: string; message?: string }): string {
+  if (detail.reason === 'waiting-for-host') {
+    return "You'll join automatically when the host arrives."
+  }
+  return detail.message || 'Waiting for someone already in the encrypted meeting to let you in.'
 }
 
 // --- Guest session ---
 const isGuestSession = computed(
-	() =>
-		!session.isLoggedIn &&
-		(!!connectionState.guestAuthToken ||
-			lobbyStore.isWaitingForApproval ||
-			currentUser.currentUser.value?.is_guest === true),
-);
+  () =>
+    !session.isLoggedIn &&
+    (!!connectionState.guestAuthToken ||
+      lobbyStore.isWaitingForApproval ||
+      currentUser.currentUser.value?.is_guest === true),
+)
 
 // --- SFU Connection ---
 const sfuConnection = useSFUConnection({
-	connectionState,
-	currentUser,
-	mediaState,
-	participantStore,
-	lobbyStore,
-	meetingDoc,
-	gridLayout,
-	meetingId: meetingId.value,
-	notifiedLobbyUsers,
-	onHostMutedYou: () => {
-		if (mediaState.isMicOn) {
-			mediaControls.toggleMicrophone();
-		}
-	},
-	onHostKickedYou: () => sfuConnection.endCall(),
-	onParticipantConnectionReplaced: () => mediaControls.cleanupLocalMedia(),
-	onScreenShareStarted: (data: SFUScreenShareData) => {
-		const pid = data.participantId;
-		const producerId = data.producerId ?? data.consumer?.producerId;
-		if (!pid || !producerId) return;
-		const replacement = replaceActiveScreenShare(
-			mediaState.activeScreenShareConsumers || [],
-			{
-				source: "remote",
-				participantId: pid,
-				consumerId: data.consumer?.id || "remote-screen",
-				producerId,
-				startedAt: data.startedAt || Date.now(),
-			},
-		);
-		for (const share of replacement.replaced) {
-			sfuConnection.removeScreenSharePreview(share.consumerId);
-		}
-		mediaState.activeScreenShareConsumers = replacement.shares;
-		if (data.stream instanceof MediaStream) {
-			try {
-				const store = mediaState.screenShareStreams || {};
-				store[pid] = data.stream;
-				mediaState.screenShareStreams = store;
-				void sfuConnection
-					.attachScreenSharePreview(
-						data.consumer?.id || "remote-screen",
-						data.stream,
-						"owned",
-					)
-					.catch((error) =>
-						console.warn("Failed to attach screen share preview:", error),
-					);
-			} catch (err) {
-				console.warn("Failed to store screen share stream:", err);
-			}
-		}
-	},
-	onScreenShareStopped: (data: SFUScreenShareData) => {
-		const pid = data.participantId;
-		const producerId = data.producerId ?? data.consumer?.producerId;
-		if (!pid || !producerId) return;
-		const list = mediaState.activeScreenShareConsumers || [];
-		const current = findActiveScreenShare(
-			list,
-			pid,
-			producerId,
-			data.consumerId ?? data.consumer?.id,
-		);
-		if (!current) return;
-		sfuConnection.removeScreenSharePreview(current.consumerId);
-		mediaState.activeScreenShareConsumers = list.filter(
-			(share) => share.producerId !== producerId,
-		);
-		const store = mediaState.screenShareStreams || {};
-		if (pid && store[pid]) {
-			delete store[pid];
-			mediaState.screenShareStreams = store;
-		}
-	},
-	onActiveSpeakerChanged: (participantIds: string[]) => {
-		participantStore.activeSpeakerIds = participantIds;
-	},
-	onRecordingState: recording.syncState,
-	onRecordingEnabled: recording.setGlobalEnabled,
-	onCohostPromoted: () => meetingDoc.reload(),
-});
+  connectionState,
+  currentUser,
+  mediaState,
+  participantStore,
+  lobbyStore,
+  meetingDoc,
+  gridLayout,
+  meetingId: meetingId.value,
+  notifiedLobbyUsers,
+  onHostMutedYou: () => {
+    if (mediaState.isMicOn) {
+      mediaControls.toggleMicrophone()
+    }
+  },
+  onHostKickedYou: () => sfuConnection.endCall(),
+  onParticipantConnectionReplaced: () => mediaControls.cleanupLocalMedia(),
+  onScreenShareStarted: (data: SFUScreenShareData) => {
+    const pid = data.participantId
+    const producerId = data.producerId ?? data.consumer?.producerId
+    if (!pid || !producerId) return
+    const replacement = replaceActiveScreenShare(mediaState.activeScreenShareConsumers || [], {
+      source: 'remote',
+      participantId: pid,
+      consumerId: data.consumer?.id || 'remote-screen',
+      producerId,
+      startedAt: data.startedAt || Date.now(),
+    })
+    for (const share of replacement.replaced) {
+      sfuConnection.removeScreenSharePreview(share.consumerId)
+    }
+    mediaState.activeScreenShareConsumers = replacement.shares
+    if (data.stream instanceof MediaStream) {
+      try {
+        const store = mediaState.screenShareStreams || {}
+        store[pid] = data.stream
+        mediaState.screenShareStreams = store
+        void sfuConnection
+          .attachScreenSharePreview(data.consumer?.id || 'remote-screen', data.stream, 'owned')
+          .catch((error) => console.warn('Failed to attach screen share preview:', error))
+      } catch (err) {
+        console.warn('Failed to store screen share stream:', err)
+      }
+    }
+  },
+  onScreenShareStopped: (data: SFUScreenShareData) => {
+    const pid = data.participantId
+    const producerId = data.producerId ?? data.consumer?.producerId
+    if (!pid || !producerId) return
+    const list = mediaState.activeScreenShareConsumers || []
+    const current = findActiveScreenShare(
+      list,
+      pid,
+      producerId,
+      data.consumerId ?? data.consumer?.id,
+    )
+    if (!current) return
+    sfuConnection.removeScreenSharePreview(current.consumerId)
+    mediaState.activeScreenShareConsumers = list.filter((share) => share.producerId !== producerId)
+    const store = mediaState.screenShareStreams || {}
+    if (pid && store[pid]) {
+      delete store[pid]
+      mediaState.screenShareStreams = store
+    }
+  },
+  onActiveSpeakerChanged: (participantIds: string[]) => {
+    participantStore.activeSpeakerIds = participantIds
+  },
+  onRoomRejoined: () => void captions.restoreCaptionSubscription(),
+  onE2EERequired: () => captions.disableCaptionsForE2EE(),
+  onRecordingState: recording.syncState,
+  onRecordingEnabled: recording.setGlobalEnabled,
+  onCohostPromoted: () => meetingDoc.reload(),
+})
 
 // --- Background effects & noise cancellation ---
 const backgroundEffects = useBackgroundEffects({
-	autoCleanupOnUnmount: false,
-	mediaAttachments: sfuConnection,
-});
-const noiseCancellation = useNoiseCancellation();
+  autoCleanupOnUnmount: false,
+  mediaAttachments: sfuConnection,
+})
+const noiseCancellation = useNoiseCancellation()
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
-	sfuConnection.sfuManager,
-);
+  sfuConnection.sfuManager,
+)
 const localNetworkQuality = computed(() => {
-	if (isTransportFailed.value) return "critical";
-	if (
-		sfuConnection.localNetworkQuality.value === "critical" ||
-		downlinkQuality.value === "critical"
-	) {
-		return "critical";
-	}
-	if (
-		sfuConnection.localNetworkQuality.value === "poor" ||
-		downlinkQuality.value === "poor"
-	) {
-		return "poor";
-	}
-	return "good";
-});
+  if (isTransportFailed.value) return 'critical'
+  if (
+    sfuConnection.localNetworkQuality.value === 'critical' ||
+    downlinkQuality.value === 'critical'
+  ) {
+    return 'critical'
+  }
+  if (sfuConnection.localNetworkQuality.value === 'poor' || downlinkQuality.value === 'poor') {
+    return 'poor'
+  }
+  return 'good'
+})
 
 // --- Media Controls ---
 const mediaControls = useMediaControls({
-	mediaState,
-	connectionState,
-	raiseHandStore,
-	currentUser,
-	sfuClient: sfuConnection.sfuClient,
-	sfuManager: sfuConnection.sfuManager,
-	mediaAttachments: sfuConnection,
-	deviceManager,
-	backgroundEffects,
-	noiseCancellation,
-});
+  mediaState,
+  connectionState,
+  raiseHandStore,
+  currentUser,
+  sfuClient: sfuConnection.sfuClient,
+  sfuManager: sfuConnection.sfuManager,
+  mediaAttachments: sfuConnection,
+  deviceManager,
+  backgroundEffects,
+  noiseCancellation,
+})
 
-import { meetingControls } from "../composables/useKeyboardShortcuts";
-
-meetingControls.toggleMicrophone = () => mediaControls.toggleMicrophone();
-meetingControls.toggleCamera = () => mediaControls.toggleCamera();
+meetingControls.toggleMicrophone = () => mediaControls.toggleMicrophone()
+meetingControls.toggleCamera = () => mediaControls.toggleCamera()
 watch(
-	() => mediaState.isMicOn,
-	(val) => (meetingControls.isMicOn = val),
-	{ immediate: true },
-);
+  () => mediaState.isMicOn,
+  (val) => (meetingControls.isMicOn = val),
+  { immediate: true },
+)
 
 // --- Chat ---
 const chat = useChat({
-	chatStore,
-	currentUser,
-	sfuClient: sfuConnection.sfuClient,
-	canPin: () => isCurrentUserHost.value || isCurrentUserCohost.value,
-});
+  chatStore,
+  currentUser,
+  sfuClient: sfuConnection.sfuClient,
+  canPin: () => isCurrentUserHost.value || isCurrentUserCohost.value,
+})
 
 function unpinChatMessage() {
-	const messageId = chatStore.pinnedMessage?.messageId;
-	if (messageId) chat.pinMessage(messageId, "unpin");
+  const messageId = chatStore.pinnedMessage?.messageId
+  if (messageId) chat.pinMessage(messageId, 'unpin')
 }
 
 // --- Poll ---
 
 const poll = usePoll({
-	pollStore,
-	currentUser,
-	sfuClient: sfuConnection.sfuClient,
-});
-
+  pollStore,
+  currentUser,
+  sfuClient: sfuConnection.sfuClient,
+})
 
 // --- Reactions ---
 const reactions = useReactions({
-	reactionStore,
-	currentUser,
-	sfuClient: sfuConnection.sfuClient,
-});
+  reactionStore,
+  currentUser,
+  sfuClient: sfuConnection.sfuClient,
+})
 
 // --- Raise Hand ---
 const raiseHand = useRaiseHand({
-	raiseHandStore,
-	currentUser,
-	sfuClient: sfuConnection.sfuClient,
-});
+  raiseHandStore,
+  currentUser,
+  sfuClient: sfuConnection.sfuClient,
+})
+
+const captions = useCaptions({
+  sfuClient: sfuConnection.sfuClient,
+})
+const {
+  isAvailable: areCaptionsAvailable,
+  isCaptionsEnabled,
+  captionLines,
+  toggleCaptions,
+} = captions
 
 // --- Lobby ---
 const lobby = useLobby({
-	lobbyStore,
-	meetingDoc,
-});
+  lobbyStore,
+  meetingDoc,
+})
 
-type AccessData = { allow_guest?: boolean; host_only_chat?: boolean };
+type AccessData = { allow_guest?: boolean; host_only_chat?: boolean }
 
 // --- Provide meeting context for child components ---
 provideMeetingContext({
-	mediaState,
-	participantStore,
-	currentUser,
-	chatStore,
-	gridLayout,
-	raiseHandStore,
-	reactionStore,
-	lobbyStore,
-	sfuManager: sfuConnection.sfuManager.value,
-	processedStream: toRef(mediaState, "processedStream"),
-	isInMeeting: computed(() => true),
-	onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
-	networkQuality,
-	localNetworkQuality,
-});
+  mediaState,
+  participantStore,
+  currentUser,
+  chatStore,
+  gridLayout,
+  raiseHandStore,
+  reactionStore,
+  lobbyStore,
+  sfuManager: sfuConnection.sfuManager.value,
+  processedStream: toRef(mediaState, 'processedStream'),
+  isInMeeting: computed(() => true),
+  onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
+  networkQuality,
+  localNetworkQuality,
+})
 
 // Provide legacy injects for components not yet migrated to useMeetingContext
-provide("setLocalVideoRef", mediaControls.setLocalVideoRef);
-provide("setRemoteVideoRef", mediaControls.setRemoteVideoRef);
+provide('setLocalVideoRef', mediaControls.setLocalVideoRef)
+provide('setRemoteVideoRef', mediaControls.setRemoteVideoRef)
+provide('setScreenShareVideoRef', (_consumerId: string, element: HTMLVideoElement | null) => {
+  mediaControls.setScreenShareVideoRef(_consumerId, element)
+})
+provide('getParticipantName', participantStore.getParticipantName)
+provide('meetingId', meetingId.value)
+provide('sfuManager', sfuConnection.sfuManager)
+provide('socket', useSocket())
+provide('isCurrentUserHost', isCurrentUserHost)
+provide('hostControls', {
+  muteParticipant: (...args: unknown[]) => handleMuteParticipant(args[0] as string),
+  kickParticipant: (...args: unknown[]) =>
+    handleKickParticipant(args[0] as string, args[1] as boolean),
+})
 provide(
-	"setScreenShareVideoRef",
-	(_consumerId: string, element: HTMLVideoElement | null) => {
-		mediaControls.setScreenShareVideoRef(_consumerId, element);
-	},
-);
-provide("getParticipantName", participantStore.getParticipantName);
-provide("meetingId", meetingId.value);
-provide("sfuManager", sfuConnection.sfuManager);
-provide("socket", useSocket());
-provide("isCurrentUserHost", isCurrentUserHost);
-provide("hostControls", {
-	muteParticipant: (...args: unknown[]) =>
-		handleMuteParticipant(args[0] as string),
-	kickParticipant: (...args: unknown[]) =>
-		handleKickParticipant(args[0] as string, args[1] as boolean),
-});
-provide("meetingTitle", computed(() => meetingTitle.value));
+  'meetingTitle',
+  computed(() => meetingTitle.value),
+)
 
-provide(pollKey, poll);
+provide(pollKey, poll)
 
 // --- Computed properties ---
-const isConnecting = sfuConnection.isConnecting;
-const hasConnectionError = computed(() => !!connectionState.connectionError);
-const isInLobby = computed(() => lobbyStore.isInLobby || false);
-const isWaitingForApproval = computed(
-	() => lobbyStore.isWaitingForApproval || false,
-);
-const isRejected = computed(() => lobbyStore.isJoinRequestRejected || false);
+const isConnecting = sfuConnection.isConnecting
+const hasConnectionError = computed(() => !!connectionState.connectionError)
+const isInLobby = computed(() => lobbyStore.isInLobby || false)
+const isWaitingForApproval = computed(() => lobbyStore.isWaitingForApproval || false)
+const isRejected = computed(() => lobbyStore.isJoinRequestRejected || false)
 const showPreview = computed(() => {
-	const isUnauthenticatedGuest = !session.isLoggedIn && !isGuestSession.value;
-	if (isUnauthenticatedGuest) {
-		return true;
-	}
-	if (lobbyStore.isInLobby) {
-		return false;
-	}
-	if (lobbyStore.isWaitingForApproval) {
-		return false;
-	}
-	const inPreview = connectionState.isInPreview;
-	const joinRequestRejected = lobbyStore.isJoinRequestRejected;
-	return inPreview || joinRequestRejected;
-});
+  const isUnauthenticatedGuest = !session.isLoggedIn && !isGuestSession.value
+  if (isUnauthenticatedGuest) {
+    return true
+  }
+  if (lobbyStore.isInLobby) {
+    return false
+  }
+  if (lobbyStore.isWaitingForApproval) {
+    return false
+  }
+  const inPreview = connectionState.isInPreview
+  const joinRequestRejected = lobbyStore.isJoinRequestRejected
+  return inPreview || joinRequestRejected
+})
+
+const canLeaveMeeting = ref(false)
+let pendingLeaveConfirmation: Promise<boolean> | null = null
+
+async function confirmMeetingLeave() {
+  if (
+    canLeaveMeeting.value ||
+    (!sfuConnection.isSetupComplete.value && !sfuConnection.isConnecting.value)
+  )
+    return true
+  if (pendingLeaveConfirmation) return pendingLeaveConfirmation
+
+  pendingLeaveConfirmation = confirmLeave({
+    title: 'Leave meeting?',
+    message: 'You will be disconnected from the meeting.',
+    confirmLabel: 'Leave meeting',
+    focusConfirm: true,
+  })
+  try {
+    return await pendingLeaveConfirmation
+  } finally {
+    pendingLeaveConfirmation = null
+  }
+}
+
+async function confirmAndEndCall() {
+  if (!(await confirmMeetingLeave())) return
+  canLeaveMeeting.value = true
+  await sfuConnection.endCall()
+}
+
+onBeforeRouteLeave(confirmMeetingLeave)
+onBeforeRouteUpdate((to, from) => {
+  if (to.params.meetingId === from.params.meetingId) return true
+  return confirmMeetingLeave()
+})
 
 // Soft connecting feedback: only if join takes longer than 5s (no full-page spinner).
-const CONNECTING_TOAST_ID = "meet-connecting";
-const CONNECTING_TOAST_DELAY_MS = 5000;
-let connectingToastTimer: ReturnType<typeof setTimeout> | null = null;
+const CONNECTING_TOAST_ID = 'meet-connecting'
+const CONNECTING_TOAST_DELAY_MS = 5000
+let connectingToastTimer: ReturnType<typeof setTimeout> | null = null
 
 const clearConnectingToast = () => {
-	if (connectingToastTimer) {
-		clearTimeout(connectingToastTimer);
-		connectingToastTimer = null;
-	}
-	toast.dismiss(CONNECTING_TOAST_ID);
-};
+  if (connectingToastTimer) {
+    clearTimeout(connectingToastTimer)
+    connectingToastTimer = null
+  }
+  toast.dismiss(CONNECTING_TOAST_ID)
+}
 
 watch(
-	[
-		isConnecting,
-		showPreview,
-		isWaitingForApproval,
-		isInLobby,
-		hasConnectionError,
-		e2eeJoinPendingMessage,
-	],
-	([connecting, preview, waiting, lobby, error, e2eePending]) => {
-		const shouldTrack =
-			connecting &&
-			!preview &&
-			!waiting &&
-			!lobby &&
-			!error &&
-			!e2eePending;
+  [
+    isConnecting,
+    showPreview,
+    isWaitingForApproval,
+    isInLobby,
+    hasConnectionError,
+    e2eeJoinPendingMessage,
+  ],
+  ([connecting, preview, waiting, lobby, error, e2eePending]) => {
+    const shouldTrack = connecting && !preview && !waiting && !lobby && !error && !e2eePending
 
-		if (!shouldTrack) {
-			clearConnectingToast();
-			return;
-		}
+    if (!shouldTrack) {
+      clearConnectingToast()
+      return
+    }
 
-		if (connectingToastTimer) {
-			return;
-		}
+    if (connectingToastTimer) {
+      return
+    }
 
-		connectingToastTimer = setTimeout(() => {
-			connectingToastTimer = null;
-			if (
-				!sfuConnection.isConnecting.value ||
-				connectionState.isInPreview ||
-				lobbyStore.isWaitingForApproval ||
-				lobbyStore.isInLobby ||
-				connectionState.connectionError ||
-				e2eeJoinPendingMessage.value
-			) {
-				return;
-			}
-			toast.loading("Connecting…", {
-				id: CONNECTING_TOAST_ID,
-				duration: Number.POSITIVE_INFINITY,
-			});
-		}, CONNECTING_TOAST_DELAY_MS);
-	},
-);
+    connectingToastTimer = setTimeout(() => {
+      connectingToastTimer = null
+      if (
+        !sfuConnection.isConnecting.value ||
+        connectionState.isInPreview ||
+        lobbyStore.isWaitingForApproval ||
+        lobbyStore.isInLobby ||
+        connectionState.connectionError ||
+        e2eeJoinPendingMessage.value
+      ) {
+        return
+      }
+      toast.loading('Connecting…', {
+        id: CONNECTING_TOAST_ID,
+        duration: Number.POSITIVE_INFINITY,
+      })
+    }, CONNECTING_TOAST_DELAY_MS)
+  },
+)
 
-const isPeopleOpen = ref(false);
+const isPeopleOpen = ref(false)
 
 const activePanel = computed(() => {
-	if (chatStore.isChatOpen) return "chat";
-	if (isPeopleOpen.value) return "people";
-	return null;
-});
+  if (chatStore.isChatOpen) return 'chat'
+  if (isPeopleOpen.value) return 'people'
+  return null
+})
 
 const participantsForPeoplePanel = computed<Record<string, Participant>>(
-	() => participantStore.participants as Record<string, Participant>,
-);
+  () => participantStore.participants as Record<string, Participant>,
+)
 
 const participantAvatars = computed(() =>
-	Object.fromEntries(
-		Object.entries(participantsForPeoplePanel.value).map(([userId, participant]) => [
-			userId,
-			participant.avatar,
-		]),
-	),
-);
+  Object.fromEntries(
+    Object.entries(participantsForPeoplePanel.value).map(([userId, participant]) => [
+      userId,
+      participant.avatar,
+    ]),
+  ),
+)
 
-const { isMobile } = useResponsiveGrid();
+const { isMobile } = useResponsiveGrid()
 
 const panelWidth = computed(() => {
-	if (!activePanel.value) return "0rem";
-	if (isMobile.value) return "0rem";
-	return "24rem";
-});
+  if (!activePanel.value) return '0rem'
+  if (isMobile.value) return '0rem'
+  return '24rem'
+})
 
 const isHandRaised = computed(() => {
-	const currentUserId = currentUser.currentUser.value?.user_id as string;
-	return currentUserId ? !!raiseHandStore.raisedHands?.[currentUserId] : false;
-});
+  const currentUserId = currentUser.currentUser.value?.user_id as string
+  return currentUserId ? !!raiseHandStore.raisedHands?.[currentUserId] : false
+})
 
 // --- Refs ---
-const isInitializingPreview = ref(true);
-const isReactionPickerOpen = ref(false);
-const isFullscreen = ref(false);
-const isToolbarVisible = ref(true);
+const isInitializingPreview = ref(true)
+const isReactionPickerOpen = ref(false)
+const isFullscreen = ref(false)
+const isToolbarVisible = ref(true)
 const headerVisible = computed(
-	() => showPreview.value || isConnecting.value || !autoHideToolbar.value || isToolbarVisible.value,
-);
+  () => showPreview.value || isConnecting.value || !autoHideToolbar.value || isToolbarVisible.value,
+)
 
 // --- Extracted handlers ---
 const handlers = useMeetingHandlers({
-	connectionState,
-	mediaState,
-	participantStore,
-	chatStore,
-	lobbyStore,
-	reactionStore,
-	raiseHandStore,
-	gridLayout,
-	currentUser,
-	sfuConnection,
-	mediaControls,
-	lobby,
-	meetingDoc,
-	meetingId: meetingId.value,
-	isCurrentUserHost,
-	isPeopleOpen,
-	notifiedLobbyUsers,
-	router,
-});
+  connectionState,
+  mediaState,
+  participantStore,
+  chatStore,
+  lobbyStore,
+  reactionStore,
+  raiseHandStore,
+  gridLayout,
+  currentUser,
+  sfuConnection,
+  mediaControls,
+  lobby,
+  meetingDoc,
+  meetingId: meetingId.value,
+  isCurrentUserHost,
+  isPeopleOpen,
+  notifiedLobbyUsers,
+  router,
+})
 
 const {
-	resetToPreview,
-	joinMeetingFromPreview,
-	handleGuestJoinComplete,
-	leaveWaitingRoom,
-	leaveLobby,
-	goHome,
-	tryJoinAgain,
-	toggleChat,
-	handleMuteParticipant,
-	handleKickParticipant,
-	handleLowerHand,
-	handlePromoteToCohost,
-	handleApproveLobbyUser,
-	handleApproveAllLobbyUsers,
-	handleRejectLobbyUser,
-	toggleFullscreen,
-	handleReportProblem,
-	handleDeviceChanged,
-} = handlers;
+  resetToPreview,
+  joinMeetingFromPreview,
+  handleGuestJoinComplete,
+  leaveWaitingRoom,
+  leaveLobby,
+  goHome,
+  tryJoinAgain,
+  toggleChat,
+  handleMuteParticipant,
+  handleKickParticipant,
+  handleLowerHand,
+  handlePromoteToCohost,
+  handleApproveLobbyUser,
+  handleApproveAllLobbyUsers,
+  handleRejectLobbyUser,
+  toggleFullscreen,
+  handleReportProblem,
+  handleDeviceChanged,
+} = handlers
 
 const showMeetingNotification = (notification: {
-	message: string;
-	fromUser: string;
-	fromName: string;
-	type: "chat" | "poll";
+  message: string
+  fromUser: string
+  fromName: string
+  type: 'chat' | 'poll'
 }) => {
-	const participant = participantStore.participants[notification.fromUser] as
-		| { avatar?: string }
-		| undefined;
-	const openChat = () => {
-		if (!chatStore.isChatOpen) toggleChat();
-	};
-	let toastId: string | number;
-	const removeToastId = () => meetingNotificationIds.delete(toastId);
-	const handleClick = () => {
-		toast.dismiss(toastId);
-		openChat();
-	};
+  const participant = participantStore.participants[notification.fromUser] as
+    { avatar?: string } | undefined
+  const openChat = () => {
+    if (!chatStore.isChatOpen) toggleChat()
+  }
+  let toastId: string | number
+  const removeToastId = () => meetingNotificationIds.delete(toastId)
+  const handleClick = () => {
+    toast.dismiss(toastId)
+    openChat()
+  }
 
-	toastId = toast.custom(
-		() =>
-			h(
-				"button",
-				{
-					type: "button",
-					class:
-						"flex w-full min-w-0 items-center gap-3 text-left focus-visible:outline-none",
-					onClick: handleClick,
-				},
-				[
-					h(MeetAvatar, {
-						image: participant?.avatar,
-						label: notification.fromName,
-						size: "lg",
-					}),
-					h("span", { class: "min-w-0 flex-1" }, [
-						h(
-							"span",
-							{ class: "block truncate text-p-base font-medium text-ink-base" },
-							notification.type === "poll"
-								? `${notification.fromName} started a poll`
-								: notification.fromName,
-						),
-						h(
-							"span",
-							{ class: "block truncate text-p-base text-ink-base" },
-							notification.message,
-						),
-					]),
-				],
-			),
-		{
-			duration: 5000,
-			onDismiss: removeToastId,
-			onAutoClose: removeToastId,
-		},
-	);
-	meetingNotificationIds.add(toastId);
-};
+  toastId = toast.custom(
+    () =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'flex w-full min-w-0 items-center gap-3 text-left focus-visible:outline-none',
+          onClick: handleClick,
+        },
+        [
+          h(MeetAvatar, {
+            image: participant?.avatar,
+            label: notification.fromName,
+            size: 'lg',
+          }),
+          h('span', { class: 'min-w-0 flex-1' }, [
+            h(
+              'span',
+              { class: 'block truncate text-p-base font-medium text-ink-base' },
+              notification.type === 'poll'
+                ? `${notification.fromName} started a poll`
+                : notification.fromName,
+            ),
+            h('span', { class: 'block truncate text-p-base text-ink-base' }, notification.message),
+          ]),
+        ],
+      ),
+    {
+      duration: 5000,
+      onDismiss: removeToastId,
+      onAutoClose: removeToastId,
+    },
+  )
+  meetingNotificationIds.add(toastId)
+}
 
-const meetingNotificationIds = new Set<string | number>();
+const meetingNotificationIds = new Set<string | number>()
 const clearMeetingNotifications = () => {
-	for (const id of meetingNotificationIds) toast.dismiss(id);
-	meetingNotificationIds.clear();
-};
+  for (const id of meetingNotificationIds) toast.dismiss(id)
+  meetingNotificationIds.clear()
+}
 
 watch(
-	() => chatStore.isChatOpen,
-	(isOpen) => {
-		if (isOpen) clearMeetingNotifications();
-	},
-);
+  () => chatStore.isChatOpen,
+  (isOpen) => {
+    if (isOpen) clearMeetingNotifications()
+  },
+)
 
 // --- Local UI state ---
 const togglePeople = () => {
-	isPeopleOpen.value = !isPeopleOpen.value;
-	if (isPeopleOpen.value) {
-		chatStore.isChatOpen = false;
-		if (isCurrentUserHost.value || isCurrentUserCohost.value) {
-			void sfuConnection.fetchExistingWaitingRoomUsers();
-		}
-	}
-};
+  isPeopleOpen.value = !isPeopleOpen.value
+  if (isPeopleOpen.value) {
+    chatStore.isChatOpen = false
+    if (isCurrentUserHost.value || isCurrentUserCohost.value) {
+      void sfuConnection.fetchExistingWaitingRoomUsers()
+    }
+  }
+}
 
 const toggleReactions = (payload: string) => {
-	reactions.onSendReaction(payload);
-	isReactionPickerOpen.value = false;
-};
+  reactions.onSendReaction(payload)
+  isReactionPickerOpen.value = false
+}
 
 const toggleStatsForNerds = () => {
-	setShowStatsForNerds(!showStatsForNerds.value);
-};
+  setShowStatsForNerds(!showStatsForNerds.value)
+}
 
 const syncFullscreenState = () => {
-	isFullscreen.value = !!document.fullscreenElement;
-};
+  isFullscreen.value = !!document.fullscreenElement
+}
 
 const handleE2EENeedsMediaRepublish = async (event: Event) => {
-	const detail = (event as CustomEvent).detail as
-		| { needsCamera?: boolean; needsMicrophone?: boolean }
-		| undefined;
-	try {
-		await mediaControls.republishMediaAfterE2EE(detail);
-	} catch (error) {
-		console.error(
-			"Failed to republish media after E2EE reconfiguration:",
-			error,
-		);
-	}
-};
+  const detail = (event as CustomEvent).detail as
+    { needsCamera?: boolean; needsMicrophone?: boolean } | undefined
+  try {
+    await mediaControls.republishMediaAfterE2EE(detail)
+  } catch (error) {
+    console.error('Failed to republish media after E2EE reconfiguration:', error)
+  }
+}
 
 // --- Lifecycle ---
 onMounted(async () => {
-	// get wasJustCreated before resetting stores else it'll be reset to false
-	const wasJustCreated = connectionState.justCreated;
+  // get wasJustCreated before resetting stores else it'll be reset to false
+  const wasJustCreated = connectionState.justCreated
 
-	// Reset all stores
-	connectionState.$reset();
-	mediaState.$reset();
-	participantStore.$reset();
-	chatStore.$reset();
-	pollStore.$reset();
-	lobbyStore.$reset();
-	reactionStore.$reset();
-	raiseHandStore.$reset();
-	gridLayout.resetGridLayout();
-	currentUser.resetCurrentUser();
-	e2eeState.reset();
+  // Reset all stores
+  connectionState.$reset()
+  mediaState.$reset()
+  participantStore.$reset()
+  chatStore.$reset()
+  pollStore.$reset()
+  lobbyStore.$reset()
+  reactionStore.$reset()
+  raiseHandStore.$reset()
+  captions.reset()
+  gridLayout.resetGridLayout()
+  currentUser.resetCurrentUser()
+  e2eeState.reset()
 
-	document.addEventListener("fullscreenchange", syncFullscreenState);
-	document.addEventListener(
-		"meet:e2ee-needs-media-republish",
-		handleE2EENeedsMediaRepublish,
-	);
-	document.addEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
-	syncFullscreenState();
+  document.addEventListener('fullscreenchange', syncFullscreenState)
+  document.addEventListener('meet:e2ee-needs-media-republish', handleE2EENeedsMediaRepublish)
+  document.addEventListener('meet:e2ee-join-status', handleE2EEJoinStatus)
+  syncFullscreenState()
 
-	// Check meeting access for unauthenticated users
-	if (!session.isLoggedIn) {
-		try {
-			const accessData = await submit(checkMeetingAccess, {
-				meeting_id: meetingId.value,
-			});
+  // Check meeting access for unauthenticated users
+  if (!session.isLoggedIn) {
+    try {
+      const accessData = await submit(checkMeetingAccess, {
+        meeting_id: meetingId.value,
+      })
 
-			if (accessData?.host_only_chat !== undefined) {
-				chatStore.hostOnlyChat = !!accessData.host_only_chat;
-			}
-			if (!accessData?.allow_guest) {
-				const loginUrl = `/login?redirect-to=${encodeURIComponent(`/meet/${meetingId.value}`)}`;
-				window.location.href = loginUrl;
-				return;
-			}
-		} catch (error) {
-			console.error("Failed to check meeting access:", error);
-			isInitializingPreview.value = false;
-			return;
-		}
-	}
+      if (accessData?.host_only_chat !== undefined) {
+        chatStore.hostOnlyChat = !!accessData.host_only_chat
+      }
+      if (!accessData?.allow_guest) {
+        const loginUrl = `/login?redirect-to=${encodeURIComponent(`/meet/${meetingId.value}`)}`
+        window.location.href = loginUrl
+        return
+      }
+    } catch (error) {
+      console.error('Failed to check meeting access:', error)
+      isInitializingPreview.value = false
+      return
+    }
+  }
 
-	// Setup event handlers
-	chat.setupChatEvents(showMeetingNotification);
-	reactions.setupReactionEvents();
-	raiseHand.setupRaiseHandEvents();
-	poll.setupPollEvents(showMeetingNotification);
+  // Setup event handlers
+  chat.setupChatEvents(showMeetingNotification)
+  reactions.setupReactionEvents()
+  raiseHand.setupRaiseHandEvents()
+  poll.setupPollEvents(showMeetingNotification)
 
-	// Setup notification context watchers
+  // Setup notification context watchers
 
-	if (!session.isLoggedIn) {
-		await mediaControls.initializeCamera();
-		if (selectedSpeakerId.value) {
-			await mediaControls.applySpeakerDevice();
-		}
-		isInitializingPreview.value = false;
-		return;
-	}
+  if (!session.isLoggedIn) {
+    await mediaControls.initializeCamera()
+    if (selectedSpeakerId.value) {
+      await mediaControls.applySpeakerDevice()
+    }
+    isInitializingPreview.value = false
+    return
+  }
 
-	if (!userResource.fetched) {
-		try {
-			await userResource.fetch();
-		} catch (error) {
-			console.warn("Failed to load current user profile:", error);
-		}
-	}
+  if (!userResource.fetched) {
+    try {
+      await userResource.fetch()
+    } catch (error) {
+      console.warn('Failed to load current user profile:', error)
+    }
+  }
 
-	// Initialize camera
-	await mediaControls.initializeCamera();
+  // Initialize camera
+  await mediaControls.initializeCamera()
 
-	if (selectedSpeakerId.value) {
-		await mediaControls.applySpeakerDevice();
-	}
+  if (selectedSpeakerId.value) {
+    await mediaControls.applySpeakerDevice()
+  }
 
-	isInitializingPreview.value = false;
+  isInitializingPreview.value = false
 
-	// Auto-join if just created
-	if (wasJustCreated) {
-		connectionState.justCreated = false;
-		await joinMeetingFromPreview();
-	}
-});
+  // Auto-join if just created
+  if (wasJustCreated) {
+    connectionState.justCreated = false
+    await joinMeetingFromPreview()
+  }
+})
 
 onUnmounted(() => {
-	clearConnectingToast();
-	clearMeetingNotifications();
-	document.removeEventListener("fullscreenchange", syncFullscreenState);
-	document.removeEventListener(
-		"meet:e2ee-needs-media-republish",
-		handleE2EENeedsMediaRepublish,
-	);
-	document.removeEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
-});
+  clearConnectingToast()
+  clearMeetingNotifications()
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
+  document.removeEventListener('meet:e2ee-needs-media-republish', handleE2EENeedsMediaRepublish)
+  document.removeEventListener('meet:e2ee-join-status', handleE2EEJoinStatus)
+})
 
 watch(selectedSpeakerId, async (newSpeakerId) => {
-	if (
-		newSpeakerId &&
-		deviceManager.isDeviceAvailable(newSpeakerId, "speaker")
-	) {
-		await mediaControls.applySpeakerDevice();
-	}
-});
+  if (newSpeakerId && deviceManager.isDeviceAvailable(newSpeakerId, 'speaker')) {
+    await mediaControls.applySpeakerDevice()
+  }
+})
 
 // Watch lobby users for notification tracking
 watch(
-	() => lobbyStore.lobbyUsers,
-	(newUsers, oldUsers) => {
-		if (isCurrentUserHost.value) {
-			const newUserIds = new Set((newUsers || []).map((u) => u.userId));
-			const oldUserIds = new Set((oldUsers || []).map((u) => u.userId));
-			for (const userId of oldUserIds) {
-				if (!newUserIds.has(userId)) {
-					notifiedLobbyUsers.value.add(userId);
-				}
-			}
-		}
-	},
-	{ immediate: true },
-);
+  () => lobbyStore.lobbyUsers,
+  (newUsers, oldUsers) => {
+    if (isCurrentUserHost.value) {
+      const newUserIds = new Set((newUsers || []).map((u) => u.userId))
+      const oldUserIds = new Set((oldUsers || []).map((u) => u.userId))
+      for (const userId of oldUserIds) {
+        if (!newUserIds.has(userId)) {
+          notifiedLobbyUsers.value.add(userId)
+        }
+      }
+    }
+  },
+  { immediate: true },
+)
 
 watch(
-	() => chatStore.hostOnlyChat,
-	(isRestricted, oldValue) => {
-		if (
-			isRestricted !== oldValue &&
-			(isCurrentUserHost.value || isCurrentUserCohost.value) &&
-			sfuConnection.sfuClient?.isConnected()
-		) {
-			chat.toggleRestriction(isRestricted);
-		}
-	},
-);
+  () => chatStore.hostOnlyChat,
+  (isRestricted, oldValue) => {
+    if (
+      isRestricted !== oldValue &&
+      (isCurrentUserHost.value || isCurrentUserCohost.value) &&
+      sfuConnection.sfuClient?.isConnected()
+    ) {
+      chat.toggleRestriction(isRestricted)
+    }
+  },
+)
 
-let previousTheme: string | null = null;
-let previousThemeMode: string | null = null;
-let previousBodyTheme: string | null = null;
-let previousBodyThemeMode: string | null = null;
-let themeObserver: MutationObserver | null = null;
-let userChangedTheme = false;
+let previousTheme: string | null = null
+let previousThemeMode: string | null = null
+let previousBodyTheme: string | null = null
+let previousBodyThemeMode: string | null = null
+let themeObserver: MutationObserver | null = null
+let userChangedTheme = false
 
 const forceDarkTheme = () => {
-	if (document.documentElement.getAttribute("data-theme") !== "dark") {
-		document.documentElement.setAttribute("data-theme", "dark");
-	}
-	if (document.body.getAttribute("data-theme") !== "dark") {
-		document.body.setAttribute("data-theme", "dark");
-	}
-};
+  if (document.documentElement.getAttribute('data-theme') !== 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark')
+  }
+  if (document.body.getAttribute('data-theme') !== 'dark') {
+    document.body.setAttribute('data-theme', 'dark')
+  }
+}
 
 onMounted(() => {
-	previousTheme = document.documentElement.getAttribute("data-theme");
-	previousThemeMode = document.documentElement.getAttribute("data-theme-mode");
-	previousBodyTheme = document.body.getAttribute("data-theme");
-	previousBodyThemeMode = document.body.getAttribute("data-theme-mode");
-	forceDarkTheme();
-	document.documentElement.setAttribute("data-theme-mode", "dark");
-	document.body.setAttribute("data-theme-mode", "dark");
+  previousTheme = document.documentElement.getAttribute('data-theme')
+  previousThemeMode = document.documentElement.getAttribute('data-theme-mode')
+  previousBodyTheme = document.body.getAttribute('data-theme')
+  previousBodyThemeMode = document.body.getAttribute('data-theme-mode')
+  forceDarkTheme()
+  document.documentElement.setAttribute('data-theme-mode', 'dark')
+  document.body.setAttribute('data-theme-mode', 'dark')
 
-	themeObserver = new MutationObserver(forceDarkTheme);
-	themeObserver.observe(document.documentElement, {
-		attributes: true,
-		attributeFilter: ["data-theme"],
-	});
-	themeObserver.observe(document.body, {
-		attributes: true,
-		attributeFilter: ["data-theme"],
-	});
+  themeObserver = new MutationObserver(forceDarkTheme)
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  })
+  themeObserver.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  })
 
-	const modeObserver = new MutationObserver(() => {
-		userChangedTheme = true;
-	});
-	modeObserver.observe(document.documentElement, {
-		attributes: true,
-		attributeFilter: ["data-theme-mode"],
-	});
-});
+  const modeObserver = new MutationObserver(() => {
+    userChangedTheme = true
+  })
+  modeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme-mode'],
+  })
+})
 
 onUnmounted(() => {
-	themeObserver?.disconnect();
-	themeObserver = null;
+  themeObserver?.disconnect()
+  themeObserver = null
 
-	if (userChangedTheme) {
-		const mode = document.documentElement.getAttribute("data-theme-mode") || "light";
-		const resolved =
-			mode === "automatic"
-				? window.matchMedia("(prefers-color-scheme: dark)").matches
-					? "dark"
-					: "light"
-				: mode;
-		document.documentElement.setAttribute("data-theme", resolved);
-		document.documentElement.setAttribute("data-theme-mode", mode);
-		document.body.setAttribute("data-theme", resolved);
-		document.body.setAttribute("data-theme-mode", mode);
-	} else {
-		if (previousTheme) {
-			document.documentElement.setAttribute("data-theme", previousTheme);
-		} else {
-			document.documentElement.removeAttribute("data-theme");
-		}
+  if (userChangedTheme) {
+    const mode = document.documentElement.getAttribute('data-theme-mode') || 'light'
+    const resolved =
+      mode === 'automatic'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+        : mode
+    document.documentElement.setAttribute('data-theme', resolved)
+    document.documentElement.setAttribute('data-theme-mode', mode)
+    document.body.setAttribute('data-theme', resolved)
+    document.body.setAttribute('data-theme-mode', mode)
+  } else {
+    if (previousTheme) {
+      document.documentElement.setAttribute('data-theme', previousTheme)
+    } else {
+      document.documentElement.removeAttribute('data-theme')
+    }
 
-		if (previousThemeMode) {
-			document.documentElement.setAttribute("data-theme-mode", previousThemeMode);
-		} else {
-			document.documentElement.removeAttribute("data-theme-mode");
-		}
+    if (previousThemeMode) {
+      document.documentElement.setAttribute('data-theme-mode', previousThemeMode)
+    } else {
+      document.documentElement.removeAttribute('data-theme-mode')
+    }
 
-		if (previousBodyTheme) {
-			document.body.setAttribute("data-theme", previousBodyTheme);
-		} else {
-			document.body.removeAttribute("data-theme");
-		}
+    if (previousBodyTheme) {
+      document.body.setAttribute('data-theme', previousBodyTheme)
+    } else {
+      document.body.removeAttribute('data-theme')
+    }
 
-		if (previousBodyThemeMode) {
-			document.body.setAttribute("data-theme-mode", previousBodyThemeMode);
-		} else {
-			document.body.removeAttribute("data-theme-mode");
-		}
-	}
-});
+    if (previousBodyThemeMode) {
+      document.body.setAttribute('data-theme-mode', previousBodyThemeMode)
+    } else {
+      document.body.removeAttribute('data-theme-mode')
+    }
+  }
+})
 </script>

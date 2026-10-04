@@ -678,6 +678,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         outlive the node it names.
         """
         token = self._token(self._lock(self.doc_path))
+        node_core.update(node_principals(OWNER), self.doc, state="Trashed")
         node_core.purge(node_principals(OWNER), self.doc)
 
         self.assertFalse(frappe.db.exists("Drive DAV Lock", token))

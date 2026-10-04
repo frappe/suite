@@ -34,7 +34,9 @@ class FakeSocket implements SocketLike {
 describe('realtime', () => {
   it('creates one lazy credentialed socket and cleans subscriptions', () => {
     const socket = new FakeSocket()
-    const factory = vi.fn<(url: string, options: Record<string, unknown>) => SocketLike>(() => socket)
+    const factory = vi.fn<(url: string, options: Record<string, unknown>) => SocketLike>(
+      () => socket,
+    )
     const realtime = createRealtime({
       io: factory,
       siteName: 'slides.localhost',
@@ -81,24 +83,40 @@ describe('realtime', () => {
   })
 
   it('discovers production and development socket URLs', () => {
-    expect(resolveSocketUrl({
-      location: {
-        origin: 'https://suite.example.com', protocol: 'https:', hostname: 'suite.example.com', port: '',
-      } as Location,
-    } as Window, 'suite.example.com', 9000)).toBe('https://suite.example.com/suite.example.com')
-    expect(resolveSocketUrl({
-      location: {
-        origin: 'https://slides.localhost:8080', protocol: 'https:', hostname: 'slides.localhost', port: '8080',
-      } as Location,
-    } as Window, 'slides.localhost', 9000)).toBe('https://slides.localhost:9000/slides.localhost')
+    expect(
+      resolveSocketUrl(
+        {
+          location: {
+            origin: 'https://suite.example.com',
+            protocol: 'https:',
+            hostname: 'suite.example.com',
+            port: '',
+          } as Location,
+        } as Window,
+        'suite.example.com',
+        9000,
+      ),
+    ).toBe('https://suite.example.com/suite.example.com')
+    expect(
+      resolveSocketUrl(
+        {
+          location: {
+            origin: 'https://slides.localhost:8080',
+            protocol: 'https:',
+            hostname: 'slides.localhost',
+            port: '8080',
+          } as Location,
+        } as Window,
+        'slides.localhost',
+        9000,
+      ),
+    ).toBe('https://slides.localhost:9000/slides.localhost')
   })
 
   it('closes the tab connection and creates a fresh lazy socket on demand', () => {
     const first = new FakeSocket()
     const second = new FakeSocket()
-    const factory = vi.fn()
-      .mockReturnValueOnce(first)
-      .mockReturnValueOnce(second)
+    const factory = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second)
     const realtime = createRealtime({ io: factory, siteName: 'site', window })
     expect(factory).not.toHaveBeenCalled()
     expect(realtime.socket()).toBe(first)

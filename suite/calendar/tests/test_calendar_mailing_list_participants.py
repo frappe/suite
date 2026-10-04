@@ -18,15 +18,15 @@ from suite.calendar.doctype.calendar_event.mailing_lists import (
     expand_mailing_list_participants,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import jscalendar_to_vevent
+from suite.calendar.jmap_events import participants_map
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
-from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
-from suite.mail.stalwart import get_domains, get_mailing_list_index
+from suite.mail.directory import get_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 MODULE = "suite.calendar.doctype.calendar_event.mailing_lists"
 INVITATIONS = "suite.calendar.doctype.calendar_event.invitations"
 
-DOMAINS = [{"name": "example.com"}]
+DOMAINS = [{"domain": "example.com"}]
 INDEX = {
     "team@example.com": ["alice@example.com", "bob@example.com"],
     "team-alias@example.com": ["alice@example.com", "bob@example.com"],
@@ -307,7 +307,7 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         # Members reset fields to None rather than leaving them out, which the serialiser must take.
         team, alice, _ = self.expand([participant("team@example.com", kind=None)])
 
-        serialised = CalendarEventService._get_participants_map([team, alice])
+        serialised = participants_map([team, alice])
 
         self.assertEqual(serialised[team["uid"]]["scheduleAgent"], "none")
         self.assertEqual(serialised[team["uid"]]["kind"], "group")
@@ -394,6 +394,23 @@ class TestMailingListInviteAddressing(IntegrationTestCase):
             {kw["recipients"][0]["email"] for kw in sent}, {"alice@example.com", "boss@example.org"}
         )
 
+    def test_the_invite_mail_has_no_bare_line_feeds(self):
+        """A bare LF is rewritten in transit, which breaks the DKIM body hash (Outlook junks it)."""
+
+        sent = []
+
+        with (
+            patch(f"{INVITATIONS}.get_user_for_jmap_account", return_value="organizer@example.com"),
+            patch(f"{INVITATIONS}.get_participant_identities", return_value=[]),
+            patch(f"{INVITATIONS}.MailQueue._create", side_effect=lambda **kw: sent.append(kw)),
+            patch(f"{INVITATIONS}.log_error", side_effect=AssertionError),
+        ):
+            notify_participants("acc", "invite", event_snapshot=self.event() | {"id": "e1"})
+
+        self.assertTrue(sent)
+        for kw in sent:
+            self.assertNotIn("\n", kw["raw_message"].replace("\r\n", ""))
+
     def test_the_itip_attendee_records_the_membership(self):
         event = self.event() | {
             "uid": "abc",
@@ -420,10 +437,18 @@ class TestMailingListExpansionConfig(IntegrationTestCase):
     """The toggle and the cap resolve through ``get_config``, so site config can supply either."""
 
     def test_the_toggle_is_coerced_to_a_bool(self):
-        with patch(f"{MODULE}.get_config", return_value=1):
-            self.assertTrue(_expansion_enabled())
+        with patch(f"{MODULE}.is_suite_cloud_configured", return_value=True):
+            with patch(f"{MODULE}.get_config", return_value=1):
+                self.assertTrue(_expansion_enabled())
 
-        with patch(f"{MODULE}.get_config", return_value=None):
+            with patch(f"{MODULE}.get_config", return_value=None):
+                self.assertFalse(_expansion_enabled())
+
+    def test_the_toggle_means_nothing_without_a_directory_to_expand_from(self):
+        with (
+            patch(f"{MODULE}.is_suite_cloud_configured", return_value=False),
+            patch(f"{MODULE}.get_config", return_value=1),
+        ):
             self.assertFalse(_expansion_enabled())
 
     def test_the_cap_accepts_a_string_from_site_config(self):
@@ -452,8 +477,7 @@ class TestMailingListInvite(StalwartIntegrationTestCase):
             add_mailing_list_recipients(list_id, [self.first.email, self.second.email])
             list_email = get_mailing_list(list_id)["email"]
 
-        # The directory is cached, and the list was created after this run started.
-        get_domains.clear_cache()
+        # The list index is cached, and the list was created after this run started.
         get_mailing_list_index.clear_cache()
 
         with self.set_user(self.organizer.email):

@@ -44,6 +44,8 @@ REPORT_KEYS = (
     "title_renames",
     "grant_rows_dropped",
     "links_minted",
+    "creator_grants_minted",
+    "creator_denies_overridden",
     "docshare_rows_dropped",
     "trash_disagreements",
     "orphan_content_docs_adopted",
@@ -86,6 +88,13 @@ def build_report(env) -> dict:
         "title_renames": tree.title_renames + content.title_renames,
         "grant_rows_dropped": {reason: grants.grant_rows_dropped.get(reason, 0) for reason in DROP_REASONS},
         "links_minted": grants.links_minted,
+        # §4.2's creator rule applied to legacy owners: how many owners
+        # would otherwise have ended below EDIT on their own nodes.
+        "creator_grants_minted": grants.creator_grants_minted,
+        # Legacy let the owner past their own deny, and the owner never
+        # ends below EDIT on their own node, so Build raises it and tells
+        # the operator which decisions it overrode.
+        "creator_denies_overridden": grants.creator_denies_overridden,
         # `Drive Permission` supplies the Sheet `DocShare` rows and step 10
         # supplies the Writer and Slides ones. One key, both sources.
         "docshare_rows_dropped": grants.docshare_rows_dropped + content.docshare_rows_dropped,

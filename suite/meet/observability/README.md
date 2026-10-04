@@ -74,7 +74,12 @@ Open `https://<GRAFANA_DOMAIN>`, sign in, and use the provisioned Prometheus and
 up{job=~"frappe-meet-(sfu|recorder)"}
 ```
 
-Each SFU and recorder appears under Prometheus's automatic `instance` label. Grafana provisions separate SFU and recorder overview dashboards.
+Each SFU and recorder appears under Prometheus's automatic `instance` label.
+Grafana provisions SFU and recorder overviews plus an **STT Delivery** dashboard
+with aggregate caption subscribers, ingesters, open streams, and audio sent to
+STT per SFU. STT panels require the SFU version that exports those metrics and
+show no data until that version is deployed. Audio sent is not an STT receipt,
+transcription success, or browser-visible caption latency measure.
 
 ## Log collection
 

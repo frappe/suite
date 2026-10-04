@@ -2,7 +2,7 @@ import frappe
 from frappe import _
 from frappe.utils.caching import redis_cache
 
-from suite.mail.utils.user import is_jmap_configured
+from suite.mail.utils.user import can_use_mail
 from suite.suite_core.setup import build_setup_args, uses_suite_setup_wizard
 
 ALLOWED_LOGO_EXTENSIONS = ("png", "jpg", "jpeg", "webp")
@@ -163,6 +163,17 @@ def get_pending_invites() -> list[dict]:
     return invites
 
 
+def forget_logged_in_users() -> None:
+    """Drops what get_logged_in_user remembers, for every user.
+
+    Which apps it offers depends on the site as well as on the user, so a change to the site's
+    JMAP server must not wait out the hour the answer is kept for.
+    """
+
+    key = f"{get_logged_in_user.__module__}.{get_logged_in_user.__qualname__}"
+    frappe.cache.delete_keys(key, user="*")
+
+
 @frappe.whitelist()
 @redis_cache(user=True)
 def get_logged_in_user() -> dict | None:
@@ -177,5 +188,5 @@ def get_logged_in_user() -> dict | None:
         "full_name": user_doc.full_name,
         "avatar": user_doc.user_image,
         "roles": [role.role for role in user_doc.roles],
-        "is_jmap_configured": is_jmap_configured(user),
+        "is_jmap_configured": can_use_mail(user),
     }

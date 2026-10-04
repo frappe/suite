@@ -80,18 +80,21 @@ Resolved with the user on 2026-09-19. Facts were checked against
 
 ### Upload progress in the rail
 
-- The Files rail item shows one ring for the whole queue, weighted by
-  bytes, in every area while uploads run. In Files, the tracker panel
-  shows as well. Clicking the ring opens `/files` with the tracker open.
-- States: uploading (determinate ring), paused or retrying (amber), all
-  done (ring completes, fades after about 3 s), some failed or
-  interrupted after reload (red dot until the user opens the tracker).
+- The Files rail item shows one dot for the whole queue, at the top-right
+  corner of its icon, in every area while uploads run. In Files, the
+  tracker panel shows as well. Clicking the item while the dot shows
+  opens `/files` with the tracker open.
+- The dot shows state, not progress. The item's tooltip shows the
+  percentage done, weighted by bytes. States: uploading (orange dot),
+  paused or retrying (orange dot, tooltip "Paused"), all done (the dot
+  fades out), some failed or interrupted after reload (red dot until the
+  user opens the tracker) [Faris, 2026-10-02].
 - The mobile bottom-nav Files item shows the same indicator.
 - Drive exports `driveUploadProgress()` through `apps/drive/index.ts`.
   Composition maps it to the Files badge beside the Mail badge in
   `appRegistry.ts`, and `Rail.vue` renders it through the `RailItem`
   `#badge` slot. `AreaDefinition` does not change. The tracker component
-  does not cross the seam. `ProgressRing` comes from frappe-ui.
+  does not cross the seam. The dot is the shell's `AreaProgressDot`.
 
 ### Collisions
 

@@ -1,18 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
+
 import { CollabOpenError } from './answers'
 import { openCollabRoom } from './open'
-import type { Answer, CollabEndpoints, CollabRoom, OpenOptions } from './types'
 import { openDeviceStore, type DeviceStore } from './store'
+import type { Answer, CollabEndpoints, CollabRoom, OpenOptions } from './types'
 
 const reply = (status: number, body: unknown): Answer => ({
   status,
   bytes: new TextEncoder().encode(JSON.stringify(body)),
 })
 
-function frame(header: object, rows: { rev: number; bytes: Uint8Array }[] = [], checkpoint = new Uint8Array()): Answer {
+function frame(
+  header: object,
+  rows: { rev: number; bytes: Uint8Array }[] = [],
+  checkpoint = new Uint8Array(),
+): Answer {
   const json = new TextEncoder().encode(JSON.stringify(header))
-  const size = 4 + json.length + 8 + checkpoint.length + rows.reduce((sum, row) => sum + 12 + row.bytes.length, 0)
+  const size =
+    4 +
+    json.length +
+    8 +
+    checkpoint.length +
+    rows.reduce((sum, row) => sum + 12 + row.bytes.length, 0)
   const out = new Uint8Array(size)
   const view = new DataView(out.buffer)
   let at = 0
@@ -53,22 +63,34 @@ function fakeServer(state = 'live') {
     async open() {
       reach('open')
       const tail = state === 'live' ? rows.filter((row) => row.rev > checkpoint.base) : []
-      const header = { state, proto: 1, lineage: 'L', can_write: access.canWrite, base: checkpoint.base }
+      const header = {
+        state,
+        proto: 1,
+        lineage: 'L',
+        can_write: access.canWrite,
+        base: checkpoint.base,
+      }
       return frame(header, tail, checkpoint.bytes)
     },
     async pull(since) {
       reach('pull')
       pulls.push(since)
       if (access.refuse) return access.refuse
-      return frame({ state, proto: 1 }, rows.filter((row) => row.rev > since))
+      return frame(
+        { state, proto: 1 },
+        rows.filter((row) => row.rev > since),
+      )
     },
     async session(sid, claim) {
       reach(claim ? 'claim' : 'session')
       if (!access.canWrite) return reply(403, { collab: 'forbidden' })
       if (claim) {
         if (claim.lineage !== 'L') return reply(200, { claim: 'lineage' })
-        const taken = [...sessions.entries()].some(([other, session]) => other !== sid && session.cid === claim.cid)
-        if (taken || (sessions.has(sid) && sessions.get(sid)!.cid !== claim.cid)) return reply(200, { claim: 'clash' })
+        const taken = [...sessions.entries()].some(
+          ([other, session]) => other !== sid && session.cid === claim.cid,
+        )
+        if (taken || (sessions.has(sid) && sessions.get(sid)!.cid !== claim.cid))
+          return reply(200, { claim: 'clash' })
         if (!sessions.has(sid)) sessions.set(sid, { cid: claim.cid, acked: 0, shas: [] })
         return reply(200, { claim: 'ok' })
       }
@@ -83,15 +105,18 @@ function fakeServer(state = 'live') {
       const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
       finals.push(header.final)
       const session = sessions.get(header.sid)
-      if (length > 4096 || header.shas?.length !== header.to - header.from + 1) return reply(400, { collab: 'malformed' })
+      if (length > 4096 || header.shas?.length !== header.to - header.from + 1)
+        return reply(400, { collab: 'malformed' })
       if (!session || session.cid !== header.cid) return reply(409, { collab: 'client_conflict' })
       if (header.from <= session.acked) {
         for (let seq = header.from; seq <= Math.min(header.to, session.acked); seq++) {
-          if (session.shas[seq] !== header.shas[seq - header.from]) return reply(409, { collab: 'seq_conflict' })
+          if (session.shas[seq] !== header.shas[seq - header.from])
+            return reply(409, { collab: 'seq_conflict' })
         }
         return reply(200, { dup: true, acked: session.acked, head: rows.length })
       }
-      if (header.from !== session.acked + 1) return reply(409, { collab: 'seq', acked: session.acked })
+      if (header.from !== session.acked + 1)
+        return reply(409, { collab: 'seq', acked: session.acked })
       header.shas.forEach((sha: string, index: number) => (session.shas[header.from + index] = sha))
       rows.push({ rev: rows.length + 1, bytes: body.slice(4 + length) })
       session.acked = header.to
@@ -281,13 +306,18 @@ describe('collab room', () => {
     const endpoints = server.endpoints()
     const push = endpoints.push
     let busy = 5
-    endpoints.push = async (body, options) => (busy-- > 0 ? reply(423, { collab: 'busy', retry_ms: 1000 }) : push(body, options))
+    endpoints.push = async (body, options) =>
+      busy-- > 0 ? reply(423, { collab: 'busy', retry_ms: 1000 }) : push(body, options)
     const room = await join(endpoints)
 
     for (let at = 0; at < 130; at++) room.doc.getText('t').insert(at, 'x')
     await vi.advanceTimersByTimeAsync(20_000)
 
-    expect([room.saveState, room.unsent, text(await join(server.endpoints())).length]).toEqual(['clean', 0, 130])
+    expect([room.saveState, room.unsent, text(await join(server.endpoints())).length]).toEqual([
+      'clean',
+      0,
+      130,
+    ])
   })
 
   it('a server that forgot what it acknowledged stops saving instead of resending in a loop', async () => {
@@ -338,7 +368,10 @@ describe('collab room', () => {
     vi.useFakeTimers()
     const server = fakeServer()
     const endpoints = server.endpoints()
-    let answers = [reply(423, { collab: 'busy', retry_ms: 1000 }), reply(401, { collab: 'signed_out' })]
+    const answers = [
+      reply(423, { collab: 'busy', retry_ms: 1000 }),
+      reply(401, { collab: 'signed_out' }),
+    ]
     endpoints.push = async () => answers.shift() ?? reply(401, { collab: 'signed_out' })
     const room = await join(endpoints)
     signedIn = 'Guest'
@@ -538,7 +571,12 @@ describe('collab room', () => {
 
     room.doc.getText('t').insert(0, 'kept')
     await vi.advanceTimersByTimeAsync(0)
-    expect([room.blocked, room.canWrite, room.unsent, server.rows.length]).toEqual(['signed_out', true, 1, 0])
+    expect([room.blocked, room.canWrite, room.unsent, server.rows.length]).toEqual([
+      'signed_out',
+      true,
+      1,
+      0,
+    ])
 
     server.access.refuse = null
     signedIn = 'a@x.com'
@@ -558,7 +596,12 @@ describe('collab room', () => {
     await room.flush()
     room.doc.getText('t').insert(0, 'more ')
 
-    expect([room.blocked, room.canWrite, room.saveState, room.unsent]).toEqual(['other_user', false, 'failed', 1])
+    expect([room.blocked, room.canWrite, room.saveState, room.unsent]).toEqual([
+      'other_user',
+      false,
+      'failed',
+      1,
+    ])
   })
 
   it('a writer whose edit access is taken away is told so on the next push', async () => {
@@ -610,7 +653,12 @@ describe('collab room', () => {
     await room.flush()
     await room.pull()
 
-    expect([room.blocked, room.canWrite, room.saveState, room.unsent]).toEqual(['stale_session', false, 'failed', 1])
+    expect([room.blocked, room.canWrite, room.saveState, room.unsent]).toEqual([
+      'stale_session',
+      false,
+      'failed',
+      1,
+    ])
   })
 
   it('opening with a stale sign-in asks for a reload', async () => {
@@ -636,7 +684,11 @@ describe('collab room', () => {
 
   it('opens nothing while collaboration is off or the document is not collaborative', async () => {
     for (const state of ['disabled', 'unconverted']) {
-      const opened = openCollabRoom({ endpoints: fakeServer(state).endpoints(), principal: 'a@x.com', signedIn: () => 'a@x.com' })
+      const opened = openCollabRoom({
+        endpoints: fakeServer(state).endpoints(),
+        principal: 'a@x.com',
+        signedIn: () => 'a@x.com',
+      })
       await expect(opened).resolves.toEqual({
         state,
       })
@@ -645,7 +697,10 @@ describe('collab room', () => {
 })
 
 // IndexedDB answers through setImmediate, which must keep running
-const fakeTime = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+const fakeTime = () =>
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+  })
 declare const setImmediate: (callback: () => void) => void
 const idle = async () => {
   for (let turn = 0; turn < 20; turn++) await new Promise<void>((resolve) => setImmediate(resolve))
@@ -760,7 +815,11 @@ describe('collab room on a device', () => {
     await vi.advanceTimersByTimeAsync(1000)
 
     expect(server.calls.slice(0, 3)).toEqual(['claim', 'push', 'pull'])
-    expect([text(offline), offline.saveState, server.rows.length]).toEqual(['mine base other', 'clean', 3])
+    expect([text(offline), offline.saveState, server.rows.length]).toEqual([
+      'mine base other',
+      'clean',
+      3,
+    ])
   })
 
   it('a claim that clashes keeps the offline work as a recovery copy and sends none of it', async () => {
@@ -804,7 +863,9 @@ describe('collab room on a device', () => {
     await next.flush()
 
     const records = await kept.store.recovery('D')
-    expect(records.map((record) => [record.reason, record.entries.length])).toEqual([['id_clash', 1]])
+    expect(records.map((record) => [record.reason, record.entries.length])).toEqual([
+      ['id_clash', 1],
+    ])
     expect([text(next), server.rows.length]).toEqual(['earlier', 1])
   })
 
@@ -835,7 +896,9 @@ describe('collab room on a device', () => {
     const full = Object.create(kept.store)
     full.saveSession = () => Promise.reject(new DOMException('full', 'QuotaExceededError'))
 
-    await expect(join(server.endpoints(), { device: { store: full, doc: 'D' } })).rejects.toThrow('Failed to fetch')
+    await expect(join(server.endpoints(), { device: { store: full, doc: 'D' } })).rejects.toThrow(
+      'Failed to fetch',
+    )
   })
 
   it('a tab closed while its claim is answered takes on no other tab’s work', async () => {
@@ -876,7 +939,10 @@ describe('collab room on a device', () => {
     const endpoints = server.endpoints()
     const refusing: CollabEndpoints = {
       ...endpoints,
-      session: async (sid, claim) => (await endpoints.session(sid, claim), reply(409, { collab: 'session_owner' })),
+      session: async (sid, claim) => (
+        await endpoints.session(sid, claim),
+        reply(409, { collab: 'session_owner' })
+      ),
     }
     const room = await join(refusing, { device: kept, pollMs: 1000 })
     room.doc.getText('t').insert(0, 'mine')
@@ -889,7 +955,10 @@ describe('collab room on a device', () => {
     await vi.advanceTimersByTimeAsync(1000)
 
     const records = await kept.store.recovery('D')
-    expect([room.saveState, server.calls.filter((call) => call === 'claim').length]).toEqual(['failed', 1])
+    expect([room.saveState, server.calls.filter((call) => call === 'claim').length]).toEqual([
+      'failed',
+      1,
+    ])
     expect(records.map((record) => record.reason)).toEqual(['session_owner'])
   })
 
@@ -920,7 +989,10 @@ describe('collab room on a device', () => {
     await room.flush()
     server.access.refuse = null
 
-    expect([room.saveState, (await kept.store.recovery('D'))[0]?.reason]).toEqual(['failed', 'seq_conflict'])
+    expect([room.saveState, (await kept.store.recovery('D'))[0]?.reason]).toEqual([
+      'failed',
+      'seq_conflict',
+    ])
     expect(text(await join(server.endpoints(), { device: kept }))).toBe('')
   })
 
@@ -936,7 +1008,11 @@ describe('collab room on a device', () => {
 
     const room = await join(server.endpoints(), { device: kept })
 
-    expect([text(room), room.unsent, (await kept.store.recovery('D'))[0]?.reason]).toEqual(['', 0, 'lineage'])
+    expect([text(room), room.unsent, (await kept.store.recovery('D'))[0]?.reason]).toEqual([
+      '',
+      0,
+      'lineage',
+    ])
   })
 
   it('without a device store the tab stops editing while offline and resumes once back', async () => {

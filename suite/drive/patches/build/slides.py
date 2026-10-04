@@ -3,11 +3,13 @@
 import io
 import json
 from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from urllib.parse import unquote, urlsplit
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFile, ImageOps
 
 from suite.drive._core.nodes import child_path
 from suite.drive.patches.build.content_mapping import (
@@ -19,18 +21,18 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.history import _document_node
+from suite.drive.patches.build.legacy import S3_URL_PREFIX
 from suite.drive.patches.build.slide_journal import SlideBody, SlideJournalError
 from suite.drive.patches.build.state import RelocatedMediaNode
 from suite.drive.patches.build.templates import convert_templates
 from suite.drive.patches.build.titles import SiblingTitles
-from suite.drive.utils.files import S3_URL_PREFIX
 
 MAX_IMAGE_PIXELS = 25_000_000
 MEDIA_KEYS = ("src", "poster")
 NODE_FIELDS = (
     "name",
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "kind",
@@ -64,7 +66,7 @@ NODE_FIELDS = (
 #   it.
 ADOPTED_FIELDS = (
     "title",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "size",
@@ -167,6 +169,7 @@ def _convert_deck(env, deck, batch_size, result):
         batch_size,
         lambda row: (str(row.creation or ""), row.name),
     )
+    files = _private_media(env.content_target, files)
     files = _one_blob_per_content(env.content_target, files, host)
     thumbnail, excluded = _thumbnail_file(deck, files, result, host)
     references = _references(parsed, slides)
@@ -449,9 +452,11 @@ def _adopt_tree_node(writer, result, deck, stored, planned):
     the node this one repaired (§13 exact rerun validation). Returns the node
     as it now reads, so the caller validates what is stored.
     """
-    if not stored or stored.get("parent") == writer.parent["name"]:
+    if not stored or stored.get("parent_node") == writer.parent["name"]:
         return stored
-    result.record_relocated_media(RelocatedMediaNode(deck.name, stored["name"], stored.get("parent") or ""))
+    result.record_relocated_media(
+        RelocatedMediaNode(deck.name, stored["name"], stored.get("parent_node") or "")
+    )
     return writer.adopt(stored, planned)
 
 
@@ -524,16 +529,14 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
     candidates = env.content.media_files_by_urls(tuple(sorted(_url_lookup(unresolved, host))))
     all_files = defaultdict(list)
     by_url = defaultdict(list)
-    foreign = defaultdict(list)
     for row in candidates:
         for alias in _aliases(row, host):
             all_files[alias].append(row)
-        if row.deck == deck.name:
-            continue
-        adoptable = env.content.presentation_is_template(row.deck)
-        for alias in _aliases(row, host):
-            foreign[alias].append(row)
-            if adoptable:
+            # B112: a picture another deck holds, template or not, is copied
+            # into this one. The copy is a new node for the same blob, so the
+            # other deck keeps its picture and this deck's readers read the
+            # copy through this deck's grants.
+            if row.deck != deck.name:
                 by_url[alias].append(row)
     media_nodes = {row["name"] for row in writer.children if row.get("kind") == "file"}
     mapping = {}
@@ -542,15 +545,7 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
     for value in unresolved:
         rows = _named_rows(by_url, value, host)
         if not rows:
-            # A non-template global File cannot be adopted: Build cannot
-            # reconstruct the original paste actor's access.
-            if _named_rows(foreign, value, host):
-                result.record_issue(
-                    f"Presentation:{deck.name}",
-                    f"media reference {value!r} belongs to a non-template Presentation and was not adopted",
-                    phase="slides",
-                )
-            elif (
+            if (
                 not _named_rows(all_files, value, host)
                 and value not in media_nodes
                 and not _never_media(value, host)
@@ -565,6 +560,7 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
             continue
         # §3: one unambiguous Ready blob. A reference with none is unresolved
         # evidence, not a reason to refuse a deck that is otherwise convertible.
+        rows = _private_media(env.content_target, rows)
         blobs = {row.blob for row in rows if row.blob and _blob_is_ready(env.content_target, row.blob)}
         if not blobs:
             result.record_issue(
@@ -610,7 +606,7 @@ def _media_node(row, parent, name, blob, title):
     return {
         "name": name,
         "title": title,
-        "parent": parent["name"],
+        "parent_node": parent["name"],
         "root": parent["root"],
         # The controller rule, not a local spelling of it: a deck directly under
         # a root has `path == ""`, and its children still need `/<deck>/`.
@@ -702,7 +698,8 @@ def _preview(env, deck, source):
         raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is oversized")
     try:
         with Image.open(io.BytesIO(raw)) as image:
-            image.load()
+            with _refusing_truncated_images():
+                image.load()
             image = ImageOps.exif_transpose(image)
             reusable = bool(blob.is_private and blob.mime_type == "image/webp" and max(image.size) <= 512)
             if reusable:
@@ -730,6 +727,22 @@ def _preview(env, deck, source):
     }
     target.insert_previews([planned])
     return 1
+
+
+@contextmanager
+def _refusing_truncated_images() -> Iterator[None]:
+    """Make a decode of a cut-off image raise instead of padding it.
+
+    `frappe.utils.image` turns Pillow's process-wide `LOAD_TRUNCATED_IMAGES`
+    on when it is imported, which would let a half-written thumbnail through
+    as a gray-bottomed preview.
+    """
+    previous = ImageFile.LOAD_TRUNCATED_IMAGES
+    ImageFile.LOAD_TRUNCATED_IMAGES = False
+    try:
+        yield
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = previous
 
 
 def _validate_preview(target, deck, source, found):
@@ -772,6 +785,15 @@ def _ready_blob(target, name):
     if not blob or blob.status != "Ready":
         raise InvalidLegacyContent(f"blob {name} is not Ready")
     return blob
+
+
+def _private_media(target, files):
+    return [
+        replace(row, blob=target.private_blob(row.blob, row.file_name or row.name))
+        if row.blob and _blob_is_ready(target, row.blob)
+        else row
+        for row in files
+    ]
 
 
 def _aliases(row, host=""):

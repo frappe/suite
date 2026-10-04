@@ -1,8 +1,8 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 import re
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from uuid import uuid7
@@ -11,26 +11,45 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
+from jmap import CreationRef
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
 from suite.mail.doctype.screened_email_address.screened_email_address import (
     get_effective_screened_email_addresses,
 )
-from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.doctype.user_account.user_account import get_enabled_account_user, get_user_for_jmap_account
 from suite.mail.jmap import (
+    JMAP_REFUSALS,
+    SuiteJMAPClient,
+    chunked_get,
+    chunked_set,
+    download_blobs,
     format_jmap_error,
-    get_jmap_set_error_message,
+    format_method_error,
+    format_set_error,
+    get_account_client,
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
     get_mailbox_name_by_id,
     get_mailboxes,
-    get_sieve_script_service,
+    get_set_error_message,
+    invalidate_jmap_identities_cache,
+    invalidate_jmap_mailboxes_cache,
 )
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_emails
-from suite.utils import enqueue_job, execute_with_logging, parse_filters
+from suite.utils import enqueue_job, execute_with_logging, parse_filters, user_context
+from suite.utils.validation import JSONList
+
+# The creation id of a script's blob when it travels inside the request (see _script_blob).
+SCRIPT_BLOB = "script"
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
+# A rebuild job serves one account — a handful of JMAP calls — so this leaves room for a slow server.
+_REBUILD_JOB_TIMEOUT = 900
+# Seconds each retry chain waits before rebuilding the accounts that failed: long enough to ride out a
+# mail server restart.
+_REBUILD_RETRY_DELAYS = (30, 120, 300)
 
 
 class SieveScript(Document):
@@ -142,23 +161,24 @@ class SieveScript(Document):
         if name == AUTOMATION_SCRIPT_NAME and not frappe.flags.allow_automation_script_creation:
             frappe.throw(_("Not allowed to create automation script."))
 
+        title = _("Sieve Script Creation Error")
         creation_id = str(uuid7())
-        service = get_sieve_script_service(account)
-        sieve_script = {
-            "creation_id": creation_id,
-            "name": name,
-            "content": content,
-            "is_active": active,
-        }
-        response = service.create([sieve_script])
+        client = get_account_client(account)
 
-        if created := response.get("created"):
-            return created[creation_id]["id"]
+        extra = {"onSuccessActivateScript": f"#{creation_id}"} if active else {}
+        try:
+            with client.batch() as b:
+                blob_id, upload = _script_blob(client, b, content)
+                h = b.sieve.sieve_script.set(create={creation_id: {"name": name, "blobId": blob_id}}, **extra)
+            _check_script_upload(upload, title)
+            response = h.result
+        except JMAP_REFUSALS as e:
+            frappe.throw(format_method_error(e), title=title)
 
-        frappe.throw(
-            get_jmap_set_error_message(response, "notCreated", creation_id),
-            title=_("Sieve Script Creation Error"),
-        )
+        if script_id := response.created_id(creation_id):
+            return script_id
+
+        frappe.throw(get_set_error_message(response, "create", creation_id), title=title)
 
     @classmethod
     def _fetch_sieve_scripts(
@@ -170,14 +190,12 @@ class SieveScript(Document):
     ) -> tuple[list, int]:
         """Returns a list of sieve scripts for the given account."""
 
-        scripts = []
-        service = get_sieve_script_service(account)
-        data = service.query(filter, position, limit)
+        data = _query_sieve_scripts(account, filter, position, limit)
 
         ids = data.get("ids", [])
         total = data.get("total", 0)
 
-        scripts.extend(SieveScript._get_sieve_scripts(account, ids))
+        scripts = SieveScript._get_sieve_scripts(account, ids)
 
         return scripts[:limit], total
 
@@ -185,17 +203,21 @@ class SieveScript(Document):
     def _get_sieve_scripts(cls, account: str, ids: list[str], download_content: bool = False) -> list[dict]:
         """Returns a list of sieve scripts for the provided IDs in the same order as ids."""
 
-        sieve_scripts = {}
-        service = get_sieve_script_service(account)
-        scripts = service.get(ids)
+        if not ids:
+            return []
+
+        client = get_account_client(account)
+        items = chunked_get(client, lambda b, chunk: b.sieve.sieve_script.get(ids=chunk), ids)
+        scripts = [s.to_wire() for s in items]
 
         if download_content:
             blobs = [(s["blobId"], None) for s in scripts if s["blobId"]]
-            data = service.download_blobs_concurrently(blobs)
+            data = download_blobs(client, blobs) if blobs else {}
 
             for script in scripts:
                 script["content"] = data.get(script["blobId"], b"").decode("utf-8")
 
+        sieve_scripts = {}
         for script in scripts:
             script = format_sieve_script(account, script)
             sieve_scripts[script["id"]] = script
@@ -209,11 +231,22 @@ class SieveScript(Document):
         if not content or not content.strip():
             frappe.throw(_("Sieve script content cannot be empty."))
 
-        service = get_sieve_script_service(account)
-        response = service.validate(content)
+        title = _("Sieve Script Validation Error")
+        client = get_account_client(account)
 
-        if error := response.get("error"):
-            frappe.throw(format_jmap_error(error), title=_("Sieve Script Validation Error"))
+        try:
+            with client.batch() as b:
+                blob_id, upload = _script_blob(client, b, content, argument=True)
+                h = b.sieve.sieve_script.validate(blob_id=blob_id)
+            _check_script_upload(upload, title)
+            response = h.result
+        except JMAP_REFUSALS as e:
+            frappe.throw(format_method_error(e), title=title)
+
+        # A syntactically invalid script is not a method error: the call succeeds and
+        # reports the problem in its `error` argument.
+        if response.error:
+            frappe.throw(format_jmap_error(response.error), title=title)
 
     @classmethod
     def _update_sieve_script(
@@ -229,42 +262,57 @@ class SieveScript(Document):
         if not content or not content.strip():
             frappe.throw(_("Sieve script content cannot be empty."))
 
-        service = get_sieve_script_service(account)
-        scripts = service.get([id])
+        client = get_account_client(account)
+        with client.batch() as b:
+            h = b.sieve.sieve_script.get(ids=[id])
 
-        if not scripts:
+        if not h.result.items:
             frappe.throw(
                 _("Sieve Script with ID {0} not found.").format(frappe.bold(id)),
                 title=_("Sieve Script Not Found"),
             )
 
-        script = scripts[0]
+        script = h.result.items[0].to_wire()
         deactivate = script["isActive"] and not active
-        sieve_script = {"id": id, "name": name, "content": content, "is_active": bool(active)}
-        response = service.update([sieve_script], deactivate=deactivate)
 
-        if not response.get("updated"):
-            frappe.throw(
-                get_jmap_set_error_message(response, "notUpdated", id),
-                title=_("Sieve Script Update Error"),
-            )
+        title = _("Sieve Script Update Error")
+
+        extra = {}
+        if active:
+            extra["onSuccessActivateScript"] = id
+        if deactivate:
+            extra["onSuccessDeactivateScript"] = True
+
+        try:
+            with client.batch() as b:
+                blob_id, upload = _script_blob(client, b, content)
+                h = b.sieve.sieve_script.set(update={id: {"name": name, "blobId": blob_id}}, **extra)
+            _check_script_upload(upload, title)
+            response = h.result
+        except JMAP_REFUSALS as e:
+            frappe.throw(format_method_error(e), title=title)
+
+        if id not in response.updated:
+            frappe.throw(get_set_error_message(response, "update", id), title=title)
 
     @classmethod
     def _delete_sieve_scripts(cls, account: str, ids: list[str]) -> None:
         """Deletes sieve scripts for the given list of IDs and account."""
 
-        service = get_sieve_script_service(account)
-        response = service.delete(ids)
-
         title = _("Sieve Script Deletion Error")
-        if not_destroyed := response.get("notDestroyed"):
-            error_messages = [f"{id}: {format_jmap_error(error)}" for id, error in not_destroyed.items()]
+        client = get_account_client(account)
+
+        try:
+            result = chunked_set(client, lambda b, chunk: b.sieve.sieve_script.set(destroy=chunk), ids)
+        except JMAP_REFUSALS as e:
+            frappe.throw(format_method_error(e), title=title)
+
+        if not_destroyed := result.not_destroyed:
+            error_messages = [f"{id}: {format_set_error(error)}" for id, error in not_destroyed.items()]
             frappe.throw(
                 _("Sieve Script Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
                 title=title,
             )
-        elif error := response.get("error"):
-            frappe.throw(format_jmap_error(error), title=title)
 
     def validate(self) -> None:
         if self.read_only:
@@ -295,12 +343,52 @@ def parse_sieve_script_name(name: str) -> tuple[str, str]:
     return account, id
 
 
-@frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
-    """Deletes multiple sieve scripts given their names."""
+def _query_sieve_scripts(
+    account: str, filter: dict | None = None, position: int = 0, limit: int = 50
+) -> dict:
+    """Queries sieve script ids, paging in server-sized batches until `limit` is reached."""
 
-    if isinstance(names, str):
-        names = json.loads(names)
+    _filter = {}
+    filter = filter or {}
+    for key in ["name", "isActive"]:
+        if key in filter and filter[key] is not None:
+            _filter[key] = filter[key]
+
+    client = get_account_client(account)
+
+    ids = []
+    total = None
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+
+        with client.batch() as b:
+            h = b.sieve.sieve_script.query(
+                filter=_filter,
+                position=position,
+                limit=current_batch_size,
+                calculate_total=total is None,
+            )
+        query_response = h.result
+
+        batch_ids = query_response.ids
+        ids.extend(batch_ids)
+
+        if total is None:
+            total = query_response.total
+
+        if len(batch_ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(batch_ids)
+
+    return {"ids": ids[:limit], "total": total}
+
+
+@frappe.whitelist()
+def bulk_delete(names: JSONList[str]) -> None:
+    """Deletes multiple sieve scripts given their names."""
 
     accounts_map = {}
     for name in names:
@@ -334,8 +422,7 @@ def bulk_delete(names: str | list[str]) -> None:
 def get_active_sieve_script_id(account: str) -> str | None:
     """Returns the ID of the currently active sieve script for the given account, if any."""
 
-    service = get_sieve_script_service(account)
-    query_result = service.query({"isActive": True})
+    query_result = _query_sieve_scripts(account, {"isActive": True})
 
     if query_result.get("ids") and len(query_result["ids"]) > 0:
         return query_result["ids"][0]
@@ -418,10 +505,44 @@ def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 
 # Frappe Mail Automation Sieve Script
 
+
+def _script_blob(client: SuiteJMAPClient, b, content: str, argument: bool = False) -> tuple:
+    """The blob id a SieveScript call names for `content`, queued into the batch `b` where it can be,
+    and the handle of the upload queued there, if one was (see _check_script_upload).
+
+    A server offering RFC 9404 creates the blob from a Blob/upload in the same request - one round
+    trip fewer for every save - and the id is then a creation reference: `#script` inside a /set
+    object, or, for a method argument such as validate's `blobId`, a result reference to the
+    upload's answer (RFC 8620 §3.7). Anywhere else the script goes to the upload endpoint first.
+    """
+
+    if "blob" not in client.capabilities.attrs:
+        return client.upload(content.encode("utf-8"), content_type="application/sieve").blob_id, None
+
+    upload = b.blob.blob.upload(
+        create={SCRIPT_BLOB: {"data": [{"data:asText": content}], "type": "application/sieve"}}
+    )
+    return (upload.ref_created(SCRIPT_BLOB) if argument else CreationRef(SCRIPT_BLOB)), upload
+
+
+def _check_script_upload(upload, title: str) -> None:
+    """Throws the server's reason for refusing the script's Blob/upload, once the batch is back.
+
+    The call naming the blob fails with it, but only over a reference that did not resolve: why
+    the script could not be stored - too large, over quota - is in the upload's answer.
+    """
+
+    if upload is None:
+        return
+
+    if error := upload.result.not_created.get(SCRIPT_BLOB):
+        frappe.throw(format_set_error(error), title=title)
+
+
 SCREENER_MAILBOX_NAME = "Screener"
 AUTOMATION_SCRIPT_NAME = "frappe_mail_automation"
 AUTOMATION_SCRIPT_REQUIRE = (
-    'require ["fileinto", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"];'
+    'require ["fileinto", "mailbox", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"];'
 )
 
 
@@ -434,7 +555,7 @@ def maybe_build_automation_sieve(account: str, activate: bool = False) -> None:
     build_automation_sieve(account, activate=activate)
 
 
-def build_automation_sieve(account: str, activate: bool = False) -> None:
+def build_automation_sieve(account: str, activate: bool = False, raise_exception: bool = False) -> None:
     """Build the automation sieve script for the given account and optionally activate it.
 
     Activation is skipped while the vacation sieve script is active, so rebuilding the automation
@@ -445,6 +566,9 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
     that user, so the rebuild cannot work (e.g. the personal account of a deactivated employee) and
     would only produce an error log. The script is rebuilt on the next change once the user is
     enabled again.
+
+    A failed build is logged rather than raised, unless `raise_exception` asks for it — for a caller
+    that handles the failure itself, e.g. to retry.
     """
 
     user = get_user_for_jmap_account(account, raise_exception=False)
@@ -464,6 +588,10 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
             doc.active = True
 
         doc.save()
+
+    if raise_exception:
+        _build_automation_sieve(account, activate=activate)
+        return
 
     execute_with_logging(
         lambda: _build_automation_sieve(account, activate=activate),
@@ -488,16 +616,7 @@ def rebuild_all_automation_sieves() -> None:
     frappe.only_for("System Manager")
 
     accounts = frappe.db.get_all("JMAP Account", pluck="name")
-    for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
-        enqueue_job(
-            _rebuild_automation_sieves,
-            job_id=f"rebuild-automation-sieves::{i}",
-            deduplicate=True,
-            queue="long",
-            timeout=3600,
-            enqueue_after_commit=True,
-            accounts=batch,
-        )
+    enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="rebuild-automation-sieves")
 
     frappe.msgprint(
         _("Rebuilding the automation sieve scripts for {0} account(s) in the background.").format(
@@ -507,21 +626,146 @@ def rebuild_all_automation_sieves() -> None:
     )
 
 
-def _rebuild_automation_sieves(accounts: list[str]) -> None:
-    """Rebuild each account's automation script, isolating per-account failures."""
+def enqueue_automation_sieve_rebuilds(accounts: list[str], job_id_prefix: str) -> None:
+    """Rebuild the automation script of each account in the background, once the current transaction
+    commits: a chain of long-queue jobs per batch of accounts, the batches side by side. Content only
+    (activate=False): activating would override an account whose active script is the vacation
+    auto-responder or one the user wrote themselves.
 
-    for account in accounts:
+    Only a batch's first job carries `job_id_prefix` and is deduplicated — a link carrying it would
+    find the job before it still running, and be dropped. So a second call once a chain is under way
+    starts another: twice the work, though every job still reads the rules afresh.
+    """
+
+    for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
+        _enqueue_automation_sieve_rebuild(batch, job_id=f"{job_id_prefix}::{i}")
+
+
+def _enqueue_automation_sieve_rebuild(
+    accounts: list[str],
+    job_id: str | None = None,
+    failures: dict[str, str] | None = None,
+    attempt: int = 0,
+    not_before: float = 0,
+    after_commit: bool = True,
+) -> None:
+    """Queue the job that rebuilds the first of the accounts, by default once the current transaction
+    commits."""
+
+    enqueue_job(
+        _rebuild_automation_sieves,
+        job_id=job_id,
+        deduplicate=bool(job_id),
+        queue="long",
+        timeout=_REBUILD_JOB_TIMEOUT,
+        enqueue_after_commit=after_commit,
+        accounts=accounts,
+        failures=failures or {},
+        attempt=attempt,
+        not_before=not_before,
+    )
+
+
+def _pass_on_automation_sieve_rebuild(
+    accounts: list[str], failures: dict[str, str], attempt: int, delay: int = 0
+) -> None:
+    """Queue the next job of a chain, logging what the chain still holds if it cannot be queued.
+
+    Queued straight away rather than once this job commits — it has nothing to commit — so a queue too
+    full to take the job, or Redis failing, surfaces here instead of silently ending the chain.
+    """
+
+    try:
+        _enqueue_automation_sieve_rebuild(
+            accounts,
+            failures=failures,
+            attempt=attempt,
+            not_before=time.time() + delay if delay else 0,
+            after_commit=False,
+        )
+    except Exception:
+        # The chain ends here. Accounts it failed keep their own traceback; the rest get this one.
+        _log_automation_sieve_rebuild_failures(
+            {**dict.fromkeys(accounts, frappe.get_traceback()), **failures}
+        )
+
+
+def _log_automation_sieve_rebuild_failures(failures: dict[str, str]) -> None:
+    for account, traceback in failures.items():
+        log_mail_error(
+            "Rebuild Automation Sieves Error",
+            f"Failed to rebuild the automation sieve script for JMAP account {account}\n\n{traceback}",
+        )
+
+
+def _rebuild_automation_sieves(
+    accounts: list[str], failures: dict[str, str] | None = None, attempt: int = 0, not_before: float = 0
+) -> None:
+    """Rebuild the first account's automation script, then queue a job for the rest.
+
+    One account per job, so each account's rules are read in a transaction of its own: a job serving
+    several would read the later ones from the snapshot its first read took, and could replace a
+    script a user had since rebuilt with newer rules. One account also keeps a job far from its
+    timeout, and the chain, rather than the queue, holds the accounts still to come.
+
+    `failures` carries the accounts whose rebuild has failed down the chain, with their latest
+    traceback. Once the chain is through, a new chain retries them after a wait — the mail
+    server was perhaps briefly unreachable, and nothing else rebuilds an account until its user next
+    changes a rule — dropping each that rebuilds. Those that still fail after the last retry are
+    logged, as is everything the chain holds if its next job cannot be queued.
+    """
+
+    # A retry waits until `not_before`, counting the time it already spent in the queue: a worker
+    # asleep here serves no other job.
+    if (wait := not_before - time.time()) > 0:
+        time.sleep(wait)
+
+    failures = dict(failures or {})
+    if accounts:
+        if traceback := _rebuild_automation_sieve(accounts[0]):
+            failures[accounts[0]] = traceback
+        else:
+            # A retry chain carries the failures it retries; this one is resolved.
+            failures.pop(accounts[0], None)
+
+    if rest := accounts[1:]:
+        _pass_on_automation_sieve_rebuild(rest, failures, attempt)
+    elif failures and attempt < len(_REBUILD_RETRY_DELAYS):
+        _pass_on_automation_sieve_rebuild(
+            list(failures), failures, attempt + 1, _REBUILD_RETRY_DELAYS[attempt]
+        )
+    else:
+        _log_automation_sieve_rebuild_failures(failures)
+
+
+def _rebuild_automation_sieve(account: str) -> str | None:
+    """Rebuild one account's automation script, returning the traceback if it failed.
+
+    It is rebuilt as a user of it who can connect, the account's owner where it has one (see
+    `get_enabled_account_user`); an account without one is skipped. Every failure is returned — the
+    job's timeout included — so that the job still hands the rest of the chain on.
+    """
+
+    try:
         # The job runs async after the fan-out committed, so an account can vanish in between.
         if not account or not frappe.db.exists("JMAP Account", account):
-            continue
+            return None
 
-        try:
-            build_automation_sieve(account)
-        except Exception:
-            log_mail_error(
-                "Rebuild Automation Sieves Error",
-                f"Failed to rebuild the automation sieve script for JMAP account {account}",
-            )
+        user = get_enabled_account_user(account)
+        if not user:
+            return None
+
+        # A worker that doesn't fork per job keeps its mailbox and identity caches from job to job,
+        # for up to an hour: read the folders as they are, or rules follow a folder's old path.
+        invalidate_jmap_mailboxes_cache(account)
+        invalidate_jmap_identities_cache(account)
+
+        with user_context(user):
+            build_automation_sieve(account, raise_exception=True)
+    except Exception:
+        return frappe.get_traceback()
+
+    return None
 
 
 @contextmanager
@@ -717,7 +961,7 @@ def rule_object_to_sieve(automation: dict, mailbox_path: str) -> str:
     if automation.get("add_star"):
         script_parts.append('  addflag "\\\\Flagged";')
 
-    script_parts.append(f'  fileinto "{mailbox_path}";')
+    script_parts.append(f'  fileinto "{_escape_sieve_string(mailbox_path)}";')
     script_parts.append("  stop;")
     script_parts.append("}")
 
@@ -778,7 +1022,7 @@ def _apply_screening_blocks(account: str, content: str) -> str:
             spam_emails,
             # Flag as junk ($junk keyword) as well as filing into Junk, so the mail is marked junk — not
             # just located there — matching what marking a mail as junk does.
-            ['  addflag "$junk";', f'  fileinto "{junk_mailbox_path}";', "  stop;"],
+            ['  addflag "$junk";', f'  fileinto "{_escape_sieve_string(junk_mailbox_path)}";', "  stop;"],
         )
         if spam_block:
             content = content.rstrip() + "\n\n" + spam_block.rstrip() + "\n"
@@ -811,7 +1055,9 @@ def _escape_sieve_string(value: str) -> str:
     """Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote.
 
     Line breaks are dropped as well, so a value carrying a newline cannot terminate the statement it
-    is embedded in.
+    is embedded in. Stalwart's Sieve parser (sieve-rs) still misreads an escaped backslash that ends
+    the string or is followed by n, r, t, a quote or another backslash, so a value like that is not
+    carried through intact.
     """
 
     value = value.replace("\r", "").replace("\n", "")
@@ -888,17 +1134,24 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     It routes mail that no earlier block (Reject, Spam, or a mailbox automation rule) already claimed:
 
     - Accepted senders — and the account's own identity emails, which are always trusted — are
-      delivered straight to the Inbox, so accepted mail always reaches the inbox regardless of its
-      spam score.
-    - Otherwise, mail the server has not classified as spam is filed into Screening.
-    - Otherwise (an unrecognised sender whose mail is classified as spam) nothing is done, so the
-      server's default filtering assigns the mailbox (e.g. Junk once the spam score exceeds the
-      configured threshold).
+      filed into the Inbox, skipping the Screener. Stalwart before v0.16.22 still moves mail it
+      classifies as spam out of the Inbox into Junk, so on those versions accepted mail reaches the
+      Inbox only as ham.
+    - Otherwise, mail the server has not classified as spam is filed into Screening. The Screener is
+      created on delivery if it has gone missing (`:create`, which Stalwart creates unsubscribed),
+      because Stalwart files mail for a mailbox that does not exist into the Inbox.
+    - Otherwise (spam from an unrecognised sender) nothing is done, so the server's default filtering
+      assigns the mailbox: Junk, unless Stalwart overrides the verdict because the sender is one of the
+      user's contacts or replied to the user's own mail, and delivers it to the Inbox as ham.
 
     Spam classification is read with the `spamtest` extension (RFC 5235), not the `X-Spam-Status`
     header: Stalwart injects the verdict into the Sieve runtime before the user's script runs, but only
-    stamps the header afterwards, so the header is not visible here. `spamtest` returns a 0-10 value
-    (Ham -> 1, Spam -> 10), so `:value "ge" "2"` treats anything above ham as spam.
+    stamps the header afterwards, so the header is not visible here. `spamtest` returns 0 when the
+    message was not scored, 1-4 for ham (1 at a score of about zero or below, rising towards the spam
+    threshold) and 5-10 for spam, so `:value "ge" "5"` is exactly Stalwart's spam verdict. Do not lower
+    it: ham with a small positive score lands on 2-4, and a lower cut-off lets that mail skip the
+    Screener and reach the Inbox. (Stalwart before v0.16.19 only ever returned 1 or 10, which the same
+    test handles.)
     """
 
     screening_mailbox_path = get_screening_mailbox_path(account)
@@ -923,9 +1176,9 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     else:
         accepted_test = None
 
-    # Mail the server has not classified as spam (spamtest value below 2, i.e. ham or unchecked) is
+    # Mail the server has not classified as spam (spamtest value below 5, i.e. ham or unscored) is
     # screened; spam falls through to the server's default filtering.
-    not_spam_test = 'not spamtest :value "ge" :comparator "i;ascii-numeric" "2"'
+    not_spam_test = 'not spamtest :value "ge" :comparator "i;ascii-numeric" "5"'
 
     lines = ["# Screening"]
     if accepted_test:
@@ -935,7 +1188,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         inbox_mailbox_path = get_inbox_mailbox_path(account)
         lines += [
             f"if {accepted_test} {{",
-            f'  fileinto "{inbox_mailbox_path}";',
+            f'  fileinto "{_escape_sieve_string(inbox_mailbox_path)}";',
             "  stop;",
             "}",
             f"elsif {not_spam_test} {{",
@@ -945,7 +1198,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         lines.append(f"if {not_spam_test} {{")
 
     lines += [
-        f'  fileinto "{screening_mailbox_path}";',
+        f'  fileinto :create "{_escape_sieve_string(screening_mailbox_path)}";',
         "  stop;",
         "}",
         "\n",
@@ -961,14 +1214,13 @@ def get_screening_mailbox_path(account: str) -> str:
     """
 
     from suite.mail.doctype.mailbox.mailbox import add_mailbox
-    from suite.mail.jmap.services.core import CoreService
 
     # The mailbox list lives in a per-process TTL cache, so a negative lookup can be stale — another
     # worker may already have created the Screener. Refresh from the server before deciding to create,
     # so we never try to recreate an existing mailbox (which JMAP rejects with "already exists").
-    CoreService.invalidate_cache(account, key="mailboxes")
+    invalidate_jmap_mailboxes_cache(account)
     if not get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME):
         add_mailbox(account, SCREENER_MAILBOX_NAME)
-        CoreService.invalidate_cache(account, key="mailboxes")
+        invalidate_jmap_mailboxes_cache(account)
 
     return get_mailbox_path(account, SCREENER_MAILBOX_NAME, raise_exception=True)

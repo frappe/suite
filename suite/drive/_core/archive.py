@@ -137,7 +137,7 @@ def _build(principals: Principals, folder: frappe._dict, rows: list[frappe._dict
         with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED, allowZip64=True) as archive:
             archive.writestr(paths[folder.name] + "/", b"")
             for row in rows[1:]:
-                parent = paths.get(row.parent)
+                parent = paths.get(row.parent_node)
                 if parent is None:
                     raise DriveConflict(_("The Drive folder tree is inconsistent"))
                 path = f"{parent}/{_segment(row.title)}"

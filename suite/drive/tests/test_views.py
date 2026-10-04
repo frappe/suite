@@ -6,6 +6,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
+from suite.drive._core import activity
 from suite.drive._core import nodes as nodes_module
 from suite.drive._core.access import effective_roles
 from suite.drive._core.errors import DriveConflict, DriveLinkExpired, DriveLocked
@@ -73,7 +74,7 @@ class TestListingContract(UnitTestCase):
         self.assertEqual(decode_cursor(page["next_cursor"]), 1)
         self.assertEqual(sql.call_count, 3)
         window_query = sql.call_args_list[0].args[0]
-        self.assertIn("parent = %(parent)s", window_query)
+        self.assertIn("parent_node = %(parent_node)s", window_query)
         self.assertIn("is_template = 0", window_query)
         self.assertIn("kind <> 'root'", window_query)
         self.assertEqual(sql.call_args_list[0].args[1]["limit"], 1)
@@ -106,7 +107,7 @@ class TestListingContract(UnitTestCase):
             {
                 "rows": [],
                 "next_cursor": None,
-                "parent": {"name": "root", "kind": "root", "root": None, "path": ""},
+                "container": {"name": "root", "kind": "root", "root": None, "path": ""},
             },
         )
         self.assertEqual(sql.call_args_list[0].args[1]["limit"], MAX_PAGE_SIZE)
@@ -215,7 +216,7 @@ class TestListingContract(UnitTestCase):
             {
                 "rows": [],
                 "next_cursor": None,
-                "parent": {"name": "root", "kind": "root", "root": None, "path": ""},
+                "container": {"name": "root", "kind": "root", "root": None, "path": ""},
             },
         )
 
@@ -227,19 +228,17 @@ class TestListingContract(UnitTestCase):
         self.assertLess(ancestor_filter, limit)
         self.assertIn("ancestor_grant.principal IN %(own)s", SHARED_SQL)
 
-    def test_folder_filter_and_grouping_live_inside_the_sql_window(self):
-        query = nodes_module._folder_page_query("title", "ASC", group_by="owner")
+    def test_folder_order_lives_inside_the_sql_window(self):
+        query = nodes_module._folder_page_query("title", "ASC", listing_types=("folder",))
         before_limit = query[: query.index("LIMIT")]
-        self.assertIn("(%(kind)s IS NULL OR kind = %(kind)s)", before_limit)
         order = before_limit[before_limit.rindex("ORDER BY") :]
-        self.assertLess(order.index("owner"), order.index("kind = 'folder'"))
         self.assertLess(order.index("kind = 'folder'"), order.index("title ASC"))
         self.assertTrue(order.rstrip().endswith("name ASC"))
 
-    def test_ungrouped_order_always_partitions_folders_first(self):
+    def test_every_order_partitions_folders_first(self):
         for direction in ("ASC", "DESC"):
             with self.subTest(direction=direction):
-                order = nodes_module._listing_order("modified", direction, group_by=None, prefix="")
+                order = nodes_module._listing_order("modified", direction, prefix="")
                 self.assertTrue(order.startswith("CASE WHEN kind = 'folder' THEN 0 ELSE 1 END ASC"))
                 self.assertTrue(order.endswith("name ASC"))
 
@@ -322,7 +321,7 @@ class TestDriveViews(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": title,
-                "parent": parent.name,
+                "parent_node": parent.name,
                 "root": root,
                 "path": path,
                 "kind": kind,
@@ -420,20 +419,77 @@ class TestDriveViews(IntegrationTestCase):
         self.assertEqual([row.name for row in nested_page["rows"]], [nested.name])
         self.assertEqual(sql.call_count, 3)
 
-    def test_folder_kind_filter_is_applied_before_the_short_window(self):
+    def test_folder_type_filter_is_applied_before_the_short_window(self):
         self._node(self.personal.name, "A file", kind="file")
         folder = self._node(self.personal.name, "Z folder")
 
-        page = children(self.principals, self.personal.name, kind="folder", limit=1)
+        page = children(self.principals, self.personal.name, listing_types=("folder",), limit=1)
 
         self.assertEqual([row.name for row in page["rows"]], [folder.name])
         self.assertIsNotNone(page["next_cursor"])
 
         empty_root = self._node(self.personal.name, "Empty picker")
         self._node(empty_root.name, "Only file", kind="file")
-        empty = children(self.principals, empty_root.name, kind="folder", limit=1)
+        empty = children(self.principals, empty_root.name, listing_types=("folder",), limit=1)
         self.assertEqual(empty["rows"], [])
         self.assertIsNone(empty["next_cursor"])
+
+    def test_type_filters_keep_exactly_the_nodes_of_the_chosen_types(self):
+        holder = self._node(self.personal.name, "Holder")
+        expected = {
+            "folder": {"Budget plans"},
+            "document": {"Budget letter", "Budget letter.docx"},
+            "spreadsheet": {"Budget sheet", "Budget figures.xlsx", "Budget export.csv"},
+            "presentation": {"Budget deck", "Budget slides.odp"},
+            "pdf": {"Budget scan"},
+            "image": {"Budget photo"},
+            "video": {"Budget clip"},
+            "audio": {"Budget memo"},
+        }
+        self._node(holder.name, "Budget plans")
+        self._node(holder.name, "Budget letter", kind="document", content_doctype="Writer Document")
+        self._node(holder.name, "Budget sheet", kind="document", content_doctype="Sheet")
+        self._node(holder.name, "Budget deck", kind="document", content_doctype="Presentation")
+        # A file with a mime needs a blob to insert. Only the mime matters here.
+        # An uploaded office file is the document type it holds.
+        for title, mime in (
+            ("Budget scan", "application/pdf"),
+            ("Budget photo", "image/png"),
+            ("Budget clip", "video/mp4"),
+            ("Budget memo", "audio/mpeg"),
+            ("Budget notes", "text/plain"),
+            ("Budget letter.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            ("Budget figures.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("Budget export.csv", "text/csv"),
+            ("Budget slides.odp", "application/vnd.oasis.opendocument.presentation"),
+        ):
+            frappe.db.set_value("Drive Node", self._node(holder.name, title, kind="file").name, "mime", mime)
+        # No type names a plain text file, or a document no content app declares.
+        self._node(holder.name, "Budget task", kind="document", content_doctype="ToDo")
+        everything = {*set().union(*expected.values()), "Budget notes", "Budget task"}
+        for row in children(self.principals, holder.name)["rows"]:
+            activity.set_favourite(self.principals, row.name)
+
+        listings = {
+            "children": lambda types: children(self.principals, holder.name, listing_types=types),
+            "search": lambda types: views(self.principals, "search", term="Budget", listing_types=types),
+            "favourites": lambda types: views(self.principals, "favourites", listing_types=types),
+        }
+        for listing, read in listings.items():
+            with self.subTest(listing=listing, types=()):
+                self.assertEqual({row.title for row in read(())["rows"]}, everything)
+            for listing_type, titles in expected.items():
+                with self.subTest(listing=listing, types=(listing_type,)):
+                    self.assertEqual({row.title for row in read((listing_type,))["rows"]}, titles)
+            # Several types keep a node of any of them.
+            with self.subTest(listing=listing, types=("pdf", "image", "spreadsheet")):
+                self.assertEqual(
+                    {row.title for row in read(("pdf", "image", "spreadsheet"))["rows"]},
+                    {"Budget scan", "Budget photo", *expected["spreadsheet"]},
+                )
+            for unknown in (("spreadsheets",), ("pdf", "zip")):
+                with self.subTest(listing=listing, types=unknown), self.assertRaises(frappe.ValidationError):
+                    read(unknown)
 
     def test_folder_access_expansion_keeps_the_three_query_page_cost(self):
         folder = self._node(self.personal.name, "Access-batched folder")
@@ -448,36 +504,49 @@ class TestDriveViews(IntegrationTestCase):
         expanded = next(row for row in rows if row.name == folder.name)
         self.assertGreaterEqual(expanded.access["role"], READ)
 
-    def test_grouping_is_contiguous_stable_and_folders_first_inside_owner(self):
+    def test_folders_lead_every_order_and_the_order_runs_inside_each_kind(self):
         made = []
-        for owner, kind, title in (
-            ("a@example.com", "file", "A file"),
-            ("a@example.com", "folder", "Z folder"),
-            ("b@example.com", "file", "B file"),
-            ("b@example.com", "folder", "Y folder"),
+        for kind, title in (
+            ("file", "A file"),
+            ("folder", "Z folder"),
+            ("file", "B file"),
+            ("folder", "Y folder"),
         ):
-            node = self._node(self.personal.name, title, kind=kind)
-            frappe.db.set_value("Drive Node", node.name, "owner", owner, update_modified=False)
-            made.append(node.name)
+            made.append(self._node(self.personal.name, title, kind=kind).name)
 
-        rows = children(
-            self.principals,
-            self.personal.name,
-            group_by="owner",
-            order_by="title",
-            ascending=False,
-        )["rows"]
-        relevant = [row for row in rows if row.name in made]
+        rows = children(self.principals, self.personal.name, order_by="title", ascending=False)["rows"]
+        relevant = [(row.kind, row.title) for row in rows if row.name in made]
 
         self.assertEqual(
-            [(row.owner, row.kind) for row in relevant],
-            [
-                ("a@example.com", "folder"),
-                ("a@example.com", "file"),
-                ("b@example.com", "folder"),
-                ("b@example.com", "file"),
-            ],
+            relevant,
+            [("folder", "Z folder"), ("folder", "Y folder"), ("file", "B file"), ("file", "A file")],
         )
+
+    def test_children_sort_by_owner_and_by_type_with_ties_in_name_order(self):
+        folder = self._node(self.personal.name, "Sort folder")
+        made = {}
+        for owner, kind, mime, title in (
+            ("b@example.com", "file", "image/png", "E picture"),
+            ("a@example.com", "file", "application/pdf", "B paper"),
+            ("c@example.com", "file", "image/jpeg", "C photo"),
+            ("b@example.com", "file", "image/png", "A picture"),
+            ("b@example.com", "folder", None, "D folder"),
+        ):
+            node = self._node(folder.name, title, kind=kind)
+            frappe.db.set_value(
+                "Drive Node", node.name, {"owner": owner, "mime": mime}, update_modified=False
+            )
+            made[node.name] = title
+
+        def titles(order_by, ascending=True):
+            rows = children(self.principals, folder.name, order_by=order_by, ascending=ascending)["rows"]
+            return [made[row.name] for row in rows]
+
+        self.assertEqual(titles("owner"), ["D folder", "B paper", "A picture", "E picture", "C photo"])
+        self.assertEqual(
+            titles("owner", ascending=False), ["D folder", "C photo", "A picture", "E picture", "B paper"]
+        )
+        self.assertEqual(titles("kind"), ["D folder", "B paper", "C photo", "A picture", "E picture"])
 
     def test_document_children_are_hidden_from_children_and_general_views(self):
         document = self._node(self.other.name, "Deck", kind="document")
@@ -620,15 +689,15 @@ class TestDriveViews(IntegrationTestCase):
 
         self.assertEqual([row.name for row in rows], [match.name])
         self.assertEqual(
-            [crumb["name"] for crumb in rows[0].breadcrumbs],
-            [self.personal.name, folder.name],
+            [(crumb["name"], crumb["kind"]) for crumb in rows[0].breadcrumbs],
+            [(self.personal.name, "root"), (folder.name, "folder")],
         )
         title_reads = [
             call
             for call in get_all.call_args_list
             if call.args
             and call.args[0] == "Drive Node"
-            and call.kwargs.get("fields") == ["name", "title"]
+            and call.kwargs.get("fields") == ["name", "title", "kind"]
         ]
         self.assertEqual(len(title_reads), 1)
 

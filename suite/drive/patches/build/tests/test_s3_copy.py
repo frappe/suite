@@ -11,7 +11,9 @@ from frappe.storage import blob
 from frappe.storage.blob import sniff_mime
 
 from suite.drive.patches.build import layout, s3_copy
+from suite.drive.patches.build.copy_ledger import CopiedObject, CopyLedger
 from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD, blob_key, object_key
+from suite.drive.patches.build.legacy import get_s3_url
 from suite.drive.patches.build.s3_copy import (
     READ_CHUNK,
     SNIFF_BYTES,
@@ -22,9 +24,9 @@ from suite.drive.patches.build.tests.fakes import (
     FakeBucket,
     FakeFiles,
     FakeStorage,
+    InterruptedRun,
     build_environment,
 )
-from suite.drive.utils.files import get_s3_url
 
 BYTES = b"the quick brown fox" * 16
 SHA = hashlib.sha256(BYTES).hexdigest()
@@ -77,8 +79,8 @@ class TestOneObject(S3CopyCase):
         self.assertEqual(self.bucket.opened, ["team/f1"])
 
     def test_the_legacy_object_is_left_where_it_was(self):
-        # Cleanup deletes Drive's prefix a release later (§14.10); Build must
-        # leave a rollback that is only "truncate the new tables".
+        # Only the manual legacy-object delete removes it, after Cleanup; a
+        # backup restore has to find every legacy object where it was.
         self.assertEqual(self.bucket.objects["team/f1"], BYTES)
         self.assertEqual(self.files.rows["f1"]["file_url"], get_s3_url("team/f1"))
 
@@ -414,7 +416,7 @@ class TestObjectAboveFiveGB(S3CopyCase):
         self.assertEqual(bucket.copies, [("managed_copy", "team/big", destination)])
 
     def test_the_blob_row_carries_the_whole_size(self):
-        files, _, storage, prep = self.run_it()
+        files, _, storage, _prep = self.run_it()
 
         (name,) = storage.blobs
         blob = storage.blobs[name]
@@ -546,3 +548,95 @@ class TestBatchBoundaries(S3CopyCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestKeyLayouts(S3CopyCase):
+    """The production bucket was never normalised: keys start with a slash,
+    sit bare at the root, or live in a per-user folder. Each is read and
+    copied under the key the `File` row actually carries."""
+
+    LEADING = "/8f3a9c2d1e/Quarterly report.pdf"
+    BARE = "standalone.pdf"
+    FOLDER = "faris%40erpnext.com/notes.txt"
+
+    def setUp(self):
+        super().setUp()
+        self.files = FakeFiles.with_s3_files(
+            ("f1", self.LEADING, "Quarterly report.pdf"),
+            ("f2", self.BARE, "standalone.pdf"),
+            ("f3", self.FOLDER, "notes.txt"),
+        )
+        self.bucket = FakeBucket().put(self.LEADING, BYTES).put(self.BARE, OTHER).put(self.FOLDER, b"n" * 70)
+        self.env, self.prep = self.run_copy(files=self.files, bucket=self.bucket)
+
+    def test_every_layout_is_read_under_its_own_key(self):
+        self.assertEqual(self.bucket.opened, [self.LEADING, self.BARE, self.FOLDER])
+        self.assertEqual(self.prep.s3_objects_copied, 3)
+        self.assertEqual(self.prep.missing_bytes, [])
+
+    def test_the_leading_slash_is_the_copy_source_and_the_destination_is_canonical(self):
+        kind, source, destination = self.bucket.copies[0]
+        self.assertEqual((kind, source), ("copy_object", self.LEADING))
+        self.assertEqual(destination, object_key(SHA, "Quarterly report.pdf"))
+        self.assertEqual(self.bucket.objects[destination], BYTES)
+
+    def test_a_bare_root_key_is_copied_as_is(self):
+        self.assertEqual(self.bucket.copies[1][1], self.BARE)
+        self.assertEqual(self.bucket.objects[object_key(OTHER_SHA, "standalone.pdf")], OTHER)
+
+    def test_the_legacy_objects_all_stay_in_place(self):
+        for key in (self.LEADING, self.BARE, self.FOLDER):
+            self.assertIn(key, self.bucket.objects)
+
+    def test_the_ledger_names_each_legacy_key_exactly(self):
+        entries = {entry.legacy_key: entry for entry in self.env.ledger().entries()}
+        self.assertEqual(set(entries), {self.LEADING, self.BARE, self.FOLDER})
+        leading = entries[self.LEADING]
+        self.assertEqual(leading.file, "f1")
+        self.assertEqual(leading.destination, object_key(SHA, "Quarterly report.pdf"))
+        self.assertEqual(
+            (leading.size, leading.checksum, leading.bucket), (len(BYTES), SHA, self.bucket.bucket)
+        )
+
+
+class TestCopyLedger(S3CopyCase):
+    def test_a_reused_object_is_in_the_ledger_too(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"), ("f2", "team/f2", "b.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", BYTES)
+        env, prep = self.run_copy(files=files, bucket=bucket)
+        self.assertEqual(prep.s3_objects_reused, 1)
+        self.assertEqual({e.legacy_key for e in env.ledger().entries()}, {"team/f1", "team/f2"})
+        destinations = {e.destination for e in env.ledger().entries()}
+        self.assertEqual(destinations, {object_key(SHA, "a.txt")})
+
+    def test_the_ledger_is_written_before_the_file_row_is_linked(self):
+        class FailingLink(FakeFiles):
+            def link_blob(self, name, blob):
+                raise InterruptedRun("killed before the link")
+
+        files = FailingLink.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+        with self.assertRaises(InterruptedRun):
+            self.run_copy(files=files, bucket=bucket)
+        ledger = CopyLedger(self.path / "drive-build-copied-objects.jsonl")
+        self.assertEqual([e.legacy_key for e in ledger.entries()], ["team/f1"])
+
+    def test_a_rerun_appends_but_entries_answers_each_key_once(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES)
+        self.run_copy(files=files, bucket=bucket)
+        files.rows["f1"]["blob"] = None
+        env, _ = self.run_copy(files=files, bucket=bucket)
+        self.assertEqual(sum(1 for _ in open(env.ledger().path)), 2)
+        self.assertEqual(len(env.ledger().entries()), 1)
+
+    def test_a_damaged_line_refuses_the_whole_ledger(self):
+        ledger = CopyLedger(self.path / "ledger.jsonl")
+        ledger.record(CopiedObject("f1", "team/f1", "private/x", 1, "sha", "b"))
+        with open(ledger.path, "a") as handle:
+            handle.write("{not json\n")
+        with self.assertRaises(ValueError):
+            ledger.entries()
+
+    def test_a_missing_ledger_reads_as_empty(self):
+        self.assertEqual(CopyLedger(self.path / "absent.jsonl").entries(), [])

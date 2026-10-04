@@ -119,7 +119,7 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         self.assertTrue(created.exists)
         self.assertTrue(created.is_collection)
         self.assertEqual(created.node.kind, "folder")
-        self.assertEqual(created.node.parent, self.base)
+        self.assertEqual(created.node.parent_node, self.base)
 
     def test_mkcol_on_an_existing_resource_or_the_mount_is_405(self):
         """RFC 4918 §9.3: MKCOL never replaces what is already mapped.

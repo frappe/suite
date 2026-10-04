@@ -25,33 +25,69 @@ const VOLATILE_RE = /\b(RAND|RANDBETWEEN|TODAY|NOW)\s*\(/i
 const MAXROW = 1048576
 
 // ── ref helpers ───────────────────────────────────────────────────────────────
-const colToIdx = (l) => { let n = 0; for (const c of l) n = n * 26 + (c.charCodeAt(0) - 64); return n - 1 }
-const colLabel = (i) => { let s = '', n = i + 1; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26) } return s }
-const parseRef = (id) => { const m = String(id).match(/^\$?([A-Z]+)\$?(\d+)$/i); if (!m) return null; return { c: colToIdx(m[1].toUpperCase()), r: parseInt(m[2], 10) } }
-const boxOf = (a, b) => { const pa = parseRef(a), pb = parseRef(b); if (!pa || !pb) return null; return { c1: Math.min(pa.c, pb.c), c2: Math.max(pa.c, pb.c), r1: Math.min(pa.r, pb.r), r2: Math.max(pa.r, pb.r) } }
+const colToIdx = (l) => {
+  let n = 0
+  for (const c of l) n = n * 26 + (c.charCodeAt(0) - 64)
+  return n - 1
+}
+const colLabel = (i) => {
+  let s = '',
+    n = i + 1
+  while (n > 0) {
+    const r = (n - 1) % 26
+    s = String.fromCharCode(65 + r) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
+}
+const parseRef = (id) => {
+  const m = String(id).match(/^\$?([A-Z]+)\$?(\d+)$/i)
+  if (!m) return null
+  return { c: colToIdx(m[1].toUpperCase()), r: parseInt(m[2], 10) }
+}
+const boxOf = (a, b) => {
+  const pa = parseRef(a),
+    pb = parseRef(b)
+  if (!pa || !pb) return null
+  return {
+    c1: Math.min(pa.c, pb.c),
+    c2: Math.max(pa.c, pb.c),
+    r1: Math.min(pa.r, pb.r),
+    r2: Math.max(pa.r, pb.r),
+  }
+}
 const boxHas = (box, c, r) => c >= box.c1 && c <= box.c2 && r >= box.r1 && r <= box.r2
 
 export function createSheet2() {
-  const sheets = { Sheet1: {} }              // sheet -> { id: rawValue }
-  const names = {}                           // NAME -> { sheet, start, end }
-  const cache = new Map()                     // "sheet!id" -> computed value
-  const computing = new Set()                 // cycle guard
+  const sheets = { Sheet1: {} } // sheet -> { id: rawValue }
+  const names = {} // NAME -> { sheet, start, end }
+  const cache = new Map() // "sheet!id" -> computed value
+  const computing = new Set() // cycle guard
 
   // dependency graph
-  const fwd = new Map()                        // depKey ("S!ID" | "name:X") -> Set(dependent "S!ID")
-  const rangeDeps = new Map()                  // dependent "S!ID" -> [{ sheet, box }]
-  const subs = new Map()                       // dependent "S!ID" -> Set(depKey) it subscribed to (for teardown)
-  const volatileBase = new Set()               // "S!ID" whose own formula is volatile
-  const volatile = new Set()                   // transitive closure of volatileBase
+  const fwd = new Map() // depKey ("S!ID" | "name:X") -> Set(dependent "S!ID")
+  const rangeDeps = new Map() // dependent "S!ID" -> [{ sheet, box }]
+  const subs = new Map() // dependent "S!ID" -> Set(depKey) it subscribed to (for teardown)
+  const volatileBase = new Set() // "S!ID" whose own formula is volatile
+  const volatile = new Set() // transitive closure of volatileBase
 
   const key = (sheet, id) => `${sheet}!${id}`
-  const splitKey = (k) => { const i = k.indexOf('!'); return [k.slice(0, i), k.slice(i + 1)] }
-  const addEdge = (dk, dep) => { if (!fwd.has(dk)) fwd.set(dk, new Set()); fwd.get(dk).add(dep) }
+  const splitKey = (k) => {
+    const i = k.indexOf('!')
+    return [k.slice(0, i), k.slice(i + 1)]
+  }
+  const addEdge = (dk, dep) => {
+    if (!fwd.has(dk)) fwd.set(dk, new Set())
+    fwd.get(dk).add(dep)
+  }
 
   // ── extent (for capping whole-column ranges to real data) ──────────────────
   function extent(sheet) {
     let maxR = 0
-    for (const id of Object.keys(sheets[sheet] || {})) { const p = parseRef(id); if (p && p.r > maxR) maxR = p.r }
+    for (const id of Object.keys(sheets[sheet] || {})) {
+      const p = parseRef(id)
+      if (p && p.r > maxR) maxR = p.r
+    }
     return maxR
   }
 
@@ -68,9 +104,15 @@ export function createSheet2() {
     const mySubs = new Set()
     const myRanges = []
     for (const p of precedents(formula)) {
-      if (p.kind === 'cell') { const dk = key(p.sheet || sheet, p.id); addEdge(dk, k); mySubs.add(dk) }
-      else if (p.kind === 'name') { const dk = 'name:' + p.name.toUpperCase(); addEdge(dk, k); mySubs.add(dk) }
-      else if (p.kind === 'range') {
+      if (p.kind === 'cell') {
+        const dk = key(p.sheet || sheet, p.id)
+        addEdge(dk, k)
+        mySubs.add(dk)
+      } else if (p.kind === 'name') {
+        const dk = 'name:' + p.name.toUpperCase()
+        addEdge(dk, k)
+        mySubs.add(dk)
+      } else if (p.kind === 'range') {
         const box = boxOf(p.a, p.b)
         if (box) myRanges.push({ sheet: p.sheet || sheet, box })
       }
@@ -89,10 +131,13 @@ export function createSheet2() {
     for (const d of fwd.get(key(sheet, id)) || []) out.add(d)
     const p = parseRef(id)
     if (p) {
-      for (const [dep, boxes] of rangeDeps) for (const rb of boxes) if (rb.sheet === sheet && boxHas(rb.box, p.c, p.r)) out.add(dep)
+      for (const [dep, boxes] of rangeDeps)
+        for (const rb of boxes) if (rb.sheet === sheet && boxHas(rb.box, p.c, p.r)) out.add(dep)
       for (const [nm, b] of Object.entries(names)) {
-        const bs = b.sheet || 'Sheet1', bx = boxOf(b.start, b.end)
-        if (bs === sheet && bx && boxHas(bx, p.c, p.r)) for (const d of fwd.get('name:' + nm) || []) out.add(d)
+        const bs = b.sheet || 'Sheet1',
+          bx = boxOf(b.start, b.end)
+        if (bs === sheet && bx && boxHas(bx, p.c, p.r))
+          for (const d of fwd.get('name:' + nm) || []) out.add(d)
       }
     }
     return out
@@ -101,10 +146,17 @@ export function createSheet2() {
   function recomputeVolatile() {
     volatile.clear()
     const stack = []
-    for (const k of volatileBase) { volatile.add(k); stack.push(k) }
+    for (const k of volatileBase) {
+      volatile.add(k)
+      stack.push(k)
+    }
     while (stack.length) {
       const [s, i] = splitKey(stack.pop())
-      for (const dep of directDependents(s, i)) if (!volatile.has(dep)) { volatile.add(dep); stack.push(dep) }
+      for (const dep of directDependents(s, i))
+        if (!volatile.has(dep)) {
+          volatile.add(dep)
+          stack.push(dep)
+        }
     }
   }
 
@@ -117,7 +169,8 @@ export function createSheet2() {
       const [s, i] = stack.pop()
       for (const dep of directDependents(s, i)) {
         if (done.has(dep)) continue
-        done.add(dep); cache.delete(dep)
+        done.add(dep)
+        cache.delete(dep)
         stack.push(splitKey(dep))
       }
     }
@@ -125,11 +178,16 @@ export function createSheet2() {
 
   // ── evaluation ─────────────────────────────────────────────────────────────
   function buildRange(sheet, a, b) {
-    const box = boxOf(a, b); if (!box) return []
+    const box = boxOf(a, b)
+    if (!box) return []
     let r2 = box.r2
-    if (r2 >= MAXROW) r2 = Math.max(box.r1, extent(sheet))   // cap whole-column to real data
+    if (r2 >= MAXROW) r2 = Math.max(box.r1, extent(sheet)) // cap whole-column to real data
     const rows = []
-    for (let r = box.r1; r <= r2; r++) { const row = []; for (let c = box.c1; c <= box.c2; c++) row.push(_pull(colLabel(c) + r, sheet)); rows.push(row) }
+    for (let r = box.r1; r <= r2; r++) {
+      const row = []
+      for (let c = box.c1; c <= box.c2; c++) row.push(_pull(colLabel(c) + r, sheet))
+      rows.push(row)
+    }
     return rows
   }
 
@@ -148,13 +206,15 @@ export function createSheet2() {
     computing.add(k)
     try {
       return evaluate2(body, {
-        getCell:      (cid)      => _pull(cid, sheet),
-        getRange:     (a, b)     => buildRange(sheet, a, b),
-        getSheetCell: (S, cid)   => (sheets[S] === undefined ? '#REF!' : _pull(cid, S)),
-        getSheetRange:(S, a, b)  => (sheets[S] === undefined ? [['#REF!']] : buildRange(S, a, b)),
-        resolveName:  (nm)       => names[String(nm).toUpperCase()] || null,
+        getCell: (cid) => _pull(cid, sheet),
+        getRange: (a, b) => buildRange(sheet, a, b),
+        getSheetCell: (S, cid) => (sheets[S] === undefined ? '#REF!' : _pull(cid, S)),
+        getSheetRange: (S, a, b) => (sheets[S] === undefined ? [['#REF!']] : buildRange(S, a, b)),
+        resolveName: (nm) => names[String(nm).toUpperCase()] || null,
       })
-    } finally { computing.delete(k) }
+    } finally {
+      computing.delete(k)
+    }
   }
 
   // The FORMULA precedent cells of a formula (literals need no pre-warming; they
@@ -162,19 +222,28 @@ export function createSheet2() {
   // formulas, so a SUM over 200k literals costs nothing here.
   function precedentCells(formula, sheet) {
     const out = []
-    const pushFormula = (s, id) => { const r = sheets[s]?.[id]; if (typeof r === 'string' && r.startsWith('=')) out.push({ sheet: s, id }) }
+    const pushFormula = (s, id) => {
+      const r = sheets[s]?.[id]
+      if (typeof r === 'string' && r.startsWith('=')) out.push({ sheet: s, id })
+    }
     for (const p of precedents(formula)) {
       if (p.kind === 'cell') pushFormula(p.sheet || sheet, p.id.replace(/\$/g, '').toUpperCase())
       else if (p.kind === 'range') {
-        const box = boxOf(p.a, p.b); if (!box) continue
+        const box = boxOf(p.a, p.b)
+        if (!box) continue
         const s = p.sheet || sheet
-        let r2 = box.r2; if (r2 >= MAXROW) r2 = Math.max(box.r1, extent(s))
-        for (let r = box.r1; r <= r2; r++) for (let c = box.c1; c <= box.c2; c++) pushFormula(s, colLabel(c) + r)
+        let r2 = box.r2
+        if (r2 >= MAXROW) r2 = Math.max(box.r1, extent(s))
+        for (let r = box.r1; r <= r2; r++)
+          for (let c = box.c1; c <= box.c2; c++) pushFormula(s, colLabel(c) + r)
       } else if (p.kind === 'name') {
-        const b = names[p.name.toUpperCase()]; if (!b) continue
-        const box = boxOf(b.start, b.end); if (!box) continue
+        const b = names[p.name.toUpperCase()]
+        if (!b) continue
+        const box = boxOf(b.start, b.end)
+        if (!box) continue
         const s = b.sheet || 'Sheet1'
-        for (let r = box.r1; r <= box.r2; r++) for (let c = box.c1; c <= box.c2; c++) pushFormula(s, colLabel(c) + r)
+        for (let r = box.r1; r <= box.r2; r++)
+          for (let c = box.c1; c <= box.c2; c++) pushFormula(s, colLabel(c) + r)
       }
     }
     return out
@@ -193,18 +262,23 @@ export function createSheet2() {
       const k = key(fr.sheet, fr.id)
       const raw = sheets[fr.sheet]?.[fr.id]
       const isFormula = typeof raw === 'string' && raw.startsWith('=')
-      if (done.has(k) || !isFormula || (!volatile.has(k) && cache.has(k))) { stack.pop(); continue }
+      if (done.has(k) || !isFormula || (!volatile.has(k) && cache.has(k))) {
+        stack.pop()
+        continue
+      }
       if (fr.phase === 0) {
         fr.phase = 1
         onstack.add(k)
         for (const pc of precedentCells(raw.slice(1), fr.sheet)) {
           const pk = key(pc.sheet, pc.id)
-          if (onstack.has(pk) || done.has(pk)) continue   // cycle edge / already handled
+          if (onstack.has(pk) || done.has(pk)) continue // cycle edge / already handled
           stack.push({ sheet: pc.sheet, id: pc.id, phase: 0 })
         }
       } else {
-        onstack.delete(k); done.add(k); stack.pop()
-        const v = computeCell(fr.sheet, fr.id)            // precedents now cached → shallow
+        onstack.delete(k)
+        done.add(k)
+        stack.pop()
+        const v = computeCell(fr.sheet, fr.id) // precedents now cached → shallow
         if (!volatile.has(k)) cache.set(k, v)
       }
     }
@@ -217,7 +291,7 @@ export function createSheet2() {
     const isFormula = typeof raw === 'string' && raw.startsWith('=')
     if (!isFormula) return computeCell(sheet, id)
     const k = key(sheet, id)
-    if (volatile.has(k)) return computeCell(sheet, id)      // never cache volatile
+    if (volatile.has(k)) return computeCell(sheet, id) // never cache volatile
     if (cache.has(k)) return cache.get(k)
     const v = computeCell(sheet, id)
     cache.set(k, v)
@@ -248,12 +322,37 @@ export function createSheet2() {
   }
 
   // structural changes → full cache clear (rare; correctness over cleverness)
-  function structural() { cache.clear(); recomputeVolatile() }
-  function defineName(name, binding) { names[name.toUpperCase()] = { sheet: 'Sheet1', ...binding }; structural() }
-  function undefineName(name) { delete names[name.toUpperCase()]; structural() }
-  function addSheet(name) { if (!sheets[name]) sheets[name] = {}; structural() }
-  function deleteSheet(name) { if (Object.keys(sheets).length <= 1) return false; delete sheets[name]; structural(); return true }
+  function structural() {
+    cache.clear()
+    recomputeVolatile()
+  }
+  function defineName(name, binding) {
+    names[name.toUpperCase()] = { sheet: 'Sheet1', ...binding }
+    structural()
+  }
+  function undefineName(name) {
+    delete names[name.toUpperCase()]
+    structural()
+  }
+  function addSheet(name) {
+    if (!sheets[name]) sheets[name] = {}
+    structural()
+  }
+  function deleteSheet(name) {
+    if (Object.keys(sheets).length <= 1) return false
+    delete sheets[name]
+    structural()
+    return true
+  }
 
-  return { setCell, getValue, getDisplay, defineName, undefineName, addSheet, deleteSheet,
-    _debug: { fwd, rangeDeps, volatile, names, sheets } }
+  return {
+    setCell,
+    getValue,
+    getDisplay,
+    defineName,
+    undefineName,
+    addSheet,
+    deleteSheet,
+    _debug: { fwd, rangeDeps, volatile, names, sheets },
+  }
 }

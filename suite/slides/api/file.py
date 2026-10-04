@@ -2,6 +2,7 @@ import mimetypes
 
 import frappe
 from frappe import _
+from frappe.storage.serve import parse_path, stream_blob
 from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.utils import send_file
 from werkzeug.wrappers import Response
@@ -21,14 +22,18 @@ def get_file_metadata(src: str) -> tuple[str, str]:
 
 def get_media_response(src: str) -> Response:
     """Streams the file, honouring the Range header (206 / 416) as a browser expects."""
-    file_path, mimetype = get_file_metadata(src)
-
-    response = send_file(
-        file_path,
-        environ=frappe.local.request.environ,
-        conditional=True,
-        mimetype=mimetype,
-    )
+    if src.startswith("/f/"):
+        # A Storage v2 url names a blob, not a path on disk. The caller has
+        # already authorized the read, which is what `stream_blob` expects.
+        response = stream_blob(*parse_path(src))
+    else:
+        file_path, mimetype = get_file_metadata(src)
+        response = send_file(
+            file_path,
+            environ=frappe.local.request.environ,
+            conditional=True,
+            mimetype=mimetype,
+        )
     # werkzeug advertises ranges only on a 206; a player decides from the 200
     response.headers["Accept-Ranges"] = "bytes"
     return response

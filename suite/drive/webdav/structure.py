@@ -93,7 +93,7 @@ def handle_delete(ctx: DavContext) -> Response:
     locks.enforce(
         ctx,
         entity=row.name,
-        membership_parent=row.parent,
+        membership_parent=row.parent_node,
         check_descendants=resolved.is_collection,
     )
 
@@ -130,7 +130,7 @@ def handle_move(ctx: DavContext) -> Response:
     locks.enforce(
         ctx,
         entity=row.name,
-        membership_parent=row.parent,
+        membership_parent=row.parent_node,
         check_descendants=source.is_collection,
     )
     locks.enforce(ctx, membership_parent=dest_parent.name)
@@ -154,28 +154,31 @@ def _relocate(ctx: DavContext, row: frappe._dict, dest_parent: frappe._dict, des
     node still sits. Neither is more right, so the first order is tried and a
     collision falls back to the other. The savepoint is what makes the retry
     honest: without it a fallback could leave a node renamed where it stands.
+
+    A rename here may change a file's extension, because desktop apps save
+    through temporary names. The browser rename keeps it.
     """
-    moving = dest_parent.name != row.parent
+    moving = dest_parent.name != row.parent_node
     renaming = dest_name != row.title
     if not moving and not renaming:
         return
     if not moving:
-        node_core.update(ctx.principals, row.name, title=dest_name)
+        node_core.update(ctx.principals, row.name, title=dest_name, _keep_extension=False)
         return
     if not renaming:
-        node_core.update(ctx.principals, row.name, parent=dest_parent.name)
+        node_core.update(ctx.principals, row.name, parent_node=dest_parent.name)
         return
 
     savepoint = f"dav_move_{frappe.generate_hash(length=10)}"
     frappe.db.savepoint(savepoint)
     try:
         try:
-            node_core.update(ctx.principals, row.name, parent=dest_parent.name)
-            node_core.update(ctx.principals, row.name, title=dest_name)
+            node_core.update(ctx.principals, row.name, parent_node=dest_parent.name)
+            node_core.update(ctx.principals, row.name, title=dest_name, _keep_extension=False)
         except DriveConflict as collision:
             rollback_savepoint(savepoint, collision)
-            node_core.update(ctx.principals, row.name, title=dest_name)
-            node_core.update(ctx.principals, row.name, parent=dest_parent.name)
+            node_core.update(ctx.principals, row.name, title=dest_name, _keep_extension=False)
+            node_core.update(ctx.principals, row.name, parent_node=dest_parent.name)
     except Exception as failure:
         # the fallback's own first leg has to be discarded too. Placing a
         # collection inside itself is refused in both orders, and without this

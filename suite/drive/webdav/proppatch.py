@@ -133,7 +133,7 @@ def _apply(ctx: DavContext, row: frappe._dict, instructions: list[Instruction]) 
         if instruction.action == "set":
             deadprops.upsert(row.name, instruction.element)
             if instruction.tag == WIN32_MTIME:
-                from suite.drive.webdav.properties import to_site_naive
+                from suite.drive._core.times import to_site_naive
 
                 # §8.11: Win32LastModifiedTime is a client mtime, so it lands
                 # in `content_modified` through the workflow that owns it -

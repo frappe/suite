@@ -1,20 +1,13 @@
-"""`suite.writer.api.embed`, against the documents ticket 29 made Drive-native.
-
-`Writer Document` is registered in `drive_content_types`, so every document
-written since is a `Drive Node` with no `File` row. Both endpoints read the
-`File` first and refused one with `DoesNotExistError` before reaching the
-workflow, so the editor could neither add a picture to a new document nor show
-one back.
+"""`suite.writer.api.embed`: pictures in a document, as media nodes below it.
 
 `add` decides nothing itself: it names the document as the upload destination
-and `upload_file` runs the UPLOAD check on it. `get` serves a media node
-through Drive's own signed byte path, whose READ check is the forwarder's.
-These cases pin both halves and the refusals around them.
+and `drive.store_file` runs the UPLOAD check on it. `get` streams a media
+node's bytes after Drive's READ check on it. These cases pin both halves and
+the refusals around them.
 """
 
 from contextlib import contextmanager
 from io import BytesIO
-from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -30,7 +23,6 @@ from suite.drive._core.roots import personal_root_for, provision_personal_root
 from suite.drive.tests.fixtures import storage_v2
 from suite.tests.utils import ensure_user
 from suite.writer.api import embed
-from suite.writer.api.docs import create_document
 
 OWNER = "writer-embed-owner@example.com"
 OTHER = "writer-embed-other@example.com"
@@ -81,7 +73,11 @@ class TestWriterEmbed(IntegrationTestCase):
         super().setUp()
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
-        self.document = frappe._dict(create_document(title=f"Embeds {frappe.generate_hash(6)}"))
+        root = drive.personal_root_for(OWNER) or drive.ensure_personal_root(OWNER)
+        node = drive.create_document(
+            root, f"Embeds {frappe.generate_hash(6)}", content_doctype="Writer Document"
+        )
+        self.document = frappe._dict(name=node)
         self.addCleanup(self._purge, self.document.name)
 
     @staticmethod
@@ -94,11 +90,7 @@ class TestWriterEmbed(IntegrationTestCase):
         frappe.db.commit()
 
     def add(self, document: str, content: bytes = PNG, filename: str = "shot.png"):
-        with (
-            storage_v2(),
-            upload_request(content, filename),
-            patch("suite.drive.api.files.frappe.publish_realtime"),
-        ):
+        with storage_v2(), upload_request(content, filename):
             return embed.add(document)
 
     # add
@@ -110,15 +102,14 @@ class TestWriterEmbed(IntegrationTestCase):
         answer = self.add(self.document.name)
 
         node = answer["file_url"].rsplit("=", 1)[1]
-        row = frappe.db.get_value("Drive Node", node, ("parent", "kind", "title"), as_dict=True)
-        self.assertEqual(row.parent, self.document.name)
+        row = frappe.db.get_value("Drive Node", node, ("parent_node", "kind", "title"), as_dict=True)
+        self.assertEqual(row.parent_node, self.document.name)
         self.assertEqual(row.kind, "file")
         self.assertTrue(row.title.startswith(f"{self.document.name} embed -"))
-        self.assertFalse(frappe.db.exists("File", node), "no legacy row is written beside it")
         self.assertEqual(answer["file_url"], f"/api/method/suite.writer.api.embed.get?id={node}")
 
     def test_a_stranger_cannot_add_a_picture_and_is_not_told_the_document_exists(self):
-        """The gate is `upload_file`'s UPLOAD check on the document node. §5.4
+        """The gate is `store_file`'s UPLOAD check on the document node. §5.4
         hides a node below Read, so a stranger gets `DriveNotFound`."""
         frappe.set_user(OTHER)
         with self.assertRaises(DriveNotFound):
@@ -141,7 +132,7 @@ class TestWriterEmbed(IntegrationTestCase):
 
     def test_an_id_neither_store_holds_is_refused_before_the_upload(self):
         """`add` names its own destination, so an id that is not a document
-        must not reach `upload_file` — it would place the picture wherever the
+        must not reach `store_file` — it would place the picture wherever the
         caller pointed."""
         with self.assertRaises(frappe.DoesNotExistError):
             self.add("no-such-document")
@@ -163,16 +154,15 @@ class TestWriterEmbed(IntegrationTestCase):
 
     # get
 
-    def test_the_owner_reads_the_picture_back_through_drives_signed_path(self):
-        """§6.8: every node byte path answers a redirect to a signature. That
-        is what an `<img src>` needs, and it is the forwarder's READ check that
-        decides, not this module."""
+    def test_the_owner_reads_the_picture_back(self):
+        """The bytes come back under the picture's own type, which is what an
+        `<img src>` needs."""
         node = self.add(self.document.name)["file_url"].rsplit("=", 1)[1]
 
-        embed.get(node)
+        response = embed.get(node)
 
-        self.assertEqual(frappe.local.response["type"], "redirect")
-        self.assertTrue(frappe.local.response["location"])
+        self.assertTrue(response.mimetype.startswith("image/"), response.mimetype)
+        self.assertEqual(b"".join(response.response), PNG)
 
     def test_a_stranger_is_refused_the_picture(self):
         node = self.add(self.document.name)["file_url"].rsplit("=", 1)[1]
@@ -189,9 +179,9 @@ class TestWriterEmbed(IntegrationTestCase):
         frappe.db.commit()
 
         frappe.set_user(OTHER)
-        embed.get(node)
+        response = embed.get(node)
 
-        self.assertEqual(frappe.local.response["type"], "redirect")
+        self.assertEqual(b"".join(response.response), PNG)
 
     def test_a_node_that_is_not_below_a_writer_document_is_not_an_embed(self):
         """The endpoint is guest-reachable, so it must not become a general
@@ -210,9 +200,4 @@ class TestWriterEmbed(IntegrationTestCase):
             embed.get(deck)
 
     def _children(self, node: str) -> list[str]:
-        return frappe.get_all("Drive Node", filters={"parent": node, "state": "Active"}, pluck="name")
-
-    def tearDown(self):
-        frappe.local.response.pop("type", None)
-        frappe.local.response.pop("location", None)
-        super().tearDown()
+        return frappe.get_all("Drive Node", filters={"parent_node": node, "state": "Active"}, pluck="name")

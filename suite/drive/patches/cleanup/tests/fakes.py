@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from suite.drive.patches.cleanup.environment import CleanupEnvironment
-from suite.drive.patches.cleanup.ports import ACTIVE, DISK_SETTINGS_FIELDS, ChainRow
+from suite.drive.patches.cleanup.ports import (
+    ACTIVE,
+    DISK_SETTINGS_FIELDS,
+    ChainRow,
+    SlideBodyValues,
+    SlidesMediaRow,
+)
 from suite.drive.patches.cleanup.state import CleanupState
 
 # A fixture's baseline "nothing configured yet" disk settings: local (not
@@ -111,58 +117,6 @@ def fake_blob_columns(pairs=None):
     return lambda: [{"doctype": d, "fieldname": f, "issingle": 0} for d, f in pairs]
 
 
-class FakeForwarders:
-    """`ForwarderRegistry` over a plain classification dict."""
-
-    def __init__(self, classification: dict[str, str] | None = None, wildcard_paths: list[str] | None = None):
-        self._classification = dict(classification or {})
-        self._wildcard_paths = list(
-            wildcard_paths if wildcard_paths is not None else ["/api/method/suite.drive.api.", "/dav/"]
-        )
-        self.removed: list[str] = []
-        self.error: Exception | None = None
-
-    def classification(self) -> dict[str, str]:
-        if self.error is not None:
-            raise self.error
-        return dict(self._classification)
-
-    def remove(self, names: tuple[str, ...]) -> int:
-        removed = 0
-        for name in names:
-            if self._classification.pop(name, None) is not None:
-                removed += 1
-                self.removed.append(name)
-        return removed
-
-    def remove_wildcard_prefix(self, prefix: str) -> bool:
-        if prefix in self._wildcard_paths:
-            self._wildcard_paths.remove(prefix)
-            return True
-        return False
-
-
-class FakeClientCallerEvidence:
-    """`ClientCallerEvidence` over a plain in-memory "still called" set.
-
-    Defaults to empty: a fixture that never mentions caller evidence models
-    a site where the SPA has genuinely moved off every legacy name, which
-    is what makes `check_gate_legacy_callers_removed` pass by default in
-    every existing test that only cares about something else.
-    """
-
-    def __init__(self, still_called: set[str] | None = None):
-        self.still_called = set(still_called or ())
-        self.error: Exception | None = None
-        self.calls: list[tuple[str, ...]] = []
-
-    def still_referenced(self, names: tuple[str, ...]) -> frozenset[str]:
-        self.calls.append(tuple(names))
-        if self.error is not None:
-            raise self.error
-        return frozenset(name for name in names if name in self.still_called)
-
-
 class FakeSchema:
     """`SchemaGateway` over plain in-memory sets, for asserting what Cleanup touched."""
 
@@ -180,8 +134,6 @@ class FakeSchema:
         self.columns: dict[str, set[str]] = {k: set(v) for k, v in (columns or {}).items()}
         self.singles: dict[str, set[str]] = {k: set(v) for k, v in (singles or {}).items()}
         self.required_fields: set[tuple[str, str]] = set()
-        self.dropped_child_table_fields: list[tuple[str, str]] = []
-        self.removed_permission_hooks: list[tuple[str, ...]] = []
 
     def drop_custom_fields(self, fieldnames: tuple[str, ...]) -> int:
         dropped = 0
@@ -199,11 +151,11 @@ class FakeSchema:
                 dropped += 1
         return dropped
 
-    def drop_doctypes(self, dotted_paths: tuple[str, ...]) -> int:
+    def drop_doctypes(self, doctypes: tuple[str, ...]) -> int:
         dropped = 0
-        for path in dotted_paths:
-            if path in self.doctypes:
-                self.doctypes.discard(path)
+        for doctype in doctypes:
+            if doctype in self.doctypes:
+                self.doctypes.discard(doctype)
                 dropped += 1
         return dropped
 
@@ -230,12 +182,6 @@ class FakeSchema:
     def require_field(self, doctype: str, fieldname: str) -> None:
         self.required_fields.add((doctype, fieldname))
 
-    def drop_child_table_field(self, parent_doctype: str, fieldname: str) -> None:
-        self.dropped_child_table_fields.append((parent_doctype, fieldname))
-
-    def remove_permission_hooks(self, doctypes: tuple[str, ...]) -> None:
-        self.removed_permission_hooks.append(tuple(doctypes))
-
     def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
         return frozenset(name for name in fieldnames if name in self.custom_fields)
 
@@ -244,8 +190,8 @@ class FakeSchema:
     ) -> frozenset[tuple[str, str, str]]:
         return frozenset(key for key in keys if key in self.property_setters)
 
-    def doctypes_present(self, dotted_paths: tuple[str, ...]) -> frozenset[str]:
-        return frozenset(path for path in dotted_paths if path in self.doctypes)
+    def doctypes_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
+        return frozenset(doctype for doctype in doctypes if doctype in self.doctypes)
 
     def columns_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
         held = self.columns.get(doctype, set())
@@ -254,16 +200,6 @@ class FakeSchema:
     def single_values_present(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
         held = self.singles.get(doctype, set())
         return frozenset(name for name in fieldnames if name in held)
-
-
-class RaisingSchema(FakeSchema):
-    """A `SchemaGateway` whose source-edit ports raise, like the real one does."""
-
-    def drop_child_table_field(self, parent_doctype: str, fieldname: str) -> None:
-        raise NotImplementedError("fixture: drop_child_table_field is not implemented")
-
-    def remove_permission_hooks(self, doctypes: tuple[str, ...]) -> None:
-        raise NotImplementedError("fixture: remove_permission_hooks is not implemented")
 
 
 class CrashingSchema(FakeSchema):
@@ -285,8 +221,8 @@ class CrashingSchema(FakeSchema):
             self.crash_after = None
             raise RuntimeError(f"simulated crash right after {name}")
 
-    def drop_doctypes(self, dotted_paths: tuple[str, ...]) -> int:
-        result = super().drop_doctypes(dotted_paths)
+    def drop_doctypes(self, doctypes: tuple[str, ...]) -> int:
+        result = super().drop_doctypes(doctypes)
         self._maybe_crash("drop_doctypes")
         return result
 
@@ -319,57 +255,20 @@ class RaisingPresenceSchema(FakeSchema):
         raise self.error
 
 
-class FakeSourceSchema:
-    """`SourceSchemaReadiness` over plain in-memory sets.
-
-    Defaults to fully ready (nothing still declared, nothing still hooked):
-    a fixture that never mentions source-schema readiness models a site
-    where Ticket 36's source edits have already landed, which is what makes
-    `readiness.run_preflight` pass by default in every existing test that
-    only cares about something else. Pass `still_declared`/`still_hooked` to
-    model the real, checked-in-source default instead.
-    """
-
-    def __init__(
-        self,
-        still_declared: dict[str, set[str]] | None = None,
-        still_hooked: set[str] | None = None,
-    ):
-        self.still_declared = {k: set(v) for k, v in (still_declared or {}).items()}
-        self.still_hooked = set(still_hooked or ())
-        self.fields_declared_calls: list[tuple[str, tuple[str, ...]]] = []
-        self.permission_hooks_calls: list[tuple[str, ...]] = []
-
-    def fields_declared(self, doctype: str, fieldnames: tuple[str, ...]) -> frozenset[str]:
-        self.fields_declared_calls.append((doctype, tuple(fieldnames)))
-        return frozenset(self.still_declared.get(doctype, set()) & set(fieldnames))
-
-    def permission_hooks_present(self, doctypes: tuple[str, ...]) -> frozenset[str]:
-        self.permission_hooks_calls.append(tuple(doctypes))
-        return frozenset(self.still_hooked & set(doctypes))
-
-
-class FakeNotificationWriterReadiness:
-    """`NotificationWriterReadiness` over a plain in-memory "still unready"
-    set. Defaults to empty: a fixture that never mentions this models a site
-    where Ticket 36 has already migrated both legacy writers, which is what
-    makes `readiness.run_preflight` pass by default in every existing test
-    that only cares about something else. Pass `still_unready` to model the
-    real, checked-in-source default instead (both writers, today)."""
-
-    def __init__(self, still_unready: set[str] | None = None):
-        self._still_unready = set(still_unready or ())
-        self.calls = 0
-
-    def still_unready(self) -> frozenset[str]:
-        self.calls += 1
-        return frozenset(self._still_unready)
-
-
 class FakeContent:
     """`ContentRows` over plain in-memory counters/flags."""
 
-    def __init__(self, docshares=(), ycomments: int = 0, sheets_with_comments: int = 0):
+    def __init__(
+        self,
+        docshares=(),
+        ycomments: int = 0,
+        sheets_with_comments: int = 0,
+        *,
+        slides_media: dict[str, str] | None = None,
+        slide_strings=(),
+        unreadable_bodies=(),
+        host: str = "suite.test",
+    ):
         # The governed doctypes that still carry a `DocShare` row. Build
         # deletes them, so on a site that ran it this is empty and Cleanup
         # only verifies that.
@@ -377,6 +276,14 @@ class FakeContent:
         self.ycomments = ycomments
         self.sheets_with_comments = sheets_with_comments
         self.strip_calls = 0
+        # `File` name to `file_url`, for the deck pictures a node of their
+        # deck holds. They live in the shared `FakeFileTable` too, so a row
+        # `files.delete` removed stops being returned, as on a real site.
+        self.slides_media = dict(slides_media or {})
+        self.slide_strings = frozenset(slide_strings)
+        self.unreadable_bodies = tuple(unreadable_bodies)
+        self.host = host
+        self.files: FakeFileTable | None = None
 
     def governed_docshares_remaining(self) -> frozenset[str]:
         return self.docshares
@@ -390,9 +297,24 @@ class FakeContent:
         stripped, self.sheets_with_comments = self.sheets_with_comments, 0
         return stripped
 
+    def converted_slides_media(self, after: str, limit: int) -> list[SlidesMediaRow]:
+        present = self.files.rows if self.files is not None else self.slides_media
+        names = sorted(name for name in self.slides_media if name > after and name in present)
+        return [SlidesMediaRow(name, self.slides_media[name]) for name in names[:limit]]
+
+    def slide_body_values(self, *, batch_size: int) -> SlideBodyValues:
+        return SlideBodyValues(self.slide_strings, self.unreadable_bodies)
+
+    def site_host(self) -> str:
+        return self.host
+
 
 class FakeThumbnails:
-    """`ThumbnailStore` over a plain set of sidecar names that "exist"."""
+    """`ThumbnailStore` over a plain set of sidecar names that "exist".
+
+    Like the real store, an S3 snapshot (`enabled`) deletes nothing: Cleanup
+    deletes no bucket object. The settings each call received are kept so a
+    test can check what the phase passed."""
 
     def __init__(self, existing: set[str] | None = None):
         self.existing = set(existing or ())
@@ -401,7 +323,7 @@ class FakeThumbnails:
     def delete_sidecars(self, names: tuple[str, ...], *, settings: dict) -> int:
         self.delete_calls.append((tuple(names), dict(settings)))
         if settings.get("enabled"):
-            raise NotImplementedError("fixture: S3-backed sidecar deletion is not implemented")
+            return 0
         deleted = 0
         for name in names:
             if name in self.existing:
@@ -429,47 +351,6 @@ class FakeDiskSettingsSnapshot:
         return dict(self.values)
 
 
-class FakeS3:
-    """`S3LegacyPrefix` over an in-memory key list and a `File Blob` key set."""
-
-    def __init__(
-        self,
-        *,
-        keys: list[str] | None = None,
-        referenced_keys: set[str] | None = None,
-    ):
-        self.keys = list(keys or [])
-        self.referenced_keys = set(referenced_keys or ())
-        self.enqueued: list[tuple[str, ...]] = []
-        self.blob_reference_calls: list[tuple[str, ...]] = []
-        self.list_prefix_calls: list[tuple[str, str, int]] = []
-        self._job_seq = 0
-
-    def list_prefix(self, prefix: str, after: str, limit: int) -> list[str]:
-        self.list_prefix_calls.append((prefix, after, limit))
-        candidates = sorted(key for key in self.keys if key.startswith(prefix) and key > after)
-        return candidates[:limit]
-
-    def blob_references(self, keys: tuple[str, ...]) -> set[str]:
-        self.blob_reference_calls.append(tuple(keys))
-        return {key for key in keys if key in self.referenced_keys}
-
-    def enqueue_delete(self, keys: tuple[str, ...]) -> str:
-        self._job_seq += 1
-        self.enqueued.append(tuple(keys))
-        return f"fake-job-{self._job_seq}"
-
-
-class RaisingS3(FakeS3):
-    """An `S3LegacyPrefix` whose bucket-touching ports raise, like the real one does."""
-
-    def list_prefix(self, prefix: str, after: str, limit: int) -> list[str]:
-        raise NotImplementedError("fixture: list_prefix is not implemented")
-
-    def enqueue_delete(self, keys: tuple[str, ...]) -> str:
-        raise NotImplementedError("fixture: enqueue_delete is not implemented")
-
-
 class FakeTransaction:
     """`TransactionGateway` over a plain call counter, optionally set to fail
     once — the crash-order fixture for "commit before checkpoint"."""
@@ -490,48 +371,43 @@ def cleanup_environment(
     *,
     files: FakeFileTable | None = None,
     blob_columns=None,
-    forwarders: FakeForwarders | None = None,
-    callers: FakeClientCallerEvidence | None = None,
     schema: FakeSchema | None = None,
-    source_schema: FakeSourceSchema | None = None,
-    notification_writers: FakeNotificationWriterReadiness | None = None,
     content: FakeContent | None = None,
     thumbnails: FakeThumbnails | None = None,
     disk_settings: FakeDiskSettingsSnapshot | None = None,
-    s3: FakeS3 | None = None,
     transaction: FakeTransaction | None = None,
-    authorized: bool = False,
-    backup_ref: str | None = None,
+    backup: str | None = None,
 ) -> CleanupEnvironment:
     """A `CleanupEnvironment` wired to fakes, with its state file in `tmp_path`."""
     table = files if files is not None else FakeFileTable()
+    content = content if content is not None else FakeContent()
+    if content.files is None:
+        content.files = table
+    # A deck picture sits under frappe's `Home`, outside every Drive chain.
+    if content.slides_media and "Home" not in table.rows:
+        table.add("Home", has_node=False)
+    for name in content.slides_media:
+        if name not in table.rows:
+            table.add(name, folder="Home", has_node=False)
     return CleanupEnvironment(
         tree=table,
         drive=table,
         blob_columns=blob_columns if blob_columns is not None else fake_blob_columns(),
-        forwarders=forwarders if forwarders is not None else FakeForwarders(),
-        callers=callers if callers is not None else FakeClientCallerEvidence(),
         files=table,
         schema=schema if schema is not None else FakeSchema(),
-        source_schema=source_schema if source_schema is not None else FakeSourceSchema(),
-        notification_writers=notification_writers
-        if notification_writers is not None
-        else FakeNotificationWriterReadiness(),
-        content=content if content is not None else FakeContent(),
+        content=content,
         thumbnails=thumbnails if thumbnails is not None else FakeThumbnails(),
         disk_settings=disk_settings if disk_settings is not None else FakeDiskSettingsSnapshot(),
-        s3=s3 if s3 is not None else FakeS3(),
         transaction=transaction if transaction is not None else FakeTransaction(),
         state=CleanupState(Path(tmp_path) / "drive-cleanup-state.json"),
-        authorized=authorized,
-        backup_ref=backup_ref,
+        backup=backup,
     )
 
 
 def seed_snapshot(env, *, names: tuple[str, ...] = (), **settings) -> None:
     """Pre-populate `env.state` with the census and disk-settings snapshot
-    `phase_file_rows` would otherwise take, for a test that calls a later
-    phase (`phase_thumbnails`, `phase_s3_prefix`) directly instead of going
-    through the whole ordered `run_cleanup`."""
+    `phase_file_rows` would otherwise take, for a test that calls
+    `phase_thumbnails` directly instead of going through the whole ordered
+    `run_cleanup`."""
     env.state.put_census(list(names))
     env.state.put_settings_snapshot({**DEFAULT_DISK_SETTINGS, **settings})

@@ -1,10 +1,11 @@
-import frappe
-from frappe.tests import UnitTestCase
 from unittest.mock import patch
 
+import frappe
+from frappe.tests import UnitTestCase
+
 from suite.composition.tests.http_conformance import HttpConformanceMixin
-from suite.mail.http.framework import HTTP
 from suite.mail.http import routes
+from suite.mail.http.framework import HTTP
 
 
 def setUpModule():

@@ -36,6 +36,11 @@ CUMULATIVE_FIELDS = frozenset(
         # the number owners must be told about, so it may not reset to zero
         # on the rerun that finishes an interrupted migration.
         "links_minted",
+        # A creator grant is minted once, and an owner's deny is overridden
+        # once: the rerun finds the owner at EDIT and writes nothing, so
+        # either count would read zero after a resume.
+        "creator_grants_minted",
+        "creator_denies_overridden",
         # Governed DocShare rows and content documents whose every File is
         # Removed are deleted once. A later pass cannot derive the deleted or
         # dropped totals from source rows that no longer exist.
@@ -63,6 +68,15 @@ CUMULATIVE_FIELDS = frozenset(
         # for the same reason `pending_link_nodes` is one.
         "personal_roots_created_for_reservations",
         "pending_reservation_roots",
+        # A Writer body is rewritten once: the next history pass reads a body
+        # that names only the document's own pictures, wrapped, and writes
+        # nothing, so none of the three could be derived again.
+        "writer_media_copied",
+        "writer_bodies_rewritten",
+        "writer_images_wrapped",
+        # The template copies, for the same reason: the next templates pass
+        # finds them under the template node and plans none.
+        "template_media_copied",
     }
 )
 
@@ -287,6 +301,15 @@ class GrantConversion:
     # The §3.2 floor: a Shared root node whose legacy row mapped to nothing
     # still has to carry a `$GENERAL` grant.
     shared_anchors_written: int = 0
+    # §4.2's creator rule applied to legacy owners (`grants._creator_grants`):
+    # EDIT for an owner whose effective role on their own node was lower.
+    # `creator_grants_minted` counts rows written or raised from a lower
+    # positive role; `creator_denies_overridden` counts the owner's own
+    # denies turned into EDIT. The two are disjoint.
+    owned_nodes_seen: int = 0
+    creator_grants_minted: int = 0
+    creator_denies_overridden: int = 0
+    creator_owners_dead: int = 0
     # Node ids only. The tokens live in `Drive Grant.principal`, and a
     # migration record on disk is not the place for a second copy of a
     # secret that authorises access.
@@ -384,6 +407,14 @@ class RelocatedMediaNode:
 
 
 @dataclass
+class MissingSheetSnapshot:
+    """A Sheet's stored head id with no snapshot in that Sheet's source history."""
+
+    sheet: str
+    snapshot: str
+
+
+@dataclass
 class ContentConversion:
     """The durable outcome of §14.2 steps 7, 8, and 10."""
 
@@ -396,6 +427,8 @@ class ContentConversion:
     links_completed: bool = False
     documents_seen: int = 0
     versions_seen: int = 0
+    sheet_snapshots_missing: int = 0
+    missing_sheet_snapshots: list[MissingSheetSnapshot] = field(default_factory=list)
     comments_seen: int = 0
     # Not in §14.9, and owned by the history phase like `comments_seen` above.
     # §14.6 makes the Yjs comment id the thread `anchor`; §3.6 keeps that
@@ -407,6 +440,20 @@ class ContentConversion:
     # same rows without writing any.
     comment_threads_renamed: int = 0
     comments_renamed: int = 0
+    # Not in §14.9, and owned by the history phase. §14.6's Writer body pass
+    # (`writer_bodies`): pictures another document owned that now have a node
+    # of their own under the document showing them, the bodies rewritten to
+    # name them or to wrap a loose image, and the images wrapped. The first
+    # three are cumulative. The rest are recounted every pass: a version's
+    # bytes are derived from its source on every pass, a reference that names
+    # no copyable picture stays in the body or version, and a body pycrdt
+    # cannot read stays as it is.
+    writer_media_copied: int = 0
+    writer_bodies_rewritten: int = 0
+    writer_images_wrapped: int = 0
+    writer_versions_rewritten: int = 0
+    writer_media_references_missing: int = 0
+    writer_bodies_unreadable: int = 0
     trash_disagreements: int = 0
     orphan_content_docs_adopted: int = 0
     versions_to_thin: int = 0
@@ -415,7 +462,7 @@ class ContentConversion:
     # Not in §14.9, and owned by the slides phase like the counters above it.
     # §14.7's `media_duplicates_collapsed` counts a deck's own `File` rows
     # that share one node. This counts the extra `File Blob` rows a borrowed
-    # reference named on a template deck, which are nobody's own rows, so the
+    # reference named on another deck, which are not this deck's own rows, so the
     # two numbers stay apart.
     borrowed_duplicates_collapsed: int = 0
     # Not in §14.9, and owned by the slides phase. A legacy media reference
@@ -440,6 +487,13 @@ class ContentConversion:
     # written, so it counts none.
     template_nodes_adopted: int = 0
     writer_templates_converted: int = 0
+    # Not in §14.9, and owned by the templates phase. The same picture pass
+    # as the `writer_*` counters above, for a Writer template's body: copies
+    # under the template node (cumulative), bodies that name a copy, and
+    # references left as they are (both recounted every pass).
+    template_media_copied: int = 0
+    template_bodies_rewritten: int = 0
+    template_media_references_missing: int = 0
     blobless_nodes: int = 0
     title_renames: int = 0
     template_title_renames: int = 0
@@ -497,6 +551,12 @@ class ContentConversion:
         if len(self.removed_file_docs) < SAMPLE_KEPT:
             self.removed_file_docs.append(entry)
 
+    def record_missing_sheet_snapshot(self, sheet: str, snapshot: str) -> None:
+        """Count unavailable source heads without inventing version bytes (§14.6)."""
+        self.sheet_snapshots_missing += 1
+        if len(self.missing_sheet_snapshots) < SAMPLE_KEPT:
+            self.missing_sheet_snapshots.append(MissingSheetSnapshot(sheet, snapshot))
+
     def record_legacy_comment(self, entry: LegacyComment) -> None:
         """Keep a bounded list; the counter above stays exact."""
         self.legacy_comments_unported += 1
@@ -548,13 +608,20 @@ class ContentConversion:
 
     @classmethod
     def from_dict(cls, data: dict) -> ContentConversion:
-        samples = {"issues", "removed_file_docs", "legacy_comment_rows", "relocated_media_nodes"}
+        samples = {
+            "issues",
+            "removed_file_docs",
+            "legacy_comment_rows",
+            "relocated_media_nodes",
+            "missing_sheet_snapshots",
+        }
         known = {f for f in cls.__dataclass_fields__ if f not in samples}
         content = cls(**{k: v for k, v in data.items() if k in known})
         content.issues = _rebuild(ContentIssue, data.get("issues"))
         content.removed_file_docs = _rebuild(RemovedFileDocument, data.get("removed_file_docs"))
         content.legacy_comment_rows = _rebuild(LegacyComment, data.get("legacy_comment_rows"))
         content.relocated_media_nodes = _rebuild(RelocatedMediaNode, data.get("relocated_media_nodes"))
+        content.missing_sheet_snapshots = _rebuild(MissingSheetSnapshot, data.get("missing_sheet_snapshots"))
         content.issues_by_phase = {
             str(key): int(value)
             for key, value in (data.get("issues_by_phase") or {}).items()
@@ -821,7 +888,7 @@ class BuildState:
                 data = json.load(f)
         except FileNotFoundError:
             return {"version": STATE_VERSION}
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             # Unreadable content. A read error (EIO, EACCES) is not: losing
             # the cumulative totals to a transient fault would make the
             # report understate a migration that really did run, so it

@@ -1,17 +1,10 @@
 import { get as idbGet, set as idbSet } from 'idb-keyval'
-import {
-  getCurrentScope,
-  onScopeDispose,
-  reactive,
-  ref,
-  watch,
-  type WatchStopHandle,
-} from 'vue'
+import { getCurrentScope, onScopeDispose, reactive, ref, watch, type WatchStopHandle } from 'vue'
 
 import { realtime as defaultRealtime, type Realtime } from '@/platform/realtime'
 import {
-  TransportError,
   transport as defaultTransport,
+  TransportError,
   type EntityDeclaration,
   type Operation,
   type PlatformError,
@@ -25,6 +18,7 @@ export interface QueryOptions<Row = unknown> {
   staleTime?: number
   gcTime?: number
   refetchInterval?: number
+  /** Whether a row belongs in the list. A row that stops belonging leaves at once; one that comes to belong shows once the list refetches. */
   member?: (row: Row) => boolean
   invalidates?: readonly string[]
 }
@@ -62,23 +56,48 @@ export interface MutationDescriptor<Input = any, Output = any, Entity = any> {
   options: MutationOptions<Input, Entity>
 }
 
-export interface UploadDescriptor<Input = any, Output = any> {
+export interface UploadDescriptor<Input = unknown, Output = unknown, Session = unknown> {
   kind: 'upload'
-  create: Operation<Input, unknown>
-  chunk: Operation<any, unknown>
-  finish: Operation<any, Output>
-  options: MutationOptions<Input, any> & { chunkSize?: number }
+  create: Operation<Input, Session>
+  chunk: Operation<UploadChunkInput, UploadChunkReply>
+  finish: Operation<Record<string, unknown>, Output>
+  options: UploadOptions<Input, Session>
+}
+
+/** One chunk request: the fields `chunkInput` returns, plus the bytes. */
+export type UploadChunkInput = Record<string, unknown> & { chunk: Blob }
+
+/** A chunk reply. `received` is how many bytes the server holds. */
+export interface UploadChunkReply {
+  received?: number
+}
+
+export interface UploadOptions<Input = unknown, Session = unknown> extends MutationOptions<
+  Input,
+  unknown
+> {
+  /** Bytes per chunk request. Chunks of one file go one after another. */
+  chunkSize?: number
+  /** The chunk request's input without its bytes, which go in its `chunk` field. */
+  chunkInput?(session: Session, offset: number): Record<string, unknown>
+  /** The finish request's input. */
+  finishInput?(input: Input, session: Session): Record<string, unknown>
+}
+
+/**
+ * The input of one upload run: the create input plus the file. `start`
+ * continues a session that already exists at `offset`, so a resumed upload
+ * does not begin at byte 0 and makes no new session.
+ */
+export type UploadRun<Input, Session = unknown> = Input & {
+  file: Blob
+  start?: { session: Session; offset: number }
 }
 
 export type ReadDescriptor<Input = any, Output = any> =
-  | QueryDescriptor<Input, Output>
-  | InfiniteDescriptor<Input, any>
+  QueryDescriptor<Input, Output> | InfiniteDescriptor<Input, any>
 export type DescriptorSource<D extends ReadDescriptor = ReadDescriptor> =
-  | D
-  | false
-  | null
-  | undefined
-  | (() => D | false | null | undefined)
+  D | false | null | undefined | (() => D | false | null | undefined)
 
 export interface QueryResult<Data = unknown> {
   readonly data: Data | undefined
@@ -131,14 +150,20 @@ export interface CreateServerStateOptions {
 export interface ServerState {
   useQuery<D extends ReadDescriptor>(source: DescriptorSource<D>): QueryResult<DescriptorData<D>>
   useMutation<Input, Output>(
-    descriptor: MutationDescriptor<Input, Output> | UploadDescriptor<Input, Output>,
+    descriptor: MutationDescriptor<Input, Output>,
     options?: { silent?: boolean | readonly string[] },
   ): MutationResult<Input, Output>
+  useMutation<Input, Output, Session>(
+    descriptor: UploadDescriptor<Input, Output, Session>,
+    options?: { silent?: boolean | readonly string[] },
+  ): MutationResult<UploadRun<Input, Session>, Output>
   invalidateAll(predicate?: (descriptor: ReadDescriptor) => boolean): void
-  onChallenge(
-    type: string,
-    handler: ChallengeHandler,
-  ): () => void
+  /**
+   * Calls `listener` after each successful mutation whose `touches` names `id`.
+   * For readers that hold an entity outside the cache. Returns the stop function.
+   */
+  onTouch(id: string, listener: () => void): () => void
+  onChallenge(type: string, handler: ChallengeHandler): () => void
   resume(): void
   dispose(): void
 }
@@ -148,11 +173,12 @@ export type ChallengeHandler = (
   retry: () => Promise<unknown>,
 ) => Promise<unknown>
 
-type DescriptorData<D> = D extends QueryDescriptor<any, infer O>
-  ? O
-  : D extends InfiniteDescriptor<any, infer Row>
-    ? { rows: Row[]; next_cursor?: string | null; [key: string]: any }
-    : never
+type DescriptorData<D> =
+  D extends QueryDescriptor<any, infer O>
+    ? O
+    : D extends InfiniteDescriptor<any, infer Row>
+      ? { rows: Row[]; next_cursor?: string | null; [key: string]: any }
+      : never
 
 type EntityRecord = {
   key: string
@@ -179,12 +205,25 @@ type QueryRecord = {
   stale: boolean
   updatedAt: number
   promise: Promise<void> | null
+  /** The one read queued behind `promise` for `fresh` fetches. */
+  followUp: Promise<void> | null
   controller: AbortController | null
   observers: number
   gcTimer: ReturnType<typeof setTimeout> | null
   interval: ReturnType<typeof setInterval> | null
   rooms: Array<() => void>
 }
+
+/**
+ * How a read treats the cache and a read already in flight.
+ * - `cached`: joins an in-flight read, and skips the request while the data is fresh.
+ * - `next`: requests the next page of an infinite list.
+ * - `revalidate`: requests even fresh data, but joins an in-flight read.
+ * - `fresh`: answers from a request sent after this call. While a read is in
+ *   flight, one follow-up read waits for it, and every `fresh` call during that
+ *   read shares the follow-up.
+ */
+type FetchMode = 'cached' | 'next' | 'revalidate' | 'fresh'
 
 const DEFAULT_STALE_TIME = 30_000
 const DEFAULT_GC_TIME = 5 * 60_000
@@ -216,12 +255,12 @@ export function mutation<Input, Output, Entity = any>(
   return { kind: 'mutation', operation, options }
 }
 
-export function upload<Input, Output>(
-  create: Operation<Input, unknown>,
-  chunk: Operation<any, unknown>,
-  finish: Operation<any, Output>,
-  options: UploadDescriptor<Input, Output>['options'] = {},
-): UploadDescriptor<Input, Output> {
+export function upload<Input, Output, Session = unknown>(
+  create: Operation<Input, Session>,
+  chunk: Operation<UploadChunkInput, UploadChunkReply>,
+  finish: Operation<Record<string, unknown>, Output>,
+  options: UploadOptions<Input, Session> = {},
+): UploadDescriptor<Input, Output, Session> {
   assertOperation(create)
   assertOperation(chunk)
   assertOperation(finish)
@@ -235,6 +274,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   const entityStore = new Map<string, EntityRecord>()
   const queryStore = new Map<string, QueryRecord>()
   const challenges = new Map<string, ChallengeHandler>()
+  const touchListeners = new Map<string, Set<() => void>>()
   const realtime = options.realtime === undefined ? defaultRealtime : options.realtime
   const persistence = options.persistence === undefined ? browserPersistence() : options.persistence
   const cleanup: Array<() => void> = []
@@ -247,16 +287,15 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         .load()
         .then((records) => {
           for (const persisted of records) {
-            entityStore.set(
-              persisted.key,
-              reactive({ ...persisted, stale: true }) as EntityRecord,
-            )
+            entityStore.set(persisted.key, reactive({ ...persisted, stale: true }) as EntityRecord)
           }
         })
         .catch(() => {})
     : Promise.resolve()
 
-  function useQuery<D extends ReadDescriptor>(source: DescriptorSource<D>): QueryResult<DescriptorData<D>> {
+  function useQuery<D extends ReadDescriptor>(
+    source: DescriptorSource<D>,
+  ): QueryResult<DescriptorData<D>> {
     const current = ref<QueryRecord | null>(null)
     let stop: WatchStopHandle | null = null
 
@@ -310,11 +349,11 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         return current.value?.isFetchingNext ?? false
       },
       async refetch() {
-        if (current.value) await fetchRecord(current.value, false, true)
+        if (current.value) await fetchRecord(current.value, 'fresh')
         return result
       },
       async fetchNext() {
-        if (current.value) await fetchRecord(current.value, true)
+        if (current.value) await fetchRecord(current.value, 'next')
         return result
       },
       async settled() {
@@ -358,14 +397,21 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
         return state.progress
       },
       run(input: Input) {
-        const operation = descriptor.kind === 'upload' ? descriptor.create : descriptor.operation
-        operation.validateInput?.(input)
+        if (descriptor.kind === 'upload') {
+          const run = input as UploadRun<Input>
+          if (!run.start) descriptor.create.validateInput?.(createInput(run))
+        } else {
+          descriptor.operation.validateInput?.(input)
+        }
         state.isPending = true
         state.error = null
         state.controller = new AbortController()
         const execute = () => executeMutation(descriptor, input, state.controller!.signal, state)
-        const pending = mutationTail.then(execute, execute)
-        mutationTail = pending.catch(() => undefined)
+        // An upload runs beside other writes. Queued behind the tail, one large
+        // file would hold back every rename until its last byte.
+        const pending =
+          descriptor.kind === 'upload' ? execute() : mutationTail.then(execute, execute)
+        if (descriptor.kind !== 'upload') mutationTail = pending.catch(() => undefined)
         return pending
           .catch(async (cause) => {
             const error = platformError(cause)
@@ -413,7 +459,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     try {
       let output: Output
       if (descriptor.kind === 'upload') {
-        output = await executeUpload(descriptor, input, signal, state)
+        output = await executeUpload(descriptor, input as UploadRun<Input>, signal, state)
       } else {
         output = await options.transport.request(descriptor.operation, input, { signal })
       }
@@ -426,27 +472,40 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     }
   }
 
-  async function executeUpload<Input, Output>(
-    descriptor: UploadDescriptor<Input, Output>,
-    input: Input,
+  async function executeUpload<Input, Output, Session>(
+    descriptor: UploadDescriptor<Input, Output, Session>,
+    input: UploadRun<Input, Session>,
     signal: AbortSignal,
     state: { progress: number | null },
   ): Promise<Output> {
-    const created = await options.transport.request(descriptor.create, input, { signal })
-    const record = input as Record<string, any>
-    const file = record.file
-    if (typeof Blob !== 'undefined' && file instanceof Blob) {
-      const size = descriptor.options.chunkSize ?? 1024 * 1024
-      for (let offset = 0; offset < file.size; offset += size) {
-        await options.transport.request(
-          descriptor.chunk,
-          { ...record, upload: created, offset, chunk: file.slice(offset, offset + size) },
-          { signal },
-        )
-        state.progress = Math.min(1, (offset + size) / file.size)
-      }
+    const { file, start } = input
+    const session = start
+      ? start.session
+      : await options.transport.request(descriptor.create, createInput(input), { signal })
+    const size = descriptor.options.chunkSize ?? 1024 * 1024
+    const chunkInput =
+      descriptor.options.chunkInput ??
+      ((created: Session, at: number) => ({ upload: created, offset: at }))
+    let offset = Math.max(0, start?.offset ?? 0)
+    state.progress = file.size ? Math.min(1, offset / file.size) : 0
+    while (offset < file.size) {
+      const chunk = file.slice(offset, offset + size)
+      const reply = await options.transport.request(
+        descriptor.chunk,
+        { ...chunkInput(session, offset), chunk },
+        { signal },
+      )
+      // The server says how many bytes it holds. The next chunk starts there.
+      const received =
+        isObject(reply) && typeof reply.received === 'number' ? reply.received : offset + chunk.size
+      if (received <= offset) throw new TypeError('The upload made no progress')
+      offset = received
+      state.progress = Math.min(1, offset / file.size)
     }
-    return options.transport.request(descriptor.finish, { ...record, upload: created }, { signal })
+    const finishInput = descriptor.options.finishInput
+      ? descriptor.options.finishInput(createInput(input), session)
+      : { ...createInput(input), upload: session }
+    return options.transport.request(descriptor.finish, finishInput, { signal })
   }
 
   function getQueryRecord(descriptor: ReadDescriptor): QueryRecord {
@@ -468,6 +527,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
       stale: true,
       updatedAt: 0,
       promise: null,
+      followUp: null,
       controller: null,
       observers: 0,
       gcTimer: null,
@@ -478,11 +538,23 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     return record
   }
 
-  async function fetchRecord(record: QueryRecord, next = false, force = false): Promise<void> {
+  async function fetchRecord(record: QueryRecord, mode: FetchMode = 'cached'): Promise<void> {
     if (paused) return
-    if (record.promise && !next && !record.controller?.signal.aborted) return record.promise
+    const next = mode === 'next'
+    if (record.promise && !next && !record.controller?.signal.aborted) {
+      if (mode !== 'fresh') return record.promise
+      // The in-flight read may predate the change that asked for this one: an
+      // optimistic write invalidates its lists before its own request is sent.
+      // It is not aborted, so a read slower than its poll interval still lands.
+      return (record.followUp ??= record.promise.then(() => {
+        record.followUp = null
+        // A read started since then is already fresh enough to join.
+        if (record.observers && queryStore.get(record.key) === record)
+          return fetchRecord(record, 'revalidate')
+      }))
+    }
     if (next && (record.isFetchingNext || !hasNext(record))) return
-    if (!force && !next && record.normalized !== undefined && !isRecordStale(record)) return
+    if (mode === 'cached' && record.normalized !== undefined && !isRecordStale(record)) return
 
     const controller = new AbortController()
     record.controller = controller
@@ -491,7 +563,9 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     record.error = null
     const input = next ? nextInput(record) : record.descriptor.input
     const work = options.transport
-      .request(record.descriptor.operation as Operation<any, any>, input, { signal: controller.signal })
+      .request(record.descriptor.operation as Operation<any, any>, input, {
+        signal: controller.signal,
+      })
       .then((output) => {
         const normalized = normalizeOutput(output, record.descriptor.operation.entity)
         if (next && record.descriptor.kind === 'infinite') record.pages.push(normalized.value)
@@ -523,7 +597,10 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     return work
   }
 
-  function normalizeOutput(value: unknown, declaration?: EntityDeclaration | null): {
+  function normalizeOutput(
+    value: unknown,
+    declaration?: EntityDeclaration | null,
+  ): {
     value: Normalized
     changed: EntityRecord[]
   } {
@@ -550,7 +627,14 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
           entityStore.set(key, entity)
           changed.push(entity)
         } else if (acceptVersion(entity.version, incomingVersion)) {
-          entity.data = structuredCloneSafe(item)
+          // The same version is the same record read with other fields, such
+          // as a detail read without a listing's `preview`. Merge, so one read
+          // does not erase what another asked for. A newer version replaces.
+          const sameVersion =
+            versionField !== null && compareVersion(incomingVersion, entity.version) === 0
+          entity.data = sameVersion
+            ? { ...entity.data, ...structuredCloneSafe(item) }
+            : structuredCloneSafe(item)
           entity.version = incomingVersion
           entity.fetchedAt = now()
           entity.stale = false
@@ -573,7 +657,9 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     if (Array.isArray(value)) return value.map(materialize)
     if (!isObject(value)) return value
     if (typeof value.__suiteEntity === 'string') return entityStore.get(value.__suiteEntity)?.data
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, materialize(child)]))
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, materialize(child)]),
+    )
   }
 
   function materializeRecord(record: QueryRecord): any {
@@ -589,7 +675,8 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     if (record.observers > 1) return
     joinRecordRooms(record)
     const every = record.descriptor.options.refetchInterval
-    if (every && every > 0) record.interval = setInterval(() => void fetchRecord(record, false, true), every)
+    if (every && every > 0)
+      record.interval = setInterval(() => void fetchRecord(record, 'revalidate'), every)
   }
 
   function detach(record: QueryRecord | null): void {
@@ -646,7 +733,8 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     const direct = values[declaration.id]
     if (direct !== undefined) ids.add(String(direct))
     for (const value of Object.values(values)) {
-      if (typeof value === 'string' && entityStore.has(entityKey(declaration.tag, value))) ids.add(value)
+      if (typeof value === 'string' && entityStore.has(entityKey(declaration.tag, value)))
+        ids.add(value)
     }
     const snapshots: Array<{
       entity: EntityRecord
@@ -666,7 +754,11 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   }
 
   function rollback(
-    snapshots: Array<{ entity: EntityRecord; data: Record<string, any>; version: string | number | null }>,
+    snapshots: Array<{
+      entity: EntityRecord
+      data: Record<string, any>
+      version: string | number | null
+    }>,
   ): void {
     for (const snapshot of snapshots) {
       snapshot.entity.data = snapshot.data
@@ -693,37 +785,52 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     if (invalidates.length) {
       for (const record of queryStore.values()) {
         const tag = record.descriptor.operation.entity?.tag
-        if (invalidates.includes(record.descriptor.operation.id) || (tag && invalidates.includes(tag))) {
+        if (
+          invalidates.includes(record.descriptor.operation.id) ||
+          (tag && invalidates.includes(tag))
+        ) {
           invalidateRecord(record)
         }
       }
     }
+    // Listeners run last, and one that throws is reported, so it cannot keep
+    // the cache or the other listeners from hearing about the mutation.
+    const listeners = touched.flatMap((id) => [...(touchListeners.get(id) ?? [])])
+    for (const listener of listeners) {
+      try {
+        listener()
+      } catch (error) {
+        console.error(error)
+      }
+    }
   }
 
+  /**
+   * A row that stops belonging leaves the list at once. A row that comes to
+   * belong waits for the list's refetch, which puts it where the server's
+   * order does: the list cannot know that place, and a row shown at the end
+   * would jump when the refetch lands.
+   */
   function reconcileMembership(entity: EntityRecord): void {
     for (const record of queryStore.values()) {
       const descriptor = record.descriptor
       const member = descriptor.options.member
-      if (!member || descriptor.operation.entity?.tag !== entity.tag || record.normalized === undefined) continue
-      const belongs = member(entity.data)
-      const references = refsIn(record.normalized)
-      const contains = references.has(entity.key)
-      if (belongs && !contains) addEntityReference(record, entity.key)
-      if (!belongs && contains) record.normalized = removeEntityReference(record.normalized, entity.key)
+      if (
+        !member ||
+        descriptor.operation.entity?.tag !== entity.tag ||
+        record.normalized === undefined
+      )
+        continue
+      if (!member(entity.data) && refsIn(record.normalized).has(entity.key)) {
+        record.normalized = removeEntityReference(record.normalized, entity.key)
+      }
       invalidateRecord(record)
     }
   }
 
-  function addEntityReference(record: QueryRecord, key: string): void {
-    const target = record.descriptor.kind === 'infinite' ? record.pages[0] : record.normalized
-    if (Array.isArray(target)) target.push({ __suiteEntity: key })
-    else if (isObject(target) && Array.isArray(target.rows)) target.rows.push({ __suiteEntity: key })
-    if (record.descriptor.kind === 'infinite') record.normalized = mergePages(record.pages)
-  }
-
   function invalidateRecord(record: QueryRecord): void {
     record.stale = true
-    if (record.observers) void fetchRecord(record, false, true)
+    if (record.observers) void fetchRecord(record, 'fresh')
   }
 
   function markEntityStale(entity: EntityRecord): void {
@@ -739,6 +846,17 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
     }
   }
 
+  function onTouch(id: string, listener: () => void): () => void {
+    const listeners = touchListeners.get(id) ?? new Set<() => void>()
+    listeners.add(listener)
+    touchListeners.set(id, listeners)
+    return () => {
+      // A second call does nothing, and never drops a set a later `onTouch` made.
+      if (!listeners.delete(listener)) return
+      if (!listeners.size && touchListeners.get(id) === listeners) touchListeners.delete(id)
+    }
+  }
+
   function onChallenge(type: string, handler: ChallengeHandler): () => void {
     challenges.set(type, handler)
     return () => {
@@ -749,7 +867,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   function resume(): void {
     paused = false
     for (const record of queryStore.values()) {
-      if (record.observers && record.stale) void fetchRecord(record, false, true)
+      if (record.observers && record.stale) void fetchRecord(record, 'fresh')
     }
   }
 
@@ -768,7 +886,7 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   if (typeof window !== 'undefined') {
     const refetchObserved = () => {
       for (const record of queryStore.values()) {
-        if (record.observers) void fetchRecord(record, false, true)
+        if (record.observers) void fetchRecord(record, 'revalidate')
       }
     }
     const visibility = () => {
@@ -781,18 +899,24 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
   }
 
   if (realtime) {
-    cleanup.push(realtime.onReconnect(() => {
-      for (const record of queryStore.values()) {
-        if (record.observers) void fetchRecord(record, false, true)
-      }
-    }))
     cleanup.push(
-      realtime.subscribe<{ doctype: string; name: string; modified?: string }>('doc_update', (event) => {
-        const entity = entityStore.get(entityKey(event.doctype, event.name))
-        if (!entity) return
-        if (event.modified !== undefined && compareVersion(event.modified, entity.version) <= 0) return
-        markEntityStale(entity)
+      realtime.onReconnect(() => {
+        for (const record of queryStore.values()) {
+          if (record.observers) void fetchRecord(record, 'revalidate')
+        }
       }),
+    )
+    cleanup.push(
+      realtime.subscribe<{ doctype: string; name: string; modified?: string }>(
+        'doc_update',
+        (event) => {
+          const entity = entityStore.get(entityKey(event.doctype, event.name))
+          if (!entity) return
+          if (event.modified !== undefined && compareVersion(event.modified, entity.version) <= 0)
+            return
+          markEntityStale(entity)
+        },
+      ),
     )
     cleanup.push(
       realtime.subscribe<{ doctype: string; name: string }>('list_update', (event) => {
@@ -853,9 +977,10 @@ export function createServerState(options: CreateServerStateOptions): ServerStat
       for (const leave of record.rooms) leave()
     }
     queryStore.clear()
+    touchListeners.clear()
   }
 
-  return { useQuery, useMutation, invalidateAll, onChallenge, resume, dispose }
+  return { useQuery, useMutation, invalidateAll, onTouch, onChallenge, resume, dispose }
 
   function isRecordStale(record: QueryRecord): boolean {
     return (
@@ -890,7 +1015,11 @@ function hasNext(record: QueryRecord): boolean {
   if (paging === 'cursor') return last.next_cursor !== null && last.next_cursor !== undefined
   if (paging === 'offset') {
     if (typeof last.has_next === 'boolean') return last.has_next
-    const limit = Number((record.descriptor.input as Record<string, unknown>)[record.descriptor.options.limitParam ?? 'limit'])
+    const limit = Number(
+      (record.descriptor.input as Record<string, unknown>)[
+        record.descriptor.options.limitParam ?? 'limit'
+      ],
+    )
     return Array.isArray(last.rows) && (!Number.isFinite(limit) || last.rows.length >= limit)
   }
   return false
@@ -901,10 +1030,13 @@ function nextInput(record: QueryRecord): any {
   const input = { ...(record.descriptor.input as Record<string, unknown>) }
   const last = record.pages.at(-1)
   const paging = record.descriptor.options.paging ?? 'cursor'
-  if (paging === 'cursor') input[record.descriptor.options.cursorParam ?? 'cursor'] = last?.next_cursor
+  if (paging === 'cursor')
+    input[record.descriptor.options.cursorParam ?? 'cursor'] = last?.next_cursor
   if (paging === 'offset') {
     const field = record.descriptor.options.offsetParam ?? 'offset'
-    input[field] = Number(input[field] ?? 0) + record.pages.reduce((count, page) => count + (page?.rows?.length ?? 0), 0)
+    input[field] =
+      Number(input[field] ?? 0) +
+      record.pages.reduce((count, page) => count + (page?.rows?.length ?? 0), 0)
   }
   return input
 }
@@ -994,7 +1126,16 @@ function replaceReference(record: QueryRecord, oldKey: string, newKey: string): 
   record.pages = record.pages.map(replace)
 }
 
-function finalOperation(descriptor: MutationDescriptor | UploadDescriptor): Operation {
+/** An upload run's input without the file and the resume point: what `create` receives. */
+/** The caller's own input: an upload run minus the bytes and the start point. */
+function createInput<Input>(run: UploadRun<Input>): Input {
+  const { file: _file, start: _start, ...rest } = run
+  return rest as Input
+}
+
+function finalOperation<Input, Output>(
+  descriptor: MutationDescriptor<Input, Output> | UploadDescriptor<Input, Output>,
+): Operation {
   return descriptor.kind === 'upload' ? descriptor.finish : descriptor.operation
 }
 
@@ -1042,7 +1183,9 @@ function assertDescriptor(descriptor: ReadDescriptor): void {
   assertOperation(descriptor.operation)
 }
 
-function assertMutationDescriptor(descriptor: MutationDescriptor | UploadDescriptor): void {
+function assertMutationDescriptor<Input, Output>(
+  descriptor: MutationDescriptor<Input, Output> | UploadDescriptor<Input, Output>,
+): void {
   if (descriptor.kind === 'mutation') assertOperation(descriptor.operation)
   else if (descriptor.kind === 'upload') {
     assertOperation(descriptor.create)
@@ -1078,6 +1221,7 @@ const singleton = createServerState({
 export const useQuery = singleton.useQuery
 export const useMutation = singleton.useMutation
 export const invalidateAll = singleton.invalidateAll
+export const onTouch = singleton.onTouch
 export const onChallenge = singleton.onChallenge
 export const serverState = singleton
 

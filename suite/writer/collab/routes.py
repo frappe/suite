@@ -18,11 +18,42 @@ from suite.composition.http import HttpOwner, Route
 from suite.suite_core import collab
 from suite.writer.collab import ADAPTER, consider_compaction
 
+# Every row reads or writes its own bytes, so each is a stream; a POST answers JSON
 ROUTES = (
-    Route("GET", "documents/{node}/collab", "collab_get", allow_guest=True),
-    Route("GET", "documents/{node}/collab/updates", "collab_updates_get", allow_guest=True),
-    Route("POST", "documents/{node}/collab/updates", "collab_updates_post", allow_guest=True),
-    Route("POST", "documents/{node}/collab/sessions", "collab_sessions_post", allow_guest=True),
+    Route(
+        "GET",
+        "documents/{node}/collab",
+        "collab_get",
+        allow_guest=True,
+        errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
+        stream=True,
+    ),
+    Route(
+        "GET",
+        "documents/{node}/collab/updates",
+        "collab_updates_get",
+        allow_guest=True,
+        errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
+        stream=True,
+    ),
+    Route(
+        "POST",
+        "documents/{node}/collab/updates",
+        "collab_updates_post",
+        allow_guest=True,
+        errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
+        output=dict[str, int | str],
+        stream=True,
+    ),
+    Route(
+        "POST",
+        "documents/{node}/collab/sessions",
+        "collab_sessions_post",
+        allow_guest=True,
+        errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
+        output=dict[str, int | str],
+        stream=True,
+    ),
 )
 
 HTTP = HttpOwner(

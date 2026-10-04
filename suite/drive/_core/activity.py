@@ -1,12 +1,12 @@
 """Drive activity, recents, favourites, and notification workflows."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import escape_html, get_fullname, get_url, now_datetime
 
 from suite.drive._core.errors import (
     DriveConflict,
@@ -16,7 +16,7 @@ from suite.drive._core.errors import (
     rollback_savepoint,
 )
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import READ
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 
 ACTIVITY_ACTIONS = (
     "create",
@@ -181,33 +181,84 @@ def _insert_unique(doc: dict, reread) -> tuple[str | None, bool]:
     return name, True
 
 
+# `recents` reads further SQL windows while unreadable rows leave its page
+# short, and gives up after this many. A page can still come back short or
+# empty; its cursor then points past the last row read (§11.4).
+MAX_RECENT_WINDOWS = 5
+
+# STRAIGHT_JOIN keeps the plan on the caller's own rows: `recent_user_opened`
+# walks `user = ?` in `opened_at` order, and each node is one primary-key
+# lookup. Left to itself the planner can start from `node_content` and read
+# every document of the type on the site first. `r.name` breaks ties between
+# visits stamped the same second, so offset pages never repeat or skip a row;
+# the secondary index carries the primary key, so it adds no sort.
+RECENTS_SQL = """
+SELECT STRAIGHT_JOIN r.name, r.node, r.opened_at
+FROM `tabDrive Recent` r
+JOIN `tabDrive Node` n ON n.name = r.node
+WHERE r.user = %(user)s
+  AND n.state = 'Active'
+  AND {type_filter}
+ORDER BY r.opened_at DESC, r.name DESC
+LIMIT %(limit)s OFFSET %(offset)s
+"""
+
+# The caller's marks, newest first. The join is there for the `?type=` filter,
+# and STRAIGHT_JOIN reads the caller's own rows first, as in `RECENTS_SQL`.
+# `f.name` breaks ties between marks made the same second.
+FAVOURITES_SQL = """
+SELECT STRAIGHT_JOIN f.name, f.node, f.creation
+FROM `tabDrive Favourite` f
+JOIN `tabDrive Node` n ON n.name = f.node
+WHERE f.user = %(user)s
+  AND {type_filter}
+ORDER BY f.creation DESC, f.name DESC
+LIMIT %(limit)s OFFSET %(offset)s
+"""
+
+
 def recents(
     principals: Principals,
     *,
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
     with_access: bool = False,
+    listing_types: Sequence[str] = (),
 ) -> dict:
-    """Page only the caller's still-readable recent nodes, newest first."""
-    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+    """Page only the caller's still-readable, Active recent nodes, newest first.
+
+    `listing_types` keeps the nodes of any of those `?type=` values
+    (`nodes.type_filter`). It is a predicate in the query, not a filter on the
+    fetched window, so a history full of other types cannot leave a page short.
+
+    Readability is checked after the query, so a window can lose rows. Further
+    windows are read, up to `MAX_RECENT_WINDOWS`, until the page is full.
+    """
+    from suite.drive._core.nodes import decode_cursor, encode_cursor, page_limit, type_filter
 
     _require_person(principals)
     window = page_limit(limit)
     offset = decode_cursor(cursor)
-    rows = frappe.get_all(
-        "Drive Recent",
-        filters={"user": principals.user},
-        fields=["name", "node", "opened_at"],
-        order_by="opened_at desc",
-        limit=window,
-        start=offset,
-    )
-    return page_of(
-        _visible_personal_rows(principals, rows, with_access=with_access),
-        offset,
-        len(rows),
-        window,
-    )
+    query = RECENTS_SQL.format(type_filter=type_filter(listing_types, "n."))
+    values = {"user": principals.user, "limit": window}
+    page: list = []
+    read = 0
+    exhausted = False
+    for _window in range(MAX_RECENT_WINDOWS):
+        values["offset"] = offset + read
+        rows = frappe.db.sql(query, values, as_dict=True)
+        kept = {row.name for row in _visible_personal_rows(principals, rows, with_access=with_access)}
+        for row in rows:
+            read += 1
+            if row.name in kept:
+                page.append(row)
+                if len(page) == window:
+                    break
+        # A short window is the end of the history, once every row in it is read.
+        exhausted = len(rows) < window and values["offset"] + len(rows) == offset + read
+        if len(page) == window or exhausted:
+            break
+    return {"rows": page, "next_cursor": None if exhausted else encode_cursor(offset + read)}
 
 
 def clear_recents(principals: Principals, nodes: Iterable[str] | None = None) -> int:
@@ -235,9 +286,10 @@ def set_favourite(principals: Principals, node: str, value: bool = True) -> bool
         frappe.throw(_("Drive favourite value must be a boolean"), frappe.ValidationError)
     # Adding a mark needs Read on the node. Removing the caller's own private
     # mark does not, or a node that stopped being readable would leave a
-    # favourite its owner can neither see nor clear.
-    if value:
-        _authorized_node(principals, node)
+    # favourite its owner can neither see nor clear. A trashed node takes no
+    # new mark, as it takes no other write (§4.2).
+    if value and _authorized_node(principals, node).state != "Active":
+        raise DriveForbidden(_("A trashed Drive node cannot be starred"))
     existing = frappe.db.get_value(
         "Drive Favourite",
         {"user": principals.user, "node": node},
@@ -264,20 +316,21 @@ def favourites(
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
     with_access: bool = False,
+    listing_types: Sequence[str] = (),
 ) -> dict:
-    """Page only the caller's still-readable favourite nodes."""
-    from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+    """Page only the caller's still-readable favourite nodes.
+
+    `listing_types` keeps those `?type=` values inside the query, as in `recents`.
+    """
+    from suite.drive._core.nodes import decode_cursor, page_limit, page_of, type_filter
 
     _require_person(principals)
     window = page_limit(limit)
     offset = decode_cursor(cursor)
-    rows = frappe.get_all(
-        "Drive Favourite",
-        filters={"user": principals.user},
-        fields=["name", "node", "creation"],
-        order_by="creation desc",
-        limit=window,
-        start=offset,
+    rows = frappe.db.sql(
+        FAVOURITES_SQL.format(type_filter=type_filter(listing_types, "n.")),
+        {"user": principals.user, "limit": window, "offset": offset},
+        as_dict=True,
     )
     return page_of(
         _visible_personal_rows(principals, rows, with_access=with_access),
@@ -341,6 +394,51 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
 
             emit_for_users((user,))
     return created
+
+
+# What a share email tells the recipient they may do. A deny shares nothing,
+# so role 0 has no entry and sends no email.
+SHARE_VERBS = {READ: "view", COMMENT: "comment on", UPLOAD: "upload to", EDIT: "edit", MANAGE: "manage"}
+
+
+def queue_share_email(node: str, recipient: str, role: int, path: str, sharer: str) -> None:
+    """Queue one share email after commit; the grant never waits on it (§9.5).
+
+    The job is pushed from Drive's own after-commit callback, not through
+    `enqueue_after_commit`. Frappe's deferred push runs inside `commit`, so a
+    Redis failure there would answer 500 for a grant that is already
+    committed, and a retry would mint a second link. The push is best-effort:
+    any failure is logged and the request answers with the committed grant.
+    """
+    if role == NONE:
+        return
+    job = {"node": node, "recipient": recipient, "role": role, "path": path, "sharer": sharer}
+    frappe.db.after_commit.add(lambda: _push_share_email(job))
+
+
+def _push_share_email(job: dict) -> None:
+    try:
+        frappe.enqueue("suite.drive._core.activity.send_share_email", queue="short", **job)
+    except Exception:
+        # A file log, not an Error Log row: this runs after the request's only
+        # commit, so a row written here would never be committed.
+        frappe.logger("suite.drive").exception("Drive: could not queue a share email for %s", job["node"])
+
+
+def send_share_email(node: str, recipient: str, role: int, path: str, sharer: str) -> None:
+    """Background job: mail one share with the sharer, the title, the role, and the link."""
+    title = frappe.db.get_value("Drive Node", node, "title")
+    if title is None:
+        # Purged between the grant and the job: there is nothing to open.
+        return
+    name = get_fullname(sharer)
+    message = _('<p>{0} shared <b>{1}</b> with you. You can {2} it.</p><p><a href="{3}">Open {1}</a></p>')
+    frappe.sendmail(
+        recipients=[recipient],
+        subject=_("{0} shared {1} with you").format(name, title),
+        message=message.format(escape_html(name), escape_html(title), SHARE_VERBS[role], get_url(path)),
+        now=False,
+    )
 
 
 def notifications(
@@ -497,10 +595,7 @@ def _visible_personal_rows(
         filters={"name": ["in", wanted]},
         fields=NODE_FIELD_NAMES,
     )
-    visible = {
-        node.name: node
-        for node in _readable_rows(stored, principals, with_access=with_access)
-    }
+    visible = {node.name: node for node in _readable_rows(stored, principals, with_access=with_access)}
     answer = []
     for row in rows:
         node = visible.get(row.node)

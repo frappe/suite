@@ -488,18 +488,12 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
     def test_guest_proof_is_redacted_before_downstream_endpoint_errors(self):
         original_request = getattr(frappe.local, "request", None)
         original_form_dict = frappe.local.form_dict
+        # `frappe.init` binds `request_ip` to None, and every later test reads it,
+        # so restore the value rather than deleting the attribute.
         original_request_ip = getattr(frappe.local, "request_ip", None)
         self.addCleanup(setattr, frappe.local, "request", original_request)
         self.addCleanup(setattr, frappe.local, "form_dict", original_form_dict)
-        if original_request_ip is not None:
-            self.addCleanup(setattr, frappe.local, "request_ip", original_request_ip)
-        else:
-
-            def delete_request_ip():
-                if hasattr(frappe.local, "request_ip"):
-                    delattr(frappe.local, "request_ip")
-
-            self.addCleanup(delete_request_ip)
+        self.addCleanup(setattr, frappe.local, "request_ip", original_request_ip)
 
         frappe.local.request_ip = "127.0.0.1"
         proof = "private-proof-that-must-not-reach-telemetry"

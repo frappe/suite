@@ -3,9 +3,11 @@ import { getHierarchicalIndexes } from '@tiptap/extension-table-of-contents'
 import { CharacterCount, Selection } from '@tiptap/extensions'
 import { Heading, RichTextKit, type MentionSuggestionItem } from 'frappe-ui/editor'
 import type { Ref } from 'vue'
+
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
 import { CommentExtension } from '@/apps/writer/extensions/comments'
 import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
+import { DriveMedia, type DocumentMedia } from '@/apps/writer/extensions/drive-media'
 import EmbedExtension from '@/apps/writer/extensions/embed-extension'
 import ExtendedParagraph from '@/apps/writer/extensions/extended-paragraph'
 import FontFamily from '@/apps/writer/extensions/font-family'
@@ -14,6 +16,7 @@ import { HeadingAnchors } from '@/apps/writer/extensions/heading-anchors'
 import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
 import { ListJoin } from '@/apps/writer/extensions/list-join'
 import MediaDownload from '@/apps/writer/extensions/media-download'
+import { MentionSearch } from '@/apps/writer/extensions/mention-search'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
 import { ReceivedContentGuard } from '@/apps/writer/extensions/received-content-guard'
@@ -24,9 +27,11 @@ import { WRITER_STARTER_KIT } from '@/apps/writer/schema'
 export type WriterEditorOptions = {
   collaborative: boolean
   mentionItems: () => MentionSuggestionItem[]
+  onMentionQuery: (query: string) => void
   onCommentActivated: (id: string) => void
   onAnchors: (anchors: unknown[]) => void
   scrollParent: () => HTMLElement | Window
+  media: DocumentMedia | null
   comments: unknown
   ydoc: unknown
   activeComment: Ref<unknown>
@@ -49,6 +54,7 @@ export const writerEditorExtensions = (options: WriterEditorOptions): AnyExtensi
     mention: { items: options.mentionItems },
     styleClipboard: {},
   }),
+  MentionSearch.configure({ onQuery: options.onMentionQuery }),
   Heading,
   ListJoin,
   ReceivedContentGuard,
@@ -77,6 +83,7 @@ export const writerEditorExtensions = (options: WriterEditorOptions): AnyExtensi
     scrollParent: options.scrollParent,
   }),
   MediaDownload,
+  DriveMedia.configure({ media: options.media }),
   CommentExtension.configure({
     comments: options.comments,
     doc: options.ydoc,

@@ -14,7 +14,6 @@
   "settings",
   "updates",
   "ycomments",
-  "versions",
   "collab"
  ],
  "fields": [
@@ -38,12 +37,6 @@
    "fieldname": "settings",
    "fieldtype": "JSON",
    "label": "Settings"
-  },
-  {
-   "fieldname": "versions",
-   "fieldtype": "Table",
-   "label": "Versions",
-   "options": "Writer Doc Version"
   },
   {
    "fieldname": "updates",

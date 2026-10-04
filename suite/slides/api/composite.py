@@ -16,8 +16,8 @@ point check the whole-deck read path already runs.
     composite_manifest(name)                -> the reference list, no content
     composite_group(name, references)       -> content for one bounded group
 
-The manifest costs one point check, on the composite itself. The group costs
-one on the composite plus one per requested reference. Neither call is ever
+The manifest costs one point check on the composite plus one per referenced
+deck. The group costs one on the composite plus one per requested reference. Neither call is ever
 answered from a remembered client association: the client names references, and
 the server resolves each one to a deck and a node itself.
 
@@ -63,7 +63,8 @@ its place: both fail the membership check.
 {"presentation": "deck-7", "node": "a1b2c3d4e5",
  "modified": "2026-09-06 11:04:12.882913",
  "group_limit": 19, "reference_count": 21,
- "references": [{"reference": "b7c1…", "index": 1, "presentation": "deck-8"}]}
+ "references": [{"reference": "b7c1…", "index": 1, "presentation": "deck-8",
+                 "node": "f9e8d7c6b5"}]}
 ```
 
 `composite_group`
@@ -79,9 +80,17 @@ its place: both fail the membership check.
 
 The `references` list holds exactly one entry per requested id, in the order
 they were requested, never reordered and never dropped. An unreadable reference
-carries `readable: false` and no content at all: no node id, because a node id
-is the handle every Drive route takes (§5.4), and no slides. The client decides
+carries `readable: false` and no content at all: no node id and no slides. The client decides
 whether to draw a placeholder (§6.6).
+
+A manifest reference names the referenced deck's `node` only when the caller
+can read that deck: with their own grants, or with a code the manifest request
+carried in `X-Drive-Links`. The client sends every code it holds, up to the 20
+the header allows, and selects the one code for each group by the node ids the
+manifest answered (§6.6). A reference the caller cannot read gets `null`, the
+same as a row that names no deck, so the manifest never names a node the
+caller could not open and cannot be used to match private decks across
+composites. Every group still runs its own point check.
 
 `presentation` is the referenced deck's docname, and it crosses for an
 unreadable reference too: the client needs no permission to hold a name it
@@ -188,12 +197,11 @@ REFUSED = "Presentation is not public"
 def composite_manifest(name: str) -> dict:
     """Answer the composite's reference list, with no reference content.
 
-    One point check, on the composite. The references are named, not opened, so
-    this call costs nothing per reference and tells the caller nothing it could
-    not learn from the whole-deck read path.
+    One point check on the composite, and one READ check per referenced deck,
+    so a reference carries its node id only for a caller who can open it.
     """
     docname, node, modified = _authorized_composite(name)
-    rows = slides_drive.composite_reference_rows(docname)
+    rows = _with_readable_nodes(slides_drive.composite_reference_rows(docname))
     return {
         "presentation": docname,
         "node": node,
@@ -224,6 +232,31 @@ def composite_group(name: str, references: object = None) -> dict:
         "node": node,
         "references": [_answer(members[reference]) for reference in requested],
     }
+
+
+def _with_readable_nodes(rows: list[dict]) -> list[dict]:
+    """Add each referenced deck's node id where this caller can read the deck.
+
+    The client needs it to select the share-link code that reaches the deck.
+    The ids come from one query, and the READ check runs once per distinct
+    node. An unreadable deck and a row with no deck both answer `None`.
+    """
+    decks = list({row["presentation"] for row in rows if row["presentation"]})
+    nodes = (
+        dict(
+            frappe.get_all(
+                DOCTYPE, filters={"name": ["in", decks]}, fields=["name", NODE_FIELD], as_list=True
+            )
+        )
+        if decks
+        else {}
+    )
+    readable = {node for node in set(nodes.values()) if node and slides_drive.node_is_readable(node)}
+    answered = []
+    for row in rows:
+        node = nodes.get(row["presentation"])
+        answered.append({**row, "node": node if node in readable else None})
+    return answered
 
 
 def _requested_references(references) -> list[str]:

@@ -10,7 +10,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ScrollOwner } from "@/platform/contracts";
+import type { ScrollOwner } from '@/platform/contracts'
 
-withDefaults(defineProps<{ scroll?: ScrollOwner }>(), { scroll: "shell" });
+withDefaults(defineProps<{ scroll?: ScrollOwner }>(), { scroll: 'shell' })
 </script>

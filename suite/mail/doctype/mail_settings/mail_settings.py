@@ -2,14 +2,14 @@
 # For license information, please see license.txt
 
 import base64
-import os
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from jmap.push import PushKeyPair
 
-from suite.mail.stalwart import get_domain_service
-from suite.mail.utils import is_stalwart_configured
+from suite.mail.directory import get_active_domain_names
+from suite.suite_core.utils import is_suite_cloud_configured
 
 
 class MailSettings(Document):
@@ -25,49 +25,34 @@ class MailSettings(Document):
             MailClientConfiguration,
         )
 
-        admin_log_file_count: DF.Int
-        admin_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        admin_log_max_file_size: DF.Int
         allow_signup: DF.Check
         custom_event_invites: DF.Check
         default_disk_quota_gb: DF.Int
-        default_dns_ttl: DF.Int
         default_gravatar: DF.Literal[
             "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
         ]
-        disabled_account_role: DF.Data | None
         enable_gravatar: DF.Check
         enable_jmap_push_encryption: DF.Check
         exchange_export_batch_size: DF.Int
         exchange_export_timeout: DF.Int
         exchange_import_timeout: DF.Int
-        exchange_log_file_count: DF.Int
-        exchange_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        exchange_log_max_file_size: DF.Int
         exchange_max_export: DF.Int
         exchange_max_import: DF.Int
         expand_mailing_list_participants: DF.Check
-        inbound_log_file_count: DF.Int
-        inbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        inbound_log_max_file_size: DF.Int
         jmap_push_auth: DF.Password | None
         jmap_push_p256dh: DF.Data | None
         jmap_push_private_key: DF.Password | None
+        log_file_count: DF.Int
+        log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+        log_max_file_size_mb: DF.Int
         mail_client_configurations: DF.Table[MailClientConfiguration]
         max_email_sync: DF.Int
         max_mailing_list_participants: DF.Int
         max_message_payload_size_mb: DF.Int
         max_push_notifications: DF.Int
-        outbound_log_file_count: DF.Int
-        outbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        outbound_log_max_file_size: DF.Int
-        password: DF.Password | None
         process_pending_emails_batch_size: DF.Int
         process_pending_emails_max_batch_size: DF.Int
         process_pending_emails_timeout: DF.Int
-        push_log_file_count: DF.Int
-        push_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-        push_log_max_file_size: DF.Int
         scan_message_timeout: DF.Int
         server_url: DF.Data | None
         show_calendar_client_config: DF.Check
@@ -77,7 +62,6 @@ class MailSettings(Document):
         spamd_hybrid_scanning_threshold: DF.Float
         spamd_port: DF.Int
         spamd_scanning_mode: DF.Literal["Exclude Attachments", "Include Attachments", "Hybrid Approach"]
-        username: DF.Data | None
         verify_ssl: DF.Check
     # end: auto-generated types
 
@@ -89,6 +73,11 @@ class MailSettings(Document):
     def on_update(self) -> None:
         self.clear_cache()
         frappe.clear_document_cache(self.doctype)
+        if self.has_value_changed("server_url"):
+            # Mail and Calendar are offered on a site with a JMAP server, so the launcher's answer changes.
+            from suite.api.account import forget_logged_in_users
+
+            forget_logged_in_users()
 
     def validate_signup(self) -> None:
         """Validates the Signup."""
@@ -97,7 +86,12 @@ class MailSettings(Document):
             self.signup_domains = ""
             return
 
-        is_stalwart_configured(raise_exception=True)
+        # Only a change to the signup fields is checked against Suite Cloud: the client would
+        # otherwise use the credentials from before this save, refusing the save that fixes them.
+        if not (self.has_value_changed("allow_signup") or self.has_value_changed("signup_domains")):
+            return
+
+        is_suite_cloud_configured(raise_exception=True)  # the domains are Suite Cloud's to tell
 
         if not self.signup_domains:
             frappe.throw(_("Please add at least one Signup Domain."))
@@ -107,11 +101,16 @@ class MailSettings(Document):
         if not signup_domains:
             frappe.throw(_("Invalid Signup Domains format. Please provide one domain per line."))
 
+        # Accounts can only be created on active domains, so signup is offered on those alone.
+        site_domains = set(get_active_domain_names())
         valid_signup_domains = []
         for domain in signup_domains:
             domain = domain.strip().lower()
             if domain:
-                get_domain_service().get_by_name(domain, raise_exception=True)
+                if domain not in site_domains:
+                    frappe.throw(
+                        _("Domain {0} is not an active mail domain of this site.").format(frappe.bold(domain))
+                    )
                 valid_signup_domains.append(domain)
 
         self.signup_domains = "\n".join(valid_signup_domains)
@@ -143,37 +142,17 @@ class MailSettings(Document):
         if set_count == 0:
             return
 
-        for value, label in (
-            (p256dh, _("P256DH")),
-            (private_key, _("Private Key")),
-            (auth, _("Auth")),
-        ):
-            if not self._is_urlsafe_base64(value):
-                frappe.throw(
-                    _("The JMAP Push Subscription {0} key must be URL-safe base64 encoded.").format(
-                        frappe.bold(label)
-                    )
-                )
-
         try:
-            from cryptography.hazmat.primitives.asymmetric import ec
-            from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+            pair = PushKeyPair(private_key, auth)
+            public_key = _unbase64(p256dh)
+        except ValueError as e:  # binascii.Error included
+            frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(e))
 
-            def _b64decode(s: str) -> bytes:
-                return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
-
-            priv_bytes = _b64decode(private_key)
-            priv = ec.derive_private_key(int.from_bytes(priv_bytes, "big"), ec.SECP256R1())
-            computed_pub = priv.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-            expected_pub = _b64decode(p256dh)
-            if computed_pub != expected_pub:
-                frappe.throw(
-                    _("The JMAP Push Subscription Private Key does not correspond to the P256DH public key.")
-                )
-        except frappe.exceptions.ValidationError:
-            raise
-        except Exception as e:
-            frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(str(e)))
+        # Either half may have been stored with base64 padding; compare the key bytes.
+        if _unbase64(pair.keys.p256dh) != public_key:
+            frappe.throw(
+                _("The JMAP Push Subscription Private Key does not correspond to the P256DH public key.")
+            )
 
     @frappe.whitelist()
     def generate_jmap_push_keys(self) -> None:
@@ -185,39 +164,26 @@ class MailSettings(Document):
     def _generate_jmap_push_keys(self) -> None:
         """Generates a new ECDH P-256 key pair and auth secret for JMAP push encryption and saves them."""
 
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        pair = PushKeyPair.generate()
 
-        private_key = ec.generate_private_key(ec.SECP256R1())
-        private_key_bytes = private_key.private_numbers().private_value.to_bytes(32, "big")
-        public_key_bytes = private_key.public_key().public_bytes(
-            Encoding.X962, PublicFormat.UncompressedPoint
-        )
-        auth_bytes = os.urandom(16)
-
-        self.jmap_push_p256dh = base64.urlsafe_b64encode(public_key_bytes).decode()
-        self.jmap_push_private_key = base64.urlsafe_b64encode(private_key_bytes).decode()
-        self.jmap_push_auth = base64.urlsafe_b64encode(auth_bytes).decode()
+        self.jmap_push_p256dh = pair.keys.p256dh
+        self.jmap_push_private_key = pair.private_key
+        self.jmap_push_auth = pair.auth
 
         self.flags.ignore_mandatory = True
         self.flags.ignore_validate = True
         self.save()
 
-    @staticmethod
-    def _is_urlsafe_base64(value: str) -> bool:
-        """Returns True if the given value is URL-safe base64 encoded."""
-
-        try:
-            padding = "=" * (-len(value) % 4)
-            base64.urlsafe_b64decode(f"{value}{padding}".encode())
-            return True
-        except Exception:
-            return False
-
     def clear_cache(self) -> None:
         """Clears the Cache."""
 
         frappe.cache.delete_value("mail-settings")
+
+
+def _unbase64(text: str) -> bytes:
+    """URL-safe base64 to bytes, whether or not the text kept its padding."""
+
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
 def get_signup_domains() -> list:

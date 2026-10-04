@@ -242,6 +242,7 @@ SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
+    listing_type="presentation",
     # §10.7, accepted 2026-09-05: every content app stays hidden over WebDAV in
     # this release, and Slides offers no export format of its own.
     default_export=None,
@@ -256,12 +257,7 @@ SPEC = drive.ContentTypeSpec(
     pushes_preview=True,
     on_purge=on_purge,
     satellites=(drive.Satellite(doctype=SATELLITE_DOCTYPE, link_field=SATELLITE_LINK_FIELD),),
-    # §14.7 reads this column at Build and §14.10 drops it at Cleanup, one
-    # release after activation. Declaring it here is what lets ticket 29
-    # activate without dropping a Build source early: the column stays, frozen,
-    # and `refuse_legacy_field_write` refuses every write to it. `is_template`
-    # and `thumbnail` need no entry; §10.2 forbids neither.
-    legacy_fields=("title",),
+    legacy_fields=(),
     used_nodes=used_nodes,
     remap_media=remap_media,
 )
@@ -394,7 +390,8 @@ def composite_reference_rows(docname: str) -> list[dict]:
 
     `presentation` is the referenced deck's docname. §6.6 marks an unreadable
     reference rather than dropping it, so the docname crosses for every
-    reference; the node id does not (see `composite_references`).
+    reference; the node id does not (see `composite_references`). The grouped
+    manifest adds a node id only where the caller can read the deck.
 
     The id is stable while the reference list is. `duplicate` and
     `restore_version` rewrite the table, so both mint new ids, and a client

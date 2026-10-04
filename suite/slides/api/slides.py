@@ -11,12 +11,15 @@ SLIDE_FIELDS = frozenset(
         "transition",
         "transition_duration",
         "fade_unmatched_elements",
+        "advance_after",
     }
 )
 
 
-# a save over GET would report success and then be rolled back after responding
-@frappe.whitelist(methods=["POST"])
+# a save over GET would report success and then be rolled back after responding;
+# Guest is admitted because a share link's holder has no session, and the write
+# check below answers for the link the request carries
+@frappe.whitelist(methods=["POST"], allow_guest=True)
 def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
     """Replace a presentation's slides with the editor's list.
 

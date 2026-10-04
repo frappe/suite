@@ -45,30 +45,38 @@ def _run(label, func, *args, **kwargs):
 def after_install():
     from suite.calendar.install import after_install as calendar_after_install
     from suite.drive.framework import validate_content_registry
-    from suite.drive.install import after_install as drive_after_install
-    from suite.drive.install import ensure_custom_fields
+    from suite.drive.install import index_group_membership
     from suite.mail.install import after_install as mail_after_install
     from suite.meet.install import after_install as meet_after_install
+    from suite.slides.install import seed_system_templates
+    from suite.suite_core.file_size import set_default_max_file_size
     from suite.writer.collab import ensure_tables as writer_collab_tables
 
-    _run("drive.ensure_custom_fields", ensure_custom_fields)
-    _run("drive.after_install", drive_after_install)
     _run("mail.after_install", mail_after_install)
     _run("calendar.after_install", calendar_after_install)
     _run("meet.after_install", meet_after_install)
     _run("writer.collab.ensure_tables", writer_collab_tables)
+    _run("suite_core.set_default_max_file_size", set_default_max_file_size)
+    _run("drive.index_group_membership", index_group_membership)
     # A fresh install never migrates, so it needs the same boot validation.
     _run("drive.validate_content_registry", validate_content_registry)
+    # The shipped template decks are Drive documents, so they are seeded after
+    # the registry is known to be sound rather than synced as a fixture.
+    _run("slides.seed_system_templates", seed_system_templates)
 
 
 def after_migrate():
     from suite.drive.framework import validate_content_registry
+    from suite.drive.install import index_group_membership
     from suite.mail.install import after_migrate as mail_after_migrate
+    from suite.slides.install import seed_system_templates
     from suite.writer.collab import ensure_tables as writer_collab_tables
 
     _run("mail.after_migrate", mail_after_migrate)
     _run("writer.collab.ensure_tables", writer_collab_tables)
+    _run("drive.index_group_membership", index_group_membership)
     _run("drive.validate_content_registry", validate_content_registry)
+    _run("slides.seed_system_templates", seed_system_templates)
 
 
 def after_app_install(app_name=None):

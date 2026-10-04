@@ -33,7 +33,7 @@ class DriveNode(Document):
         invalid = (
             any(
                 (
-                    self.parent,
+                    self.parent_node,
                     self.root,
                     self.path,
                     self.blob,
@@ -58,11 +58,11 @@ class DriveNode(Document):
                 frappe.throw(_("A root node must have matching Drive Root metadata"))
 
     def _validate_tree_position(self) -> None:
-        if not self.parent or not self.root:
+        if not self.parent_node or not self.root:
             frappe.throw(_("Every non-root node must name its parent and root"))
         parent = frappe.db.get_value(
             "Drive Node",
-            self.parent,
+            self.parent_node,
             ["name", "kind", "root", "path", "state"],
             as_dict=True,
             for_update=True,
@@ -138,12 +138,12 @@ class DriveNode(Document):
         ):
             frappe.throw(_("A Drive content document identity cannot change"))
         if self.kind == "root" and previous:
-            immutable = ("parent", "root", "path", "state")
+            immutable = ("parent_node", "root", "path", "state")
             if any(previous.get(field) != self.get(field) for field in immutable):
                 frappe.throw(_("A root node cannot be moved, trashed, or restored"))
 
 
 def on_doctype_update() -> None:
-    frappe.db.add_index("Drive Node", ["parent", "state", "title"], "node_parent_page")
+    frappe.db.add_index("Drive Node", ["parent_node", "state", "title"], "node_parent_page")
     frappe.db.add_index("Drive Node", ["root", "path"], "node_subtree")
     frappe.db.add_index("Drive Node", ["content_doctype", "content_docname"], "node_content")

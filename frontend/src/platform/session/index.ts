@@ -24,8 +24,18 @@ export interface Session {
   user: Readonly<Ref<SessionUser | null>>
   capabilities: Readonly<Ref<SessionCapabilities>>
   login(email: string, password: string): Promise<void>
+  /** Ends the server session, then runs every logout cleanup before it resolves. */
   logout(): Promise<void>
   refresh(): Promise<void>
+  /**
+   * Runs `cleanup` on every later logout, after the server ends the session.
+   * Use it for data a browser keeps per user, so the next user never sees it.
+   * With `whileSignedIn`, it runs before the server ends the session, for a
+   * cleanup that needs the user's session (a server-side unsubscribe).
+   * A cleanup that fails does not stop the logout. Returns a function that
+   * removes the cleanup.
+   */
+  onLogout(cleanup: () => Promise<void> | void, options?: { whileSignedIn?: boolean }): () => void
 }
 
 type AccountResponse = Record<string, unknown> & {
@@ -71,11 +81,12 @@ export function createSession(client: Transport = defaultTransport): Session {
   const cookieId = sessionIdFromCookies(cookies)
   const status = ref<SessionStatus>(cookieId ? 'loading' : 'guest')
   const user = ref<SessionUser | null>(cookieId ? cookieUser(cookieId, cookies) : null)
-  const capabilities = ref<SessionCapabilities>({
-    jmap: false,
-    systemManager: cookies.system_user === 'yes',
-  })
+  // The account route is the only source of capabilities [T021]. The
+  // `system_user` cookie marks nearly every invited user, so boot grants none.
+  const capabilities = ref<SessionCapabilities>({ jmap: false, systemManager: false })
   let refreshPromise: Promise<void> | null = null
+  const logoutCleanups = new Set<() => Promise<void> | void>()
+  const signedInLogoutCleanups = new Set<() => Promise<void> | void>()
 
   async function refresh(): Promise<void> {
     if (refreshPromise) return refreshPromise
@@ -87,7 +98,8 @@ export function createSession(client: Transport = defaultTransport): Session {
     refreshPromise = client
       .request(accountOperation, {})
       .then((account) => {
-        const id = string(account.id) ?? string(account.name) ?? string(account.email) ?? user.value?.id
+        const id =
+          string(account.id) ?? string(account.name) ?? string(account.email) ?? user.value?.id
         if (!id || id === 'Guest') {
           user.value = null
           capabilities.value = { jmap: false, systemManager: false }
@@ -98,8 +110,10 @@ export function createSession(client: Transport = defaultTransport): Session {
           ...account,
           id,
           email: string(account.email) ?? id,
-          fullName: string(account.fullName) ?? string(account.full_name) ?? user.value?.fullName ?? id,
-          avatar: string(account.avatar) ?? string(account.user_image) ?? user.value?.avatar ?? null,
+          fullName:
+            string(account.fullName) ?? string(account.full_name) ?? user.value?.fullName ?? id,
+          avatar:
+            string(account.avatar) ?? string(account.user_image) ?? user.value?.avatar ?? null,
         }
         capabilities.value = {
           jmap: account.capabilities?.jmap ?? !!account.is_jmap_configured,
@@ -130,10 +144,23 @@ export function createSession(client: Transport = defaultTransport): Session {
   }
 
   async function logout(): Promise<void> {
+    await Promise.allSettled([...signedInLogoutCleanups].map(async (cleanup) => cleanup()))
     await client.request(logoutOperation, {})
+    await Promise.allSettled([...logoutCleanups].map(async (cleanup) => cleanup()))
     user.value = null
     capabilities.value = { jmap: false, systemManager: false }
     status.value = 'guest'
+  }
+
+  function onLogout(
+    cleanup: () => Promise<void> | void,
+    options: { whileSignedIn?: boolean } = {},
+  ): () => void {
+    const cleanups = options.whileSignedIn ? signedInLogoutCleanups : logoutCleanups
+    cleanups.add(cleanup)
+    return () => {
+      cleanups.delete(cleanup)
+    }
   }
 
   if (cookieId) void refresh()
@@ -145,6 +172,7 @@ export function createSession(client: Transport = defaultTransport): Session {
     login,
     logout,
     refresh,
+    onLogout,
   }
 }
 

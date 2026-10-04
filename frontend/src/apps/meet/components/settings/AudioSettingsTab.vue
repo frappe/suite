@@ -1,57 +1,51 @@
 <template>
-	<AppSettingsHeader
-		title="Audio"
-		description="Configure your audio and microphone settings"
-	/>
-	<AppSettingsBody>
-		<div>
-			<SettingsRow
-				title="Noise Cancellation"
-				description="Reduce background noise from your microphone"
-			>
-				<Switch v-model="noiseCancellationEnabledLocal" />
-			</SettingsRow>
-			<SettingsRow
-				title="Push to Talk"
-				description="Hold spacebar to unmute your microphone"
-			>
-				<Switch v-model="pushToTalkEnabledLocal" />
-			</SettingsRow>
-		</div>
-	</AppSettingsBody>
+  <AppSettingsHeader title="Audio" description="Configure your audio and microphone settings" />
+  <AppSettingsBody>
+    <div>
+      <SettingsRow
+        title="Noise Cancellation"
+        description="Reduce background noise from your microphone"
+      >
+        <Switch v-model="noiseCancellationEnabledLocal" />
+      </SettingsRow>
+      <SettingsRow title="Push to Talk" description="Hold spacebar to unmute your microphone">
+        <Switch v-model="pushToTalkEnabledLocal" />
+      </SettingsRow>
+    </div>
+  </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import { SettingsRow, Switch } from "frappe-ui";
-import { type Ref, ref, watch } from "vue";
-import {
-	noiseCancellationEnabled,
-	pushToTalkEnabled,
-	setNoiseCancellationEnabled,
-	setPushToTalkEnabled,
-} from "../../data/mediaPreferences";
+import { SettingsRow, Switch } from 'frappe-ui'
+import { ref, watch, type Ref } from 'vue'
 
-const noiseCancellationEnabledLocal: Ref<boolean> = ref(
-	noiseCancellationEnabled.value,
-);
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+
+import {
+  noiseCancellationEnabled,
+  pushToTalkEnabled,
+  setNoiseCancellationEnabled,
+  setPushToTalkEnabled,
+} from '../../data/mediaPreferences'
+
+const noiseCancellationEnabledLocal: Ref<boolean> = ref(noiseCancellationEnabled.value)
 
 watch(noiseCancellationEnabledLocal, (newValue) => {
-	setNoiseCancellationEnabled(newValue);
-});
+  setNoiseCancellationEnabled(newValue)
+})
 
 watch(noiseCancellationEnabled, (newValue) => {
-	noiseCancellationEnabledLocal.value = newValue;
-});
+  noiseCancellationEnabledLocal.value = newValue
+})
 
-const pushToTalkEnabledLocal: Ref<boolean> = ref(pushToTalkEnabled.value);
+const pushToTalkEnabledLocal: Ref<boolean> = ref(pushToTalkEnabled.value)
 
 watch(pushToTalkEnabledLocal, (newValue) => {
-	setPushToTalkEnabled(newValue);
-});
+  setPushToTalkEnabled(newValue)
+})
 
 watch(pushToTalkEnabled, (newValue) => {
-	pushToTalkEnabledLocal.value = newValue;
-});
+  pushToTalkEnabledLocal.value = newValue
+})
 </script>

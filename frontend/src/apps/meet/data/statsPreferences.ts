@@ -1,11 +1,12 @@
-import { type Ref, ref } from "vue";
-import { readBoolean, writeBoolean } from "@/utils/localStorage";
+import { ref, type Ref } from 'vue'
 
-const STORAGE_KEY = "meetPref.statsForNerds";
+import { readBoolean, writeBoolean } from '@/utils/localStorage'
 
-export const showStatsForNerds: Ref<boolean> = ref(readBoolean(STORAGE_KEY));
+const STORAGE_KEY = 'meetPref.statsForNerds'
+
+export const showStatsForNerds: Ref<boolean> = ref(readBoolean(STORAGE_KEY))
 
 export function setShowStatsForNerds(value: boolean): void {
-	showStatsForNerds.value = value;
-	writeBoolean(STORAGE_KEY, value);
+  showStatsForNerds.value = value
+  writeBoolean(STORAGE_KEY, value)
 }

@@ -3,7 +3,7 @@ import io
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier, Event, local
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 import frappe
 from frappe.storage.blob import put_blob
@@ -15,8 +15,10 @@ from suite.drive._core.access import effective_role, grant
 from suite.drive._core.errors import (
     DriveConflict,
     DriveForbidden,
+    DriveMoved,
     DriveNotFound,
     DriveOverQuota,
+    DriveRestoreDestinationRequired,
 )
 from suite.drive._core.nodes import (
     _content_purge_callbacks,
@@ -27,6 +29,7 @@ from suite.drive._core.nodes import (
     create_file,
     create_folder,
     create_link,
+    empty_trash,
     purge,
     update,
 )
@@ -34,9 +37,9 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.jobs import purge_trashed_nodes
+from suite.drive.tests.fixtures import ensure_rootless_user, skip_if_shared_root_exists
 from suite.drive.tests.test_content import registered as registered_content
 from suite.drive.tests.test_content import spec as content_spec
-from suite.tests.utils import ensure_user
 
 USER = "drive-lifecycle-user@example.com"
 OTHER = "drive-lifecycle-other@example.com"
@@ -45,15 +48,10 @@ LINK_B = "$LINK:" + "B" * 22
 
 
 class TestNodeLifecycle(IntegrationTestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        ensure_user(USER)
-        ensure_user(OTHER)
-
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
+        ensure_rootless_user(USER, OTHER)
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
         self.root = create_root(kind="Personal", title="Lifecycle A", user=USER)
         self.other_root = create_root(kind="Personal", title="Lifecycle B", user=OTHER)
@@ -130,6 +128,74 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(renamed.title, "One")
         self.assertEqual(frappe.db.count("Drive Activity", {"node": second, "action": "rename"}), 1)
 
+    def test_file_rename_keeps_the_extension(self):
+        # (current title, new title, refusal message or None when allowed)
+        cases = (
+            ("Report.pdf", "Report", "Keep the .pdf extension."),
+            ("Report.pdf", "Report.txt", "Keep the .pdf extension."),
+            ("Report.pdf", "Report.pdf.bak", "Keep the .pdf extension."),
+            ("Scan.PDF", "Scan.pdf", None),
+            ("Report.pdf", "Q3 summary.pdf", None),
+            ("archive.tar.gz", "backup.tar.gz", None),
+            ("archive.tar.gz", "archive.tar", "Keep the .gz extension."),
+            ("README", "README.md", None),
+            (".env", "env", None),
+            ("v1.2 notes", "notes", None),
+        )
+        for index, (title, new_title, refusal) in enumerate(cases):
+            with self.subTest(title=title, new_title=new_title):
+                folder = create_folder(self.admin, self.root.name, f"Case {index}")
+                node = self._file(folder, title)
+                if refusal is None:
+                    self.assertEqual(update(self.admin, node, title=new_title).title, new_title)
+                    continue
+                with self.assertRaisesRegex(frappe.ValidationError, f"^{refusal}$"):
+                    update(self.admin, node, title=new_title)
+                self.assertEqual(frappe.db.get_value("Drive Node", node, "title"), title)
+                self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "rename"}))
+
+        folder = create_folder(self.admin, self.root.name, "Photos.2024")
+        self.assertEqual(update(self.admin, folder, title="Photos").title, "Photos")
+
+        # A WebDAV MOVE may change the extension, as a desktop app's save does.
+        node = self._file(self.root.name, "Draft.docx")
+        self.assertEqual(
+            update(self.admin, node, title="~WRL0001.tmp", _keep_extension=False).title, "~WRL0001.tmp"
+        )
+
+    def test_every_create_kind_refuses_a_taken_title_and_names_the_free_one(self):
+        # §8.6: an Active sibling blocks the title and a Trashed one does not.
+        # The refusal carries the title the dedupe rule would give, so a client
+        # can offer Keep both without predicting a suffix.
+        create_folder(self.admin, self.root.name, "Plan.txt")
+        taken = create_folder(self.admin, self.root.name, "Plan (2).txt")
+        update(self.admin, taken, state="Trashed")
+        blob = self._blob(b"plan")
+        creates = {
+            "folder": lambda: create_folder(self.admin, self.root.name, "Plan.txt"),
+            "link": lambda: create_link(self.admin, self.root.name, "Plan.txt", url="https://example.test"),
+            "file": lambda: create_file(
+                self.admin,
+                self.root.name,
+                "Plan.txt",
+                blob=blob.name,
+                size=blob.file_size,
+                mime=blob.mime_type,
+            ),
+        }
+        for kind, attempt in creates.items():
+            with self.subTest(kind=kind), self.assertRaises(DriveConflict) as refused:
+                attempt()
+            self.assertEqual(refused.exception.free_title, "Plan (2).txt")
+        self.assertEqual(
+            frappe.db.count("Drive Node", {"parent_node": self.root.name, "title": "Plan.txt"}), 1
+        )
+
+        create_folder(self.admin, self.root.name, "Plan (2).txt")
+        with self.assertRaises(DriveConflict) as refused:
+            create_folder(self.admin, self.root.name, "Plan.txt")
+        self.assertEqual(refused.exception.free_title, "Plan (3).txt")
+
     def test_move_rewrites_active_and_independently_trashed_descendants(self):
         source = create_folder(self.admin, self.root.name, "Source")
         inner = create_folder(self.admin, source, "Inner")
@@ -138,14 +204,14 @@ class TestNodeLifecycle(IntegrationTestCase):
         update(self.admin, inner, state="Trashed")
         before_stamp = frappe.db.get_value("Drive Node", inner, ["trash_root", "trashed_at"], as_dict=True)
 
-        update(self.admin, source, parent=destination)
+        update(self.admin, source, parent_node=destination)
 
-        moved = frappe.db.get_value("Drive Node", source, ["parent", "path"], as_dict=True)
+        moved = frappe.db.get_value("Drive Node", source, ["parent_node", "path"], as_dict=True)
         inner_row = frappe.db.get_value(
             "Drive Node", inner, ["path", "state", "trash_root", "trashed_at"], as_dict=True
         )
         leaf_row = frappe.db.get_value("Drive Node", leaf, ["path", "state", "trash_root"], as_dict=True)
-        self.assertEqual(moved.parent, destination)
+        self.assertEqual(moved.parent_node, destination)
         self.assertIn(f"/{destination}/{source}/", inner_row.path)
         self.assertEqual(
             (inner_row.state, inner_row.trash_root, inner_row.trashed_at),
@@ -153,20 +219,44 @@ class TestNodeLifecycle(IntegrationTestCase):
         )
         self.assertEqual((leaf_row.state, leaf_row.trash_root), ("Trashed", inner))
 
+    def test_a_move_naming_the_folder_it_expects_is_refused_once_the_node_moved_on(self):
+        # Safe Undo (§8.2): an undo says where it last saw the item. A match
+        # moves it; a later move elsewhere makes the undo a refusal that
+        # writes nothing, so it cannot pull the item out of its new place.
+        source = create_folder(self.admin, self.root.name, "Source")
+        first = create_folder(self.admin, self.root.name, "First")
+        second = create_folder(self.admin, self.root.name, "Second")
+
+        update(self.admin, source, parent_node=first, expect_parent_node=self.root.name)
+        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent_node"), first)
+
+        update(self.admin, source, parent_node=second)
+        before = frappe.db.get_value("Drive Node", source, ["parent_node", "path", "modified"], as_dict=True)
+        with self.assertRaises(DriveMoved) as refused:
+            update(self.admin, source, parent_node=self.root.name, expect_parent_node=first)
+        self.assertIsInstance(refused.exception, DriveConflict)
+        after = frappe.db.get_value("Drive Node", source, ["parent_node", "path", "modified"], as_dict=True)
+        self.assertEqual(after, before)
+
+        # Only a move can state the folder it expects.
+        with self.assertRaises(frappe.ValidationError):
+            update(self.admin, source, state="Trashed", expect_parent_node=second)
+        self.assertEqual(frappe.db.get_value("Drive Node", source, "state"), "Active")
+
     def test_move_refuses_cycle_and_quota_failure_rolls_back_every_write(self):
         source = create_folder(self.admin, self.root.name, "Source")
         child = create_folder(self.admin, source, "Child")
         with self.assertRaises(DriveConflict):
-            update(self.admin, source, parent=child)
-        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent"), self.root.name)
+            update(self.admin, source, parent_node=child)
+        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent_node"), self.root.name)
 
         self._file(source, content=b"12345")
         frappe.db.set_value("Drive Root", self.other_root.name, "quota_bytes", 4)
         source_before = frappe.db.get_value("Drive Root", self.root.name, "used_bytes")
         activities_before = frappe.db.count("Drive Activity", {"node": source, "action": "move"})
         with self.assertRaises(DriveOverQuota):
-            update(self.admin, source, parent=self.other_root.name)
-        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent"), self.root.name)
+            update(self.admin, source, parent_node=self.other_root.name)
+        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent_node"), self.root.name)
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), source_before)
         self.assertEqual(frappe.db.get_value("Drive Root", self.other_root.name, "used_bytes"), 0)
         self.assertEqual(
@@ -177,7 +267,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         renamed = update(self.admin, self.root.name, title="Renamed root")
         self.assertEqual(renamed.title, "Renamed root")
         with self.assertRaises(DriveForbidden):
-            update(self.admin, self.root.name, parent=self.other_root.name)
+            update(self.admin, self.root.name, parent_node=self.other_root.name)
         with self.assertRaises(DriveForbidden):
             update(self.admin, self.root.name, state="Trashed")
         with self.assertRaises(DriveForbidden):
@@ -186,6 +276,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             purge(self.admin, self.root.name)
 
     def test_move_keeps_direct_edit_grant_without_duplicate(self):
+        skip_if_shared_root_exists(self)
         shared = create_root(kind="Shared", title="Shared lifecycle")
         self.root_ids += (shared.name,)
         source = create_folder(self.admin, shared.name, "Source")
@@ -195,7 +286,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         )
         user = Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",))
 
-        update(user, source, parent=destination)
+        update(user, source, parent_node=destination)
 
         self.assertEqual(frappe.db.count("Drive Grant", {"node": source, "principal": USER}), 1)
         self.assertEqual(
@@ -210,7 +301,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         ).insert(ignore_permissions=True)
         user = Principals(USER, (USER,), ("$PUBLIC",))
 
-        update(user, source, parent=destination)
+        update(user, source, parent_node=destination)
 
         self.assertEqual(
             frappe.db.get_value("Drive Grant", {"node": source, "principal": USER}, "role"), EDIT
@@ -230,7 +321,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             frappe.set_user("Administrator")
             try:
                 barrier.wait(timeout=10)
-                update(self.admin, source, parent=destination)
+                update(self.admin, source, parent_node=destination)
                 frappe.db.commit()
             finally:
                 frappe.destroy()
@@ -289,7 +380,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             frappe.set_user("Administrator")
             operation.name = "move"
             try:
-                update(self.admin, source, parent=destination)
+                update(self.admin, source, parent_node=destination)
                 frappe.db.commit()
             finally:
                 frappe.destroy()
@@ -354,7 +445,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             frappe.set_user("Administrator")
             operation.name = "move"
             try:
-                update(self.admin, source, parent=destination)
+                update(self.admin, source, parent_node=destination)
                 frappe.db.commit()
             finally:
                 frappe.destroy()
@@ -384,7 +475,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             child = created.result(timeout=30)
 
         frappe.db.rollback()
-        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent"), destination)
+        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent_node"), destination)
         child_row = frappe.db.get_value("Drive Node", child, ["root", "path"], as_dict=True)
         self.assertEqual(child_row.root, self.other_root.name)
         self.assertIn(f"/{destination_ancestor}/{destination}/", child_row.path)
@@ -406,7 +497,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         ).insert(ignore_permissions=True)
         frappe.db.set_value("Drive Root", self.root.name, "used_bytes", 10)
 
-        update(self.admin, source, parent=self.other_root.name)
+        update(self.admin, source, parent_node=self.other_root.name)
 
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), 0)
         self.assertEqual(frappe.db.get_value("Drive Root", self.other_root.name, "used_bytes"), 10)
@@ -434,7 +525,55 @@ class TestNodeLifecycle(IntegrationTestCase):
         )
         self.assertEqual(frappe.db.get_value("Drive Node", inner_leaf, "state"), "Trashed")
 
+    def test_a_trashed_folder_opens_read_only_on_what_was_trashed_with_it(self):
+        # §5.6: a node trashed with its folder is reached by opening the folder.
+        # A child trashed earlier on its own stays in Trash, not in the folder.
+        from suite.drive.http import routes
+
+        user = Principals(USER, (USER,), ("$PUBLIC",))
+        outer = create_folder(user, self.root.name, "Outer")
+        sub = create_folder(user, outer, "Sub")
+        create_folder(user, sub, "Leaf")
+        earlier = create_folder(user, outer, "Trashed earlier")
+        update(user, earlier, state="Trashed")
+        update(user, outer, state="Trashed")
+
+        def listed(folder):
+            return {row["title"]: row["trash_root"] for row in routes.node_children(node=folder)["rows"]}
+
+        frappe.set_user(USER)
+        self.assertEqual(routes.node_get(node=outer)["trash_root"], outer)
+        self.assertEqual(listed(outer), {"Sub": outer})
+        self.assertEqual(listed(sub), {"Leaf": outer})
+        self.assertEqual(node_workflows.readable_child_counts(user, [outer, sub]), {outer: 1, sub: 1})
+
+        # Only the trash root restores (§8.8). Restoring it brings back what
+        # was trashed with it; the earlier trash keeps its own place in Trash.
+        with self.assertRaises(DriveConflict):
+            update(user, sub, state="Active")
+        update(user, outer, state="Active")
+        self.assertEqual(listed(outer), {"Sub": None})
+        self.assertEqual(listed(sub), {"Leaf": None})
+        self.assertEqual(routes.node_get(node=earlier)["trash_root"], earlier)
+
+    def test_only_a_trash_root_is_deleted_forever(self):
+        # §8.8: purge takes what restore takes. An Active node goes to the
+        # trash first, and a node trashed with its folder goes with the folder.
+        outer = create_folder(self.admin, self.root.name, "Outer")
+        sub = create_folder(self.admin, outer, "Sub")
+        with self.assertRaises(DriveConflict):
+            purge(self.admin, outer)
+
+        update(self.admin, outer, state="Trashed")
+        with self.assertRaises(DriveConflict):
+            purge(self.admin, sub)
+        self.assertTrue(frappe.db.exists("Drive Node", sub))
+
+        self.assertEqual(purge(self.admin, outer), 2)
+        self.assertFalse(frappe.db.exists("Drive Node", sub))
+
     def test_original_trasher_with_direct_edit_restores_in_place_without_parent_upload(self):
+        skip_if_shared_root_exists(self)
         shared = create_root(kind="Shared", title="Shared lifecycle")
         self.root_ids += (shared.name,)
         child = create_folder(self.admin, shared.name, "Child")
@@ -448,7 +587,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         update(user, child, state="Trashed")
         restored = update(user, child, state="Active")
 
-        self.assertEqual((restored.parent, restored.state), (shared.name, "Active"))
+        self.assertEqual((restored.parent_node, restored.state), (shared.name, "Active"))
         self.assertEqual(
             frappe.db.count("Drive Activity", {"node": child, "action": "restore", "actor": USER}), 1
         )
@@ -465,27 +604,29 @@ class TestNodeLifecycle(IntegrationTestCase):
         before = frappe.db.get_value(
             "Drive Node",
             child,
-            ["parent", "path", "title", "state", "trash_root", "trashed_at"],
+            ["parent_node", "path", "title", "state", "trash_root", "trashed_at"],
             as_dict=True,
         )
         activity_count = frappe.db.count("Drive Activity", {"node": child})
 
-        with self.assertRaises(DriveConflict):
+        with self.assertRaises(DriveRestoreDestinationRequired):
             update(self.admin, child, state="Active")
+        self.assertTrue(issubclass(DriveRestoreDestinationRequired, DriveConflict))
+        self.assertEqual(DriveRestoreDestinationRequired.http_status_code, 409)
         self.assertEqual(
             frappe.db.get_value(
                 "Drive Node",
                 child,
-                ["parent", "path", "title", "state", "trash_root", "trashed_at"],
+                ["parent_node", "path", "title", "state", "trash_root", "trashed_at"],
                 as_dict=True,
             ),
             before,
         )
         self.assertEqual(frappe.db.count("Drive Activity", {"node": child}), activity_count)
 
-        restored = update(self.admin, child, parent=destination, state="Active")
+        restored = update(self.admin, child, parent_node=destination, state="Active")
         self.assertEqual(
-            (restored.parent, restored.title, restored.state), (destination, "Report (3).txt", "Active")
+            (restored.parent_node, restored.title, restored.state), (destination, "Report (3).txt", "Active")
         )
         self.assertIn(f"/{destination}/{child}/", frappe.db.get_value("Drive Node", descendant, "path"))
         self.assertEqual(frappe.db.get_value("Drive Node", parent, "state"), "Trashed")
@@ -495,16 +636,17 @@ class TestNodeLifecycle(IntegrationTestCase):
         child = create_folder(self.admin, parent, "Child")
         update(self.admin, child, state="Trashed")
         update(self.admin, parent, state="Trashed")
-        snapshot = frappe.db.get_value("Drive Node", child, ["parent", "path", "state"], as_dict=True)
+        snapshot = frappe.db.get_value("Drive Node", child, ["parent_node", "path", "state"], as_dict=True)
         with self.assertRaises(DriveConflict):
-            update(self.admin, child, parent=self.other_root.name, state="Active")
+            update(self.admin, child, parent_node=self.other_root.name, state="Active")
         with self.assertRaises(DriveForbidden):
-            update(self.admin, child, parent=self.root.name)
+            update(self.admin, child, parent_node=self.root.name)
         self.assertEqual(
-            frappe.db.get_value("Drive Node", child, ["parent", "path", "state"], as_dict=True), snapshot
+            frappe.db.get_value("Drive Node", child, ["parent_node", "path", "state"], as_dict=True), snapshot
         )
 
     def test_restore_by_another_edit_actor_requires_manage(self):
+        skip_if_shared_root_exists(self)
         shared = create_root(kind="Shared", title="Shared lifecycle")
         self.root_ids += (shared.name,)
         child = create_folder(self.admin, shared.name, "Child")
@@ -520,6 +662,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Drive Node", child, "state"), "Trashed")
 
     def test_copy_skips_denied_subtree_and_copies_no_source_grants_or_versions(self):
+        skip_if_shared_root_exists(self)
         shared = create_root(kind="Shared", title="Shared lifecycle")
         self.root_ids += (shared.name,)
         source = create_folder(self.admin, shared.name, "Source")
@@ -558,10 +701,10 @@ class TestNodeLifecycle(IntegrationTestCase):
         frappe.db.set_value("Drive Root", self.other_root.name, "quota_bytes", 5)
         copied = copy(self.admin, source, self.other_root.name)
         copied_file = frappe.db.get_value(
-            "Drive Node", {"parent": copied, "title": "data.bin"}, ["blob", "owner"], as_dict=True
+            "Drive Node", {"parent_node": copied, "title": "data.bin"}, ["blob", "owner"], as_dict=True
         )
         copied_link = frappe.db.get_value(
-            "Drive Node", {"parent": copied, "title": "Link"}, ["url", "owner"], as_dict=True
+            "Drive Node", {"parent_node": copied, "title": "Link"}, ["url", "owner"], as_dict=True
         )
         self.assertEqual((copied_file.blob, copied_file.owner), (source_blob, "Administrator"))
         self.assertEqual((copied_link.url, copied_link.owner), ("https://example.test", "Administrator"))
@@ -578,9 +721,9 @@ class TestNodeLifecycle(IntegrationTestCase):
         with self.assertRaises(DriveConflict):
             copy(self.admin, source, self.root.name)
         with self.assertRaises(DriveConflict):
-            update(self.admin, media, parent=self.root.name)
+            update(self.admin, media, parent_node=self.root.name)
         with self.assertRaises(DriveConflict):
-            update(self.admin, ordinary, parent=hidden_folder)
+            update(self.admin, ordinary, parent_node=hidden_folder)
         self.assertEqual(frappe.db.count("Drive Node", {"root": self.root.name}), before_nodes)
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), before_usage)
 
@@ -601,6 +744,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
         frappe.db.set_value("Drive Root", self.root.name, "used_bytes", size * 2)
+        update(self.admin, folder, state="Trashed")
         self.assertEqual(purge(self.admin, folder), 2)
         self.assertFalse(frappe.db.exists("Drive Node", folder))
         self.assertFalse(frappe.db.exists("Drive Node", file_node))
@@ -608,6 +752,48 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), 0)
         self.assertTrue(frappe.db.exists("File Blob", blob))
         self.assertEqual(size, len(b"charged"))
+
+    def test_empty_trash_purges_every_trashed_tree_in_one_root_only(self):
+        # Two trashings at two different times, one nested inside the other,
+        # and a loose file: every trashed row in the root goes, and nothing
+        # Active and nothing in another root moves.
+        outer = create_folder(self.admin, self.root.name, "Outer")
+        inner = create_folder(self.admin, outer, "Inner")
+        inner_file = self._file(inner, "inner.bin", b"inner bytes")
+        loose = self._file(self.root.name, "loose.bin", b"loose")
+        kept = self._file(self.root.name, "kept.bin", b"kept bytes")
+        elsewhere = create_folder(self.admin, self.other_root.name, "Elsewhere")
+        update(self.admin, inner, state="Trashed")
+        frappe.db.set_value("Drive Node", inner, "trashed_at", "2026-01-01 00:00:00", update_modified=False)
+        frappe.db.set_value(
+            "Drive Node", inner_file, "trashed_at", "2026-01-01 00:00:00", update_modified=False
+        )
+        update(self.admin, outer, state="Trashed")
+        update(self.admin, loose, state="Trashed")
+        update(self.admin, elsewhere, state="Trashed")
+        owner = Principals(USER, (USER,), ("$PUBLIC",))
+
+        self.assertEqual(empty_trash(owner, self.root.name), 4)
+
+        for gone in (outer, inner, inner_file, loose):
+            self.assertFalse(frappe.db.exists("Drive Node", gone))
+        self.assertEqual(frappe.db.get_value("Drive Node", kept, "state"), "Active")
+        self.assertEqual(frappe.db.get_value("Drive Node", elsewhere, "state"), "Trashed")
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), len(b"kept bytes"))
+        self.assertEqual(empty_trash(owner, self.root.name), 0)
+
+    def test_empty_trash_needs_manage_on_the_root(self):
+        doomed = create_folder(self.admin, self.root.name, "Doomed")
+        update(self.admin, doomed, state="Trashed")
+        stranger = Principals(OTHER, (OTHER,), ("$PUBLIC",))
+        with self.assertRaises(DriveNotFound):
+            empty_trash(stranger, self.root.name)
+        grant(self.root.name, OTHER, EDIT, self.admin)
+        with self.assertRaises(DriveForbidden):
+            empty_trash(stranger, self.root.name)
+        with self.assertRaises(DriveConflict):
+            empty_trash(self.admin, doomed)
+        self.assertEqual(frappe.db.get_value("Drive Node", doomed, "state"), "Trashed")
 
     def test_malformed_subtree_and_callback_failure_roll_back_without_drift(self):
         folder = create_folder(self.admin, self.root.name, "Malformed")
@@ -620,6 +806,7 @@ class TestNodeLifecycle(IntegrationTestCase):
 
         frappe.db.set_value("Drive Node", child, "path", f"/{folder}/", update_modified=False)
         document = self._raw_document(folder)
+        update(self.admin, folder, state="Trashed")
         before_nodes = frappe.db.count("Drive Node", {"root": self.root.name})
         before_activity = frappe.db.count("Drive Activity", {"node": folder})
 
@@ -643,7 +830,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": "Missing bytes",
-                "parent": self.root.name,
+                "parent_node": self.root.name,
                 "root": self.root.name,
                 "path": "",
                 "kind": "file",
@@ -657,7 +844,7 @@ class TestNodeLifecycle(IntegrationTestCase):
                 {
                     "doctype": "Drive Node",
                     "title": "Partial bytes",
-                    "parent": self.root.name,
+                    "parent_node": self.root.name,
                     "root": self.root.name,
                     "path": "",
                     "kind": "file",
@@ -670,7 +857,7 @@ class TestNodeLifecycle(IntegrationTestCase):
                 {
                     "doctype": "Drive Node",
                     "title": "Bad template",
-                    "parent": self.root.name,
+                    "parent_node": self.root.name,
                     "root": self.root.name,
                     "path": "",
                     "kind": "folder",
@@ -683,7 +870,7 @@ class TestNodeLifecycle(IntegrationTestCase):
                 {
                     "doctype": "Drive Node",
                     "title": "Bad trash",
-                    "parent": self.root.name,
+                    "parent_node": self.root.name,
                     "root": self.root.name,
                     "path": "",
                     "kind": "folder",
@@ -700,7 +887,7 @@ class TestNodeLifecycle(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": "Document",
-                "parent": parent,
+                "parent_node": parent,
                 "root": root,
                 "path": path,
                 "kind": "document",
@@ -719,7 +906,7 @@ class TestNodeLifecycle(IntegrationTestCase):
                 {
                     "doctype": "Drive Node",
                     "title": title,
-                    "parent": parent,
+                    "parent_node": parent,
                     "root": parent_row.root,
                     "path": f"{parent_row.path or '/'}{parent_row.name}/",
                     "kind": "folder",
@@ -748,14 +935,17 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(effective_role(_row(plain), other), READ)
         self.assertEqual(effective_role(_row(denied), other), 0)
 
-    def test_child_counts_answer_every_named_folder_and_ignore_the_trash(self):
+    def test_child_counts_answer_every_named_folder_and_ignore_the_trash_and_templates(self):
+        # A folder counts what `children` lists, which leaves out templates.
         other = Principals(OTHER, (OTHER,), ())
         left = create_folder(self.admin, self.root.name, "Left")
         right = create_folder(self.admin, self.root.name, "Right")
         create_folder(self.admin, left, "Kept")
         trashed = create_folder(self.admin, left, "Trashed")
+        template = create_folder(self.admin, right, "Template")
         create_folder(self.admin, right, "Only")
         frappe.db.set_value("Drive Node", trashed, "state", "Trashed")
+        frappe.db.set_value("Drive Node", template, "is_template", 1)
         grant(left, OTHER, READ, self.admin)
         grant(right, OTHER, READ, self.admin)
 
@@ -783,23 +973,29 @@ class TestLifecyclePolicy(UnitTestCase):
         table_exists.assert_not_called()
         get_meta.assert_not_called()
 
-    def test_create_parent_locks_source_to_descendant_then_refreshes(self):
+    def test_create_parent_locks_the_tree_then_source_to_descendant_then_refreshes(self):
         snapshot = frappe._dict(name="descendant", root="root", path="/source/", kind="folder")
         refreshed = frappe._dict(name="descendant", root="root", path="/source/", kind="folder")
-        with patch(
-            "suite.drive._core.nodes._node",
-            side_effect=[snapshot, frappe._dict(), frappe._dict(), frappe._dict(), refreshed],
-        ) as node:
+        order = Mock()
+        with (
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=[snapshot, frappe._dict(), frappe._dict(), refreshed],
+            ) as node,
+            patch("suite.drive._core.nodes.lock_trees") as lock_trees,
+        ):
+            order.attach_mock(node, "node")
+            order.attach_mock(lock_trees, "lock_trees")
             self.assertIs(node_workflows._lock_create_parent("descendant"), refreshed)
 
         self.assertEqual(
-            node.call_args_list,
+            order.mock_calls,
             [
-                call("descendant"),
-                call("source", for_update=True),
-                call("descendant", for_update=True),
-                call("root", for_update=True),
-                call("descendant", for_update=True),
+                call.node("descendant"),
+                call.lock_trees("root"),
+                call.node("source", for_update=True),
+                call.node("descendant", for_update=True),
+                call.node("descendant", for_update=True),
             ],
         )
 
@@ -811,8 +1007,9 @@ class TestLifecyclePolicy(UnitTestCase):
         with (
             patch(
                 "suite.drive._core.nodes._node",
-                side_effect=[snapshot, frappe._dict(), frappe._dict(), frappe._dict(), refreshed],
+                side_effect=[snapshot, frappe._dict(), frappe._dict(), refreshed],
             ),
+            patch("suite.drive._core.nodes.lock_trees"),
             self.assertRaises(DriveConflict),
         ):
             node_workflows._lock_create_parent("descendant")
@@ -824,6 +1021,7 @@ class TestLifecyclePolicy(UnitTestCase):
                 "suite.drive._core.nodes._node",
                 side_effect=[snapshot, DriveNotFound("Drive node gone was not found")],
             ),
+            patch("suite.drive._core.nodes.lock_trees"),
             self.assertRaises(DriveConflict),
         ):
             node_workflows._lock_create_parent("descendant")
@@ -839,7 +1037,7 @@ class TestLifecyclePolicy(UnitTestCase):
             node_workflows._lock_create_parent("ghost")
 
     def test_stored_position_refuses_a_parent_row_that_no_longer_exists(self):
-        orphan = frappe._dict(name="orphan", root="root", path="", parent="ghost", kind="folder")
+        orphan = frappe._dict(name="orphan", root="root", path="", parent_node="ghost", kind="folder")
         with (
             patch(
                 "suite.drive._core.nodes._node",
@@ -851,7 +1049,7 @@ class TestLifecyclePolicy(UnitTestCase):
         self.assertIsInstance(refused.exception.__cause__, DriveNotFound)
 
     def test_purge_root_refuses_a_parent_row_that_no_longer_exists(self):
-        orphan = frappe._dict(name="orphan", root="root", path="", parent="ghost", kind="folder")
+        orphan = frappe._dict(name="orphan", root="root", path="", parent_node="ghost", kind="folder")
         with (
             patch("suite.drive._core.nodes.root_for_node"),
             patch(
@@ -917,7 +1115,7 @@ class TestLifecyclePolicy(UnitTestCase):
         principals = Principals(USER, (USER,), ())
         workflows = {
             "trash": lambda: node_workflows._trash(principals, "node"),
-            "restore": lambda: node_workflows._restore(principals, "node", parent=None),
+            "restore": lambda: node_workflows._restore(principals, "node", parent_node=None),
             "purge": lambda: node_workflows.purge(principals, "node"),
             "expired purge": lambda: node_workflows.purge_expired_trash_root("node", now_datetime()),
             "rename": lambda: node_workflows._rename(principals, "node", "title"),
@@ -984,7 +1182,7 @@ class TestLifecyclePolicy(UnitTestCase):
         current = frappe._dict(name="rooted", root="root", kind="folder", path="")
         subtree = [
             current,
-            frappe._dict(name="doc", parent="rooted", root="root", kind="document", path="/rooted/"),
+            frappe._dict(name="doc", parent_node="rooted", root="root", kind="document", path="/rooted/"),
         ]
 
         def callback(name):

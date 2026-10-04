@@ -6,13 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "node",
-  "title",
   "sheets_data",
-  "head_seq",
-  "head_snapshot",
-  "trashed",
-  "trashed_on",
-  "trashed_by"
+  "head_seq"
  ],
  "fields": [
   {
@@ -25,58 +20,22 @@
    "search_index": 1
   },
   {
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Title",
-   "description": "Legacy title. Drive owns a linked sheet's title on its node. Frozen once the declaration is registered; §14.10 drops this column at Cleanup."
-  },
-  {
    "fieldname": "sheets_data",
    "fieldtype": "JSON",
    "label": "Sheets Data"
   },
   {
    "fieldname": "head_seq",
-   "fieldtype": "Long Int",
+   "fieldtype": "Int",
+   "length": 20,
    "label": "Head op-log seq",
    "default": "0",
    "description": "Highest op-log seq applied to the live sheets_data blob."
-  },
-  {
-   "fieldname": "head_snapshot",
-   "fieldtype": "Link",
-   "options": "Sheet Snapshot",
-   "label": "Latest snapshot",
-   "description": "Legacy head pointer. \u00a710.7 retargets it to a Drive Node Version, but only \u00a714.10 may do it: an unlinked sheet keeps writing Sheet Snapshot names here until Cleanup drops that doctype, and Frappe validates the link on every Sheet.save()."
-  },
-  {
-   "fieldname": "trashed",
-   "fieldtype": "Check",
-   "label": "Trashed",
-   "default": "0",
-   "in_standard_filter": 1,
-   "description": "Soft-delete flag. Trashed sheets are hidden from the app and purged after the retention window."
-  },
-  {
-   "fieldname": "trashed_on",
-   "fieldtype": "Datetime",
-   "label": "Trashed On",
-   "read_only": 1,
-   "depends_on": "trashed"
-  },
-  {
-   "fieldname": "trashed_by",
-   "fieldtype": "Link",
-   "options": "User",
-   "label": "Trashed By",
-   "read_only": 1,
-   "depends_on": "trashed"
   }
  ],
  "links": [],
- "modified": "2026-05-19 14:39:41.599820",
- "modified_by": "asif@frappe.io",
+ "modified": "2026-10-03 12:00:00.000000",
+ "modified_by": "Administrator",
  "module": "Sheets",
  "name": "Sheet",
  "naming_rule": "Random",
@@ -116,6 +75,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title",
  "track_changes": 0
 }

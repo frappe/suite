@@ -1,10 +1,22 @@
 # Copyright (c) 2022, Frappe Technologies Pvt. Ltd. and Contributors
 # MIT License. See license.txt
 
+"""Users and groups for the Playwright suites, named by a run id so one run
+can clean up after itself and never touch another's data.
+
+A user's Drive data is their Personal root pair and everything in it. Inserting
+the `User` provisions the root, and removing the user archives and purges it
+through the same workflows an admin uses, so a content document created in a
+test goes with its node.
+"""
+
 import re
 
 import frappe
 from frappe.tests.utils import whitelist_for_tests
+
+from suite.drive._core.roots import archive_personal_root, personal_root_for, purge_root
+from suite.drive.framework import principals_for
 
 DEFAULT_PASSWORD = "DriveWriterE2E!2026"
 USER_COUNT = 2
@@ -37,91 +49,19 @@ def _existing_user_emails(run_id: str) -> list[str]:
 
 
 def _user_result(email: str, password: str | None = None) -> dict:
-    result = {
-        "email": email,
-        "user": email,
-        "drive_settings": frappe.db.get_value("Drive Settings", {"user": email}, "name"),
-        "user_folder": frappe.db.get_value("Drive Settings", email, "user_folder"),
-    }
+    result = {"email": email, "user": email, "personal_root": personal_root_for(email)}
     if password is not None:
         result["password"] = password
     return result
 
 
-def _user_files(email: str) -> list[str]:
-    """The user's folder and everything under it, plus anything they own."""
-    folder = frappe.db.get_value("Drive Settings", email, "user_folder")
-    names = frappe.get_all("File", filters={"owner": email}, pluck="name")
-    if folder:
-        names.append(folder)
-        frontier = [folder]
-        while frontier:
-            children = frappe.get_all("File", filters={"folder": ["in", frontier]}, pluck="name")
-            frontier = [c for c in children if c not in names]
-            names.extend(frontier)
-    return list(dict.fromkeys(names))
-
-
-def _delete_user_drive_data(email: str) -> None:
-    files = _user_files(email)
-
-    if files:
-        writer_documents = frappe.get_all(
-            "File",
-            filters={"name": ["in", files], "content_doctype": "Writer Document"},
-            pluck="content_docname",
-        )
-        for document in set(filter(None, writer_documents)):
-            frappe.db.delete("Writer Version", {"doc": document})
-            frappe.db.delete("Writer Document", {"name": document})
-
-        sheets = frappe.get_all(
-            "File",
-            filters={"name": ["in", files], "content_doctype": "Sheet"},
-            pluck="content_docname",
-        )
-        for sheet in set(filter(None, sheets)):
-            # Sheet Op Log and Sheet Snapshot both carry a User link (actor) that
-            # blocks the User delete below.
-            frappe.db.delete("Sheet Op Log", {"sheet": sheet})
-            frappe.db.delete("Sheet Snapshot", {"sheet": sheet})
-            frappe.db.delete("Sheet", {"name": sheet})
-
-        presentations = frappe.get_all(
-            "File",
-            filters={"name": ["in", files], "content_doctype": "Presentation"},
-            pluck="content_docname",
-        )
-        for presentation in set(filter(None, presentations)):
-            frappe.db.delete("Presentation", {"name": presentation})
-
-        for doctype, field in (
-            ("Drive Permission", "entity"),
-            ("Drive Favourite", "entity"),
-            ("Drive Recent", "node"),
-            ("Drive Entity Activity Log", "entity"),
-            ("Drive Token", "file"),
-        ):
-            frappe.db.delete(doctype, {field: ["in", files]})
-
-    frappe.db.delete("Drive Permission", {"user": email})
-    frappe.db.delete("Drive Favourite", {"user": email})
-    frappe.db.delete("Drive Recent", {"user": email})
-    frappe.db.delete("Drive Token", {"user": email})
-    frappe.db.delete("Drive Notification", {"from_user": email})
-    frappe.db.delete("Drive Notification", {"to_user": email})
-    frappe.db.delete("Drive User Invitation", {"email": email})
-
-    if files:
-        frappe.db.delete("File", {"name": ["in", files]})
-
-    frappe.db.delete("Drive Settings", {"user": email})
-
-
-def _create_user_drive_data(email: str) -> None:
-    from suite.drive.utils import get_user_folder
-
-    get_user_folder(email)
+def _purge_user_drive_data(email: str) -> None:
+    """Archive and purge the user's Personal root, with every node in it."""
+    root = personal_root_for(email)
+    if not root:
+        return
+    archive_personal_root(email)
+    purge_root(root, principals_for("Administrator"))
 
 
 @whitelist_for_tests(methods=["POST"])
@@ -146,11 +86,9 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD, user_count: i
                 "new_password": password,
             }
         )
-        user.flags.skip_drive_setup = True
         user.insert(ignore_permissions=True)
         user.reload()
         user.add_roles("Suite User")
-        _create_user_drive_data(email)
 
     return {"run_id": run_id, "users": [_user_result(email, password) for email in emails]}
 
@@ -167,31 +105,26 @@ def create_user_group(run_id: str, name: str, members: str) -> dict:
     for email in emails:
         doc.append("user_group_members", {"user": email})
     doc.insert(ignore_permissions=True)
-
-    from suite.drive.utils import clear_user_group_cache
-
-    clear_user_group_cache()
     frappe.db.commit()
     return {"name": group, "member_count": len(emails)}
 
 
 @whitelist_for_tests(methods=["POST"])
 def cleanup_users(run_id: str) -> dict:
-    """Delete only users and personal Drive/Writer data named by this run ID."""
+    """Delete only the users, groups and Drive data named by this run id."""
     emails = _existing_user_emails(run_id)
     deleted = []
 
     for group in frappe.get_all(
         "User Group", filters={"name": ["like", f"{_validate_run_id(run_id)}-%"]}, pluck="name"
     ):
-        frappe.db.delete("Drive Permission", {"user": f"$GROUP:{group}"})
+        frappe.db.delete("Drive Grant", {"principal": f"$GROUP:{group}"})
         frappe.delete_doc("User Group", group, ignore_permissions=True, force=True)
 
     for email in emails:
         if not frappe.db.exists("User", email):
             continue
-
-        _delete_user_drive_data(email)
+        _purge_user_drive_data(email)
         frappe.delete_doc("User", email, ignore_permissions=True)
         deleted.append(email)
 

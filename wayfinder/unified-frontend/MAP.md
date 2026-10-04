@@ -143,7 +143,10 @@ Scope, decided 2026-09-11:
   the rollback plan: bugs are fixed forward. The rail lists an area only when its flip is
   on. Between the flips a temporary Apps submenu in the avatar menu lists
   the old Drive, Writer, Sheets and Slides pages (Faris moved it from the
-  rail on 2026-09-29).
+  rail on 2026-09-29). On 2026-10-03 Faris ruled that rollback is a full
+  backup restore: both flip keys, the standalone chrome and the legacy Drive
+  UI are deleted, the rail lists every area, and Mail, Calendar and Meet
+  render inside the shell on every route.
 
 - [Draft the spec and plan](tickets/015-draft-the-spec-and-plan.md) —
   Both documents are drafted and audited against every resolution: the
@@ -224,7 +227,8 @@ Scope, decided 2026-09-11:
   control is built from the reserved room and scheduled-meeting routes. The
   bell is a Drive-only popover with mark-on-click plus Mark all read;
   composition owns the Mail rail badge so AreaDefinition stays frozen.
-  Sections never hide and fail inline. The command palette is out of scope.
+  Sections never hide and fail inline. The shell ships upstream's Cmd+K
+  palette; search across products is out of scope.
 
 - [Files area: listing, navigation and roots](tickets/006-files-area-listing-and-navigation.md) —
   My files and Organization files are direct panel locations; Shared with me,
@@ -296,8 +300,8 @@ Scope, decided 2026-09-11:
 - Mobile behaviour per area beyond the shell chrome.
 - Recordings and past meetings in the Meet area. Neither has a route or a
   list endpoint today. A Meet-program ask before the area can show them.
-- Keyboard shortcuts across areas (Cmd+number, Escape). Cmd+K is not among
-  them: ticket 012 ruled the palette out of scope.
+- Keyboard shortcuts across areas (Cmd+number, Escape). Cmd+K already opens
+  the shell's palette (ticket 012).
 - Where the quota and storage breakdown surface lives: settings, the Files
   panel, or both. Ticket 007 shows quota only when an upload fails.
 - Named Meet rooms: persistent rooms with a handle and a cadence, as the base
@@ -316,11 +320,11 @@ Scope, decided 2026-09-11:
 
 ## Out of scope
 
-- Command palette and global search across products. Ruled out under
+- Global search across products. Ruled out under
   [Home, palette and notifications at launch](tickets/012-home-palette-and-notifications-at-launch.md):
-  the unified frontend ships with no Cmd+K and no rail Search button. A
-  palette is only worth building over a search that spans products, and that
-  search is a separate effort.
+  the unified shell ships upstream's Cmd+K palette, which searches only the
+  current area, and no rail Search button. Search that spans products is a
+  separate effort.
 - Rebuilding Mail, Meet or Calendar pages. They adopt the shell. Their
   internals are later efforts.
 - REST migration of Mail, Meet, Calendar, Writer, Sheets and Slides

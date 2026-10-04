@@ -6,11 +6,35 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
+from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_event_notification_service
+from suite.mail.jmap import (
+    SuiteJMAPClient,
+    chunked_get,
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+)
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
+from suite.utils.validation import JSONList
+
+# ``CalendarEventNotification/get`` must always name the properties it wants: Stalwart returns a
+# reduced default property set when a ``get`` omits ``properties``, which silently drops
+# ``event``/``eventPatch`` from every notification.
+EVENT_NOTIFICATION_PROPERTIES = [
+    "id",
+    "created",
+    "changedBy",
+    "comment",
+    "type",
+    "calendarEventId",
+    "isDraft",
+    "event",
+    "eventPatch",
+]
 
 
 class EventNotification(Document):
@@ -74,7 +98,10 @@ class EventNotification(Document):
         filter = {}
         limit = cint(kwargs.get("start")) + page_length
         notifications, total = fetch_event_notifications(account, filter, limit=limit)
-        frappe.cache.set_value(_get_total_cache_key(account), total, expires_in_sec=600)
+        if total is not None:
+            # A query the server refuses says nothing of how many notifications there are, so the
+            # cached total is left as the last listing set it.
+            frappe.cache.set_value(_get_total_cache_key(account), total, expires_in_sec=600)
 
         if not notifications:
             frappe.msgprint(_("No event notifications found."), alert=True)
@@ -104,11 +131,8 @@ def _get_total_cache_key(account: str) -> str:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple event notifications given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
@@ -128,15 +152,16 @@ def fetch_event_notifications(
     position: int = 0,
     limit: int = 50,
     sort: list[dict] | None = None,
-) -> tuple[list[dict], int]:
-    """Returns a list of event notifications and total count based on the provided filter."""
+) -> tuple[list[dict], int | None]:
+    """Returns a list of event notifications and total count based on the provided filter. The
+    total is None when the server refused the query: not known, rather than zero."""
 
     notifications = []
-    service = get_calendar_event_notification_service(account)
-    data = service.query(filter, position, limit, sort)
+    client = get_account_client(account)
+    data = _query_notifications(client, filter, position, limit, sort)
 
     ids = data.get("ids", [])
-    total = data.get("total", 0)
+    total = data.get("total")
 
     notifications.extend(get_event_notifications(account, ids))
 
@@ -147,10 +172,16 @@ def fetch_event_notifications(
 def get_event_notifications(account: str, ids: list[str]) -> list[dict]:
     """Returns a list of event notifications for the specified account and IDs."""
 
-    service = get_calendar_event_notification_service(account)
+    client = get_account_client(account)
+
+    try:
+        fetched = fetch_notifications(client, ids)
+    except MethodError:
+        # A read the server refuses finds nothing, rather than failing the page that asked.
+        fetched = []
 
     notifications = {}
-    for notification in service.get(ids):
+    for notification in fetched:
         notification = format_event_notification(account, notification)
         notifications[notification["id"]] = notification
 
@@ -161,17 +192,97 @@ def get_event_notifications(account: str, ids: list[str]) -> list[dict]:
 def delete_event_notifications(account: str, ids: list[str]) -> None:
     """Deletes event notifications for the specified account and ID(s)."""
 
-    service = get_calendar_event_notification_service(account)
-    response = service.delete(ids)
-
-    if response.get("notDestroyed"):
-        error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
-        frappe.throw(
-            _("Event Notification Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Event Notification Deletion Error"),
+    client = get_account_client(account)
+    title = _("Event Notification Deletion Error")
+    try:
+        result = chunked_set(
+            client, lambda b, chunk: b.calendars.calendar_event_notification.set(destroy=chunk), ids
         )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if result.not_destroyed:
+        error_messages = []
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
+        frappe.throw(
+            _("Event Notification Deletion Error(s):<br>{0}").format("<br>".join(error_messages)), title=title
+        )
+
+
+def fetch_notifications(
+    client: SuiteJMAPClient, ids: list[str] | None = None, properties: list[str] | None = None
+) -> list[dict]:
+    """Fetches raw notification objects, always naming the properties (``[]`` means "no
+    preference", not "no properties" — an empty set would fetch nothing usable). Large id
+    lists are chunked, the properties carried on every chunk, and concatenated like the old
+    client — a concurrent change must not abort the read."""
+
+    properties = properties or EVENT_NOTIFICATION_PROPERTIES
+
+    if ids is None:
+        with client.batch() as b:
+            h = b.calendars.calendar_event_notification.get(properties=properties)
+        notifications = h.result.items
+    elif not ids:
+        # A query that matched nothing asks for nothing: `ids: []` is not "every notification".
+        notifications = []
+    else:
+        notifications = chunked_get(
+            client,
+            lambda b, chunk: b.calendars.calendar_event_notification.get(ids=chunk, properties=properties),
+            ids,
+        )
+
+    return [n.to_wire() for n in notifications]
+
+
+def _query_notifications(
+    client: SuiteJMAPClient,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    sort: list[dict] | None = None,
+) -> dict:
+    """Queries notification ids with the old service's pagination loop; returns {"ids", "total"}."""
+
+    ids = []
+    total = None
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+    sort = sort or [{"property": "created", "isAscending": True}]
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+
+        # An explicit ``filter=None`` serializes as ``"filter": null``, which Stalwart
+        # rejects with ``notRequest`` — omit the argument instead (UNSET), like the old
+        # transport did for every None argument.
+        filter_kwargs = {"filter": filter} if filter is not None else {}
+        with client.batch() as b:
+            h = b.calendars.calendar_event_notification.query(
+                position=position,
+                limit=current_batch_size,
+                sort=sort,
+                calculate_total=total is None,
+                **filter_kwargs,
+            )
+        if h.error:
+            # A refused page ends the listing with what the pages before it found, as an
+            # empty one would.
+            break
+        response = h.result
+
+        ids.extend(response.ids)
+
+        if total is None:
+            total = response.total
+
+        if len(response.ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(response.ids)
+
+    return {"ids": ids[:limit], "total": total}
 
 
 def format_event_notification(account: str, notification: dict) -> dict:

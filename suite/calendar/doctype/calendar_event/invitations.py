@@ -12,6 +12,7 @@ API after the event is written to JMAP.
 """
 
 import re
+from copy import deepcopy
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -22,7 +23,8 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, get_datetime, get_system_timezone, strip_html_tags
 
-from suite.calendar.doctype.calendar_event.ics import build_event_ics
+from suite.calendar import jmap_events
+from suite.calendar.doctype.calendar_event.ics import _apply_override, build_event_ics
 from suite.calendar.doctype.calendar_event.invite_templates import (
     DEFAULT_SUBJECTS,
     DEFAULT_TEMPLATES,
@@ -34,7 +36,7 @@ from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
 )
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_event_service, get_participant_identities
+from suite.mail.jmap import get_account_client, get_participant_identities
 from suite.utils import log_error
 from suite.utils.dt import get_utc_now
 
@@ -104,7 +106,8 @@ def notify_participants(
     enables new -> invite / kept -> update / gone -> cancel; omit it to send a plain update to
     everyone. A cancellation to someone gone from the event is addressed from their previous
     record, so a member who left a mailing list still sees the list in the To header.
-    `recurrence_id` scopes a cancellation to a single occurrence of a recurring event.
+    `recurrence_id` scopes the mail to a single occurrence of a recurring event — the date it
+    names, and everything else it says, is that occurrence's rather than the series'.
 
     Note: the snapshot arg is named `event_snapshot`, not `event` — `event` is a reserved
     kwarg of `frappe.enqueue` and would be swallowed before reaching this function.
@@ -112,7 +115,7 @@ def notify_participants(
 
     event = event_snapshot
     if event is None:
-        events = get_calendar_event_service(account).get([event_id])
+        events = jmap_events.get_events(get_account_client(account), [event_id])
         if not events:
             return
         event = events[0]
@@ -124,7 +127,7 @@ def notify_participants(
         return
 
     user = get_user_for_jmap_account(account, raise_exception=True)
-    expires_at = _rsvp_expiry(event)
+    expires_at = _rsvp_expiry(_occurrence_view(event, recurrence_id))
 
     for email, kind in plan.items():
         participant = attendees.get(email) or (previous_attendees or {}).get(email)
@@ -159,7 +162,7 @@ def notify_organizer_of_response(account: str, event_id: str, participant_email:
     original_user = frappe.session.user
     frappe.set_user(owner)
     try:
-        events = get_calendar_event_service(account).get([event_id])
+        events = jmap_events.get_events(get_account_client(account), [event_id])
         if not events:
             return
         event = events[0]
@@ -209,7 +212,7 @@ def notify_organizer_of_reply(
         return
 
     try:
-        events = get_calendar_event_service(account).get([event_id])
+        events = jmap_events.get_events(get_account_client(account), [event_id])
         if not events:
             return
         event = events[0]
@@ -223,7 +226,7 @@ def notify_organizer_of_reply(
         user = get_user_for_jmap_account(account, raise_exception=True)
         responder_name = _organizer_name(account, event, responder_email)
         subject, html = _render_response(
-            event,
+            _occurrence_view(event, recurrence_id),
             organizer,
             _organizer_name(account, event, organizer),
             responder_email,
@@ -244,7 +247,7 @@ def notify_organizer_of_reply(
             account=account,
             from_name=responder_name,
             from_email=responder_email,
-            recipients=[{"name": None, "email": organizer, "type": "To"}],
+            recipients=[{"display_name": None, "email": organizer, "type": "To"}],
             raw_message=message,
             via_api=True,
             delivery_mode="Enqueue",
@@ -304,7 +307,10 @@ def _send(
         links = build_rsvp_links(account, event["id"], participant["uid"], email, expires_at)
 
     from_name = _organizer_name(account, event, organizer)
-    subject, html = _render(kind, event, organizer, from_name, participant, links)
+    # The .ics above speaks for the series (or for the occurrence, where one is named); the body
+    # has no such machinery, so it is rendered from the occurrence's own view of the event.
+    occurrence = _occurrence_view(event, recurrence_id)
+    subject, html = _render(kind, occurrence, organizer, from_name, participant, links)
     # The header may name the mailing list a member came through; the envelope stays theirs.
     to_header = participant["to"] if participant else email
     message = _build_mime(from_name, organizer, to_header, subject, html, ics, method)
@@ -314,7 +320,7 @@ def _send(
         account=account,
         from_name=from_name,
         from_email=organizer,
-        recipients=[{"name": (participant or {}).get("name"), "email": email, "type": "To"}],
+        recipients=[{"display_name": (participant or {}).get("name"), "email": email, "type": "To"}],
         raw_message=message,
         via_api=True,
         delivery_mode="Enqueue",
@@ -358,6 +364,27 @@ def _render_response(
     subject = frappe.render_template(DEFAULT_SUBJECTS["response"], context, is_path=False)
     html = frappe.render_template(template_path(DEFAULT_TEMPLATES["response"]), context, is_path=True)
     return subject, html
+
+
+def _occurrence_view(event: dict, recurrence_id: str | None) -> dict:
+    """The event as one occurrence sees it: the series with that date's override folded in.
+
+    A mail about a single occurrence has to name that occurrence — the date it was moved to, the
+    title it was given — and the series carries none of that: its own start never moved, and the
+    edit lives in `recurrenceOverrides` under the date the occurrence was expanded at. Which is
+    the recurrence id, and so the start to fall back on when the override says nothing about it.
+
+    Returns the event untouched when the mail speaks for the whole series.
+    """
+
+    if not recurrence_id:
+        return event
+
+    view = deepcopy({k: v for k, v in event.items() if k != "recurrenceOverrides"})
+    view["start"] = recurrence_id
+    _apply_override(view, (event.get("recurrenceOverrides") or {}).get(recurrence_id) or {})
+
+    return view
 
 
 def _context(event, organizer, organizer_name, participant, links) -> dict:
@@ -453,7 +480,9 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
     attachment.add_header("Content-Disposition", "attachment", filename="invite.ics")
     root.attach(attachment)
 
-    return root.as_string()
+    # CRLF line endings, as RFC 5322 requires. Python's default is a bare LF, which a relay
+    # rewrites in transit: the DKIM body hash then fails and the invite lands in Junk.
+    return root.as_string(policy=root.policy.clone(linesep="\r\n"))
 
 
 def _plain_text(html: str) -> str:

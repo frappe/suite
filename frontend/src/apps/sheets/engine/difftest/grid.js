@@ -5,8 +5,10 @@
 // and reduce both results to a canonical shape so they can be compared without
 // false diffs from float noise or differing error spellings.
 
-import { evaluate } from '../formula.js'
 import HF from 'hyperformula'
+
+import { evaluate } from '../formula.js'
+
 const { HyperFormula } = HF
 
 // ── The fixture grid ─────────────────────────────────────────────────────────
@@ -15,27 +17,41 @@ const { HyperFormula } = HF
 // `null` = genuinely empty cell.
 export const GRID = [
   //  A      B      C      D       E
-  [   1,     10,   -1,    2.5,    'apple'  ], // row 1
-  [   2,     null, null,  0,      'banana' ], // row 2
-  [   3,     30,   -5,   -2.5,    'apple'  ], // row 3
-  [   4,     null, 7,     100,    ''       ], // row 4
-  [   5,     50,   0,    -0.5,    'cherry' ], // row 5
-  [   -6,    60,   12,    1000,   'apple'  ], // row 6
-  [   'x',   70,   -3,    3.14159,'date'   ], // row 7  (A7 is text on purpose)
-  [   8,     null, 4,     -1000,  ''       ], // row 8
-  [   9,     90,   -9,    0.001,  'banana' ], // row 9
-  [   10,    100,  100,   -12345, 'apple'  ], // row 10
+  [1, 10, -1, 2.5, 'apple'], // row 1
+  [2, null, null, 0, 'banana'], // row 2
+  [3, 30, -5, -2.5, 'apple'], // row 3
+  [4, null, 7, 100, ''], // row 4
+  [5, 50, 0, -0.5, 'cherry'], // row 5
+  [-6, 60, 12, 1000, 'apple'], // row 6
+  ['x', 70, -3, 3.14159, 'date'], // row 7  (A7 is text on purpose)
+  [8, null, 4, -1000, ''], // row 8
+  [9, 90, -9, 0.001, 'banana'], // row 9
+  [10, 100, 100, -12345, 'apple'], // row 10
 ]
 
 const COLS = 5
-const colIdx = (l) => { let n = 0; for (const c of l) n = n * 26 + (c.charCodeAt(0) - 64); return n - 1 }
-const colLbl = (i) => { let s = '', n = i + 1; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26) } return s }
+const colIdx = (l) => {
+  let n = 0
+  for (const c of l) n = n * 26 + (c.charCodeAt(0) - 64)
+  return n - 1
+}
+const colLbl = (i) => {
+  let s = '',
+    n = i + 1
+  while (n > 0) {
+    const r = (n - 1) % 26
+    s = String.fromCharCode(65 + r) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
+}
 
 // Map "A1" style id -> grid value ('' for blank, matching Sheets' own resolver).
 function cellAt(id) {
   const m = String(id).match(/^([A-Z]+)(\d+)$/)
   if (!m) return ''
-  const c = colIdx(m[1]), r = parseInt(m[2], 10) - 1
+  const c = colIdx(m[1]),
+    r = parseInt(m[2], 10) - 1
   if (r < 0 || r >= GRID.length || c < 0 || c >= COLS) return ''
   const v = GRID[r][c]
   return v === null || v === undefined ? '' : v
@@ -44,9 +60,13 @@ function cellAt(id) {
 // ── Sheets engine adapter ────────────────────────────────────────────────────
 const getCellValue = (id) => cellAt(id)
 const getRangeValues = (a, b) => {
-  const m1 = String(a).match(/^([A-Z]+)(\d+)$/), m2 = String(b).match(/^([A-Z]+)(\d+)$/)
+  const m1 = String(a).match(/^([A-Z]+)(\d+)$/),
+    m2 = String(b).match(/^([A-Z]+)(\d+)$/)
   if (!m1 || !m2) return []
-  const c1 = colIdx(m1[1]), r1 = +m1[2], c2 = colIdx(m2[1]), r2 = +m2[2]
+  const c1 = colIdx(m1[1]),
+    r1 = +m1[2],
+    c2 = colIdx(m2[1]),
+    r2 = +m2[2]
   const rows = []
   for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) {
     const row = []
@@ -57,7 +77,14 @@ const getRangeValues = (a, b) => {
 }
 export function sheetsEval(formula) {
   try {
-    return evaluate(formula.replace(/^=/, ''), getCellValue, getRangeValues, () => '', () => [], () => null)
+    return evaluate(
+      formula.replace(/^=/, ''),
+      getCellValue,
+      getRangeValues,
+      () => '',
+      () => [],
+      () => null,
+    )
   } catch (e) {
     return { __throw: e.message }
   }
@@ -90,13 +117,15 @@ export function canon(raw) {
   if (isErrTok(raw)) return { kind: 'err', v: raw }
   if (typeof raw === 'number') return { kind: 'num', v: raw }
   // numeric string?
-  if (typeof raw === 'string' && raw.trim() !== '' && !isNaN(Number(raw))) return { kind: 'num', v: Number(raw) }
+  if (typeof raw === 'string' && raw.trim() !== '' && !isNaN(Number(raw)))
+    return { kind: 'num', v: Number(raw) }
   return { kind: 'text', v: String(raw) }
 }
 
 // Compare two canon()'d results. Returns { match, reason }.
 export function compare(a, b, eps = 1e-9) {
-  const ca = canon(a), cb = canon(b)
+  const ca = canon(a),
+    cb = canon(b)
   // Both errors: we count as a match on the *class* (both refuse), even if the
   // specific error code differs — that is a far smaller problem than a silent
   // wrong number, and we track code-mismatches separately in the report.

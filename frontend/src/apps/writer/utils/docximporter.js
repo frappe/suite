@@ -1,5 +1,7 @@
+import { toast as nToast, useFileUpload } from 'frappe-ui'
 import { v4 as uuidv4 } from 'uuid'
-import { call, useFileUpload, toast as nToast } from 'frappe-ui'
+
+import { purgeNodes } from '@/apps/writer/drive'
 import { findTab } from '@/apps/writer/extensions/tabs'
 
 const IMAGE_EXTENSIONS = {
@@ -35,7 +37,7 @@ async function _uploadImage(element, fileId, uploaded) {
 async function _discardUploads(uploaded) {
   if (!uploaded.length) return
   try {
-    await call('suite.drive.api.files.delete_entities', { entity_names: uploaded })
+    await purgeNodes(uploaded)
   } catch (e) {
     console.error('Could not remove images from the failed import:', e)
   }
@@ -140,10 +142,7 @@ function _insertInNewTab(editor, html, label) {
   const tab = findTab(editor.state.doc, id)
   if (!tab) return _insertAtEnd(editor, html) // shouldn't happen; don't lose content
   // createTab() adds an empty paragraph — swap it for the imported content.
-  editor.commands.insertContentAt(
-    { from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 },
-    html,
-  )
+  editor.commands.insertContentAt({ from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 }, html)
 }
 
 /**

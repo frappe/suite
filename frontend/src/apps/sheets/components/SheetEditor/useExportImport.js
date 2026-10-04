@@ -1,11 +1,12 @@
+import { fromXlsxCell, mergesFromXlsx, mergesToXlsx, toXlsxCell } from '../../engine/xlsx-io.js'
 import { colLabel, parseCellId } from '../../utils/cells.js'
-import { toXlsxCell, fromXlsxCell, mergesToXlsx, mergesFromXlsx } from '../../engine/xlsx-io.js'
 
 // ── private helpers ────────────────────────────────────────────────────────────
 
 function _sheetToAoa(sheetName, sheet) {
   const data = sheet.getRawData(sheetName)
-  let maxR = 0, maxC = 0
+  let maxR = 0,
+    maxC = 0
   for (const id of Object.keys(data)) {
     const p = parseCellId(id)
     if (!p) continue
@@ -23,9 +24,11 @@ function _sheetToAoa(sheetName, sheet) {
 }
 
 function _esc(v) {
-  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
-
 
 function _parseCSV(text) {
   const rows = []
@@ -40,9 +43,13 @@ function _parseCSV(text) {
         i++
         let cell = ''
         while (i < s.length) {
-          if (s[i] === '"' && s[i + 1] === '"') { cell += '"'; i += 2 }
-          else if (s[i] === '"') { i++; break }
-          else cell += s[i++]
+          if (s[i] === '"' && s[i + 1] === '"') {
+            cell += '"'
+            i += 2
+          } else if (s[i] === '"') {
+            i++
+            break
+          } else cell += s[i++]
         }
         row.push(cell)
       } else {
@@ -51,7 +58,10 @@ function _parseCSV(text) {
         while (i < s.length && s[i] !== ',' && s[i] !== '\n') i++
         row.push(s.slice(start, i))
       }
-      if (i >= s.length || s[i] === '\n') { i++; break }
+      if (i >= s.length || s[i] === '\n') {
+        i++
+        break
+      }
       i++ // skip ','
     }
     rows.push(row)
@@ -86,20 +96,26 @@ export function useExportImport({
 }) {
   function _diffRefs(before, after) {
     const ids = new Set([...Object.keys(before || {}), ...Object.keys(after || {})])
-    return [...ids].filter(id => (before?.[id]) !== (after?.[id]))
+    return [...ids].filter((id) => before?.[id] !== after?.[id])
   }
 
   // ── exports ──────────────────────────────────────────────────────────────────
 
   function exportCSV() {
     const sheet = getSheet()
-    const rows  = _sheetToAoa(sheet.getCurrentSheet(), sheet)
-    const csv   = rows.map(row => row.map(v => {
-      const s = String(v ?? '')
-      return s.includes(',') || s.includes('"') || s.includes('\n')
-        ? `"${s.replace(/"/g, '""')}"`
-        : s
-    }).join(',')).join('\n')
+    const rows = _sheetToAoa(sheet.getCurrentSheet(), sheet)
+    const csv = rows
+      .map((row) =>
+        row
+          .map((v) => {
+            const s = String(v ?? '')
+            return s.includes(',') || s.includes('"') || s.includes('\n')
+              ? `"${s.replace(/"/g, '""')}"`
+              : s
+          })
+          .join(','),
+      )
+      .join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(blob),
@@ -114,13 +130,14 @@ export function useExportImport({
   function _buildWorksheet(sheet, formats, merge, sn) {
     const data = sheet.getRawData(sn)
     const ws = {}
-    let maxR = 0, maxC = 0
+    let maxR = 0,
+      maxC = 0
     for (const [id, raw] of Object.entries(data)) {
       const p = parseCellId(id)
       if (!p) continue
       const isFormula = typeof raw === 'string' && raw.startsWith('=')
-      const computed  = isFormula ? sheet.getCellValue(id, sn) : null
-      const fmt  = formats?.get(id, sn)?.numberFormat || ''
+      const computed = isFormula ? sheet.getCellValue(id, sn) : null
+      const fmt = formats?.get(id, sn)?.numberFormat || ''
       const cell = toXlsxCell(raw, computed, fmt)
       if (!cell) continue
       ws[id] = cell
@@ -134,9 +151,9 @@ export function useExportImport({
   }
 
   async function exportXLSX() {
-    const sheet   = getSheet()
+    const sheet = getSheet()
     const formats = getFormats?.()
-    const merge   = getMerge?.()
+    const merge = getMerge?.()
     const { utils, writeFile } = await import('xlsx')
     const wb = utils.book_new()
     const used = new Set()
@@ -150,8 +167,13 @@ export function useExportImport({
   // Excel caps sheet names at 31 chars, bans []:*?/\ and duplicates. Coerce to
   // a safe, unique name so book_append_sheet never throws mid-export.
   function _excelSheetName(name, used) {
-    let base = String(name || 'Sheet').replace(/[[\]:*?/\\]/g, ' ').slice(0, 31).trim() || 'Sheet'
-    let out = base, n = 1
+    let base =
+      String(name || 'Sheet')
+        .replace(/[[\]:*?/\\]/g, ' ')
+        .slice(0, 31)
+        .trim() || 'Sheet'
+    let out = base,
+      n = 1
     while (used.has(out.toLowerCase())) {
       const suffix = ` (${++n})`
       out = base.slice(0, 31 - suffix.length) + suffix
@@ -162,12 +184,14 @@ export function useExportImport({
 
   function exportPDF() {
     const sheet = getSheet()
-    const sn    = sheet.getCurrentSheet()
-    const rows  = _sheetToAoa(sn, sheet)
+    const sn = sheet.getCurrentSheet()
+    const rows = _sheetToAoa(sn, sheet)
     if (!rows.length) return
-    const thead = `<tr>${rows[0].map(c => `<th>${_esc(c)}</th>`).join('')}</tr>`
-    const tbody = rows.slice(1)
-      .map(r => `<tr>${r.map(c => `<td>${_esc(c)}</td>`).join('')}</tr>`).join('')
+    const thead = `<tr>${rows[0].map((c) => `<th>${_esc(c)}</th>`).join('')}</tr>`
+    const tbody = rows
+      .slice(1)
+      .map((r) => `<tr>${r.map((c) => `<td>${_esc(c)}</td>`).join('')}</tr>`)
+      .join('')
     const title = getCurrentTitle()
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>${_esc(title)}</title>
@@ -205,7 +229,9 @@ export function useExportImport({
   //      separate iteration pass; dropping it is a clean win.
   const CHUNK_ROWS = 2000
 
-  function _yield() { return new Promise(r => setTimeout(r, 0)) }
+  function _yield() {
+    return new Promise((r) => setTimeout(r, 0))
+  }
 
   // Build {cellId: value} from a rectangular row array, yielding to the
   // event loop every CHUNK_ROWS rows so the UI stays responsive on big files.
@@ -234,7 +260,7 @@ export function useExportImport({
       const wb = read(buf, { type: 'array', cellFormula: true, cellDates: true, cellNF: true })
       await _ingestWorkbook(wb)
     } finally {
-      e.target.value = ''   // always reset so re-picking the same file re-fires
+      e.target.value = '' // always reset so re-picking the same file re-fires
     }
   }
 
@@ -242,10 +268,10 @@ export function useExportImport({
   // current sheets are untouched. Each cell carries its value/formula, number
   // format, and the sheet's merges.
   async function _ingestWorkbook(wb) {
-    const sheet    = getSheet()
-    const formats  = getFormats?.()
-    const merge    = getMerge?.()
-    const existing = new Set(sheet.getSheetNames().map(n => n.toLowerCase()))
+    const sheet = getSheet()
+    const formats = getFormats?.()
+    const merge = getMerge?.()
+    const existing = new Set(sheet.getSheetNames().map((n) => n.toLowerCase()))
     let firstAdded = null
     // finally: even if a worksheet throws mid-import, resync the tab bar so the
     // engine and UI never disagree about which sheets exist, and surface what
@@ -280,7 +306,7 @@ export function useExportImport({
     const fmts = []
     let n = 0
     for (const [id, cell] of Object.entries(ws)) {
-      if (id[0] === '!') continue                  // !ref, !merges, !cols meta keys
+      if (id[0] === '!') continue // !ref, !merges, !cols meta keys
       if (!parseCellId(id)) continue
       const { value, fmt } = fromXlsxCell(cell)
       if (value !== '' && value != null) map[id] = value
@@ -290,14 +316,16 @@ export function useExportImport({
     sheet.batchSetCells(map, name, { replace: false })
     if (formats) for (const [id, fmt] of fmts) formats.set(id, { numberFormat: fmt }, name)
     if (merge && Array.isArray(ws['!merges'])) {
-      for (const { r0, c0, r1, c1 } of mergesFromXlsx(ws['!merges'])) merge.merge(r0, c0, r1, c1, name)
+      for (const { r0, c0, r1, c1 } of mergesFromXlsx(ws['!merges']))
+        merge.merge(r0, c0, r1, c1, name)
     }
   }
 
   // Ensure an imported worksheet name doesn't collide with an existing sheet.
   function _uniqueSheetName(name, existing) {
     const base = String(name || 'Sheet').trim() || 'Sheet'
-    let out = base, n = 1
+    let out = base,
+      n = 1
     while (existing.has(out.toLowerCase())) out = `${base} (${++n})`
     return out
   }
@@ -306,7 +334,7 @@ export function useExportImport({
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = async ev => {
+    reader.onload = async (ev) => {
       const text = ev.target.result
       const rows = _parseCSV(text)
       await _ingestRows(rows, file.name)
@@ -318,10 +346,10 @@ export function useExportImport({
   // Shared post-parse pipeline: chunked map build → bulk engine write →
   // dirty flag. No undo entry (imports replace the sheet, by design).
   async function _ingestRows(rows, fileName) {
-    const sheet     = getSheet()
-    const grid      = getGrid()
+    const sheet = getSheet()
+    const grid = getGrid()
     const currentSh = sheet.getCurrentSheet()
-    const map       = await _rowsToCellMap(rows)
+    const map = await _rowsToCellMap(rows)
     if (grid) grid.clearAll()
     sheet.batchSetCells(map, currentSh)
     // No history entry: imports aren't undoable (Sheets parity). The old

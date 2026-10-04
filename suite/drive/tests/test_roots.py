@@ -17,6 +17,7 @@ from suite.drive._core.roots import (
     reject_illegal_root_operation,
     validate_root_pair,
 )
+from suite.drive.tests.fixtures import ensure_rootless_user, skip_if_shared_root_exists
 
 
 class TestRootCreationContract(UnitTestCase):
@@ -76,10 +77,12 @@ class TestRootDiscovery(UnitTestCase):
 
 
 class TestRootLifecycle(IntegrationTestCase):
-    user = "Administrator"
+    user = "drive-root-lifecycle@example.com"
 
     def setUp(self) -> None:
         super().setUp()
+        frappe.set_user("Administrator")
+        ensure_rootless_user(self.user)
         self._root_nodes_before = set(frappe.get_all("Drive Node", filters={"kind": "root"}, pluck="name"))
         self._root_metadata_before = set(frappe.get_all("Drive Root", pluck="name"))
 
@@ -111,7 +114,7 @@ class TestRootLifecycle(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": title,
-                "parent": root,
+                "parent_node": root,
                 "root": root,
                 "path": "",
                 "kind": "folder",
@@ -133,7 +136,7 @@ class TestRootLifecycle(IntegrationTestCase):
         self.assertEqual(pair.node.name, pair.root.name)
         self.assertEqual(pair.root.node, pair.node.name)
         self.assertEqual(pair.node.kind, "root")
-        self.assertIsNone(pair.node.parent)
+        self.assertIsNone(pair.node.parent_node)
         self.assertIsNone(pair.node.root)
         self.assertEqual(pair.node.path, "")
         self.assertEqual(pair.node.owner, self.user)
@@ -144,6 +147,7 @@ class TestRootLifecycle(IntegrationTestCase):
         )
 
     def test_shared_root_is_owned_by_administrator_with_general_upload(self):
+        skip_if_shared_root_exists(self)
         original_user = frappe.session.user
         frappe.set_user("Guest")
         try:
@@ -279,6 +283,7 @@ class TestRootLifecycle(IntegrationTestCase):
             duplicate.insert(ignore_permissions=True)
 
     def test_pair_validation_rejects_missing_or_mismatched_metadata(self):
+        skip_if_shared_root_exists(self)
         first = self._personal_root()
         frappe.db.delete("Drive Root", {"name": first.name})
         with self.assertRaises(frappe.ValidationError):
@@ -312,7 +317,7 @@ class TestRootLifecycle(IntegrationTestCase):
     def test_root_tree_identity_cannot_be_moved_or_trashed(self):
         root = self._personal_root()
         node = frappe.get_doc("Drive Node", root.name)
-        node.parent = root.name
+        node.parent_node = root.name
         with self.assertRaises(frappe.ValidationError):
             node.save(ignore_permissions=True)
         with self.assertRaises(frappe.ValidationError):
@@ -330,7 +335,7 @@ class TestRootLifecycle(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": "Nested",
-                "parent": child.name,
+                "parent_node": child.name,
                 "root": root.name,
                 "path": f"/{child.name}/",
                 "kind": "folder",
@@ -343,7 +348,7 @@ class TestRootLifecycle(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": "Deeply nested",
-                "parent": grandchild.name,
+                "parent_node": grandchild.name,
                 "root": root.name,
                 "path": f"/{child.name}/{grandchild.name}/",
                 "kind": "folder",
@@ -353,7 +358,7 @@ class TestRootLifecycle(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
 
-        self.assertEqual(child.parent, root.name)
+        self.assertEqual(child.parent_node, root.name)
         self.assertEqual(child.path, "")
         self.assertEqual(chain_ids(grandchild), [root.name, child.name, grandchild.name])
         self.assertEqual(
@@ -405,6 +410,7 @@ class TestRootLifecycle(IntegrationTestCase):
         self.assertTrue(frappe.db.exists("Drive Grant", deny.name))
 
     def test_creator_gets_edit_when_only_upload_is_inherited(self):
+        skip_if_shared_root_exists(self)
         root = create_root(kind="Shared", title="Shared")
         child = self._child(root.name)
         principals = Principals(self.user, (self.user, "$GENERAL"), ("$PUBLIC",))
@@ -416,6 +422,7 @@ class TestRootLifecycle(IntegrationTestCase):
         )
 
     def test_link_upload_does_not_create_a_creator_grant(self):
+        skip_if_shared_root_exists(self)
         root = create_root(kind="Shared", title="Shared")
         child = self._child(root.name)
         principals = Principals("Guest", (), ("$PUBLIC", "$LINK:abc"))
@@ -448,7 +455,7 @@ class TestRootLifecycle(IntegrationTestCase):
             """
             SELECT u.name
             FROM `tabUser` u
-            WHERE u.name != 'Guest'
+            WHERE u.name NOT IN ('Guest', %s)
               AND NOT EXISTS (
                 SELECT 1 FROM `tabDrive Root` r
                 WHERE r.user = u.name AND r.kind = 'Personal' AND r.state = 'Active'
@@ -456,6 +463,9 @@ class TestRootLifecycle(IntegrationTestCase):
             ORDER BY u.name
             LIMIT 1
             """,
+            # setUp inserts `self.user` without committing, and the race runs on
+            # fresh connections that cannot see it.
+            (self.user,),
             pluck=True,
         )
         if not user:
@@ -463,8 +473,7 @@ class TestRootLifecycle(IntegrationTestCase):
         self._assert_concurrent_root(kind="Personal", user=user[0])
 
     def test_concurrent_shared_creation_leaves_one_pair_and_no_loser_orphans(self):
-        if frappe.db.exists("Drive Root", {"kind": "Shared", "state": "Active"}):
-            self.skipTest("The site already has an Active Shared root")
+        skip_if_shared_root_exists(self)
         self._assert_concurrent_root(kind="Shared", user=None)
 
     def _assert_concurrent_root(self, *, kind: str, user: str | None):

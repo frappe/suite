@@ -10,11 +10,11 @@
 // isn't available (older Safari) or the payload is tiny, we fall back to
 // sending the raw string.
 
-const MARKER     = '_z'
-const KIND       = 'gzip'
+const MARKER = '_z'
+const KIND = 'gzip'
 // Only compress payloads larger than this — below it the round-trip overhead
 // outweighs the wire-size saving.
-const MIN_BYTES  = 64 * 1024
+const MIN_BYTES = 64 * 1024
 
 function isCompressionSupported() {
   return typeof CompressionStream !== 'undefined'
@@ -37,13 +37,17 @@ export async function decodeFromDownload(stored) {
   // legacy string just to discover it isn't an envelope.
   if (!stored.startsWith('{"_z"')) return stored
   let env
-  try { env = JSON.parse(stored) } catch { return stored }
+  try {
+    env = JSON.parse(stored)
+  } catch {
+    return stored
+  }
   if (!env || env[MARKER] !== KIND || typeof env.data !== 'string') return stored
   return _gunzip(env.data)
 }
 
 async function _gunzip(base64) {
-  const bytes  = _base64ToBytes(base64)
+  const bytes = _base64ToBytes(base64)
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
   return new Response(stream).text()
 }
@@ -57,22 +61,22 @@ function _base64ToBytes(b64) {
 
 export async function encodeForUpload(jsonString) {
   if (!jsonString || jsonString.length < MIN_BYTES) return jsonString
-  if (!isCompressionSupported())                    return jsonString
-  const gz       = await _gzip(jsonString)
-  const data     = _bytesToBase64(gz)
+  if (!isCompressionSupported()) return jsonString
+  const gz = await _gzip(jsonString)
+  const data = _bytesToBase64(gz)
   return JSON.stringify({ [MARKER]: KIND, data })
 }
 
 async function _gzip(text) {
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
-  const buf    = await new Response(stream).arrayBuffer()
+  const buf = await new Response(stream).arrayBuffer()
   return new Uint8Array(buf)
 }
 
 // Chunked to avoid "Maximum call stack size exceeded" on multi-MB inputs.
 function _bytesToBase64(bytes) {
   const CHUNK = 0x8000
-  let binary  = ''
+  let binary = ''
   for (let i = 0; i < bytes.length; i += CHUNK)
     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
   return btoa(binary)

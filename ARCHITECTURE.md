@@ -122,7 +122,7 @@ suite/
 │   ├── http/                        # HTTP adapter into Drive workflows
 │   ├── webdav/                      # WebDAV adapter into Drive workflows
 │   ├── doctype/                     # persistence implementation
-│   ├── patches/                     # additive Build, later Cleanup
+│   ├── patches/                     # Build, then Cleanup, in one migrate
 │   └── tests/                       # interface and adapter behavior
 ├── writer/
 │   └── drive.py                     # Writer content adapter

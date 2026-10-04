@@ -41,6 +41,6 @@ describe('build watcher', () => {
 
     expect(tab.belowMinBuild('writer')).toBe(true)
     expect(tab.belowMinBuild('slides')).toBe(false)
-    expect(info.mock.calls.at(-1)[1].description).toBe('Reload to keep editing in Writer.')
+    expect(info.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Writer.')
   })
 })

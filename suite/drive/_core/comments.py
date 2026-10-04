@@ -1,6 +1,7 @@
 """Authorized comment threads attached to Drive content-document nodes."""
 
 import re
+from collections.abc import Iterable
 from uuid import uuid4
 
 import frappe
@@ -33,9 +34,8 @@ def create_thread(
 ) -> dict:
     """Create a thread and its first server-authored comment.
 
-    Returns both ids. §11.2's `POST /nodes/<id>/threads` answers
-    `{thread, comment}`, and the first comment is written here, so returning
-    the thread alone would make the adapter re-query for a row it just wrote.
+    Returns the thread as `threads` lists it, its first comment included, so
+    `POST /nodes/<id>/threads` answers the resource it created (§11.2).
     """
     _validate_anchor(anchor)
     _validate_text(text)
@@ -74,7 +74,7 @@ def create_thread(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
-    return {"thread": thread.name, "comment": comment}
+    return _thread_view(thread.name)
 
 
 def reply(
@@ -83,8 +83,8 @@ def reply(
     text: str,
     *,
     author_name: str | None = None,
-) -> str:
-    """Append a server-authored reply to an existing thread."""
+) -> frappe._dict:
+    """Append a server-authored reply to an existing thread; answer the comment row."""
     _validate_text(text)
     savepoint = f"drive_comment_reply_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
@@ -117,11 +117,11 @@ def reply(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
-    return comment
+    return _comment_view(comment)
 
 
-def resolve(principals: Principals, thread: str, resolved: bool = True) -> None:
-    """Resolve or reopen a thread with Comment access."""
+def resolve(principals: Principals, thread: str, resolved: bool = True) -> frappe._dict:
+    """Resolve or reopen a thread with Comment access; answer the thread as listed."""
     if type(resolved) is not bool:
         frappe.throw(_("Drive comment resolution must be a boolean"), frappe.ValidationError)
     savepoint = f"drive_comment_resolve_{uuid4().hex[:12]}"
@@ -133,7 +133,7 @@ def resolve(principals: Principals, thread: str, resolved: bool = True) -> None:
         _require_active(node)
         if bool(thread_row.resolved) == resolved:
             frappe.db.release_savepoint(savepoint)
-            return
+            return _thread_view(thread_row.name)
         values = {
             "resolved": int(resolved),
             "resolved_by": principals.user if resolved else None,
@@ -152,10 +152,11 @@ def resolve(principals: Principals, thread: str, resolved: bool = True) -> None:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    return _thread_view(thread_row.name)
 
 
-def edit_comment(principals: Principals, comment: str, text: str) -> None:
-    """Edit a comment as an editor or as its attributed author."""
+def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dict:
+    """Edit a comment as an editor or as its attributed author; answer the comment row."""
     _validate_text(text)
     savepoint = f"drive_comment_edit_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
@@ -189,10 +190,16 @@ def edit_comment(principals: Principals, comment: str, text: str) -> None:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    return _comment_view(comment_row.name)
 
 
 def delete_comment(principals: Principals, comment: str) -> None:
-    """Delete a comment as an editor or as its attributed author."""
+    """Delete a comment as an editor or as its attributed author.
+
+    A thread is a group of comments (`CONTEXT.md`, Comment), so one that loses
+    its last comment goes with it: `threads` never lists an empty thread, and
+    a panel never renders one. The activity row keeps the thread's id.
+    """
     savepoint = f"drive_comment_delete_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
@@ -201,8 +208,10 @@ def delete_comment(principals: Principals, comment: str) -> None:
         _require_document(node)
         _require_active(node)
         _require_editor_or_author(principals, node, comment_row, via_link)
-        thread = _thread(comment_row.thread)
+        thread = _thread(comment_row.thread, for_update=True)
         frappe.db.delete("Drive Comment", {"name": comment_row.name})
+        if not frappe.db.count("Drive Comment", {"thread": thread.name}):
+            frappe.db.delete("Drive Comment Thread", {"name": thread.name})
         record(
             principals,
             node.name,
@@ -221,6 +230,39 @@ def delete_comment(principals: Principals, comment: str) -> None:
         frappe.db.release_savepoint(savepoint)
 
 
+def record_comment(
+    principals: Principals,
+    node: str,
+    *,
+    thread: str,
+    comment: str,
+    resolved: bool,
+    mentions: Iterable[str],
+) -> str:
+    """Record a comment a content app stores in its own body; answer the activity.
+
+    Writer's inline comments are anchored Yjs data only Writer can read, so
+    Writer keeps them and reports each one here (§10.2). The row is the same
+    `comment` activity a Drive thread writes, `thread` and `comment` are the
+    app's own ids, and the people it mentions get the same notification a
+    Drive comment's mention gets. Needs COMMENT on an Active document node,
+    as any comment does.
+    """
+    node_row = _comment_node(node)
+    via_link = require(node_row, COMMENT, principals)
+    _require_document(node_row)
+    _require_active(node_row)
+    activity = record(
+        principals,
+        node_row.name,
+        "comment",
+        detail={"thread": thread, "comment": comment, "resolved": resolved},
+        via_link=via_link,
+    )
+    notify_users(activity, mentions)
+    return activity
+
+
 def threads(
     principals: Principals,
     node: str,
@@ -236,6 +278,18 @@ def threads(
     filters = {"node": node_row.name}
     if resolved is not None:
         filters["resolved"] = int(resolved)
+    return _thread_views(filters)
+
+
+def _thread_view(thread: str) -> frappe._dict:
+    """One thread with its comments, as `threads` lists it. The write answers it."""
+    rows = _thread_views({"name": thread})
+    if not rows:
+        raise DriveNotFound(_("Drive comment thread {0} was not found").format(thread))
+    return rows[0]
+
+
+def _thread_views(filters: dict) -> list[frappe._dict]:
     rows = frappe.get_all(
         "Drive Comment Thread",
         filters=filters,
@@ -286,11 +340,25 @@ def threads(
     return rows
 
 
+def _comment_view(comment: str) -> frappe._dict:
+    """One comment row as a thread lists it. The write answers it."""
+    row = frappe.db.get_value(
+        "Drive Comment",
+        comment,
+        ["name", "thread", "node", "content", "author", "author_name", "mentions", "creation", "modified"],
+        as_dict=True,
+    )
+    if not row:
+        raise DriveNotFound(_("Drive comment {0} was not found").format(comment))
+    row.mentions = _json_value(row.mentions, [])
+    return row
+
+
 def _comment_node(node: str, *, for_update: bool = False) -> frappe._dict:
     row = frappe.db.get_value(
         "Drive Node",
         node,
-        ["name", "parent", "root", "path", "kind", "state"],
+        ["name", "parent_node", "root", "path", "kind", "state"],
         as_dict=True,
         for_update=for_update,
     )

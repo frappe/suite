@@ -7,9 +7,10 @@
 //
 // Without the fix these go red: _applyCanvasSize re-clamps scroll and shifts
 // every cell, but leaves the textarea floating at its pre-change offset.
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createMockCtx } from './painters/test-utils.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { createGrid } from './index.js'
+import { createMockCtx } from './painters/test-utils.js'
 
 // Open the editor on the given cell by synthesizing the dblclick the grid
 // listens for. jsdom's getBoundingClientRect() is all-zero (no layout), so
@@ -24,18 +25,21 @@ function mount() {
   const grid = createGrid(canvas, { getFormat: () => ({}), canEdit: () => true })
   grid.resize(800, 600)
   const editor = () => parent.querySelector('textarea')
-  const openA1 = () => canvas.dispatchEvent(
-    new MouseEvent('dblclick', { clientX: 55, clientY: 30, bubbles: true }))
+  const openA1 = () =>
+    canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: 55, clientY: 30, bubbles: true }))
   return { grid, editor, openA1 }
 }
 
 // The overlay stores its on-screen offset as inline px styles; strip 'px'.
-const leftOf = el => parseFloat(el.style.left)
-const topOf  = el => parseFloat(el.style.top)
+const leftOf = (el) => parseFloat(el.style.left)
+const topOf = (el) => parseFloat(el.style.top)
 
 describe('in-cell editor stays pinned to its cell', () => {
   let h
-  beforeEach(() => { document.body.innerHTML = ''; h = mount() })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    h = mount()
+  })
 
   it('opens the editor anchored to the double-clicked cell', () => {
     h.openA1()

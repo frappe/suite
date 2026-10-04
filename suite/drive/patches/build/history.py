@@ -1,5 +1,7 @@
 """Build Writer and Sheet history without changing legacy rows."""
 
+import hashlib
+
 from suite.drive.patches.build.content_mapping import (
     MAX_VERSION_SEQ,
     InvalidLegacyContent,
@@ -10,6 +12,11 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.ports import REMOVED
+from suite.drive.patches.build.writer_bodies import (
+    DocumentPictures,
+    convert_writer_body,
+    writer_version_html,
+)
 
 
 class BuildHistoryError(RuntimeError):
@@ -23,9 +30,17 @@ HISTORY_FIELDS = (
     "history_existing_complete",
     "history_deferred",
     "versions_seen",
+    "sheet_snapshots_missing",
+    "missing_sheet_snapshots",
     "comments_seen",
     "comment_threads_renamed",
     "comments_renamed",
+    "writer_media_copied",
+    "writer_bodies_rewritten",
+    "writer_images_wrapped",
+    "writer_versions_rewritten",
+    "writer_media_references_missing",
+    "writer_bodies_unreadable",
 )
 
 VERSION_FIELDS = (
@@ -49,6 +64,10 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
     """Implement §14.2 step 7 and return the durable outcome."""
     _require_ticket27(env)
     source, target = _ports(env)
+    # Steps 7 to 10 read legacy rows one document at a time, and this is the
+    # first of them. The index DDL commits, which is safe here: steps 1 to 6
+    # are durable and this step has written nothing yet.
+    source.index_document_reads()
     content = env.state.content()
     # The census the last complete pass froze its `report_at` against. New
     # source history has to invalidate that timestamp (plan §8), and the source
@@ -89,7 +108,8 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
                         first_pending = first_pending or document.name
                     else:
                         if doctype == "Writer Document":
-                            _writer_versions(env, content, document, node, batch_size)
+                            pictures = convert_writer_body(env, content, document, node)
+                            _writer_versions(env, content, document, node, batch_size, pictures)
                         else:
                             _sheet_versions(env, content, document, node, batch_size)
                         from suite.drive.patches.build.comments import convert_document_comments
@@ -136,9 +156,11 @@ def convert_history_and_comments(env, *, batch_size: int = BUILD_BATCH_SIZE, all
     return content
 
 
-def _writer_versions(env, content, document, node: str, batch_size: int) -> None:
+def _writer_versions(env, content, document, node: str, batch_size: int, pictures: DocumentPictures) -> None:
     # The source page is the keyset the port orders by, so the running index is
-    # the target `seq`: position 1 is the oldest `(creation, name)`.
+    # the target `seq`: position 1 is the oldest `(creation, name)`. The bytes
+    # are the source HTML with each borrowed picture pointed at the
+    # document's copy (§14.6), so a rerun derives the same bytes and checksum.
     expected = []
     target_batch = max(1, batch_size // 2)
     by_seq = env.content_target.version_seqs(node)
@@ -148,11 +170,12 @@ def _writer_versions(env, content, document, node: str, batch_size: int) -> None
         rows = env.content.writer_versions(document.name, after, target_batch)
         if not rows:
             break
-        for row in rows:
+        htmls = writer_version_html(env, content, pictures, [row.snapshot or "" for row in rows])
+        for row, html in zip(rows, htmls, strict=True):
             seq += 1
             if seq > MAX_VERSION_SEQ:
                 raise InvalidLegacyContent("Writer Version count does not fit the target positive Int")
-            raw = (row.snapshot or "").encode("utf-8")
+            raw = html.encode("utf-8")
             expected.append(
                 _version_row(
                     env,
@@ -226,10 +249,11 @@ def _sheet_versions(env, content, document, node: str, batch_size: int) -> None:
     _write_versions(env, content, node, expected, by_seq, batch_size)
 
     if head:
-        # §8 keeps the stored head id and repoints it at the migrated row, so
-        # the head must name a snapshot this sheet really had. Every column of
-        # that row is already proved by `_write_versions`; what is not implied
-        # is that the id exists in the source at all.
+        # §14.6 records absent source heads and keeps the live workbook. A
+        # source snapshot that exists still owes an exact migrated version.
+        if not head_plan and not env.content.sheet_snapshot_exists(document.name, head):
+            content.record_missing_sheet_snapshot(document.name, head)
+            return
         stored = env.content_target.version_names((head,)).get(head)
         if not head_plan or not stored:
             raise InvalidLegacyContent("Sheet head_snapshot does not name a migrated source snapshot")
@@ -245,7 +269,10 @@ def _version_row(env, row, *, node, seq, kind, label, pinned, actor, raw, filena
         blob = env.content_target.blob(stored.get("blob"))
         if not blob or blob.status != "Ready" or not blob.is_private or blob.file_size != len(raw):
             raise InvalidLegacyContent(f"version {row.name} has unavailable target bytes")
-        if env.content_target.read_blob(blob.name) != raw:
+        # Compare checksums, not bytes: reading every stored version back
+        # from the bucket would make a rerun over a finished site as slow as
+        # the first run, and the framework already hashed what it stored.
+        if blob.checksum != hashlib.sha256(raw).hexdigest():
             raise InvalidLegacyContent(f"version {row.name} target bytes differ from the source")
         blob_name = blob.name
     else:

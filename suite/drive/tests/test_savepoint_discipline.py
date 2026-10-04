@@ -11,11 +11,10 @@ on, with the handle left unreset.
 `_core/errors.rollback_savepoint` is the one place allowed to make that call.
 `suite/drive/tests/test_nodes.py` sweeps `_core`; this module sweeps the
 adapters and the content-app call sites around it, and drives the repaired
-Drive ones into a deadlock. The two content-app runtime cases live in
-`suite/writer/tests/test_docs_savepoint.py` and
+Drive ones into a deadlock. The content-app runtime case lives in
 `suite/slides/tests/test_presentation_savepoint.py`, because ARCHITECTURE.md
 rule 2.4 forbids Drive from importing Writer, Sheets, or Slides
-implementations. Meet's own reservation call site is a third such case and
+implementations. Meet's own reservation call site is a second such case and
 lives in `suite/meet/api/test/test_recording_savepoint.py`, for the same
 reason. The sweep below still reaches all of their files: it reads paths and
 imports nothing.
@@ -47,7 +46,6 @@ USER = "actor@example.com"
 OWNED_SURFACE = (
     "suite/drive/http",
     "suite/drive/webdav",
-    "suite/drive/api",
     "suite/drive/patches",
     "suite/drive/e2e_api.py",
     "suite/drive/install.py",
@@ -152,7 +150,7 @@ class TestTheDavMoveReportsItsDeadlock(StubbedDatabase):
 
     def relocate(self, update):
         ctx = SimpleNamespace(principals=Principals(USER, (USER,), ()))
-        row = frappe._dict(name="node", parent="here", title="old.txt")
+        row = frappe._dict(name="node", parent_node="here", title="old.txt")
         destination = frappe._dict(name="there")
         with patch.object(structure.node_core, "update", side_effect=update):
             structure._relocate(ctx, row, destination, "new.txt")
@@ -198,7 +196,11 @@ class TestTheDavMoveReportsItsDeadlock(StubbedDatabase):
 
         self.assertEqual(
             calls,
-            [{"parent": "there"}, {"title": "new.txt"}, {"parent": "there"}],
+            [
+                {"parent_node": "there"},
+                {"title": "new.txt", "_keep_extension": False},
+                {"parent_node": "there"},
+            ],
         )
         self.db.release_savepoint.assert_called_once()
 

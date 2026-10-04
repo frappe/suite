@@ -4,7 +4,7 @@
 import json
 import os
 import shutil
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid7
 
 import frappe
@@ -23,15 +23,31 @@ from frappe.utils import (
     random_string,
     time_diff_in_seconds,
 )
+from jmap import MethodError
+from pydantic import BaseModel, ConfigDict, Field
 
 from suite.mail.doctype.push_subscription.push_subscription import (
     freeze_jmap_push_notifications,
     unfreeze_jmap_push_notifications,
 )
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
-from suite.mail.jmap import get_jmap_connection
-from suite.mail.jmap.services.contacts.address_book import AddressBookService
-from suite.mail.jmap.services.contacts.contact_card import ContactCardService
+from suite.mail.jmap import (
+    EXCHANGE_TIMEOUT,
+    SuiteJMAPClient,
+    account_view,
+    chunk_list,
+    chunked_get,
+    chunked_set,
+    format_set_error,
+    get_cached_address_books,
+    get_default_address_book_id,
+    get_jmap_client,
+    get_set_error_message,
+    maybe_applied,
+    never_applied,
+    omit_none,
+    upload_blobs,
+)
 from suite.mail.utils import (
     get_config,
     get_contacts_export_directory,
@@ -46,6 +62,7 @@ from suite.utils import log_error, reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
+from suite.utils.validation import parse_json
 
 # JSContact (RFC 9553) Name component kind -> its position in the vCard 4.0 "N" property
 # (Family;Given;Additional;Prefixes;Suffixes), plus the two surname/given halves JSContact splits out.
@@ -59,6 +76,52 @@ SERVER_MANAGED_KEYS = (
     "blobId",
     "vCard",
 )
+
+# Everything a full export needs to round-trip a card: the JMAP-specific ids plus the whole
+# JSContact surface.
+CARD_PROPERTIES = [
+    "id",
+    "addressBookIds",
+    "blobId",
+    "uid",
+    "kind",
+    "prodId",
+    "version",
+    "created",
+    "updated",
+    "fullName",
+    "name",
+    "nickNames",
+    "categories",
+    "notes",
+    "anniversaries",
+    "urls",
+    "relatedTo",
+    "organizations",
+    "titles",
+    "roles",
+    "emails",
+    "phones",
+    "addresses",
+    "onlineServices",
+    "preferredLanguages",
+    "speakToAs",
+    "gender",
+    "timeZones",
+    "photos",
+    "members",
+    "preferredContactChannels",
+    "localizations",
+    "extensions",
+]
+
+
+class ContactsImportMetadata(BaseModel):
+    """Where imported contacts go. A misspelt key is refused rather than ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    address_book_ids: dict[str, bool] | None = Field(None, alias="addressBookIds")
 
 
 class ContactsExchange(OwnerFromUser, Document):
@@ -180,10 +243,8 @@ class ContactsExchange(OwnerFromUser, Document):
         self._resolve_import_file()
 
         if self.import_metadata:
-            try:
-                self.import_metadata = json.dumps(json.loads(self.import_metadata), indent=4)
-            except json.JSONDecodeError:
-                frappe.throw(_("Metadata must be valid JSON."))
+            metadata = parse_json(ContactsImportMetadata, self.import_metadata, _("Metadata"))
+            self.import_metadata = metadata.model_dump_json(by_alias=True, exclude_none=True, indent=4)
 
     def _resolve_import_file(self) -> str:
         """Resolves ``import_file`` to an absolute path, refusing anything outside the site's files
@@ -210,10 +271,8 @@ class ContactsExchange(OwnerFromUser, Document):
         """Validate the export parameters."""
 
         if self.export_filter:
-            try:
-                self.export_filter = json.dumps(json.loads(self.export_filter), indent=4)
-            except json.JSONDecodeError:
-                frappe.throw(_("Export filter must be valid JSON."))
+            export_filter = parse_json(dict[str, Any], self.export_filter, _("Filter"))
+            self.export_filter = json.dumps(export_filter, indent=4)
 
         if not self.export_archive_type:
             frappe.throw(_("Archive Type is required."))
@@ -324,7 +383,7 @@ class ContactsExchange(OwnerFromUser, Document):
         os.makedirs(base_dir, exist_ok=True)
 
         kwargs = {}
-        service = None
+        client = None
         staging_address_book_id = None
         try:
             if self.import_format == "vcf" and self.import_file.endswith(".vcf"):
@@ -334,11 +393,11 @@ class ContactsExchange(OwnerFromUser, Document):
             logger.debug("import-source-prepared", base_dir=base_dir)
             self._log_output(_("Prepared the source files for import."))
 
-            service = get_contact_card_service(self.user, self.account)
-            self._validate_target_address_books(service)
+            client = get_exchange_client(self.user, self.account)
+            self._validate_target_address_books()
 
             if self.import_format == "vcf":
-                cards = self._load_vcf_cards(service, base_dir, logger)
+                cards = self._load_vcf_cards(client, base_dir, logger)
             else:
                 cards = self._load_jmap_cards(base_dir)
 
@@ -353,16 +412,16 @@ class ContactsExchange(OwnerFromUser, Document):
             # Stage everything into one throwaway address book first, then move it to the destination
             # address book(s). A failure before the move leaves nothing scattered across the account: the
             # staging address book and every card in it are deleted on rollback.
-            staging_address_book_id = self._create_staging_address_book(service, logger)
-            targets, skipped, failed = self._create_cards(service, cards, staging_address_book_id, logger)
+            staging_address_book_id = self._create_staging_address_book(client, logger)
+            targets, skipped, failed = self._create_cards(client, cards, staging_address_book_id, logger)
 
             # The server rejecting every card (e.g. an invalid target address book) is a failure,
             # not a successful zero-import.
             if not targets and failed > 0:
                 frappe.throw(_("Import failed: the server rejected all {0} contact(s).").format(failed))
 
-            self._move_to_target_address_books(service, targets, logger)
-            self._discard_staging_address_book(service, staging_address_book_id, logger)
+            self._move_to_target_address_books(client, targets, logger)
+            self._discard_staging_address_book(client, staging_address_book_id, logger)
             staging_address_book_id = None
 
             created = len(targets)
@@ -376,8 +435,8 @@ class ContactsExchange(OwnerFromUser, Document):
         except Exception:
             logger.exception("import-failed")
             self._log_output(_("Import failed. See the error details below."))
-            if staging_address_book_id and service:
-                self._rollback_staging_address_book(service, staging_address_book_id, logger)
+            if staging_address_book_id and client:
+                self._rollback_staging_address_book(client, staging_address_book_id, logger)
             kwargs.update(
                 {"status": "Failed", "output": f"{self.output}\n\n{frappe.get_traceback(with_context=False)}"}
             )
@@ -405,10 +464,10 @@ class ContactsExchange(OwnerFromUser, Document):
 
         kwargs = {}
         try:
-            service = get_contact_card_service(self.user, self.account)
+            client = get_exchange_client(self.user, self.account)
 
             limit = min(self.max_export, cint(self.export_limit or self.max_export))
-            data = service.query(self.export_filter_dict, limit=limit)
+            data = query_card_ids(client, self.export_filter_dict, limit=limit)
             ids = data.get("ids", [])
             total = data.get("total")
             logger.info("export-query-resolved", total=total, fetched=len(ids), max_export=self.max_export)
@@ -421,7 +480,14 @@ class ContactsExchange(OwnerFromUser, Document):
             if not ids:
                 frappe.throw(_("No contacts found for export."))
 
-            cards = service.get(ids)
+            cards = [
+                c.to_wire()
+                for c in chunked_get(
+                    client,
+                    lambda b, chunk: b.contacts.contact_card.get(ids=chunk, properties=CARD_PROPERTIES),
+                    ids,
+                )
+            ]
 
             if self.deduplicate_export:
                 fetched = len(cards)
@@ -442,7 +508,9 @@ class ContactsExchange(OwnerFromUser, Document):
             # export doesn't leak the account's other address books into addressbooks.json.
             referenced_ids = {book_id for card in cards for book_id in (card.get("addressBookIds") or {})}
             address_book_map = {
-                b["id"]: b["name"] for b in service.address_books if b["id"] in referenced_ids
+                b["id"]: b["name"]
+                for b in get_cached_address_books(self.account)
+                if b["id"] in referenced_ids
             }
             ContactsExportWriter.write(self.export_format, cards, out_dir, address_book_map)
             self._log_output(_("Wrote {0} contact(s) to the export directory.").format(len(cards)))
@@ -467,9 +535,7 @@ class ContactsExchange(OwnerFromUser, Document):
         self._mark_completed(**kwargs)
         self._notify_user(success=kwargs.get("status") == "Completed", action="Export")
 
-    def _load_vcf_cards(
-        self, service: ContactCardService, base_dir: str, logger: ExchangeLogger
-    ) -> list[dict]:
+    def _load_vcf_cards(self, client: SuiteJMAPClient, base_dir: str, logger: ExchangeLogger) -> list[dict]:
         """Splits the uploaded .vcf file(s) into individual vCards and converts them to JSContact.
 
         ``ContactCard/parse`` returns a single Card per blob (the first vCard it finds), so a file
@@ -498,15 +564,15 @@ class ContactsExchange(OwnerFromUser, Document):
         cards: list[dict] = []
         try:
             # One blob per vCard so the server parses (and returns) every contact, not just the first.
-            uploads = service.upload_blobs_concurrently(
-                [(vcard.encode("utf-8"), "text/vcard; charset=utf-8") for vcard in vcards]
+            uploads = upload_blobs(
+                client, [(vcard.encode("utf-8"), "text/vcard; charset=utf-8") for vcard in vcards]
             )
             blob_to_vcard: dict[str, str] = {}
             for vcard, upload in zip(vcards, uploads, strict=False):
-                if blob_id := (upload or {}).get("blobId"):
-                    blob_to_vcard[blob_id] = vcard
+                if upload and upload.blob_id:
+                    blob_to_vcard[upload.blob_id] = vcard
 
-            response = service.parse(list(blob_to_vcard.keys()))
+            response = parse_contact_blobs(client, list(blob_to_vcard.keys()))
 
             for value in (response.get("parsed") or {}).values():
                 if isinstance(value, list):
@@ -534,7 +600,7 @@ class ContactsExchange(OwnerFromUser, Document):
 
         return cards
 
-    def _validate_target_address_books(self, service: ContactCardService) -> None:
+    def _validate_target_address_books(self) -> None:
         """Validates that the client-supplied target address book(s) exist in this account.
 
         ``target_address_book_ids`` comes from the import metadata and is passed straight to
@@ -545,7 +611,7 @@ class ContactsExchange(OwnerFromUser, Document):
         if not target:
             return
 
-        known = {book["id"] for book in service.address_books}
+        known = {book["id"] for book in get_cached_address_books(self.account)}
         if invalid := [book_id for book_id in target if book_id not in known]:
             frappe.throw(
                 _("Target address book(s) not found in this account: {0}").format(", ".join(invalid))
@@ -566,26 +632,27 @@ class ContactsExchange(OwnerFromUser, Document):
 
         return cards
 
-    def _create_staging_address_book(self, service: ContactCardService, logger: ExchangeLogger) -> str:
+    def _create_staging_address_book(self, client: SuiteJMAPClient, logger: ExchangeLogger) -> str:
         """Creates a temporary address book (named after this exchange) to stage the import into."""
 
         self._log_output(_("Creating a temporary address book to stage the import."))
-        response = AddressBookService(service.account, service.connection).create(
-            [{"creation_id": str(uuid7()), "name": self.name, "is_subscribed": False}]
-        )
-        created = response.get("created") or {}
-        if not created:
-            frappe.throw(
-                _("Failed to create the staging address book: {0}").format(response.get("notCreated"))
+        creation_id = str(uuid7())
+        with client.batch() as b:
+            handle = b.contacts.address_book.set(
+                create={creation_id: {"name": self.name, "isSubscribed": False}}
             )
 
-        staging_address_book_id = next(iter(created.values()))["id"]
+        response = handle.result
+        staging_address_book_id = response.created_id(creation_id)
+        if not staging_address_book_id:
+            frappe.throw(_("Failed to create the staging address book: {0}").format(response.not_created))
+
         logger.info("import-staging-address-book-created", address_book=staging_address_book_id)
         return staging_address_book_id
 
     def _create_cards(
         self,
-        service: ContactCardService,
+        client: SuiteJMAPClient,
         cards: list[dict],
         staging_address_book_id: str,
         logger: ExchangeLogger,
@@ -601,8 +668,13 @@ class ContactsExchange(OwnerFromUser, Document):
         uids = [c["uid"] for c in cards if c.get("uid")]
         existing_uids: set[str] = set()
         if uids:
-            if existing_ids := service.get_master_ids(uids):
-                existing_uids = {c["uid"] for c in service.get(existing_ids) if c.get("uid")}
+            if existing_ids := get_card_ids_by_uids(client, uids):
+                existing = chunked_get(
+                    client,
+                    lambda b, chunk: b.contacts.contact_card.get(ids=chunk, properties=["id", "uid"]),
+                    existing_ids,
+                )
+                existing_uids = {card["uid"] for card in (c.to_wire() for c in existing) if card.get("uid")}
 
         default_address_book_id: str | None = None
 
@@ -614,9 +686,7 @@ class ContactsExchange(OwnerFromUser, Document):
             if card.get("addressBookIds"):
                 return card["addressBookIds"]
             if default_address_book_id is None:
-                default_address_book_id = AddressBookService(service.account, service.connection).get_default(
-                    raise_exception=True
-                )
+                default_address_book_id = get_default_address_book_id(self.account, raise_exception=True)
             return {default_address_book_id: True}
 
         pending: list[dict] = []
@@ -630,7 +700,7 @@ class ContactsExchange(OwnerFromUser, Document):
         targets: dict[str, dict[str, bool]] = {}
         failed = 0
         total = len(pending)
-        for batch in create_batch(pending, service.max_objects_in_set):
+        for batch in create_batch(pending, client.capabilities.limits.max_objects_in_set):
             payload: dict[str, dict] = {}
             creation_meta: dict[str, tuple[str, dict]] = {}
             for card in batch:
@@ -645,17 +715,16 @@ class ContactsExchange(OwnerFromUser, Document):
                 payload[creation_id] = card
                 creation_meta[creation_id] = (card.get("uid", creation_id), destination)
 
-            response = service._create(payload)
-            method_responses = response.get("methodResponses") or []
-            result = method_responses[0][1] if method_responses else {}
+            with client.batch() as b:
+                handle = b.contacts.contact_card.set(create=payload)
+            result = handle.result
 
-            batch_failed = result.get("notCreated") or {}
-            failed += len(batch_failed)
+            failed += len(result.not_created)
 
-            for creation_id, info in (result.get("created") or {}).items():
-                targets[info["id"]] = creation_meta[creation_id][1]
+            for creation_id in result.created:
+                targets[result.created_id(creation_id)] = creation_meta[creation_id][1]
 
-            for creation_id, error in batch_failed.items():
+            for creation_id, error in result.not_created.items():
                 logger.warning(
                     "import-card-not-created",
                     uid=creation_meta.get(creation_id, (None,))[0],
@@ -667,7 +736,7 @@ class ContactsExchange(OwnerFromUser, Document):
         return targets, skipped, failed
 
     def _move_to_target_address_books(
-        self, service: ContactCardService, targets: dict[str, dict[str, bool]], logger: ExchangeLogger
+        self, client: SuiteJMAPClient, targets: dict[str, dict[str, bool]], logger: ExchangeLogger
     ) -> None:
         """Moves the staged cards into their destination address books, replacing the staging book.
 
@@ -680,40 +749,113 @@ class ContactsExchange(OwnerFromUser, Document):
         self._log_output(
             _("Moving {0} contact(s) into the destination address book(s).").format(len(targets))
         )
-        result = service.set_address_book_ids(targets)
-
-        if not_updated := result.get("notUpdated"):
-            logger.warning("import-card-not-moved", count=len(not_updated))
-            frappe.throw(
-                _("Failed to move {0} contact(s) into the destination address book(s).").format(
-                    len(not_updated)
+        # Patch addressBookIds only and let the server manage the `updated` timestamp, so we never
+        # depend on `updated` being client-writable for ContactCard.
+        updates = {id: {"addressBookIds": book_ids} for id, book_ids in targets.items()}
+        total = len(updates)
+        try:
+            result = chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(update=chunk), updates)
+        except Exception as e:
+            # The chunks before the one that failed are committed, and the rollback only removes
+            # what is still staged: say how much of the import stays in the account.
+            applied = getattr(e, "applied", None)
+            moved = len(applied.updated) if applied else 0
+            if maybe_applied(e):
+                # No answer, or one that says only some of it was done: the chunk that failed may
+                # be committed as well, so the count is only a floor - and worth saying even at zero.
+                logger.warning("import-cards-possibly-moved", moved=moved, total=total)
+                self._log_output(
+                    _(
+                        "The mail server did not confirm the move. {0} of {1} contact(s) are known to "
+                        "have been moved into the destination address book(s); some of the rest may "
+                        "have been moved as well. Moved contact(s) remain in the account."
+                    ).format(moved, total)
                 )
-            )
+            elif moved and never_applied(e):
+                logger.warning("import-cards-partially-moved", moved=moved, total=total)
+                self._log_output(self._partially_moved_message(moved, total))
+            elif moved:
+                # Not the server's doing, and not known to have stopped short of the chunk it
+                # failed on: the count without a word on the server or on the rest.
+                logger.warning("import-cards-partially-moved", moved=moved, total=total)
+                self._log_output(
+                    _(
+                        "At least {0} of {1} contact(s) were moved into the destination address book(s) before the "
+                        "import failed, and remain there."
+                    ).format(moved, total)
+                )
+            raise
 
-        logger.info("import-cards-moved", cards=len(result.get("updated", [])))
+        if result.not_updated:
+            # Log the server's reasons, aggregated by message, and surface the first one to the user.
+            reasons: dict[str, int] = {}
+            for error in result.not_updated.values():
+                key = error.get("description") or error.get("type") or "unknown"
+                reasons[key] = reasons.get(key, 0) + 1
+            moved = len(result.updated)
+            logger.warning(
+                "import-card-not-moved", count=len(result.not_updated), moved=moved, reasons=reasons
+            )
+            message = _("Failed to move {0} contact(s) into the destination address book(s): {1}").format(
+                len(result.not_updated),
+                format_set_error(next(iter(result.not_updated.values()))),
+            )
+            if moved:
+                # The cards beside the refused ones are committed, like the chunks above.
+                partially_moved = self._partially_moved_message(moved, total)
+                self._log_output(partially_moved)
+                message = f"{message}<br>{partially_moved}"
+            frappe.throw(message)
+
+        logger.info("import-cards-moved", cards=len(result.updated))
+
+    @staticmethod
+    def _partially_moved_message(moved: int, total: int) -> str:
+        """What a move that stopped short leaves behind, when the server said exactly how far it got."""
+
+        return _(
+            "{0} of {1} contact(s) were already moved into the destination address book(s) and remain "
+            "there; the rest were not imported."
+        ).format(moved, total)
 
     def _discard_staging_address_book(
-        self, service: ContactCardService, staging_address_book_id: str, logger: ExchangeLogger
+        self, client: SuiteJMAPClient, staging_address_book_id: str, logger: ExchangeLogger
     ) -> None:
         """Deletes the now-empty staging address book after a successful import. A failure here is logged
         but not fatal: the cards are already safely in their destination address books."""
 
         try:
-            AddressBookService(service.account, service.connection).delete([staging_address_book_id])
+            with client.batch() as b:
+                h = b.contacts.address_book.set(destroy=[staging_address_book_id])
+            if h.result.not_destroyed:
+                logger.warning(
+                    "import-staging-address-book-remove-failed",
+                    address_book=staging_address_book_id,
+                    reason=get_set_error_message(h.result, "destroy", staging_address_book_id),
+                )
+                return
             logger.info("import-staging-address-book-removed", address_book=staging_address_book_id)
         except Exception:
             logger.warning("import-staging-address-book-remove-failed", address_book=staging_address_book_id)
 
     def _rollback_staging_address_book(
-        self, service: ContactCardService, staging_address_book_id: str, logger: ExchangeLogger
+        self, client: SuiteJMAPClient, staging_address_book_id: str, logger: ExchangeLogger
     ) -> None:
         """Deletes the staging address book and every card still staged in it, undoing a failed import."""
 
         self._log_output(_("Rolling back: removing the staging address book and any staged contacts."))
         try:
-            AddressBookService(service.account, service.connection).delete(
-                [staging_address_book_id], remove_contents=True
-            )
+            with client.batch() as b:
+                h = b.contacts.address_book.set(
+                    destroy=[staging_address_book_id], onDestroyRemoveContents=True
+                )
+            if h.result.not_destroyed:
+                logger.error(
+                    "import-rollback-failed",
+                    address_book=staging_address_book_id,
+                    reason=get_set_error_message(h.result, "destroy", staging_address_book_id),
+                )
+                return
             logger.info("import-rolled-back", address_book=staging_address_book_id)
         except Exception:
             logger.exception("import-rollback-failed", address_book=staging_address_book_id)
@@ -871,15 +1013,125 @@ class ContactsExportWriter:
                 f.write("\r\n")
 
 
-def get_contact_card_service(
+def get_exchange_client(
     user: str,
     account: str,
     ignore_permissions: bool = False,
-) -> ContactCardService:
-    """Returns a ContactCardService configured with the longer exchange timeouts."""
+) -> SuiteJMAPClient:
+    """Returns an account-scoped JMAP client configured with the longer exchange timeouts."""
 
-    connection = get_jmap_connection(user, ignore_permissions=ignore_permissions, timeout=(60.0, 180.0))
-    return ContactCardService(account, connection)
+    return account_view(
+        get_jmap_client(user, ignore_permissions=ignore_permissions, timeout=EXCHANGE_TIMEOUT), account
+    )
+
+
+def query_card_ids(client: SuiteJMAPClient, filter: dict | None, limit: int) -> dict:
+    """Paginates ContactCard/query until `limit` ids are collected, returning `{"ids", "total"}`."""
+
+    ids: list[str] = []
+    total = None
+    position = 0
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+
+        with client.batch() as b:
+            handle = b.contacts.contact_card.query(
+                position=position,
+                limit=current_batch_size,
+                calculate_total=total is None,
+                **omit_none(filter=filter),
+            )
+
+        response = handle.result
+        ids.extend(response.ids)
+
+        if total is None:
+            total = response.total
+
+        if len(response.ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(response.ids)
+
+    return {"ids": ids[:limit], "total": total}
+
+
+def parse_contact_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
+    """Parses vCard blobs into JSContact Cards via 'ContactCard/parse'.
+
+    The number of blob ids allowed per 'ContactCard/parse' call is capped well below
+    'maxObjectsInGet' and is not advertised in the session capabilities, so we start from the
+    general object limit and halve the batch whenever the server responds with 'requestTooLarge',
+    reusing the largest size that succeeds for the remaining blobs. Any other error is raised so
+    the caller can fall back to local parsing."""
+
+    result = {"parsed": {}, "notFound": {}, "notParsable": {}}
+
+    remaining = list(blob_ids)
+    batch_size = min(len(remaining), client.capabilities.limits.max_objects_in_get) or 1
+    while remaining:
+        batch = remaining[:batch_size]
+        # The handle resolves to a typed ParsedCards; `parsed` maps a blob id to ONE Card.
+        with client.batch() as b:
+            handle = b.contacts.contact_card.parse(blob_ids=batch)
+
+        try:
+            body = handle.result
+        except MethodError as e:
+            if e.type == "requestTooLarge" and batch_size > 1:
+                batch_size = max(1, batch_size // 2)
+                continue
+            raise RuntimeError(f"ContactCard/parse failed: {e.arguments or e.type}") from e
+
+        result["parsed"].update({blob_id: card.to_wire() for blob_id, card in (body.parsed or {}).items()})
+        # The server reports notFound/notParsable as blob-id arrays; keep the
+        # dict shape callers read (.keys()) by keying the ids.
+        if body.not_found:
+            result["notFound"].update(dict.fromkeys(body.not_found))
+        if body.not_parsable:
+            result["notParsable"].update(dict.fromkeys(body.not_parsable))
+
+        remaining = remaining[batch_size:]
+
+    return result
+
+
+def get_card_ids_by_uids(client: SuiteJMAPClient, uids: list[str]) -> list[str]:
+    """Returns the contact card IDs for a list of UIDs.
+
+    The UIDs are batched into separate OR queries so the filter stays within server limits, and
+    each batch is fully paginated using the reported ``total``. We cannot rely on the generic
+    ``query_card_ids`` helper here: it stops as soon as a page returns fewer IDs than requested,
+    but a server may cap a query page below that, which would silently drop matches after the
+    first page and let a re-run create duplicate cards."""
+
+    if not uids:
+        return []
+
+    ids: list[str] = []
+    for batch in chunk_list(uids, client.capabilities.limits.max_objects_in_get):
+        filter = {"operator": "OR", "conditions": [{"uid": uid} for uid in batch]}
+        position = 0
+        total = None
+        while True:
+            with client.batch() as b:
+                handle = b.contacts.contact_card.query(
+                    filter=filter, position=position, limit=len(batch), calculate_total=total is None
+                )
+
+            response = handle.result
+            ids.extend(response.ids)
+
+            if total is None:
+                total = response.total
+
+            position += len(response.ids)
+            if not response.ids or (total is not None and position >= total):
+                break
+
+    return ids
 
 
 # ---------------------------------------------------------------------------

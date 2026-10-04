@@ -58,7 +58,7 @@
    "label": "Server URL",
    "length": 255,
    "no_copy": 1,
-   "placeholder": "https://mail.frappemail.com/",
+   "placeholder": "https://mail.c1.frappemail.com/",
    "read_only": 1
   },
   {
@@ -218,7 +218,7 @@
    "link_fieldname": "user_settings"
   }
  ],
- "modified": "2026-08-31 12:00:00.000000",
+ "modified": "2026-09-17 12:30:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Settings",

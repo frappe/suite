@@ -11,8 +11,8 @@ const DEFAULT_UNDO_SEND_PERIOD = 5
  * a fallback. Off-list or missing values fall back to the default, as they do on the server.
  */
 export const undoSendPeriodOf = (user?: Pick<User, 'undo_send_period'>): number => {
-	const period = Number(user?.undo_send_period)
-	return (UNDO_SEND_PERIODS as readonly number[]).includes(period)
-		? period
-		: DEFAULT_UNDO_SEND_PERIOD
+  const period = Number(user?.undo_send_period)
+  return (UNDO_SEND_PERIODS as readonly number[]).includes(period)
+    ? period
+    : DEFAULT_UNDO_SEND_PERIOD
 }

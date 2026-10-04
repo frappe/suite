@@ -12,6 +12,7 @@ import {
 	type DriveNode,
 } from "../../helpers/drive";
 import { failRequest } from "../../helpers/shell";
+import { test as withFlips } from "../../helpers/flips";
 
 /** Tickets 004 and 005: the Home surface, its two sections and the bell. */
 
@@ -22,9 +23,10 @@ let home: DriveNode;
 let recent: DriveNode;
 
 /**
- * Calendar reads go to JMAP. Administrator has no mail account on this site, so
- * `GET /api/suite/calendar/events` answers 200 with an empty list. The rows
- * below are a stub of that same answer, used only to check the rendering.
+ * Calendar reads go to JMAP. Administrator has a mail account on this site
+ * (`administrator@suite.test` on the local Stalwart server), and its calendar
+ * holds real events. The rows below stub `GET /api/suite/calendar/events`, so
+ * each journey checks the rendering against a known answer.
  */
 const EVENT_FIXTURE = [
 	{
@@ -79,6 +81,28 @@ test("Recent lists the documents the account opened", async ({ page }) => {
 	await expect(page).toHaveURL(new RegExp(`/d/${recent.name}/home-recent-doc`));
 });
 
+withFlips.describe("Recent's View all", () => {
+	// The old Drive pages have no `/drive/recent`, so View all shows only with the files flip on.
+	withFlips("opens the Recent view with the files flip on", async ({ page }) => {
+		await page.goto("/home");
+		await page.locator('section[aria-labelledby="home-recent-heading"]').getByText("View all").click();
+		await expect(page).toHaveURL(/\/drive\/recent$/);
+	});
+
+	withFlips.describe("with the files flip off", () => {
+		withFlips.use({ flips: { suite_flip_shell: false, suite_flip_files: false } });
+
+		withFlips("is hidden, and Upcoming keeps its own", async ({ page }) => {
+			await page.goto("/home");
+			await expect(page.getByTestId("recent-rows").getByText("home-recent-doc")).toBeVisible();
+			const recent = page.locator('section[aria-labelledby="home-recent-heading"]');
+			await expect(recent.getByText("View all")).toHaveCount(0);
+			const upcoming = page.locator('section[aria-labelledby="home-upcoming-heading"]');
+			await expect(upcoming.getByText("View all")).toHaveCount(1);
+		});
+	});
+});
+
 test("Upcoming groups the events and offers Join for a conferencing one", async ({ page }) => {
 	await stubEvents(page);
 	await page.goto("/home");
@@ -92,6 +116,7 @@ test("Upcoming groups the events and offers Join for a conferencing one", async 
 });
 
 test("Upcoming reports an empty calendar when the account has no events", async ({ page }) => {
+	await stubEvents(page, []);
 	await page.goto("/home");
 	await expect(page.getByText("Nothing scheduled")).toBeVisible();
 	await expect(page.getByTestId("recent-rows")).toBeVisible();

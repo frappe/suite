@@ -1,4 +1,11 @@
-import { openCollabRoom, openDeviceStore, type CollabEndpoints, type DeviceStore, type Opened } from '@suite/collab-client'
+import {
+  openCollabRoom,
+  openDeviceStore,
+  type CollabEndpoints,
+  type DeviceStore,
+  type Opened,
+} from '@suite/collab-client'
+
 import type { DocumentSession } from '@/apps/drive'
 import { getCookieSessionUser } from '@/platform/session'
 import { createTransport, type HttpMethod, type Operation } from '@/platform/transport'
@@ -22,7 +29,9 @@ const SESSION = route('collab_sessions_post', 'POST', 'documents/{node}/collab/s
 
 // Every request names who the tab expects to be, so the server can tell a lapsed sign-in from lost access
 export function writerEndpoints(session: DocumentSession, principal: string): CollabEndpoints {
-  const transport = createTransport({ linkStore: session.credentials })
+  const transport = createTransport({
+    fetch: (url, init) => session.credentials.fetch(String(url), init),
+  })
   const node = session.nodeId
   const headers = { 'X-Collab-Principal': principal }
   return {
@@ -31,10 +40,14 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
     push: (body, options) =>
       transport.requestBytes(PUSH, { node }, { body, keepalive: options?.keepalive, headers }),
     session: (sid, claim) =>
-      transport.requestBytes(SESSION, { node }, {
-        body: new TextEncoder().encode(JSON.stringify(claim ? { sid, claim } : { sid })),
-        headers,
-      }),
+      transport.requestBytes(
+        SESSION,
+        { node },
+        {
+          body: new TextEncoder().encode(JSON.stringify(claim ? { sid, claim } : { sid })),
+          headers,
+        },
+      ),
   }
 }
 
@@ -49,7 +62,8 @@ const stores = new Map<string, Promise<DeviceStore | null>>()
 
 function deviceStore(principal: string) {
   const key = principal === 'Guest' ? 'guest' : principal
-  if (!stores.has(key)) stores.set(key, openDeviceStore(`suite-writer-collab:${location.host}:${key}`))
+  if (!stores.has(key))
+    stores.set(key, openDeviceStore(`suite-writer-collab:${location.host}:${key}`))
   return stores.get(key)!
 }
 

@@ -5,9 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from suite.drive.patches.cleanup.gate import CleanupAuthorizationError, LegacyCallerGateError
+from suite.drive.patches.cleanup.gate import CleanupAuthorizationError, GCDiscoveryGateError
 from suite.drive.patches.cleanup.patch import PHASES, run_cleanup
-from suite.drive.patches.cleanup.readiness import PortNotReadyError
 from suite.drive.patches.cleanup.removal import (
     RETAINED_FILE_CUSTOM_FIELDS,
     CleanupPatchError,
@@ -15,14 +14,10 @@ from suite.drive.patches.cleanup.removal import (
 )
 from suite.drive.patches.cleanup.state import CleanupState, CorruptCleanupStateError
 from suite.drive.patches.cleanup.tests.fakes import (
-    FakeClientCallerEvidence,
     FakeFileTable,
-    FakeForwarders,
     FakeSchema,
-    FakeSourceSchema,
     FakeThumbnails,
     FakeTransaction,
-    RaisingSchema,
     cleanup_environment,
     fake_blob_columns,
 )
@@ -30,14 +25,7 @@ from suite.drive.patches.cleanup.tests.fakes import (
 
 def _healthy_env(tmp_path, **overrides):
     files = FakeFileTable().add("Drive").add("Users", folder=None).add("a", folder="Drive", has_node=True)
-    forwarders = FakeForwarders({"api.s3.fetch": "permanent"})
-    kwargs = dict(
-        files=files,
-        blob_columns=fake_blob_columns(),
-        forwarders=forwarders,
-        authorized=True,
-        backup_ref="s3://backups/2026-09-09",
-    )
+    kwargs = dict(files=files, blob_columns=fake_blob_columns(), backup="s3://backups/2026-09-09")
     kwargs.update(overrides)
     return cleanup_environment(tmp_path, **kwargs)
 
@@ -49,79 +37,33 @@ class TestRunCleanupRefusals(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def test_a_failing_gate_refuses_before_any_phase_runs(self):
-        env = _healthy_env(
-            self.path,
-            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
-            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
-        )
-        with self.assertRaises(LegacyCallerGateError):
+        env = _healthy_env(self.path, blob_columns=fake_blob_columns([]))
+        with self.assertRaises(GCDiscoveryGateError):
             run_cleanup(env)
         self.assertEqual(env.files.deleted, [])
         self.assertFalse(env.state.path.exists())
 
-    def test_gates_passing_without_authorization_still_refuses(self):
-        env = _healthy_env(self.path, authorized=False)
-        with self.assertRaises(CleanupAuthorizationError):
+    def test_gates_passing_without_a_recorded_backup_still_refuses(self):
+        env = _healthy_env(self.path, backup=None)
+        with self.assertRaises(CleanupAuthorizationError) as caught:
             run_cleanup(env)
+        self.assertIn("set-config drive_cleanup_backup", str(caught.exception))
         self.assertEqual(env.files.deleted, [])
         self.assertFalse(env.state.path.exists())
 
-    def test_gates_passing_without_backup_ref_still_refuses(self):
-        env = _healthy_env(self.path, backup_ref=None)
-        with self.assertRaises(CleanupAuthorizationError):
-            run_cleanup(env)
-        self.assertEqual(env.files.deleted, [])
-
-    def test_an_unready_port_refuses_before_any_phase_runs(self):
-        # `RaisingSchema` mimics the real `SiteSchemaGateway`'s honest
-        # `NotImplementedError` for `drop_child_table_field`/
-        # `remove_permission_hooks`: activation must fail here, in
-        # preflight, not partway through phase 3 or 4 after rows and
-        # doctypes are already gone.
-        env = _healthy_env(self.path, schema=RaisingSchema())
-        with self.assertRaises(PortNotReadyError):
-            run_cleanup(env)
-        self.assertEqual(env.files.deleted, [])
-        self.assertFalse(env.state.path.exists())
-
-    def test_source_schema_still_declared_refuses_before_any_phase_runs(self):
-        env = _healthy_env(
-            self.path,
-            source_schema=FakeSourceSchema(still_declared={"Drive Notification": {"from_user"}}),
-        )
-        with self.assertRaises(PortNotReadyError):
-            run_cleanup(env)
-        self.assertEqual(env.files.deleted, [])
-        self.assertFalse(env.state.path.exists())
-
-    def test_permission_hooks_still_present_refuses_before_any_phase_runs(self):
-        env = _healthy_env(self.path, source_schema=FakeSourceSchema(still_hooked={"Drive Permission"}))
-        with self.assertRaises(PortNotReadyError):
-            run_cleanup(env)
-        self.assertEqual(env.files.deleted, [])
-        self.assertFalse(env.state.path.exists())
-
-    def test_preflight_runs_before_the_gates(self):
-        # An unready port and a failing gate both present: preflight's
-        # refusal must win, since gates passing on a site that cannot
-        # finish the run is not actually safe to start.
-        env = _healthy_env(
-            self.path,
-            schema=RaisingSchema(),
-            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
-            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
-        )
-        with self.assertRaises(PortNotReadyError):
-            run_cleanup(env)
+    def test_the_backup_is_on_record_once_a_run_starts(self):
+        env = _healthy_env(self.path)
+        run_cleanup(env)
+        self.assertEqual(env.state.get_backup(), "s3://backups/2026-09-09")
 
 
 class TestRunCleanupCorruptState(unittest.TestCase):
     """Finding: a corrupt state file was quarantined and then silently
     treated as a fresh site with no prior run, so a resumed call could
     rescan a table phase 1 already emptied and overwrite the durable census
-    with an empty one. `run_cleanup` must refuse outright, before preflight,
-    the gates, or any mutation — the only recovery is a database restore or
-    an operator manually reconstructing the record."""
+    with an empty one. `run_cleanup` must refuse outright, before the gates
+    or any mutation — the only recovery is a database restore or an
+    operator manually reconstructing the record."""
 
     def setUp(self):
         self.tmp = TemporaryDirectory()
@@ -129,13 +71,9 @@ class TestRunCleanupCorruptState(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def test_corrupt_state_before_any_phase_wins_over_a_failing_gate(self):
-        # Rigged to fail gate 3 if ever reached, so a `CorruptCleanupStateError`
-        # (not `LegacyCallerGateError`) proves the corruption check runs first.
-        env = _healthy_env(
-            self.path,
-            forwarders=FakeForwarders({"api.files.upload_file": "forwarder"}),
-            callers=FakeClientCallerEvidence({"api.files.upload_file"}),
-        )
+        # Rigged to fail gate 2 if ever reached, so a `CorruptCleanupStateError`
+        # (not `GCDiscoveryGateError`) proves the corruption check runs first.
+        env = _healthy_env(self.path, blob_columns=fake_blob_columns([]))
         env.state.path.write_text("{not json", encoding="utf-8")
 
         with self.assertRaises(CorruptCleanupStateError):
@@ -164,10 +102,9 @@ class TestRunCleanupCorruptState(unittest.TestCase):
         with self.assertRaises(CorruptCleanupStateError):
             run_cleanup(env)
 
-        # No phase past 1 ran: no sidecar or S3 work, no schema mutation.
+        # No phase past 1 ran: no sidecar work, no schema mutation.
         self.assertEqual(schema.custom_fields, set(RETAINED_FILE_CUSTOM_FIELDS))
         self.assertEqual(thumbnails.existing, {"a"})
-        self.assertEqual(env.s3.enqueued, [])
 
         # The corrupt record is quarantined for forensics, not deleted: the
         # spoiled file still holds the bytes we wrote (evidence preserved),
@@ -223,11 +160,10 @@ class TestRunCleanupCorruptState(unittest.TestCase):
         with self.assertRaises(CorruptCleanupStateError):
             env.state.get_census()
 
-        # Still no phase past 1 ran, across both calls: no sidecar or S3
-        # work, no schema mutation.
+        # Still no phase past 1 ran, across both calls: no sidecar work, no
+        # schema mutation.
         self.assertEqual(schema.custom_fields, set(RETAINED_FILE_CUSTOM_FIELDS))
         self.assertEqual(thumbnails.existing, {"a"})
-        self.assertEqual(env.s3.enqueued, [])
 
 
 class TestCleanupStateQuarantinePersistence(unittest.TestCase):
@@ -305,11 +241,11 @@ class TestRunCleanupOrder(unittest.TestCase):
             self.assertTrue(env.state.get(name).completed, msg=name)
 
     def test_gates_run_once_per_call_not_once_per_phase(self):
-        # Re-checking before every one of eight phases bought no real
-        # safety over checking once per call (Cleanup is single-actor and
-        # serial within a run) for the cost of up to ten full `File` scans
-        # a run; a genuine resume still gets a fully fresh check, because
-        # that is a new call to `run_cleanup`.
+        # Re-checking before every one of seven phases bought no real safety
+        # over checking once per call (Cleanup is single-actor and serial
+        # within a run) for the cost of several full `File` scans a run; a
+        # genuine resume still gets a fully fresh check, because that is a
+        # new call to `run_cleanup`.
         env = _healthy_env(self.path)
         calls = []
         from suite.drive.patches.cleanup import patch as patch_module
@@ -324,18 +260,13 @@ class TestRunCleanupOrder(unittest.TestCase):
             run_cleanup(env)
         self.assertEqual(len(calls), 1)
 
-    def test_preflight_and_gates_run_before_the_first_mutation(self):
+    def test_the_gates_run_before_the_first_mutation(self):
         env = _healthy_env(self.path)
         order = []
         from suite.drive.patches.cleanup import patch as patch_module
 
-        original_preflight = patch_module.run_preflight
         original_gates = patch_module.check_gates
         original_phase = patch_module.phase_file_rows
-
-        def tracking_preflight(*args, **kwargs):
-            order.append("preflight")
-            return original_preflight(*args, **kwargs)
 
         def tracking_gates(*args, **kwargs):
             order.append("gates")
@@ -346,12 +277,11 @@ class TestRunCleanupOrder(unittest.TestCase):
             return original_phase(*args, **kwargs)
 
         with (
-            patch.object(patch_module, "run_preflight", side_effect=tracking_preflight),
             patch.object(patch_module, "check_gates", side_effect=tracking_gates),
             patch.object(patch_module, "phase_file_rows", side_effect=tracking_phase),
         ):
             run_cleanup(env)
-        self.assertEqual(order, ["preflight", "gates", "phase_file_rows"])
+        self.assertEqual(order, ["gates", "phase_file_rows"])
 
     def test_each_phase_commits_before_its_checkpoint_is_written(self):
         env = _healthy_env(self.path)

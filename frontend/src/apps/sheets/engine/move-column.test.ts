@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
+
+import { deleteMap, insertMap, moveMap } from './ref-remap.js'
 import { createSheet } from './sheet.js'
-import { moveMap, insertMap, deleteMap } from './ref-remap.js'
 
 // End-to-end through the real evaluation engine: a formula must produce the
 // SAME result after a structural op, because both the data and the references
@@ -36,7 +37,7 @@ describe('sheet.remapCols — formulas survive a column move', () => {
     s.setCell('A1', '=Sheet1!D1')
     expect(s.getCellValue('A1')).toBe(10)
 
-    s.remapCols(moveMap(3, 1, 1), 'Sheet1')   // op on Sheet1, formula on Sheet2
+    s.remapCols(moveMap(3, 1, 1), 'Sheet1') // op on Sheet1, formula on Sheet2
 
     expect(s.getCell('A1', 'Sheet2')).toBe('=Sheet1!B1')
     expect(s.getCellValue('A1', 'Sheet2')).toBe(10)
@@ -48,9 +49,9 @@ describe('sheet.remapCols — formulas survive a column move', () => {
     s.setCell('C1', '=B1*2')
     expect(s.getCellValue('C1')).toBe(10)
 
-    s.remapCols(insertMap(0, 1))   // insert a column at A
+    s.remapCols(insertMap(0, 1)) // insert a column at A
 
-    expect(s.getCell('C1')).toBe('5')     // B → C
+    expect(s.getCell('C1')).toBe('5') // B → C
     expect(s.getCellValue('D1')).toBe(10)
     expect(s.getCell('D1')).toBe('=C1*2') // formula followed
   })
@@ -61,7 +62,7 @@ describe('sheet.remapCols — formulas survive a column move', () => {
     s.setCell('C1', '=B1*2')
     expect(s.getCellValue('C1')).toBe(10)
 
-    s.remapCols(deleteMap(1, 1))   // delete column B
+    s.remapCols(deleteMap(1, 1)) // delete column B
 
     // B is gone; C shifted to B and its ref to the deleted column is #REF!.
     expect(s.getCell('B1')).toBe('=#REF!*2')

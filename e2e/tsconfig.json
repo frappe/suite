@@ -8,7 +8,11 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "types": ["node", "@playwright/test"]
+    "types": ["node", "@playwright/test"],
+    "paths": {
+      "@/platform/transport": ["../frontend/src/platform/transport/index.ts"],
+      "@/*": ["../frontend/src/*"]
+    }
   },
   "include": ["**/*.ts"]
 }

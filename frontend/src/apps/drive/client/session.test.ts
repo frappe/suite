@@ -1,46 +1,143 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ACCESS_REFRESH_MS, CREDENTIAL_CAP, CredentialOverflowError, MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
-import { TransportError, type Transport } from '@/platform/transport'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const documentNode = (name: string, code?: string) => ({
-  name, title: name, kind: 'document', parent: 'p', root: 'r', state: 'Active', size: 0, mime: null,
-  url: null, content_doctype: 'Presentation', content_docname: `doc-${name}`, is_template: 0,
-  owner: 'Administrator', creation: null, modified: '2026-09-15', content_modified: null,
-  access: { role: 40, via_link: code ? `$LINK:${code}` : null },
+import { createTransport, TransportError, type Transport } from '@/platform/transport'
+
+import { driveLinks } from './links'
+import { ACCESS_REFRESH_MS, MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
+
+const documentNode = (name: string) => ({
+  name,
+  title: name,
+  kind: 'document',
+  parent_node: 'p',
+  root: 'r',
+  state: 'Active',
+  trash_root: null,
+  size: 0,
+  mime: null,
+  url: null,
+  content_doctype: 'Presentation',
+  content_docname: `doc-${name}`,
+  is_template: 0,
+  owner: { id: 'Administrator', full_name: 'Administrator', user_image: null },
+  creation: null,
+  modified: '2026-09-15',
+  content_modified: null,
+  access: { role: 40, via_link: null },
 })
+const code = (index: number) => `S${String(index).padStart(21, '0')}`
 
 function transport(handler: (id: string, input: any) => any): Transport {
   return { request: (operation, input) => Promise.resolve(handler(operation.id, input)) }
 }
 
-afterEach(() => vi.useRealTimers())
+beforeEach(() => localStorage.clear())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('document session credentials', () => {
-  it('partitions ordered references under the 20-code cap', async () => {
-    const requester = transport((id, input) => id === 'node_get' ? documentNode(input.node, `code-${input.node}`) : {})
-    const session = await openDriveDocumentSession('root', { transport: requester })
-    const ids = Array.from({ length: CREDENTIAL_CAP + 1 }, (_, index) => `n${index}`)
-    const groups = await session.credentials.group(ids)
-    expect(groups.map((group) => group.nodeIds.length)).toEqual([20, 1])
-    await expect(session.credentials.codesFor(ids)).rejects.toBeInstanceOf(CredentialOverflowError)
+  it('groups references under the 20-code cap, each group with the document code', async () => {
+    const requester = transport((id, input) => (id === 'node_get' ? documentNode(input.node) : {}))
+    driveLinks.seed(code(0), 'deck')
+    const ids = Array.from({ length: 21 }, (_, index) => `n${index}`)
+    ids.forEach((id, index) => driveLinks.seed(code(index + 1), id))
+    const session = await openDriveDocumentSession('deck', { transport: requester })
+
+    const groups = session.credentials.group(ids)
+
+    const sent: string[][] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sent.push(new Headers(init?.headers).get('X-Drive-Links')!.split(','))
+        return new Response('{}', { status: 200 })
+      }),
+    )
+    for (const group of groups)
+      await group.fetch('/api/method/suite.slides.api.composite.composite_group')
+
+    expect(groups.map((group) => group.nodeIds)).toEqual([ids.slice(0, 19), ids.slice(19)])
+    expect(sent.map((codes) => [codes[0], codes.length])).toEqual([
+      [code(0), 20],
+      [code(0), 3],
+    ])
     session.dispose()
   })
 
-  it('looks up a node held without a link once, not before every request', async () => {
-    const looked: string[] = []
-    const requester = transport((id, input) => {
-      if (id !== 'node_get') return {}
-      looked.push(input.node)
-      return documentNode(input.node)
-    })
-    const session = await openDriveDocumentSession('root', { transport: requester })
+  it('asks with every held code, the document code among them, for a manifest', async () => {
+    const requester = transport((id, input) => (id === 'node_get' ? documentNode(input.node) : {}))
+    driveLinks.seed(code(0), 'deck')
+    driveLinks.seed(code(1), 'part-a')
+    driveLinks.seed(code(2), 'part-b')
+    const session = await openDriveDocumentSession('deck', { transport: requester })
+    const sent: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sent.push(new Headers(init?.headers).get('X-Drive-Links')!)
+        return new Response('{}', { status: 200 })
+      }),
+    )
 
-    for (let request = 0; request < 3; request++) {
-      expect(await session.credentials.codesFor(['root', 'other'])).toEqual([])
-    }
+    await session.credentials.fetchHeld('/api/method/suite.slides.api.composite.composite_manifest')
 
-    expect(looked).toEqual(['root', 'other'])
+    expect(sent[0]!.split(',').sort()).toEqual([code(0), code(1), code(2)])
     session.dispose()
+  })
+
+  it('keeps the document link when a comment is missing, and forgets it when a product request answers 410', async () => {
+    const sent: Array<string | null> = []
+    const reply = (url: string) => {
+      if (url.includes('/nodes/deck'))
+        return new Response(JSON.stringify({ data: documentNode('deck') }))
+      if (url.includes('/threads/')) {
+        return new Response(
+          JSON.stringify({ errors: [{ type: 'DriveNotFound', message: 'Missing' }] }),
+          { status: 404 },
+        )
+      }
+      return new Response(JSON.stringify({ exc_type: 'DriveLinkExpired' }), { status: 410 })
+    }
+    const record = async (url: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers).get('X-Drive-Links'))
+      return reply(String(url))
+    }
+    vi.stubGlobal('fetch', vi.fn(record))
+    driveLinks.seed(code(0), 'deck')
+    const session = await openDriveDocumentSession('deck', {
+      transport: createTransport({ fetch: record }),
+    })
+
+    await session.comments.reply('missing-thread', 'Hello').catch(() => null)
+    await session.credentials.fetch('/api/method/suite.slides.api.composite.composite_manifest')
+    await session.credentials.fetch('/api/method/suite.slides.api.composite.composite_manifest')
+
+    expect(sent.slice(-3)).toEqual([code(0), code(0), null])
+    session.dispose()
+  })
+})
+
+describe('document session visits', () => {
+  it("records a visit for the caller's own access, and none when a share link decides it", async () => {
+    const visits: string[] = []
+    const open = (viaLink: string | null) =>
+      openDriveDocumentSession(viaLink ? 'linked' : 'own', {
+        transport: transport((id, input) => {
+          if (id === 'node_visit') visits.push(input.node)
+          return id === 'node_get'
+            ? { ...documentNode(input.node), access: { role: 20, via_link: viaLink } }
+            : {}
+        }),
+      })
+
+    const own = await open(null)
+    const linked = await open(`$LINK:${code(1)}`)
+
+    expect(visits).toEqual(['own'])
+    own.dispose()
+    linked.dispose()
   })
 })
 
@@ -69,18 +166,28 @@ describe('document session media', () => {
 })
 
 describe('document session access refresh', () => {
-  const failure = (type: string, status: number) => new TransportError({ type, message: type, status })
+  const failure = (type: string, status: number) =>
+    new TransportError({ type, message: type, status })
 
   it('keeps access through network and server errors and refuses on a real answer', async () => {
     vi.useFakeTimers()
     let answer: TransportError | null = null
     const requester: Transport = {
-      request: (operation, input: any) =>
-        operation.id === 'node_get' && answer ? Promise.reject(answer) : Promise.resolve(documentNode(input.node) as never),
+      request: (operation, input) =>
+        operation.id === 'node_get' && answer
+          ? Promise.reject(answer)
+          : Promise.resolve(documentNode((input as { node: string }).node) as never),
     }
-    const session = await openDriveDocumentSession('root', { transport: requester, signedIn: () => 'Administrator' })
+    const session = await openDriveDocumentSession('root', {
+      transport: requester,
+      signedIn: () => 'Administrator',
+    })
 
-    for (const error of [failure('NetworkError', 0), failure('ServerError', 500), failure('Timeout', 408)]) {
+    for (const error of [
+      failure('NetworkError', 0),
+      failure('ServerError', 500),
+      failure('Timeout', 408),
+    ]) {
       answer = error
       await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
       expect(session.state.value).toBe('Active')
@@ -100,15 +207,24 @@ describe('document session access refresh', () => {
     let refused = 0
     const target = new EventTarget()
     const requester: Transport = {
-      request: (operation, input: any) => {
-        if (operation.id !== 'node_get' || !answer) return Promise.resolve(documentNode(input.node) as never)
+      request: (operation, input) => {
+        if (operation.id !== 'node_get' || !answer)
+          return Promise.resolve(documentNode((input as { node: string }).node) as never)
         refused += 1
         return Promise.reject(answer)
       },
     }
-    const session = await openDriveDocumentSession('root', { transport: requester, window: target as Window, signedIn: () => user })
+    const session = await openDriveDocumentSession('root', {
+      transport: requester,
+      window: target as Window,
+      signedIn: () => user,
+    })
     user = null
-    for (const error of [failure('DriveNotFound', 404), failure('SessionExpired', 401), failure('PermissionError', 403)]) {
+    for (const error of [
+      failure('DriveNotFound', 404),
+      failure('SessionExpired', 401),
+      failure('PermissionError', 403),
+    ]) {
       answer = error
       const before = refused
       target.dispatchEvent(new Event('focus'))

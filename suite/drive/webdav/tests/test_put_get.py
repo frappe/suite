@@ -11,6 +11,7 @@ reap, and no compensation of its own to replay.
 """
 
 import io
+import os
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -25,6 +26,7 @@ from suite.drive._core.access import grant
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM
 from suite.drive._core.roles import NONE, READ
+from suite.drive._core.times import to_site_naive
 from suite.drive.tests.fixtures import nodes_in_root
 from suite.drive.webdav import context, put
 from suite.drive.webdav import get as get_module
@@ -37,7 +39,7 @@ from suite.drive.webdav.errors import (
     PayloadTooLarge,
     PreconditionFailed,
 )
-from suite.drive.webdav.properties import compute_etag, to_site_naive
+from suite.drive.webdav.properties import compute_etag
 from suite.drive.webdav.tests.utils import (
     dispatch,
     drop_dav_root,
@@ -233,7 +235,7 @@ class TestWebDAVContent(IntegrationTestCase):
     def test_collection_get_redirects_to_the_drive_ui(self):
         response = self._get(f"/dav/{self.folder_name}")
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], f"/drive/d/{self.folder}")
+        self.assertEqual(response.headers["Location"], f"/drive/f/{self.folder}")
 
         # the mount is the Personal Root itself, so it lands on the root view
         response = self._get("/dav")
@@ -613,6 +615,35 @@ class TestWebDAVPut(IntegrationTestCase):
 
         response = self._put_without_length(self._url("under-cap.bin"), b"z" * 100)
         self.assertEqual(response.status_code, 201)
+
+    def test_the_site_per_file_limit_bounds_a_put_like_a_browser_upload(self):
+        """§7.3: `max_file_size` is the one per-file limit, and DAV is not a way around it.
+
+        With no DAV cap at all, a body above the site's per-file limit is 413
+        before a byte lands, declared or not. A DAV cap can only lower the
+        bound, never raise it past the site's limit.
+        """
+        self._set_site_quota(0)
+        self._set_conf("drive_webdav_max_upload_size", 0)
+        blobs_before = frappe.db.count("File Blob")
+
+        with patch("frappe.core.api.file.get_max_file_size", return_value=512):
+            with self.assertRaises(PayloadTooLarge) as caught:
+                self._put(self._url("over-site-limit.bin"), b"z" * 4096)
+            self.assertEqual(caught.exception.status, 413)
+            with self.assertRaises(PayloadTooLarge):
+                self._put_without_length(self._url("over-site-limit-chunked.bin"), b"z" * 4096)
+            # Fresh bytes, so the one blob this test expects is never one an earlier run stored.
+            self.assertEqual(self._put(self._url("at-site-limit.bin"), os.urandom(512)).status_code, 201)
+
+            self._set_conf("drive_webdav_max_upload_size", 4096)
+            with self.assertRaises(PayloadTooLarge):
+                self._put(self._url("dav-cap-above-site-limit.bin"), b"z" * 1024)
+
+        self.assertIsNone(self._resolve(f"{self.base_name}/over-site-limit.bin").node)
+        self.assertIsNone(self._resolve(f"{self.base_name}/over-site-limit-chunked.bin").node)
+        self.assertIsNone(self._resolve(f"{self.base_name}/dav-cap-above-site-limit.bin").node)
+        self.assertEqual(frappe.db.count("File Blob"), blobs_before + 1)
 
     def test_an_exhausted_quota_still_answers_507_beside_the_cap(self):
         """The two bounds keep their own statuses; the cap does not swallow one.

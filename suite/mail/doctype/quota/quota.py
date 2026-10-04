@@ -9,7 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_quota_service
+from suite.mail.jmap import get_account_client
 from suite.utils import parse_filters
 
 
@@ -104,9 +104,7 @@ def parse_quota_name(name: str) -> tuple[str, str]:
 def get_quota(account: str, id: str, raise_exception: bool = True) -> dict | None:
     """Returns quota details for the given account and id."""
 
-    service = get_quota_service(account)
-
-    if quotas := service.get([id]):
+    if quotas := _fetch_quota_objects(account, [id]):
         return format_quota(account, quotas[0])
 
     if raise_exception:
@@ -116,12 +114,21 @@ def get_quota(account: str, id: str, raise_exception: bool = True) -> dict | Non
         )
 
 
+def _fetch_quota_objects(account: str, ids: list[str] | None = None) -> list[dict]:
+    """Returns raw Quota objects for the account, all of them when `ids` is None."""
+
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.quota.quota.get(ids=ids) if ids is not None else b.quota.quota.get()
+
+    return [q.to_wire() for q in h.result.items]
+
+
 @frappe.whitelist()
 def fetch_quotas(account: str, page: int = 1, limit: int = 10) -> list:
     """Returns a list of quotas for the given account."""
 
-    service = get_quota_service(account)
-    quotas = service.get()
+    quotas = _fetch_quota_objects(account)
     formatted_quotas = [format_quota(account, quota) for quota in quotas]
     frappe.cache.set_value(_get_total_cache_key(account), len(quotas), expires_in_sec=600)
 

@@ -7,7 +7,8 @@ from uuid import uuid4
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
-from suite.drive._core.errors import DriveNotFound, DriveOverQuota
+from suite.drive._core.errors import DriveForbidden, DriveNotFound, DriveOverQuota
+from suite.drive._core.principals import Principals
 from suite.drive._core.quota import (
     ADMIT_SQL,
     RELEASE_SQL,
@@ -26,8 +27,9 @@ from suite.drive._core.quota import (
     root_for_node,
     site_quota_bytes,
 )
-from suite.drive._core.roots import create_root, personal_root_for
+from suite.drive._core.roots import LARGEST_FILES, create_root, personal_root_for, usage_for
 from suite.drive.jobs import recompute_root_usage
+from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.hooks import scheduler_events
 
 
@@ -43,7 +45,7 @@ def scan_active_and_archived_roots(doctype, filters=None, pluck=None):
 
 
 class TestQuotaContract(UnitTestCase):
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
     def test_effective_quota_prefers_override_then_kind_default(self, get_settings):
         get_settings.return_value = frappe._dict(default_personal_quota=100, shared_quota=200)
 
@@ -51,20 +53,14 @@ class TestQuotaContract(UnitTestCase):
         self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 0}), 100)
         self.assertEqual(effective_quota({"kind": "Shared", "quota_bytes": 0}), 200)
 
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
-    def test_effective_quota_reads_a_site_default_a_single_stores_as_text(self, get_settings):
-        """`Drive Disk Settings` is a Single, so its `Long Int` quotas come back as text.
-
-        `tabSingles.value` is a longtext column and Frappe casts a Single's `Int`
-        and `Check` fields but not its `Long Int` ones, so the installed default
-        `0` reads back as `"0"`.
-        """
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
+    def test_effective_quota_reads_raw_site_defaults(self, get_settings):
         get_settings.return_value = frappe._dict(default_personal_quota="0", shared_quota="20480")
 
         self.assertEqual(effective_quota({"kind": "Personal", "quota_bytes": 0}), 0)
         self.assertEqual(effective_quota({"kind": "Shared", "quota_bytes": 0}), 20480)
 
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
     def test_a_malformed_site_default_is_refused_not_read_as_unlimited(self, get_settings):
         for stored in ("5GB", "1.5", "-1", "0x10", "1_000"):
             with self.subTest(stored=stored):
@@ -72,7 +68,7 @@ class TestQuotaContract(UnitTestCase):
                 with self.assertRaises(frappe.ValidationError):
                     effective_quota({"kind": "Personal", "quota_bytes": 0})
 
-    @patch("suite.drive._core.quota.frappe.get_cached_doc")
+    @patch("suite.drive._core.quota.frappe.db.get_singles_dict")
     def test_an_unset_site_default_is_unlimited(self, get_settings):
         for stored in (None, "", "   ", 0):
             with self.subTest(stored=stored):
@@ -198,15 +194,15 @@ class TestSiteDefaultQuota(IntegrationTestCase):
     """The site defaults on a root with no override, read off the real Single.
 
     `Drive Disk Settings` is a Single, so `default_personal_quota` and
-    `shared_quota` live in `tabSingles.value`, a longtext column. Frappe casts a
-    Single's `Int` and `Check` fields back to numbers but not its `Long Int`
-    ones, so both quotas reach `effective_quota` as text on every site.
+    `shared_quota` live in `tabSingles.value`. Quota checks read the raw text
+    to reject malformed values before Frappe casts them to zero.
     """
 
-    user = "Administrator"
+    user = "drive-quota-default@example.com"
 
     def setUp(self):
         super().setUp()
+        ensure_rootless_user(self.user)
         self.previous = {
             field: frappe.db.get_single_value("Drive Disk Settings", field)
             for field in ("default_personal_quota", "shared_quota")
@@ -264,10 +260,12 @@ class TestSiteDefaultQuota(IntegrationTestCase):
 
 
 class TestRootReservationsAndRecompute(IntegrationTestCase):
-    user = "Administrator"
+    user = "drive-quota-reservations@example.com"
+    other_user = "drive-quota-other@example.com"
 
     def setUp(self):
         super().setUp()
+        ensure_rootless_user(self.user)
         self.root = create_root(
             kind="Personal", title="Reservation root", user=self.user, quota_bytes=100
         ).name
@@ -284,7 +282,9 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         super().tearDown()
 
     def test_create_resize_release_are_root_keyed_idempotent_and_charged(self):
-        self.assertTrue(frappe.db.has_index("tabDrive Storage Reservation", "root_index"))
+        # Frappe names a `search_index` key `root` when it creates the table and
+        # `root_index` when it adds the key to an existing one, so match the column.
+        self.assertTrue(frappe.db.get_column_index("tabDrive Storage Reservation", "root", unique=False))
         created = create_storage_reservation(self.root, "quota-test", 60)
         retried = create_storage_reservation(self.root, "quota-test", 60)
         self.assertEqual(created, retried)
@@ -307,7 +307,7 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
             {
                 "doctype": "Drive Node",
                 "title": "Charged node",
-                "parent": self.root,
+                "parent_node": self.root,
                 "root": self.root,
                 "path": "",
                 "kind": "folder",
@@ -406,24 +406,26 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 60)
         release_storage_reservation(None, "archived-limit")
 
+    def _insert_unbound_reservation(self, key: str, reserved_bytes: int) -> None:
+        """A row the old Drive wrote: no root, as a pre-Build patch finds it."""
+        frappe.db.sql(
+            """INSERT INTO `tabDrive Storage Reservation` (name, creation, modified, reserved_bytes)
+            VALUES (%(name)s, NOW(), NOW(), %(reserved_bytes)s)""",
+            {"name": key, "reserved_bytes": reserved_bytes},
+        )
+        self.addCleanup(frappe.db.delete, "Drive Storage Reservation", {"name": key})
+
     def test_binding_a_legacy_reservation_charges_it_once_and_never_rebinds(self):
-        frappe.get_doc(
-            {
-                "doctype": "Drive Storage Reservation",
-                "name": "legacy-adopt",
-                "storage_owner": self.user,
-                "reserved_bytes": 30,
-            }
-        ).insert(ignore_permissions=True)
+        self._insert_unbound_reservation("legacy-adopt", 30)
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
 
         adopted = bind_legacy_storage_reservation(self.root, "legacy-adopt", 30)
 
         self.assertEqual((adopted.root, adopted.reserved_bytes), (self.root, 30))
-        self.assertIsNone(frappe.db.get_value("Drive Storage Reservation", "legacy-adopt", "storage_owner"))
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 30)
 
-        other = create_root(kind="Shared", title="Other root", quota_bytes=100)
+        ensure_rootless_user(self.other_user)
+        other = create_root(kind="Personal", title="Other root", user=self.other_user, quota_bytes=100)
         self.addCleanup(self._drop_root, other.name)
 
         # A rerun against a different root keeps the original binding and only
@@ -438,14 +440,7 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
 
     def test_releasing_an_unbound_legacy_reservation_charges_no_root(self):
-        frappe.get_doc(
-            {
-                "doctype": "Drive Storage Reservation",
-                "name": "legacy-release",
-                "storage_owner": self.user,
-                "reserved_bytes": 30,
-            }
-        ).insert(ignore_permissions=True)
+        self._insert_unbound_reservation("legacy-release", 30)
 
         release_storage_reservation(None, "legacy-release")
         release_storage_reservation(None, "legacy-release")
@@ -499,3 +494,201 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
             frappe.db.delete("Drive Root", self.root)
             frappe.db.delete("Drive Node", self.root)
             frappe.db.commit()
+
+
+BREAKDOWN_OWNER = "drive-breakdown-owner@example.com"
+BREAKDOWN_OTHER = "drive-breakdown-other@example.com"
+USAGE_KEYS = {"used_bytes", "reserved_bytes", "quota_bytes", "effective_quota"}
+
+
+class TestRootBreakdown(IntegrationTestCase):
+    """`usage_for(..., breakdown=True)`: what one root's Active bytes are made of."""
+
+    def setUp(self):
+        super().setUp()
+        ensure_rootless_user(BREAKDOWN_OWNER, BREAKDOWN_OTHER)
+        self.owner = Principals(BREAKDOWN_OWNER, (BREAKDOWN_OWNER, "$GENERAL"), ("$PUBLIC",))
+        self.other = Principals(BREAKDOWN_OTHER, (BREAKDOWN_OTHER, "$GENERAL"), ("$PUBLIC",))
+        self.root = create_root(kind="Personal", title="Breakdown root", user=BREAKDOWN_OWNER).name
+        self.other_root = create_root(kind="Personal", title="Other root", user=BREAKDOWN_OTHER).name
+
+    def tearDown(self):
+        frappe.db.rollback()
+        super().tearDown()
+
+    def node(self, title, size, *, kind="file", mime=None, root=None, state="Active", owner=None, **extra):
+        """Insert one node straight into a root, then give it bytes and an owner.
+
+        The size, mime, and state are written after the insert: a file node
+        with a mime must name a blob, and a trashed node a trash stamp. These
+        rows need neither to be counted or skipped.
+        """
+        root = root or self.root
+        row = frappe.get_doc(
+            {
+                "doctype": "Drive Node",
+                "title": title,
+                "parent_node": root,
+                "root": root,
+                "path": "",
+                "kind": kind,
+                "state": "Active",
+                "size": 0,
+                "is_template": 0,
+                **extra,
+            }
+        ).insert(ignore_permissions=True, ignore_links=True)
+        frappe.db.set_value(
+            "Drive Node",
+            row.name,
+            {"size": size, "mime": mime, "state": state, "owner": owner or BREAKDOWN_OWNER},
+            update_modified=False,
+        )
+        return row.name
+
+    def test_without_the_expansion_the_answer_is_the_four_counters(self):
+        self.node("a.pdf", 900, mime="application/pdf")
+        self.assertEqual(set(usage_for(self.root, self.owner)), USAGE_KEYS)
+
+    def test_an_empty_root_has_no_types_and_no_files(self):
+        usage = usage_for(self.root, self.owner, breakdown=True)
+        self.assertEqual(set(usage), USAGE_KEYS | {"by_type", "largest"})
+        self.assertEqual((usage.by_type, usage.largest), ([], []))
+
+    def test_active_bytes_group_by_mime_family_and_content_doctype(self):
+        pdf = self.node("a.pdf", 900, mime="application/pdf")
+        png = self.node("b.png", 300, mime="image/png", owner=BREAKDOWN_OTHER)
+        jpeg = self.node("c.jpg", 200, mime="image/jpeg")
+        deck = self.node(
+            "Deck",
+            50,
+            kind="document",
+            mime="frappe/slides",
+            content_doctype="Presentation",
+            content_docname="d1",
+        )
+        # None of these is listed: trash, a folder, a link, an empty file, another root.
+        self.node("old.png", 5000, mime="image/png", state="Trashed")
+        self.node("Folder", 0, kind="folder")
+        self.node("Link", 0, kind="link", url="https://example.com")
+        self.node("empty.txt", 0, mime="text/plain")
+        self.node("theirs.pdf", 7000, mime="application/pdf", root=self.other_root, owner=BREAKDOWN_OTHER)
+
+        usage = usage_for(self.root, self.owner, breakdown=True)
+
+        self.assertEqual(
+            usage.by_type,
+            [
+                {"type": "PDF", "bytes": 900},
+                {"type": "Image", "bytes": 500},
+                {"type": "Presentation", "bytes": 50},
+            ],
+        )
+        self.assertEqual(
+            usage.largest,
+            [
+                {
+                    "node": pdf,
+                    "title": "a.pdf",
+                    "size": 900,
+                    "mime": "application/pdf",
+                    "kind": "file",
+                    "type": "PDF",
+                },
+                {
+                    "node": png,
+                    "title": "b.png",
+                    "size": 300,
+                    "mime": "image/png",
+                    "kind": "file",
+                    "type": "Image",
+                },
+                {
+                    "node": jpeg,
+                    "title": "c.jpg",
+                    "size": 200,
+                    "mime": "image/jpeg",
+                    "kind": "file",
+                    "type": "Image",
+                },
+                {
+                    "node": deck,
+                    "title": "Deck",
+                    "size": 50,
+                    "mime": "frappe/slides",
+                    "kind": "document",
+                    "type": "Presentation",
+                },
+            ],
+        )
+
+    def test_a_documents_media_counts_as_the_document(self):
+        # A Drive listing shows the deck, not the video inside it, so the
+        # breakdown names the deck and charges it the video's bytes.
+        deck = self.node(
+            "Deck",
+            50,
+            kind="document",
+            mime="frappe/slides",
+            content_doctype="Presentation",
+            content_docname="d1",
+        )
+        inside = {"parent_node": deck, "path": f"/{deck}/"}
+        self.node("talk.mp4", 4000, mime="video/mp4", **inside)
+        self.node("slide.png", 1000, mime="image/png", **inside)
+        clip = self.node("clip.mp4", 3000, mime="video/mp4")
+
+        usage = usage_for(self.root, self.owner, breakdown=True)
+
+        self.assertEqual(
+            usage.by_type,
+            [{"type": "Presentation", "bytes": 5050}, {"type": "Video", "bytes": 3000}],
+        )
+        self.assertEqual(
+            [(row["node"], row["title"], row["size"], row["type"]) for row in usage.largest],
+            [(deck, "Deck", 5050, "Presentation"), (clip, "clip.mp4", 3000, "Video")],
+        )
+
+    def test_a_generic_mime_takes_its_type_from_the_extension(self):
+        notes = self.node("Talk notes.md", 700, mime="application/octet-stream")
+        self.node("blob", 300, mime="application/octet-stream")
+
+        usage = usage_for(self.root, self.owner, breakdown=True)
+
+        self.assertEqual(
+            usage.by_type, [{"type": "Code", "bytes": 700}, {"type": "Application", "bytes": 300}]
+        )
+        self.assertEqual(usage.largest[0]["node"], notes)
+        self.assertEqual(usage.largest[0]["type"], "Code")
+
+    def test_the_largest_list_is_capped_but_the_totals_are_not(self):
+        count = LARGEST_FILES + 2
+        for index in range(count):
+            self.node(f"f{index:02}.bin", 100 + index, mime="application/zip")
+
+        usage = usage_for(self.root, self.owner, breakdown=True)
+
+        self.assertEqual(len(usage.largest), LARGEST_FILES)
+        self.assertEqual(
+            [row["size"] for row in usage.largest],
+            sorted((100 + index for index in range(count)), reverse=True)[:LARGEST_FILES],
+        )
+        self.assertEqual(usage.by_type, [{"type": "Archive", "bytes": sum(100 + i for i in range(count))}])
+
+    def test_the_breakdown_keeps_the_totals_role_rule(self):
+        self.node("a.pdf", 900, mime="application/pdf")
+        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
+        self.assertEqual(usage_for(self.root, admin, breakdown=True).by_type, [{"type": "PDF", "bytes": 900}])
+        with self.assertRaises(DriveNotFound):
+            usage_for(self.root, self.other, breakdown=True)
+
+    def test_a_manager_who_does_not_own_the_root_reads_totals_but_not_titles(self):
+        from suite.drive._core.access import grant
+        from suite.drive._core.roles import MANAGE
+
+        self.node("secret.pdf", 900, mime="application/pdf")
+        grant(self.root, BREAKDOWN_OTHER, MANAGE, self.owner)
+
+        self.assertEqual(set(usage_for(self.root, self.other)), USAGE_KEYS)
+        with self.assertRaises(DriveForbidden):
+            usage_for(self.root, self.other, breakdown=True)

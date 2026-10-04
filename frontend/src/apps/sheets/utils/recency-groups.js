@@ -30,16 +30,14 @@ export function recencyBucket(dateStr, now = new Date()) {
 // group header mutates it in place, and the groups array is rebuilt on every
 // fetch/append, so without this a Load More would re-expand collapsed groups.
 export function groupSheetsByRecency(rows, now = new Date(), prevGroups = []) {
-  const buckets = new Map(GROUP_ORDER.map(g => [g, []]))
+  const buckets = new Map(GROUP_ORDER.map((g) => [g, []]))
   for (const row of rows) {
     buckets.get(recencyBucket(row.modified, now)).push(row)
   }
-  const collapsedByLabel = new Map(prevGroups.map(g => [g.group, g.collapsed]))
-  return GROUP_ORDER
-    .filter(g => buckets.get(g).length)
-    .map(g => ({
-      group: g,
-      collapsed: collapsedByLabel.get(g) ?? false,
-      rows: buckets.get(g),
-    }))
+  const collapsedByLabel = new Map(prevGroups.map((g) => [g.group, g.collapsed]))
+  return GROUP_ORDER.filter((g) => buckets.get(g).length).map((g) => ({
+    group: g,
+    collapsed: collapsedByLabel.get(g) ?? false,
+    rows: buckets.get(g),
+  }))
 }

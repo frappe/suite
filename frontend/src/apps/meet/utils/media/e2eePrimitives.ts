@@ -9,39 +9,36 @@
 // --- Base64 codec ---
 
 export function bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
-	const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-	let binary = "";
-	for (let i = 0; i < bytes.byteLength; i++) {
-		binary += String.fromCharCode(bytes[i]);
-	}
-	return btoa(binary);
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
 }
 
 export function bytesFromBase64(b64: string): Uint8Array<ArrayBuffer> {
-	const binary = atob(b64);
-	const buffer = new ArrayBuffer(binary.length);
-	const bytes = new Uint8Array(buffer);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return bytes;
+  const binary = atob(b64)
+  const buffer = new ArrayBuffer(binary.length)
+  const bytes = new Uint8Array(buffer)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
 }
 
 // --- HKDF info strings (domain separators) ---
 
-export const INFO_FRAME_AT = (
-	senderId: number,
-	mediaType: string,
-	generation: number,
-): string => `meet-e2ee|frame|${senderId}|${mediaType}|${generation}`;
+export const INFO_FRAME_AT = (senderId: number, mediaType: string, generation: number): string =>
+  `meet-e2ee|frame|${senderId}|${mediaType}|${generation}`
 
-export const INFO_CHAT = "meet-e2ee|chat";
+export const INFO_CHAT = 'meet-e2ee|chat'
 
-export const INFO_POLL = "meet-e2ee|poll";
+export const INFO_POLL = 'meet-e2ee|poll'
 
 export function encodeInfo(s: string): Uint8Array<ArrayBuffer> {
-	const src = new TextEncoder().encode(s);
-	const out = new Uint8Array(src.length);
-	out.set(src);
-	return out;
+  const src = new TextEncoder().encode(s)
+  const out = new Uint8Array(src.length)
+  out.set(src)
+  return out
 }

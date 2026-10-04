@@ -164,7 +164,7 @@ class TestSharedRootPair(RootPairCase):
         self.assertEqual(self.node["kind"], "root")
         self.assertEqual(self.node["state"], ACTIVE)
         self.assertEqual(self.node["path"], "")
-        self.assertIsNone(self.node["parent"])
+        self.assertIsNone(self.node["parent_node"])
         self.assertIsNone(self.node["root"])
         self.assertIsNone(self.node["blob"])
         self.assertEqual(self.node["size"], 0)
@@ -627,15 +627,17 @@ class TestMismatchRefusals(RootPairCase):
 
     def test_a_node_that_is_not_a_root_is_refused(self):
         """A tree hung off a folder node would have no root at all."""
-        message = self.refuse(drive_row(), node={"name": DRIVE_ROOT_ROW, "kind": "folder", "parent": None})
+        message = self.refuse(
+            drive_row(), node={"name": DRIVE_ROOT_ROW, "kind": "folder", "parent_node": None}
+        )
         self.assertIn("'folder'", message)
 
     def test_a_root_node_with_a_parent_is_refused(self):
         """§3.1: a root node has no parent, so this row is not the root Build means."""
         message = self.refuse(
-            drive_row(), node={"name": DRIVE_ROOT_ROW, "kind": "root", "parent": "elsewhere"}
+            drive_row(), node={"name": DRIVE_ROOT_ROW, "kind": "root", "parent_node": "elsewhere"}
         )
-        self.assertIn("parent='elsewhere'", message)
+        self.assertIn("parent_node='elsewhere'", message)
 
     def test_every_noncanonical_root_node_field_is_refused(self):
         """A complete pair is not valid merely because the node says kind=root."""

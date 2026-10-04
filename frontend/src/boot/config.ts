@@ -1,12 +1,12 @@
-import { ref } from 'vue'
 import { frappeRequest, setConfig, toast } from 'frappe-ui'
+import { ref } from 'vue'
 
 import { translate } from '@/boot/translation'
 
 /** Error shape thrown by frappe-ui's `frappeRequest` (the type is not re-exported). */
 type RequestError = Error & { exc_type?: string; messages?: string[] }
 
-// Raised by the backend (suite.mail.jmap.connection) whenever Stalwart — the server behind
+// Raised by the backend (suite.mail.jmap) whenever Stalwart — the server behind
 // mail, calendar and contacts — cannot be reached. Handled centrally here so every failing
 // resource collapses into ONE friendly toast instead of silent console errors.
 const MAIL_SERVER_UNAVAILABLE_EXC = 'MailServerUnavailableError'

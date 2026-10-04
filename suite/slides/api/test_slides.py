@@ -31,8 +31,10 @@ class TestSaveSlides(IntegrationTestCase):
         ensure_user(OTHER_USER)
 
     def setUp(self):
+        # Every test in the class shares one transaction, and Drive refuses a
+        # second sibling with the same title in the owner's root.
         with self.set_user(OWNER):
-            self.presentation = make_presentation("Save Slides").name
+            self.presentation = make_presentation(f"Save Slides {self._testMethodName}").name
 
     def modified(self):
         return cstr(frappe.db.get_value("Presentation", self.presentation, "modified"))
@@ -85,6 +87,20 @@ class TestSaveSlides(IntegrationTestCase):
             self.save([{**slide("a"), "thumbnail": "forged"}])
 
         self.assertEqual(frappe.db.get_value("Slide", name, "thumbnail"), "server-owned")
+
+    def test_advance_after_round_trips(self):
+        self.save([{**slide("a"), "advance_after": 5}])
+        (name,) = row_names(self.presentation)
+
+        self.assertEqual(frappe.db.get_value("Slide", name, "advance_after"), "5")
+
+        self.save([{**slide("a"), "advance_after": None}])
+        self.assertIsNone(frappe.db.get_value("Slide", name, "advance_after"))
+
+    def test_advance_after_out_of_range_is_refused(self):
+        for value in ("soon", 0, 3601, "1,000", "١٢"):
+            with self.assertRaises(frappe.ValidationError):
+                self.save([{**slide("a"), "advance_after": value}])
 
     def test_returns_the_new_version(self):
         result = self.save([slide("a")])

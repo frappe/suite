@@ -1,141 +1,142 @@
 <template>
-	<div ref="slideContainer" class="flex size-full" @dragenter="showOverlay">
-		<!-- when mounting place slide directly in the center of the visible container -->
-		<!-- 1/2 width of viewport + 1/2 width of offset caused due to thinner navigation panel -->
-		<div
-			ref="slideRef"
-			:style="slideStyles"
-			:class="slideClasses"
-			@contextmenu.capture="(e) => elementContextMenuRef?.handleContextMenu(e)"
-		>
-			<ElementContextMenu ref="elementContextMenu">
-				<SelectionBox
-					ref="selectionBox"
-					v-if="!inReadonlyMode"
-					:isDragging
-					@mousedown="(e) => handleMouseDown(e)"
-				/>
+  <!-- the slide's containing block, clipped so OverflowContentOverlay's mask stays on the canvas;
+	     clip, not hidden: a hidden box still scrolls when a caret lands past its edge -->
+  <div ref="slideContainer" class="relative flex size-full overflow-clip" @dragenter="showOverlay">
+    <!-- when mounting place slide directly in the center of the visible container -->
+    <!-- 1/2 width of viewport + 1/2 width of offset caused due to thinner navigation panel -->
+    <div
+      ref="slideRef"
+      :style="slideStyles"
+      :class="slideClasses"
+      @contextmenu.capture="(e) => elementContextMenuRef?.handleContextMenu(e)"
+    >
+      <ElementContextMenu ref="elementContextMenu">
+        <SelectionBox
+          ref="selectionBox"
+          v-if="!inReadonlyMode"
+          :isDragging
+          @mousedown="(e) => handleMouseDown(e)"
+        />
 
-				<MarqueeOverlay v-if="!inReadonlyMode" @setIsSelecting="(val) => (isSelecting = val)" />
+        <MarqueeOverlay v-if="!inReadonlyMode" @setIsSelecting="(val) => (isSelecting = val)" />
 
-				<ShapeDrawOverlay v-if="!inReadonlyMode" />
+        <ShapeDrawOverlay v-if="!inReadonlyMode" />
 
-				<CropOverlay v-if="!inReadonlyMode" />
+        <CropOverlay v-if="!inReadonlyMode" />
 
-				<ConnectorPorts v-if="!inReadonlyMode" />
+        <ConnectorPorts v-if="!inReadonlyMode" />
 
-				<SnapGuides :ongoingInteraction="hasOngoingInteraction" :activeGuides="activeGuides" />
+        <SnapGuides :ongoingInteraction="hasOngoingInteraction" :activeGuides="activeGuides" />
 
-				<SlideElement
-					v-for="element in currentSlide?.elements"
-					:key="`editor-${element.id}`"
-					:ref="(comp) => registerElementDiv(element.id, comp?.$el)"
-					mode="editor"
-					:element
-					:data-index="element.id"
-					:highlight="highlightElement(element)"
-					@mousedown="(e) => handleMouseDown(e, element)"
-					@mouseenter="hoveredElementId = element.id"
-					@mouseleave="hoveredElementId = null"
-				/>
-			</ElementContextMenu>
+        <SlideElement
+          v-for="element in currentSlide?.elements"
+          :key="`editor-${element.id}`"
+          :ref="(comp) => registerElementDiv(element.id, comp?.$el)"
+          mode="editor"
+          :element
+          :data-index="element.id"
+          :highlight="highlightElement(element)"
+          @mousedown="(e) => handleMouseDown(e, element)"
+          @mouseenter="hoveredElementId = element.id"
+          @mouseleave="hoveredElementId = null"
+        />
+      </ElementContextMenu>
 
-			<OverflowContentOverlay />
-		</div>
-		<DropTargetOverlay v-show="mediaDragOver" @hideOverlay="hideOverlay" />
-	</div>
+      <OverflowContentOverlay />
+    </div>
+    <DropTargetOverlay v-show="mediaDragOver" @hideOverlay="hideOverlay" />
+  </div>
 </template>
 
 <script setup>
-import {
-	ref,
-	computed,
-	watch,
-	useTemplateRef,
-	nextTick,
-	onMounted,
-	onBeforeUnmount,
-	provide,
-	onActivated,
-	onDeactivated,
-	inject,
-} from 'vue'
 import { useResizeObserver } from '@vueuse/core'
+import {
+  computed,
+  inject,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  provide,
+  ref,
+  useTemplateRef,
+  watch,
+} from 'vue'
 
-import SnapGuides from '@/apps/slides/components/SnapGuides.vue'
-import SelectionBox from '@/apps/slides/components/SelectionBox.vue'
-import MarqueeOverlay from '@/apps/slides/components/MarqueeOverlay.vue'
-import ShapeDrawOverlay from '@/apps/slides/components/ShapeDrawOverlay.vue'
-import CropOverlay from '@/apps/slides/components/CropOverlay.vue'
 import ConnectorPorts from '@/apps/slides/components/ConnectorPorts.vue'
-import SlideElement from '@/apps/slides/components/SlideElement.vue'
+import CropOverlay from '@/apps/slides/components/CropOverlay.vue'
 import DropTargetOverlay from '@/apps/slides/components/DropTargetOverlay.vue'
-import OverflowContentOverlay from '@/apps/slides/components/OverflowContentOverlay.vue'
 import ElementContextMenu from '@/apps/slides/components/ElementContextMenu.vue'
-
-import {
-	currentSlide,
-	slideBounds,
-	selectionBounds,
-	updateSelectionBounds,
-	slideIndex,
-} from '@/apps/slides/stores/slide'
-
-import {
-	activeElementIds,
-	activeElement,
-	focusElementId,
-	pairElementId,
-	dragOccurred,
-	addFixedWidthToElement,
-	ensureExplicitHeight,
-	setEditableState,
-	duplicateElements,
-	activeElements,
-	cropSelectionToFitContent,
-	findSlideElement,
-	isSelectionLocked,
-} from '@/apps/slides/stores/element'
-
-import {
-	interactionOffset,
-	commitInteraction,
-	resetInteractionOffset,
-	bindPreview,
-	pendingConnector,
-	pendingPoints,
-	getTargetBox,
-	getBindableAt,
-} from '@/apps/slides/stores/interaction'
-
-import { handleCopy, handleCut, handlePaste } from '@/apps/slides/stores/copyPaste'
-
-import { registerElementDiv, getElementDiv } from '@/apps/slides/stores/elementRegistry'
-
+import MarqueeOverlay from '@/apps/slides/components/MarqueeOverlay.vue'
+import OverflowContentOverlay from '@/apps/slides/components/OverflowContentOverlay.vue'
+import SelectionBox from '@/apps/slides/components/SelectionBox.vue'
+import ShapeDrawOverlay from '@/apps/slides/components/ShapeDrawOverlay.vue'
+import SlideElement from '@/apps/slides/components/SlideElement.vue'
+import SnapGuides from '@/apps/slides/components/SnapGuides.vue'
+import { useCornerRadius } from '@/apps/slides/composables/useCornerRadius'
 import { useDragAndDrop } from '@/apps/slides/composables/useDragAndDrop'
+import { usePanAndZoom } from '@/apps/slides/composables/usePanAndZoom'
 import { useResizer } from '@/apps/slides/composables/useResizer'
 import { useRotator } from '@/apps/slides/composables/useRotator'
-import { useCornerRadius } from '@/apps/slides/composables/useCornerRadius'
-import { usePanAndZoom } from '@/apps/slides/composables/usePanAndZoom'
 import { useSnapping } from '@/apps/slides/composables/useSnapping'
-import { isCmdOrCtrl } from '@/apps/slides/utils/helpers'
-import { selectionColor } from '@/apps/slides/utils/constants'
+import { handleCopy, handleCut, handlePaste } from '@/apps/slides/stores/copyPaste'
 import {
-	getResizedBox,
-	getResizedLine,
-	getResizedTextBox,
-	getRotatedBoundingBox,
-	getMinSizeForElement,
-	isAspectLocked,
+  activeElement,
+  activeElementIds,
+  activeElements,
+  addFixedWidthToElement,
+  cropSelectionToFitContent,
+  dragOccurred,
+  duplicateElements,
+  ensureExplicitHeight,
+  findSlideElement,
+  focusElementId,
+  isSelectionLocked,
+  pairElementId,
+  setEditableState,
+} from '@/apps/slides/stores/element'
+import { getElementDiv, registerElementDiv } from '@/apps/slides/stores/elementRegistry'
+import {
+  bindPreview,
+  commitInteraction,
+  getBindableAt,
+  getTargetBox,
+  interactionOffset,
+  pendingConnector,
+  pendingPoints,
+  resetInteractionOffset,
+} from '@/apps/slides/stores/interaction'
+import {
+  currentSlide,
+  selectionBounds,
+  slideBounds,
+  slideIndex,
+  updateSelectionBounds,
+} from '@/apps/slides/stores/slide'
+import {
+  getBoundTargetIds,
+  getConnectorEndpoints,
+  getLineEndpoints,
+  routeConnector,
+  snapToPort,
+} from '@/apps/slides/utils/connectors'
+import { selectionColor } from '@/apps/slides/utils/constants'
+import { isCmdOrCtrl } from '@/apps/slides/utils/helpers'
+import {
+  getMinSizeForElement,
+  getResizedBox,
+  getResizedLine,
+  getResizedTextBox,
+  getRotatedBoundingBox,
+  isAspectLocked,
 } from '@/apps/slides/utils/resize'
 import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
-import {
-	getBoundTargetIds,
-	getConnectorEndpoints,
-	getLineEndpoints,
-	routeConnector,
-	snapToPort,
-} from '@/apps/slides/utils/connectors'
+
+const props = defineProps({
+  // scale the slide to fit the container, centered, with pan and zoom off (the phone layout)
+  fit: { type: Boolean, default: false },
+})
 
 const emit = defineEmits(['update:hasOngoingInteraction'])
 
@@ -149,14 +150,14 @@ const elementContextMenuRef = useTemplateRef('elementContextMenu')
 const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 
 const {
-	isResizing,
-	isShiftHeld,
-	isAltHeld,
-	isMetaHeld,
-	pointerDelta,
-	currentResizer,
-	resizeCursor,
-	startResize,
+  isResizing,
+  isShiftHeld,
+  isAltHeld,
+  isMetaHeld,
+  pointerDelta,
+  currentResizer,
+  resizeCursor,
+  startResize,
 } = useResizer()
 
 const { isRotating, rotationDelta, startRotate } = useRotator()
@@ -168,331 +169,371 @@ const isHovered = computed(() => hoveredElementId.value === activeElement.value?
 const setHovered = (id) => (hoveredElementId.value = id)
 
 const hasOngoingInteraction = computed(
-	() => isDragging.value || isResizing.value || isRotating.value,
+  () => isDragging.value || isResizing.value || isRotating.value,
 )
 
 const { activeGuides, snapForDrag, snapForResize } = useSnapping(
-	selectionBoxRef,
-	currentResizer,
-	hasOngoingInteraction,
+  selectionBoxRef,
+  currentResizer,
+  hasOngoingInteraction,
 )
 
 // Elements are stored in a fixed 960x540 coordinate space, so the slide keeps
 // that authored size and is only scaled down to DISPLAY_WIDTH for display —
 // shrinking the authored width instead would shift every existing element.
 const SLIDE_WIDTH = 960
+const SLIDE_HEIGHT = 540
 const DISPLAY_WIDTH = 900
 
-const { allowPanAndZoom, transform, transformOrigin } = usePanAndZoom(
-	slideContainerRef,
-	slideRef,
-	DISPLAY_WIDTH / SLIDE_WIDTH,
+const {
+  allowPanAndZoom,
+  transform: pannedTransform,
+  transformOrigin: pannedTransformOrigin,
+} = usePanAndZoom(slideContainerRef, slideRef, DISPLAY_WIDTH / SLIDE_WIDTH)
+
+const FIT_MARGIN = 16
+const containerSize = ref({ width: 0, height: 0 })
+useResizeObserver(slideContainerRef, ([entry]) => {
+  containerSize.value = { width: entry.contentRect.width, height: entry.contentRect.height }
+})
+
+const fitScale = computed(() => {
+  const { width, height } = containerSize.value
+  if (!width || !height) return DISPLAY_WIDTH / SLIDE_WIDTH
+  return Math.max(
+    0.1,
+    Math.min((width - FIT_MARGIN * 2) / SLIDE_WIDTH, (height - FIT_MARGIN * 2) / SLIDE_HEIGHT),
+  )
+})
+
+// `fit` alone decides pan and zoom; nothing else writes `allowPanAndZoom`, so
+// fit mode cannot be zoomed out of its centred layout.
+watch(
+  () => props.fit,
+  (fit) => {
+    allowPanAndZoom.value = !fit
+  },
+  { immediate: true },
 )
 
+const transform = computed(() =>
+  props.fit ? `matrix(${fitScale.value}, 0, 0, ${fitScale.value}, 0, 0)` : pannedTransform.value,
+)
+const transformOrigin = computed(() => (props.fit ? '0 0' : pannedTransformOrigin.value))
+
+// the fitted slide is centered in px; the panned slide by the position classes below
+const fitPosition = computed(() => {
+  if (!props.fit) return {}
+  const { width, height } = containerSize.value
+  return {
+    left: `${(width - SLIDE_WIDTH * fitScale.value) / 2}px`,
+    top: `${(height - SLIDE_HEIGHT * fitScale.value) / 2}px`,
+  }
+})
+
 const slideClasses = computed(() => {
-	const classes = [
-		'absolute',
-		'h-[540px]',
-		'w-[960px]',
-		'rounded-4',
-		'border',
-		'border-outline-gray-1',
-		'shadow-sm',
-	]
+  const classes = [
+    'absolute',
+    'h-[540px]',
+    'w-[960px]',
+    'rounded-4',
+    'border',
+    'border-outline-gray-1',
+    'shadow-sm',
+  ]
 
-	const outlineClasses = mediaDragOver.value ? ['outline', 'outline-2'] : []
+  const outlineClasses = mediaDragOver.value ? ['outline', 'outline-2'] : []
 
-	// Offsets center the scaled slide (900x506.25), shifted for the side panels
-	// (edit: nav + properties; readonly: nav only). Recompute if widths change.
-	const positionClasses = inReadonlyMode.value
-		? ['left-[calc(50%-354.5px)]', 'top-[calc(50%-253.125px)]']
-		: ['left-[calc(50%-482px)]', 'top-[calc(50%-253.125px)]']
+  // Offsets center the scaled slide (900x506.25), shifted for the side panels
+  // (edit: nav + properties; readonly: nav only). Recompute if widths change.
+  const positionClasses = props.fit
+    ? []
+    : inReadonlyMode.value
+      ? ['left-[calc(50%-354.5px)]', 'top-[calc(50%-253.125px)]']
+      : ['left-[calc(50%-482px)]', 'top-[calc(50%-253.125px)]']
 
-	return [...classes, outlineClasses, positionClasses]
+  return [...classes, outlineClasses, positionClasses]
 })
 
 const isSelecting = ref(false)
 
 const getSlideCursor = () => {
-	if (isDragging.value) return 'move'
-	if (isSelecting.value) return 'crosshair'
-	if (resizeCursor.value) return resizeCursor.value
+  if (isDragging.value) return 'move'
+  if (isSelecting.value) return 'crosshair'
+  if (resizeCursor.value) return resizeCursor.value
 
-	return 'default'
+  return 'default'
 }
 
 const highlightElement = (element) => {
-	const toHighlight =
-		activeElementIds.value.length > 1 && activeElementIds.value.includes(element.id)
-	const isAutoBindTarget =
-		bindPreview.value?.anchor === 'auto' && bindPreview.value.elementId === element.id
-	return toHighlight || pairElementId.value == element.id || isAutoBindTarget
+  const toHighlight =
+    activeElementIds.value.length > 1 && activeElementIds.value.includes(element.id)
+  const isAutoBindTarget =
+    bindPreview.value?.anchor === 'auto' && bindPreview.value.elementId === element.id
+  return toHighlight || pairElementId.value == element.id || isAutoBindTarget
 }
 
 const slideStyles = computed(() => ({
-	transformOrigin: transformOrigin.value,
-	transform: transform.value,
-	backgroundColor: currentSlide.value?.background || '#ffffff',
-	outlineColor: selectionColor,
-	cursor: getSlideCursor(),
-	zIndex: 0,
+  ...fitPosition.value,
+  transformOrigin: transformOrigin.value,
+  transform: transform.value,
+  backgroundColor: currentSlide.value?.background || '#ffffff',
+  outlineColor: selectionColor,
+  cursor: getSlideCursor(),
+  zIndex: 0,
 }))
 
 const mediaDragOver = ref(false)
 
 const showOverlay = (e) => {
-	e.preventDefault()
-	if (inReadonlyMode.value) return
-	mediaDragOver.value = true
+  e.preventDefault()
+  if (inReadonlyMode.value) return
+  mediaDragOver.value = true
 }
 
 const hideOverlay = () => {
-	mediaDragOver.value = false
+  mediaDragOver.value = false
 }
 
 const triggerSelection = (e, id) => {
-	if (!id) return
+  if (!id) return
 
-	if (activeElementIds.value.includes(id)) {
-		if (['text', 'table'].includes(activeElement.value?.type) && !activeElement.value.locked) {
-			focusElementId.value = id
-			setEditableState()
-		}
-		return
-	}
+  if (activeElementIds.value.includes(id)) {
+    if (['text', 'table'].includes(activeElement.value?.type) && !activeElement.value.locked) {
+      focusElementId.value = id
+      setEditableState()
+    }
+    return
+  }
 
-	if (isCmdOrCtrl(e) || e.shiftKey) {
-		if (activeElementIds.value.length && !!findSlideElement(id)?.locked !== isSelectionLocked.value)
-			return
-		activeElementIds.value = [...activeElementIds.value, id]
-	} else {
-		activeElementIds.value = [id]
-	}
+  if (isCmdOrCtrl(e) || e.shiftKey) {
+    if (activeElementIds.value.length && !!findSlideElement(id)?.locked !== isSelectionLocked.value)
+      return
+    activeElementIds.value = [...activeElementIds.value, id]
+  } else {
+    activeElementIds.value = [id]
+  }
 
-	focusElementId.value = null
+  focusElementId.value = null
 }
 
 const handleMouseUp = (e, id) => {
-	pairElementId.value = null
+  pairElementId.value = null
 
-	if (!isDragging.value) triggerSelection(e, id)
+  if (!isDragging.value) triggerSelection(e, id)
 }
 
 const triggerDrag = (e, id) => {
-	if (id ? findSlideElement(id)?.locked : isSelectionLocked.value) return
+  if (id ? findSlideElement(id)?.locked : isSelectionLocked.value) return
 
-	const notEditable = id && focusElementId.value !== id
-	const isMultiSelect = activeElementIds.value.length > 1
-	const isNotInSelection = id && !activeElementIds.value.includes(id)
+  const notEditable = id && focusElementId.value !== id
+  const isMultiSelect = activeElementIds.value.length > 1
+  const isNotInSelection = id && !activeElementIds.value.includes(id)
 
-	// prevent drag if multiple are selected and id isn't in the selection
-	if (isMultiSelect && isNotInSelection) return
+  // prevent drag if multiple are selected and id isn't in the selection
+  if (isMultiSelect && isNotInSelection) return
 
-	if (notEditable || isMultiSelect) {
-		dragOccurred.value = true
-		startDragging(e)
+  if (notEditable || isMultiSelect) {
+    dragOccurred.value = true
+    startDragging(e)
 
-		if (id && !isMultiSelect && activeElementIds.value[0] !== id) {
-			activeElementIds.value = [id]
-			focusElementId.value = null
+    if (id && !isMultiSelect && activeElementIds.value[0] !== id) {
+      activeElementIds.value = [id]
+      focusElementId.value = null
 
-			// the selection watcher will crop async — too late for the drag
-			// anchor below, so fit the bounds to this element now
-			cropSelectionToFitContent([id])
-		}
+      // the selection watcher will crop async — too late for the drag
+      // anchor below, so fit the bounds to this element now
+      cropSelectionToFitContent([id])
+    }
 
-		// anchor synchronously: the drag math must never depend on watcher
-		// flush order or on a previous gesture's state
-		dragStartBounds = {
-			left: selectionBounds.left,
-			top: selectionBounds.top,
-		}
-	}
+    // anchor synchronously: the drag math must never depend on watcher
+    // flush order or on a previous gesture's state
+    dragStartBounds = {
+      left: selectionBounds.left,
+      top: selectionBounds.top,
+    }
+  }
 }
 
 const DRAG_START_THRESHOLD = 4
 
 const watchForDragIntent = (downEvent, id) => {
-	const cancelDragIntent = () => {
-		window.removeEventListener('mousemove', detectDrag)
-		window.removeEventListener('mouseup', cancelDragIntent)
-	}
+  const cancelDragIntent = () => {
+    window.removeEventListener('mousemove', detectDrag)
+    window.removeEventListener('mouseup', cancelDragIntent)
+  }
 
-	const detectDrag = (moveEvent) => {
-		// button already released (e.g. mouseup outside the window)
-		if (!moveEvent.buttons) return cancelDragIntent()
+  const detectDrag = (moveEvent) => {
+    // button already released (e.g. mouseup outside the window)
+    if (!moveEvent.buttons) return cancelDragIntent()
 
-		const dx = moveEvent.clientX - downEvent.clientX
-		const dy = moveEvent.clientY - downEvent.clientY
-		if (Math.hypot(dx, dy) < DRAG_START_THRESHOLD) return
+    const dx = moveEvent.clientX - downEvent.clientX
+    const dy = moveEvent.clientY - downEvent.clientY
+    if (Math.hypot(dx, dy) < DRAG_START_THRESHOLD) return
 
-		cancelDragIntent()
+    cancelDragIntent()
 
-		// pass the original mousedown event so the drag measures
-		// from the press position and no movement is lost
-		triggerDrag(downEvent, id)
-	}
+    // pass the original mousedown event so the drag measures
+    // from the press position and no movement is lost
+    triggerDrag(downEvent, id)
+  }
 
-	window.addEventListener('mousemove', detectDrag)
-	window.addEventListener('mouseup', cancelDragIntent)
+  window.addEventListener('mousemove', detectDrag)
+  window.addEventListener('mouseup', cancelDragIntent)
 }
 
 const duplicateAndDrag = (e, id) => {
-	if (isSelectionLocked.value) return
+  if (isSelectionLocked.value) return
 
-	duplicateElements(e, activeElements.value, slideIndex.value, false).then(() => {
-		watchForDragIntent(e, id)
-	})
+  duplicateElements(e, activeElements.value, slideIndex.value, false).then(() => {
+    watchForDragIntent(e, id)
+  })
 }
 
 // the multi-selection box covers its whole bounding rect, so an unselected
 // element inside it never receives the press
 const findElementUnderPointer = (e) => {
-	if (!e.target?.matches?.('[data-selection-box]')) return null
+  if (!e.target?.matches?.('[data-selection-box]')) return null
 
-	for (const node of document.elementsFromPoint(e.clientX, e.clientY)) {
-		if (!slideRef.value?.contains(node)) continue
+  for (const node of document.elementsFromPoint(e.clientX, e.clientY)) {
+    if (!slideRef.value?.contains(node)) continue
 
-		const id = node.closest('[data-index]')?.getAttribute('data-index')
-		if (!id) continue
+    const id = node.closest('[data-index]')?.getAttribute('data-index')
+    if (!id) continue
 
-		return activeElementIds.value.includes(id) ? null : id
-	}
-	return null
+    return activeElementIds.value.includes(id) ? null : id
+  }
+  return null
 }
 
 const handleMouseDown = (e, element) => {
-	if (inReadonlyMode.value || e.button == 2) return
+  if (inReadonlyMode.value || e.button == 2) return
 
-	e.stopPropagation()
-	e.preventDefault()
+  e.stopPropagation()
+  e.preventDefault()
 
-	dragOccurred.value = false
+  dragOccurred.value = false
 
-	// alt-drag duplicates the whole selection, so it ignores what is under the pointer
-	if (e.altKey) return duplicateAndDrag(e, element?.id)
+  // alt-drag duplicates the whole selection, so it ignores what is under the pointer
+  if (e.altKey) return duplicateAndDrag(e, element?.id)
 
-	const id = element?.id ?? findElementUnderPointer(e)
+  const id = element?.id ?? findElementUnderPointer(e)
 
-	// start dragging once the pointer moves past a small threshold
-	watchForDragIntent(e, id)
+  // start dragging once the pointer moves past a small threshold
+  watchForDragIntent(e, id)
 
-	// if mouseup happens before the threshold is crossed
-	// then consider it a selection instead of dragging
-	window.addEventListener('mouseup', () => handleMouseUp(e, id), { once: true })
+  // if mouseup happens before the threshold is crossed
+  // then consider it a selection instead of dragging
+  window.addEventListener('mouseup', () => handleMouseUp(e, id), { once: true })
 }
 
 const scale = computed(() => {
-	const matrix = transform.value?.match(/matrix\((.+)\)/)
-	if (!matrix) return 1
-	return parseFloat(matrix[1].split(', ')[0])
+  const matrix = transform.value?.match(/matrix\((.+)\)/)
+  if (!matrix) return 1
+  return parseFloat(matrix[1].split(', ')[0])
 })
 
 const activeDiv = computed(() => {
-	if (activeElementIds.value.length != 1) return null
-	return getElementDiv(activeElementIds.value[0])
+  if (activeElementIds.value.length != 1) return null
+  return getElementDiv(activeElementIds.value[0])
 })
 
 useResizeObserver(activeDiv, (entries) => {
-	if (!activeElement.value) return
+  if (!activeElement.value) return
 
-	const entry = entries[0]
-	const { width, height } = entry.contentRect
+  const entry = entries[0]
+  const { width, height } = entry.contentRect
 
-	// fires on any size change: resize gestures, and property updates like
-	// font size / line height / letter spacing. every element type is
-	// layout-anchored — left/top derive from element state, so no
-	// forced-layout read is needed
-	updateSelectionBounds({
-		width: width,
-		height: height,
-		left: activeElement.value.left + interactionOffset.left,
-		top: activeElement.value.top + interactionOffset.top,
-	})
+  // fires on any size change: resize gestures, and property updates like
+  // font size / line height / letter spacing. every element type is
+  // layout-anchored — left/top derive from element state, so no
+  // forced-layout read is needed
+  updateSelectionBounds({
+    width: width,
+    height: height,
+    left: activeElement.value.left + interactionOffset.left,
+    top: activeElement.value.top + interactionOffset.top,
+  })
 })
-
-const togglePanZoom = () => {
-	allowPanAndZoom.value = !allowPanAndZoom.value
-}
 
 // selection bounds at drag start — captured synchronously in triggerDrag
 let dragStartBounds = null
 
 const snapRotatedPosition = (target, rotation) => {
-	const boundingBox = getRotatedBoundingBox(target, rotation)
-	const snapped = snapForDrag(boundingBox)
-	return {
-		left: target.left + (snapped.left - boundingBox.left),
-		top: target.top + (snapped.top - boundingBox.top),
-	}
+  const boundingBox = getRotatedBoundingBox(target, rotation)
+  const snapped = snapForDrag(boundingBox)
+  return {
+    left: target.left + (snapped.left - boundingBox.left),
+    top: target.top + (snapped.top - boundingBox.top),
+  }
 }
 
 const handlePositionChange = (total) => {
-	if (!dragStartBounds) return
+  if (!dragStartBounds) return
 
-	const target = {
-		left: dragStartBounds.left + total.left / slideBounds.scale,
-		top: dragStartBounds.top + total.top / slideBounds.scale,
-		width: selectionBounds.width,
-		height: selectionBounds.height,
-	}
-	const rotation = activeElement.value?.rotation
-	const desired = rotation ? snapRotatedPosition(target, rotation) : snapForDrag(target)
+  const target = {
+    left: dragStartBounds.left + total.left / slideBounds.scale,
+    top: dragStartBounds.top + total.top / slideBounds.scale,
+    width: selectionBounds.width,
+    height: selectionBounds.height,
+  }
+  const rotation = activeElement.value?.rotation
+  const desired = rotation ? snapRotatedPosition(target, rotation) : snapForDrag(target)
 
-	interactionOffset.left = desired.left - dragStartBounds.left
-	interactionOffset.top = desired.top - dragStartBounds.top
-	updateSelectionBounds({ left: desired.left, top: desired.top })
+  interactionOffset.left = desired.left - dragStartBounds.left
+  interactionOffset.top = desired.top - dragStartBounds.top
+  updateSelectionBounds({ left: desired.left, top: desired.top })
 }
 
 // the element's box + type when the resize began, captured synchronously like dragStartBounds
 let resizeStartBounds = null
 
 const startElementResize = (e, resizer) => {
-	ensureExplicitHeight(activeElement.value)
+  ensureExplicitHeight(activeElement.value)
 
-	resizeStartBounds = {
-		left: selectionBounds.left,
-		top: selectionBounds.top,
-		width: selectionBounds.width,
-		height: selectionBounds.height,
-		rotation: activeElement.value?.rotation || 0,
-		type: activeElement.value?.type,
-		// a table's columns have minimums of their own, which the static size map
-		// has no way to express
-		minWidth: Math.max(
-			getMinSizeForElement(activeElement.value?.type).width,
-			getMinTableWidth(activeElement.value?.content),
-		),
-	}
+  resizeStartBounds = {
+    left: selectionBounds.left,
+    top: selectionBounds.top,
+    width: selectionBounds.width,
+    height: selectionBounds.height,
+    rotation: activeElement.value?.rotation || 0,
+    type: activeElement.value?.type,
+    // a table's columns have minimums of their own, which the static size map
+    // has no way to express
+    minWidth: Math.max(
+      getMinSizeForElement(activeElement.value?.type).width,
+      getMinTableWidth(activeElement.value?.content),
+    ),
+  }
 
-	startResize(e, resizer)
+  startResize(e, resizer)
 }
 
 const setOffsetFromBox = (box) => {
-	interactionOffset.left = box.left - resizeStartBounds.left
-	interactionOffset.top = box.top - resizeStartBounds.top
-	interactionOffset.width = box.width - resizeStartBounds.width
-	interactionOffset.height = box.height - resizeStartBounds.height
+  interactionOffset.left = box.left - resizeStartBounds.left
+  interactionOffset.top = box.top - resizeStartBounds.top
+  interactionOffset.width = box.width - resizeStartBounds.width
+  interactionOffset.height = box.height - resizeStartBounds.height
 
-	updateSelectionBounds({ left: box.left, top: box.top, width: box.width, height: box.height })
+  updateSelectionBounds({ left: box.left, top: box.top, width: box.width, height: box.height })
 }
 
 const resizeBox = (cursorMovement) => {
-	const keepAspect = isShiftHeld.value
-	const fromCenter = isAltHeld.value
-	const box = getResizedBox(resizeStartBounds, currentResizer.value, cursorMovement, {
-		keepAspect,
-		fromCenter,
-	})
-	if (!box) return
+  const keepAspect = isShiftHeld.value
+  const fromCenter = isAltHeld.value
+  const box = getResizedBox(resizeStartBounds, currentResizer.value, cursorMovement, {
+    keepAspect,
+    fromCenter,
+  })
+  if (!box) return
 
-	const axes = isAspectLocked(resizeStartBounds.type) ? ['x'] : ['x', 'y']
-	// resize runs in the element's rotated local frame; the snap engine works on
-	// screen-axis-aligned boxes, so snapping a rotated resize isn't supported yet.
-	// snapping moves one edge, which would break a modifier-constrained resize
-	const skipSnap = resizeStartBounds.rotation || keepAspect || fromCenter
-	const snappedBox = skipSnap ? box : snapForResize(box, { axes })
-	setOffsetFromBox(snappedBox)
+  const axes = isAspectLocked(resizeStartBounds.type) ? ['x'] : ['x', 'y']
+  // resize runs in the element's rotated local frame; the snap engine works on
+  // screen-axis-aligned boxes, so snapping a rotated resize isn't supported yet.
+  // snapping moves one edge, which would break a modifier-constrained resize
+  const skipSnap = resizeStartBounds.rotation || keepAspect || fromCenter
+  const snappedBox = skipSnap ? box : snapForResize(box, { axes })
+  setOffsetFromBox(snappedBox)
 }
 
 const PORT_SNAP_RADIUS = 14
@@ -501,167 +542,167 @@ const boxFor = (bound) => bound && getTargetBox(bound.elementId)
 
 // ⌘ keeps the end free; the other end's target is out, both ends on it would collapse the line
 const bindDraggedEnd = (line, end, cursor) => {
-	const other = line.connector[end === 'start' ? 'end' : 'start']
-	const target = isMetaHeld.value ? null : getBindableAt(cursor, [line.id, other?.elementId])
-	const anchor =
-		target && (snapToPort(target.box, cursor, PORT_SNAP_RADIUS / slideBounds.scale) || 'auto')
-	bindPreview.value = target ? { elementId: target.elementId, anchor } : null
+  const other = line.connector[end === 'start' ? 'end' : 'start']
+  const target = isMetaHeld.value ? null : getBindableAt(cursor, [line.id, other?.elementId])
+  const anchor =
+    target && (snapToPort(target.box, cursor, PORT_SNAP_RADIUS / slideBounds.scale) || 'auto')
+  bindPreview.value = target ? { elementId: target.elementId, anchor } : null
 
-	const connector = {
-		...line.connector,
-		[end]: target ? { elementId: target.elementId, anchor } : null,
-	}
-	pendingConnector.value = connector
-	return connector
+  const connector = {
+    ...line.connector,
+    [end]: target ? { elementId: target.elementId, anchor } : null,
+  }
+  pendingConnector.value = connector
+  return connector
 }
 
 const draggedEnd = () => (currentResizer.value === 'line-left' ? 'start' : 'end')
 
 const routeDraggedEnd = (box, cursorMovement) => {
-	const line = activeElement.value
-	const end = draggedEnd()
-	const grabbed = getLineEndpoints(line)[end]
-	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
+  const line = activeElement.value
+  const end = draggedEnd()
+  const grabbed = getLineEndpoints(line)[end]
+  const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
 
-	const connector = bindDraggedEnd(line, end, cursor)
-	if (!getBoundTargetIds(connector).length) return box
+  const connector = bindDraggedEnd(line, end, cursor)
+  if (!getBoundTargetIds(connector).length) return box
 
-	return routeConnector(
-		{ ...line, ...box, connector },
-		boxFor(connector.start),
-		boxFor(connector.end),
-	)
+  return routeConnector(
+    { ...line, ...box, connector },
+    boxFor(connector.start),
+    boxFor(connector.end),
+  )
 }
 
 // an elbow end moves as a point and the path re-routes around it
 const resizeElbowEnd = (cursorMovement) => {
-	const line = activeElement.value
-	const end = draggedEnd()
-	const grabbed = getConnectorEndpoints(line)[end]
-	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
+  const line = activeElement.value
+  const end = draggedEnd()
+  const grabbed = getConnectorEndpoints(line)[end]
+  const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
 
-	const connector = bindDraggedEnd(line, end, cursor)
-	const points = [...line.points]
-	points[end === 'start' ? 0 : points.length - 1] = {
-		x: cursor.x - line.left,
-		y: cursor.y - line.top,
-	}
-	const box = routeConnector(
-		{ ...line, connector, points },
-		boxFor(connector.start),
-		boxFor(connector.end),
-	)
-	setOffsetFromBox(box)
-	pendingPoints.value = box.points
+  const connector = bindDraggedEnd(line, end, cursor)
+  const points = [...line.points]
+  points[end === 'start' ? 0 : points.length - 1] = {
+    x: cursor.x - line.left,
+    y: cursor.y - line.top,
+  }
+  const box = routeConnector(
+    { ...line, connector, points },
+    boxFor(connector.start),
+    boxFor(connector.end),
+  )
+  setOffsetFromBox(box)
+  pendingPoints.value = box.points
 }
 
 const resizeLine = (cursorMovement) => {
-	if (activeElement.value.points) return resizeElbowEnd(cursorMovement)
+  if (activeElement.value.points) return resizeElbowEnd(cursorMovement)
 
-	const resized = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement, {
-		snapAngle: isShiftHeld.value,
-	})
-	const box = activeElement.value.connector ? routeDraggedEnd(resized, cursorMovement) : resized
+  const resized = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement, {
+    snapAngle: isShiftHeld.value,
+  })
+  const box = activeElement.value.connector ? routeDraggedEnd(resized, cursorMovement) : resized
 
-	setOffsetFromBox(box)
-	rotationDelta.value = box.rotation - resizeStartBounds.rotation
+  setOffsetFromBox(box)
+  rotationDelta.value = box.rotation - resizeStartBounds.rotation
 }
 
 const setOffsetFromTextBox = (box) => {
-	interactionOffset.width = box.width - resizeStartBounds.width
-	interactionOffset.left = box.left - resizeStartBounds.left
+  interactionOffset.width = box.width - resizeStartBounds.width
+  interactionOffset.left = box.left - resizeStartBounds.left
 }
 
 const resizeText = (cursorMovement) => {
-	if (!activeElement.value.width) addFixedWidthToElement()
+  if (!activeElement.value.width) addFixedWidthToElement()
 
-	const box = getResizedTextBox(resizeStartBounds, currentResizer.value, cursorMovement)
-	const snappedBox = snapForResize(box, { axes: ['x'] })
+  const box = getResizedTextBox(resizeStartBounds, currentResizer.value, cursorMovement)
+  const snappedBox = snapForResize(box, { axes: ['x'] })
 
-	const minWidth = resizeStartBounds.minWidth
-	if (snappedBox.width < minWidth) {
-		if (currentResizer.value === 'text-left') {
-			snappedBox.left = snappedBox.left + snappedBox.width - minWidth
-		}
-		snappedBox.width = minWidth
-	}
+  const minWidth = resizeStartBounds.minWidth
+  if (snappedBox.width < minWidth) {
+    if (currentResizer.value === 'text-left') {
+      snappedBox.left = snappedBox.left + snappedBox.width - minWidth
+    }
+    snappedBox.width = minWidth
+  }
 
-	setOffsetFromTextBox(snappedBox)
+  setOffsetFromTextBox(snappedBox)
 }
 
 const handleResize = () => {
-	if (!resizeStartBounds) return
+  if (!resizeStartBounds) return
 
-	const cursorMovement = {
-		x: pointerDelta.value.x / slideBounds.scale,
-		y: pointerDelta.value.y / slideBounds.scale,
-	}
-	const handle = currentResizer.value
-	if (handle === 'text-left' || handle === 'text-right') return resizeText(cursorMovement)
-	if (handle === 'line-left' || handle === 'line-right') return resizeLine(cursorMovement)
-	resizeBox(cursorMovement)
+  const cursorMovement = {
+    x: pointerDelta.value.x / slideBounds.scale,
+    y: pointerDelta.value.y / slideBounds.scale,
+  }
+  const handle = currentResizer.value
+  if (handle === 'text-left' || handle === 'text-right') return resizeText(cursorMovement)
+  if (handle === 'line-left' || handle === 'line-right') return resizeLine(cursorMovement)
+  resizeBox(cursorMovement)
 }
 
 const updateSlideBounds = () => {
-	const slideRect = slideRef.value.getBoundingClientRect()
+  const slideRect = slideRef.value.getBoundingClientRect()
 
-	slideBounds.width = slideRect.width
-	slideBounds.height = slideRect.height
-	slideBounds.left = slideRect.left
-	slideBounds.top = slideRect.top
-	slideBounds.scale = scale.value
+  slideBounds.width = slideRect.width
+  slideBounds.height = slideRect.height
+  slideBounds.left = slideRect.left
+  slideBounds.top = slideRect.top
+  slideBounds.scale = scale.value
 }
 
 const handleSlideTransform = () => {
-	// wait for the new transform to render before updating dimensions
-	nextTick(() => {
-		updateSlideBounds()
-	})
+  // wait for the new transform to render before updating dimensions
+  nextTick(() => {
+    updateSlideBounds()
+  })
 }
 
 watch(
-	() => activeElementIds.value,
-	(newVal, oldVal) => {
-		selectionBoxRef.value?.handleSelectionChange(newVal, oldVal)
-	},
+  () => activeElementIds.value,
+  (newVal, oldVal) => {
+    selectionBoxRef.value?.handleSelectionChange(newVal, oldVal)
+  },
 )
 
 watch(
-	() => transform.value,
-	() => {
-		if (!transform.value) return
-		handleSlideTransform()
-	},
+  () => transform.value,
+  () => {
+    if (!transform.value) return
+    handleSlideTransform()
+  },
 )
 
 watch(
-	() => positionDelta.value,
-	(total) => {
-		handlePositionChange(total)
-	},
+  () => positionDelta.value,
+  (total) => {
+    handlePositionChange(total)
+  },
 )
 
 watch(
-	() => pointerDelta.value,
-	() => handleResize(),
+  () => pointerDelta.value,
+  () => handleResize(),
 )
 
 const initSlideAndListeners = () => {
-	if (!slideRef.value) return
+  if (!slideRef.value) return
 
-	updateSlideBounds()
+  updateSlideBounds()
 
-	document.addEventListener('copy', handleCopy)
-	document.addEventListener('cut', handleCut)
-	document.addEventListener('paste', handlePaste)
-	window.addEventListener('resize', updateSlideBounds)
+  document.addEventListener('copy', handleCopy)
+  document.addEventListener('cut', handleCut)
+  document.addEventListener('paste', handlePaste)
+  window.addEventListener('resize', updateSlideBounds)
 }
 
 const clearListeners = () => {
-	document.removeEventListener('copy', handleCopy)
-	document.removeEventListener('cut', handleCut)
-	document.removeEventListener('paste', handlePaste)
-	window.removeEventListener('resize', updateSlideBounds)
+  document.removeEventListener('copy', handleCopy)
+  document.removeEventListener('cut', handleCut)
+  document.removeEventListener('paste', handlePaste)
+  window.removeEventListener('resize', updateSlideBounds)
 }
 
 onMounted(() => initSlideAndListeners())
@@ -675,39 +716,35 @@ onBeforeUnmount(() => clearListeners())
 provide('slideDiv', slideRef)
 provide('slideContainerDiv', slideContainerRef)
 provide('resizer', {
-	currentResizer,
-	startResize: startElementResize,
+  currentResizer,
+  startResize: startElementResize,
 })
 provide('rotator', {
-	startRotate,
+  startRotate,
 })
 provide('cornerRadius', {
-	startRound,
-	maxRadius,
-	isRounding,
-	isHovered,
-	setHovered,
-})
-
-defineExpose({
-	togglePanZoom,
+  startRound,
+  maxRadius,
+  isRounding,
+  isHovered,
+  setHovered,
 })
 
 const applyInteractionOffsets = () => {
-	pairElementId.value = null
-	requestAnimationFrame(() => {
-		commitInteraction()
-	})
+  pairElementId.value = null
+  requestAnimationFrame(() => {
+    commitInteraction()
+  })
 }
 
 watch(
-	() => hasOngoingInteraction.value,
-	(newVal, oldVal) => {
-		// a gesture torn down before it commits leaves its offsets and its
-		// auto-to-fixed mark behind, and the next commit would record them as its own
-		if (!oldVal && newVal) resetInteractionOffset()
-		if (oldVal && !newVal) applyInteractionOffsets()
-		emit('update:hasOngoingInteraction', newVal)
-	},
+  () => hasOngoingInteraction.value,
+  (newVal, oldVal) => {
+    // a gesture torn down before it commits leaves its offsets and its
+    // auto-to-fixed mark behind, and the next commit would record them as its own
+    if (!oldVal && newVal) resetInteractionOffset()
+    if (oldVal && !newVal) applyInteractionOffsets()
+    emit('update:hasOngoingInteraction', newVal)
+  },
 )
 </script>

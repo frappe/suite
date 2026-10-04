@@ -453,6 +453,34 @@ describe('RoomRegistry', () => {
 			);
 		});
 
+		it('emitToFullAccessSockets reaches only selected full sockets', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const subscribed = makeSocket('subscribed');
+			const other = makeSocket('other');
+			const preview = makeSocket('preview');
+			addFullSocket(setup, 'r1', subscribed);
+			addFullSocket(setup, 'r1', other);
+			addPreviewSocket(setup, 'r1', preview);
+
+			registry.emitToFullAccessSockets(
+				'r1',
+				new Set(['subscribed', 'preview']),
+				'hello',
+				{ x: 1 },
+			);
+
+			expect(
+				(subscribed as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([{ event: 'hello', data: { x: 1 } }]);
+			expect(
+				(other as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+		});
+
 		it('emitToScope is a no-op when the room has no sockets', () => {
 			const { io } = makeIo();
 			const registry = new RoomRegistry(io);
@@ -824,9 +852,11 @@ describe('RoomRegistry', () => {
 			});
 		});
 
-		it('omits empty avatars and projects participant updates without a legacy join', () => {
+		it('broadcasts participant updates and projects them without a legacy join', () => {
 			const setup = makeIo();
 			const registry = new RoomRegistry(setup.io);
+			const viewer = makeSocket('viewer-1');
+			addFullSocket(setup, 'r1', viewer);
 			const recorder = makeSocket('recorder-1');
 			addRecorderSocket(setup, registry, 'r1', recorder);
 			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
@@ -842,6 +872,25 @@ describe('RoomRegistry', () => {
 				avatar: '',
 				audio_enabled: false,
 				video_enabled: false,
+			});
+			const viewerCalls = (
+				viewer as unknown as {
+					_emitCalls: Array<{ event: string; data: unknown }>;
+				}
+			)._emitCalls;
+			expect(viewerCalls).toContainEqual({
+				event: 'participant_updated',
+				data: {
+					roomId: 'r1',
+					participantId: 'p1',
+					userData: {
+						name: 'Alice Updated',
+						userId: 'p1',
+						avatar: '',
+						audio_enabled: false,
+						video_enabled: false,
+					},
+				},
 			});
 			const calls = (
 				recorder as unknown as {

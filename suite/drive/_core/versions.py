@@ -24,6 +24,7 @@ from suite.drive._core.errors import (
 from suite.drive._core.nodes import (
     CONTENT_TTL_SECONDS,
     DEFAULT_PAGE_SIZE,
+    _lock_node,
     _node,
     _record_activity,
     _validate_existing_head,
@@ -75,7 +76,7 @@ def take_version(
 ) -> int:
     """Capture one file head or content document body as immutable bytes."""
     _validate_kind_and_label(kind, label)
-    current = _node(node, for_update=True)
+    current = _lock_node(node)
     via_link = require(current, EDIT, principals)
     _require_content_version_node(current)
 
@@ -167,10 +168,11 @@ def version_content_url(
     that are missing, public, or a different size than the row claims, so a
     signature is only ever minted over the exact blob the history recorded.
 
-    LIMITATION: `Drive Node Version` has no MIME column (§3.4) and the version
-    blob was written without one, so on a driver that presigns the object
-    directly the download arrives as `application/octet-stream`. `versions.py`
-    records the same handoff where the blob is written.
+    LIMITATION: `Drive Node Version` has no MIME column (§3.4) and a version
+    blob the sniffer cannot type is stored as `application/octet-stream`. Every
+    driver then serves it with the type the download filename suggests, so a
+    title with no extension downloads as `application/octet-stream`.
+    `versions.py` records the same handoff where the blob is written.
     """
     _validate_seq(seq)
     current = _node(node)
@@ -205,7 +207,7 @@ def label_version(
     *,
     label: str | None | object = KEEP,
     pinned: bool | object = KEEP,
-) -> dict:
+) -> frappe._dict:
     """Mutate only the user-controlled label and retention pin.
 
     An argument left at `KEEP` is not written. §9.1 makes `pinned` a retention
@@ -213,8 +215,8 @@ def label_version(
     milestone and said nothing about the pin must not silently lose it, and a
     caller who pinned one must not silently lose its name.
 
-    Answers both stored values, so `PATCH /nodes/<id>/versions/<seq>` publishes
-    what the row now holds rather than what the request happened to name.
+    Answers the version row as stored, so `PATCH /nodes/<id>/versions/<seq>`
+    publishes what the row now holds rather than what the request named.
     """
     _validate_seq(seq)
     if label is not KEEP and label is not None and not isinstance(label, str):
@@ -227,7 +229,7 @@ def label_version(
     savepoint = f"drive_label_version_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node, for_update=True)
+        current = _lock_node(node)
         require(current, EDIT, principals)
         # Trashed is allowed. §8.8 opens a trashed document read-only, which
         # covers its body; a label and a pin are retention metadata on the
@@ -248,10 +250,16 @@ def label_version(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
-    return {
-        "label": changes.get("label", version.label),
-        "pinned": changes.get("pinned", int(version.pinned or 0)),
-    }
+    return frappe._dict(version, **changes)
+
+
+def get_version(principals: Principals, node: str, seq: int) -> frappe._dict:
+    """Answer one readable node's version row, as `list_versions` lists it."""
+    _validate_seq(seq)
+    current = _node(node)
+    require(current, READ, principals)
+    _require_version_node(current)
+    return _version(current.name, seq)
 
 
 def delete_version(principals: Principals, node: str, seq: int) -> None:
@@ -260,7 +268,7 @@ def delete_version(principals: Principals, node: str, seq: int) -> None:
     savepoint = f"drive_delete_version_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node, for_update=True)
+        current = _lock_node(node)
         require(current, MANAGE, principals)
         # Trashed is allowed. §7.1 makes deleting a version the way to free
         # its bytes, and the daily thinner already removes a trashed node's
@@ -286,7 +294,7 @@ def restore_version(principals: Principals, node: str, seq: int) -> int:
     is the one exception and returns 0 because no version row is created.
     """
     _validate_seq(seq)
-    current = _node(node, for_update=True)
+    current = _lock_node(node)
     via_link = require(current, EDIT, principals)
     _require_content_version_node(current)
     target = _version(current.name, seq, for_update=True)
@@ -422,7 +430,7 @@ def _thin_node(node: str, now: datetime, policy: Mapping[str, int]) -> dict:
     savepoint = f"drive_thin_versions_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node, for_update=True)
+        current = _lock_node(node)
         rows = frappe.db.sql(
             """
             SELECT name, seq, creation, size
@@ -499,12 +507,9 @@ def _version_bytes(node: frappe._dict, *, spec=None) -> tuple[str, int]:
     # JSON or plain text body lands as `application/octet-stream`. §10.1
     # states the return type only and names no consumer, and §11.2 requires
     # only a 302 to a signed URL, so dropping it conforms.
-    # LIMITATION: the served type is then driver-dependent. On the local
-    # driver `frappe/storage/serve.py` recovers the type from the download
-    # filename. On S3 it does not: `signed_url_for_blob` returns the driver
-    # presigned URL, which sets `ResponseContentDisposition` and no
-    # `ResponseContentType`, and the object was written with no `ContentType`.
-    # A Writer version therefore downloads as octet-stream on S3.
+    # LIMITATION: the served type then comes from the download filename, on
+    # the local driver and on S3 alike (`frappe.storage.blob.served_type`). A
+    # Writer version whose title has no extension downloads as octet-stream.
     # HANDOFF, ticket 16 (§10.1) and ticket 22 (§11.2 version content
     # route). Fixing it needs a §3.4 MIME column or a framework
     # `put_blob(content_type=)`, so neither belongs to this ticket.
@@ -534,9 +539,12 @@ def _insert_version(
 ) -> int:
     # Every compliant writer holds the node row lock before allocating. That
     # one stable lock serializes MAX(seq)+1 without a separate counter field.
+    # The read locks so that it sees versions committed while this writer
+    # waited for that lock: at REPEATABLE READ a plain read would answer from
+    # a snapshot that can predate the wait.
     seq = int(
         frappe.db.sql(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM `tabDrive Node Version` WHERE node = %s",
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM `tabDrive Node Version` WHERE node = %s FOR UPDATE",
             node.name,
         )[0][0]
     )

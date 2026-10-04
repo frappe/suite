@@ -285,7 +285,7 @@ class TestWebDAVPropfind(IntegrationTestCase):
         The body is empty, so this is `allprop`: the widest request there is,
         and the one that pays for the page's validators.
         """
-        small, large, created = self._budget_folders()
+        _small, _large, created = self._budget_folders()
         try:
             small_queries = self._depth_one_queries("/dav/BudgetSmall")
             large_queries = self._depth_one_queries("/dav/BudgetLarge")

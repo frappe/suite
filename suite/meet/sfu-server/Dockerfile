@@ -16,8 +16,9 @@ WORKDIR /app/sfu-server
 COPY sfu-server/package.json sfu-server/yarn.lock sfu-server/tsconfig.json ./
 RUN corepack enable
 RUN corepack prepare yarn@1.22.22 --activate
-RUN yarn install --frozen-lockfile
+RUN ONNXRUNTIME_NODE_INSTALL=skip yarn install --frozen-lockfile
 COPY sfu-server/src ./src
+COPY sfu-server/assets ./assets
 RUN yarn build
 
 # --- Runtime stage (minimal) ---
@@ -26,7 +27,7 @@ WORKDIR /app/sfu-server
 ENV NODE_ENV=production \
   PORT=3000
 
-RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates curl ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app /app

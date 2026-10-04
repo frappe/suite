@@ -1,7 +1,7 @@
-import { Plugin, PluginKey } from '@tiptap/pm/state'
-import type { Node } from '@tiptap/pm/model'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import TableOfContents from '@tiptap/extension-table-of-contents'
+import type { Node } from '@tiptap/pm/model'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 // Opening or watching a document must never write to it. Ids are assigned
 // only on the user's own edits; headings saved without one get an anchor drawn
@@ -70,17 +70,20 @@ export const HeadingAnchors = TableOfContents.extend({
   onBeforeCreate() {
     const onUpdate = this.options.onUpdate
     this.options.onUpdate = (anchors, isInitial) =>
-      onUpdate?.(withRenderedIds(anchors as Anchor[], this.storage.scrollPosition) as never, isInitial)
+      onUpdate?.(
+        withRenderedIds(anchors as Anchor[], this.storage.scrollPosition) as never,
+        isInitial,
+      )
   },
 
-  onCreate() {
+  onCreate(event) {
     const { view } = this.editor
     const dispatch = view.dispatch
     view.dispatch = (tr) => {
       if (!tr.docChanged) dispatch(tr)
     }
     try {
-      this.parent?.()
+      this.parent?.(event)
     } finally {
       view.dispatch = dispatch
     }

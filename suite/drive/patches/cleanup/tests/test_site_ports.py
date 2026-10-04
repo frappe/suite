@@ -1,11 +1,13 @@
 """The real `Site*` ports, port-level: no fixture stands between the test
-and the actual code Ticket 36 would wire in. `tests.fakes` proves the
-*phases* behave correctly against a double; this file proves the doubles
-were honest about what the real port does, for the ports whose correctness
-is not obvious from their contract alone.
+and the code `execute()` wires in. `tests.fakes` proves the *phases* behave
+correctly against a double; this file proves the doubles were honest about
+what the real port does, for the ports whose correctness is not obvious
+from their contract alone. Frappe is mocked at `frappe.db` and boto at the
+client, so none of this needs a site.
 """
 
 import gzip
+import hashlib
 import json
 import unittest
 from base64 import b64encode
@@ -17,15 +19,12 @@ import frappe
 
 import suite.drive.patches.cleanup as cleanup
 from suite.drive.patches.cleanup.ports import (
-    DISK_SETTINGS_FIELDS,
-    SiteClientCallerEvidence,
+    SNAPSHOT_FIELDS,
+    LegacyBucket,
     SiteContentRows,
     SiteDiskSettingsSnapshot,
     SiteLegacyFileRows,
-    SiteNotificationWriterReadiness,
-    SiteS3LegacyPrefix,
     SiteSchemaGateway,
-    SiteSourceSchema,
     SiteThumbnailStore,
     SiteTransactionGateway,
     ThumbnailPathError,
@@ -71,6 +70,61 @@ class TestSiteLegacyFileRowsBypassesHooks(unittest.TestCase):
         self.assertEqual(count, 2)
         delete_doc.assert_not_called()
         db.delete.assert_called_once_with("File", {"name": ["in", ["a", "b"]]})
+
+    def test_public_urls_and_framework_attachments_survive_as_home_files(self):
+        avatar = frappe._dict(
+            name="avatar",
+            blob="public-avatar",
+            file_url="/files/avatar.png",
+            file_name="avatar.png",
+            is_private=0,
+            blob_private=0,
+            blob_driver="local",
+            attached_to_doctype="User",
+            attached_to_name="person@example.com",
+            attached_to_field="user_image",
+        )
+        video = frappe._dict(
+            name="video",
+            blob="public-video",
+            file_url="/files/video.mp4",
+            blob_private=0,
+            blob_driver="local",
+            attached_to_doctype="Writer Document",
+        )
+        private = frappe._dict(
+            name="private-avatar",
+            blob="private-avatar",
+            file_url="/private/files/avatar.png",
+            blob_private=1,
+            blob_driver="local",
+            attached_to_doctype="User",
+            attached_to_name="person@example.com",
+        )
+        with patch("frappe.db", new=MagicMock()) as db, patch("frappe.delete_doc") as delete_doc:
+            db.get_all.return_value = [row.name for row in (avatar, video, private)]
+            db.sql.return_value = [avatar, video, private]
+            db.exists.return_value = True
+            db.get_value.return_value = None
+            self.assertEqual(SiteLegacyFileRows().delete(tuple(db.get_all.return_value)), 3)
+            copies = [
+                dict(zip(call.kwargs["fields"], call.kwargs["values"][0], strict=True))
+                for call in db.bulk_insert.call_args_list
+            ]
+            self.assertEqual(len(copies), 3)
+            for copy, original in zip(copies, (avatar, video, private), strict=True):
+                self.assertEqual(
+                    copy["name"], "attachment-" + hashlib.sha256(original.name.encode()).hexdigest()
+                )
+                self.assertEqual(copy["folder"], "Home")
+                self.assertEqual(copy["blob"], original.blob)
+                self.assertEqual(copy["file_url"], original.file_url)
+            db.get_value.side_effect = lambda doctype, name, *args, **kwargs: next(
+                (frappe._dict(copy) for copy in copies if copy["name"] == name), None
+            )
+            SiteLegacyFileRows().delete(tuple(row.name for row in (avatar, video, private)))
+            self.assertEqual(db.bulk_insert.call_count, 3)
+            delete_doc.assert_not_called()
 
     def test_returns_the_count_actually_present_not_the_count_requested(self):
         with patch("frappe.db", new=MagicMock()) as db:
@@ -193,13 +247,22 @@ class TestSiteContentRowsCommentStripping(unittest.TestCase):
 
 
 class TestSiteThumbnailStore(unittest.TestCase):
-    """Finding: an S3-enabled site must fail loudly (`NotImplementedError`),
-    never swallow the bucket error and quietly report "not deleted" —
-    indistinguishable from an ordinary missing local file."""
+    """A local site deletes sidecar files, and a filesystem error propagates,
+    never a quiet "not deleted" indistinguishable from an ordinary missing
+    file. An S3 site deletes nothing: Cleanup deletes no bucket object."""
 
-    def test_s3_enabled_raises_honestly_never_swallows_the_error(self):
-        with self.assertRaises(NotImplementedError):
-            SiteThumbnailStore().delete_sidecars(("a",), settings={"enabled": True})
+    def test_s3_enabled_deletes_nothing_and_touches_no_bucket_or_disk(self):
+        settings = {"enabled": True, "root_folder": "team", "thumbnail_prefix": "thumbnails"}
+        with (
+            patch("suite.drive.patches.cleanup.ports.legacy_bucket") as bucket,
+            patch("os.path.exists") as exists,
+            patch("os.unlink") as unlink,
+        ):
+            deleted = SiteThumbnailStore().delete_sidecars(("a", "b"), settings=settings)
+        self.assertEqual(deleted, 0)
+        bucket.assert_not_called()
+        exists.assert_not_called()
+        unlink.assert_not_called()
 
     def test_local_disk_deletes_only_sidecars_that_exist(self):
         with TemporaryDirectory() as tmp:
@@ -398,12 +461,34 @@ class TestSiteSchemaGateway(unittest.TestCase):
             )
         self.assertEqual(present, {("File", "file_url", "depends_on")})
 
-    def test_doctypes_present_checks_the_capitalized_doctype_name(self):
+    def test_doctypes_present_counts_a_leftover_table_even_without_a_doctype_row(self):
+        # `delete_doc("DocType")` leaves the table behind, so "present" has
+        # to mean either half is still there.
         with patch("frappe.db", new=MagicMock()) as db:
-            db.exists.return_value = True
-            present = SiteSchemaGateway().doctypes_present(("drive/doctype/drive_permission",))
-        self.assertEqual(present, {"drive/doctype/drive_permission"})
-        db.exists.assert_called_once_with("DocType", "Drive Permission")
+            db.exists.return_value = False
+            db.table_exists.side_effect = lambda doctype: doctype == "Drive Permission"
+            present = SiteSchemaGateway().doctypes_present(("Drive Permission", "Drive Token"))
+        self.assertEqual(present, {"Drive Permission"})
+        db.exists.assert_any_call("DocType", "Drive Permission")
+
+    def test_drop_doctypes_deletes_the_doctype_row_then_drops_the_table(self):
+        with (
+            patch("frappe.db", new=MagicMock()) as db,
+            patch("frappe.delete_doc") as delete_doc,
+            patch("frappe.clear_cache") as clear_cache,
+        ):
+            db.exists.side_effect = lambda doctype, name: name == "Drive Permission"
+            dropped = SiteSchemaGateway().drop_doctypes(("Drive Permission", "Drive Token"))
+        self.assertEqual(dropped, 1)
+        delete_doc.assert_called_once_with("DocType", "Drive Permission", ignore_permissions=True, force=True)
+        # The table goes for both: a doctype row already gone (an earlier
+        # partial run, or a site that never shipped the doctype) still has
+        # its table dropped if one is there.
+        self.assertEqual(
+            [call.args[0] for call in db.sql_ddl.call_args_list],
+            ["DROP TABLE IF EXISTS `tabDrive Permission`", "DROP TABLE IF EXISTS `tabDrive Token`"],
+        )
+        clear_cache.assert_called_once()
 
     def test_columns_present_calls_has_column_with_the_bare_doctype(self):
         with patch("frappe.db", new=MagicMock()) as db:
@@ -426,94 +511,27 @@ class TestSiteSchemaGateway(unittest.TestCase):
         db.sql.assert_not_called()
 
 
-class TestSiteSourceSchema(unittest.TestCase):
-    """Finding: nothing probed whether Ticket 36's source edits (removing a
-    dropped field from a doctype's shipped JSON, or a permission-hook entry
-    from `suite/hooks.py`) had actually landed before a runtime column/
-    Single-value drop ran. These tests read the real, checked-in source tree
-    in this worktree (only `frappe.get_app_path` is mocked, to point at it),
-    so they prove today's honest "not ready" answer directly, not through a
-    fixture that could assert anything."""
-
-    def test_fields_declared_reports_the_real_undropped_fields_today(self):
-        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
-            declared = SiteSourceSchema().fields_declared(
-                "Sheet", ("title", "trashed", "trashed_on", "trashed_by", "made_up_field")
-            )
-        self.assertEqual(declared, {"title", "trashed", "trashed_on", "trashed_by"})
-
-    def test_fields_declared_reports_all_ten_single_fields_today(self):
-        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
-            declared = SiteSourceSchema().fields_declared("Drive Disk Settings", DISK_SETTINGS_FIELDS)
-        self.assertEqual(declared, set(DISK_SETTINGS_FIELDS))
-
-    def test_fields_declared_an_unknown_doctype_raises_rather_than_reporting_clear(self):
-        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
-            with self.assertRaises(RuntimeError):
-                SiteSourceSchema().fields_declared("Doctype Nobody Ships", ("field",))
-
-    def test_permission_hooks_present_reports_the_real_entries_today(self):
-        # `Drive Token` carries no permission_query_conditions/has_permission
-        # entry in `suite/hooks.py`; the other two do.
-        present = SiteSourceSchema().permission_hooks_present(
-            ("Drive Permission", "Drive Entity Activity Log", "Drive Token")
-        )
-        self.assertEqual(present, {"Drive Permission", "Drive Entity Activity Log"})
-
-    def test_permission_hooks_present_narrows_to_only_the_requested_names(self):
-        present = SiteSourceSchema().permission_hooks_present(("Drive Token",))
-        self.assertEqual(present, set())
-
-
-class TestSiteNotificationWriterReadiness(unittest.TestCase):
-    """Finding: nothing probed whether the two legacy `Drive Notification`
-    writers Ticket 30's addendum named had actually stopped building a row
-    naming a step-3-dropped column, or one with no `activity` set. This
-    reads the real, checked-in source of both writers in this worktree
-    (only `frappe.get_app_path` is mocked, to point at it), so it proves
-    today's honest "not ready" answer directly."""
-
-    def test_both_real_writers_are_unready_today(self):
-        # Ticket 35 changes neither writer, so this must fail honestly.
-        with patch("frappe.get_app_path", return_value=str(SUITE_APP_ROOT)):
-            unready = SiteNotificationWriterReadiness().still_unready()
-        self.assertEqual(unready, {"notifications.create_notification", "DriveUserInvitation.after_insert"})
-
-    def test_a_migrated_writer_naming_no_legacy_field_and_setting_activity_is_ready(self):
-        with TemporaryDirectory() as tmp:
-            app_root = Path(tmp)
-            (app_root / "drive" / "api").mkdir(parents=True)
-            (app_root / "drive" / "doctype" / "drive_user_invitation").mkdir(parents=True)
-            (app_root / "drive" / "api" / "notifications.py").write_text(
-                'frappe.get_doc({"doctype": "Drive Notification", "to_user": to_user, "activity": activity}).insert()',
-                encoding="utf-8",
-            )
-            (
-                app_root / "drive" / "doctype" / "drive_user_invitation" / "drive_user_invitation.py"
-            ).write_text(
-                'frappe.get_doc({"doctype": "Drive Notification", "to_user": admin, "activity": activity}).insert()',
-                encoding="utf-8",
-            )
-            with patch("frappe.get_app_path", return_value=str(app_root)):
-                unready = SiteNotificationWriterReadiness().still_unready()
-        self.assertEqual(unready, frozenset())
-
-    def test_a_missing_writer_file_raises_rather_than_reporting_ready(self):
-        with TemporaryDirectory() as tmp:
-            with patch("frappe.get_app_path", return_value=tmp):
-                with self.assertRaises(RuntimeError):
-                    SiteNotificationWriterReadiness().still_unready()
-
-
 class TestSiteDiskSettingsSnapshot(unittest.TestCase):
-    def test_reads_exactly_the_ten_disk_settings_fields(self):
-        settings = MagicMock()
-        settings.get.side_effect = lambda field: f"value-of-{field}"
-        with patch("frappe.get_single", return_value=settings) as get_single:
+    """The Single's meta no longer declares these fields, so `frappe.get_single`
+    would drop them: the snapshot reads `tabSingles` rows directly."""
+
+    def test_reads_the_snapshot_fields_from_tab_singles(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            db.sql.return_value = (("enabled", "1"), ("root_folder", "team"), ("bucket", "b"))
             values = SiteDiskSettingsSnapshot().read()
-        get_single.assert_called_once_with("Drive Disk Settings")
-        self.assertEqual(set(values), set(DISK_SETTINGS_FIELDS))
-        self.assertEqual(values["root_folder"], "value-of-root_folder")
+        self.assertEqual(set(values), set(SNAPSHOT_FIELDS))
+        self.assertIs(values["enabled"], True)
+        self.assertEqual(values["root_folder"], "team")
+        self.assertIsNone(values["thumbnail_prefix"])
+        sql, params = db.sql.call_args.args
+        self.assertIn("`tabSingles`", sql)
+        self.assertEqual(params["fields"], SNAPSHOT_FIELDS)
+
+    def test_a_site_that_never_enabled_s3_reads_as_disabled(self):
+        with patch("frappe.db", new=MagicMock()) as db:
+            db.sql.return_value = ()
+            values = SiteDiskSettingsSnapshot().read()
+        self.assertIs(values["enabled"], False)
 
 
 class TestSiteTransactionGateway(unittest.TestCase):
@@ -534,69 +552,39 @@ class TestSiteTransactionGateway(unittest.TestCase):
         db.commit.assert_not_called()
 
 
-class TestSiteClientCallerEvidence(unittest.TestCase):
-    def _app_tree(self, tmp_path, files: dict[str, str]):
-        app_root = Path(tmp_path) / "apps" / "suite" / "suite"
-        src = Path(tmp_path) / "apps" / "suite" / "frontend" / "src"
-        src.mkdir(parents=True)
-        app_root.mkdir(parents=True)
-        for relpath, contents in files.items():
-            path = src / relpath
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(contents, encoding="utf-8")
-        return app_root
+class TestLegacyBucket(unittest.TestCase):
+    """boto, at the client: 1000-key batches, keys passed through exactly as
+    given, and a partial failure reported instead of swallowed."""
 
-    def test_a_call_site_using_the_dotted_name_is_found(self):
-        with TemporaryDirectory() as tmp:
-            app_root = self._app_tree(tmp, {"api/upload.js": "call('suite.drive.api.files.upload_file', {})"})
-            with patch("frappe.get_app_path", return_value=str(app_root)):
-                found = SiteClientCallerEvidence().still_referenced(
-                    ("api.files.upload_file", "api.files.gone")
-                )
-        self.assertEqual(found, frozenset({"api.files.upload_file"}))
+    def test_delete_keys_passes_every_key_shape_through_unchanged(self):
+        # The production bucket holds leading-slash keys and bare root keys;
+        # normalising either would delete the wrong object or none.
+        client = MagicMock()
+        client.delete_objects.side_effect = lambda Bucket, Delete: {"Deleted": Delete["Objects"]}
+        keys = ("/abc/x.pdf", "bare.pdf", "team/y.pdf")
+        deleted = LegacyBucket("bucket", client).delete_keys(keys)
+        self.assertEqual(deleted, 3)
+        sent = [item["Key"] for item in client.delete_objects.call_args.kwargs["Delete"]["Objects"]]
+        self.assertEqual(sent, list(keys))
 
-    def test_a_missing_source_tree_raises_rather_than_reporting_all_clear(self):
-        with TemporaryDirectory() as tmp:
-            with patch("frappe.get_app_path", return_value=str(Path(tmp) / "apps" / "suite" / "suite")):
-                with self.assertRaises(RuntimeError):
-                    SiteClientCallerEvidence().still_referenced(("api.files.upload_file",))
+    def test_delete_keys_batches_a_thousand_per_call(self):
+        client = MagicMock()
+        client.delete_objects.side_effect = lambda Bucket, Delete: {"Deleted": Delete["Objects"]}
+        keys = tuple(f"team/{i}" for i in range(1500))
+        deleted = LegacyBucket("bucket", client).delete_keys(keys)
+        self.assertEqual(deleted, 1500)
+        sizes = [len(call.kwargs["Delete"]["Objects"]) for call in client.delete_objects.call_args_list]
+        self.assertEqual(sizes, [1000, 500])
 
-    def test_non_bundle_extensions_are_not_scanned(self):
-        with TemporaryDirectory() as tmp:
-            app_root = self._app_tree(
-                tmp, {"README.md": "mentions suite.drive.api.files.upload_file in prose"}
-            )
-            with patch("frappe.get_app_path", return_value=str(app_root)):
-                found = SiteClientCallerEvidence().still_referenced(("api.files.upload_file",))
-        self.assertEqual(found, frozenset())
-
-
-class TestSiteS3LegacyPrefix(unittest.TestCase):
-    def test_blob_references_queries_file_blob_by_key(self):
-        with patch("frappe.get_all", return_value=["team/a"]) as get_all:
-            found = SiteS3LegacyPrefix().blob_references(("team/a", "team/b"))
-        self.assertEqual(found, {"team/a"})
-        get_all.assert_called_once_with(
-            "File Blob", filters={"key": ["in", ["team/a", "team/b"]]}, pluck="key"
-        )
-
-    def test_an_empty_key_tuple_never_queries(self):
-        with patch("frappe.get_all") as get_all:
-            found = SiteS3LegacyPrefix().blob_references(())
-        self.assertEqual(found, set())
-        get_all.assert_not_called()
-
-    def test_list_prefix_and_enqueue_delete_are_honest_not_implemented_ports(self):
-        s3 = SiteS3LegacyPrefix()
-        with self.assertRaises(NotImplementedError):
-            s3.list_prefix("team", "", 100)
-        with self.assertRaises(NotImplementedError):
-            s3.enqueue_delete(("team/a",))
-
-    def test_blob_references_propagates_a_database_error_rather_than_swallowing_it(self):
-        with patch("frappe.get_all", side_effect=RuntimeError("connection lost")):
-            with self.assertRaises(RuntimeError):
-                SiteS3LegacyPrefix().blob_references(("team/a",))
+    def test_delete_keys_raises_on_a_partial_failure(self):
+        client = MagicMock()
+        client.delete_objects.return_value = {
+            "Deleted": [{"Key": "team/a"}],
+            "Errors": [{"Key": "team/b", "Code": "AccessDenied", "Message": "no"}],
+        }
+        with self.assertRaises(RuntimeError) as caught:
+            LegacyBucket("bucket", client).delete_keys(("team/a", "team/b"))
+        self.assertIn("team/b", str(caught.exception))
 
 
 if __name__ == "__main__":

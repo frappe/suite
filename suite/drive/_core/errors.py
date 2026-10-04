@@ -27,8 +27,44 @@ class DriveOverQuota(DriveError):
     http_status_code = 413
 
 
+class DriveFileTooLarge(DriveError):
+    """One file is larger than the site accepts (§11.6).
+
+    The bound is the site's own per-file limit, not a root's quota, so it says
+    nothing about the other files in a batch. It is not 413: an upload client
+    stops its whole queue on 413, because a full root refuses every file.
+    """
+
+    http_status_code = 422
+
+
 class DriveConflict(DriveError):
+    """A title is taken, or the tree refuses the write (§11.6).
+
+    `free_title` is set on a title collision only. It is the title §8.6's
+    dedupe rule would give, so a client offers Keep both without predicting a
+    suffix. The HTTP boundary copies it into the error envelope.
+    """
+
     http_status_code = 409
+
+    def __init__(self, *args, free_title: str | None = None):
+        super().__init__(*args)
+        self.free_title = free_title
+
+
+class DriveRestoreDestinationRequired(DriveConflict):
+    """Restore needs a destination: the original parent chain is not Active (§8.8)."""
+
+
+class DriveMoved(DriveConflict):
+    """The node is not in the folder the caller expected (§8.2).
+
+    A move may name `expect_parent_node`, the folder the caller last saw the
+    node in. When the node has moved on since, the move is refused before any
+    write, so an Undo cannot pull an item out of a folder a later move put it
+    in. It is its own class so a client can tell it from a title clash.
+    """
 
 
 def rollback_savepoint(savepoint: str, error: Exception) -> None:

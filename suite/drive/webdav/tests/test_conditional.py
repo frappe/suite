@@ -53,7 +53,7 @@ def row(**overrides) -> frappe._dict:
 class TestPreconditions(UnitTestCase):
     def setUp(self):
         super().setUp()
-        zone = patch("suite.drive.webdav.properties._site_zone", return_value=ZoneInfo("UTC"))
+        zone = patch("suite.drive._core.times.site_zone", return_value=ZoneInfo("UTC"))
         zone.start()
         self.addCleanup(zone.stop)
 

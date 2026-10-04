@@ -1,12 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-
 import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// Local frappe-ui work: when the submodule is checked out, bare `frappe-ui`
+// Local frappe-ui work: when the submodule is checked out, public component
 // imports resolve to its source instead of the pinned package, so edits show up
 // without a publish/reinstall. Same wiring as the mail app.
 //
@@ -19,6 +18,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // pin, components come from the checkout while tokens come from the package. Run
 // `yarn dev:frappe-ui` to point node at the checkout too and keep them in step.
 const frappeUIPath = path.resolve(__dirname, '../frappe-ui/src/index.ts')
+const frappeUIExperimentalPath = path.resolve(__dirname, '../frappe-ui/experimental.ts')
 
 const emitSlidesServiceWorker = () => ({
   name: 'slides-service-worker',
@@ -37,18 +37,19 @@ const serveNoiseSuppressionAssets = () => {
   return {
     name: 'serve-noise-suppression-assets',
     apply: 'serve' as const,
-    configureServer(server: { middlewares: { use: (path: string, fn: (req: any, res: any, next: () => void) => void) => void } }) {
+    configureServer(server: {
+      middlewares: {
+        use: (path: string, fn: (req: any, res: any, next: () => void) => void) => void
+      }
+    }) {
       server.middlewares.use('/noise-suppression', (req, res, next) => {
-        const rel = (req.url || '/').split('?')[0].replace(/^\//, '') || 'audio-worklet-processor.js'
+        const rel =
+          (req.url || '/').split('?')[0].replace(/^\//, '') || 'audio-worklet-processor.js'
         const filePath = path.resolve(noiseDir, rel)
         // Directory containment (not string prefix): avoid
         // /noise-suppression/../noise-suppression-sibling/secret.js escapes.
         const relative = path.relative(noiseDir, filePath)
-        if (
-          relative.startsWith('..') ||
-          path.isAbsolute(relative) ||
-          !fs.existsSync(filePath)
-        ) {
+        if (relative.startsWith('..') || path.isAbsolute(relative) || !fs.existsSync(filePath)) {
           next()
           return
         }
@@ -61,6 +62,31 @@ const serveNoiseSuppressionAssets = () => {
   }
 }
 
+/**
+ * frappe-ui's `codeLanguages` plugin adds an esbuild plugin to dependency
+ * pre-bundling. Vite 8 pre-bundles with Rolldown, and its esbuild compat layer
+ * throws "Not implemented" for the `build.resolve` and `initialOptions.absWorkingDir`
+ * calls that plugin makes, so every `@codemirror/lang-*` fails to optimize in dev.
+ * The esbuild plugin only stubs language packages that frappe-ui's own
+ * code editor imports and the app did not install, and the app installs all
+ * of them, so dropping it loses nothing. Dev serves frappe-ui
+ * un-bundled (see `optimizeDeps.exclude`), so the Rollup half of the same plugin
+ * still covers it. Remove this once frappe-ui ships a Rolldown version.
+ */
+const dropFrappeUICodeLanguagesEsbuildPlugin = (): Plugin => ({
+  name: 'drop-frappeui-code-languages-esbuild-plugin',
+  apply: 'serve',
+  enforce: 'post',
+  config(config) {
+    const esbuildOptions = config.optimizeDeps?.esbuildOptions
+    if (esbuildOptions?.plugins) {
+      esbuildOptions.plugins = esbuildOptions.plugins.filter(
+        (plugin: { name: string }) => plugin.name !== 'frappeui-code-languages',
+      )
+    }
+  },
+})
+
 const benchRoot = path.resolve(__dirname, '../../..')
 const commonSiteConfigPath = path.join(benchRoot, 'sites/common_site_config.json')
 // Allow static tooling to load this config in a standalone checkout/worktree.
@@ -68,8 +94,6 @@ const commonSiteConfig = fs.existsSync(commonSiteConfigPath)
   ? JSON.parse(fs.readFileSync(commonSiteConfigPath, 'utf-8'))
   : {}
 const defaultSite = commonSiteConfig.default_site || 'localhost'
-const webserverPort = commonSiteConfig.webserver_port || 8000
-const frappeBackendUrl = `http://${defaultSite}:${webserverPort}`
 // Ordered, so a product can name the oldest build that may still edit it
 const suiteBuild = String(Date.now())
 
@@ -93,10 +117,10 @@ export default defineConfig(({ mode }) => ({
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.
-      // `/files` is left out of its proxy source: the Files area owns that
-      // prefix in the SPA (ticket 001), while Frappe serves public uploads
-      // there. The dedicated `/files` proxy rule below keeps both working.
-      frappeProxy: { source: '^/(desk|app|login|api|assets|private)' },
+      // `/files` is Frappe's public upload path. `/f/<blob>/...` is Frappe's
+      // signed blob URL, where the content API redirects. `/l/<token>` and its
+      // old address `/drive/l/<token>` are server pages, not SPA routes (ticket 011).
+      frappeProxy: { source: '^/(desk|app|login|api|assets|files|private|f/|(drive/)?l/)' },
       lucideIcons: true,
       jinjaBootData: true,
       buildConfig: {
@@ -107,6 +131,7 @@ export default defineConfig(({ mode }) => ({
         sourcemap: true,
       },
     }),
+    dropFrappeUICodeLanguagesEsbuildPlugin(),
     vue(),
     {
       name: 'suite-build-stamp',
@@ -116,15 +141,12 @@ export default defineConfig(({ mode }) => ({
     emitSlidesServiceWorker(),
     // Bundles mail's Firebase Cloud Messaging service worker (src/apps/mail/sw.ts)
     // into sw.js at the build root -> served at /assets/suite/frontend/sw.js, which
-    // MailLayout.registerServiceWorker() registers. Scoped to FCM only: precaching
+    // the platform (src/platform/pwa) registers. Scoped to FCM only: precaching
     // is disabled (injectionPoint: undefined). Registration is manual
     // (injectRegister: null).
-    // `manifest: false`: the webmanifest is NOT generated here. All seven apps
-    // share one HTML shell, so a <link rel="manifest"> injected into <head> at
-    // build time would offer the install from every app, phone layout or not.
-    // It lives at public/pwa/suite/ instead and is linked at runtime only
-    // while the route is inside an installable app (see router/index.ts
-    // setPwaTags).
+    // `manifest: false`: the webmanifest is NOT generated here. It lives at
+    // public/pwa/suite/ and the platform links it on every route at runtime
+    // (see src/platform/pwa setPwaTags).
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src/apps/mail',
@@ -151,7 +173,10 @@ export default defineConfig(({ mode }) => ({
         replacement: path.resolve(__dirname, 'tailwind.config.js'),
       },
       ...(fs.existsSync(frappeUIPath)
-        ? [{ find: /^frappe-ui$/, replacement: frappeUIPath }]
+        ? [
+            { find: /^frappe-ui$/, replacement: frappeUIPath },
+            { find: /^frappe-ui\/experimental$/, replacement: frappeUIExperimentalPath },
+          ]
         : []),
     ],
     // Keep single ProseMirror / Yjs / reka-ui / vue singletons across the 7
@@ -189,20 +214,14 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     port: 8085,
-    proxy: {
-      // Public uploads live at /files/<name> on the bench. A browser
-      // navigation (Accept: text/html) to /files, /files/recent or
-      // /files/f/<node> is a Files-area route and gets the SPA instead.
-      '^/files(/|$)': {
-        target: frappeBackendUrl,
-        changeOrigin: false,
-        bypass(req) {
-          if ((req.headers.accept || '').includes('text/html')) return req.url
-          return undefined
-        },
-      },
-    },
-    allowedHosts: [defaultSite, 'suite.localhost', ...(process.env.VITE_ALLOWED_HOSTS || '').split(',').map((host) => host.trim()).filter(Boolean)],
+    allowedHosts: [
+      defaultSite,
+      'suite.localhost',
+      ...(process.env.VITE_ALLOWED_HOSTS || '')
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean),
+    ],
     fs: {
       // Allow the bench + frappe-ui source paths used by the dev proxy/build.
       allow: ['..', 'node_modules', '../../..', '../frappe-ui'],
@@ -211,6 +230,10 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     include: [
       'debug',
+      // Imported from @iframe-resizer/vue's raw .vue source, which is never pre-bundled, so
+      // left alone Vite resolves it through its `browser` field to a UMD build that has no
+      // default export, and the page fails to load.
+      '@iframe-resizer/core',
       'frappe-ui > lowlight',
       'yjs',
       'tailwind.config.js',
@@ -221,6 +244,30 @@ export default defineConfig(({ mode }) => ({
       '@tiptap/pm/state',
       '@tiptap/pm/tables',
       '@tiptap/pm/view',
+      // The same for CodeMirror, which frappe-ui's code editor imports. Vite
+      // never discovers a dep from an importer inside node_modules, so without
+      // this list `@codemirror/language` and `@lezer/highlight` load raw for
+      // frappe-ui, while the app's optimized `@codemirror/lang-javascript`
+      // bundles its own copy. A grammar from one copy and a highlighter from
+      // the other produce no token spans, so TypeScript previews show plain
+      // text. List every package so they all share one pre-bundled copy.
+      '@codemirror/autocomplete',
+      '@codemirror/commands',
+      '@codemirror/language',
+      '@codemirror/search',
+      '@codemirror/state',
+      '@codemirror/view',
+      '@lezer/highlight',
+      '@codemirror/lang-css',
+      '@codemirror/lang-html',
+      '@codemirror/lang-javascript',
+      '@codemirror/lang-json',
+      '@codemirror/lang-markdown',
+      '@codemirror/lang-python',
+      '@codemirror/lang-sass',
+      '@codemirror/lang-sql',
+      '@codemirror/lang-xml',
+      '@codemirror/lang-yaml',
     ],
     exclude: mode === 'production' ? [] : ['frappe-ui'],
   },

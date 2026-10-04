@@ -1,5 +1,5 @@
-import { computed, reactive, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { computed, reactive, ref, watch } from 'vue'
 
 import { getCookieSessionUser, useSession } from '@/platform/session'
 
@@ -153,7 +153,10 @@ export const useSessionStore = defineStore('suite-session', () => {
 })
 
 export const session = reactive({
-  user: computed(() => ({ sessionUser: platformSession.user.value?.id ?? null, ...userResource.data })),
+  user: computed(() => ({
+    sessionUser: platformSession.user.value?.id ?? null,
+    ...userResource.data,
+  })),
   isLoggedIn: computed(() => !!platformSession.user.value),
 })
 
@@ -163,7 +166,9 @@ export function useCurrentUser() {
     isLoggedIn: computed(() => !!platformSession.user.value),
     fullName,
     imageURL,
-    email: computed(() => platformSession.user.value?.email ?? platformSession.user.value?.id ?? ''),
+    email: computed(
+      () => platformSession.user.value?.email ?? platformSession.user.value?.id ?? '',
+    ),
     systemUser,
     isSystemManager: systemUser,
     jmapUser,

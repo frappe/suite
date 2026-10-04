@@ -21,8 +21,10 @@ function _shiftRef(cDollar, colStr, rDollar, rowStr, dr, dc) {
 export function adjustFormula(formula, dr, dc) {
   if (!formula || typeof formula !== 'string' || !formula.startsWith('=')) return formula
   if (dr === 0 && dc === 0) return formula
-  return formula.replace(/(\$?)([A-Za-z]+)(\$?)(\d+)(?!!)/g, (_, cDollar, colStr, rDollar, rowStr) =>
-    _shiftRef(cDollar, colStr.toUpperCase(), rDollar, rowStr, dr, dc)
+  return formula.replace(
+    /(\$?)([A-Za-z]+)(\$?)(\d+)(?!!)/g,
+    (_, cDollar, colStr, rDollar, rowStr) =>
+      _shiftRef(cDollar, colStr.toUpperCase(), rDollar, rowStr, dr, dc),
   )
 }
 
@@ -47,8 +49,10 @@ export function renameSheetInFormula(formula, oldName, newName) {
   const needsQuotes = /[\s'!]/.test(newName)
   const replacement = needsQuotes ? `'${newName.replace(/'/g, "''")}'!` : `${newName}!`
 
-  return formula
-    // Quoted form first so we don't double-replace.
-    .replace(new RegExp(`'${esc}'!`, 'g'), replacement)
-    .replace(new RegExp(`(?<![A-Za-z0-9_'])${esc}!`, 'g'), replacement)
+  return (
+    formula
+      // Quoted form first so we don't double-replace.
+      .replace(new RegExp(`'${esc}'!`, 'g'), replacement)
+      .replace(new RegExp(`(?<![A-Za-z0-9_'])${esc}!`, 'g'), replacement)
+  )
 }

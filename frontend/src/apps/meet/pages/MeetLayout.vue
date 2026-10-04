@@ -1,36 +1,36 @@
 <script setup lang="ts">
-import { FrappeUIProvider, KeyboardShortcutsDialog, useKeyboardShortcut } from "frappe-ui";
-import { computed, provide, ref } from "vue";
-import { useRoute } from "vue-router";
+import { KeyboardShortcutsDialog, useKeyboardShortcut } from 'frappe-ui'
+import { computed, onScopeDispose, provide, ref } from 'vue'
+import { useRoute } from 'vue-router'
 
-import { useKeyboardShortcuts } from "@/apps/meet/composables/useKeyboardShortcuts";
-import { initSocket } from "@/apps/meet/socket";
-import { getPlatform } from "@/apps/meet/utils/device";
+import { useKeyboardShortcuts } from '@/apps/meet/composables/useKeyboardShortcuts'
+import { disposeSocket, initSocket } from '@/apps/meet/socket'
+import { getPlatform } from '@/apps/meet/utils/device'
 
-initSocket();
+// One site socket per mount, closed on unmount so a return to Meet does not add one.
+initSocket()
+onScopeDispose(disposeSocket)
 
-provide("$platform", getPlatform());
+provide('$platform', getPlatform())
 
-const route = useRoute();
-const isInMeeting = computed(() => route.name === "meet-meeting");
+const route = useRoute()
+const isInMeeting = computed(() => route.name === 'meet-meeting')
 
-useKeyboardShortcuts(() => isInMeeting.value);
+useKeyboardShortcuts(() => isInMeeting.value)
 
-const showShortcutsDialog = ref(false);
-provide("showShortcutsDialog", showShortcutsDialog);
+const showShortcutsDialog = ref(false)
+provide('showShortcutsDialog', showShortcutsDialog)
 
 useKeyboardShortcut({
-	combo: "Shift+Slash",
-	description: "View shortcuts",
-	group: "General",
-	allowInDialog: true,
-	handler: () => (showShortcutsDialog.value = true),
-});
+  combo: 'Shift+Slash',
+  description: 'View shortcuts',
+  group: 'General',
+  allowInDialog: true,
+  handler: () => (showShortcutsDialog.value = true),
+})
 </script>
 
 <template>
-	<FrappeUIProvider>
-		<router-view />
-		<KeyboardShortcutsDialog v-model:open="showShortcutsDialog" />
-	</FrappeUIProvider>
+  <router-view />
+  <KeyboardShortcutsDialog v-model:open="showShortcutsDialog" />
 </template>

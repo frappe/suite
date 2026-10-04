@@ -10,8 +10,7 @@ export interface SocketLike {
 }
 
 export type Room =
-  | { type: 'doc'; doctype: string; name: string }
-  | { type: 'doctype'; doctype: string }
+  { type: 'doc'; doctype: string; name: string } | { type: 'doctype'; doctype: string }
 
 export interface Realtime {
   subscribe<T = unknown>(event: string, handler: (payload: T) => void): () => void
@@ -41,7 +40,8 @@ export function createRealtime(options: CreateRealtimeOptions = {}): Realtime {
   function socket(): SocketLike {
     if (instance) return instance
     const targetWindow = options.window ?? window
-    const definedSite = typeof __SITE_NAME__ === 'undefined' ? targetWindow.location.hostname : __SITE_NAME__
+    const definedSite =
+      typeof __SITE_NAME__ === 'undefined' ? targetWindow.location.hostname : __SITE_NAME__
     const siteName = options.siteName ?? targetWindow.site_name ?? definedSite
     const factory = options.io ?? (io as unknown as CreateRealtimeOptions['io'])!
     instance = factory(resolveSocketUrl(targetWindow, siteName, options.socketioPort), {
@@ -113,8 +113,8 @@ export function createRealtime(options: CreateRealtimeOptions = {}): Realtime {
 export function resolveSocketUrl(
   targetWindow: Pick<Window, 'location'> & Partial<Window>,
   siteName: string,
-  configuredPort: string | number =
-    targetWindow.socketio_port ?? (typeof __SOCKETIO_PORT__ === 'undefined' ? 9000 : __SOCKETIO_PORT__),
+  configuredPort: string | number = targetWindow.socketio_port ??
+    (typeof __SOCKETIO_PORT__ === 'undefined' ? 9000 : __SOCKETIO_PORT__),
 ): string {
   const origin = targetWindow.location.origin
   if (!targetWindow.location.port) return `${origin}/${siteName}`

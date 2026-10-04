@@ -1,21 +1,53 @@
 <template>
-  <div class="w-full" @keydown.ctrl.enter.capture.stop="
-    !disabled && !isEmpty && $emit('submit', editor)
-    " @keydown.meta.enter.capture.stop="
-      !disabled && !isEmpty && $emit('submit', editor)
-      " @keydown.esc.stop="$emit('cancel', editor)">
+  <div
+    class="w-full"
+    @keydown.ctrl.enter.capture.stop="!disabled && !isEmpty && $emit('submit', editor)"
+    @keydown.meta.enter.capture.stop="!disabled && !isEmpty && $emit('submit', editor)"
+    @keydown.esc.stop="$emit('cancel', editor)"
+  >
     <div class="flex" :class="editable && 'border rounded-4'">
-      <Editor ref="textEditor" v-model="editorContent" :editable="editable" :extensions
-        @change="(val) => { modelValue = val; $emit('change') }">
+      <Editor
+        ref="textEditor"
+        v-model="editorContent"
+        :editable="editable"
+        :extensions
+        @change="
+          (val) => {
+            modelValue = val
+            $emit('change')
+          }
+        "
+      >
         <template #default="{ editor }">
           <EditorBubbleMenu :editor :items="bubbleItems" />
           <EditorTableMenu :editor />
-          <EditorContent :editor class="min-w-2 flex-grow prose prose-sm prose-v3" :class="editable && 'pl-2.5 py-1.5'"
-            :placeholder style="--editor-font-size: 14px" />
+          <EditorContent
+            :editor
+            class="min-w-2 flex-grow prose prose-sm prose-v3"
+            :class="editable && 'pl-2.5 py-1.5'"
+            :placeholder
+            style="--editor-font-size: 14px"
+          />
           <div v-if="editable" class="self-end me-1 flex-shrink-0 flex gap-1 mb-1.5">
-            <Button v-if="!isEmpty" :disabled size="xs" variant="ghost" :icon="LucideMessageCircleReply"
-              @click="$emit('submit', editor)" />
-            <Button v-if="!isEmpty" size="xs" variant="ghost" :icon="LucideX" @click="$emit('cancel', editor)" />
+            <Button
+              v-if="!isEmpty"
+              :disabled
+              size="xs"
+              variant="ghost"
+              :icon="LucideMessageCircleReply"
+              label="Send"
+              tooltip="Send"
+              @click="$emit('submit', editor)"
+            />
+            <Button
+              v-if="!isEmpty"
+              size="xs"
+              variant="ghost"
+              :icon="LucideX"
+              label="Cancel"
+              tooltip="Cancel"
+              @click="$emit('cancel', editor)"
+            />
           </div>
         </template>
       </Editor>
@@ -24,27 +56,29 @@
 </template>
 
 <script setup>
-import {
-  Editor,
-  EditorContent,
-  EditorBubbleMenu,
-  EditorTableMenu,
-  RichTextKit,
-  Bold,
-  Italic,
-  Strike,
-  InlineCode,
-  Blockquote,
-  BulletList,
-  OrderedList,
-  InsertLink,
-  Separator,
-} from 'frappe-ui/editor'
-import { Button } from 'frappe-ui'
-import { allUsers } from '@/apps/drive/legacy/sdk'
-import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import LucideMessageCircleReply from '~icons/lucide/message-circle-reply'
 import LucideX from '~icons/lucide/x'
+import { Button } from 'frappe-ui'
+import {
+  Blockquote,
+  Bold,
+  Editor,
+  EditorBubbleMenu,
+  EditorContent,
+  EditorTableMenu,
+  InlineCode,
+  InsertLink,
+  Italic,
+  RichTextKit,
+  Separator,
+  Strike,
+} from 'frappe-ui/editor'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+
+import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
+import { MentionSearch } from '@/apps/writer/extensions/mention-search'
+
+import { BulletListItem, OrderedListItem } from './core-editor/menu-buttons'
 
 const props = defineProps({
   placeholder: String,
@@ -77,7 +111,11 @@ watch(
   },
 )
 
-const extensions = [RichTextKit.configure({ mention: { items: () => allUsers.data ?? [] } })]
+const { users } = useUsers()
+const extensions = [
+  RichTextKit.configure({ mention: { items: () => users.value } }),
+  MentionSearch.configure({ onQuery: searchMentions }),
+]
 
 const bubbleItems = [
   Bold,
@@ -87,6 +125,6 @@ const bubbleItems = [
   InlineCode,
   Blockquote,
   Separator,
-  { type: 'group', label: 'List', icon: 'lucide-list', items: [BulletList, OrderedList] },
+  { type: 'group', label: 'List', icon: 'lucide-list', items: [BulletListItem, OrderedListItem] },
 ]
 </script>

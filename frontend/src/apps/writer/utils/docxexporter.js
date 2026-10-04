@@ -1,9 +1,11 @@
-import fileSaver from 'file-saver'
 import {
   AlignmentType,
   BorderStyle,
+  convertInchesToTwip,
   Document,
   ExternalHyperlink,
+  HorizontalPositionAlign,
+  HorizontalPositionRelativeFrom,
   ImageRun,
   LevelFormat,
   Packer,
@@ -14,16 +16,15 @@ import {
   TableLayoutType,
   TableRow,
   TextRun,
-  WidthType,
-  convertInchesToTwip,
-  HorizontalPositionAlign,
-  HorizontalPositionRelativeFrom,
+  TextWrappingSide,
+  TextWrappingType,
+  VerticalAlign,
   VerticalPositionAlign,
   VerticalPositionRelativeFrom,
-  TextWrappingType,
-  TextWrappingSide,
-  VerticalAlign,
+  WidthType,
 } from 'docx'
+import fileSaver from 'file-saver'
+
 import { pxToTwips, toDocxLine } from '@/apps/writer/utils/typography'
 
 const CELL_PADDING = 240
@@ -113,8 +114,22 @@ const HEADING_SIZES = { h1: 40, h2: 36, h3: 32, h4: 28, h5: 26, h6: 24 }
 // Block-level tags a generic wrapper (tab/div/section from pasted or future
 // nodes) might contain; anything else is treated as an inline-only leaf.
 const BLOCK_TAGS = new Set([
-  'DIV', 'P', 'UL', 'OL', 'TABLE', 'BLOCKQUOTE', 'PRE',
-  'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'VIDEO', 'IFRAME',
+  'DIV',
+  'P',
+  'UL',
+  'OL',
+  'TABLE',
+  'BLOCKQUOTE',
+  'PRE',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'HR',
+  'VIDEO',
+  'IFRAME',
 ])
 
 export function cssColorToDocx(c) {
@@ -180,10 +195,34 @@ export function resolveHref(href) {
   }
 }
 
-async function dataFromUrl(url) {
-  const res = await fetch(url)
-  const buf = await res.arrayBuffer()
-  return new Uint8Array(buf)
+// The formats Word embeds, by their leading bytes. docx needs the format named.
+const IMAGE_SIGNATURES = [
+  ['png', [0x89, 0x50, 0x4e, 0x47]],
+  ['jpg', [0xff, 0xd8, 0xff]],
+  ['gif', [0x47, 0x49, 0x46, 0x38]],
+  ['bmp', [0x42, 0x4d]],
+]
+
+export function imageType(data) {
+  const match = IMAGE_SIGNATURES.find(([, signature]) =>
+    signature.every((byte, i) => data[i] === byte),
+  )
+  return match ? match[0] : null
+}
+
+/**
+ * The picture `img` shows as ImageRun options, fetched through the caller's
+ * `fetchPicture` so a share link's credentials reach Drive. Throws for a
+ * refused fetch or a format Word cannot embed.
+ */
+async function imageFromElement(img, ctx) {
+  const res = await ctx.fetchPicture(img)
+  // A refused picture answers an error page, which is not image data.
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  const data = new Uint8Array(await res.arrayBuffer())
+  const type = imageType(data)
+  if (!type) throw new Error('Unsupported image format')
+  return { data, type }
 }
 
 /** Natural size from the img's width/height attrs, scaled down to fit maxWidthPx. */
@@ -219,9 +258,9 @@ async function inlineToRuns(node, inherited = {}, ctx) {
     const src = node.getAttribute('src')
     if (!src) return []
     try {
-      const bytes = await dataFromUrl(src)
+      const image = await imageFromElement(node, ctx)
       const { width, height } = fitImageSize(node, ctx.contentWidthPx)
-      return [new ImageRun({ data: bytes, transformation: { width, height } })]
+      return [new ImageRun({ ...image, transformation: { width, height } })]
     } catch (e) {
       console.warn('Image fetch failed:', src, e)
       return []
@@ -363,7 +402,9 @@ async function headingFromHx(hx, ctx) {
   return new Paragraph({
     alignment: resolveAlignment(hx),
     spacing: { before: 240, after: 120 },
-    children: runs.length ? runs : [new TextRun({ text: '', bold: true, size, font: ctx.defaultFont })],
+    children: runs.length
+      ? runs
+      : [new TextRun({ text: '', bold: true, size, font: ctx.defaultFont })],
   })
 }
 
@@ -380,7 +421,10 @@ export function buildListLevels(reference, kind, defaultFont) {
   const levels = []
   for (let level = 0; level <= MAX_LIST_LEVEL; level++) {
     const indent = { left: 720 * (level + 1), hanging: 360 }
-    const style = { paragraph: { indent, spacing: { before: 0, after: 0 } }, run: { font: defaultFont, size: 28 } }
+    const style = {
+      paragraph: { indent, spacing: { before: 0, after: 0 } },
+      run: { font: defaultFont, size: 28 },
+    }
     if (kind === 'bullets') {
       levels.push({
         level,
@@ -391,7 +435,13 @@ export function buildListLevels(reference, kind, defaultFont) {
       })
     } else {
       const spec = ORDERED_LEVELS[level % ORDERED_LEVELS.length]
-      levels.push({ level, format: spec.format, text: spec.text, alignment: AlignmentType.LEFT, style })
+      levels.push({
+        level,
+        format: spec.format,
+        text: spec.text,
+        alignment: AlignmentType.LEFT,
+        style,
+      })
     }
   }
   return { reference, levels }
@@ -566,7 +616,7 @@ async function paragraphsFromBlockquote(el, ctx) {
 }
 
 /** <pre><code> content is one text blob with literal newlines — Word needs an explicit break per line. */
-function paragraphFromCodeBlock(el, ctx) {
+function paragraphFromCodeBlock(el, _ctx) {
   const codeEl = el.querySelector(':scope > code') || el
   const lines = (codeEl.textContent || '').split('\n')
   const runStyle = { font: CODE_FONT, size: 20, color: 'D4D4D4' }
@@ -588,7 +638,9 @@ function paragraphFromCodeBlock(el, ctx) {
 function dividerParagraph(ctx) {
   return new Paragraph({
     spacing: { before: 240, after: 240 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: COLOR_MAP['var(--outline-gray-2)'] } },
+    border: {
+      bottom: { style: BorderStyle.SINGLE, size: 6, color: COLOR_MAP['var(--outline-gray-2)'] },
+    },
     children: [new TextRun({ text: '', font: ctx.defaultFont })],
   })
 }
@@ -631,7 +683,14 @@ function blockForIframe(el, ctx) {
     children: [
       new ExternalHyperlink({
         link: href,
-        children: [new TextRun({ text: title, color: HYPERLINK_COLOR, underline: {}, font: ctx.defaultFont })],
+        children: [
+          new TextRun({
+            text: title,
+            color: HYPERLINK_COLOR,
+            underline: {},
+            font: ctx.defaultFont,
+          }),
+        ],
       }),
     ],
   })
@@ -641,9 +700,9 @@ function blockForIframe(el, ctx) {
 async function imageParagraph(el, ctx) {
   const src = el.getAttribute('src')
   if (!src) return null
-  let bytes
+  let image
   try {
-    bytes = await dataFromUrl(src)
+    image = await imageFromElement(el, ctx)
   } catch (e) {
     console.warn('Image fetch failed:', src, e)
     return null
@@ -664,12 +723,13 @@ async function imageParagraph(el, ctx) {
       spacing: { before: IMG_SPACE_BEFORE, after: IMG_SPACE_AFTER },
       children: [
         new ImageRun({
-          data: bytes,
+          ...image,
           transformation: { width, height },
           floating: {
             horizontalPosition: {
               relative: HorizontalPositionRelativeFrom.MARGIN,
-              align: floatAttr === 'left' ? HorizontalPositionAlign.LEFT : HorizontalPositionAlign.RIGHT,
+              align:
+                floatAttr === 'left' ? HorizontalPositionAlign.LEFT : HorizontalPositionAlign.RIGHT,
             },
             verticalPosition: {
               relative: VerticalPositionRelativeFrom.PARAGRAPH,
@@ -678,7 +738,12 @@ async function imageParagraph(el, ctx) {
             wrap: {
               type: TextWrappingType.SQUARE,
               side: TextWrappingSide.BOTH_SIDES,
-              margin: { top: CELL_PADDING, bottom: CELL_PADDING, left: CELL_PADDING, right: CELL_PADDING },
+              margin: {
+                top: CELL_PADDING,
+                bottom: CELL_PADDING,
+                left: CELL_PADDING,
+                right: CELL_PADDING,
+              },
             },
           },
         }),
@@ -688,12 +753,16 @@ async function imageParagraph(el, ctx) {
 
   const alignAttr = (el.getAttribute('data-align') || 'center').toLowerCase()
   const alignment =
-    alignAttr === 'left' ? AlignmentType.LEFT : alignAttr === 'right' ? AlignmentType.RIGHT : AlignmentType.CENTER
+    alignAttr === 'left'
+      ? AlignmentType.LEFT
+      : alignAttr === 'right'
+        ? AlignmentType.RIGHT
+        : AlignmentType.CENTER
 
   return new Paragraph({
     alignment,
     spacing: { before: IMG_SPACE_BEFORE, after: IMG_SPACE_AFTER },
-    children: [new ImageRun({ data: bytes, transformation: { width, height } })],
+    children: [new ImageRun({ ...image, transformation: { width, height } })],
   })
 }
 
@@ -721,12 +790,12 @@ async function blocksForImageGroup(el, ctx) {
       let children = [emptyParagraph(ctx)]
       if (src) {
         try {
-          const bytes = await dataFromUrl(src)
+          const image = await imageFromElement(img, ctx)
           const { width, height } = fitImageSize(img, cellWidthPx)
           children = [
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              children: [new ImageRun({ data: bytes, transformation: { width, height } })],
+              children: [new ImageRun({ ...image, transformation: { width, height } })],
             }),
           ]
         } catch (e) {
@@ -744,7 +813,11 @@ async function blocksForImageGroup(el, ctx) {
     }
     while (cells.length < cols) {
       cells.push(
-        new TableCell({ children: [emptyParagraph(ctx)], borders: noBorders, width: { size: cellDxa, type: WidthType.DXA } }),
+        new TableCell({
+          children: [emptyParagraph(ctx)],
+          borders: noBorders,
+          width: { size: cellDxa, type: WidthType.DXA },
+        }),
       )
     }
     rows.push(new TableRow({ children: cells }))
@@ -816,13 +889,18 @@ async function tableFromTABLE(tbl, ctx) {
   const headerFill = COLOR_MAP['var(--surface-gray-2)']
   const numberingConfigs = []
 
-  const trs = Array.from(tbl.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr'))
+  const trs = Array.from(
+    tbl.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr'),
+  )
   let totalCols = 0
   trs.forEach((tr) => (totalCols = Math.max(totalCols, countCols(tr))))
   if (!totalCols) totalCols = 1
 
   const columnWidths = computeColumnWidths(trs, totalCols, ctx.tableWidthDxa)
-  const cellCtx = { ...ctx, contentWidthPx: Math.max(40, Math.floor(ctx.tableWidthDxa / totalCols / 15) - 20) }
+  const cellCtx = {
+    ...ctx,
+    contentWidthPx: Math.max(40, Math.floor(ctx.tableWidthDxa / totalCols / 15) - 20),
+  }
 
   const borders = {
     top: { style: BorderStyle.SINGLE, size: 8, color: borderColor },
@@ -864,7 +942,12 @@ async function tableFromTABLE(tbl, ctx) {
         new TableCell({
           children: paras,
           borders,
-          margins: { top: CELL_PADDING, bottom: CELL_PADDING, left: CELL_PADDING, right: CELL_PADDING },
+          margins: {
+            top: CELL_PADDING,
+            bottom: CELL_PADDING,
+            left: CELL_PADDING,
+            right: CELL_PADDING,
+          },
           verticalAlign: VerticalAlign.CENTER,
           shading: bg ? { fill: bg } : isHeader ? { fill: headerFill } : undefined,
           columnSpan: colSpan > 1 ? colSpan : undefined,
@@ -956,7 +1039,15 @@ async function blocksFromNodes(nodeList, ctx) {
   return { blocks: out, numberingConfigs }
 }
 
-export async function downloadDocxFromHtml(html, filename, settings = {}) {
+/** Without a caller's fetch, a picture is taken from its `src` as the browser would. */
+const fetchBySrc = (img) => fetch(img.getAttribute('src'))
+
+export async function downloadDocxFromHtml(
+  html,
+  filename,
+  settings = {},
+  fetchPicture = fetchBySrc,
+) {
   const fontSetting = settings?.font_family || settings?.fontFamily
 
   const fontMap = {
@@ -997,6 +1088,7 @@ export async function downloadDocxFromHtml(html, filename, settings = {}) {
     defaultSpacing,
     tableWidthDxa: CONTENT_WIDTH_TWIPS,
     contentWidthPx: CONTENT_WIDTH_PX,
+    fetchPicture,
   }
 
   // Exporting every tab: build each tab's heading + content as one unit, in
@@ -1014,7 +1106,12 @@ export async function downloadDocxFromHtml(html, filename, settings = {}) {
           pageBreakBefore: index > 0,
           spacing: { before: 0, after: 200 },
           children: [
-            new TextRun({ text: tab.getAttribute('data-tab-label') || 'Untitled', bold: true, size: 40, font: defaultFont }),
+            new TextRun({
+              text: tab.getAttribute('data-tab-label') || 'Untitled',
+              bold: true,
+              size: 40,
+              font: defaultFont,
+            }),
           ],
         }),
       )

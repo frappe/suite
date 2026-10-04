@@ -1,9 +1,14 @@
 """Writer and Sheet history conversion without a site."""
 
+import base64
+import hashlib
 import json
 import tempfile
 import unittest
+from itertools import count
 from pathlib import Path
+
+import pycrdt
 
 from suite.drive.patches.build.content_mapping import MAX_VERSION_SEQ
 from suite.drive.patches.build.history import BuildHistoryError, convert_history_and_comments
@@ -12,8 +17,10 @@ from suite.drive.patches.build.ports import (
     ContentRow,
     SheetSnapshotRow,
     TreeRow,
+    WriterBody,
     WriterVersionRow,
 )
+from suite.drive.patches.build.report import build_report
 from suite.drive.patches.build.tests.fakes import FakeContent, FakeContentTarget, build_environment
 
 STAMP = "2024-01-02 03:04:05.000000"
@@ -631,29 +638,55 @@ class HistoryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "node/seq"):
             target.insert_versions([{"name": "b", "node": "node-1", "seq": 1}])
 
-    def test_a_head_snapshot_outside_the_source_refuses_the_document(self):
-        document = ContentRow(
-            **{**content_row("Sheet", "sheet-1", "node-1").__dict__, "head_snapshot": "snapshot-gone"}
-        )
-        snapshots = [
-            SheetSnapshotRow(
-                "snapshot-1",
-                "sheet-1",
-                1,
-                "auto",
-                "{}",
-                actor=OWNER,
-                owner=OWNER,
-                creation=STAMP,
-                modified=STAMP,
-            )
-        ]
-        source = FakeContent(documents=[document], sheet_snapshots=snapshots)
-        env, target = self.environment(source)
-        add_document_node(target, "node-1", "Sheet", "sheet-1")
+    def test_missing_source_heads_are_reported_without_changing_live_sheets_or_existing_history(self):
+        for has_history in (False, True):
+            with self.subTest(has_history=has_history), tempfile.TemporaryDirectory() as directory:
+                document = ContentRow(
+                    **{
+                        **content_row("Sheet", "sheet-1", "node-1").__dict__,
+                        "head_snapshot": "snapshot-gone",
+                        "head_seq": 7,
+                        "sheets_data": '{"sheets":[{"name":"Budget","cells":{"A1":42}}]}',
+                    }
+                )
+                snapshots = (
+                    [
+                        SheetSnapshotRow(
+                            "snapshot-1",
+                            "sheet-1",
+                            1,
+                            "auto",
+                            "{}",
+                            actor=OWNER,
+                            owner=OWNER,
+                            creation=STAMP,
+                            modified=STAMP,
+                        )
+                    ]
+                    if has_history
+                    else []
+                )
+                source = FakeContent(documents=[document], sheet_snapshots=snapshots)
+                target = FakeContentTarget(content=source)
+                env = build_environment(
+                    Path(directory), content=source, content_target=target, content_ready=True
+                )
+                add_document_node(target, "node-1", "Sheet", "sheet-1")
 
-        with self.assertRaisesRegex(BuildHistoryError, "head_snapshot"):
-            convert_history_and_comments(env)
+                for _ in range(2):
+                    result = convert_history_and_comments(env)
+                    self.assertTrue(result.history_completed)
+                    self.assertEqual(result.issues_total, 0)
+                    self.assertEqual(result.sheet_snapshots_missing, 1)
+                    evidence = build_report(env)["evidence"]["content"]
+                    self.assertEqual(
+                        evidence["missing_sheet_snapshots"],
+                        [{"sheet": "sheet-1", "snapshot": "snapshot-gone"}],
+                    )
+                    self.assertEqual(set(target.version_rows), {"snapshot-1"} if has_history else set())
+                    self.assertEqual(document.head_seq, 7)
+                    self.assertEqual(document.head_snapshot, "snapshot-gone")
+                    self.assertEqual(document.sheets_data, '{"sheets":[{"name":"Budget","cells":{"A1":42}}]}')
 
     def test_a_head_snapshot_pointing_at_another_node_refuses_the_document(self):
         document = ContentRow(
@@ -682,6 +715,34 @@ class HistoryTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BuildHistoryError, "field node"):
             convert_history_and_comments(env)
+
+    def test_an_existing_head_with_an_invalid_sequence_is_not_reported_as_missing(self):
+        for seq in (-1, 0):
+            with self.subTest(seq=seq), tempfile.TemporaryDirectory() as directory:
+                document = ContentRow(
+                    **{**content_row("Sheet", "sheet-1", "node-1").__dict__, "head_snapshot": "bad-head"}
+                )
+                snapshot = SheetSnapshotRow(
+                    "bad-head",
+                    "sheet-1",
+                    seq,
+                    "auto",
+                    "{}",
+                    actor=OWNER,
+                    owner=OWNER,
+                    creation=STAMP,
+                    modified=STAMP,
+                )
+                source = FakeContent(documents=[document], sheet_snapshots=[snapshot])
+                target = FakeContentTarget(content=source)
+                env = build_environment(
+                    Path(directory), content=source, content_target=target, content_ready=True
+                )
+                add_document_node(target, "node-1", "Sheet", "sheet-1")
+
+                with self.assertRaises(BuildHistoryError):
+                    convert_history_and_comments(env)
+                self.assertEqual(env.state.content().sheet_snapshots_missing, 0)
 
     def test_the_source_is_read_in_bounded_pages_with_a_keyset_cursor(self):
         # Plan §13: `(doc, creation, name)` and `(sheet, seq, name)`. One
@@ -779,6 +840,301 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(content.legacy_comments_ported, 1)
         self.assertEqual(target.thread_rows["legacy-1"]["node"], "file-1")
         self.assertEqual(target.comment_rows["legacy-1"]["thread"], "legacy-1")
+
+
+def yjs_body(*blocks) -> str:
+    """One Writer body, as the editor stores it: a base64 Yjs update."""
+    document = pycrdt.Doc()
+    fragment = pycrdt.XmlFragment()
+    document["default"] = fragment
+    for block in blocks:
+        fragment.children.append(block)
+    return base64.b64encode(document.get_update()).decode("ascii")
+
+
+def body_fragment(content: str) -> pycrdt.XmlFragment:
+    document = pycrdt.Doc()
+    fragment = pycrdt.XmlFragment()
+    document["default"] = fragment
+    document.apply_update(base64.b64decode(content))
+    return fragment
+
+
+def image(**attributes) -> pycrdt.XmlElement:
+    return pycrdt.XmlElement("image", attributes)
+
+
+def paragraph(*children) -> pycrdt.XmlElement:
+    return pycrdt.XmlElement("paragraph", None, list(children))
+
+
+def embed(node: str) -> str:
+    return f"/api/method/suite.writer.api.embed.get?id={node}"
+
+
+class WriterBodyTest(unittest.TestCase):
+    """§14.6: a Writer body after Build shows every picture it showed before."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        ids = count(1)
+        self.source = FakeContent()
+        self.target = FakeContentTarget(content=self.source)
+        self.env = build_environment(
+            Path(self.tmp.name),
+            content=self.source,
+            content_target=self.target,
+            content_ready=True,
+            make_id=lambda: f"copy-{next(ids)}",
+        )
+        self.target.node_rows["root-1"] = {"name": "root-1", "kind": "root", "path": "", "root": "root-1"}
+
+    def add_document(self, docname, node, *, owner=OWNER, body=None):
+        self.source.add_content_document(
+            ContentRow(
+                doctype="Writer Document",
+                name=docname,
+                node=node,
+                owner=owner,
+                creation=STAMP,
+                modified=STAMP,
+                modified_by=owner,
+            )
+        )
+        self.target.node_rows[node] = {
+            **self.node(node, "root-1", kind="document", title=docname),
+            "content_doctype": "Writer Document",
+            "content_docname": docname,
+        }
+        if body is not None:
+            self.source.writer_bodies[docname] = body
+
+    def add_picture(self, name, document_node, blob, title, *, owner=OWNER):
+        self.target.add_blob(blob, f"bytes of {blob}".encode(), mime_type="image/png")
+        self.target.node_rows[name] = {
+            **self.node(name, document_node, kind="file", title=title, owner=owner),
+            "blob": blob,
+            "size": len(f"bytes of {blob}"),
+            "mime": "image/png",
+        }
+
+    def node(self, name, parent, *, kind, title, owner=OWNER):
+        stored = self.target.node_rows[parent]
+        path = "" if stored["kind"] == "root" else f"{stored['path'] or '/'}{parent}/"
+        return {
+            "name": name,
+            "title": title,
+            "parent_node": parent,
+            "root": "root-1",
+            "path": path,
+            "kind": kind,
+            "state": "Active",
+            "owner": owner,
+            "creation": STAMP,
+            "modified": STAMP,
+            "content_modified": STAMP,
+        }
+
+    def children(self, parent):
+        return {name: row for name, row in self.target.node_rows.items() if row.get("parent_node") == parent}
+
+    def test_a_picture_another_document_owns_is_copied_under_the_document_that_shows_it(self):
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(
+                    paragraph(image(src=embed("pic-1"), alt="borrowed")),
+                    paragraph(image(src=embed("own-1"))),
+                    # The same picture again, in the plain spelling: one copy serves both.
+                    paragraph(image(**{"data-node": "pic-1"})),
+                    paragraph(image(src=embed("gone-1"))),
+                ),
+                html=(
+                    '<p><img src="/api/method/drive.api.embed.get_file_content'
+                    '?embed_name=pic-1&parent_entity_name=node-a"></p>'
+                    f'<p><img src="{embed("own-1")}"></p>'
+                    f'<p><img src="{embed("gone-1")}"></p>'
+                ),
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        first = convert_history_and_comments(self.env)
+        body = self.source.writer_bodies["reader-doc"]
+        second = convert_history_and_comments(self.env)
+
+        copies = {name: row for name, row in self.children("node-b").items() if name != "own-1"}
+        self.assertEqual(list(copies), ["copy-1"])
+        copy = copies["copy-1"]
+        self.assertEqual(
+            {key: copy[key] for key in ("blob", "title", "kind", "state", "root", "path", "owner", "mime")},
+            {
+                "blob": "blob-1",
+                "title": "photo.png",
+                "kind": "file",
+                "state": "Active",
+                "root": "root-1",
+                "path": "/node-b/",
+                "owner": OWNER,
+                "mime": "image/png",
+            },
+        )
+        # The owning document keeps its picture where it was.
+        self.assertEqual(self.target.node_rows["pic-1"]["parent_node"], "node-a")
+        self.assertEqual(self.target.grant_rows, {})
+
+        sources = [
+            {key: value for key, value in dict(child.children[0].attributes).items()}
+            for child in body_fragment(body.content).children
+        ]
+        self.assertEqual(
+            sources,
+            [
+                {"src": embed("copy-1"), "alt": "borrowed"},
+                {"src": embed("own-1")},
+                {"data-node": "copy-1"},
+                {"src": embed("gone-1")},
+            ],
+        )
+        self.assertEqual(
+            body.html,
+            '<p><img src="/api/method/drive.api.embed.get_file_content'
+            '?embed_name=copy-1&parent_entity_name=node-a"></p>'
+            f'<p><img src="{embed("own-1")}"></p>'
+            f'<p><img src="{embed("gone-1")}"></p>',
+        )
+        # The reference that names no node stays, and is reported.
+        self.assertIn("gone-1", " ".join(issue.reason for issue in second.issues))
+
+        # A rerun copies nothing and rewrites nothing.
+        self.assertEqual(self.source.writer_bodies["reader-doc"], body)
+        for content in (first, second):
+            self.assertEqual(content.writer_media_copied, 1)
+            self.assertEqual(content.writer_bodies_rewritten, 1)
+            self.assertEqual(content.writer_media_references_missing, 1)
+
+    def test_an_old_version_points_at_the_documents_copy_of_a_borrowed_picture(self):
+        # Restoring a version puts its HTML back into the live body, so a
+        # version naming another document's node would bring back a blank
+        # picture. `pic-2` is in the old versions only, never in the body.
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        self.add_picture("pic-2", "node-a", "blob-2", "chart.png", owner="author@example.com")
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=embed("pic-1")))),
+                html=f'<p><img src="{embed("pic-1")}"></p>',
+            ),
+        )
+        older = (
+            '<h1 class="title">Draft</h1>'
+            f'<p><img src="{embed("pic-1")}" alt="same"></p>'
+            f'<p><img data-node="pic-2" src="{embed("pic-2")}"> see id=pic-2 below</p>'
+        )
+        old = (
+            '<p><img src="/api/method/drive.api.embed.get_file_content'
+            '?embed_name=pic-2&parent_entity_name=node-a"></p>'
+        )
+        for name, snapshot, creation in (
+            ("version-1", older, "2024-01-01"),
+            ("version-2", old, "2024-01-02"),
+        ):
+            self.source.writer_version_rows.append(
+                WriterVersionRow(name, "reader-doc", snapshot, owner=OWNER, creation=creation, modified=STAMP)
+            )
+
+        # One version per page, so the second page meets a picture the
+        # first page already copied.
+        first = convert_history_and_comments(self.env, batch_size=2)
+        rows = (dict(self.target.node_rows), dict(self.target.version_rows), dict(self.target.blob_rows))
+        second = convert_history_and_comments(self.env, batch_size=2)
+
+        # One copy per blob, shared by the body and both versions.
+        copies = self.children("node-b")
+        self.assertEqual(
+            {name: row["blob"] for name, row in copies.items()}, {"copy-1": "blob-1", "copy-2": "blob-2"}
+        )
+        self.assertEqual(self.target.node_rows["pic-2"]["parent_node"], "node-a")
+        # Only the ids inside the picture references change.
+        expected = {
+            "version-1": (
+                '<h1 class="title">Draft</h1>'
+                f'<p><img src="{embed("copy-1")}" alt="same"></p>'
+                f'<p><img data-node="copy-2" src="{embed("copy-2")}"> see id=pic-2 below</p>'
+            ),
+            "version-2": (
+                '<p><img src="/api/method/drive.api.embed.get_file_content'
+                '?embed_name=copy-2&parent_entity_name=node-a"></p>'
+            ),
+        }
+        for name, html in expected.items():
+            version = self.target.version_rows[name]
+            data = html.encode("utf-8")
+            self.assertEqual(self.target.read_blob(version["blob"]), data)
+            self.assertEqual(version["size"], len(data))
+            self.assertEqual(self.target.blob(version["blob"]).checksum, hashlib.sha256(data).hexdigest())
+
+        # A rerun copies nothing, rewrites no version, and stores no new bytes.
+        self.assertEqual(
+            (dict(self.target.node_rows), dict(self.target.version_rows), dict(self.target.blob_rows)), rows
+        )
+        for content in (first, second):
+            self.assertEqual(content.writer_media_copied, 2)
+            self.assertEqual(content.writer_versions_rewritten, 2)
+            self.assertEqual(content.writer_media_references_missing, 0)
+
+    def test_a_picture_directly_inside_a_list_item_is_wrapped_in_a_paragraph(self):
+        # B113: the editor's image is inline and a list item holds only
+        # blocks, so the editor dropped this picture. After Build it sits in
+        # a paragraph inside the same list item, with every attribute kept.
+        attributes = {"src": embed("own-1"), "alt": "chart", "title": None, "width": 320}
+        valid = paragraph(image(src=embed("own-1"), alt="already fine"))
+        self.add_document(
+            "listed-doc",
+            "node-l",
+            body=WriterBody(
+                content=yjs_body(
+                    pycrdt.XmlElement(
+                        "bulletList",
+                        None,
+                        [pycrdt.XmlElement("listItem", None, [image(**attributes)])],
+                    ),
+                    valid,
+                ),
+                html=f'<ul><li><img src="{embed("own-1")}"></li></ul>',
+            ),
+        )
+        self.add_picture("own-1", "node-l", "blob-own", "chart.png")
+
+        first = convert_history_and_comments(self.env)
+        body = self.source.writer_bodies["listed-doc"]
+        second = convert_history_and_comments(self.env)
+
+        bullet_list, kept = list(body_fragment(body.content).children)
+        (item,) = list(bullet_list.children)
+        (wrapper,) = list(item.children)
+        (picture,) = list(wrapper.children)
+        self.assertEqual((item.tag, wrapper.tag, picture.tag), ("listItem", "paragraph", "image"))
+        self.assertEqual(dict(picture.attributes), attributes)
+        # A picture already inside a paragraph is left alone.
+        (kept_picture,) = list(kept.children)
+        self.assertEqual(
+            (kept.tag, kept_picture.tag, dict(kept_picture.attributes)),
+            ("paragraph", "image", {"src": embed("own-1"), "alt": "already fine"}),
+        )
+        # The HTML copy needs no wrap: the editor's HTML parser wraps it.
+        self.assertEqual(body.html, f'<ul><li><img src="{embed("own-1")}"></li></ul>')
+        # A rerun wraps nothing again.
+        self.assertEqual(self.source.writer_bodies["listed-doc"], body)
+        self.assertEqual(self.children("node-l").keys(), {"own-1"})
+        for content in (first, second):
+            self.assertEqual(content.writer_images_wrapped, 1)
+            self.assertEqual(content.writer_bodies_rewritten, 1)
 
 
 if __name__ == "__main__":

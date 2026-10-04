@@ -1,14 +1,22 @@
 import type { Editor } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import TabView from './components/TabView.vue'
-import { EditorState, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { DOMSerializer, Fragment, Node as PMNode } from '@tiptap/pm/model'
+import { EditorState, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { v4 } from 'uuid'
+
 import { TabNode } from '@/apps/writer/schema'
 
+import TabView from './components/TabView.vue'
+
 type TabMatch = { node: PMNode; pos: number }
+
+declare module '@tiptap/core' {
+  interface Storage {
+    tab: { activeTabId: string | null }
+  }
+}
 
 // Tabs are always direct children of the doc
 export const tabsIn = (doc: PMNode): TabMatch[] => {
@@ -37,8 +45,7 @@ const firstTabBlocks = (doc: PMNode): TabMatch[] => {
   return blocks
 }
 
-const metaMap = (state: EditorState) =>
-  ySyncPluginKey.getState(state)?.doc?.getMap('meta')
+const metaMap = (state: EditorState) => ySyncPluginKey.getState(state)?.doc?.getMap('meta')
 
 const firstTabLabel = (state: EditorState): string | null =>
   metaMap(state)?.get(FIRST_TAB_LABEL) ?? null
@@ -74,6 +81,25 @@ const orderedHTML = (doc: PMNode, firstTabLabel: string | null): string => {
   const serializer = DOMSerializer.fromSchema(doc.type.schema)
   const wrapper = document.createElement('div')
   wrapper.appendChild(serializer.serializeFragment(Fragment.fromArray(children)))
+  return wrapper.innerHTML
+}
+
+/** The HTML of the open tab, or of the whole document when no tab is open. */
+export const currentTabHTML = (editor: Editor): string => {
+  const { state } = editor
+  const activeTabId = editor.storage.tab?.activeTabId
+  const serializer = DOMSerializer.fromSchema(state.schema)
+  const wrapper = document.createElement('div')
+  if (activeTabId === FIRST_TAB_ID) {
+    const blocks = firstTabBlocks(state.doc).map(({ node }) => node)
+    wrapper.appendChild(serializer.serializeFragment(Fragment.from(blocks)))
+    return wrapper.innerHTML
+  }
+
+  const tab = activeTabId ? findTab(state.doc, activeTabId) : null
+  if (!tab) return editor.getHTML()
+
+  wrapper.appendChild(serializer.serializeNode(tab.node))
   return wrapper.innerHTML
 }
 
@@ -136,15 +162,13 @@ export const TabsExtension = TabNode.extend({
   // `create` fires a tick late, so patch the serialiser before anything can
   // call it
   onBeforeCreate() {
-    this.editor.getHTML = () =>
-      orderedHTML(this.editor.state.doc, firstTabLabel(this.editor.state))
+    this.editor.getHTML = () => orderedHTML(this.editor.state.doc, firstTabLabel(this.editor.state))
   },
 
   onCreate() {
     const meta = metaMap(this.editor.state)
     if (meta) {
-      const announce = () =>
-        this.editor.view.dom.dispatchEvent(new CustomEvent('tab-renamed'))
+      const announce = () => this.editor.view.dom.dispatchEvent(new CustomEvent('tab-renamed'))
       meta.observe(announce)
       this.storage.stopAnnouncing = () => meta.unobserve(announce)
     }
@@ -217,17 +241,14 @@ export const TabsExtension = TabNode.extend({
 
           return true
         },
-      focusTab:
-        (tabId: string) =>
-        () => {
-          setTimeout(() => {
-            const { doc } = this.editor.state
-            const tab =
-              tabId === FIRST_TAB_ID ? firstTabBlocks(doc)[0] : findTab(doc, tabId)
-            if (tab) this.editor.commands.focus(tab.pos + 1)
-          }, 0)
-          return true
-        },
+      focusTab: (tabId: string) => () => {
+        setTimeout(() => {
+          const { doc } = this.editor.state
+          const tab = tabId === FIRST_TAB_ID ? firstTabBlocks(doc)[0] : findTab(doc, tabId)
+          if (tab) this.editor.commands.focus(tab.pos + 1)
+        }, 0)
+        return true
+      },
       renameTab:
         (tabId: string, newLabel: string, refocus: boolean = true) =>
         ({ tr, dispatch, state }) => {
@@ -284,10 +305,7 @@ export const TabsExtension = TabNode.extend({
             if (attrs.order === undefined) attrs.order = tabsIn(state.doc).length
 
             const paragraphType = this.editor.schema.nodes.paragraph
-            const tab = this.editor.schema.nodes.tab.create(
-              attrs,
-              paragraphType.create(),
-            )
+            const tab = this.editor.schema.nodes.tab.create(attrs, paragraphType.create())
             tr.insert(state.doc.content.size, tab)
             dispatch(tr)
 
@@ -295,23 +313,7 @@ export const TabsExtension = TabNode.extend({
           }
           return true
         },
-      getCurrentTabHTML:
-        () =>
-        ({ state }) => {
-          const serializer = DOMSerializer.fromSchema(state.schema)
-          const wrapper = document.createElement('div')
-          if (this.storage.activeTabId === FIRST_TAB_ID) {
-            const blocks = firstTabBlocks(state.doc).map(({ node }) => node)
-            wrapper.appendChild(serializer.serializeFragment(Fragment.from(blocks)))
-            return wrapper.innerHTML
-          }
-
-          const tab = findTab(state.doc, this.storage.activeTabId)
-          if (!tab) return this.editor.getHTML()
-
-          wrapper.appendChild(serializer.serializeNode(tab.node))
-          return wrapper.innerHTML
-        },
+      getCurrentTabHTML: () => () => currentTabHTML(this.editor),
     }
   },
 
@@ -336,11 +338,7 @@ export const TabsExtension = TabNode.extend({
 
         view.dispatch(
           state.tr.setSelection(
-            TextSelection.create(
-              state.doc,
-              tab.pos + 1,
-              tab.pos + tab.node.nodeSize - 1,
-            ),
+            TextSelection.create(state.doc, tab.pos + 1, tab.pos + tab.node.nodeSize - 1),
           ),
         )
         return true
@@ -348,8 +346,7 @@ export const TabsExtension = TabNode.extend({
       Backspace: () => {
         // prevent clearing of document when tab is empty
         const { $to } = this.editor.state.selection
-        if ($to.parent.type.name === 'tab' && $to.parent.content.size == 2)
-          return true
+        if ($to.parent.type.name === 'tab' && $to.parent.content.size == 2) return true
       },
       Enter: () => {
         const { state } = this.editor
@@ -368,11 +365,7 @@ export const TabsExtension = TabNode.extend({
           }
         }
 
-        if (
-          !tabNode ||
-          tabNode.attrs.label !== 'Untitled' ||
-          !tabNode.content.firstChild
-        )
+        if (!tabNode || tabNode.attrs.label !== 'Untitled' || !tabNode.content.firstChild)
           return false
 
         const firstChildStart = tabPos + 1

@@ -15,4 +15,3 @@ export async function loadUntilVisible(result: WindowResult): Promise<WindowResu
   }
   return current
 }
-

@@ -13,10 +13,11 @@ blob reference commit or roll back together.
 
 Quota is preflighted from `Content-Length`, and the same number bounds the
 spool when the header is absent (§7.3), so a client can never spool far past
-what the root could ever hold. The site's `drive_webdav_max_upload_size` caps
-the body on top of that, and answers 413 rather than 507 because it is a server
-limit and not an exhausted quota. The admission `UPDATE` itself runs inside
-`create_file` / `update`, at commit.
+what the root could ever hold. The site's per-file limit (`max_file_size`, the
+one the browser upload reads) caps the body on top of that, lowered further by
+`drive_webdav_max_upload_size` when the site sets one, and answers 413 rather
+than 507 because it is a server limit and not an exhausted quota. The
+admission `UPDATE` itself runs inside `create_file` / `update`, at commit.
 
 `X-OC-Mtime` is honoured so rclone's nextcloud vendor round-trips modification
 times (§8.11).
@@ -33,6 +34,7 @@ from suite.drive._core import nodes as node_core
 from suite.drive._core import quota as quota_core
 from suite.drive._core.access import require
 from suite.drive._core.roles import EDIT, READ
+from suite.drive._core.times import to_site_naive
 from suite.drive.webdav import pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -43,7 +45,6 @@ from suite.drive.webdav.errors import (
     MethodNotAllowed,
     PayloadTooLarge,
 )
-from suite.drive.webdav.properties import to_site_naive
 from suite.drive.webdav.settings import allow_header_without
 
 # 9999-12-31 UTC - the largest epoch datetime.fromtimestamp can represent
@@ -145,8 +146,8 @@ class _Ceilings(NamedTuple):
     """The two bounds on a PUT body, kept apart because they answer differently.
 
     `quota` is the bytes the root can still take, or None when it is unlimited.
-    `hard` is `drive_webdav_max_upload_size`, the site's own absolute body cap,
-    or None when the site sets none.
+    `hard` is the site's absolute body cap: its per-file limit, or
+    `drive_webdav_max_upload_size` when that is lower.
 
     They are not one number. An exhausted quota is 507 and tells a client to
     free space; a server body limit is 413 (RFC 7231 §6.5.11) and tells it this
@@ -156,18 +157,14 @@ class _Ceilings(NamedTuple):
     """
 
     quota: int | None
-    hard: int | None
+    hard: int
 
     def check(self, size: int) -> None:
         """Refuse `size` bytes with whichever bound it broke, hard cap first."""
-        if self.hard is not None and size > self.hard:
-            raise PayloadTooLarge("Upload exceeds this site's maximum WebDAV upload size.")
+        if size > self.hard:
+            raise PayloadTooLarge("Upload exceeds this site's maximum upload size.")
         if self.quota is not None and size > self.quota:
             raise InsufficientStorage("Upload exceeds available storage.")
-
-    @property
-    def bounded(self) -> bool:
-        return self.quota is not None or self.hard is not None
 
 
 def _ceilings(root: str) -> _Ceilings:
@@ -178,16 +175,26 @@ def _ceilings(root: str) -> _Ceilings:
     ceiling. The hard cap is what bounds a chunked PUT into an unlimited root,
     the one case the quota number cannot bound at all.
 
-    `cint` rather than `int`: a site that wrote "5GB" into the key would
-    otherwise raise `ValueError` out of every single PUT, which the mapper
-    answers 500. A cap nobody can parse is the same as no cap.
+    The hard cap starts at the site's per-file limit, Frappe's `max_file_size`
+    (§7.3): a file the browser upload refuses as too large is refused here
+    too, so a DAV client cannot store what the site does not accept.
+    `drive_webdav_max_upload_size` can only lower it, for a site that wants
+    DAV bodies smaller than browser ones. `cint` rather than `int`: a site
+    that wrote "5GB" into the key would otherwise raise `ValueError` out of
+    every single PUT, which the mapper answers 500. A cap nobody can parse is
+    the same as no cap.
     """
+    from frappe.core.api.file import get_max_file_size
+
     usage = quota_core.get_storage_usage(root)
     limit = int(usage.effective_quota or 0)
     quota = max(limit - int(usage.used_bytes or 0), 0) if limit else None
 
-    hard = cint(frappe.conf.get("drive_webdav_max_upload_size"))
-    return _Ceilings(quota=quota, hard=hard or None)
+    hard = get_max_file_size()
+    dav_cap = cint(frappe.conf.get("drive_webdav_max_upload_size"))
+    if dav_cap:
+        hard = min(hard, dav_cap)
+    return _Ceilings(quota=quota, hard=hard)
 
 
 class _BoundedBody:
@@ -211,8 +218,7 @@ class _BoundedBody:
             if not chunk:
                 break
             self._written += len(chunk)
-            if self._ceilings.bounded:
-                self._ceilings.check(self._written)
+            self._ceilings.check(self._written)
             self._buffer += chunk
         if size < 0:
             data, self._buffer = self._buffer, b""
@@ -239,8 +245,8 @@ def _client_mtime(ctx: DavContext) -> datetime | None:
 
     The header is a UTC epoch in seconds. A zoneless `fromtimestamp` would read
     it in the OS zone and skew every round-trip (rclone re-syncs) whenever the
-    two zones differ, and `_core`'s numeric form is epoch milliseconds, so
-    neither the raw value nor a bare float can be handed on.
+    two zones differ, so the value is read as UTC and converted with the
+    site's zone, the one the column is stored in.
     """
     header = ctx.request.headers.get("X-OC-Mtime")
     if not header:

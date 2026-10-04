@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext } from "@playwright/test";
+
+import { expect, test } from "../../helpers/flips";
 
 import {
 	adminApi,
@@ -33,11 +35,11 @@ test.afterEach(async () => {
 
 async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.getByRole("menuitem", { name: item }).click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 test("New Folder creates a folder in the open destination", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Folder");
 
 	const dialog = page.getByRole("dialog", { name: "New folder" });
@@ -49,7 +51,7 @@ test("New Folder creates a folder in the open destination", async ({ page }) => 
 });
 
 test("New Writer document creates the node and lands on /d/", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Document");
 
 	const dialog = page.getByRole("dialog");
@@ -65,7 +67,7 @@ test("New Writer document creates the node and lands on /d/", async ({ page }) =
 // The menu label stays "Spreadsheet" and the registry sends the "Sheet"
 // content doctype. Both were checked after commit d54f91803.
 test("New Spreadsheet creates a Sheet and lands on /d/", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Spreadsheet");
 
 	const dialog = page.getByRole("dialog");
@@ -78,7 +80,7 @@ test("New Spreadsheet creates a Sheet and lands on /d/", async ({ page }) => {
 });
 
 test("New Presentation creates the node and lands on /d/", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Presentation");
 
 	const dialog = page.getByRole("dialog");
@@ -90,12 +92,13 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 	expect(created?.content_doctype).toBe("Presentation");
 });
 
-test("Upload files stays disabled until ticket 007", async ({ page }) => {
-	await page.goto(`/files/f/${home.name}?view=list`);
+test("New offers Upload files and then Upload folder", async ({ page }) => {
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	const upload = page.getByRole("menuitem", { name: "Upload files" });
-	await expect(upload).toBeVisible();
-	await expect(upload).toBeDisabled();
+	const items = page.getByRole("menuitem");
+	await expect(page.getByRole("menuitem", { name: "Upload files" })).toBeEnabled();
+	const labels = await items.allInnerTexts();
+	expect(labels.slice(0, 3).map((label) => label.trim())).toEqual(["Folder", "Upload files", "Upload folder"]);
 });
 
 test("each registered document type opens its own surface", async ({ page }) => {
@@ -128,24 +131,23 @@ test("an unsupported file keeps the /d/ route and offers Download", async ({ pag
 
 test("a link row confirms its origin before opening a tab", async ({ page }) => {
 	await createLink(api, home.name, "outside-link", "https://frappe.io/about");
-	await page.goto(`/files/f/${home.name}?view=list`);
+	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByText("outside-link", { exact: true }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Open external link?" });
 	await expect(dialog).toBeVisible();
 	await expect(dialog.getByText("https://frappe.io")).toBeVisible();
 	await dialog.getByRole("button", { name: "Cancel" }).click();
-	await expect(page).toHaveURL(new RegExp(`/files/f/${home.name}`));
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${home.name}`));
 });
 
-// BUG: the Sheets surface mounts the legacy editor, which keeps its own header
-// with a Share button, a ShareDialog and an avatar stack
-// (apps/sheets/components/SheetEditor/index.vue:134,152-162,848). Ticket 008
-// owns the one Drive share dialog, so this second control is a duplicate and it
-// opens a dialog the new Files surface refuses to open.
-test.fixme("a Sheets document carries no second share control", async ({ page }) => {
+// On /d/ the legacy Sheets editor drops its own Share and ShareDialog
+// (`embedded`), so the one Drive share control is the only one (ticket 008).
+test("a Sheets document carries one share control, the Drive one", async ({ page }) => {
 	const sheet = await createDocument(api, home.name, "header-sheet", "Sheet");
 	await page.goto(`/d/${sheet.name}`);
 	await expect(page.getByRole("button", { name: "File" })).toBeVisible({ timeout: 20_000 });
-	await expect(page.getByRole("button", { name: /Share/ })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: /Share/ })).toHaveCount(1);
+	await page.getByRole("button", { name: /Share/ }).click();
+	await expect(page.getByRole("dialog", { name: /^Share “/ })).toBeVisible();
 });

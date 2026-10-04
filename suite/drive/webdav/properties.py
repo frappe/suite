@@ -10,14 +10,14 @@ A file node with no blob is §8.5's empty head, and the checksum of no bytes is
 still a checksum, so it validates like any other file.
 """
 
-from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 import frappe
 from lxml import etree
 from werkzeug.http import http_date
 
 from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM, blob_checksums
+from suite.drive._core.times import WIRE_FORMAT, to_utc
 from suite.drive.webdav.xmlutil import dav, dav_element
 
 # `checksum` was never looked up, as opposed to looked up and absent. A batched
@@ -56,7 +56,7 @@ def compute_etag(row: frappe._dict, checksum: str | None = UNREAD) -> str | None
 
 
 def rfc1123(value: datetime | str) -> str:
-    return http_date(_to_utc(value))
+    return http_date(to_utc(value))
 
 
 def content_time(row: frappe._dict) -> datetime | str:
@@ -70,16 +70,12 @@ def content_time(row: frappe._dict) -> datetime | str:
 
 
 def modified_utc(row: frappe._dict) -> datetime:
-    return _to_utc(content_time(row))
-
-
-def to_site_naive(value: datetime) -> datetime:
-    """Aware datetime -> the naive site-local form the DB stores."""
-    return value.astimezone(_site_zone()).replace(tzinfo=None)
+    return to_utc(content_time(row))
 
 
 def iso8601(value: datetime | str) -> str:
-    return _to_utc(value).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """The same string the HTTP API publishes for the same row (§11.3)."""
+    return to_utc(value).strftime(WIRE_FORMAT)
 
 
 def live_properties(
@@ -140,19 +136,3 @@ def _resourcetype(is_collection: bool) -> etree._Element:
     if is_collection:
         etree.SubElement(element, dav("collection"))
     return element
-
-
-def _to_utc(value: datetime | str) -> datetime:
-    # naive site-local stamps are ambiguous during the DST fall-back hour;
-    # fold=0 picks the earlier instant, the best the lost offset allows
-    return _as_datetime(value).replace(tzinfo=_site_zone()).astimezone(UTC)
-
-
-def _as_datetime(value: datetime | str) -> datetime:
-    if isinstance(value, str):
-        return frappe.utils.get_datetime(value)
-    return value
-
-
-def _site_zone() -> ZoneInfo:
-    return ZoneInfo(frappe.utils.get_system_timezone())

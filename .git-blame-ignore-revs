@@ -13,3 +13,6 @@
 
 # style: apply ruff lint autofixes
 c2ed307690147e4d91852cd8accd286f103b09eb
+
+# frontend: Format with Prettier
+e2ee3a18c41b3f668df0d0e48857077f6b9635e0

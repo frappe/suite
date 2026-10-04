@@ -37,8 +37,6 @@ from suite.drive.patches.build.mapping import (
     principal_kind,
     role_for_flags,
 )
-from suite.drive.utils import GENERAL_USER
-from suite.drive.utils import GROUP_PREFIX as UTILS_GROUP_PREFIX
 
 FLAG_NAMES = ("read", "comment", "share", "upload", "write", "deny")
 
@@ -401,12 +399,12 @@ class TestConstants(unittest.TestCase):
 
     def test_the_general_sentinel_matches_the_app(self):
         """Build has to write the same spelling the engine reads."""
-        self.assertEqual(GENERAL, GENERAL_USER)
+        self.assertEqual(GENERAL, "$GENERAL")
         self.assertEqual(_principal_kind(GENERAL), "general")
 
     def test_the_group_prefix_matches_the_app(self):
         """A different prefix would make every group grant unreadable."""
-        self.assertEqual(GROUP_PREFIX, UTILS_GROUP_PREFIX)
+        self.assertEqual(GROUP_PREFIX, "$GROUP:")
         self.assertEqual(_principal_kind(GROUP_PREFIX + "Engineering"), "group")
 
     def test_the_public_sentinel_is_the_one_the_engine_calls_open(self):

@@ -25,8 +25,39 @@ import frappe
 PROBE_KEY = "private/.drive-build-gate-probe"
 
 
+# The oldest schema Build reads. Every alpha patch before this one was
+# deleted from `suite/patches.txt`, so a site that has not run it would reach
+# Build with tables Build no longer knows how to read (per-team `File` trees,
+# a `Drive Team` column on `Drive Permission`, Writer's first schema). The
+# string is the full `Patch Log.patch` value, suffix included.
+UPGRADE_FLOOR_PATCH = "suite.drive.patches.drop_team_doctypes #2"
+
+
 class BuildGateError(frappe.ValidationError):
     """Build refused to start. Nothing was mutated."""
+
+
+def refuse_below_upgrade_floor() -> None:
+    """Refuse a site whose Patch Log stops before `UPGRADE_FLOOR_PATCH`.
+
+    A site that never ran Drive at all is fine: it has no legacy rows for the
+    deleted patches to have shaped. The refusal is for a site that ran an
+    older Drive and stopped upgrading before the floor; its only path is to
+    upgrade to a Suite release that still carried those patches first.
+    """
+    if frappe.db.exists("Patch Log", {"patch": UPGRADE_FLOOR_PATCH}):
+        return
+    older = frappe.db.sql(
+        """SELECT COUNT(*) FROM `tabPatch Log`
+           WHERE `patch` LIKE 'suite.drive.patches.%%' OR `patch` LIKE 'drive.patches.%%'""",
+    )[0][0]
+    if not older:
+        return
+    raise BuildGateError(
+        f"This site ran {older} older Drive patches but never {UPGRADE_FLOOR_PATCH!r}, which is "
+        "the oldest schema the Drive migration reads. The patches between were removed. Upgrade "
+        "to the last Suite release that carried them, migrate, then upgrade to this one."
+    )
 
 
 def check_gate(env) -> None:

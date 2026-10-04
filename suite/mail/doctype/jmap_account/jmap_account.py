@@ -1,17 +1,21 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-from typing import TYPE_CHECKING
-
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
+from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
+from suite.mail.doctype.user_account.user_account import account_apps_cache_key, get_user_jmap_accounts
 from suite.mail.jmap import (
-    get_core_service,
+    chunked_set,
+    format_set_error,
+    get_account_client,
+    get_cached_mailboxes,
     get_mailbox_id_by_role,
-    get_mailbox_service,
+    has_cached_identities,
+    has_cached_mailboxes,
     invalidate_jmap_identities_cache,
     invalidate_jmap_mailboxes_cache,
 )
@@ -22,14 +26,8 @@ from suite.mail.store import (
     get_data_store,
     rebuild_email_address_index,
 )
-from suite.store import destroy_namespace, get_search_base_path
-
-if TYPE_CHECKING:
-    from suite.mail.jmap.services.core import CoreService
-
-from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
-from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
 from suite.mail.utils.user import get_account_emails
+from suite.store import destroy_namespace, get_search_base_path
 from suite.utils import execute_with_logging, user_context
 from suite.utils.lock import acquire_lock, release_lock
 from suite.utils.user import is_suite_admin, is_system_manager
@@ -85,37 +83,22 @@ class JMAPAccount(Document):
         return self.flags.get("user") or frappe.session.user
 
     @property
-    def core_service(self) -> "CoreService | None":  # noqa: UP037
-        """Return the JMAP core service for the account, or None if there is an error."""
-
-        if self.flags.in_delete or not self.name:
-            return None
-
-        try:
-            return get_core_service(self.name)
-        except Exception:
-            frappe.msgprint(f"Error getting JMAP core service for account {self.name}")
-            return None
-
-    @property
     def has_cached_jmap_identities(self) -> int:
         """Check if there are cached JMAP identities for the account."""
 
-        service = self.core_service
-        if not service:
+        if self.flags.in_delete or not self.name:
             return 0
 
-        return cint(bool(service.cache.get("identities")))
+        return cint(has_cached_identities(self.name))
 
     @property
     def has_cached_jmap_mailboxes(self) -> int:
         """Check if there are cached JMAP mailboxes for the account."""
 
-        service = self.core_service
-        if not service:
+        if self.flags.in_delete or not self.name:
             return 0
 
-        return cint(bool(service.cache.get("mailboxes")))
+        return cint(has_cached_mailboxes(self.name))
 
     @property
     def total_cached_blobs(self) -> int:
@@ -277,8 +260,9 @@ def delete_orphaned_jmap_accounts() -> None:
         frappe.delete_doc("JMAP Account", account, ignore_permissions=True, delete_permanently=True)
 
 
-def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
-    """Ensure a shared JMAP Account document exists for each of the user's accounts.
+def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> bool:
+    """Ensure a shared JMAP Account document exists for each of the user's accounts. Returns
+    whether this call did the sync: False when it left it to another run (see below).
 
     Settings are shared by account ID across every user with access, so documents for
     accounts the user can no longer see are intentionally left untouched.
@@ -294,7 +278,7 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
     lockname = f"sync_jmap_accounts:{user}"
     identifier = acquire_lock(lockname, acquire_timeout=0)
     if not identifier:
-        return
+        return False
 
     # The skip flags only pause hook-triggered builds during the bulk sync below and must not
     # leak: flags survive the request in long-lived processes (workers, tests), where a leaked
@@ -322,6 +306,8 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
         frappe.flags.skip_automation_sieve_build = previous_sieve_flag
         frappe.flags.skip_archive_mailbox_creation = previous_archive_flag
         release_lock(lockname, identifier)
+
+    return True
 
 
 def _ensure_jmap_account_docs(user: str, accounts: dict[str, dict]) -> list[str]:
@@ -397,6 +383,11 @@ def _sync_user_accounts(user: str, account_ids: set[str]) -> None:
     if names_to_remove:
         frappe.db.delete("User Account", {"name": ["in", names_to_remove]})
 
+    if accounts_to_add or accounts_to_remove:
+        # What each app lists is worked out from the accounts; a new or lost one changes it.
+        frappe.cache.delete_value(account_apps_cache_key(user))
+        frappe.cache.delete_value(f"calendar|shared_calendars|{user}")
+
 
 def maybe_create_archive_mailbox(account: str) -> None:
     """Create the archive mailbox for the account if it does not already exist."""
@@ -434,35 +425,31 @@ def rename_default_mailboxes(account: str) -> int:
 
 
 def _rename_default_mailboxes(account: str) -> int:
-    service = get_mailbox_service(account)
-
-    updates = []
-    for mailbox in service.mailboxes:
+    updates = {}
+    for mailbox in get_cached_mailboxes(account):
         current_name, new_name = DEFAULT_MAILBOX_RENAMES.get(
             (mailbox.get("role") or "").lower(), (None, None)
         )
         if current_name is None or mailbox["name"] != current_name or current_name == new_name:
             continue
 
-        updates.append(
-            {
-                "id": mailbox["id"],
-                "name": new_name,
-                "role": mailbox["role"],
-                "parent_id": mailbox["parentId"],
-                "sort_order": mailbox["sortOrder"],
-                "is_subscribed": mailbox["isSubscribed"],
-            }
-        )
+        updates[mailbox["id"]] = {
+            "name": new_name,
+            "role": mailbox["role"],
+            "parentId": mailbox["parentId"],
+            "sortOrder": mailbox["sortOrder"],
+            "isSubscribed": mailbox["isSubscribed"],
+        }
 
     if not updates:
         return 0
 
-    response = service.update(updates)
-    service.invalidate_cache(service.account, key="mailboxes")
+    client = get_account_client(account)
+    result = chunked_set(client, lambda b, chunk: b.mail.mailbox.set(update=chunk), updates)
+    invalidate_jmap_mailboxes_cache(account)
 
-    if not_updated := response.get("notUpdated"):
-        errors = ", ".join(f"{id}: {error.get('description')}" for id, error in not_updated.items())
+    if result.not_updated:
+        errors = ", ".join(f"{id}: {format_set_error(error)}" for id, error in result.not_updated.items())
         raise ValueError(f"Failed to rename mailbox(es): {errors}")
 
     return len(updates)

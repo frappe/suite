@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+
 import { createProtectionEngine } from './protection.js'
 
 // Ranges are 0-indexed, inclusive: { r0, c0, r1, c1 }.
@@ -6,7 +7,9 @@ const rect = (r0, c0, r1, c1) => ({ r0, c0, r1, c1 })
 
 describe('ProtectionEngine — ranges & queries', () => {
   let p
-  beforeEach(() => { p = createProtectionEngine() })
+  beforeEach(() => {
+    p = createProtectionEngine()
+  })
 
   it('no protection by default', () => {
     expect(p.isProtected(0, 0)).toBe(false)
@@ -16,13 +19,13 @@ describe('ProtectionEngine — ranges & queries', () => {
 
   it('protects cells inside an added range, inclusive of edges', () => {
     p.addRange(rect(1, 1, 3, 3))
-    expect(p.isProtected(1, 1)).toBe(true)   // top-left corner
-    expect(p.isProtected(3, 3)).toBe(true)   // bottom-right corner
-    expect(p.isProtected(2, 2)).toBe(true)   // interior
-    expect(p.isProtected(0, 1)).toBe(false)  // one row above
-    expect(p.isProtected(1, 0)).toBe(false)  // one col left
-    expect(p.isProtected(4, 3)).toBe(false)  // one row below
-    expect(p.isProtected(3, 4)).toBe(false)  // one col right
+    expect(p.isProtected(1, 1)).toBe(true) // top-left corner
+    expect(p.isProtected(3, 3)).toBe(true) // bottom-right corner
+    expect(p.isProtected(2, 2)).toBe(true) // interior
+    expect(p.isProtected(0, 1)).toBe(false) // one row above
+    expect(p.isProtected(1, 0)).toBe(false) // one col left
+    expect(p.isProtected(4, 3)).toBe(false) // one row below
+    expect(p.isProtected(3, 4)).toBe(false) // one col right
   })
 
   it('normalises a reversed rect', () => {
@@ -48,10 +51,10 @@ describe('ProtectionEngine — ranges & queries', () => {
 
   it('isAnyProtected detects rect overlap', () => {
     p.addRange(rect(5, 5, 7, 7))
-    expect(p.isAnyProtected(rect(0, 0, 5, 5))).toBe(true)   // touches corner
-    expect(p.isAnyProtected(rect(6, 0, 6, 10))).toBe(true)  // crosses through
-    expect(p.isAnyProtected(rect(0, 0, 4, 4))).toBe(false)  // no overlap
-    expect(p.isAnyProtected(rect(8, 8, 9, 9))).toBe(false)  // past it
+    expect(p.isAnyProtected(rect(0, 0, 5, 5))).toBe(true) // touches corner
+    expect(p.isAnyProtected(rect(6, 0, 6, 10))).toBe(true) // crosses through
+    expect(p.isAnyProtected(rect(0, 0, 4, 4))).toBe(false) // no overlap
+    expect(p.isAnyProtected(rect(8, 8, 9, 9))).toBe(false) // past it
   })
 
   it('isAnyProtected returns true for a locked sheet regardless of rect', () => {
@@ -68,7 +71,9 @@ describe('ProtectionEngine — ranges & queries', () => {
 
 describe('ProtectionEngine — row/col shifts', () => {
   let p
-  beforeEach(() => { p = createProtectionEngine() })
+  beforeEach(() => {
+    p = createProtectionEngine()
+  })
 
   it('insertRow at/above a range shifts it down', () => {
     p.addRange(rect(6, 0, 8, 0))
@@ -115,9 +120,9 @@ describe('ProtectionEngine — row/col shifts', () => {
   it('col shifts mirror row shifts', () => {
     p.addRange(rect(0, 3, 0, 8))
     p.insertCol(5)
-    expect(p.getRanges()[0]).toMatchObject({ c0: 3, c1: 9 })  // grew
+    expect(p.getRanges()[0]).toMatchObject({ c0: 3, c1: 9 }) // grew
     p.deleteCol(5)
-    expect(p.getRanges()[0]).toMatchObject({ c0: 3, c1: 8 })  // shrank back
+    expect(p.getRanges()[0]).toMatchObject({ c0: 3, c1: 8 }) // shrank back
   })
 
   it('deleting the only col of a single-col range drops it', () => {
@@ -129,7 +134,9 @@ describe('ProtectionEngine — row/col shifts', () => {
 
 describe('ProtectionEngine — sheet lifecycle & snapshot', () => {
   let p
-  beforeEach(() => { p = createProtectionEngine() })
+  beforeEach(() => {
+    p = createProtectionEngine()
+  })
 
   it('rename moves protection to the new name', () => {
     p.addRange(rect(0, 0, 1, 1), '', 'A')
@@ -143,7 +150,7 @@ describe('ProtectionEngine — sheet lifecycle & snapshot', () => {
   it('duplicate deep-copies protection', () => {
     p.addRange(rect(0, 0, 1, 1), '', 'A')
     p.duplicateSheet('A', 'A copy')
-    p.insertRow(0, 'A')                       // mutate source only
+    p.insertRow(0, 'A') // mutate source only
     expect(p.getRanges('A copy')[0]).toMatchObject({ r0: 0, r1: 1 })
   })
 
@@ -164,9 +171,9 @@ describe('ProtectionEngine — sheet lifecycle & snapshot', () => {
     const p2 = createProtectionEngine()
     p2.restore({ Sheet1: { locked: false, ranges: [{ id: HIGH, r0: 0, c0: 0, r1: 0, c1: 0 }] } })
     const newId = p2.addRange(rect(5, 5, 5, 5))
-    expect(newId).toBeGreaterThan(HIGH)          // fails if restore didn't advance the counter
+    expect(newId).toBeGreaterThan(HIGH) // fails if restore didn't advance the counter
     p2.removeRange(newId)
-    expect(p2.isProtected(0, 0)).toBe(true)      // restored range survives its own removal
+    expect(p2.isProtected(0, 0)).toBe(true) // restored range survives its own removal
     expect(p2.isProtected(5, 5)).toBe(false)
   })
 
@@ -174,10 +181,10 @@ describe('ProtectionEngine — sheet lifecycle & snapshot', () => {
     p.addRange(rect(2, 2, 4, 4))
     p.setSheetLocked(true, 'Locked')
     const snap = p.snapshot()
-    p.addRange(rect(0, 0, 0, 0))              // mutate after snapshot
+    p.addRange(rect(0, 0, 0, 0)) // mutate after snapshot
     p.restore(snap)
     expect(p.isProtected(3, 3)).toBe(true)
-    expect(p.isProtected(0, 0)).toBe(false)   // the post-snapshot add is gone
+    expect(p.isProtected(0, 0)).toBe(false) // the post-snapshot add is gone
     expect(p.isSheetLocked('Locked')).toBe(true)
   })
 })

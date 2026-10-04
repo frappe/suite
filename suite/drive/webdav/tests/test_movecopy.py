@@ -136,7 +136,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
 
         moved = node_core.stored(self.file.name)
         self.assertEqual(moved.title, "renamed.txt")
-        self.assertEqual(moved.parent, self.base)
+        self.assertEqual(moved.parent_node, self.base)
         # the same blob: no byte of a moved file is rewritten
         self.assertEqual(moved.blob, self.file.blob)
         self.assertFalse(self._resolve(f"{self.base_name}/b.txt").exists)
@@ -148,7 +148,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         self.assertEqual(response.status_code, 201)
 
         moved = node_core.stored(self.file.name)
-        self.assertEqual(moved.parent, self.sub)
+        self.assertEqual(moved.parent_node, self.sub)
         self.assertEqual(moved.title, "b.txt")
         self.assertEqual(moved.blob, self.file.blob)
 
@@ -159,7 +159,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         self.assertEqual(response.status_code, 201)
 
         moved = node_core.stored(self.file.name)
-        self.assertEqual(moved.parent, self.sub)
+        self.assertEqual(moved.parent_node, self.sub)
         self.assertEqual(moved.title, "c.txt")
         self.assertTrue(self._resolve(f"{self.base_name}/sub/c.txt").exists)
 
@@ -172,12 +172,12 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         self.assertEqual(response.status_code, 201)
 
         moved = node_core.stored(self.file.name)
-        self.assertEqual(moved.parent, self.sub)
+        self.assertEqual(moved.parent_node, self.sub)
         self.assertEqual(moved.title, "c.txt")
         # the sibling that forced the retry is untouched
         blocked = node_core.stored(blocker.name)
         self.assertEqual(blocked.title, "b.txt")
-        self.assertEqual(blocked.parent, self.sub)
+        self.assertEqual(blocked.parent_node, self.sub)
 
     def test_a_refused_move_and_rename_leaves_no_partial_effect(self):
         """Neither order can place a collection inside itself, and the client
@@ -191,7 +191,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
 
         source = node_core.stored(self.base)
         self.assertEqual(source.title, self.base_name)
-        self.assertEqual(source.parent, self.root)
+        self.assertEqual(source.parent_node, self.root)
 
     def test_move_case_only_rename(self):
         """The case-insensitive fallback resolves the source itself, and the
@@ -224,7 +224,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
     def test_move_into_own_subtree_is_409(self):
         """§8.6: a node cannot be placed inside itself."""
         self.assert_refused(409, self._move, self._path(), self._path("sub", self.base_name))
-        self.assertEqual(node_core.stored(self.base).parent, self.root)
+        self.assertEqual(node_core.stored(self.base).parent_node, self.root)
 
     def test_move_error_statuses(self):
         """RFC 4918 §9.9.4, and §12's refusal to write the mount itself."""
@@ -244,7 +244,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         """
         self.assert_refused(400, self._move, self._path("sub"), self._path("moved"), Depth="0")
         self.assert_refused(400, self._move, self._path("sub"), self._path("moved"), Depth="1")
-        self.assertEqual(node_core.stored(self.sub).parent, self.base)
+        self.assertEqual(node_core.stored(self.sub).parent_node, self.base)
 
         # the header is optional, and the explicit value is accepted
         response = self._move(self._path("sub"), self._path("moved"), Depth="infinity")
@@ -289,13 +289,13 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         """
         grant(self.file.name, "$GENERAL", READ, node_principals(OWNER))
         self.assert_refused(403, self._move, self._path("b.txt"), self._path("sub", "b.txt"))
-        self.assertEqual(node_core.stored(self.file.name).parent, self.base)
+        self.assertEqual(node_core.stored(self.file.name).parent_node, self.base)
 
     def test_move_needs_upload_on_the_destination_parent(self):
         """§12.1: the destination's parent gains a member, which is UPLOAD."""
         grant(self.sub, "$GENERAL", READ, node_principals(OWNER))
         self.assert_refused(403, self._move, self._path("b.txt"), self._path("sub", "b.txt"))
-        self.assertEqual(node_core.stored(self.file.name).parent, self.base)
+        self.assertEqual(node_core.stored(self.file.name).parent_node, self.base)
 
     def test_copy_needs_read_on_the_source(self):
         """§12.1: COPY reads the source, and below READ is 404, never 403."""
@@ -348,7 +348,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
             destination = self._path("Elsewhere", "b.txt")
             self.assert_refused(403, self._move, self._path("b.txt"), destination)
             self.assert_refused(403, self._copy, self._path("b.txt"), destination)
-            self.assertEqual(node_core.stored(self.file.name).parent, self.base)
+            self.assertEqual(node_core.stored(self.file.name).parent_node, self.base)
         finally:
             drop_nodes([elsewhere])
 

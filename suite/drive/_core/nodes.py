@@ -5,18 +5,19 @@ import binascii
 import collections
 import io
 import os
+import re
 import time
-from collections.abc import Mapping
-from datetime import UTC, datetime
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import IO
 from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.storage.blob import revive_blob
+from frappe.storage.blob import put_blob, revive_blob
 from frappe.storage.driver import get_driver
 from frappe.storage.url import signed_url_for_blob
-from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
+from frappe.utils import get_datetime, now, now_datetime
 
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
@@ -37,15 +38,23 @@ from suite.drive._core.access import (
 from suite.drive._core.errors import (
     DriveConflict,
     DriveForbidden,
+    DriveMoved,
     DriveNotFound,
+    DriveRestoreDestinationRequired,
 )
 from suite.drive._core.errors import (
     rollback_savepoint as _rollback_savepoint,
 )
 from suite.drive._core.principals import Principals
-from suite.drive._core.quota import admit, release, root_for_node
+from suite.drive._core.quota import admit, release, release_storage_reservation, root_for_node
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
-from suite.drive._core.roots import personal_root_for, reject_illegal_root_operation, validate_root_pair
+from suite.drive._core.roots import (
+    lock_trees,
+    personal_root_for,
+    reject_illegal_root_operation,
+    validate_root_pair,
+)
+from suite.drive._core.times import to_site_naive
 
 DEFAULT_PAGE_SIZE = 60
 MAX_PAGE_SIZE = 200
@@ -63,7 +72,7 @@ EMPTY_BLOB_CHECKSUM = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7
 
 NODE_FIELD_NAMES = (
     "name",
-    "parent",
+    "parent_node",
     "root",
     "path",
     "title",
@@ -97,8 +106,8 @@ FROM (
            EXISTS (
                SELECT 1
                FROM JSON_TABLE(
-                   CASE WHEN COALESCE(parent_node.path, '') = '' THEN '[]'
-                        ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM parent_node.path), '/', '","'), '"]')
+                   CASE WHEN COALESCE(container.path, '') = '' THEN '[]'
+                        ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM container.path), '/', '","'), '"]')
                    END,
                    '$[*]' COLUMNS (
                        name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
@@ -108,18 +117,19 @@ FROM (
                WHERE document_ancestor.kind = 'document'
            ) AS _drive_document_descendant,
            {parent_fields}
-    FROM `tabDrive Node` parent_node
-    WHERE parent_node.name = %(parent)s
+    FROM `tabDrive Node` container
+    WHERE container.name = %(parent_node)s
     UNION ALL
     SELECT 1 AS _drive_parent, 0 AS _drive_document_descendant, {child_fields}
     FROM (
         SELECT {node_fields}
         FROM `tabDrive Node`
-        WHERE parent = %(parent)s
-          AND state = 'Active'
+        WHERE parent_node = %(parent_node)s
+          AND state = (SELECT state FROM `tabDrive Node` WHERE name = %(parent_node)s)
+          AND trash_root <=> (SELECT trash_root FROM `tabDrive Node` WHERE name = %(parent_node)s)
           AND kind <> 'root'
           AND is_template = 0
-          AND (%(kind)s IS NULL OR kind = %(kind)s)
+          AND {type_filter}
         ORDER BY {inner_order}
         LIMIT %(limit)s OFFSET %(offset)s
     ) children
@@ -140,6 +150,7 @@ WHERE g.principal IN %(own)s
   AND n.is_template = 0
   AND r.state = 'Active'
   AND (%(personal_root)s IS NULL OR n.root <> %(personal_root)s)
+  AND {{type_filter}}
   AND NOT EXISTS (
       SELECT 1
       FROM JSON_TABLE(
@@ -207,6 +218,7 @@ WHERE n.root = %(root)s
   AND n.trash_root = n.name
   AND n.kind <> 'root'
   AND n.is_template = 0
+  AND {{type_filter}}
   AND NOT EXISTS (
       SELECT 1
       FROM JSON_TABLE(
@@ -256,6 +268,7 @@ WHERE n.state = 'Active'
   AND n.is_template = 0
   AND n.root IN %(visible_roots)s
   AND n.title LIKE %(term)s
+  AND {{type_filter}}
   AND NOT EXISTS (
       SELECT 1
       FROM JSON_TABLE(
@@ -288,11 +301,21 @@ WHERE (r.kind = 'Personal' AND r.state = 'Active' AND r.user = %(user)s)
    )
 """
 
-SUBTREE_SQL = f"""
+# A subtree is locked as its top row by name, then its descendants as one
+# range of `node_subtree`. One `name = ... OR path LIKE ...` query is planned
+# as an index merge, and that plan locks the first index entry past the range,
+# which belongs to the next tree; two writes to two trees then deadlock.
+SUBTREE_TOP_SQL = f"""
 SELECT {NODE_FIELDS}
 FROM `tabDrive Node`
-WHERE root = %(root)s
-  AND (name = %(node)s OR path LIKE %(prefix)s)
+WHERE name = %(node)s AND root = %(root)s
+FOR UPDATE
+"""
+
+DESCENDANTS_SQL = f"""
+SELECT {NODE_FIELDS}
+FROM `tabDrive Node`
+WHERE root = %(root)s AND path LIKE %(prefix)s
 ORDER BY CHAR_LENGTH(path), name
 FOR UPDATE
 """
@@ -323,7 +346,7 @@ WHERE root = %(src_root)s
 
 MOVE_NODE_SQL = """
 UPDATE `tabDrive Node`
-SET parent = %(dest)s,
+SET parent_node = %(dest)s,
     path = %(dest_child_path)s,
     root = %(dest_root)s,
     modified = %(now)s,
@@ -340,6 +363,40 @@ def get(principals: Principals, node: str) -> frappe._dict:
     row = _node(node)
     require(row, READ, principals)
     return row
+
+
+# The kinds the Drive area opens as a folder. Every other kind opens in the
+# document host. A root is here too: the router replaces `/drive/f/<root>` with
+# `/drive` or `/drive/organization` (unified frontend spec §2.2).
+FOLDER_KINDS = frozenset({"root", "folder"})
+
+
+def node_url(node: str) -> str:
+    """Answer the browser address of one node (unified frontend spec §14.5).
+
+    A folder or a root opens at `/drive/f/<id>` and every other kind at
+    `/d/<id>`.
+
+    No role is checked. An address says where a node opens; the page that
+    opens asks for the node and is refused there. No slug is added: the router
+    adds one.
+    """
+    kind = frappe.db.get_value("Drive Node", node, "kind")
+    if kind is None:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    return f"/drive/f/{node}" if kind in FOLDER_KINDS else f"/d/{node}"
+
+
+def legacy_node(old_id: str) -> str:
+    """Answer the node id a pre-migration Drive id names now (Drive spec §3.15).
+
+    A Drive Team became a folder, and `Drive Legacy Route` maps the team's id
+    to that folder. Every other old id is already a node id: Build gave each
+    node the id its `File` row had (§14.3). The answer may name no node; the
+    caller learns that from the node read it makes next. One primary-key read,
+    no role check, for the same reason `node_url` has none.
+    """
+    return frappe.db.get_value("Drive Legacy Route", old_id, "entity") or old_id
 
 
 def stored(node: str) -> frappe._dict:
@@ -469,21 +526,26 @@ def breadcrumbs(row: frappe._dict, principals: Principals) -> list[dict]:
     if not chain:
         return []
     roles = chain_roles(row, principals)
-    titles = {
-        ancestor.name: ancestor.title
+    ancestors = {
+        ancestor.name: ancestor
         for ancestor in frappe.get_all(
             "Drive Node",
             filters={"name": ["in", chain]},
-            fields=["name", "title"],
+            fields=["name", "title", "kind"],
         )
     }
     trail: list[dict] = []
     for node_id in chain:
-        if roles.get(node_id, 0) < READ or node_id not in titles:
+        if roles.get(node_id, 0) < READ or node_id not in ancestors:
             trail = []
             continue
-        trail.append({"name": node_id, "title": titles[node_id]})
+        trail.append(crumb(ancestors[node_id]))
     return trail
+
+
+def crumb(row: frappe._dict) -> dict:
+    """Return one §11.3 breadcrumb step for an ancestor row."""
+    return {"name": row.name, "title": row.title, "kind": row.kind}
 
 
 def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_TTL_SECONDS) -> dict:
@@ -499,8 +561,13 @@ def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_
     return signed_content_url(row, expires_in=expires_in)
 
 
-def signed_content_url(row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECONDS) -> dict:
+def signed_content_url(
+    row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECONDS, as_attachment: bool = False
+) -> dict:
     """Mint the signed URL for a file node the caller is already READ on.
+
+    The file shows in the browser where it safely can. `as_attachment` makes
+    the URL save it instead, on every storage driver.
 
     §2.3 budgets the byte path at one point check. A caller that read the row
     through `get` has spent it, so it mints from that row instead of reading
@@ -520,7 +587,9 @@ def signed_content_url(row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECON
     if not blob or blob.status != "Ready" or not blob.is_private:
         raise DriveConflict(_("The Drive file bytes are unavailable"))
     return {
-        "url": signed_url_for_blob(row.blob, content.download_filename(row.title), expires_in),
+        "url": signed_url_for_blob(
+            row.blob, content.download_filename(row.title), expires_in, as_attachment=as_attachment
+        ),
         "expires": int(time.time()) + expires_in,
     }
 
@@ -631,12 +700,15 @@ def title_taken(principals: Principals, parent: str, title: str) -> bool:
     if not isinstance(title, str) or not title.strip():
         frappe.throw(_("A Drive node title is required"), frappe.ValidationError)
     return bool(
-        frappe.db.exists("Drive Node", {"parent": parent_row.name, "title": title, "state": "Active"})
+        frappe.db.exists("Drive Node", {"parent_node": parent_row.name, "title": title, "state": "Active"})
     )
 
 
 def readable_child_counts(principals: Principals, parents: list[str]) -> dict[str, int]:
-    """Count each named folder's Active children that the caller may read.
+    """Count each named folder's listed children that the caller may read.
+
+    The children counted are the ones `children` lists: those that share the
+    folder's state and trash root (§5.6), and are neither roots nor templates.
 
     The third question §11.2 does not answer: a folder page returns rows, and a
     legacy list row carries a count of what is inside each of them. It is a
@@ -657,13 +729,18 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
     if not parents:
         return {}
     counts = {
-        row["parent"]: int(row["total"] or 0)
+        row["parent_node"]: int(row["total"] or 0)
         for row in frappe.db.sql(
             """
-            SELECT parent, COUNT(name) AS total
-            FROM `tabDrive Node`
-            WHERE parent IN %(parents)s AND state = 'Active'
-            GROUP BY parent
+            SELECT child.parent_node, COUNT(child.name) AS total
+            FROM `tabDrive Node` child
+            JOIN `tabDrive Node` container ON container.name = child.parent_node
+            WHERE child.parent_node IN %(parents)s
+              AND child.state = container.state
+              AND child.trash_root <=> container.trash_root
+              AND child.kind <> 'root'
+              AND child.is_template = 0
+            GROUP BY child.parent_node
             """,
             {"parents": _sql_values(parents)},
             as_dict=True,
@@ -676,8 +753,13 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
         """
         SELECT DISTINCT child.name
         FROM `tabDrive Node` child
+        JOIN `tabDrive Node` container ON container.name = child.parent_node
         JOIN `tabDrive Grant` grants ON grants.node = child.name
-        WHERE child.parent IN %(parents)s AND child.state = 'Active'
+        WHERE child.parent_node IN %(parents)s
+          AND child.state = container.state
+          AND child.trash_root <=> container.trash_root
+          AND child.kind <> 'root'
+          AND child.is_template = 0
         """,
         {"parents": _sql_values(parents)},
         pluck=True,
@@ -688,8 +770,8 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
     rows = frappe.get_all("Drive Node", filters={"name": ("in", decided)}, fields=list(NODE_FIELD_NAMES))
     readable = {row.name for row in _readable_rows(rows, principals)}
     for row in rows:
-        if row.name not in readable and row.parent in counts:
-            counts[row.parent] -= 1
+        if row.name not in readable and row.parent_node in counts:
+            counts[row.parent_node] -= 1
     return counts
 
 
@@ -713,24 +795,51 @@ def available_title(principals: Principals, parent: str, title: str) -> str:
     _validate_parent(parent_row)
     if not isinstance(title, str) or not title.strip():
         frappe.throw(_("A Drive node title is required"), frappe.ValidationError)
-
-    def taken(candidate: str) -> bool:
-        return bool(
-            frappe.db.exists("Drive Node", {"parent": parent_row.name, "title": candidate, "state": "Active"})
-        )
-
-    if not taken(title):
-        return title
-    stem, extension = os.path.splitext(title)
-    suffix = 2
-    while taken(f"{stem} ({suffix}){extension}"):
-        suffix += 1
-    return f"{stem} ({suffix}){extension}"
+    return _free_title(parent_row.name, title, for_update=False)
 
 
 def create_folder(principals: Principals, parent: str, title: str) -> str:
     """Create an empty folder below an authorized active container."""
     return _create_empty_node(principals, parent, title, kind="folder")
+
+
+def ensure_folder(principals: Principals, parent: str, title: str) -> str:
+    """Answer the caller's Active folder titled `title` below `parent`, creating it if absent.
+
+    The find-or-create a server-side producer needs for its destination
+    folder: a recording finaliser that files every artifact under one folder
+    with no user in the loop to pick it.
+
+    Only a folder the caller created is reused. A sibling somebody else
+    created with the same title is theirs: `add_creator_grant` gave them a
+    grant on it, so filing the caller's bytes there would share them. The new
+    folder then takes §8.6's free title (`title (2)`), and that is the folder
+    later calls answer: the caller's oldest Active folder titled `title` or
+    `title (n)`. Two first calls for the same caller can race to create it;
+    the loser's `create_folder` is refused with `DriveConflict` and its retry
+    finds the winner.
+    """
+    _validate_title(title)
+    parent_row = _node(parent)
+    require(parent_row, UPLOAD, principals)
+    _validate_parent(parent_row, allow_document=False)
+    suffixed = re.compile(rf"^{re.escape(title)}( \(\d+\))?$")
+    candidates = frappe.get_all(
+        "Drive Node",
+        filters={
+            "parent_node": parent_row.name,
+            "title": ["like", f"{title}%"],
+            "kind": "folder",
+            "state": "Active",
+            "owner": principals.user,
+        },
+        fields=["name", "title"],
+        order_by="creation asc",
+    )
+    for candidate in candidates:
+        if suffixed.match(candidate.title):
+            return candidate.name
+    return create_folder(principals, parent, _free_title(parent_row.name, title, for_update=False))
 
 
 def create_link(principals: Principals, parent: str, title: str, *, url: str) -> str:
@@ -1131,7 +1240,7 @@ def create_file(
             {
                 "doctype": "Drive Node",
                 "title": title,
-                "parent": parent_row.name,
+                "parent_node": parent_row.name,
                 "root": root,
                 "path": path,
                 "kind": "file",
@@ -1165,23 +1274,99 @@ def create_file(
     return node.name
 
 
+def store_file(
+    principals: Principals,
+    parent: str,
+    title: str,
+    stream: IO[bytes],
+    *,
+    content_modified: datetime | int | float | str | None = None,
+    reservation: str | None = None,
+) -> str:
+    """Store bytes this process holds as a private blob and create their file node.
+
+    §10.1's create shape for a server-side producer: a background job that
+    holds the bytes itself (a recording finaliser, an import) and has no
+    upload session and no client to name a blob. The bytes are stored here, in
+    this call, so like §8.4's bound upload they are their own proof and
+    `_client_named_blob` stays unset. The role is checked before a byte is
+    stored, so a refused caller leaves no blob behind.
+
+    The title is §8.6-deduplicated, because no user is in the loop to choose
+    another; the rule is read without a lock, and a title taken while the bytes
+    store is refused by `create_file` under its lock as `DriveConflict`, which a
+    retry resolves.
+
+    `reservation` names a storage reservation the caller charged these bytes to
+    in advance. It is consumed here: released before the file is admitted, in
+    the same savepoint, so the bytes move from reserved to stored without ever
+    counting twice against the root and without a window in which they count
+    zero times. Lock order is `create_file`'s own: the parent chain first, then
+    the root, then the reservation row.
+    """
+    _validate_title(title)
+    parent_row = _node(parent)
+    require(parent_row, UPLOAD, principals)
+    _validate_parent(parent_row)
+    blob = put_blob(stream, is_private=True, filename=title)
+    savepoint = f"drive_store_file_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        _lock_create_parent(parent)
+        if reservation is not None:
+            release_storage_reservation(None, reservation)
+        node = create_file(
+            principals,
+            parent,
+            _free_title(parent_row.name, title, for_update=False),
+            blob=blob.name,
+            size=blob.file_size,
+            mime=blob.mime_type,
+            content_modified=content_modified,
+        )
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return node
+
+
 def update(
     principals: Principals,
     node: str,
     *,
     title: str | None = None,
-    parent: str | None = None,
+    parent_node: str | None = None,
     state: str | None = None,
     blob: str | None = None,
     size: int | None = None,
     mime: str | None = None,
     content_modified: datetime | int | float | str | None = None,
+    expect_parent_node: str | None = None,
     _via_link: str | None = None,
     _bound_parent: str | None = None,
+    _keep_old_head: bool = True,
+    _keep_extension: bool = True,
 ) -> dict:
-    """Apply one complete node mutation, or restore with an explicit parent."""
+    """Apply one complete node mutation, or restore with an explicit `parent_node`.
+
+    `expect_parent_node` belongs to a move only (§8.2): the folder the caller
+    last saw the node in. When the node is no longer there the move is refused
+    with `DriveMoved` before any write, so an Undo of an earlier move cannot
+    pull a node out of the folder a later move put it in.
+
+    `_keep_old_head=False` is the browser replace (§8.5): §8.4's finish passes
+    it, and WebDAV and internal workflows leave it set.
+
+    `_keep_extension=False` is the WebDAV MOVE. A desktop app can save a file
+    by renaming it to a temporary name and back, so WebDAV may change a file's
+    extension. Every other rename keeps it.
+    """
+    if expect_parent_node is not None and (parent_node is None or state is not None):
+        frappe.throw(_("Only a Drive move can state the folder it expects"), frappe.ValidationError)
     if any(value is not None for value in (blob, size, mime)):
-        if title is not None or parent is not None or state is not None:
+        if title is not None or parent_node is not None or state is not None:
             frappe.throw(_("A file replacement cannot include a tree mutation"), frappe.ValidationError)
         return _replace_file(
             principals,
@@ -1192,26 +1377,29 @@ def update(
             content_modified=content_modified,
             _via_link=_via_link,
             _bound_parent=_bound_parent,
+            _keep_old_head=_keep_old_head,
         )
 
     if content_modified is not None:
-        if title is not None or parent is not None or state is not None:
+        if title is not None or parent_node is not None or state is not None:
             frappe.throw(_("A content time cannot be set with a tree mutation"), frappe.ValidationError)
         return _stamp_content_time(principals, node, content_modified)
 
     if state is not None:
         if title is not None or state not in ("Active", "Trashed"):
             frappe.throw(_("The Drive node state mutation is invalid"), frappe.ValidationError)
-        if state == "Trashed" and parent is not None:
+        if state == "Trashed" and parent_node is not None:
             frappe.throw(_("Trashing cannot select a destination"), frappe.ValidationError)
-        return _restore(principals, node, parent=parent) if state == "Active" else _trash(principals, node)
+        if state == "Active":
+            return _restore(principals, node, parent_node=parent_node)
+        return _trash(principals, node)
 
-    if parent is not None:
+    if parent_node is not None:
         if title is not None:
             frappe.throw(_("Rename and move must be separate Drive writes"), frappe.ValidationError)
-        return _move(principals, node, parent)
+        return _move(principals, node, parent_node, expect_parent_node=expect_parent_node)
     if title is not None:
-        return _rename(principals, node, title)
+        return _rename(principals, node, title, keep_extension=_keep_extension)
     frappe.throw(_("A Drive node mutation is required"), frappe.ValidationError)
 
 
@@ -1228,7 +1416,7 @@ def _stamp_content_time(
     of taken: EDIT on the node, one indexed UPDATE, no head, no version, no
     charge, and no activity row (§9.4).
     """
-    current = _node(node_id, for_update=True)
+    current = _lock_node(node_id)
     require(current, EDIT, principals)
     if current.kind == "root":
         raise DriveConflict(_("A Drive root holds no content to stamp"))
@@ -1257,6 +1445,7 @@ def _replace_file(
     content_modified: datetime | int | float | str | None = None,
     _via_link: str | None = None,
     _bound_parent: str | None = None,
+    _keep_old_head: bool = True,
 ) -> dict:
     """Replace a file head, preserving a nonempty old head as one auto version.
 
@@ -1265,6 +1454,10 @@ def _replace_file(
     are §8.4's bound finish and the WebDAV PUT, and each stored what it
     passes. `create_file`'s `_client_named_blob` proof has nothing to guard on
     this path (`test_blob_provenance`).
+
+    `_keep_old_head=False` is §8.5's browser exception: no version is written,
+    and the old head's charge is released before the new head is admitted, so
+    the root moves by new - old.
     """
     if blob is None or size is None or mime is None:
         frappe.throw(_("A file replacement requires blob, size, and MIME type"), frappe.ValidationError)
@@ -1272,7 +1465,7 @@ def _replace_file(
     savepoint = f"drive_replace_file_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node, for_update=True)
+        current = _lock_node(node)
         via_link = require(current, EDIT, principals)
         if _via_link is not None:
             # The exact link remains bound to the original upload parent. EDIT
@@ -1280,18 +1473,22 @@ def _replace_file(
             via_link = _via_link
         if current.kind != "file" or current.state != "Active":
             raise DriveForbidden(_("Only an active Drive file can be replaced"))
-        if _bound_parent is not None and current.parent != _bound_parent:
+        if _bound_parent is not None and current.parent_node != _bound_parent:
             raise DriveForbidden(_("The replacement moved outside the upload destination"))
         _validate_stored_position(current, for_update=True)
         blob_row = _validated_blob(blob, size, mime)
         _validate_existing_head(current)
 
         version = None
-        if current.blob and int(current.size or 0) > 0:
+        if not _keep_old_head:
+            # Nothing references the old head any more, so its charge goes.
+            # The framework GC reclaims the blob once no row names it.
+            release(current.root, int(current.size or 0))
+        elif current.blob and int(current.size or 0) > 0:
             version = _preserve_head(current, principals)
 
-        # The old head's existing charge becomes the version's charge. Only
-        # the new head increases total logical usage, including same-blob edits.
+        # A kept old head's charge becomes the version's charge. Only the new
+        # head increases total logical usage, including same-blob edits.
         admit(current.root, blob_row.file_size)
         frappe.db.delete("Drive Node Preview", {"node": current.name})
         frappe.db.set_value(
@@ -1321,21 +1518,23 @@ def _replace_file(
     return frappe.db.get_value("Drive Node", current.name, NODE_FIELD_NAMES, as_dict=True)
 
 
-def _rename(principals: Principals, node_id: str, title: str) -> dict:
+def _rename(principals: Principals, node_id: str, title: str, *, keep_extension: bool = True) -> dict:
     _validate_title(title)
     savepoint = f"drive_rename_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node_id, for_update=True)
+        current = _lock_node(node_id)
         via_link = require(current, EDIT, principals)
         if current.state != "Active":
             raise DriveForbidden(_("A trashed Drive node cannot be renamed"))
+        if keep_extension and current.kind == "file":
+            _refuse_extension_change(current.title, title)
         if current.kind == "root":
             root_for_node(current, for_update=True)
         else:
             _validate_stored_position(current, for_update=True)
-            _node(current.parent, for_update=True)
-            _refuse_sibling_collision(current.parent, title, exclude=current.name)
+            _node(current.parent_node, for_update=True)
+            _refuse_sibling_collision(current.parent_node, title, exclude=current.name)
         old_title = current.title
         if title != old_title:
             frappe.db.set_value("Drive Node", current.name, "title", title)
@@ -1354,7 +1553,9 @@ def _rename(principals: Principals, node_id: str, title: str) -> dict:
     return _node(current.name)
 
 
-def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
+def _move(
+    principals: Principals, node_id: str, destination_id: str, *, expect_parent_node: str | None = None
+) -> dict:
     savepoint = f"drive_move_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
@@ -1363,6 +1564,10 @@ def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
         source_link = require(current, EDIT, principals)
         if current.state != "Active":
             raise DriveForbidden(_("A trashed Drive node must be restored, not moved"))
+        # Checked on the locked row, after the READ gate hides the node from a
+        # caller who cannot see it, and before any write.
+        if expect_parent_node is not None and current.parent_node != expect_parent_node:
+            raise DriveMoved(_("{0} has moved since you last saw it").format(current.title))
         _validate_stored_position(current, for_update=True)
         destination_link = require(destination, UPLOAD, principals)
         _validate_generic_destination(current, destination, operation="move")
@@ -1392,7 +1597,7 @@ def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
             "move",
             principals,
             {
-                "from": current.parent,
+                "from": current.parent_node,
                 "to": destination.name,
                 "from_root": source_root,
                 "to_root": destination_root,
@@ -1443,7 +1648,7 @@ def _trash(principals: Principals, node_id: str) -> dict:
     savepoint = f"drive_trash_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node_id, for_update=True)
+        current = _lock_node(node_id)
         reject_illegal_root_operation(current, "trash")
         via_link = require(current, EDIT, principals)
         if current.state != "Active":
@@ -1454,17 +1659,17 @@ def _trash(principals: Principals, node_id: str) -> dict:
         _validate_subtree(current, subtree)
         _validate_stored_position(current, for_update=True)
         stamp = now_datetime()
+        # By name, the rows `_subtree` locked: a range with an OR in it would
+        # lock past the tree (see `SUBTREE_TOP_SQL`).
         frappe.db.sql(
             """
             UPDATE `tabDrive Node`
             SET state = 'Trashed', trash_root = %(node)s, trashed_at = %(stamp)s
-            WHERE kind <> 'root' AND state = 'Active' AND root = %(root)s
-              AND (name = %(node)s OR path LIKE %(prefix)s)
+            WHERE name IN %(names)s AND kind <> 'root' AND state = 'Active'
             """,
             {
                 "node": current.name,
-                "root": current.root,
-                "prefix": f"{child_path(current)}%",
+                "names": tuple(row.name for row in subtree),
                 "stamp": stamp,
             },
         )
@@ -1485,11 +1690,11 @@ def _trash(principals: Principals, node_id: str) -> dict:
     return _node(current.name)
 
 
-def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dict:
+def _restore(principals: Principals, node_id: str, *, parent_node: str | None) -> dict:
     savepoint = f"drive_restore_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node_id, for_update=True)
+        current = _lock_node(node_id)
         reject_illegal_root_operation(current, "restore")
         if current.state != "Trashed" or current.trash_root != current.name or not current.trashed_at:
             raise DriveConflict(_("Only a trash root can be restored"))
@@ -1500,16 +1705,23 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
 
         original_available = _original_parent_available(current)
         if original_available:
-            if parent is not None and parent != current.parent:
+            if parent_node is not None and parent_node != current.parent_node:
                 raise DriveConflict(
                     _("A restore destination is only used when the original path is unavailable")
                 )
-            destination = _node(current.parent, for_update=True)
+            destination = _node(current.parent_node, for_update=True)
             reparented_to = None
         else:
-            if parent is None:
-                raise DriveConflict(_("Choose an active destination before restoring this node"))
-            destination = _node(parent, for_update=True)
+            if parent_node is None:
+                raise DriveRestoreDestinationRequired(
+                    _("Choose an active destination before restoring this node")
+                )
+            destination = _node(parent_node)
+            if root_id(destination) == current.root:
+                # A row in another tree is never locked without that tree's
+                # lock. A destination there is refused below, after the
+                # UPLOAD check, so its unlocked row is all the refusal needs.
+                destination = _node(parent_node, for_update=True)
             reparented_to = destination.name
 
         if reparented_to is not None:
@@ -1526,7 +1738,7 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
 
         _validate_move_depth(current, destination, subtree)
         restored_title = _deduplicated_title(destination.name, current.title, exclude=current.name)
-        if destination.name != current.parent:
+        if destination.name != current.parent_node:
             _rewrite_subtree(current, destination, current.root, actor=principals.user)
         if restored_title != current.title:
             frappe.db.set_value("Drive Node", current.name, "title", restored_title, update_modified=False)
@@ -1557,14 +1769,32 @@ def _restore(principals: Principals, node_id: str, *, parent: str | None) -> dic
     return _node(current.name)
 
 
+def stored_ancestors(nodes: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
+    """Each stored node's non-root ancestor ids, read from its `path`.
+
+    An id with no stored row is absent. The result says nothing about access;
+    a caller uses it to order work, never to decide who may do it.
+    """
+    if not nodes:
+        return {}
+    rows = frappe.get_all("Drive Node", filters={"name": ["in", list(nodes)]}, fields=["name", "path"])
+    return {row.name: tuple(part for part in (row.path or "").split("/") if part) for row in rows}
+
+
 def purge(principals: Principals, node: str) -> int:
-    """Permanently remove a non-root subtree and release its logical bytes."""
+    """Permanently remove one trash root's subtree and release its logical bytes.
+
+    Like restore, purge takes only a trash root: an Active node goes to the
+    trash first, and a node trashed with a folder goes with that folder.
+    """
     savepoint = f"drive_purge_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node, for_update=True)
+        current = _lock_node(node)
         reject_illegal_root_operation(current, "purge")
         via_link = require(current, MANAGE, principals)
+        if current.state != "Trashed" or current.trash_root != current.name:
+            raise DriveConflict(_("Only a trash root can be deleted forever"))
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, principals, via_link=via_link, subtree=subtree)
@@ -1581,7 +1811,7 @@ def purge_expired_trash_root(node: str, cutoff: datetime) -> int:
     savepoint = f"drive_expired_purge_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        current = _node(node, for_update=True)
+        current = _lock_node(node)
         if (
             current.state != "Trashed"
             or current.trash_root != current.name
@@ -1597,6 +1827,48 @@ def purge_expired_trash_root(node: str, cutoff: datetime) -> int:
     except DriveNotFound as exc:
         _rollback_savepoint(savepoint, exc)
         return 0
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return count
+
+
+def empty_trash(principals: Principals, root: str) -> int:
+    """Purge every trashed tree in one root, and return how many nodes went.
+
+    Trash is listed per root (§5.6), so it is emptied per root. MANAGE on the
+    root node is the one check: below READ the root is hidden (404), and
+    below MANAGE it is forbidden (403). The trash empties whole or not at all.
+
+    Trash roots are purged shallowest first. A tree trashed earlier inside one
+    trashed later goes with the outer tree, and is skipped when its turn comes.
+    """
+    savepoint = f"drive_empty_trash_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        current = _lock_node(root)
+        via_link = require(current, MANAGE, principals)
+        if current.kind != "root":
+            raise DriveConflict(_("Only a Drive root has a trash to empty"))
+        trash_roots = frappe.db.sql(
+            """
+            SELECT name FROM `tabDrive Node`
+            WHERE root = %(root)s AND state = 'Trashed' AND trash_root = name
+            ORDER BY CHAR_LENGTH(path), name
+            """,
+            {"root": current.name},
+            pluck=True,
+        )
+        count = 0
+        for name in trash_roots:
+            trashed = frappe.db.get_value("Drive Node", name, NODE_FIELD_NAMES, as_dict=True, for_update=True)
+            if not trashed or trashed.state != "Trashed":
+                continue
+            subtree = _subtree(trashed)
+            _validate_purge_root(trashed)
+            count += _purge_locked(trashed, principals, via_link=via_link, subtree=subtree)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
         raise
@@ -1640,7 +1912,9 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
 
         by_source: dict[str, frappe._dict] = {}
         for source_row in source_rows:
-            copied_parent = destination if source_row.name == source.name else by_source[source_row.parent]
+            copied_parent = (
+                destination if source_row.name == source.name else by_source[source_row.parent_node]
+            )
             new_node = _insert_node(
                 principals,
                 copied_parent,
@@ -1719,7 +1993,7 @@ def _insert_node(
     values = {
         "doctype": "Drive Node",
         "title": title,
-        "parent": parent.get("name"),
+        "parent_node": parent.get("name"),
         "root": root_id(parent),
         "path": child_path(parent),
         "kind": kind,
@@ -1739,10 +2013,10 @@ def _insert_node(
 
 
 def _subtree(node: dict) -> list[frappe._dict]:
-    return frappe.db.sql(
-        SUBTREE_SQL,
-        {"root": node.get("root"), "node": node.get("name"), "prefix": f"{child_path(node)}%"},
-        as_dict=True,
+    """Lock and return a node's subtree, shallowest first, the node itself first."""
+    values = {"root": node.get("root"), "node": node.get("name"), "prefix": f"{child_path(node)}%"}
+    return frappe.db.sql(SUBTREE_TOP_SQL, values, as_dict=True) + frappe.db.sql(
+        DESCENDANTS_SQL, values, as_dict=True
     )
 
 
@@ -1763,8 +2037,8 @@ def _copyable_subtree(
         if row.name == source.get("name"):
             copyable.append(row)
             continue
-        parent = by_name.get(row.parent)
-        if row.parent not in included or not check(row, READ, principals):
+        parent = by_name.get(row.parent_node)
+        if row.parent_node not in included or not check(row, READ, principals):
             continue
         if parent is not None and parent.kind == "document":
             # Media below a content document is copied per blob by the content
@@ -1919,7 +2193,7 @@ def _rewrite_subtree(source: dict, destination: dict, destination_root: str, *, 
 def _original_parent_available(node: dict) -> bool:
     try:
         _validate_stored_position(node, for_update=True)
-    except (DriveConflict, DriveNotFound):
+    except DriveConflict, DriveNotFound:
         return False
     return True
 
@@ -1940,27 +2214,37 @@ def _require_restore_actor(node: dict, principals: Principals, via_link: str | N
 
 
 def _deduplicated_title(parent: str, title: str, *, exclude: str | None = None) -> str:
-    if not _title_exists(parent, title, exclude=exclude):
+    return _free_title(parent, title, exclude=exclude, for_update=True)
+
+
+def _free_title(parent: str, title: str, *, exclude: str | None = None, for_update: bool) -> str:
+    """Return §8.6's free title: `title` itself, else the first free ` (n)`.
+
+    The oldest keeps the plain title and later ones get ` (2)`, ` (3)`, before
+    the extension. Only Active siblings count, so a Trashed one never blocks.
+    """
+    if not _title_exists(parent, title, exclude=exclude, for_update=for_update):
         return title
     stem, extension = os.path.splitext(title)
     suffix = 2
-    while _title_exists(parent, f"{stem} ({suffix}){extension}", exclude=exclude):
+    while _title_exists(parent, f"{stem} ({suffix}){extension}", exclude=exclude, for_update=for_update):
         suffix += 1
     return f"{stem} ({suffix}){extension}"
 
 
-def _title_exists(parent: str, title: str, *, exclude: str | None = None) -> bool:
+def _title_exists(parent: str, title: str, *, exclude: str | None = None, for_update: bool = True) -> bool:
+    lock = "FOR UPDATE" if for_update else ""
     return bool(
         frappe.db.sql(
-            """
+            f"""
             SELECT name
             FROM `tabDrive Node`
-            WHERE parent = %(parent)s AND state = 'Active' AND title = %(title)s
+            WHERE parent_node = %(parent_node)s AND state = 'Active' AND title = %(title)s
               AND (%(exclude)s IS NULL OR name <> %(exclude)s)
             LIMIT 1
-            FOR UPDATE
+            {lock}
             """,
-            {"parent": parent, "title": title, "exclude": exclude},
+            {"parent_node": parent, "title": title, "exclude": exclude},
         )
     )
 
@@ -2010,13 +2294,13 @@ def _purge_locked(
 
 
 def _validate_purge_root(node: dict) -> None:
-    if not node.get("parent") or not node.get("root"):
+    if not node.get("parent_node") or not node.get("root"):
         raise DriveConflict(_("The Drive node has an invalid tree position"))
     root_for_node(node, for_update=True)
     cursor = node
     seen = {node.get("name")}
     for _depth_index in range(40):
-        parent = _chain_node(cursor.get("parent"), for_update=True)
+        parent = _chain_node(cursor.get("parent_node"), for_update=True)
         if parent.name in seen:
             raise DriveConflict(_("The Drive node tree contains a cycle"))
         expected_root = parent.name if parent.kind == "root" else parent.root
@@ -2041,7 +2325,7 @@ def _validate_subtree(current: dict, subtree: list[dict]) -> None:
     if len(by_name) != len(subtree):
         raise DriveConflict(_("The Drive subtree contains duplicate nodes"))
     for row in subtree[1:]:
-        parent = by_name.get(row.parent)
+        parent = by_name.get(row.parent_node)
         if (
             parent is None
             or row.root != current.get("root")
@@ -2053,7 +2337,7 @@ def _validate_subtree(current: dict, subtree: list[dict]) -> None:
         """
         SELECT name
         FROM `tabDrive Node`
-        WHERE parent IN %(parents)s AND name NOT IN %(nodes)s
+        WHERE parent_node IN %(parents)s AND name NOT IN %(nodes)s
         LIMIT 1
         FOR UPDATE
         """,
@@ -2150,6 +2434,24 @@ def _node(node_id: str, *, for_update: bool = False) -> frappe._dict:
     return row
 
 
+def _lock_node(node_id: str) -> frappe._dict:
+    """Lock one node's tree, then the node, and return the node's current row.
+
+    The tree is read from an unlocked snapshot, so a move between roots that
+    commits before the tree lock is granted leaves this caller holding the
+    wrong tree. That is refused as a conflict rather than followed.
+    """
+    snapshot = _node(node_id)
+    tree = root_id(snapshot)
+    if not tree:
+        raise DriveConflict(_("The Drive node has an invalid tree position"))
+    lock_trees(tree)
+    current = _node(node_id, for_update=True)
+    if root_id(current) != tree:
+        raise DriveConflict(_("The Drive tree changed; retry the operation"))
+    return current
+
+
 def _lock_create_parent(parent_id: str) -> frappe._dict:
     """Lock one creation chain in the source-to-descendant move order."""
     snapshot = _node(parent_id)
@@ -2157,11 +2459,11 @@ def _lock_create_parent(parent_id: str) -> frappe._dict:
 
 
 def _lock_tree_chains(snapshots: dict[str, frappe._dict]) -> dict[str, frappe._dict]:
-    """Lock immutable snapshots by depth and id, with root nodes last.
+    """Lock the snapshots' trees, then their ancestry chains by depth and id.
 
-    Create and move both use this order. It puts a move source before every
-    descendant in its subtree without reversing the destination ancestry
-    order used by a concurrent create.
+    Create, move and copy use this. The tree lock (`lock_trees`) comes first,
+    as in every Drive tree write; the chains below it are then locked top-down,
+    which puts a move source before every descendant in its subtree.
     """
     expected = {}
     by_depth: dict[int, set[str]] = {}
@@ -2180,11 +2482,10 @@ def _lock_tree_chains(snapshots: dict[str, frappe._dict]) -> dict[str, frappe._d
         for depth, candidate in enumerate(chain[1:], start=1):
             by_depth.setdefault(depth, set()).add(candidate)
 
+    lock_trees(*roots)
     for depth in sorted(by_depth):
         for candidate in sorted(by_depth[depth]):
             _chain_node(candidate, for_update=True)
-    for root in sorted(roots):
-        _chain_node(root, for_update=True)
 
     refreshed = {node_id: _chain_node(node_id, for_update=True) for node_id in sorted(snapshots)}
     if any(tuple(chain_ids(refreshed[node_id])) != chain for node_id, chain in expected.items()):
@@ -2231,9 +2532,9 @@ def _validate_stored_position(node: frappe._dict, *, for_update: bool = False) -
         if cursor.kind == "root":
             root_for_node(cursor, for_update=for_update)
             return
-        if not cursor.parent or not cursor.root:
+        if not cursor.parent_node or not cursor.root:
             raise DriveConflict(_("The Drive node has an invalid tree position"))
-        parent = _chain_node(cursor.parent, for_update=for_update)
+        parent = _chain_node(cursor.parent_node, for_update=for_update)
         if parent.name in seen:
             raise DriveConflict(_("The Drive node tree contains a cycle"))
         if parent.state != "Active" or parent.kind not in ("root", "folder", "document"):
@@ -2252,20 +2553,46 @@ def _validate_title(title: str) -> None:
         frappe.throw(_("A Drive file title is required"), frappe.ValidationError)
 
 
-def _refuse_sibling_collision(parent: str, title: str, *, exclude: str | None = None) -> None:
-    collision = frappe.db.sql(
-        """
-        SELECT name
-        FROM `tabDrive Node`
-        WHERE parent = %(parent)s AND title = %(title)s AND state = 'Active'
-          AND (%(exclude)s IS NULL OR name <> %(exclude)s)
-        LIMIT 1
-        FOR UPDATE
-        """,
-        {"parent": parent, "title": title, "exclude": exclude},
-    )
-    if collision:
-        raise DriveConflict(_("An active Drive node with this title already exists"))
+def _title_extension(title: str) -> str | None:
+    """Return a file title's extension without its dot, or None if it has none.
+
+    The extension is the text after the last dot, when that dot is not the
+    first character and the text is 1 to 10 characters with no whitespace. So
+    `.env` has none, `archive.tar.gz` has `gz`, and `v1.2 notes` has none. The
+    frontend's `titleExtension` in `files/internal/filename.ts` matches this.
+    """
+    dot = title.rfind(".")
+    extension = title[dot + 1 :]
+    if dot < 1 or not 1 <= len(extension) <= 10 or any(char.isspace() for char in extension):
+        return None
+    return extension
+
+
+def _refuse_extension_change(old_title: str, new_title: str) -> None:
+    """Refuse a file rename that removes or changes the extension.
+
+    A file with no extension may take any title. Letter case does not count,
+    so `.PDF` may become `.pdf`.
+    """
+    extension = _title_extension(old_title)
+    if extension is None:
+        return
+    if (_title_extension(new_title) or "").lower() != extension.lower():
+        frappe.throw(_("Keep the .{0} extension.").format(extension), frappe.ValidationError)
+
+
+def _refuse_sibling_collision(
+    parent: str, title: str, *, exclude: str | None = None, for_update: bool = True
+) -> None:
+    """Refuse a title an Active sibling holds, naming the free one (§8.6).
+
+    A write path locks the candidate rows, so the answer holds until it
+    commits. The upload preflight reads without a lock: it writes nothing, and
+    its finish checks again under the lock.
+    """
+    free = _free_title(parent, title, exclude=exclude, for_update=for_update)
+    if free != title:
+        raise DriveConflict(_("An active Drive node with this title already exists"), free_title=free)
 
 
 # Page size for both blob-source scans below. Storage dedup is
@@ -2452,23 +2779,25 @@ def _preserve_head(node: frappe._dict, principals: Principals) -> int:
     return preserve_file_head(node, principals)
 
 
-def _content_time(value: datetime | int | float | str | None) -> datetime:
+def _content_time(value: datetime | str | None) -> datetime:
+    """A client's content time as the site-naive form the column stores (§8.11).
+
+    An aware datetime is converted with the site's zone; a naive datetime or
+    string is taken to be in it already. The HTTP layer parses the wire's
+    RFC 3339 form before it gets here (`http.shapes.moment`), and WebDAV
+    hands over an aware instant.
+    """
     if value is None:
         return now_datetime()
-    if isinstance(value, bool):
+    if not isinstance(value, datetime | str):
         frappe.throw(_("Drive content time is invalid"), frappe.ValidationError)
     try:
-        if isinstance(value, int | float):
-            if value < 0:
-                raise ValueError
-            stamp = datetime.fromtimestamp(value / 1000, tz=UTC)
-            return convert_utc_to_system_timezone(stamp).replace(tzinfo=None)
         parsed = get_datetime(value)
         if parsed is None:
             raise ValueError
-        return parsed
-    except (OverflowError, OSError, TypeError, ValueError):
+    except OverflowError, TypeError, ValueError:
         frappe.throw(_("Drive content time is invalid"), frappe.ValidationError)
+    return to_site_naive(parsed)
 
 
 def _record_activity(
@@ -2507,26 +2836,29 @@ def children(
     limit: int = DEFAULT_PAGE_SIZE,
     order_by: str = "title",
     ascending: bool = True,
-    mime_prefix: str | None = None,
-    kind: str | None = None,
-    group_by: str | None = None,
+    listing_types: Sequence[str] = (),
     with_access: bool = False,
 ) -> dict:
     """Return one three-query SQL window of readable, ordinary children.
 
+    A child is listed when it shares the folder's state and trash root. An
+    Active folder lists its Active children. A trashed folder lists what was
+    trashed with it, read-only; a child trashed earlier on its own has its own
+    trash root and is listed in Trash instead (§5.6).
+
+    `listing_types` keeps the nodes of any of those `?type=` values inside the
+    window (`type_filter`).
     `with_access` adds §11.3's access detail to every row from the grant rows
     this page already read, so an expanded listing costs no extra query.
     """
     page_size = page_limit(limit)
     offset = decode_cursor(cursor)
     order_column = _order_column(order_by)
-    _validate_kind_filter(kind)
-    _validate_group(group_by)
     direction = "ASC" if ascending else "DESC"
-    query = _folder_page_query(order_column, direction, group_by=group_by)
+    query = _folder_page_query(order_column, direction, listing_types=listing_types)
     result = frappe.db.sql(
         query,
-        {"parent": parent, "limit": page_size, "offset": offset, "kind": kind},
+        {"parent_node": parent, "limit": page_size, "offset": offset},
         as_dict=True,
     )
     return _folder_page_from_result(
@@ -2535,7 +2867,6 @@ def children(
         parent,
         offset=offset,
         page_size=page_size,
-        mime_prefix=mime_prefix,
         with_access=with_access,
     )
 
@@ -2544,14 +2875,15 @@ def _folder_page_query(
     order_column: str = "title",
     direction: str = "ASC",
     *,
-    group_by: str | None = None,
+    listing_types: Sequence[str] = (),
 ) -> str:
     return FOLDER_PAGE_SQL.format(
-        parent_fields=", ".join(f"parent_node.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES),
+        parent_fields=", ".join(f"container.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES),
         child_fields=", ".join(f"children.`{field}`" for field in NODE_FIELD_NAMES),
         node_fields=NODE_FIELDS,
-        inner_order=_listing_order(order_column, direction, group_by=group_by, prefix=""),
-        outer_order=_listing_order(order_column, direction, group_by=group_by, prefix="page."),
+        type_filter=type_filter(listing_types),
+        inner_order=_listing_order(order_column, direction, prefix=""),
+        outer_order=_listing_order(order_column, direction, prefix="page."),
     )
 
 
@@ -2562,7 +2894,6 @@ def _folder_page_from_result(
     *,
     offset: int,
     page_size: int,
-    mime_prefix: str | None,
     with_access: bool = False,
 ) -> dict:
     parent_row = None
@@ -2590,11 +2921,7 @@ def _folder_page_from_result(
     if parent_row.kind == "document" or parent_row.pop("_drive_document_descendant", 0):
         raise DriveConflict(_("A content document cannot be listed as a folder"))
 
-    rows = [
-        row
-        for row in window
-        if roles[row.name] >= READ and (not mime_prefix or (row.mime or "").startswith(mime_prefix))
-    ]
+    rows = [row for row in window if roles[row.name] >= READ]
     if with_access:
         detail = describe_page(chain, {row.name: by_child[row.name] for row in rows}, chain_rows, principals)
         for row in rows:
@@ -2603,7 +2930,7 @@ def _folder_page_from_result(
     # The listed folder, already read and authorized here. An adapter that owes
     # the caller a breadcrumb trail takes it from this row instead of spending
     # a second read and a second point check on the node it just listed.
-    page["parent"] = parent_row
+    page["container"] = parent_row
     return page
 
 
@@ -2624,6 +2951,7 @@ def views(
     kept by `_core.activity` and answer in their own row shape, and unwrapping
     them here is what lets every view page answer in node shapes.
     """
+    listing_types = filters.get("listing_types", ())
     if name in ("recents", "favourites"):
         return _personal_view(
             principals,
@@ -2632,15 +2960,17 @@ def views(
             limit=limit,
             with_access=with_access,
             with_breadcrumbs=with_breadcrumbs,
+            listing_types=listing_types,
         )
 
     page_size = page_limit(limit)
     offset = decode_cursor(cursor)
     values = {"limit": page_size, "offset": offset, "now": now(), "own": _sql_values(principals.own)}
+    kept_type = type_filter(listing_types, "n.")
 
     if name == "shared":
         values["personal_root"] = personal_root_for(principals.user)
-        window = frappe.db.sql(SHARED_SQL, values, as_dict=True)
+        window = frappe.db.sql(SHARED_SQL.format(type_filter=kept_type), values, as_dict=True)
         rows = _readable_rows(
             window,
             principals,
@@ -2656,7 +2986,7 @@ def views(
         if not isinstance(root, str) or not root:
             frappe.throw(_("The trash view requires a Drive root"), frappe.ValidationError)
         values["root"] = root
-        window = frappe.db.sql(TRASH_SQL, values, as_dict=True)
+        window = frappe.db.sql(TRASH_SQL.format(type_filter=kept_type), values, as_dict=True)
         rows = _readable_rows(
             window,
             principals,
@@ -2681,7 +3011,7 @@ def views(
             frappe.throw(_("The search term is required"), frappe.ValidationError)
         values["visible_roots"] = _sql_values(_visible_root_ids(principals))
         values["term"] = f"%{term}%"
-        window = frappe.db.sql(SEARCH_SQL, values, as_dict=True)
+        window = frappe.db.sql(SEARCH_SQL.format(type_filter=kept_type), values, as_dict=True)
         rows = _readable_rows(
             window,
             principals,
@@ -2702,12 +3032,27 @@ def _personal_view(
     limit: int,
     with_access: bool,
     with_breadcrumbs: bool,
+    listing_types: Sequence[str] = (),
 ) -> dict:
     """Answer a personal list as node rows, keeping its own cursor."""
     from suite.drive._core import activity
 
-    reader = activity.recents if name == "recents" else activity.favourites
-    result = reader(principals, cursor=cursor, limit=limit, with_access=with_access)
+    if name == "recents":
+        result = activity.recents(
+            principals,
+            cursor=cursor,
+            limit=limit,
+            with_access=with_access,
+            listing_types=listing_types,
+        )
+    else:
+        result = activity.favourites(
+            principals,
+            cursor=cursor,
+            limit=limit,
+            with_access=with_access,
+            listing_types=listing_types,
+        )
     rows = _view_eligible([row.node for row in result["rows"]])
     if with_breadcrumbs:
         rows = _readable_rows(rows, principals, with_breadcrumbs=True)
@@ -2772,7 +3117,7 @@ def decode_cursor(cursor: str | None) -> int:
             raise ValueError
         if str(offset) != raw_offset:
             raise ValueError
-    except (binascii.Error, UnicodeDecodeError, ValueError):
+    except binascii.Error, UnicodeDecodeError, ValueError:
         frappe.throw(_("The Drive cursor is invalid"), frappe.ValidationError)
     return offset
 
@@ -2810,31 +3155,88 @@ ORDER_TERMS = {
     "content_modified": "COALESCE({p}content_modified, {p}modified)",
     "modified": "{p}modified",
     "size": "{p}size",
-}
-
-GROUP_TERMS = {
-    # The kind value is already in the node shape. A fixed rank keeps the
-    # folder group first and keeps the remaining groups deterministic.
-    "type": "CASE {p}kind WHEN 'folder' THEN 0 WHEN 'document' THEN 1 WHEN 'file' THEN 2 ELSE 3 END",
     "owner": "COALESCE({p}owner, '')",
-    # Drive stores row times in the site's system timezone. One calendar date
-    # is one group, and newer dates are always shown first.
-    "modified": "DATE({p}modified)",
+    # Documents before files, then by document type and MIME type, so files of
+    # one type sit together. Folders already come first in every order.
+    "kind": "CONCAT(CASE {p}kind WHEN 'document' THEN 1 ELSE 2 END, COALESCE({p}content_doctype, ''), COALESCE({p}mime, ''))",
 }
 
+# One predicate per `?type=` value (§11.2). Every listing adds the chosen ones
+# inside its SQL window, so a page is never cut short by a filter applied after
+# the read. A type is what the listing's type icon shows: a file by its mime,
+# and a Suite document by the `listing_type` its content app declares. `%%` is
+# a literal `%`, because every listing query is run with values. `{p}` is the
+# table prefix.
+FILE_TYPE_TERMS = {
+    "folder": "{p}kind = 'folder'",
+    "pdf": "{p}kind = 'file' AND {p}mime = 'application/pdf'",
+    "image": "{p}kind = 'file' AND {p}mime LIKE 'image/%%'",
+    "video": "{p}kind = 'file' AND {p}mime LIKE 'video/%%'",
+    "audio": "{p}kind = 'file' AND {p}mime LIKE 'audio/%%'",
+}
+# An uploaded office file is a document type too, by its mime, as it was in the
+# legacy `MIME_LIST_MAP`. A Suite document of the same type matches as well.
+DOCUMENT_FILE_MIMES = {
+    "document": (
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.apple.pages",
+        "application/x-abiword",
+    ),
+    "spreadsheet": (
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "application/vnd.apple.numbers",
+        "text/csv",
+    ),
+    "presentation": (
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/vnd.apple.keynote",
+    ),
+}
+LISTING_TYPES = ("folder", *content.DOCUMENT_LISTING_TYPES, "pdf", "image", "video", "audio")
 
-def _listing_order(order_by: str, direction: str, *, group_by: str | None, prefix: str) -> str:
-    terms = []
-    if group_by:
-        group_direction = "DESC" if group_by == "modified" else "ASC"
-        terms.append(f"{GROUP_TERMS[group_by].format(p=prefix)} {group_direction}")
-    terms.extend(
-        (
-            f"CASE WHEN {prefix}kind = 'folder' THEN 0 ELSE 1 END ASC",
-            f"{ORDER_TERMS[order_by].format(p=prefix)} {direction}",
-            f"{prefix}name ASC",
-        )
-    )
+
+def type_filter(listing_types: Sequence[str] = (), prefix: str = "") -> str:
+    """Return the SQL predicate that keeps a node of any of `listing_types`, or a true one for none."""
+    if set(listing_types) - set(LISTING_TYPES):
+        frappe.throw(_("The Drive listing type is invalid"), frappe.ValidationError)
+    if not listing_types:
+        return "1 = 1"
+    terms = [
+        _type_term(listing_type, prefix) for listing_type in LISTING_TYPES if listing_type in listing_types
+    ]
+    return f"({' OR '.join(terms)})"
+
+
+def _type_term(listing_type: str, prefix: str) -> str:
+    if listing_type in FILE_TYPE_TERMS:
+        return f"({FILE_TYPE_TERMS[listing_type].format(p=prefix)})"
+    # Neither registered doctypes, which are checked SQL identifiers, nor the
+    # mimes above hold a `%`.
+    mimes = ", ".join(frappe.db.escape(mime) for mime in DOCUMENT_FILE_MIMES[listing_type])
+    terms = [f"({prefix}kind = 'file' AND {prefix}mime IN ({mimes}))"]
+    doctypes = [spec.doctype for spec in content.registry().values() if spec.listing_type == listing_type]
+    if doctypes:
+        names = ", ".join(frappe.db.escape(doctype) for doctype in doctypes)
+        terms.append(f"({prefix}kind = 'document' AND {prefix}content_doctype IN ({names}))")
+    return f"({' OR '.join(terms)})"
+
+
+def _listing_order(order_by: str, direction: str, *, prefix: str) -> str:
+    # Folders first in every order; grouping is the client's, over the rows it holds.
+    terms = [
+        f"CASE WHEN {prefix}kind = 'folder' THEN 0 ELSE 1 END ASC",
+        f"{ORDER_TERMS[order_by].format(p=prefix)} {direction}",
+    ]
+    # Rows that tie, such as files of one owner or one type, read in name order.
+    if order_by != "title":
+        terms.append(f"{ORDER_TERMS['title'].format(p=prefix)} ASC")
+    terms.append(f"{prefix}name ASC")
     return ", ".join(terms)
 
 
@@ -2842,16 +3244,6 @@ def _order_column(order_by: str) -> str:
     if order_by not in ORDER_TERMS:
         frappe.throw(_("The Drive listing order is invalid"), frappe.ValidationError)
     return order_by
-
-
-def _validate_group(group_by: str | None) -> None:
-    if group_by is not None and group_by not in GROUP_TERMS:
-        frappe.throw(_("The Drive listing group is invalid"), frappe.ValidationError)
-
-
-def _validate_kind_filter(kind: str | None) -> None:
-    if kind is not None and kind != "folder":
-        frappe.throw(_("The Drive child kind filter is invalid"), frappe.ValidationError)
 
 
 def _grant_rows(node_ids: list[str], principals: Principals) -> list:
@@ -2912,13 +3304,13 @@ def _attach_breadcrumbs_from_union(
 ) -> None:
     """Attach every trail after one title read over the ancestor-id union."""
     ancestor_ids = sorted({node for row in rows for node in chains[row.name][:-1]})
-    titles = (
+    ancestors = (
         {
-            row.name: row.title
+            row.name: row
             for row in frappe.get_all(
                 "Drive Node",
                 filters={"name": ("in", ancestor_ids)},
-                fields=["name", "title"],
+                fields=["name", "title", "kind"],
             )
         }
         if ancestor_ids
@@ -2940,10 +3332,10 @@ def _attach_breadcrumbs_from_union(
                     ticket_results,
                 )["role"]
             )
-            if role < READ or node_id not in titles:
+            if role < READ or node_id not in ancestors:
                 trail = []
                 continue
-            trail.append({"name": node_id, "title": titles[node_id]})
+            trail.append(crumb(ancestors[node_id]))
         row.breadcrumbs = trail
 
 

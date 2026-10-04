@@ -14,8 +14,7 @@ const NOISE_SUPPRESSION_WORKLET_URL = import.meta.env.DEV
   ? '/noise-suppression/audio-worklet-processor.js'
   : '/assets/suite/noise-suppression/audio-worklet-processor.js'
 
-const NOISE_SUPPRESSION_AUDIO_WORKLET_PROCESSOR_NAME =
-  'workadventure-noise-suppression'
+const NOISE_SUPPRESSION_AUDIO_WORKLET_PROCESSOR_NAME = 'workadventure-noise-suppression'
 
 const DEFAULT_READY_TIMEOUT_MS = 30_000
 
@@ -59,10 +58,7 @@ function defaultNumThreads(override?: number): number {
   return Math.max(1, Math.min(4, cores))
 }
 
-function addModuleOnce(
-  context: AudioWorkletCapableContext,
-  moduleUrl: string,
-): Promise<void> {
+function addModuleOnce(context: AudioWorkletCapableContext, moduleUrl: string): Promise<void> {
   let byUrl = moduleLoadCache.get(context)
   if (!byUrl) {
     byUrl = new Map()
@@ -87,11 +83,7 @@ function waitForReady(
   return new Promise((resolve, reject) => {
     const timer = globalThis.setTimeout(() => {
       cleanup()
-      reject(
-        new Error(
-          'Timed out waiting for the noise suppression worklet to initialize.',
-        ),
-      )
+      reject(new Error('Timed out waiting for the noise suppression worklet to initialize.'))
     }, timeoutMs)
 
     const onMessage = (event: MessageEvent) => {
@@ -136,22 +128,18 @@ export async function createNoiseSuppressionAudioWorklet(
 
   await addModuleOnce(context, moduleUrl)
 
-  const node = new AudioWorkletNode(
-    context,
-    NOISE_SUPPRESSION_AUDIO_WORKLET_PROCESSOR_NAME,
-    {
-      channelCount: 1,
-      channelCountMode: 'explicit',
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-      processorOptions: {
-        threads,
-        numThreads,
-        bypassUntilReady,
-      },
+  const node = new AudioWorkletNode(context, NOISE_SUPPRESSION_AUDIO_WORKLET_PROCESSOR_NAME, {
+    channelCount: 1,
+    channelCountMode: 'explicit',
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+    processorOptions: {
+      threads,
+      numThreads,
+      bypassUntilReady,
     },
-  )
+  })
 
   return {
     node,

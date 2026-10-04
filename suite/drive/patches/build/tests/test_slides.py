@@ -109,7 +109,7 @@ class SlidesTest(unittest.TestCase):
         target.node_rows[node] = {
             "name": node,
             "title": title,
-            "parent": "root",
+            "parent_node": "root",
             "root": "root",
             "path": "",
             "kind": "document",
@@ -122,7 +122,7 @@ class SlidesTest(unittest.TestCase):
         row = {
             "name": name,
             "title": f"{name}.png",
-            "parent": parent,
+            "parent_node": parent,
             "root": parent,
             "path": "",
             "kind": "file",
@@ -204,6 +204,40 @@ class SlidesTest(unittest.TestCase):
         convert_slides_and_templates(env)
         self.assertEqual(len(env.slide_journal.records), 1)
 
+    def test_a_rewritten_reference_is_the_media_node_the_slides_runtime_reads(self):
+        """§14.7 and §10.6 meet on one value: the media node's own id.
+
+        The renderer resolves an element `src` through `GET /nodes/<deck>/media`,
+        whose rows are keyed by node, and the unused-media sweep keeps what the
+        Slides spec reads back from the body. Both see the value Build wrote
+        only if it is exactly the name of the media node under the deck;
+        `test_migration` checks the real sweep keeps it.
+        """
+        source = FakeContent(
+            documents=[deck()],
+            slides=[
+                SlideRow(
+                    "slide-1",
+                    "deck-1",
+                    1,
+                    json.dumps([{"src": "/private/files/media-a.png", "poster": "/files/media-a.png"}]),
+                    "/files/media-a.png",
+                )
+            ],
+            media=[media("media-a", blob="blob-1", url="/files/media-a.png")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-1", b"media", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        (node,) = self.media_children(target, "deck-node")
+        self.assertEqual((node["kind"], node["state"], node["blob"]), ("file", "Active", "blob-1"))
+        body = json.loads(source.slide_rows["slide-1"].elements)
+        for value in (body[0]["src"], body[0]["poster"], source.slide_rows["slide-1"].background):
+            self.assertEqual(value, node["name"])
+
     def test_media_nodes_carry_the_deck_child_path(self):
         source = FakeContent(
             documents=[deck()],
@@ -221,7 +255,7 @@ class SlidesTest(unittest.TestCase):
         # every later save, move, restore, or copy.
         for name in ("media-a", "media-b"):
             self.assertEqual(target.node_rows[name]["path"], "/deck-node/")
-            self.assertEqual(target.node_rows[name]["parent"], "deck-node")
+            self.assertEqual(target.node_rows[name]["parent_node"], "deck-node")
             self.assertEqual(target.node_rows[name]["root"], "root")
 
     def test_a_deck_too_deep_to_hold_media_is_refused_before_it_writes(self):
@@ -272,7 +306,7 @@ class SlidesTest(unittest.TestCase):
         original = target.insert_nodes
 
         def record(nodes):
-            media_rows = [row for row in nodes if row["parent"] == "deck-node"]
+            media_rows = [row for row in nodes if row["parent_node"] == "deck-node"]
             if media_rows:
                 sizes.append(len(media_rows))
             original(nodes)
@@ -726,10 +760,12 @@ class SlidesTest(unittest.TestCase):
 
         borrowed = self.media_children(target, consumer.node)
         self.assertEqual(len(borrowed), 1)
-        # Tier 1: the reference spells the public row's `file_url` exactly.
-        self.assertEqual(borrowed[0]["blob"], "blob-public")
+        self.assertEqual(borrowed[0]["blob"], "blob-private")
+        self.assertEqual(target.read_blob(borrowed[0]["blob"]), private_bytes)
+        self.assertFalse(target.blob("blob-public").is_private)
         self.assertEqual(json.loads(source.slide_rows["slide-a"].elements), [{"src": borrowed[0]["name"]}])
-        self.assertEqual(result.borrowed_duplicates_collapsed, 1)
+        # The public copy already reuses the private blob before grouping.
+        self.assertEqual(result.borrowed_duplicates_collapsed, 0)
         self.assertEqual(result.issues_total, 0)
 
         again = convert_slides_and_templates(env)
@@ -786,14 +822,17 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(self.media_children(target, "deck-node"), children)
         self.assertEqual((again.media_nodes_created, again.media_duplicates_collapsed), (1, 1))
 
-    def test_a_non_template_borrowed_file_stays_unresolved_and_is_reported(self):
+    def test_a_picture_another_deck_holds_is_copied_into_the_deck_that_shows_it(self):
+        # B112: a deck pasted from another, non-template deck shows the same
+        # picture after Build. It gets its own node for the same blob, and the
+        # other deck keeps its own.
         other = deck("other", node="other-node", title="Other")
         shared_url = "/private/files/pasted.png"
         source = FakeContent(
             documents=[deck(), other],
             slides=[
                 SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": shared_url}])),
-                SlideRow("slide-2", other.name, 1, json.dumps([])),
+                SlideRow("slide-2", other.name, 1, json.dumps([{"src": shared_url}])),
             ],
             media=[media("other-file", deck_name=other.name, blob="blob-a", url=shared_url)],
             users={"Administrator": True},
@@ -803,12 +842,19 @@ class SlidesTest(unittest.TestCase):
         target.add_blob("blob-a", b"a", mime_type="image/png")
 
         result = convert_slides_and_templates(env)
+        copied = self.media_children(target, "deck-node")
+        again = convert_slides_and_templates(env)
 
-        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": shared_url}])
-        self.assertEqual(self.media_children(target, "deck-node"), [])
-        self.assertEqual(result.issues_total, 1)
-        self.assertEqual(result.issues[0].source, "Presentation:deck-1")
-        self.assertIn("non-template", result.issues[0].reason)
+        self.assertEqual([(row["blob"], row["owner"]) for row in copied], [("blob-a", OWNER)])
+        self.assertNotEqual(copied[0]["name"], "other-file")
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": copied[0]["name"]}])
+        self.assertEqual(json.loads(source.slide_rows["slide-2"].elements), [{"src": "other-file"}])
+        self.assertEqual([row["name"] for row in self.media_children(target, other.node)], ["other-file"])
+        self.assertEqual(result.issues_total, 0)
+        # A rerun finds the copy and makes no second one.
+        self.assertEqual(self.media_children(target, "deck-node"), copied)
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": copied[0]["name"]}])
+        self.assertEqual(again.issues_total, 0)
 
     def test_private_small_webp_thumbnail_becomes_the_deck_preview(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.webp", field="thumbnail")
@@ -1282,7 +1328,7 @@ class SlidesTest(unittest.TestCase):
         for name, blob in (("stray-file", "stray-blob"), ("stray-empty", None)):
             target.node_rows[name] = {
                 "name": name,
-                "parent": "deck-node",
+                "parent_node": "deck-node",
                 "root": "root",
                 "path": "/deck-node/",
                 "kind": "file",
@@ -1308,7 +1354,7 @@ class SlidesTest(unittest.TestCase):
         insert_nodes = target.insert_nodes
 
         def record(planned):
-            media_rows = [row for row in planned if row.get("parent") == "deck-node"]
+            media_rows = [row for row in planned if row.get("parent_node") == "deck-node"]
             if media_rows:
                 sizes.append(len(media_rows))
             insert_nodes(planned)
@@ -1646,7 +1692,7 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(result.media_nodes_created, 2)
         self.assertEqual(result.issues_total, 0)
 
-    def test_a_site_absolute_reference_to_a_non_template_file_is_reported(self):
+    def test_a_site_absolute_reference_to_another_decks_picture_is_copied(self):
         other = deck("other", node="other-node", title="Other")
         source = FakeContent(
             documents=[deck(), other],
@@ -1668,10 +1714,10 @@ class SlidesTest(unittest.TestCase):
 
         result = convert_slides_and_templates(env)
 
-        self.assertEqual(self.media_children(target, "deck-node"), [])
-        self.assertEqual(result.issues_total, 1)
-        self.assertEqual(result.issues[0].source, "Presentation:deck-1")
-        self.assertIn("non-template", result.issues[0].reason)
+        copied = self.media_children(target, "deck-node")
+        self.assertEqual([row["blob"] for row in copied], ["blob-a"])
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": copied[0]["name"]}])
+        self.assertEqual(result.issues_total, 0)
 
     # -- defect 13: one File is both the deck preview and slide media
 
@@ -1747,7 +1793,7 @@ class SlidesTest(unittest.TestCase):
 
         stored = target.node_rows["media-a"]
         self.assertEqual(
-            (stored["parent"], stored["root"], stored["path"]), ("deck-node", "root", "/deck-node/")
+            (stored["parent_node"], stored["root"], stored["path"]), ("deck-node", "root", "/deck-node/")
         )
         self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["media-a"])
         self.assertEqual(result.media_nodes_created, 1)
@@ -1839,7 +1885,7 @@ class SlidesTest(unittest.TestCase):
         stored = target.node_rows["media-a"]
         self.assertEqual(stored["state"], "Active")
         self.assertEqual((stored["trashed_at"], stored["trash_root"]), (None, None))
-        self.assertEqual(stored["parent"], "deck-node")
+        self.assertEqual(stored["parent_node"], "deck-node")
 
     def test_a_second_run_moves_nothing_and_refuses_nothing(self):
         row = media("media-a", blob="blob-a")
@@ -1889,7 +1935,7 @@ class SlidesTest(unittest.TestCase):
 
         result = convert_slides_and_templates(env)
 
-        self.assertEqual(target.node_rows["media-a"]["parent"], "root")
+        self.assertEqual(target.node_rows["media-a"]["parent_node"], "root")
         self.assertEqual(result.media_nodes_relocated, 0)
         self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["earlier"])
 
@@ -1912,7 +1958,7 @@ class SlidesTest(unittest.TestCase):
 
         # [012] §4: the deck the File belongs to keeps the node, and the deck
         # that pasted it gets a copy under a new id, the same blob.
-        template_node = target.node_rows["template-file"]["parent"]
+        template_node = target.node_rows["template-file"]["parent_node"]
         self.assertEqual(target.node_rows[template_node]["content_docname"], "template")
         copies = self.media_children(target, consumer.node)
         self.assertEqual([row["blob"] for row in copies], ["blob-a"])

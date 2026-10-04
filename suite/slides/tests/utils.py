@@ -47,9 +47,8 @@ def make_presentation(title, parent=None, **fields):
     factory (one empty slide, as this fixture always made), links the two, and
     charges the owning root — all in one savepoint. The returned document is
     the deck, so every caller that reads `.name`, `.slides`, or saves it keeps
-    working. `.title` stays empty: Drive owns the title and the legacy column
-    is frozen (§10.2), so writing it here would make the next `save()` refuse.
-    Read it with `title_of` instead.
+    working. There is no `.title`: Drive owns the title (§10.2). Read it with
+    `title_of` instead.
 
     `fields` are extra legacy body columns a case needs (`is_composite`,
     `reference_presentations`), written after the deck exists.

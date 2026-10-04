@@ -1,59 +1,65 @@
 <template>
-	<!-- todo: mobile responsive -->
-	<DashboardLayout
-		:breadcrumbs="[{ label: __('Address Books') }]"
-		:button-label="__('Add Address Book')"
-		:button-action="() => (showAddAddressBook = true)"
-	>
-		<FormControl v-model="search" :placeholder="__('Search')" class="sm:w-80">
-			<template #prefix>
-				<FeatherIcon name="search" class="text-ink-gray-5 w-4" />
-			</template>
-		</FormControl>
+  <!-- todo: mobile responsive -->
+  <DashboardLayout
+    :breadcrumbs="[{ label: __('Address Books') }]"
+    :button-label="__('Add Address Book')"
+    :button-action="() => (showAddAddressBook = true)"
+  >
+    <FormControl v-model="search" :placeholder="__('Search')" class="sm:w-80">
+      <template #prefix>
+        <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
+      </template>
+    </FormControl>
 
-		<ListView
-			v-if="addressBooks?.data"
-			ref="listView"
-			class="flex-1"
-			:columns="LIST_COLUMNS"
-			:rows="addressBooks.data"
-			:options="LIST_OPTIONS"
-			row-key="id"
-		>
-			<ListHeader />
-			<ListRows>
-				<template v-if="searchedAddressBooks.length">
-					<ListRow
-						v-for="row in searchedAddressBooks"
-						:key="row.id"
-						v-slot="{ column, item }"
-						:row="row"
-					>
-						<Badge
-							v-if="column.key === 'default' && item === 1"
-							theme="blue"
-							:label="__('Default')"
-						/>
-					</ListRow>
-				</template>
-				<ListEmptyState v-else />
-			</ListRows>
-		</ListView>
-	</DashboardLayout>
+    <ListView
+      v-if="addressBooks?.data"
+      ref="listView"
+      class="flex-1"
+      :columns="LIST_COLUMNS"
+      :rows="addressBooks.data"
+      :options="LIST_OPTIONS"
+      row-key="id"
+    >
+      <ListHeader />
+      <ListRows>
+        <template v-if="searchedAddressBooks.length">
+          <ListRow
+            v-for="row in searchedAddressBooks"
+            :key="row.id"
+            v-slot="{ column, item }"
+            :row="row"
+          >
+            <Badge
+              v-if="column.key === 'default' && item === 1"
+              theme="blue"
+              :label="__('Default')"
+            />
+          </ListRow>
+        </template>
+        <ListEmptyState v-else />
+      </ListRows>
+    </ListView>
+  </DashboardLayout>
 
-	<AddAddressBookModal v-model="showAddAddressBook" />
+  <AddAddressBookModal v-model="showAddAddressBook" />
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { Badge, FormControl, usePageMeta } from 'frappe-ui'
 import {
-	Badge, FormControl, usePageMeta } from 'frappe-ui'
-import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRows, ListView } from 'frappe-ui/experimental'
+  Icon as FeatherIcon,
+  ListEmptyState,
+  ListHeader,
+  ListRow,
+  ListRows,
+  ListView,
+} from 'frappe-ui/experimental'
+import { computed, ref } from 'vue'
 
-import { userStore } from '@/apps/mail/stores/user'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddAddressBookModal from '@/apps/mail/components/Modals/AddAddressBookModal.vue'
+import { userStore } from '@/apps/mail/stores/user'
+import { appPageMeta } from '@/utils/documentTitle'
 
 usePageMeta(() => appPageMeta(__('Address Books'), 'Mail'))
 
@@ -65,21 +71,21 @@ const showAddAddressBook = ref(false)
 const search = ref('')
 
 const searchedAddressBooks = computed(() =>
-	addressBooks.data?.filter((ab) => ab._name.toLowerCase().includes(search.value.toLowerCase())),
+  addressBooks.data?.filter((ab) => ab._name.toLowerCase().includes(search.value.toLowerCase())),
 )
 
 const LIST_COLUMNS = [
-	{ label: __('Name'), key: '_name' },
-	{ label: '', key: 'default' },
+  { label: __('Name'), key: '_name' },
+  { label: '', key: 'default' },
 ]
 
 const LIST_OPTIONS = {
-	selectable: false,
-	showTooltip: false,
-	emptyState: { description: __('No address books found.') },
-	getRowRoute: (row) => ({
-		name: 'mail-address-book',
-		params: { accountId, addressBookName: row.id },
-	}),
+  selectable: false,
+  showTooltip: false,
+  emptyState: { description: __('No address books found.') },
+  getRowRoute: (row) => ({
+    name: 'mail-address-book',
+    params: { accountId, addressBookName: row.id },
+  }),
 }
 </script>

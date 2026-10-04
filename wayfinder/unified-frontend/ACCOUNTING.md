@@ -186,7 +186,7 @@ Chromium.
 
 | Bullet | State | Verified by | Note |
 |---|---|---|---|
-| No Cmd+K palette and no rail Search button | done | grep over frontend/src/{shell,composition} finds no palette; shell/Rail.vue:32-36 holds only the bell, Settings and the account menu | |
+| The shell ships upstream's Cmd+K palette; no rail Search button | done | shell/ShellLayout.vue mounts SuiteCommandPalette for signed-in users, and its `>` switcher lists the rail's areas; shell/Rail.vue holds only the bell, Settings and the account menu | Checked by hand on Home, Drive and Meet. |
 
 ### Notifications
 

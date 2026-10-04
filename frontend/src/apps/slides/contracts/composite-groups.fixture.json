@@ -9,6 +9,8 @@
     "the first group carries the composite's own code plus 19 reference codes, which is the",
     "20 items X-Drive-Links allows. The second group carries only the composite's code, so",
     "both of its references come back marked unreadable, in place, with no content.",
+    "The manifest request carried the composite's code plus the first 19 reference codes,",
+    "so it names the node of those 19 decks and null for the two it could not open.",
     "Only unreadable_composite's message is a literal in the source. The other five are",
     "translated at runtime, so switch on the refusal kind and the HTTP status, never the text.",
     "reference_shapes holds the two reference rows the 21-deck story above never produces.",
@@ -30,107 +32,128 @@
       {
         "reference": "ref00000000000000000000000000",
         "index": 1,
-        "presentation": "deck-00"
+        "presentation": "deck-00",
+        "node": "node00abcd"
       },
       {
         "reference": "ref01000000000000000000000000",
         "index": 2,
-        "presentation": "deck-01"
+        "presentation": "deck-01",
+        "node": "node01abcd"
       },
       {
         "reference": "ref02000000000000000000000000",
         "index": 3,
-        "presentation": "deck-02"
+        "presentation": "deck-02",
+        "node": "node02abcd"
       },
       {
         "reference": "ref03000000000000000000000000",
         "index": 4,
-        "presentation": "deck-03"
+        "presentation": "deck-03",
+        "node": "node03abcd"
       },
       {
         "reference": "ref04000000000000000000000000",
         "index": 5,
-        "presentation": "deck-04"
+        "presentation": "deck-04",
+        "node": "node04abcd"
       },
       {
         "reference": "ref05000000000000000000000000",
         "index": 6,
-        "presentation": "deck-05"
+        "presentation": "deck-05",
+        "node": "node05abcd"
       },
       {
         "reference": "ref06000000000000000000000000",
         "index": 7,
-        "presentation": "deck-06"
+        "presentation": "deck-06",
+        "node": "node06abcd"
       },
       {
         "reference": "ref07000000000000000000000000",
         "index": 8,
-        "presentation": "deck-07"
+        "presentation": "deck-07",
+        "node": "node07abcd"
       },
       {
         "reference": "ref08000000000000000000000000",
         "index": 9,
-        "presentation": "deck-08"
+        "presentation": "deck-08",
+        "node": "node08abcd"
       },
       {
         "reference": "ref09000000000000000000000000",
         "index": 10,
-        "presentation": "deck-09"
+        "presentation": "deck-09",
+        "node": "node09abcd"
       },
       {
         "reference": "ref10000000000000000000000000",
         "index": 11,
-        "presentation": "deck-10"
+        "presentation": "deck-10",
+        "node": "node10abcd"
       },
       {
         "reference": "ref11000000000000000000000000",
         "index": 12,
-        "presentation": "deck-11"
+        "presentation": "deck-11",
+        "node": "node11abcd"
       },
       {
         "reference": "ref12000000000000000000000000",
         "index": 13,
-        "presentation": "deck-12"
+        "presentation": "deck-12",
+        "node": "node12abcd"
       },
       {
         "reference": "ref13000000000000000000000000",
         "index": 14,
-        "presentation": "deck-13"
+        "presentation": "deck-13",
+        "node": "node13abcd"
       },
       {
         "reference": "ref14000000000000000000000000",
         "index": 15,
-        "presentation": "deck-14"
+        "presentation": "deck-14",
+        "node": "node14abcd"
       },
       {
         "reference": "ref15000000000000000000000000",
         "index": 16,
-        "presentation": "deck-15"
+        "presentation": "deck-15",
+        "node": "node15abcd"
       },
       {
         "reference": "ref16000000000000000000000000",
         "index": 17,
-        "presentation": "deck-16"
+        "presentation": "deck-16",
+        "node": "node16abcd"
       },
       {
         "reference": "ref17000000000000000000000000",
         "index": 18,
-        "presentation": "deck-17"
+        "presentation": "deck-17",
+        "node": "node17abcd"
       },
       {
         "reference": "ref18000000000000000000000000",
         "index": 19,
-        "presentation": "deck-18"
+        "presentation": "deck-18",
+        "node": "node18abcd"
       },
       {
         "reference": "ref19000000000000000000000000",
         "index": 20,
-        "presentation": "deck-19"
+        "presentation": "deck-19",
+        "node": null
       },
       {
         "reference": "ref20000000000000000000000000",
         "index": 21,
-        "presentation": "deck-20"
+        "presentation": "deck-20",
+        "node": null
       }
     ]
   },
@@ -207,6 +230,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c001",
               "parent": "deck-00",
               "parentfield": "slides",
@@ -237,6 +261,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c011",
               "parent": "deck-01",
               "parentfield": "slides",
@@ -267,6 +292,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c021",
               "parent": "deck-02",
               "parentfield": "slides",
@@ -297,6 +323,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c031",
               "parent": "deck-03",
               "parentfield": "slides",
@@ -327,6 +354,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c041",
               "parent": "deck-04",
               "parentfield": "slides",
@@ -357,6 +385,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c051",
               "parent": "deck-05",
               "parentfield": "slides",
@@ -387,6 +416,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c061",
               "parent": "deck-06",
               "parentfield": "slides",
@@ -417,6 +447,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c071",
               "parent": "deck-07",
               "parentfield": "slides",
@@ -447,6 +478,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c081",
               "parent": "deck-08",
               "parentfield": "slides",
@@ -477,6 +509,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c091",
               "parent": "deck-09",
               "parentfield": "slides",
@@ -507,6 +540,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c101",
               "parent": "deck-10",
               "parentfield": "slides",
@@ -537,6 +571,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c111",
               "parent": "deck-11",
               "parentfield": "slides",
@@ -567,6 +602,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c121",
               "parent": "deck-12",
               "parentfield": "slides",
@@ -597,6 +633,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c131",
               "parent": "deck-13",
               "parentfield": "slides",
@@ -627,6 +664,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c141",
               "parent": "deck-14",
               "parentfield": "slides",
@@ -657,6 +695,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c151",
               "parent": "deck-15",
               "parentfield": "slides",
@@ -687,6 +726,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c161",
               "parent": "deck-16",
               "parentfield": "slides",
@@ -717,6 +757,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c171",
               "parent": "deck-17",
               "parentfield": "slides",
@@ -747,6 +788,7 @@
               "transition": "none",
               "transition_duration": 0.0,
               "fade_unmatched_elements": 0,
+              "advance_after": null,
               "client_id": "c181",
               "parent": "deck-18",
               "parentfield": "slides",
@@ -760,13 +802,8 @@
     {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref19000000000000000000000000",
-          "ref20000000000000000000000000"
-        ],
-        "x_drive_links": [
-          "<composite code>"
-        ]
+        "references": ["ref19000000000000000000000000", "ref20000000000000000000000000"],
+        "x_drive_links": ["<composite code>"]
       },
       "presentation": "deck-composite",
       "node": "c0mp0site1",
@@ -835,10 +872,7 @@
     "repeated_reference": {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref00000000000000000000000000",
-          "ref00000000000000000000000000"
-        ]
+        "references": ["ref00000000000000000000000000", "ref00000000000000000000000000"]
       },
       "exception": "frappe.ValidationError",
       "http_status": 417,
@@ -847,10 +881,7 @@
     "injected_reference": {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref00000000000000000000000000",
-          "deck-99"
-        ]
+        "references": ["ref00000000000000000000000000", "deck-99"]
       },
       "exception": "frappe.ValidationError",
       "http_status": 417,
@@ -859,9 +890,7 @@
     "oversized_link_header": {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref00000000000000000000000000"
-        ],
+        "references": ["ref00000000000000000000000000"],
         "x_drive_links_count": 21
       },
       "exception": "frappe.ValidationError",
@@ -871,9 +900,7 @@
     "unreadable_composite": {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref00000000000000000000000000"
-        ]
+        "references": ["ref00000000000000000000000000"]
       },
       "exception": "frappe.PermissionError",
       "http_status": 403,
@@ -906,6 +933,7 @@
             "transition": "none",
             "transition_duration": 0.0,
             "fade_unmatched_elements": 0,
+            "advance_after": null,
             "client_id": "c001",
             "parent": "deck-00",
             "parentfield": "slides",

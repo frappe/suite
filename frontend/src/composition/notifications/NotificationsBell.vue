@@ -1,33 +1,25 @@
 <template>
   <Popover v-model:open="open" side="right" align="end" :offset="8">
     <template #trigger>
-      <Button
-        :aria-label="__('Notifications')"
-        class="relative"
-        icon="lucide-bell"
-        variant="ghost"
-      >
+      <Button :aria-label="__('Notifications')" class="relative" icon="lucide-bell" variant="ghost">
         <template #suffix>
           <span
             v-if="unread > 0"
             class="absolute -right-1 -top-1 min-w-4 rounded-full bg-surface-amber-7 px-1 text-center text-2xs-medium leading-4 text-white"
             data-testid="notification-count"
           >
-            {{ unread > 99 ? "99+" : unread }}
+            {{ unread > 99 ? '99+' : unread }}
           </span>
         </template>
       </Button>
     </template>
 
-    <div
-      class="flex h-[28rem] w-80 flex-col"
-      data-testid="notifications-popover"
-    >
+    <div class="flex h-[28rem] w-80 flex-col" data-testid="notifications-popover">
       <div
         class="flex shrink-0 items-center justify-between border-b border-outline-gray-1 px-3 py-2"
       >
         <h2 class="text-base-semibold text-ink-gray-8">
-          {{ __("Notifications") }}
+          {{ __('Notifications') }}
         </h2>
         <Button
           :disabled="unread === 0"
@@ -50,7 +42,7 @@
         class="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center"
       >
         <p class="text-p-sm text-ink-red-7">
-          {{ feed.error?.message || __("Could not load notifications.") }}
+          {{ feed.error?.message || __('Could not load notifications.') }}
         </p>
         <Button :label="__('Retry')" @click="feed.refetch()" />
       </div>
@@ -58,7 +50,7 @@
         v-else-if="!feed.rows.length"
         class="flex flex-1 items-center justify-center px-4 text-p-sm text-ink-gray-5"
       >
-        {{ __("No notifications") }}
+        {{ __('No notifications') }}
       </p>
       <ScrollArea v-else class="min-h-0 flex-1" viewport-class="pb-2">
         <button
@@ -66,18 +58,12 @@
           :key="notification.name"
           type="button"
           class="flex w-full gap-3 border-b border-outline-gray-1 px-3 py-3 text-left hover:bg-surface-gray-2"
-          :class="
-            notification.read
-              ? 'text-ink-gray-7'
-              : 'bg-surface-amber-2 text-ink-gray-8'
-          "
+          :class="notification.read ? 'text-ink-gray-7' : 'bg-surface-amber-2 text-ink-gray-8'"
           @click="openNotification(notification)"
         >
           <span
             class="mt-1 size-2 shrink-0 rounded-full"
-            :class="
-              notification.read ? 'bg-surface-gray-3' : 'bg-surface-amber-7'
-            "
+            :class="notification.read ? 'bg-surface-gray-3' : 'bg-surface-amber-7'"
             aria-hidden="true"
           />
           <span class="min-w-0 flex-1">
@@ -91,11 +77,7 @@
               {{ notificationDescription(notification) }}
             </span>
             <span class="mt-1 block text-xs text-ink-gray-5">
-              {{
-                notificationTime(
-                  notification.creation || notification.activity.at,
-                )
-              }}
+              {{ notificationTime(notification.creation || notification.activity.at) }}
             </span>
           </span>
         </button>
@@ -113,44 +95,46 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { Button, Popover, ScrollArea, Skeleton } from "frappe-ui";
-import { useRouter } from "vue-router";
+import { Button, Popover, ScrollArea, Skeleton } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-import { driveNodeRoute, type DriveNodeSummary } from "@/apps/drive";
 import {
-  loadNotificationNode,
-  markNotificationsRead,
-  notificationsFeed,
-  notificationUnreadCount,
+  driveNodeRoute,
+  driveNotifications,
+  driveUnreadNotificationCount,
+  loadDriveNodeSummary,
+  markAllDriveNotificationsRead,
+  markDriveNotificationsRead,
   type DriveNotification,
-} from "@/composition/notifications/client";
+} from '@/apps/drive'
 import {
   notificationDescription,
   notificationTime,
   notificationTitle,
-} from "@/composition/notifications/notificationPresentation";
-import { useMutation, useQuery } from "@/platform/server-state";
-import { translate as __ } from "@/platform/translation";
+} from '@/composition/notifications/notificationPresentation'
+import { useMutation, useQuery } from '@/platform/server-state'
+import { translate as __ } from '@/platform/translation'
 
-const router = useRouter();
-const open = ref(false);
-const count = useQuery(notificationUnreadCount());
-const feed = useQuery(() => (open.value ? notificationsFeed() : false));
-const markRead = useMutation(markNotificationsRead);
-const unread = computed(() => count.data?.unread ?? 0);
+const router = useRouter()
+const open = ref(false)
+const count = useQuery(driveUnreadNotificationCount())
+const feed = useQuery(() => (open.value ? driveNotifications() : false))
+const markRead = useMutation(markDriveNotificationsRead())
+const markAll = useMutation(markAllDriveNotificationsRead())
+const unread = computed(() => count.data?.unread ?? 0)
 
 async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
-    await markRead.run({ notifications: [notification.name] });
+    await markRead.run({ notifications: [notification.name] })
   }
-  const node = await loadNotificationNode(notification.activity.node);
-  open.value = false;
-  await router.push(driveNodeRoute(node as DriveNodeSummary));
+  const node = await loadDriveNodeSummary(notification.activity.node)
+  open.value = false
+  await router.push(driveNodeRoute(node))
 }
 
 async function markAllRead() {
-  if (!unread.value) return;
-  await markRead.run({ all: true });
+  if (!unread.value) return
+  await markAll.run({ all: true })
 }
 </script>

@@ -1,17 +1,18 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 from uuid import uuid7
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
+from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_participant_identity_service
+from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
 from suite.utils import parse_filters
+from suite.utils.validation import JSONList
 
 
 class ParticipantIdentity(Document):
@@ -103,11 +104,8 @@ def _get_total_cache_key(account: str) -> str:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes participant identities for the given list of names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
@@ -126,31 +124,40 @@ def add_participant_identity(account: str, name: str, email: str, default: bool 
 
     creation_id = str(uuid7())
     participant_identity = {
-        "creation_id": creation_id,
         "name": name,
-        "email": email,
-        "is_default": default,
+        "calendarAddress": f"mailto:{email}",
     }
+    kwargs = {"onSuccessSetIsDefault": f"#{creation_id}"} if default else {}
 
-    service = get_participant_identity_service(account)
-    response = service.create([participant_identity])
-
+    client = get_account_client(account)
     title = _("Participant Identity Creation Error")
-    if response.get("created"):
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.calendars.participant_identity.set(create={creation_id: participant_identity}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id := response.created_id(creation_id):
+        return id
+
+    frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
 def get_participant_identity(account: str, id: str) -> dict:
     """Returns participant identity details for the given account and identity ID."""
 
-    service = get_participant_identity_service(account)
-    if identities := service.get([id]):
-        return format_participant_identity(account, identities[0])
+    client = get_account_client(account)
+    try:
+        with client.batch() as b:
+            h = b.calendars.participant_identity.get(ids=[id])
+        identities = h.result.items
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Participant Identity Fetch Error"))
+
+    if identities:
+        return format_participant_identity(account, identities[0].to_wire())
 
     frappe.throw(
         _("Participant Identity with ID {0} not found in account {1}.").format(
@@ -165,37 +172,44 @@ def update_participant_identity(account: str, id: str, name: str, email: str, de
     """Updates an existing participant identity with the given parameters."""
 
     participant_identity = {
-        "id": id,
         "name": name,
-        "email": email,
-        "is_default": default,
+        "calendarAddress": f"mailto:{email}",
     }
+    kwargs = {"onSuccessSetIsDefault": id} if default else {}
 
-    service = get_participant_identity_service(account)
-    response = service.update([participant_identity])
+    client = get_account_client(account)
+    title = _("Participant Identity Update Error")
+    try:
+        with client.batch() as b:
+            h = b.calendars.participant_identity.set(update={id: participant_identity}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
-    if not response.get("updated"):
-        title = _("Participant Identity Update Error")
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    if id not in response.updated:
+        frappe.throw(_(format_set_error(response.not_updated.get(id))), title=title)
 
 
 @frappe.whitelist()
 def delete_participant_identities(account: str, ids: list[str]) -> None:
     """Deletes participant identities for the specified account and ID(s)."""
 
-    service = get_participant_identity_service(account)
-    response = service.delete(ids)
+    client = get_account_client(account)
+    title = _("Participant Identity Deletion Error")
+    try:
+        result = chunked_set(
+            client, lambda b, chunk: b.calendars.participant_identity.set(destroy=chunk), ids
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
-    if response.get("notDestroyed"):
+    if result.not_destroyed:
         error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Participant Identity Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Participant Identity Deletion Error"),
+            title=title,
         )
 
 
@@ -203,8 +217,16 @@ def delete_participant_identities(account: str, ids: list[str]) -> None:
 def fetch_participant_identities(account: str, page: int = 1, limit: int = 10) -> list:
     """Fetches and returns all participant identities for the given account."""
 
-    service = get_participant_identity_service(account)
-    identities = service.get()
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.calendars.participant_identity.get()
+
+    if h.error:
+        # A listing the server refuses is an empty one, not a failed page. It says nothing of how
+        # many identities there are, so the cached total is left as the last listing set it.
+        return []
+
+    identities = [i.to_wire() for i in h.result.items]
     formatted_identities = [format_participant_identity(account, identity) for identity in identities]
     frappe.cache.set_value(_get_total_cache_key(account), len(identities), expires_in_sec=600)
 

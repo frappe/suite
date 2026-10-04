@@ -1,245 +1,247 @@
 import * as cheerio from 'cheerio'
-import { File, Paperclip } from 'lucide-vue-next'
 import { toast } from 'frappe-ui'
+import { File, Paperclip } from 'lucide-vue-next'
 
-import { FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
-import dayjs from '@/apps/mail/utils/dayjs'
-import { flattenMentions } from '@/apps/mail/utils/mentions'
-import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
 import AudioIcon from '@/apps/mail/components/Icons/AudioIcon.vue'
 import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
 import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
-
+import { FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
-
+import dayjs from '@/apps/mail/utils/dayjs'
+import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
+import { flattenMentions } from '@/apps/mail/utils/mentions'
 
 export const toTitleCase = (str: string) =>
-	str
-		?.toLowerCase()
-		.split(' ')
-		.map(function (word: string) {
-			return word.charAt(0).toUpperCase().concat(word.substr(1))
-		})
-		.join(' ') || ''
+  str
+    ?.toLowerCase()
+    .split(' ')
+    .map(function (word: string) {
+      return word.charAt(0).toUpperCase().concat(word.substr(1))
+    })
+    .join(' ') || ''
+
+// A quota or allotment in gigabytes as the dashboard prints it; unknown reads as a dash.
+export const formatGb = (gb?: number | null) =>
+  gb == null ? '—' : __('{0} GB', [String(Math.round(gb * 100) / 100)])
 
 export const formatBytes = (bytes: number) => {
-	if (!+bytes) return '0 Bytes'
+  if (!+bytes) return '0 Bytes'
 
-	const k = 1024
-	const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
 
-	const i = Math.floor(Math.log(bytes) / Math.log(k))
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
 
-	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
 export const raiseToast = (
-	message: string,
-	type = 'success',
-	action?: { label: string; onClick: () => void },
-	duration?: number,
-	// A toast can carry two buttons: `action` is the urgent one, `secondaryAction` the aside. The
-	// second is sonner's `cancel` slot — named for its usual job, but it is just a second button, and
-	// frappe-ui already styles it (ToastProvider's `cancelButton`). Sonner dismisses the toast when
-	// it is pressed, which suits anything that navigates away.
-	secondaryAction?: { label: string; onClick: () => void },
+  message: string,
+  type = 'success',
+  action?: { label: string; onClick: () => void },
+  duration?: number,
+  // A toast can carry two buttons: `action` is the urgent one, `secondaryAction` the aside. The
+  // second is sonner's `cancel` slot — named for its usual job, but it is just a second button, and
+  // frappe-ui already styles it (ToastProvider's `cancelButton`). Sonner dismisses the toast when
+  // it is pressed, which suits anything that navigates away.
+  secondaryAction?: { label: string; onClick: () => void },
 ) => {
-	if (type === 'success')
-		return toast.success(
-			message,
-			action || duration || secondaryAction
-				? {
-						action,
-						duration,
-						cancel: secondaryAction,
-						// frappe-ui styles the two slots for being alone: the action carries `ml-auto` to
-						// sit against the right edge, and the cancel — never used until now — never got
-						// the action's shape. With both present that reads as one button by the message
-						// and another across the toast, in two different styles. Overridden per toast
-						// (sonner merges these over the provider's) so the pair sits together, matching:
-						// the cancel takes the auto margin for both, the action gives its up.
-						...(action && secondaryAction
-							? {
-									classes: {
-										cancelButton:
-											'!ml-auto mr-1 h-7 shrink-0 rounded-4 bg-transparent !transition-colors',
-										actionButton: '!ml-0',
-									},
-								}
-							: {}),
-					}
-				: undefined,
-		)
+  if (type === 'success')
+    return toast.success(
+      message,
+      action || duration || secondaryAction
+        ? {
+            action,
+            duration,
+            cancel: secondaryAction,
+            // frappe-ui styles the two slots for being alone: the action carries `ml-auto` to
+            // sit against the right edge, and the cancel — never used until now — never got
+            // the action's shape. With both present that reads as one button by the message
+            // and another across the toast, in two different styles. Overridden per toast
+            // (sonner merges these over the provider's) so the pair sits together, matching:
+            // the cancel takes the auto margin for both, the action gives its up.
+            ...(action && secondaryAction
+              ? {
+                  classes: {
+                    cancelButton:
+                      '!ml-auto mr-1 h-7 shrink-0 rounded-4 bg-transparent !transition-colors',
+                    actionButton: '!ml-0',
+                  },
+                }
+              : {}),
+          }
+        : undefined,
+    )
 
-	const div = document.createElement('div')
-	div.innerHTML = message
-	// strip html tags
-	const text =
-		div.textContent || div.innerText || __('Failed to perform action. Please try again later.')
-	toast.error(text)
+  const div = document.createElement('div')
+  div.innerHTML = message
+  // strip html tags
+  const text =
+    div.textContent || div.innerText || __('Failed to perform action. Please try again later.')
+  toast.error(text)
 }
 
 export const raisePromiseToast = (
-	action: () => Promise<unknown>,
-	loading: string,
-	success: string,
-	undoAction?: () => void,
+  action: () => Promise<unknown>,
+  loading: string,
+  success: string,
+  undoAction?: () => void,
 ) => {
-	toast.dismiss()
+  toast.dismiss()
 
-	const error = __('Action failed. Please try again later.')
+  const error = __('Action failed. Please try again later.')
 
-	if (undoAction)
-		return toast.promise(action(), {
-			loading,
-			success: {
-				message: success,
-				action: { label: __('Undo'), onClick: () => undoAction() },
-			},
-			error,
-		})
+  if (undoAction)
+    return toast.promise(action(), {
+      loading,
+      success: {
+        message: success,
+        action: { label: __('Undo'), onClick: () => undoAction() },
+      },
+      error,
+    })
 
-	toast.promise(action(), { loading, success, error })
+  toast.promise(action(), { loading, success, error })
 }
 
 // Toast for an OPTIMISTIC action: the UI has already updated, so show the success message (with an
 // optional Undo) immediately — no "…ing" loading phase. If the (already in-flight) request fails, the
 // caller rolls the UI back; this only swaps the confirmation for an error toast.
 export const raiseOptimisticToast = (
-	forward: Promise<unknown>,
-	success: string,
-	undoAction?: () => void,
+  forward: Promise<unknown>,
+  success: string,
+  undoAction?: () => void,
 ) => {
-	toast.dismiss()
-	const id = toast.success(
-		success,
-		undoAction ? { action: { label: __('Undo'), onClick: () => undoAction() } } : undefined,
-	)
-	forward.catch(() => {
-		toast.dismiss(id)
-		raiseToast(__('Action failed. Please try again later.'), 'error')
-	})
+  toast.dismiss()
+  const id = toast.success(
+    success,
+    undoAction ? { action: { label: __('Undo'), onClick: () => undoAction() } } : undefined,
+  )
+  forward.catch(() => {
+    toast.dismiss(id)
+    raiseToast(__('Action failed. Please try again later.'), 'error')
+  })
 }
 
 export const copyToClipBoard = async (text: string) => {
-	try {
-		await navigator.clipboard.writeText(text)
-		raiseToast(__('Copied to clipboard.'))
-	} catch {
-		raiseToast(__('Failed to copy.'), 'error')
-	}
+  try {
+    await navigator.clipboard.writeText(text)
+    raiseToast(__('Copied to clipboard.'))
+  } catch {
+    raiseToast(__('Failed to copy.'), 'error')
+  }
 }
 
 export const getGroupedRecipients = (
-	recipients: Recipient[],
-	formatToString = true,
-	showEmail = false,
+  recipients: Recipient[],
+  formatToString = true,
+  showEmail = false,
 ) => {
-	const to = []
-	const cc = []
-	const bcc = []
+  const to = []
+  const cc = []
+  const bcc = []
 
-	for (const r of recipients) {
-		if (r.type === 'To') to.push(formatToString ? r : { ...r })
-		else if (r.type === 'Cc') cc.push(formatToString ? r : { ...r })
-		else if (r.type === 'Bcc') bcc.push(formatToString ? r : { ...r })
-	}
+  for (const r of recipients) {
+    if (r.type === 'To') to.push(formatToString ? r : { ...r })
+    else if (r.type === 'Cc') cc.push(formatToString ? r : { ...r })
+    else if (r.type === 'Bcc') bcc.push(formatToString ? r : { ...r })
+  }
 
-	if (!formatToString) return { to, cc, bcc }
+  if (!formatToString) return { to, cc, bcc }
 
-	const format = (list: Recipient[]) =>
-		list
-			?.map(({ display_name, email }) =>
-				showEmail && display_name ? `${display_name} <${email}>` : display_name || email,
-			)
-			.join(', ')
+  const format = (list: Recipient[]) =>
+    list
+      ?.map(({ display_name, email }) =>
+        showEmail && display_name ? `${display_name} <${email}>` : display_name || email,
+      )
+      .join(', ')
 
-	return {
-		to: format(to as Recipient[]),
-		cc: format(cc as Recipient[]),
-		bcc: format(bcc as Recipient[]),
-	}
+  return {
+    to: format(to as Recipient[]),
+    cc: format(cc as Recipient[]),
+    bcc: format(bcc as Recipient[]),
+  }
 }
 
 export const getFormattedRecipients = (mailRecipients: Recipient[]) => {
-	const groupedRecipients = getGroupedRecipients(mailRecipients)
+  const groupedRecipients = getGroupedRecipients(mailRecipients)
 
-	let formattedRecipients = ''
-	if (groupedRecipients.to) formattedRecipients += __('To:') + ` ${groupedRecipients.to} `
-	if (groupedRecipients.cc) formattedRecipients += __('Cc:') + ` ${groupedRecipients.cc} `
-	if (groupedRecipients.bcc) formattedRecipients += __('Bcc:') + ` ${groupedRecipients.bcc} `
-	return formattedRecipients
+  let formattedRecipients = ''
+  if (groupedRecipients.to) formattedRecipients += __('To:') + ` ${groupedRecipients.to} `
+  if (groupedRecipients.cc) formattedRecipients += __('Cc:') + ` ${groupedRecipients.cc} `
+  if (groupedRecipients.bcc) formattedRecipients += __('Bcc:') + ` ${groupedRecipients.bcc} `
+  return formattedRecipients
 }
 
 export const getFormattedDate = (date: Date | string, omitDate = false) => {
-	const dateObj = dayjs(date)
-	const isCurrentYear = dateObj.year() === dayjs().year()
-	if (omitDate) return dateObj.format(isCurrentYear ? 'MMMM' : 'MMMM YYYY')
-	if (dateObj.isToday()) return __('Today')
-	if (dateObj.isYesterday()) return __('Yesterday')
-	return dateObj.format(isCurrentYear ? 'D MMMM' : 'D MMMM YYYY')
+  const dateObj = dayjs(date)
+  const isCurrentYear = dateObj.year() === dayjs().year()
+  if (omitDate) return dateObj.format(isCurrentYear ? 'MMMM' : 'MMMM YYYY')
+  if (dateObj.isToday()) return __('Today')
+  if (dateObj.isYesterday()) return __('Yesterday')
+  return dateObj.format(isCurrentYear ? 'D MMMM' : 'D MMMM YYYY')
 }
 
 export const getTheme = (
-	status: 'Draft' | 'Queued' | 'In Progress' | 'Completed' | 'Failed' | 'Cancelled',
+  status: 'Draft' | 'Queued' | 'In Progress' | 'Completed' | 'Failed' | 'Cancelled',
 ) => {
-	switch (status) {
-		case 'Draft':
-			return 'gray'
-		case 'Completed':
-			return 'green'
-		case 'Failed':
-		case 'Cancelled':
-			return 'red'
-		default:
-			return 'blue'
-	}
+  switch (status) {
+    case 'Draft':
+      return 'gray'
+    case 'Completed':
+      return 'green'
+    case 'Failed':
+    case 'Cancelled':
+      return 'red'
+    default:
+      return 'blue'
+  }
 }
 
 export const extractQuotedContent = (htmlBody?: string) => {
-	if (!htmlBody) return { quoted_content: '', html_body: '' }
+  if (!htmlBody) return { quoted_content: '', html_body: '' }
 
-	const parser = new DOMParser()
-	const doc = parser.parseFromString(htmlBody, 'text/html')
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(htmlBody, 'text/html')
 
-	const topLevelDiv = Array.from(doc.body.children).find(
-		(el) =>
-			el.tagName.toLowerCase() === 'div' &&
-			(el.classList.contains('frappe_mail_quote') || el.classList.contains('frappe_mail_fwd')),
-	)
+  const topLevelDiv = Array.from(doc.body.children).find(
+    (el) =>
+      el.tagName.toLowerCase() === 'div' &&
+      (el.classList.contains('frappe_mail_quote') || el.classList.contains('frappe_mail_fwd')),
+  )
 
-	let quoted_content = ''
-	if (topLevelDiv) {
-		quoted_content = topLevelDiv.outerHTML
-		topLevelDiv.remove()
-	}
+  let quoted_content = ''
+  if (topLevelDiv) {
+    quoted_content = topLevelDiv.outerHTML
+    topLevelDiv.remove()
+  }
 
-	return { quoted_content, html_body: doc.body.innerHTML }
+  return { quoted_content, html_body: doc.body.innerHTML }
 }
 
 export const isMac = navigator.platform.toUpperCase().includes('MAC')
 
 export const isOverlayPresent = () =>
-	!!document.querySelector(
-		'[role="dialog"]:not([role="alert"]), [role="alertdialog"], .modal-open, [data-state="open"]:not([data-reka-collection-item]), [data-attachment-viewer]',
-	)
+  !!document.querySelector(
+    '[role="dialog"]:not([role="alert"]), [role="alertdialog"], .modal-open, [data-state="open"]:not([data-reka-collection-item]), [data-attachment-viewer]',
+  )
 
 export const shouldIgnoreKeypress = (
-	e: KeyboardEvent,
-	allowCtrlAndMeta: boolean = false,
+  e: KeyboardEvent,
+  allowCtrlAndMeta: boolean = false,
 ): boolean => {
-	if (isOverlayPresent()) return true
+  if (isOverlayPresent()) return true
 
-	if (!allowCtrlAndMeta && (e.ctrlKey || e.metaKey)) return true
+  if (!allowCtrlAndMeta && (e.ctrlKey || e.metaKey)) return true
 
-	const target = e.target as HTMLElement
-	return (
-		(target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'checkbox') ||
-		target.tagName === 'TEXTAREA' ||
-		target.isContentEditable ||
-		e.altKey
-	)
+  const target = e.target as HTMLElement
+  return (
+    (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'checkbox') ||
+    target.tagName === 'TEXTAREA' ||
+    target.isContentEditable ||
+    e.altKey
+  )
 }
 
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
@@ -249,7 +251,7 @@ export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 // trailing hyphen), joined by dots, at most 253 chars overall — so the Add button never enables a value
 // the API would reject.
 const isDomain = (s: string) =>
-	/^@(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$/.test(s)
+  /^@(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$/.test(s)
 
 // A screened value: either a full email address or a whole domain (@example.com).
 export const isEmailOrDomain = (s: string) => isEmail(s) || isDomain(s)
@@ -258,15 +260,15 @@ export const isEmailOrDomain = (s: string) => isEmail(s) || isDomain(s)
 // '@domain' entry (@example.com) that matches every sender from that domain. Case-insensitive, mirroring
 // the backend's sieve matching so a sender from an accepted/blocked domain is treated consistently.
 export const matchesScreenedValue = (email: string, value: string) => {
-	const normalizedEmail = (email ?? '').trim().toLowerCase()
-	const normalizedValue = (value ?? '').trim().toLowerCase()
-	if (!normalizedEmail || !normalizedValue) return false
+  const normalizedEmail = (email ?? '').trim().toLowerCase()
+  const normalizedValue = (value ?? '').trim().toLowerCase()
+  if (!normalizedEmail || !normalizedValue) return false
 
-	if (normalizedValue.startsWith('@')) {
-		return normalizedEmail.split('@').pop() === normalizedValue.slice(1)
-	}
+  if (normalizedValue.startsWith('@')) {
+    return normalizedEmail.split('@').pop() === normalizedValue.slice(1)
+  }
 
-	return normalizedEmail === normalizedValue
+  return normalizedEmail === normalizedValue
 }
 
 // An externally-hosted reference (http/https or protocol-relative //). cid: (inline attachments) and
@@ -278,166 +280,152 @@ const REMOTE_CSS_URL = /url\(\s*['"]?(?:https?:)?\/\//i
 // whether any remote asset is present at all — a remote <img>, or a remote url(...) in an inline style or
 // <style> block (background images, fonts). Used to decide the "images blocked" banner and its count.
 export const analyzeRemoteAssets = (html?: string): { images: number; hasRemote: boolean } => {
-	if (!html) return { images: 0, hasRemote: false }
+  if (!html) return { images: 0, hasRemote: false }
 
-	const doc = new DOMParser().parseFromString(html, 'text/html')
+  const doc = new DOMParser().parseFromString(html, 'text/html')
 
-	const images = Array.from(doc.querySelectorAll('img')).filter((img) =>
-		REMOTE_URL.test(img.getAttribute('src') || ''),
-	).length
+  const images = Array.from(doc.querySelectorAll('img')).filter((img) =>
+    REMOTE_URL.test(img.getAttribute('src') || ''),
+  ).length
 
-	const hasRemoteCss =
-		Array.from(doc.querySelectorAll('[style]')).some((el) =>
-			REMOTE_CSS_URL.test(el.getAttribute('style') || ''),
-		) ||
-		Array.from(doc.querySelectorAll('style')).some((el) =>
-			REMOTE_CSS_URL.test(el.textContent || ''),
-		)
+  const hasRemoteCss =
+    Array.from(doc.querySelectorAll('[style]')).some((el) =>
+      REMOTE_CSS_URL.test(el.getAttribute('style') || ''),
+    ) ||
+    Array.from(doc.querySelectorAll('style')).some((el) =>
+      REMOTE_CSS_URL.test(el.textContent || ''),
+    )
 
-	return { images, hasRemote: images > 0 || hasRemoteCss }
+  return { images, hasRemote: images > 0 || hasRemoteCss }
 }
 
 // Blank remote url(...) in a CSS string. Regex here is unavoidable — there's no DOM API to rewrite a
 // url() inside a style string without pulling in the full CSSOM.
 const blankRemoteCssUrls = (css: string) =>
-	css.replace(/url\(\s*(['"]?)(?:https?:)?\/\/[^'")]*\1\s*\)/gi, 'url()')
+  css.replace(/url\(\s*(['"]?)(?:https?:)?\/\/[^'")]*\1\s*\)/gi, 'url()')
 
 // Neutralize remote assets so the browser never requests them. Parses the (already-sanitized) HTML into a
 // DOM and edits it there — robust against markup/attribute quirks regex would trip on: each remote <img>
 // has its src stashed on data-blocked-src (and is tagged for hiding), and remote url(...) in inline styles
 // and <style> blocks is blanked. Inline (cid:) and data: assets are left to load as normal.
 export const blockRemoteAssets = (html: string) => {
-	const doc = new DOMParser().parseFromString(html, 'text/html')
+  const doc = new DOMParser().parseFromString(html, 'text/html')
 
-	doc.querySelectorAll('img').forEach((img) => {
-		const src = img.getAttribute('src') || ''
-		if (!REMOTE_URL.test(src)) return
-		img.setAttribute('data-blocked-src', src)
-		img.removeAttribute('src')
-		img.setAttribute('data-blocked-image', '')
-	})
+  doc.querySelectorAll('img').forEach((img) => {
+    const src = img.getAttribute('src') || ''
+    if (!REMOTE_URL.test(src)) return
+    img.setAttribute('data-blocked-src', src)
+    img.removeAttribute('src')
+    img.setAttribute('data-blocked-image', '')
+  })
 
-	doc.querySelectorAll('[style]').forEach((el) => {
-		const style = el.getAttribute('style') || ''
-		const cleaned = blankRemoteCssUrls(style)
-		if (cleaned !== style) el.setAttribute('style', cleaned)
-	})
+  doc.querySelectorAll('[style]').forEach((el) => {
+    const style = el.getAttribute('style') || ''
+    const cleaned = blankRemoteCssUrls(style)
+    if (cleaned !== style) el.setAttribute('style', cleaned)
+  })
 
-	doc.querySelectorAll('style').forEach((styleEl) => {
-		const css = styleEl.textContent || ''
-		const cleaned = blankRemoteCssUrls(css)
-		if (cleaned !== css) styleEl.textContent = cleaned
-	})
+  doc.querySelectorAll('style').forEach((styleEl) => {
+    const css = styleEl.textContent || ''
+    const cleaned = blankRemoteCssUrls(css)
+    if (cleaned !== css) styleEl.textContent = cleaned
+  })
 
-	return doc.documentElement.outerHTML
+  return doc.documentElement.outerHTML
 }
 
 export const getFileIcon = (type?: string) => {
-	if (!type) return Paperclip
-	if (type?.startsWith('image/')) return ImageIcon
-	if (type === 'application/pdf') return PDFIcon
-	if (type?.startsWith('video/')) return VideoIcon
-	if (type?.startsWith('audio/')) return AudioIcon
+  if (!type) return Paperclip
+  if (type?.startsWith('image/')) return ImageIcon
+  if (type === 'application/pdf') return PDFIcon
+  if (type?.startsWith('video/')) return VideoIcon
+  if (type?.startsWith('audio/')) return AudioIcon
 
-	return File
+  return File
 }
 
 export const randomString = (length: number) => {
-	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-	let result = ''
-	for (let i = 0; i < length; i++) {
-		result += chars.charAt(Math.floor(Math.random() * chars.length))
-	}
-	return result
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let result = ''
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
 }
 
 // `sending`: mentions are flattened to plain links only on the way out. A draft keeps
 // the editor's own mention nodes, so reopening one still shows the chips.
 export const processInlineImages = (mail: ComposeMailData, { sending = false } = {}) => {
-	const htmlBody = mail.html_body! + mail.quoted_content
-	const $ = cheerio.load(htmlBody)
+  const htmlBody = mail.html_body! + mail.quoted_content
+  const $ = cheerio.load(htmlBody)
 
-	// Unconditional, unlike the mention flattening below: a draft is rendered by the reader too,
-	// in the same iframe that can't see the editor's stylesheet, so a draft left holding the
-	// variables would already be showing the wrong colours back to its own author.
-	preserveEditorColors($)
+  // Unconditional, unlike the mention flattening below: a draft is rendered by the reader too,
+  // in the same iframe that can't see the editor's stylesheet, so a draft left holding the
+  // variables would already be showing the wrong colours back to its own author.
+  preserveEditorColors($)
 
-	if (sending) flattenMentions($)
+  if (sending) flattenMentions($)
 
-	const regularAttachments = mail.attachments?.filter((a) => a.disposition !== 'inline') || []
-	const inlineAttachments = mail.attachments?.filter((a) => a.disposition === 'inline') || []
-	const processedAttachments = [...regularAttachments]
+  const regularAttachments = mail.attachments?.filter((a) => a.disposition !== 'inline') || []
+  const inlineAttachments = mail.attachments?.filter((a) => a.disposition === 'inline') || []
+  const processedAttachments = [...regularAttachments]
 
-	$('img').each((_, img) => {
-		const $img = $(img)
-		const src = $img.attr('src')
-		if (!src) return
+  $('img').each((_, img) => {
+    const $img = $(img)
+    const src = $img.attr('src')
+    if (!src) return
 
-		const cid = $img.attr('data-cid')
-		if (!cid) return
+    const cid = $img.attr('data-cid')
+    if (!cid) return
 
-		$img.attr('src', `cid:${cid}`)
+    $img.attr('src', `cid:${cid}`)
 
-		if (src.startsWith('/files') || src.startsWith('/private/files')) {
-			processedAttachments.push({ file_url: src, disposition: 'inline', cid })
-			return
-		}
+    if (src.startsWith('/files') || src.startsWith('/private/files')) {
+      processedAttachments.push({ file_url: src, disposition: 'inline', cid })
+      return
+    }
 
-		const url = new URL(src, window.location.origin)
-		const blob_id = url.searchParams.get('blob_id')
-		if (!blob_id) return
+    const url = new URL(src, window.location.origin)
+    const blob_id = url.searchParams.get('blob_id')
+    if (!blob_id) return
 
-		const attachment = inlineAttachments.find((a) => a.blob_id === blob_id)
-		if (attachment) processedAttachments.push({ ...attachment, cid })
-	})
+    const attachment = inlineAttachments.find((a) => a.blob_id === blob_id)
+    if (attachment) processedAttachments.push({ ...attachment, cid })
+  })
 
-	return { html_body: $.html(), attachments: processedAttachments }
+  return { html_body: $.html(), attachments: processedAttachments }
 }
 
 export const extractNameFromEmail = (email: string) =>
-	email
-		.split('@')[0]
-		.replace(/[._-]/g, ' ')
-		.replace(/\b\w/g, (c) => c.toUpperCase())
+  email
+    .split('@')[0]
+    .replace(/[._-]/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
 
 export const getScriptName = (scriptName: string) => {
-	if (scriptName === 'vacation') return __('Vacation Response')
-	if (scriptName === 'frappe_mail_automation') return __('Folder Automation')
-	return `'${scriptName}'`
+  if (scriptName === 'vacation') return __('Vacation Response')
+  if (scriptName === 'frappe_mail_automation') return __('Folder Automation')
+  return `'${scriptName}'`
 }
 
 export const isSystemScript = (scriptName: string) =>
-	['vacation', 'frappe_mail_automation'].includes(scriptName)
+  ['vacation', 'frappe_mail_automation'].includes(scriptName)
 
 export { decodeHtmlEntities, hasHtmlContent, plainTextToHtml } from '@/apps/mail/utils/html'
 
 export const getIcon = (mailbox: MailboxData) => {
-	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
-	// stray Mailbox Settings icon (it must never render as a generic folder).
-	if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
-	if (mailbox.icon) return mailbox.icon
-	if (mailbox.role && mailbox.role in FOLDER_ICON_MAP) return FOLDER_ICON_MAP[mailbox.role]
-	return 'folder'
+  // The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
+  // stray Mailbox Settings icon (it must never render as a generic folder).
+  if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
+  if (mailbox.icon === 'spam') return 'mail-warning'
+  if (mailbox.icon) return mailbox.icon
+  if (mailbox.role && mailbox.role in FOLDER_ICON_MAP) return FOLDER_ICON_MAP[mailbox.role]
+  return 'folder'
 }
-
-/**
- * Whether a mailbox can be moved into. The "Move to" menu and the folders that
- * take a dragged thread are the same question asked twice, so they ask it here:
- * a thread cannot be moved to where it already is, and Sent, Drafts and the
- * Screener hold mail that is defined by how it got there rather than by a folder
- * anyone files into.
- */
-export const canMoveToMailbox = (
-	mailboxId: string | undefined,
-	current: string | undefined,
-	mailboxIds: { sent?: string; drafts?: string; screener?: string },
-): boolean =>
-	!!mailboxId &&
-	![current, mailboxIds.sent, mailboxIds.drafts, mailboxIds.screener].includes(mailboxId)
 
 // The Screening folder is surfaced to users as the "Screener".
 export const getMailboxName = (mailbox: MailboxData) =>
-	mailbox._name === SCREENER_MAILBOX_NAME ? __('Screener') : mailbox._name
+  mailbox._name === SCREENER_MAILBOX_NAME ? __('Screener') : mailbox._name
 
 // Safari reads the blob behind an `<a download>` asynchronously, after the click has
 // already returned, so revoking the object URL in the same tick silently cancels the
@@ -447,15 +435,15 @@ export const getMailboxName = (mailbox: MailboxData) =>
 const DOWNLOAD_URL_TTL = 60_000
 
 export const revokeObjectUrlAfterDownload = (url: string) => {
-	setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL)
+  setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL)
 }
 
 export const downloadUrlAsFile = (url: string, filename: string) => {
-	const link = document.createElement('a')
-	link.href = url
-	link.download = filename
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	revokeObjectUrlAfterDownload(url)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  revokeObjectUrlAfterDownload(url)
 }

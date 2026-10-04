@@ -1,22 +1,11 @@
-import { defineComponent, h } from "vue";
-
-import type { AreaDefinition } from "@/platform/contracts";
-import { translate as __ } from "@/platform/translation";
-
-const HomeIcon = defineComponent({
-  name: "HomeAreaIcon",
-  setup: () => () =>
-    h("span", { class: "lucide-house size-4", "aria-hidden": "true" }),
-});
+import HomeIcon from '@/composition/home/AreaIcon.vue'
+import type { AreaDefinition } from '@/platform/contracts'
+import { translate as __ } from '@/platform/translation'
 
 export const homeArea: AreaDefinition = {
-  id: "home",
-  label: () => __("Home"),
+  id: 'home',
+  label: () => __('Home'),
   icon: HomeIcon,
-  to: "/home",
-  loadRoutes: () => import("@/composition/home/routes"),
-  loadPanel: () =>
-    import("@/composition/home/HomePanel.vue").then(
-      ({ default: panel }) => panel,
-    ),
-};
+  to: '/home',
+  loadRoutes: () => import('@/composition/home/routes'),
+}

@@ -59,7 +59,7 @@ class TreeCase(unittest.TestCase):
         self.drive.node_rows[ROOT] = {
             "name": ROOT,
             "kind": "root",
-            "parent": None,
+            "parent_node": None,
             "root": None,
             "path": "",
             "state": ACTIVE,
@@ -111,6 +111,22 @@ class PairTest(TreeCase):
             self.run_walk()
         self.assertNotIn("child00001", self.drive.node_rows)
 
+    def test_public_file_nodes_use_private_copies_and_resume_with_the_same_blob(self):
+        source = row("publicfile", ROOT, blob="public", file_size=3, mime_type="image/png")
+        self.add(source)
+        env = build_environment(self.path, tree=self.legacy, drive=self.drive)
+        env.content_target.add_blob("public", b"abc", is_private=0, mime_type="image/png")
+        tree_module.convert_trees(env, self.report, [plan()])
+        private = self.node("publicfile")["blob"]
+        self.assertNotEqual(private, "public")
+        self.assertTrue(env.content_target.blob(private).is_private)
+        self.assertEqual(env.content_target.read_blob(private), b"abc")
+        self.assertEqual(source.blob, "public")
+        self.assertFalse(env.content_target.blob("public").is_private)
+        self.assertEqual(env.content_target.read_blob("public"), b"abc")
+        tree_module.convert_trees(env, self.report, [plan()])
+        self.assertEqual(self.node("publicfile")["blob"], private)
+
     def test_a_root_with_no_node_stops_the_walk(self):
         del self.drive.node_rows[ROOT]
         with self.assertRaises(BuildPairError):
@@ -153,7 +169,7 @@ class PlaceTest(TreeCase):
         """A direct child of a root names the root node and holds no path."""
         self.add(row("child00001", ROOT))
         self.run_walk()
-        self.assertEqual(self.node("child00001")["parent"], ROOT)
+        self.assertEqual(self.node("child00001")["parent_node"], ROOT)
         self.assertEqual(self.node("child00001")["root"], ROOT)
         # §3.1: the root id stays outside `path`. An empty string, not "/".
         self.assertEqual(self.node("child00001")["path"], "")
@@ -193,7 +209,7 @@ class PlaceTest(TreeCase):
         )
         self.run_walk()
         self.assertEqual(self.node("deck000001")["kind"], "document")
-        self.assertEqual(self.node("media00001")["parent"], "deck000001")
+        self.assertEqual(self.node("media00001")["parent_node"], "deck000001")
 
 
 class CapacityTest(TreeCase):

@@ -34,6 +34,16 @@ export default defineConfig({
 		actionTimeout: 15_000,
 		navigationTimeout: 30_000,
 	},
-	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+	projects: [
+		// Empty trash deletes the admin's whole personal Trash, which other
+		// journeys read. As a teardown it runs once they have all finished.
+		{
+			name: "chromium",
+			use: { ...devices["Desktop Chrome"] },
+			testIgnore: /empty-trash\.spec\.ts/,
+			teardown: "empty-trash",
+		},
+		{ name: "empty-trash", use: { ...devices["Desktop Chrome"] }, testMatch: /empty-trash\.spec\.ts/ },
+	],
 	globalSetup: "../global-setup.ts",
 });

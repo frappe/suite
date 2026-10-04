@@ -2,22 +2,20 @@
 
 Every phase takes `env` and reads or writes only through its ports, so the
 whole contract runs against `tests.fakes` with no site — the same shape
-`suite.drive.patches.build` uses. Nothing here is called from production:
-`patch.run_cleanup` is the only caller, and nothing registers it.
+`suite.drive.patches.build` uses. `patch.run_cleanup` is the only caller.
 """
 
 from __future__ import annotations
 
 import frappe
 
+from suite.drive.patches.build.slides import _aliases, _path_variants
 from suite.drive.patches.cleanup.environment import CLEANUP_BATCH_SIZE
 from suite.drive.patches.cleanup.gate import climb
 from suite.drive.patches.cleanup.ports import DISK_SETTINGS_FIELDS, REMOVED
 from suite.drive.patches.cleanup.state import PhaseResult
 
-# §14.10's frozen deletion list, this package's own copy: `suite.drive.patches.
-# build.tests.test_dormancy` holds the mirror-image list that proves none of
-# this has happened yet. `env.schema.drop_custom_fields` only removes each
+# §14.10's deletion list. `env.schema.drop_custom_fields` only removes each
 # field's `Custom Field` metadata row, never the physical column it created
 # on `tabFile` — see that port's docstring (`ports.SiteSchemaGateway.
 # drop_custom_fields`) for why an orphaned column is intentionally outside
@@ -32,23 +30,39 @@ RETAINED_FILE_CUSTOM_FIELDS = (
     "content_docname",
 )
 
+# The five of the seven that have a column on `tabFile`. Deleting a `Custom
+# Field` row leaves its column behind (Frappe never drops one), and a
+# `status` or `content_docname` column nobody declares is legacy data a
+# restore could not explain, so the phase drops them as well.
+FILE_CUSTOM_COLUMNS = ("mime_type", "status", "file_modified", "content_doctype", "content_docname")
+
 RETAINED_PROPERTY_SETTERS = (
     ("File", "file_url", "depends_on"),
     ("File", "folder", "hidden"),
     ("File", "folder", "depends_on"),
 )
 
+# Every legacy Drive doctype whose source is gone. The first three are
+# §14.10 step 3's; the rest belonged to the legacy backend removed in the
+# same release (invitations, tokens, the old activity/entity logs, the
+# legacy-call log). A site that never had one of them is skipped, not refused.
+# `Drive Team` and `Drive Team Member` are absent because Build's upgrade
+# floor (`build.gate.UPGRADE_FLOOR_PATCH`) guarantees `drop_team_doctypes`
+# already ran, so no site reaching Cleanup has either table. `Drive Legacy
+# Route` is absent because the redirect table still reads it.
 RETAINED_DOCTYPES_STEP_3 = (
-    "drive/doctype/drive_permission",
-    "drive/doctype/drive_entity_activity_log",
-    "drive/doctype/drive_token",
+    "Drive Permission",
+    "Drive Entity Activity Log",
+    "Drive Token",
+    "Drive User Invitation",
+    "Account Request",
+    "Drive Legacy Call",
+    "Drive Entity Log",
 )
 
-# The six "Legacy ..." columns on `Drive Notification` (§3.11, §14.10). Ticket
-# 30's addendum: dropping these is what lets `activity` become `reqd: 1`,
-# because the two writers that insert rows with no `activity`
-# (`suite/drive/api/notifications.py`, `drive_user_invitation.py`) only exist
-# to populate these columns.
+# The six "Legacy ..." columns on `Drive Notification` (§3.11, §14.10).
+# Dropping these is what lets `activity` become required: the writers that
+# inserted rows with no `activity` went with the legacy backend.
 NOTIFICATION_LEGACY_COLUMNS = (
     "from_user",
     "type",
@@ -59,40 +73,40 @@ NOTIFICATION_LEGACY_COLUMNS = (
 )
 
 RETAINED_DOCTYPES_STEP_4 = (
-    "writer/doctype/writer_version",
-    "writer/doctype/writer_doc_version",
-    "writer/doctype/writer_template",
-    "sheets/doctype/sheet_snapshot",
+    "Writer Version",
+    "Writer Doc Version",
+    "Writer Template",
+    "Sheet Snapshot",
 )
 
 # §14.10: "Drop the title and trashed columns on content doctypes." Sheet
 # carries all three trash columns (`trashed`, `trashed_on`, `trashed_by`,
 # per `suite/sheets/doctype/sheet/sheet.json`); Presentation carries none of
-# them, only `title`.
+# them, only `title`. `Sheet.head_snapshot` pointed at `Sheet Snapshot`,
+# dropped in step 4; Build read it with raw SQL (`build/history.py`), so
+# it stays in the table until here.
 CONTENT_DROPPED_COLUMNS = (
     ("Presentation", ("title",)),
-    ("Sheet", ("title", "trashed", "trashed_on", "trashed_by")),
+    ("Sheet", ("title", "trashed", "trashed_on", "trashed_by", "head_snapshot")),
 )
 
-# `Drive Settings`' and `Drive Storage Reservation`'s own dropped fields.
-# `Drive Disk Settings` is a Single (§3.13) and has no table of its own for
-# `drop_columns`' DDL to touch; its ten fields drop through
-# `SINGLE_DROPPED_VALUES` and `SchemaGateway.drop_single_values` instead.
-SETTINGS_DROPPED_COLUMNS = (
+# Columns dropped from Drive doctypes that stay: `Drive Settings`' and
+# `Drive Storage Reservation`'s legacy fields, `Drive Favourite.entity` (the
+# legacy `File` pointer Build retargets to `node`), and `Drive Root`'s
+# reserved `acl_generation`, which nothing ever read. `Drive Disk Settings`
+# is a Single (§3.13) and has no table of its own for `drop_columns`' DDL to
+# touch; its ten fields drop through `SINGLE_DROPPED_VALUES` and
+# `SchemaGateway.drop_single_values` instead.
+DRIVE_DROPPED_COLUMNS = (
     ("Drive Settings", ("user_folder", "quota")),
     ("Drive Storage Reservation", ("storage_owner",)),
+    ("Drive Favourite", ("entity",)),
+    ("Drive Root", ("acl_generation",)),
 )
 
 # §3.13's complete ten-field list for `Drive Disk Settings`
 # (`ports.DISK_SETTINGS_FIELDS`), removed from `tabSingles`, never by DDL.
 SINGLE_DROPPED_VALUES = (("Drive Disk Settings", DISK_SETTINGS_FIELDS),)
-
-LEGACY_METHOD_PREFIX = "/api/method/suite.drive.api."
-
-# S3 keys must never be enumerated under these. An empty prefix is the
-# bucket root; a bare "private" or "public" is the framework's own storage
-# root, not Drive's legacy key space under it.
-DANGEROUS_PREFIXES = ("private", "public")
 
 
 class CleanupPatchError(frappe.ValidationError):
@@ -211,12 +225,12 @@ def _chunks(items: list, size: int):
 def phase_file_rows(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
     """§14.10 step 1: Drive-owned File rows, the two root rows, every Removed row.
 
-    Also takes and persists everything steps 7 and 8 need before their own
-    targets disappear: the ordered name census (`collect_drive_owned_names`
-    would otherwise have to rescan a table this very phase is about to
-    empty), and the ten `Drive Disk Settings` fields step 5 drops. Both are
-    read exactly once across this phase's entire life, including a resumed
-    call, and never queried live again once persisted.
+    Also takes and persists everything step 7 and the manual legacy-object
+    delete need before their own sources disappear: the ordered name census
+    (`collect_drive_owned_names` would otherwise have to rescan a table this
+    very phase is about to empty), and the `Drive Disk Settings` fields step
+    5 drops. Both are read exactly once across this phase's entire life,
+    including a resumed call, and never queried live again once persisted.
 
     That "once" is load-bearing, not just an optimization: if this phase's
     own `DELETE`s commit but the crash lands before `patch.run_cleanup`
@@ -247,31 +261,71 @@ def phase_file_rows(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult
     return result
 
 
+def phase_slides_media_rows(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
+    """§14.10 step 1, Slides: the `File` rows of deck pictures Build made nodes.
+
+    Build turns each picture attached to a Presentation into a `file` node
+    under the deck's node and points the slide bodies at that node (§14.7).
+    The `File` row it read stays behind: it sits under frappe's `Home`, so
+    `phase_file_rows` never reaches it. Only the row goes, through the same
+    hook-free delete, and the bytes stay with the blob the node now holds.
+
+    A row is deleted only when a node of its own deck holds its exact blob
+    (`ContentRows.converted_slides_media`), and only when no slide body on
+    the site still names its URL. Build leaves a URL in place when it cannot
+    adopt the picture, such as another deck's media (§11), and that
+    reference still needs the row to load. A kept row is counted.
+
+    Matching uses Build's own URL spellings (`_aliases`, `_path_variants`),
+    so a URL Build would have resolved is a URL this phase sees as named. A rerun
+    finds the deleted rows gone and deletes nothing more.
+    """
+    result = PhaseResult()
+    host = env.content.site_host()
+    bodies = env.content.slide_body_values(batch_size=batch_size)
+    named = set()
+    for value in bodies.strings:
+        named |= _path_variants(value, host)
+    after = ""
+    while True:
+        rows = env.content.converted_slides_media(after, batch_size)
+        unnamed = []
+        for row in rows:
+            # Build names a picture's node after its `File`, so a body value
+            # equal to the row's name is that node's id, not the row.
+            aliases = _aliases(row, host) - {row.name}
+            if aliases & named or any(alias in body for body in bodies.unreadable for alias in aliases):
+                result.media_rows_kept += 1
+            else:
+                unnamed.append(row.name)
+        result.rows_deleted += env.files.delete(tuple(unnamed))
+        if len(rows) < batch_size:
+            break
+        after = rows[-1].name
+    result.completed = True
+    return result
+
+
 def phase_custom_fields(env) -> PhaseResult:
-    """§14.10 step 2: the seven `File` custom fields and three property setters."""
+    """§14.10 step 2: the seven `File` custom fields, their five columns, and
+    three property setters."""
     result = PhaseResult()
     result.fields_dropped = env.schema.drop_custom_fields(RETAINED_FILE_CUSTOM_FIELDS)
+    result.columns_dropped = env.schema.drop_columns("File", FILE_CUSTOM_COLUMNS)
     result.property_setters_dropped = env.schema.drop_property_setters(RETAINED_PROPERTY_SETTERS)
     _verify_gone(env.schema.custom_fields_present(RETAINED_FILE_CUSTOM_FIELDS), "the File custom fields")
+    _verify_gone(env.schema.columns_present("File", FILE_CUSTOM_COLUMNS), "the File custom columns")
     _verify_gone(env.schema.property_setters_present(RETAINED_PROPERTY_SETTERS), "the File property setters")
     result.completed = True
     return result
 
 
 def phase_legacy_doctypes(env) -> PhaseResult:
-    """§14.10 step 3: `Drive Permission`/`Drive Entity Activity Log`/`Drive Token`,
-    the old notification columns, then `Drive Notification.activity` becomes
-    required.
-
-    Also prepares (but does not perform) removing these three doctypes'
-    now-dead `permission_query_conditions`/`has_permission` entries out of
-    `suite/hooks.py`: a source change Ticket 36 makes once the doctypes
-    themselves are gone, not something this phase can do at runtime.
-    """
+    """§14.10 step 3: the legacy Drive doctypes, the old notification
+    columns, then `Drive Notification.activity` becomes required."""
     result = PhaseResult()
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_3)
     _verify_gone(env.schema.doctypes_present(RETAINED_DOCTYPES_STEP_3), "the step-3 doctypes")
-    env.schema.remove_permission_hooks(RETAINED_DOCTYPES_STEP_3)
     result.columns_dropped = env.schema.drop_columns("Drive Notification", NOTIFICATION_LEGACY_COLUMNS)
     _verify_gone(
         env.schema.columns_present("Drive Notification", NOTIFICATION_LEGACY_COLUMNS),
@@ -292,17 +346,13 @@ def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> Phase
     this phase verifies the rows are gone and refuses if they are not,
     rather than doing a release late what Build must already have done.
 
-    Drops `Writer Document.versions` before `Writer Doc Version`, the child
-    doctype that field's `Table` type points at: dropping the doctype first
-    would leave the field's own JSON naming a table that no longer exists.
-    `versions` has no `Custom Field` row and no column of its own to drop by
-    DDL, so removing it is a source change to `writer_document.json`, the
-    same kind of change forwarder removal already is — `drop_child_table_field`
-    stays `NotImplementedError` until Ticket 36 makes it.
+    `Writer Document.versions`, the `Table` field that pointed at `Writer
+    Doc Version`, is gone from the shipped JSON already (a child-table field
+    has no column of its own), so model sync has removed it before this
+    phase drops the child doctype it named.
     """
     result = PhaseResult()
     _verify_gone(env.content.governed_docshares_remaining(), "the governed DocShare rows")
-    env.schema.drop_child_table_field("Writer Document", "versions")
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_4)
     _verify_gone(env.schema.doctypes_present(RETAINED_DOCTYPES_STEP_4), "the step-4 doctypes")
     result.ycomments_cleared = env.content.clear_writer_ycomments()
@@ -312,10 +362,10 @@ def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> Phase
 
 
 def phase_content_fields(env) -> PhaseResult:
-    """§14.10 step 5: title/trashed on content doctypes; settings/reservation
-    columns; `Drive Disk Settings`' ten Single values."""
+    """§14.10 step 5: title/trashed on content doctypes; the Drive doctypes'
+    legacy columns; `Drive Disk Settings`' ten Single values."""
     result = PhaseResult()
-    for doctype, columns in CONTENT_DROPPED_COLUMNS + SETTINGS_DROPPED_COLUMNS:
+    for doctype, columns in CONTENT_DROPPED_COLUMNS + DRIVE_DROPPED_COLUMNS:
         result.columns_dropped += env.schema.drop_columns(doctype, columns)
         _verify_gone(env.schema.columns_present(doctype, columns), f"{doctype}'s dropped columns")
     for doctype, fields in SINGLE_DROPPED_VALUES:
@@ -325,29 +375,14 @@ def phase_content_fields(env) -> PhaseResult:
     return result
 
 
-def phase_legacy_api(env) -> PhaseResult:
-    """§14.10 step 6: the FORWARDER callers, and the wildcard prefix.
-
-    PERMANENT and RETAINED names are never in the set this deletes: they are
-    excluded by classification, not by a second list this phase would have
-    to keep in sync by hand. This runs off `classification()` alone, on
-    purpose: gate 3 (`suite.drive.patches.cleanup.gate.
-    check_gate_legacy_callers_removed`) requires real caller evidence before
-    Cleanup starts at all, so by the time this phase runs, every
-    FORWARDER-classified name here is already proven caller-free — whether
-    or not anyone has bothered to relabel it in `shims.py`.
-    """
-    result = PhaseResult()
-    classification = env.forwarders.classification()
-    forwarders = tuple(sorted(name for name, category in classification.items() if category == "forwarder"))
-    result.forwarders_removed = env.forwarders.remove(forwarders)
-    result.wildcard_prefix_removed = env.forwarders.remove_wildcard_prefix(LEGACY_METHOD_PREFIX)
-    result.completed = True
-    return result
-
-
 def phase_thumbnails(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
-    """§14.10 step 7: the `.thumbnail` sidecars. Local legacy bytes stay in place.
+    """§14.10 step 7: the local `.thumbnail` sidecars. Every legacy byte stays.
+
+    Local legacy files stay because backfilled blobs point at them in place.
+    Legacy bucket objects stay because Cleanup deletes no bucket object at
+    all (§14.11): the backup restore must remain a complete rollback, so
+    only the manual `delete_legacy_objects` command removes them, later. On
+    an S3 site the store therefore deletes nothing and this phase records 0.
 
     Reads the census and disk-settings snapshot `phase_file_rows` persisted:
     by step 7, step 1 has already deleted the File rows a live rescan would
@@ -371,78 +406,3 @@ def phase_thumbnails(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResul
         result.sidecars_deleted += env.thumbnails.delete_sidecars(tuple(batch), settings=settings)
     result.completed = True
     return result
-
-
-def phase_s3_prefix(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> PhaseResult:
-    """§14.10 step 8: enqueue the legacy-key deletion job.
-
-    Reads `enabled`/`root_folder` off the disk-settings snapshot
-    `phase_file_rows` persisted, not off a live `Drive Disk Settings` read:
-    step 5 has already dropped both columns by the time step 8 runs.
-
-    Never a blind prefix delete: the prefix is refused if it is empty, the
-    bucket root, or a private/public parent. Truly batch-bounded end to end,
-    not just at the listing step: each page from `list_prefix` is
-    immediately deduplicated, checked against `blob_references`, and
-    enqueued on its own, one bounded `enqueue_delete` call per page, rather
-    than accumulating every key from every page into one list and issuing a
-    single call sized by however many legacy keys the whole prefix holds —
-    which could be millions, and would turn `blob_references`' `IN` clause
-    and `enqueue_delete`'s payload into one unbounded query and one
-    unbounded job apiece. This also tightens the listing/enqueueing race
-    `blob_references` closes: each page's recheck happens immediately before
-    that page's own enqueue call, not after every page has already been
-    listed. The job `enqueue_delete` starts still has to close the separate
-    race between enqueueing and actually running
-    (`SiteS3LegacyPrefix.enqueue_delete`'s docstring is that job's contract).
-    """
-    result = PhaseResult()
-    settings = env.state.get_settings_snapshot()
-    if settings is None:
-        raise CleanupPatchError(
-            "no disk-settings snapshot on record; phase_file_rows must persist one before "
-            "phase_s3_prefix can know whether S3 is even enabled"
-        )
-    if not settings.get("enabled"):
-        result.completed = True
-        return result
-
-    prefix = settings.get("root_folder") or ""
-    refuse_dangerous_prefix(prefix)
-
-    job_ids: list[str] = []
-    after = ""
-    previous = None
-    while True:
-        page = env.s3.list_prefix(prefix, after, batch_size)
-        if not page:
-            break
-        if page[0] == previous:
-            raise RuntimeError(f"the S3 prefix scan stalled at {page[0]!r}; refusing to loop")
-        previous = page[0]
-        after = page[-1]
-
-        deduped = tuple(dict.fromkeys(page))
-        result.candidates_found += len(deduped)
-        referenced = env.s3.blob_references(deduped) if deduped else set()
-        result.referenced_excluded += len(referenced)
-        candidates = tuple(key for key in deduped if key not in referenced)
-        if candidates:
-            job_ids.append(env.s3.enqueue_delete(candidates))
-
-        if len(page) < batch_size:
-            break
-
-    result.job_ids = job_ids
-    result.completed = True
-    return result
-
-
-def refuse_dangerous_prefix(prefix: str) -> None:
-    stripped = (prefix or "").strip("/")
-    if not stripped:
-        raise CleanupPatchError(
-            "the S3 legacy prefix is empty or names the bucket root; refusing to enumerate it"
-        )
-    if stripped in DANGEROUS_PREFIXES:
-        raise CleanupPatchError(f"{prefix!r} is a private/public parent prefix, not Drive's legacy key space")

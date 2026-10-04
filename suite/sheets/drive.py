@@ -19,10 +19,9 @@ and admits its size, and `delete_version` releases it again.
 ## The two satellites
 
 `Sheet Op Log` and `Sheet Collab State` take their rights from the sheet's node:
-Read to see, Edit to change. `Sheet Snapshot` is deliberately absent. §10.7 drops
-it and §14.6 turns its rows into `Drive Node Version` rows field for field, so it
-stays a Build source with its own permission guards until Cleanup removes the
-doctype (§14.10). Declaring it here would freeze rows Build still has to read.
+Read to see, Edit to change. A sheet's versions are not a satellite: they are
+`Drive Node Version` rows, written through `version_bytes` and put back through
+`restore_version`.
 
 ## The op log across a Drive lifecycle
 
@@ -33,10 +32,9 @@ writes `import`, and `restore_version` writes `restore`. The seq allocator is
 `Sheet Seq`, taken with `SELECT ... FOR UPDATE`, so an op written here is
 ordered against a concurrent save exactly like every other op.
 
-None of these calls `versioning.save`: that module gates on
-`frappe.has_permission("Sheet", ...)`, and by the time Drive reaches a callback
-the point check has already run against `Drive Grant`. Asking a second, weaker
-question would be the §1 bypass.
+None of these calls `versioning.save`: that module asks `require_sheet` first,
+and by the time Drive reaches a callback the point check has already run
+against `Drive Grant`. Asking the same question twice would only cost a query.
 
 ## Media
 
@@ -85,7 +83,6 @@ NODE_FIELD = "node"
 
 OP_LOG_DOCTYPE = "Sheet Op Log"
 COLLAB_STATE_DOCTYPE = "Sheet Collab State"
-SNAPSHOT_DOCTYPE = "Sheet Snapshot"
 SEQ_DOCTYPE = "Sheet Seq"
 CELL_DOCTYPE = "Sheet Cell"
 
@@ -135,7 +132,8 @@ MAX_IMPORT_MERGE_RANGES = 50_000
 
 # One version envelope is one workbook plus its JSON framing, so the body cap
 # plus a margin is the whole bound. Drive wrote every blob this reads, but a
-# §14.6 migrated `Sheet Snapshot` did not go through `Sheet.validate`.
+# version Build migrated from a legacy snapshot did not go through
+# `Sheet.validate`.
 MAX_VERSION_BYTES = MAX_SHEETS_DATA_BYTES + 1024 * 1024
 
 
@@ -151,9 +149,7 @@ def _read_bounded(stream, limit: int, what: str) -> bytes:
     raw = stream.read(limit + 1)
     if len(raw) > limit:
         frappe.throw(
-            _("That {0} is larger than {1} MB and cannot be read").format(
-                what, limit // (1024 * 1024)
-            ),
+            _("That {0} is larger than {1} MB and cannot be read").format(what, limit // (1024 * 1024)),
             frappe.ValidationError,
         )
     return raw
@@ -209,8 +205,7 @@ def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
     """Return the bytes Drive stores as one immutable version.
 
     The envelope carries the head seq beside the workbook so a restore can say
-    which point in the op log it is putting back, and so §14.6 can map a
-    migrated `Sheet Snapshot` onto the same shape.
+    which point in the op log it is putting back.
     """
     row = frappe.db.get_value(DOCTYPE, docname, ("sheets_data", "head_seq"), as_dict=True)
     if not row:
@@ -256,20 +251,15 @@ def restore_version(docname: str, stream) -> None:
 def on_purge(docname: str) -> None:
     """Delete the sheet and every app-owned row behind it.
 
-    §8.8 sends a purged node's app data with it, so the cascade covers all five
-    side tables, including the two `suite/sheets/trash.py` never reached
-    (`Sheet Collab State` and the dead `Sheet Cell`). `head_snapshot` is cleared
-    first because the framework's link check refuses a delete while it points at
-    a `Sheet Snapshot` row.
+    §8.8 sends a purged node's app data with it, so the cascade covers all four
+    side tables, including the dead `Sheet Cell`. The versions are Drive's and
+    go with the node.
 
     `delete_permanently` is what makes a purge a purge. Without it Frappe keeps
     the whole row as JSON in `Deleted Document`
     (`frappe/model/delete_doc.py:add_to_deleted_document`), so the workbook would
     outlive the §8.8 purge that was meant to remove it.
     """
-    if frappe.db.exists(DOCTYPE, docname):
-        frappe.db.set_value(DOCTYPE, docname, "head_snapshot", None, update_modified=False)
-    frappe.db.delete(SNAPSHOT_DOCTYPE, {"sheet": docname})
     frappe.db.delete(OP_LOG_DOCTYPE, {"sheet": docname})
     frappe.db.delete(SEQ_DOCTYPE, {"sheet": docname})
     frappe.db.delete(COLLAB_STATE_DOCTYPE, {"sheet": docname})
@@ -311,6 +301,7 @@ SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
+    listing_type="spreadsheet",
     # §10.7, accepted 2026-09-05: Sheets stays hidden over WebDAV for this
     # release, so there is no default export and no export at all. Enabling one
     # is later work, not a requirement of the rewrite.
@@ -329,12 +320,7 @@ SPEC = drive.ContentTypeSpec(
         drive.Satellite(doctype=COLLAB_STATE_DOCTYPE, link_field="sheet"),
     ),
     used_nodes=used_nodes,
-    # §14.6 reads all four columns at Build and §14.10 drops them at Cleanup,
-    # one release after activation. Declaring them here is what lets ticket 29
-    # activate without dropping a Build source early: they stay, frozen, and
-    # `refuse_legacy_field_write` refuses every write to them. `head_snapshot`
-    # needs no entry; §10.2 does not forbid it.
-    legacy_fields=("title", "trashed", "trashed_on", "trashed_by"),
+    legacy_fields=(),
 )
 
 
@@ -342,8 +328,32 @@ SPEC = drive.ContentTypeSpec(
 
 
 def node_of(docname: str) -> str | None:
-    """Return the Drive node one sheet carries, or None for a legacy row."""
+    """Return the Drive node one sheet carries, or None when no such sheet exists."""
     return frappe.db.get_value(DOCTYPE, docname, NODE_FIELD) or None
+
+
+def require_sheet(docname: str, *, write: bool = False) -> None:
+    """Raise unless the caller may read, or write, one sheet's body.
+
+    The answer is Drive's, with this request's link credentials, so a Guest
+    who holds a link reaches it the way Drive does. Drive opens a trashed node
+    read-only and refuses a write to it. A name no sheet carries is refused
+    the way Drive refuses a node the caller may not see (§5.4): the reply
+    never says whether the sheet exists.
+    """
+    node = node_of(docname)
+    if not node:
+        raise drive.DriveNotFound(_("That sheet was not found"))
+    drive.check(node, drive.EDIT if write else drive.READ)
+
+
+def may_write_sheet(docname: str) -> bool:
+    """True when `require_sheet(docname, write=True)` would pass."""
+    try:
+        require_sheet(docname, write=True)
+    except drive.DriveError:
+        return False
+    return True
 
 
 def docname_for_node(node: str) -> str | None:
@@ -355,25 +365,6 @@ def docname_for_node(node: str) -> str | None:
     guarantees.
     """
     return frappe.db.get_value(DOCTYPE, {NODE_FIELD: node}, "name") or None
-
-
-def is_drive_native(docname: str) -> bool:
-    """True when Drive owns this sheet, false for a legacy row with no node."""
-    return bool(node_of(docname))
-
-
-def refuse_drive_native(docname: str, instead: str) -> None:
-    """Refuse a legacy Sheets path on a sheet Drive already owns.
-
-    The split only ever runs one way. A linked sheet is never answered from a
-    `File` or a `DocShare`, because that would be a way around `Drive Grant`
-    (§1). The legacy path stays for a row Build has not linked.
-    """
-    if is_drive_native(docname):
-        frappe.throw(
-            _("Drive owns this sheet. Use {0} instead.").format(instead),
-            frappe.ValidationError,
-        )
 
 
 # ── Sheet rows ───────────────────────────────────────────────────────────────
@@ -500,9 +491,7 @@ def _validate_package(raw: bytes) -> None:
                 # of each part rather than the part.
                 with package.open(item) as handle:
                     if b"<!DOCTYPE" in handle.read(_DTD_PROBE_BYTES):
-                        raise UnreadableWorkbook(
-                            _("That file is not a spreadsheet Sheets can read")
-                        )
+                        raise UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read"))
     except (zipfile.BadZipFile, KeyError, RuntimeError, EOFError) as unreadable:
         raise UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read")) from unreadable
 
@@ -610,9 +599,7 @@ def _read_worksheet(worksheet, seen: int, slots: int) -> tuple[dict, dict, int, 
             packed[column_index] = value
             number_format = _number_format(getattr(cell, "number_format", None))
             if number_format:
-                formats[f"{_column_label(column_index)}{row_index + 1}"] = {
-                    "numberFormat": number_format
-                }
+                formats[f"{_column_label(column_index)}{row_index + 1}"] = {"numberFormat": number_format}
     return rows, formats, seen, slots
 
 
