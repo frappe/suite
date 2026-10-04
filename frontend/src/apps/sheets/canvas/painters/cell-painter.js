@@ -460,7 +460,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // Sheets-style checkbox: a rounded grey square centred in the cell. Checked
   // is filled with a white tick; unchecked is a hollow outline. Geometry comes
   // from checkbox-geometry so the painted box matches the click zone in
-  // canvas/index.js exactly.
+  // canvas/input/mouse.ts exactly.
   function _drawCheckbox(x, y, w, h, checked) {
     const { x: ox, y: oy, size } = checkboxRect(w, h)
     if (size < CHECKBOX.minSize) return // row too short for a legible box
@@ -491,8 +491,8 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   }
 
   // Sheets-style dropdown chip: a rounded pill holding the cell value with a
-  // caret on its right. Drawn in the bg pass; the matching click zone lives in
-  // canvas/index.js (both measure through chip-geometry so they stay aligned).
+  // caret on its right. Drawn in the bg pass; a single click anywhere in the
+  // cell opens the dropdown (canvas/input/mouse.ts).
   function _drawValidationChip(x, y, w, h, text, fmt, valid, rule) {
     const chipH = Math.min(h - 4, CHIP.maxH)
     if (chipH < CHIP.minH) {

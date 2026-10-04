@@ -12,7 +12,7 @@ export interface FrameScheduler {
   cancel(handle: number): void
 }
 
-const browserFrames: FrameScheduler = {
+export const browserFrames: FrameScheduler = {
   request: (cb) => requestAnimationFrame(cb),
   cancel: (handle) => cancelAnimationFrame(handle),
 }

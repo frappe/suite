@@ -30,15 +30,9 @@
   "include": [
     "src/apps/sheets/core/**/*.ts",
     "src/apps/sheets/utils/sheet-codec.ts",
-    "src/apps/sheets/canvas/index.d.ts",
-    "src/apps/sheets/canvas/render-loop.ts",
-    "src/apps/sheets/canvas/viewport.ts",
-    "src/apps/sheets/canvas/selection.ts",
-    "src/apps/sheets/canvas/input/hit-test.ts",
-    "src/apps/sheets/canvas/input/range-picker.ts",
-    "src/apps/sheets/canvas/input/autocomplete.ts",
-    "src/apps/sheets/canvas/input/editor.ts",
-    "src/apps/sheets/canvas/input/mouse.ts",
-    "src/apps/sheets/canvas/input/keyboard.ts"
-  ]
+    "src/apps/sheets/canvas/*.ts",
+    "src/apps/sheets/canvas/input/*.ts"
+  ],
+  // Canvas tests predate the strict config; the policy covers source.
+  "exclude": ["src/apps/sheets/canvas/**/*.test.ts"]
 }

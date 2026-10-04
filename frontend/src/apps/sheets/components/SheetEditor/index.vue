@@ -2193,7 +2193,7 @@ import { confirmLeave } from '@/utils/confirmLeave'
 
 import { chipColor, chipPaletteColor } from '../../canvas/chip-geometry.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
-import { createGrid } from '../../canvas/index.js'
+import { createGrid } from '../../canvas/index'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
