@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 import frappe
 import pycrdt
-import redis
 from frappe.tests import IntegrationTestCase
 from frappe.utils.background_jobs import get_redis_conn
 
@@ -38,7 +37,7 @@ class CheckpointCase(IntegrationTestCase):
         self.mode = frappe.db.get_single_value("Suite Collab Settings", "mode")
         frappe.db.set_single_value("Suite Collab Settings", "mode", "on")
         frappe.db.commit()
-        frappe.cache.delete_value("suite-collab-queue-down")
+        checkpoints.paused_until = 0.0
         self.addCleanup(self.restore_mode)
         frappe.set_user(WRITER)
         self.addCleanup(frappe.set_user, "Administrator")
@@ -586,20 +585,33 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.assertIn(self.doc_row(waited).id, self.requested)
         self.assertNotIn(self.doc_row(fresh).id, self.requested)
 
-    def test_a_cache_that_times_out_leaves_open_and_push_working(self):
-        node = self.new_document()
-        get_value = frappe.cache.get_value
+    def test_requests_while_the_cache_and_queue_are_down_are_logged_once(self):
+        logged = {
+            "method": "Collab compaction: request failed",
+            "creation": (">=", frappe.utils.now_datetime()),
+        }
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(frappe.db.delete, "Error Log", logged)
 
-        def slow(key, *args, **kwargs):
-            if key == "suite-collab-queue-down":
-                raise redis.exceptions.TimeoutError("cache timed out")
-            return get_value(key, *args, **kwargs)
+        def down(method, **kwargs):
+            raise ConnectionError("queue down")
 
-        with patch.object(frappe.cache, "get_value", slow):
-            self.push_bytes(node, [300 * 1024], final=True)
-            self.assertEqual(call(routes.collab_get, node).status_code, 200)
+        def refused(*args, **kwargs):
+            import redis
 
-        self.assertEqual(self.row_count(node), 1)
+            raise redis.exceptions.ConnectionError("cache down")
+
+        with (
+            patch.object(frappe.cache, "get", refused),
+            patch.object(frappe.cache, "set", refused),
+            patch.object(frappe, "enqueue", down),
+        ):
+            for _ in range(50):
+                # Each request starts with an empty local cache
+                frappe.local.cache = {}
+                checkpoints.request(routes.ADAPTER, "outage", "unused")
+
+        self.assertEqual(frappe.db.count("Error Log", logged), 1)
 
     def test_a_job_queue_outage_leaves_open_and_push_working_and_is_logged_once(self):
         node, other = self.new_document(), self.new_document()
@@ -610,7 +622,6 @@ class TestWriterCompactionTriggers(CheckpointCase):
         }
         self.addCleanup(frappe.db.commit)
         self.addCleanup(frappe.db.delete, "Error Log", logged)
-        self.addCleanup(frappe.cache.delete_value, "suite-collab-queue-down")
 
         def down(method, **kwargs):
             refused.append(kwargs["doc_id"])

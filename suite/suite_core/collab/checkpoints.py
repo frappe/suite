@@ -7,7 +7,6 @@ leaves every row and a retry time, never a loop. At most `PLACES` compactions
 run at once on a bench, because RQ's Redis is shared by every site on it.
 """
 
-import contextlib
 import gzip
 import hashlib
 import json
@@ -39,6 +38,8 @@ LEASE = TIMEOUT + 90
 PACED_FROM = 512 * 2**10
 ALERT_AT = 3
 CGROUP = "/sys/fs/cgroup"
+
+paused_until = 0.0
 
 
 class Skipped(Exception):
@@ -147,10 +148,11 @@ def sweep(adapter: str, method: str, limit: int = 100) -> None:
 
 def request(adapter: str, doc_id: str, method: str) -> None:
     """Enqueue `method(doc_id)` once per document; it runs `run` with the product's roots."""
+    global paused_until
+    if time.monotonic() < paused_until:
+        return
     queue = "collab" if "collab" in frappe.conf.get("workers", {}) else "default"
     try:
-        if frappe.cache.get_value("suite-collab-queue-down", expires=True):
-            return
         frappe.enqueue(
             method,
             queue=queue,
@@ -160,11 +162,8 @@ def request(adapter: str, doc_id: str, method: str) -> None:
             doc_id=doc_id,
         )
     except Exception:
-        # A request is only a hint, so the open or push that made it carries on and the queue rests a while
-        with contextlib.suppress(Exception):
-            frappe.cache.set_value(
-                "suite-collab-queue-down", True, expires_in_sec=int(QUEUE_PAUSE.total_seconds())
-            )
+        # A request is only a hint, so the open or push that made it carries on and this process rests a while
+        paused_until = time.monotonic() + QUEUE_PAUSE.total_seconds()
         frappe.log_error(
             title="Collab compaction: request failed",
             message=f"{adapter} document {doc_id}\n{frappe.get_traceback()}",
