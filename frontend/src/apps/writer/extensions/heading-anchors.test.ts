@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
+import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
+import Heading from '@tiptap/extension-heading'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import Heading from '@tiptap/extension-heading'
-import Collaboration from '@tiptap/extension-collaboration'
+import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+
 import { HeadingAnchors } from './heading-anchors'
 import { ReceivedContentGuard } from './received-content-guard'
 

@@ -1,5 +1,6 @@
 import { Node } from '@tiptap/core'
 import { Heading, RichTextKit } from 'frappe-ui/editor'
+
 import ExtendedParagraph from '@/apps/writer/extensions/extended-paragraph'
 import FontFamily from '@/apps/writer/extensions/font-family'
 import { FontSize } from '@/apps/writer/extensions/font-size'
@@ -35,8 +36,7 @@ export const TabNode = Node.create({
           const order = el.getAttribute('data-tab-order')
           return order === null ? null : Number(order)
         },
-        renderHTML: (attrs) =>
-          attrs.order === null ? {} : { 'data-tab-order': attrs.order },
+        renderHTML: (attrs) => (attrs.order === null ? {} : { 'data-tab-order': attrs.order }),
       },
     }
   },

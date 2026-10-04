@@ -17,7 +17,11 @@ export interface Row {
 }
 
 // `u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`
-export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; checkpoint: Uint8Array | null; rows: Row[] } {
+export function decodeFrame(bytes: Uint8Array): {
+  header: FrameHeader
+  checkpoint: Uint8Array | null
+  rows: Row[]
+} {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let at = 0
   const need = (length: number) => {
@@ -45,7 +49,10 @@ export function decodeFrame(bytes: Uint8Array): { header: FrameHeader; checkpoin
   return { header, checkpoint: checkpoint.byteLength ? checkpoint : null, rows }
 }
 
-export function encodePush(header: Record<string, unknown>, update: Uint8Array): Uint8Array<ArrayBuffer> {
+export function encodePush(
+  header: Record<string, unknown>,
+  update: Uint8Array,
+): Uint8Array<ArrayBuffer> {
   const json = new TextEncoder().encode(JSON.stringify(header))
   const body = new Uint8Array(4 + json.byteLength + update.byteLength)
   new DataView(body.buffer).setUint32(0, json.byteLength)

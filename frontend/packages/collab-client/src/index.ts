@@ -12,4 +12,11 @@ export {
   type OpenOptions,
   type SaveState,
 } from './types'
-export { openDeviceStore, type DeviceCopy, type DeviceStore, type RecoveryRecord, type StoredEntry, type StoredSession } from './store'
+export {
+  openDeviceStore,
+  type DeviceCopy,
+  type DeviceStore,
+  type RecoveryRecord,
+  type StoredEntry,
+  type StoredSession,
+} from './store'

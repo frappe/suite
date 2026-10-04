@@ -1,9 +1,17 @@
 import * as Y from 'yjs'
+
 import { readReply, staleSession, type Reply } from './answers'
 import { decodeFrame, encodePush, type Row } from './frames'
 import { holdLock, MAX_KEEPALIVE_BYTES, MAX_PUSH_BYTES, Outbox } from './outbox'
 import type { DeviceStore, StoredSession } from './store'
-import { recoverable, type Answer, type Blocked, type CollabRoom, type OpenOptions, type SaveState } from './types'
+import {
+  recoverable,
+  type Answer,
+  type Blocked,
+  type CollabRoom,
+  type OpenOptions,
+  type SaveState,
+} from './types'
 
 // Updates applied from the server; everything else in the doc is this tab's own work
 export const REMOTE = Symbol('collab-remote')
@@ -110,7 +118,8 @@ export class Room implements CollabRoom {
   }
 
   pull(): Promise<void> {
-    if (this.closed || this.blocked === 'other_user' || this.blocked === 'lost_read') return Promise.resolve()
+    if (this.closed || this.blocked === 'other_user' || this.blocked === 'lost_read')
+      return Promise.resolve()
     if (!this.bound) return this.dead ? Promise.resolve() : this.connect()
     return this.connecting ?? this.fetch()
   }
@@ -134,7 +143,12 @@ export class Room implements CollabRoom {
 
   // Waits out each retry delay rather than pushing again at once
   async flush() {
-    while (!this.closed && this.bound && (this.inFlight || this.unsent) && this.saveState !== 'failed') {
+    while (
+      !this.closed &&
+      this.bound &&
+      (this.inFlight || this.unsent) &&
+      this.saveState !== 'failed'
+    ) {
       await (this.inFlight ?? this.retrying ?? this.send())
     }
   }
@@ -160,7 +174,8 @@ export class Room implements CollabRoom {
   }
 
   private tick() {
-    if (this.unsent && this.unsentSince && Date.now() - this.unsentSince > PERSIST_AFTER_MS) this.persist()
+    if (this.unsent && this.unsentSince && Date.now() - this.unsentSince > PERSIST_AFTER_MS)
+      this.persist()
     void this.pull()
   }
 
@@ -233,7 +248,8 @@ export class Room implements CollabRoom {
         continue
       }
       const box = new Outbox(session.sid, session.cid, release, true, entries)
-      const verdict = session.lineage !== this.lineage ? 'lineage' : session.bound ? 'ok' : await this.claim(box)
+      const verdict =
+        session.lineage !== this.lineage ? 'lineage' : session.bound ? 'ok' : await this.claim(box)
       if (this.closed) return release()
       if (verdict !== 'ok') {
         if (verdict) await store.recover(key, session.sid, lost(verdict)).catch(() => {})
@@ -256,7 +272,10 @@ export class Room implements CollabRoom {
       run.push(row)
     }
     if (!run.length && !opening) return
-    const parts = [...(opening?.checkpoint ? [opening.checkpoint] : []), ...run.map((row) => row.bytes)]
+    const parts = [
+      ...(opening?.checkpoint ? [opening.checkpoint] : []),
+      ...run.map((row) => row.bytes),
+    ]
     const bytes = parts.length ? Y.mergeUpdates(parts) : null
     if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)
     if (run.length) this.appliedThrough = run[run.length - 1].rev
@@ -277,13 +296,22 @@ export class Room implements CollabRoom {
     if (this.dead) {
       if (!this.device) return
       const entry = this.own.mint(update)
-      void this.device.store.recover(this.device.doc, this.own.sid, this.dead, this.own.stored(this.device.doc, [entry])).catch(() => {})
+      void this.device.store
+        .recover(
+          this.device.doc,
+          this.own.sid,
+          this.dead,
+          this.own.stored(this.device.doc, [entry]),
+        )
+        .catch(() => {})
       return
     }
     if (!this.writable) return
     const entry = this.own.add(update)
     if (this.device) {
-      void this.device.store.capture(this.session(), this.own.stored(this.device.doc, [entry])).catch(() => this.lostStore())
+      void this.device.store
+        .capture(this.session(), this.own.stored(this.device.doc, [entry]))
+        .catch(() => this.lostStore())
     }
     this.counted()
     if (this.bound) this.scheduleSend()
@@ -311,7 +339,10 @@ export class Room implements CollabRoom {
     const now = Date.now()
     if (!this.sendTimer) this.firstUnsentAt = now
     else clearTimeout(this.sendTimer)
-    const delay = Math.min(this.options.sendDelayMs ?? 1000, this.firstUnsentAt + (this.options.sendMaxDelayMs ?? 3000) - now)
+    const delay = Math.min(
+      this.options.sendDelayMs ?? 1000,
+      this.firstUnsentAt + (this.options.sendMaxDelayMs ?? 3000) - now,
+    )
     this.sendTimer = setTimeout(
       () => {
         this.sendTimer = null
@@ -323,7 +354,8 @@ export class Room implements CollabRoom {
 
   private batch(keepalive?: boolean) {
     const box = this.boxes.find((other) => other.pending.length) ?? this.own
-    if (!box.pending.length || this.closed || !this.bound || this.saveState === 'failed') return null
+    if (!box.pending.length || this.closed || !this.bound || this.saveState === 'failed')
+      return null
     const batch = box.batch(keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES)
     const header = {
       proto: 1,
@@ -394,7 +426,8 @@ export class Room implements CollabRoom {
   // A refusal about who is asking, or a lost right once the signed-in person is confirmed unchanged
   private refused(reply: Reply, lost: 'lost_edit' | 'lost_read'): Blocked | null {
     let blocked: Blocked | null = null
-    if (reply.status === 401 && (reply.collab === 'signed_out' || reply.collab === 'locked')) blocked = reply.collab
+    if (reply.status === 401 && (reply.collab === 'signed_out' || reply.collab === 'locked'))
+      blocked = reply.collab
     else if (staleSession(reply)) blocked = 'stale_session'
     else if (reply.status === 409 && reply.collab === 'principal_changed') blocked = 'other_user'
     else if (reply.status === 403 || reply.status === 404) blocked = this.reconcile(lost)
@@ -433,7 +466,8 @@ export class Room implements CollabRoom {
     this.dead = reason
     if (!this.device) return
     const { store, doc: key } = this.device
-    for (const box of this.boxes) await store.recover(key, box.sid, reason, box.stored(key)).catch(() => {})
+    for (const box of this.boxes)
+      await store.recover(key, box.sid, reason, box.stored(key)).catch(() => {})
   }
 
   // Without a device store nothing typed offline would survive the tab, so editing stops until the server answers
@@ -484,7 +518,9 @@ export class Room implements CollabRoom {
     const committed = box.ack(through)
     if (!committed) return
     if (this.device) {
-      void this.device.store.ack(this.device.doc, box.sid, box.acked, committed, this.lineage).catch(() => {})
+      void this.device.store
+        .ack(this.device.doc, box.sid, box.acked, committed, this.lineage)
+        .catch(() => {})
       if (box.adopted && !box.pending.length) {
         void this.device.store.release(this.device.doc, box.sid).catch(() => {})
         box.release()
@@ -543,7 +579,10 @@ export class Room implements CollabRoom {
 
 // Losing edit access can still turn out to be losing read access or a switched account
 function replaces(next: Blocked, current: Blocked) {
-  return recoverable(current) || (current === 'lost_edit' && (next === 'lost_read' || next === 'other_user'))
+  return (
+    recoverable(current) ||
+    (current === 'lost_edit' && (next === 'lost_read' || next === 'other_user'))
+  )
 }
 
 const lost = (verdict: string) => (verdict === 'clash' ? 'id_clash' : verdict)

@@ -1,5 +1,5 @@
-import { RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
 import { adoptLegacyDrafts } from '@/apps/slides/utils/drafts'
+import { RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
 
 // a broken worker must not hold up navigation
 const ACK_TIMEOUT = 500

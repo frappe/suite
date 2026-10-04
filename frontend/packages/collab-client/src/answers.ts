@@ -29,7 +29,8 @@ export function readReply(answer: Answer): Reply {
 }
 
 // Frappe refuses a token from before the browser signed in again; only a reload brings the new one
-export const staleSession = (reply: Reply) => reply.status === 400 && reply.exc_type === 'CSRFTokenError'
+export const staleSession = (reply: Reply) =>
+  reply.status === 400 && reply.exc_type === 'CSRFTokenError'
 
 export class CollabOpenError extends Error {
   constructor(

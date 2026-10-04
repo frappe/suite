@@ -1,5 +1,5 @@
-import { ref } from 'vue'
 import { toast } from 'frappe-ui'
+import { ref } from 'vue'
 
 import { translate } from '@/platform/translation'
 
@@ -8,8 +8,7 @@ const BUILD = Number(__SUITE_BUILD__)
 const minBuilds = ref<Record<string, string>>({})
 
 /** A product turns read-only in tabs older than its minimum build. */
-export const belowMinBuild = (product: string) =>
-  BUILD < Number(minBuilds.value[product] ?? 0)
+export const belowMinBuild = (product: string) => BUILD < Number(minBuilds.value[product] ?? 0)
 
 let shown: string | null = null
 

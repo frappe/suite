@@ -1,5 +1,6 @@
 import { digest } from 'lib0/hash/sha256'
 import * as Y from 'yjs'
+
 import type { StoredEntry } from './store'
 
 // Each sha adds 67 bytes to the push header, which the server caps at 4 KiB
@@ -60,7 +61,8 @@ export class Outbox {
     const run: Entry[] = []
     let size = 0
     for (const entry of this.pending) {
-      if (run.length && (run.length >= MAX_ENTRIES || size + entry.bytes.byteLength > maxBytes)) break
+      if (run.length && (run.length >= MAX_ENTRIES || size + entry.bytes.byteLength > maxBytes))
+        break
       run.push(entry)
       size += entry.bytes.byteLength
     }

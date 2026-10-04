@@ -3,9 +3,13 @@ import { Plugin } from '@tiptap/pm/state'
 import { canJoin } from '@tiptap/pm/transform'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { ListJoin as StockListJoin } from 'frappe-ui/editor'
+
 import { changedRanges, touches } from './received-content-guard'
 
-const isList = (node: Node) => String(node.type.spec.group ?? '').split(' ').includes('list')
+const isList = (node: Node) =>
+  String(node.type.spec.group ?? '')
+    .split(' ')
+    .includes('list')
 
 // Joinable list boundaries next to `changed`, back to front so earlier ones stay valid
 function boundariesNear(doc: Node, changed: [number, number][]) {

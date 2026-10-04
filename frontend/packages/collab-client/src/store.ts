@@ -78,11 +78,21 @@ export function openDeviceStore(name: string, timeoutMs = 3000): Promise<DeviceS
     }
     request.onupgradeneeded = () => {
       const db = request.result
-      db.createObjectStore('sessions', { keyPath: ['doc', 'sid'] }).createIndex('cid', ['doc', 'cid'], { unique: true })
+      db.createObjectStore('sessions', { keyPath: ['doc', 'sid'] }).createIndex(
+        'cid',
+        ['doc', 'cid'],
+        { unique: true },
+      )
       db.createObjectStore('entries', { keyPath: ['doc', 'sid', 'seq'] })
-      db.createObjectStore('copies', { keyPath: 'id', autoIncrement: true }).createIndex('doc', 'doc')
+      db.createObjectStore('copies', { keyPath: 'id', autoIncrement: true }).createIndex(
+        'doc',
+        'doc',
+      )
       db.createObjectStore('meta', { keyPath: 'doc' })
-      db.createObjectStore('recovery', { keyPath: 'id', autoIncrement: true }).createIndex('doc', 'doc')
+      db.createObjectStore('recovery', { keyPath: 'id', autoIncrement: true }).createIndex(
+        'doc',
+        'doc',
+      )
     }
     request.onsuccess = () => {
       clearTimeout(timer)
@@ -95,28 +105,37 @@ export function openDeviceStore(name: string, timeoutMs = 3000): Promise<DeviceS
   })
 }
 
-const sessionRange = (doc: string, sid: string) => IDBKeyRange.bound([doc, sid, 0], [doc, sid, Infinity])
+const sessionRange = (doc: string, sid: string) =>
+  IDBKeyRange.bound([doc, sid, 0], [doc, sid, Infinity])
 const docRange = (doc: string) => IDBKeyRange.bound([doc, ''], [doc, '￿'])
 
 class IndexedDeviceStore implements DeviceStore {
   constructor(private readonly db: IDBDatabase) {}
 
   sessions(doc: string) {
-    return this.read<StoredSession[]>('sessions', (tx) => tx.objectStore('sessions').getAll(docRange(doc)))
+    return this.read<StoredSession[]>('sessions', (tx) =>
+      tx.objectStore('sessions').getAll(docRange(doc)),
+    )
   }
 
   entries(doc: string, sid: string) {
-    return this.read<StoredEntry[]>('entries', (tx) => tx.objectStore('entries').getAll(sessionRange(doc, sid)))
+    return this.read<StoredEntry[]>('entries', (tx) =>
+      tx.objectStore('entries').getAll(sessionRange(doc, sid)),
+    )
   }
 
   recovery(doc: string) {
-    return this.read<RecoveryRecord[]>('recovery', (tx) => tx.objectStore('recovery').index('doc').getAll(doc))
+    return this.read<RecoveryRecord[]>('recovery', (tx) =>
+      tx.objectStore('recovery').index('doc').getAll(doc),
+    )
   }
 
   async copy(doc: string): Promise<DeviceCopy | null> {
     const tx = this.db.transaction(['meta', 'copies'])
     const [meta, pieces] = await Promise.all([
-      done<{ lineage: string; rev: number; canWrite: boolean } | undefined>(tx.objectStore('meta').get(doc)),
+      done<{ lineage: string; rev: number; canWrite: boolean } | undefined>(
+        tx.objectStore('meta').get(doc),
+      ),
       done<{ bytes: Uint8Array }[]>(tx.objectStore('copies').index('doc').getAll(doc)),
     ])
     if (!meta) return null
@@ -169,7 +188,8 @@ class IndexedDeviceStore implements DeviceStore {
         const stored: StoredEntry[] = left.result
         const seen = new Set(stored.map((entry) => entry.seq))
         const all = [...stored, ...extra.filter((entry) => !seen.has(entry.seq))]
-        if (all.length) tx.objectStore('recovery').add({ doc, sid, reason, created: Date.now(), entries: all })
+        if (all.length)
+          tx.objectStore('recovery').add({ doc, sid, reason, created: Date.now(), entries: all })
         entries.delete(sessionRange(doc, sid))
         tx.objectStore('sessions').delete([doc, sid])
       }

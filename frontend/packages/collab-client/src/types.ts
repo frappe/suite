@@ -1,4 +1,5 @@
 import type * as Y from 'yjs'
+
 import type { OpenState } from './frames'
 import type { DeviceStore } from './store'
 
@@ -38,9 +39,11 @@ export type SaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 
 // Why the server stopped hearing this tab. `offline` is only for a tab with no device store to keep work in.
 // Only `signed_out`, `locked` and `offline` clear, once the server hears it again
-export type Blocked = 'signed_out' | 'locked' | 'offline' | 'stale_session' | 'other_user' | 'lost_edit' | 'lost_read'
+export type Blocked =
+  'signed_out' | 'locked' | 'offline' | 'stale_session' | 'other_user' | 'lost_edit' | 'lost_read'
 
-export const recoverable = (blocked: Blocked) => blocked === 'signed_out' || blocked === 'locked' || blocked === 'offline'
+export const recoverable = (blocked: Blocked) =>
+  blocked === 'signed_out' || blocked === 'locked' || blocked === 'offline'
 
 export interface CollabRoom {
   readonly doc: Y.Doc

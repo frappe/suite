@@ -21,7 +21,9 @@ function touched(tr: Transaction) {
   const ranges: Range[] = []
   tr.steps.forEach((step, i) => {
     const after = tr.mapping.slice(i + 1)
-    step.getMap().forEach((_from, _to, from, to) => ranges.push([after.map(from, -1), after.map(to, 1)]))
+    step
+      .getMap()
+      .forEach((_from, _to, from, to) => ranges.push([after.map(from, -1), after.map(to, 1)]))
   })
   return ranges
 }
@@ -86,7 +88,10 @@ export const ReceivedContentGuard = Extension.create<object, { root: Transaction
           init: () => null,
           apply: (tr, ranges) => {
             const { root } = storage
-            if (tr === root) return root.docChanged && !root.getMeta(ySyncPluginKey)?.isChangeOrigin ? touched(tr) : null
+            if (tr === root)
+              return root.docChanged && !root.getMeta(ySyncPluginKey)?.isChangeOrigin
+                ? touched(tr)
+                : null
             if (!root || !ranges) return null
             return changedRanges([tr], ranges)
           },

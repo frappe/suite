@@ -1,14 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
+import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
-import Paragraph from '@tiptap/extension-paragraph'
-import Text from '@tiptap/extension-text'
 import Heading from '@tiptap/extension-heading'
 import { BulletList, ListItem } from '@tiptap/extension-list'
+import Paragraph from '@tiptap/extension-paragraph'
+import Text from '@tiptap/extension-text'
 import { TrailingNode } from '@tiptap/extensions'
-import Collaboration from '@tiptap/extension-collaboration'
 import { prosemirrorJSONToYDoc } from '@tiptap/y-tiptap'
+import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+
 import { JoinAdjacentLists } from './join-adjacent-lists'
 import { ListJoin } from './list-join'
 import { ReceivedContentGuard } from './received-content-guard'
@@ -18,12 +19,29 @@ afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
-const extensions = [Document, Paragraph, Text, Heading, BulletList, ListItem, TrailingNode, ListJoin, JoinAdjacentLists]
+const extensions = [
+  Document,
+  Paragraph,
+  Text,
+  Heading,
+  BulletList,
+  ListItem,
+  TrailingNode,
+  ListJoin,
+  JoinAdjacentLists,
+]
 
 const schema = new Editor({ extensions }).schema
 const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
-const h = (text: string) => ({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text }] })
-const ul = (text: string) => ({ type: 'bulletList', content: [{ type: 'listItem', content: [p(text)] }] })
+const h = (text: string) => ({
+  type: 'heading',
+  attrs: { level: 2 },
+  content: [{ type: 'text', text }],
+})
+const ul = (text: string) => ({
+  type: 'bulletList',
+  content: [{ type: 'listItem', content: [p(text)] }],
+})
 const stored = (...content: object[]) =>
   Y.encodeStateAsUpdate(prosemirrorJSONToYDoc(schema, { type: 'doc', content }, 'default'))
 
@@ -73,13 +91,16 @@ describe('received content guard', () => {
     await settle()
 
     const gap = viewer.editor.state.doc.child(0).nodeSize
-    viewer.editor.commands.deleteRange({ from: gap, to: gap + viewer.editor.state.doc.child(1).nodeSize })
+    viewer.editor.commands.deleteRange({
+      from: gap,
+      to: gap + viewer.editor.state.doc.child(1).nodeSize,
+    })
 
     expect(blocks(viewer.editor)).toEqual(['bulletList', 'paragraph'])
     expect(viewer.ydoc.getXmlFragment('default').length).toBe(2)
   })
 
-  it('an untidy spot elsewhere still lets the user\'s own edit tidy up', async () => {
+  it("an untidy spot elsewhere still lets the user's own edit tidy up", async () => {
     const viewer = open(stored(ul('a'), ul('b'), p('x'), ul('c'), p('gap'), ul('d'), p('end')))
     await settle()
 
@@ -90,7 +111,13 @@ describe('received content guard', () => {
     })
     viewer.editor.commands.deleteRange({ from: gap, to: gap + doc.nodeAt(gap)!.nodeSize })
 
-    expect(blocks(viewer.editor)).toEqual(['bulletList', 'bulletList', 'paragraph', 'bulletList', 'paragraph'])
+    expect(blocks(viewer.editor)).toEqual([
+      'bulletList',
+      'bulletList',
+      'paragraph',
+      'bulletList',
+      'paragraph',
+    ])
   })
 
   it('two people editing elsewhere tidy nothing twice', async () => {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+
 import { openDeviceStore, type DeviceStore } from './store'
 
 const stores: DeviceStore[] = []
@@ -27,7 +28,13 @@ function read(bytes: Uint8Array) {
 }
 
 const session = (sid: string) => ({ doc: 'D', sid, lineage: 'L', cid: 5, bound: true })
-const entry = (sid: string, seq: number, bytes: Uint8Array) => ({ doc: 'D', sid, seq, bytes, sha: String(seq) })
+const entry = (sid: string, seq: number, bytes: Uint8Array) => ({
+  doc: 'D',
+  sid,
+  seq,
+  bytes,
+  sha: String(seq),
+})
 
 describe('device store', () => {
   it('releases a session only once it holds no entries', async () => {
@@ -72,14 +79,21 @@ describe('device store', () => {
 
     await store.ack('D', 's', 1, typed('old').update, 'L')
 
-    expect([read((await store.copy('D'))!.bytes), await store.entries('D', 's')]).toEqual(['new', []])
+    expect([read((await store.copy('D'))!.bytes), await store.entries('D', 's')]).toEqual([
+      'new',
+      [],
+    ])
   })
 
   it('a long-lived device copy is merged into fewer pieces without losing text', async () => {
     const store = await fresh()
     const doc = new Y.Doc()
     for (let at = 0; at < 100; at++) {
-      await store.commit('D', { lineage: 'L', rev: at + 1, canWrite: true }, typed('x', at, doc).update)
+      await store.commit(
+        'D',
+        { lineage: 'L', rev: at + 1, canWrite: true },
+        typed('x', at, doc).update,
+      )
     }
 
     expect(read((await store.copy('D'))!.bytes)).toBe('x'.repeat(100))
@@ -93,7 +107,10 @@ describe('device store', () => {
     await store.recover('D', 's', 'id_clash', [entry('s', 2, typed('b').update)])
 
     const [record] = await store.recovery('D')
-    expect([record.reason, record.entries.map((stored) => stored.seq)]).toEqual(['id_clash', [1, 2]])
+    expect([record.reason, record.entries.map((stored) => stored.seq)]).toEqual([
+      'id_clash',
+      [1, 2],
+    ])
     expect([await store.entries('D', 's'), await store.sessions('D')]).toEqual([[], []])
   })
 
@@ -101,7 +118,9 @@ describe('device store', () => {
     const store = await fresh()
     await store.saveSession({ doc: 'D', sid: 's', lineage: 'L', cid: 5, bound: true })
 
-    await expect(store.saveSession({ doc: 'D', sid: 't', lineage: 'L', cid: 5, bound: false })).rejects.toBeTruthy()
+    await expect(
+      store.saveSession({ doc: 'D', sid: 't', lineage: 'L', cid: 5, bound: false }),
+    ).rejects.toBeTruthy()
     await store.saveSession({ doc: 'E', sid: 't', lineage: 'L', cid: 5, bound: false })
   })
 })
