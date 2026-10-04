@@ -1,14 +1,4 @@
 import { cellId, colLabel, parseCellId } from '../utils/cells.js'
-import {
-  AC_FUN_KEYS,
-  AC_FUNS,
-  describeSignature,
-  detectAdjacentRange,
-  isNumericText,
-  parseAcToken,
-  parseSignatureContext,
-  shouldSuggestRange,
-} from '../utils/formula-ac.js'
 import { autoCloseKey } from '../utils/formula-autoclose.js'
 import { getTextWrap, isWrapText, lineHeightFor, wrapLines } from '../utils/text-wrap.js'
 import { checkboxRect } from './checkbox-geometry.js'
@@ -25,8 +15,9 @@ import {
   TOTAL_ROWS,
 } from './constants.js'
 import { createGeometry } from './geometry.js'
+import { createAutocomplete } from './input/autocomplete.js'
 import { createHitTester } from './input/hit-test.js'
-import { createRangePicker, refForRange } from './input/range-picker.js'
+import { createRangePicker } from './input/range-picker.js'
 import { createOverlay } from './overlay.js'
 import { createRenderLoop } from './render-loop.js'
 import { createRenderer } from './renderer.js'
@@ -151,10 +142,6 @@ export function createGrid(
   // User-facing zoom (Ctrl+= / Ctrl+-). Affects ctx transform + hit tests.
   let _zoom = 1
 
-  let _acEl = null,
-    _acItems = [],
-    _acIdx = 0
-
   const geo = createGeometry(
     colW,
     rowH,
@@ -203,7 +190,18 @@ export function createGrid(
     scrollIntoView: (r, c) => _scrollIntoView(r, c),
     render: () => render(),
   })
-  _acSetup()
+  // Formula autocomplete popup under the in-cell editor.
+  const ac = createAutocomplete({
+    parent: canvas.parentElement,
+    input: overlay.el,
+    picker: pick,
+    activeCell: () => S.anchor,
+    displayAt: (r, c) => getValue(cellId(r, c)),
+    sheetNames: () => getSheetNames?.() || [],
+    crossSheetName: () => _crossSheetName(),
+    onInput: (v) => onInput?.(cellId(S.anchor.r, S.anchor.c), v),
+    render: () => render(),
+  })
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -435,205 +433,6 @@ export function createGrid(
     return { r: maxR, c: maxC }
   }
 
-  // ── Formula autocomplete ─────────────────────────────────────────────────────
-
-  function _acSetup() {
-    _acEl = document.createElement('div')
-    _acEl.style.cssText = [
-      'position:absolute',
-      'display:none',
-      'z-index:50',
-      'background:var(--surface-elevation-2, var(--surface-base, #ffffff))',
-      'border:1px solid var(--outline-gray-2, #e2e2e2)',
-      'border-radius:6px',
-      'box-shadow:0 4px 14px rgba(0,0,0,.25)',
-      'min-width:200px',
-      'max-height:208px',
-      'overflow-y:auto',
-      'padding:4px 0',
-      'font:13px Inter,system-ui,sans-serif',
-    ].join(';')
-    canvas.parentElement.appendChild(_acEl)
-  }
-
-  // Drop a passive range-suggestion highlight (never touches a real pick).
-  function _clearSuggestion() {
-    if (pick.dropSuggestion()) render()
-  }
-
-  // Build the { kind:'range', name, rect } suggestion for an empty SUM-style
-  // first argument, or null when there's nothing sensible to offer.
-  function _suggestRangeItem(value, cursor) {
-    if (!shouldSuggestRange(value, cursor)) return null
-    const rect = detectAdjacentRange(S.anchor.r, S.anchor.c, (r, c) =>
-      isNumericText(getValue(cellId(r, c))),
-    )
-    if (!rect) return null
-    const name = refForRange(rect, _crossSheetName(), colLabel)
-    return { kind: 'range', name, rect }
-  }
-
-  // _acItems: { name, kind: 'fn' | 'sheet' | 'range' }[]
-  function _acUpdate(value, cursor) {
-    if (!_acEl) return
-    _clearSuggestion()
-    const result = parseAcToken(value, cursor)
-    if (!result) {
-      // Empty first arg of a SUM-style function — offer the adjacent numeric
-      // run as a one-tap range (Google Sheets behaviour). Otherwise fall back
-      // to passive parameter help. Both leave _acItems empty for key nav only
-      // in the signature case; the range item IS selectable.
-      const sug = _suggestRangeItem(value, cursor)
-      if (sug) {
-        _acItems = [sug]
-        _acIdx = 0
-        pick.showSuggestion(sug.rect)
-        _acRender()
-        render()
-        return
-      }
-      _acShowSignature(value, cursor)
-      return
-    }
-    const up = result.tok.toUpperCase()
-    const fns = AC_FUN_KEYS.filter((n) => n.startsWith(up)).slice(0, 6)
-    const sheets = (getSheetNames?.() || [])
-      .filter((n) => n.toUpperCase().startsWith(up) && !fns.includes(n.toUpperCase()))
-      .slice(0, 3)
-    _acItems = [
-      ...fns.map((name) => ({ name, kind: 'fn' })),
-      ...sheets.map((name) => ({ name, kind: 'sheet' })),
-    ]
-    if (!_acItems.length) {
-      _acHide()
-      return
-    }
-    _acIdx = 0
-    _acRender()
-  }
-
-  function _acRender() {
-    if (!_acEl) return
-    _acEl.innerHTML = ''
-    _acItems.forEach((item, i) => {
-      const row = document.createElement('div')
-      row.style.cssText = `display:flex;align-items:baseline;gap:10px;padding:6px 12px;cursor:pointer;white-space:nowrap;border-radius:4px;${i === _acIdx ? 'background:var(--surface-gray-2, #f3f3f3);' : ''}`
-      const right =
-        item.kind === 'sheet'
-          ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-cyan-6, #0891b2);background:var(--surface-cyan-1, #ecfeff);border-radius:3px;padding:1px 5px;">sheet</span>`
-          : item.kind === 'range'
-            ? `<span style="font-size:11px;color:var(--ink-gray-5, #7c7c7c);">Tab to fill range</span>`
-            : `<span style="font-size:11px;color:var(--ink-gray-5, #7c7c7c);">${AC_FUNS[item.name]}</span>`
-      row.innerHTML = `<span style="font-weight:600;min-width:80px;color:var(--ink-gray-9, #171717);">${item.name}</span>${right}`
-      row.addEventListener('mousedown', (e) => {
-        e.preventDefault()
-        _acCommit(item)
-      })
-      row.addEventListener('mouseover', () => {
-        _acIdx = i
-        _acHighlight()
-      })
-      _acEl.appendChild(row)
-    })
-    const ox = parseFloat(overlay.el.style.left) || 0
-    const oy = parseFloat(overlay.el.style.top) || 0
-    const oh = parseFloat(overlay.el.style.height) || 24
-    _acEl.style.left = ox + 'px'
-    _acEl.style.top = oy + oh + 2 + 'px'
-    _acEl.style.display = 'block'
-    // Flip upward if the list clips the viewport bottom.
-    const rect = _acEl.getBoundingClientRect()
-    if (rect.bottom > window.innerHeight - 8) {
-      _acEl.style.top = Math.max(0, oy - _acEl.offsetHeight - 2) + 'px'
-    }
-  }
-
-  function _acHighlight() {
-    if (!_acEl) return
-    Array.from(_acEl.children).forEach((row, i) => {
-      row.style.background = i === _acIdx ? 'var(--surface-gray-2, #f3f3f3)' : ''
-    })
-  }
-
-  function _acHide() {
-    _acItems = []
-    _acIdx = 0
-    // A live range suggestion owns the picker highlight — drop it too, and
-    // repaint so it actually leaves the canvas (the Escape path returns without
-    // its own render()). An accepted suggestion is no longer a suggestion, so
-    // its inserted ref stays lit.
-    if (pick.dropSuggestion()) render()
-    if (_acEl) _acEl.style.display = 'none'
-  }
-
-  // Non-selectable parameter-help row: shows FN(a, b, c) with the argument the
-  // caret is on bolded. _acItems stays empty so Up/Down/Enter/Tab don't capture.
-  function _acShowSignature(value, cursor) {
-    const ctx = parseSignatureContext(value, cursor)
-    const desc = ctx && describeSignature(ctx.fn, ctx.argIndex)
-    if (!desc) {
-      _acHide()
-      return
-    }
-    _acItems = []
-    _acIdx = 0
-    const params = desc.params
-      .map((p, i) =>
-        i === desc.active ? `<b style="color:var(--ink-gray-9, #171717);">${p}</b>` : p,
-      )
-      .join(', ')
-    _acEl.innerHTML =
-      `<div style="padding:6px 12px;white-space:nowrap;color:var(--ink-gray-5, #7c7c7c);">` +
-      `<span style="font-weight:600;color:var(--ink-gray-9, #171717);">${ctx.fn}</span>(${params})</div>`
-    const ox = parseFloat(overlay.el.style.left) || 0
-    const oy = parseFloat(overlay.el.style.top) || 0
-    const oh = parseFloat(overlay.el.style.height) || 24
-    _acEl.style.left = ox + 'px'
-    _acEl.style.top = oy + oh + 2 + 'px'
-    _acEl.style.display = 'block'
-  }
-
-  // item: { name, kind: 'fn' | 'sheet' | 'range' }
-  function _acCommit(item) {
-    const input = overlay.el
-    const cursor = input.selectionStart
-    if (item.kind === 'range') {
-      // Splice the suggested ref in at the caret (which sits just after the
-      // opening paren).
-      const newVal = input.value.slice(0, cursor) + item.name + input.value.slice(cursor)
-      input.value = newVal
-      const pos = cursor + item.name.length
-      input.setSelectionRange(pos, pos)
-      onInput?.(cellId(S.anchor.r, S.anchor.c), newVal)
-      // Promote the accepted suggestion to a real pick so the highlight is
-      // owned exactly like a click-picked ref (range-picker.ts).
-      pick.acceptSuggestion(item.rect)
-      _acHide()
-      input.focus()
-      render()
-      return
-    }
-    const result = parseAcToken(input.value, cursor)
-    if (result) {
-      const { tokStart } = result
-      // A function accepts an auto-closed '()' with the caret between; a sheet
-      // gets a trailing '!'. Caret lands one char past the name either way.
-      const suffix = item.kind === 'sheet' ? '!' : '()'
-      const newVal = input.value.slice(0, tokStart) + item.name + suffix + input.value.slice(cursor)
-      input.value = newVal
-      const pos = tokStart + item.name.length + 1
-      input.setSelectionRange(pos, pos)
-      onInput?.(cellId(S.anchor.r, S.anchor.c), newVal)
-      input.focus()
-      // Caret now sits inside the fresh '(' — surface a range suggestion or
-      // parameter help instead of leaving the user with a bare, empty popup.
-      _acUpdate(newVal, pos)
-      return
-    }
-    _acHide()
-    input.focus()
-  }
-
   // ── Inline editor ────────────────────────────────────────────────────────────
 
   // 'enter' mode (fresh typing) lets arrow keys commit-and-move like Excel /
@@ -715,7 +514,7 @@ export function createGrid(
 
   function _commitAndHide() {
     if (!editing) return
-    _acHide()
+    ac.hide()
     editing = false
     const id = cellId(S.anchor.r, S.anchor.c)
     const val = overlay.getValue()
@@ -756,53 +555,25 @@ export function createGrid(
   overlay.el.addEventListener('input', () => {
     const val = overlay.getValue()
     onInput?.(cellId(S.anchor.r, S.anchor.c), val)
-    _acUpdate(val, overlay.el.selectionStart)
+    ac.update(val, overlay.el.selectionStart)
   })
 
   overlay.el.addEventListener('keydown', (e) => {
-    if (_acItems.length) {
-      const cur = _acItems[_acIdx]
-      // A range suggestion accepts on Tab only; Enter falls through to commit
-      // the formula (so an unwanted guess never hijacks Enter). Fn/sheet items
-      // accept on either key.
-      const acceptKey =
-        cur && cur.kind === 'range' ? e.key === 'Tab' : e.key === 'Tab' || e.key === 'Enter'
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        _acIdx = Math.min(_acIdx + 1, _acItems.length - 1)
-        _acHighlight()
-        return
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        _acIdx = Math.max(_acIdx - 1, 0)
-        _acHighlight()
-        return
-      }
-      if (acceptKey && cur) {
-        e.preventDefault()
-        _acCommit(cur)
-        return
-      }
-      if (e.key === 'Escape') {
-        _acHide()
-        return
-      }
-    }
+    if (ac.handleKey(e)) return
     // Auto-close parens (`(` → `()`, `)` steps over, Backspace clears an empty
     // pair) — only inside a formula. Handle before the picker/nav branches so
     // typing `(` never leaks into them.
-    const ac = autoCloseKey(
+    const closed = autoCloseKey(
       e.key,
       overlay.el.value,
       overlay.el.selectionStart,
       overlay.el.selectionEnd,
     )
-    if (ac) {
+    if (closed) {
       e.preventDefault()
       if (pick.isKeyPicking()) pick.keyCommit() // finalize an in-progress keyboard pick first
-      overlay.el.value = ac.value
-      overlay.el.setSelectionRange(ac.caret, ac.caret)
+      overlay.el.value = closed.value
+      overlay.el.setSelectionRange(closed.caret, closed.caret)
       overlay.el.dispatchEvent(new Event('input', { bubbles: true }))
       return
     }
@@ -872,7 +643,7 @@ export function createGrid(
       moveSel(S.anchor.r, e.shiftKey ? S.anchor.c - 1 : S.anchor.c + 1)
       canvas.focus()
     } else if (e.key === 'Escape') {
-      _acHide()
+      ac.hide()
       if (pick.isKeyPicking()) {
         pick.keyCancel()
         return
@@ -888,7 +659,7 @@ export function createGrid(
 
   overlay.el.addEventListener('blur', () => {
     if (!editing) return
-    _acHide()
+    ac.hide()
     editing = false
     const id = cellId(S.anchor.r, S.anchor.c)
     const val = overlay.getValue()
@@ -1760,7 +1531,7 @@ export function createGrid(
   function destroy() {
     overlay.remove()
     scrollbars.destroy()
-    _acEl?.remove()
+    ac.remove()
     loop.cancel()
     _stopWatchingRatio()
     if (_marchRAF) {

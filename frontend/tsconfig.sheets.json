@@ -35,6 +35,7 @@
     "src/apps/sheets/canvas/viewport.ts",
     "src/apps/sheets/canvas/selection.ts",
     "src/apps/sheets/canvas/input/hit-test.ts",
-    "src/apps/sheets/canvas/input/range-picker.ts"
+    "src/apps/sheets/canvas/input/range-picker.ts",
+    "src/apps/sheets/canvas/input/autocomplete.ts"
   ]
 }
