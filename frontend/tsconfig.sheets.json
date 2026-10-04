@@ -30,6 +30,10 @@
   "include": [
     "src/apps/sheets/core/**/*.ts",
     "src/apps/sheets/utils/sheet-codec.ts",
-    "src/apps/sheets/canvas/index.d.ts"
+    "src/apps/sheets/canvas/index.d.ts",
+    "src/apps/sheets/canvas/render-loop.ts",
+    "src/apps/sheets/canvas/viewport.ts",
+    "src/apps/sheets/canvas/selection.ts",
+    "src/apps/sheets/canvas/input/hit-test.ts"
   ]
 }

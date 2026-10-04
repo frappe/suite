@@ -25,9 +25,13 @@ import {
   TOTAL_ROWS,
 } from './constants.js'
 import { createGeometry } from './geometry.js'
+import { createHitTester } from './input/hit-test.js'
 import { createOverlay } from './overlay.js'
+import { createRenderLoop } from './render-loop.js'
 import { createRenderer } from './renderer.js'
 import { createScrollbars } from './scrollbars.js'
+import { createSelection, jumpEdge } from './selection.js'
+import { createViewport, watchPixelRatio } from './viewport.js'
 
 export function createGrid(
   canvas,
@@ -67,7 +71,6 @@ export function createGrid(
   } = {},
 ) {
   const ctx = canvas.getContext('2d')
-  const dpr = window.devicePixelRatio || 1
 
   const data = {}
 
@@ -106,9 +109,13 @@ export function createGrid(
   const colW = {}
   const rowH = {}
 
-  let sel = { r: 0, c: 0 }
-  let selEnd = { r: 0, c: 0 }
-  let selMode = 'cell' // 'cell' | 'col' | 'row'
+  // Selection: anchor (active cell), head (opposite corner), mode.
+  // geo is created further down; clamp only runs after construction.
+  const S = createSelection({
+    clamp: (r, c) => geo.clamp(r, c),
+    totalRows: () => TOTAL_ROWS,
+    totalCols: () => TOTAL_COLS,
+  })
   let dragging = false
   // A plain single-click anywhere in a list-validated cell opens its dropdown.
   // We record the candidate on mousedown and fire on mouseup, so a click that
@@ -134,8 +141,6 @@ export function createGrid(
   // here" marker for filter gaps, which would otherwise cover every row
   // boundary in a filtered region.
   const filterHiddenRows = new Set()
-  let cssW = 0,
-    cssH = 0
 
   // Marching-ants rect drawn over cut/copy source until paste/Escape clears it.
   let marchAnts = null // { r0, c0, r1, c1 } or null
@@ -159,6 +164,22 @@ export function createGrid(
     () => _zoom,
     filterHiddenRows,
   )
+  const vp = createViewport({
+    scroll,
+    geo,
+    totalCols: () => TOTAL_COLS,
+    totalRows: () => TOTAL_ROWS,
+    getZoom: () => _zoom,
+    getFreeze: () => freeze,
+    rowHeaderW: ROW_HEADER_W,
+    colHeaderH: COL_HEADER_H,
+  })
+  // Re-size the backing store when the pixel ratio changes, or the grid is
+  // painted at the new ratio into a canvas sized for the old one.
+  const _stopWatchingRatio = watchPixelRatio(() => {
+    _applyCanvasSize()
+    render()
+  })
   const renderer = createRenderer(ctx, geo)
   const overlay = createOverlay(canvas.parentElement)
   const scrollbars = createScrollbars(canvas.parentElement, {
@@ -169,23 +190,41 @@ export function createGrid(
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  let _raf = null
+  const loop = createRenderLoop(() => {
+    renderer.render({
+      cssW: vp.cssW,
+      cssH: vp.cssH,
+      getValue,
+      sel: S.anchor,
+      selEnd: S.head,
+      selMode: S.mode,
+      editing,
+      getFormat,
+      freeze,
+      getMergeInfo,
+      isSlave,
+      getComment,
+      getValidation,
+      getCondFormat,
+      getSparkline,
+      getRightInset,
+      getDiffFor: _diffCells ? _getDiffFor : null,
+      marchAnts,
+      marchPhase,
+      pickerRect,
+      colDrag: colDrag && colDrag.moved ? colDrag : null,
+      zoom: _zoom,
+    })
+    scrollbars.layout()
+  })
+  // Declarations, not consts: both are called from code above this point.
+  function render() {
+    loop.render()
+  }
   function scheduleRender() {
-    if (!_raf)
-      _raf = requestAnimationFrame(() => {
-        _raf = null
-        render()
-      })
+    loop.scheduleRender()
   }
-
-  const _renderListeners = []
-  function onRender(cb) {
-    _renderListeners.push(cb)
-    return () => {
-      const i = _renderListeners.indexOf(cb)
-      if (i >= 0) _renderListeners.splice(i, 1)
-    }
-  }
+  const onRender = loop.onRender
 
   // Diff overlay: { 'A1': true, ... } for the active sheet.  Used in version-
   // preview mode to paint changed cells with a teal highlight.  Reset on
@@ -214,35 +253,6 @@ export function createGrid(
     if (!_diffCells || !_activeDiffSheet) return false
     const slice = _diffCells[_activeDiffSheet]
     return !!(slice && slice[id])
-  }
-
-  function render() {
-    renderer.render({
-      cssW,
-      cssH,
-      getValue,
-      sel,
-      selEnd,
-      selMode,
-      editing,
-      getFormat,
-      freeze,
-      getMergeInfo,
-      isSlave,
-      getComment,
-      getValidation,
-      getCondFormat,
-      getSparkline,
-      getRightInset,
-      getDiffFor: _diffCells ? _getDiffFor : null,
-      marchAnts,
-      marchPhase,
-      pickerRect,
-      colDrag: colDrag && colDrag.moved ? colDrag : null,
-      zoom: _zoom,
-    })
-    scrollbars.layout()
-    for (const cb of _renderListeners) cb()
   }
 
   function _stepMarch() {
@@ -276,7 +286,7 @@ export function createGrid(
     const fc = freeze.cols || 0
     for (let c = 0; c < fc; c++) rects.push({ c, x: geo.colX(c) * _zoom, width: geo.cw(c) * _zoom })
     const c0 = geo.firstVisCol()
-    const c1 = geo.lastVisCol(c0, cssW)
+    const c1 = geo.lastVisCol(c0, vp.cssW)
     for (let c = c0; c <= c1; c++)
       rects.push({ c, x: geo.colX(c) * _zoom, width: geo.cw(c) * _zoom })
     return rects
@@ -295,34 +305,19 @@ export function createGrid(
 
   // ── Selection ────────────────────────────────────────────────────────────────
 
+  // Selection state and range maths live in selection.ts; these wrappers add
+  // the side effects (scroll into view, repaint, tell the host).
   function getSelRange() {
-    let r0 = Math.min(sel.r, selEnd.r),
-      r1 = Math.max(sel.r, selEnd.r)
-    let c0 = Math.min(sel.c, selEnd.c),
-      c1 = Math.max(sel.c, selEnd.c)
-    // Whole-row / column / sheet selections keep their anchor on the user's
-    // active cell — selMode, not the stored corners, defines the perpendicular
-    // span. So a Shift+Space row still reports every column for copy/delete/etc.
-    if (selMode === 'row' || selMode === 'all') {
-      c0 = 0
-      c1 = TOTAL_COLS - 1
-    }
-    if (selMode === 'col' || selMode === 'all') {
-      r0 = 0
-      r1 = TOTAL_ROWS - 1
-    }
-    return { r0, c0, r1, c1, mode: selMode }
+    return S.range()
   }
 
   // Restore a rectangular selection (used by the contextmenu handler when
   // mousedown collapsed a multi-cell range the user wanted to keep).
   function setSelRange({ r0, c0, r1, c1, mode } = {}) {
     if (r0 == null || c0 == null || r1 == null || c1 == null) return
-    selMode = mode || 'cell'
-    sel = geo.clamp(r0, c0)
-    selEnd = geo.clamp(r1, c1)
+    S.set({ r0, c0, r1, c1, mode: mode || 'cell' })
     render()
-    onSelect?.(cellId(sel.r, sel.c))
+    onSelect?.(cellId(S.anchor.r, S.anchor.c))
   }
 
   // Snapshot of the selection just before the most recent mousedown — lets the
@@ -333,51 +328,23 @@ export function createGrid(
     return _preMousedownSel
   }
 
-  // Max scroll so the last col/row sits flush with the viewport's right/bottom.
-  // Beyond this we'd just be showing empty canvas past the sheet — Google
-  // Sheets clamps to here, so do we.
-  // Full sheet extent incl. the header gutter, in logical px. Summing every
-  // column/row is O(cols+rows) — up to tens of thousands of iterations — so we
-  // cache it and recompute only in `_applyCanvasSize`, the single choke point
-  // every structural change (resize, col/row size, expand, freeze, hide) routes
-  // through. Scroll clamping and the scrollbar model then read it for free.
-  let _contentW = ROW_HEADER_W,
-    _contentH = COL_HEADER_H
-  function _recomputeExtent() {
-    let w = 0
-    for (let c = 0; c < TOTAL_COLS; c++) w += geo.cw(c)
-    let h = 0
-    for (let r = 0; r < TOTAL_ROWS; r++) h += geo.rh(r)
-    _contentW = w + ROW_HEADER_W
-    _contentH = h + COL_HEADER_H
-  }
-  // Prime the cache at construction so _clampScroll / scrollTo are correct even
-  // before the first resize() → _applyCanvasSize. Otherwise the header-only
-  // seed values above would clamp any pre-resize scroll to ~0.
-  _recomputeExtent()
-  function _maxScrollX() {
-    return Math.max(0, _contentW - cssW)
-  }
-  function _maxScrollY() {
-    return Math.max(0, _contentH - cssH)
-  }
+  // Scroll extent and clamping live in viewport.ts.
   function _clampScroll() {
-    scroll.x = Math.max(0, Math.min(scroll.x, _maxScrollX()))
-    scroll.y = Math.max(0, Math.min(scroll.y, _maxScrollY()))
+    vp.clampScroll()
   }
 
-  // Pin the open in-cell editor to `sel`'s current on-screen rect. ANY change
+  // Pin the open in-cell editor to `S.anchor`'s current on-screen rect. ANY change
   // to scroll, zoom, or layout that repaints the grid must call this too, or
   // the <textarea> is left floating at a stale offset while the highlight moves
   // under it — the "editor shows somewhere else" bug. Cheap no-op when idle.
   function _positionEditor() {
     if (!editing) return
-    const fmt = getFormat ? getFormat(cellId(sel.r, sel.c)) || {} : {}
+    const fmt = getFormat ? getFormat(cellId(S.anchor.r, S.anchor.c)) || {} : {}
     overlay.position(
-      geo.colX(sel.c) * _zoom,
-      geo.rowY(sel.r) * _zoom,
-      geo.cw(sel.c) * _zoom,
-      geo.rh(sel.r) * _zoom,
+      geo.colX(S.anchor.c) * _zoom,
+      geo.rowY(S.anchor.r) * _zoom,
+      geo.cw(S.anchor.c) * _zoom,
+      geo.rh(S.anchor.r) * _zoom,
       fmt,
       _zoom,
     )
@@ -387,112 +354,57 @@ export function createGrid(
   // the wheel handler and the overlay scrollbars so both keep the in-cell
   // editor pinned to its cell and repaint. Values are clamped to the sheet.
   function scrollTo(x, y) {
-    scroll.x = x
-    scroll.y = y
-    _clampScroll()
+    vp.scrollTo(x, y)
     _positionEditor()
     render()
   }
 
-  // Scroll model consumed by the overlay scrollbars — everything the thumbs
-  // need to size and position themselves, in logical units (the scrollbars work
-  // in ratios, so zoom cancels out). `content` is the full sheet extent incl.
-  // the header gutter; `view` is the visible logical span.
   function _scrollModel() {
-    return {
-      x: { pos: scroll.x, max: _maxScrollX(), view: cssW, content: _contentW },
-      y: { pos: scroll.y, max: _maxScrollY(), view: cssH, content: _contentH },
-      // Physical viewport (the grid-wrap's content box). Lets the scrollbars
-      // size their tracks arithmetically instead of reading clientWidth/Height
-      // each render — avoiding a forced reflow in the scroll/selection hot path.
-      viewportW: _viewportW,
-      viewportH: _viewportH,
-    }
+    return vp.scrollModel()
   }
-
   function ensureVisible(r, c) {
-    if (c < (freeze.cols || 0) || r < (freeze.rows || 0)) return
-    const frozW_ = geo.frozenW ? geo.frozenW() : 0
-    const frozH_ = geo.frozenH ? geo.frozenH() : 0
-    const x = geo.colX(c),
-      y = geo.rowY(r),
-      w = geo.cw(c),
-      h = geo.rh(r)
-    const minX = 50 + frozW_,
-      minY = 24 + frozH_
-    if (x < minX) scroll.x = Math.max(0, scroll.x - (minX - x))
-    else if (x + w > cssW) scroll.x += x + w - cssW + 8
-    if (y < minY) scroll.y = Math.max(0, scroll.y - (minY - y))
-    else if (y + h > cssH) scroll.y += y + h - cssH + 8
-    _clampScroll()
+    vp.ensureVisible(r, c)
   }
 
   function moveSel(r, c) {
-    selMode = 'cell'
-    const p = geo.clamp(r, c)
-    sel = selEnd = p
-    ensureVisible(sel.r, sel.c)
+    S.moveTo(r, c)
+    ensureVisible(S.anchor.r, S.anchor.c)
     // Any non-picker selection move dismisses a lingering picker highlight.
     if (pickerRect) {
       pickerRect = null
     }
     render()
-    onSelect?.(cellId(sel.r, sel.c))
+    onSelect?.(cellId(S.anchor.r, S.anchor.c))
   }
 
   function extendSel(r, c) {
-    selEnd = geo.clamp(r, c)
-    // ensureVisible target depends on selMode. For a whole-column selection
-    // selEnd.r is pinned to the last row, so scrolling to it on a sideways
+    S.extendTo(r, c)
+    // ensureVisible target depends on S.mode. For a whole-column selection
+    // S.head.r is pinned to the last row, so scrolling to it on a sideways
     // extend would jump us to the bottom of the new column — not what the
     // user expects from Shift+Right on a column header. Same in reverse for
     // whole-row selections.
-    if (selMode === 'col') ensureVisible(0, selEnd.c)
-    else if (selMode === 'row') ensureVisible(selEnd.r, 0)
-    else ensureVisible(selEnd.r, selEnd.c)
+    if (S.mode === 'col') ensureVisible(0, S.head.c)
+    else if (S.mode === 'row') ensureVisible(S.head.r, 0)
+    else ensureVisible(S.head.r, S.head.c)
     render()
     // Re-emit onSelect so subscribers (collab cursor broadcaster) see the
     // new range. The anchor cell id is unchanged here — callers that care
     // about anchor identity short-circuit on equality; callers that fetch
     // grid.getSelection() pick up the extended range.
-    onSelect?.(cellId(sel.r, sel.c))
+    onSelect?.(cellId(S.anchor.r, S.anchor.c))
   }
 
   // Jump to data-region edge (Cmd+Arrow behaviour matching Google Sheets)
   function _jumpEdge(startR, startC, dr, dc) {
-    const maxR = TOTAL_ROWS - 1,
-      maxC = TOTAL_COLS - 1
-    const curFilled = hasVal(cellId(startR, startC))
-    let nr = Math.max(0, Math.min(maxR, startR + dr))
-    let nc = Math.max(0, Math.min(maxC, startC + dc))
-    if (curFilled && hasVal(cellId(nr, nc))) {
-      // Scan forward to end of contiguous block
-      let r = startR,
-        c = startC
-      while (true) {
-        const tr = r + dr,
-          tc = c + dc
-        if (tr < 0 || tr > maxR || tc < 0 || tc > maxC) break
-        if (!hasVal(cellId(tr, tc))) break
-        r = tr
-        c = tc
-      }
-      return { r, c }
-    } else {
-      // Scan forward to next filled cell
-      let r = startR + dr,
-        c = startC + dc
-      while (r >= 0 && r <= maxR && c >= 0 && c <= maxC) {
-        if (hasVal(cellId(r, c))) return { r, c }
-        r += dr
-        c += dc
-      }
-      // No filled cell — go to grid boundary
-      return {
-        r: dr > 0 ? maxR : dr < 0 ? 0 : startR,
-        c: dc > 0 ? maxC : dc < 0 ? 0 : startC,
-      }
-    }
+    return jumpEdge(
+      { r: startR, c: startC },
+      dr,
+      dc,
+      (r, c) => hasVal(cellId(r, c)),
+      TOTAL_ROWS - 1,
+      TOTAL_COLS - 1,
+    )
   }
 
   function _lastUsedCell() {
@@ -541,7 +453,9 @@ export function createGrid(
   // first argument, or null when there's nothing sensible to offer.
   function _suggestRangeItem(value, cursor) {
     if (!shouldSuggestRange(value, cursor)) return null
-    const rect = detectAdjacentRange(sel.r, sel.c, (r, c) => isNumericText(getValue(cellId(r, c))))
+    const rect = detectAdjacentRange(S.anchor.r, S.anchor.c, (r, c) =>
+      isNumericText(getValue(cellId(r, c))),
+    )
     if (!rect) return null
     const name = _refForRange(rect.r0, rect.c0, rect.r1, rect.c1, _crossSheetName())
     return { kind: 'range', name, rect }
@@ -683,7 +597,7 @@ export function createGrid(
       input.value = newVal
       const pos = cursor + item.name.length
       input.setSelectionRange(pos, pos)
-      onInput?.(cellId(sel.r, sel.c), newVal)
+      onInput?.(cellId(S.anchor.r, S.anchor.c), newVal)
       // Promote the accepted suggestion to a real pick so the highlight is
       // owned exactly like a click-picked ref — cleared on commit/cancel, and
       // extendable from its origin on the next click — instead of lingering as
@@ -709,7 +623,7 @@ export function createGrid(
       input.value = newVal
       const pos = tokStart + item.name.length + 1
       input.setSelectionRange(pos, pos)
-      onInput?.(cellId(sel.r, sel.c), newVal)
+      onInput?.(cellId(S.anchor.r, S.anchor.c), newVal)
       input.focus()
       // Caret now sits inside the fresh '(' — surface a range suggestion or
       // parameter help instead of leaving the user with a bare, empty popup.
@@ -882,25 +796,9 @@ export function createGrid(
   }
 
   // Bring (r, c) into view inside the scrollable region — same idea as
-  // ensureVisible but works regardless of `sel` (which we don't move).
+  // ensureVisible but works regardless of `S.anchor` (which we don't move).
   function _scrollIntoView(r, c) {
-    const frozW_ = geo.frozenW(),
-      frozH_ = geo.frozenH()
-    if (c >= (freeze.cols || 0)) {
-      const x = geo.colX(c),
-        w = geo.cw(c)
-      const minX = ROW_HEADER_W + frozW_
-      if (x < minX) scroll.x = Math.max(0, scroll.x - (minX - x))
-      else if (x + w > cssW) scroll.x += x + w - cssW + 8
-    }
-    if (r >= (freeze.rows || 0)) {
-      const y = geo.rowY(r),
-        h = geo.rh(r)
-      const minY = COL_HEADER_H + frozH_
-      if (y < minY) scroll.y = Math.max(0, scroll.y - (minY - y))
-      else if (y + h > cssH) scroll.y += y + h - cssH + 8
-    }
-    _clampScroll()
+    vp.ensureVisible(r, c)
     // Picking scrolls the view while the editor stays anchored to the formula
     // cell; repin it so it tracks that cell instead of hanging in place.
     _positionEditor()
@@ -937,7 +835,7 @@ export function createGrid(
 
     // Mouse → keyboard handoff: a prior click/drag set `picker` and the ref
     // was inserted at the input's current cursor. Adopt that anchor + rect
-    // so Shift+arrow extends from where the user dragged, not from `sel`.
+    // so Shift+arrow extends from where the user dragged, not from `S.anchor`.
     if (picker && picker.target === target && pickerRect) {
       const refLen = _refForRange(
         pickerRect.r0,
@@ -960,8 +858,8 @@ export function createGrid(
       insertStart = _refReplaceStart(target)
       insertEnd = target.selectionStart
       // Fresh pick — start one step from the edited cell.
-      headR = sel.r + dr
-      headC = sel.c + dc
+      headR = S.anchor.r + dr
+      headC = S.anchor.c + dc
       anchorR = headR
       anchorC = headC
     }
@@ -1058,20 +956,20 @@ export function createGrid(
     // so blocking it here keeps a viewer from typing into a cell that can't be
     // saved. Selection/navigation still work.
     if (!canEdit()) return
-    if (isCellEditable && !isCellEditable(sel.r, sel.c)) {
+    if (isCellEditable && !isCellEditable(S.anchor.r, S.anchor.c)) {
       onBlockedEdit?.()
       return
     }
     editMode = mode
-    selEnd = { r: sel.r, c: sel.c }
-    // Type-to-edit and F2 don't move the selection, so `sel` may have been
+    S.head = { r: S.anchor.r, c: S.anchor.c }
+    // Type-to-edit and F2 don't move the selection, so `S.anchor` may have been
     // scrolled off-screen (wheel/scrollbar leaves the selection put). Bring it
     // back into view before positioning, or the editor opens off in the void.
-    ensureVisible(sel.r, sel.c)
+    ensureVisible(S.anchor.r, S.anchor.c)
     editing = true
     _positionEditor()
     overlay.show(initialValue)
-    onInput?.(cellId(sel.r, sel.c), initialValue)
+    onInput?.(cellId(S.anchor.r, S.anchor.c), initialValue)
     render()
   }
 
@@ -1079,7 +977,7 @@ export function createGrid(
     if (!editing) return
     _acHide()
     editing = false
-    const id = cellId(sel.r, sel.c)
+    const id = cellId(S.anchor.r, S.anchor.c)
     const val = overlay.getValue()
     overlay.hide()
     _clearPickerHighlight()
@@ -1117,7 +1015,7 @@ export function createGrid(
 
   overlay.el.addEventListener('input', () => {
     const val = overlay.getValue()
-    onInput?.(cellId(sel.r, sel.c), val)
+    onInput?.(cellId(S.anchor.r, S.anchor.c), val)
     _acUpdate(val, overlay.el.selectionStart)
   })
 
@@ -1207,7 +1105,7 @@ export function createGrid(
       // Not a formula — arrow commits and moves like Excel / Google Sheets.
       e.preventDefault()
       _commitAndHide()
-      moveSel(sel.r + dr, sel.c + dc)
+      moveSel(S.anchor.r + dr, S.anchor.c + dc)
       canvas.focus()
       return
     }
@@ -1223,16 +1121,16 @@ export function createGrid(
         return
       }
       _commitAndHide()
-      const anchorC = _tabAnchorCol ?? sel.c
+      const anchorC = _tabAnchorCol ?? S.anchor.c
       _tabAnchorCol = null
-      moveSel(sel.r + 1, anchorC)
+      moveSel(S.anchor.r + 1, anchorC)
       canvas.focus()
     } else if (e.key === 'Tab') {
       e.preventDefault()
       if (pickerKb) _pickerKbCommit()
-      if (_tabAnchorCol === null) _tabAnchorCol = sel.c
+      if (_tabAnchorCol === null) _tabAnchorCol = S.anchor.c
       _commitAndHide()
-      moveSel(sel.r, e.shiftKey ? sel.c - 1 : sel.c + 1)
+      moveSel(S.anchor.r, e.shiftKey ? S.anchor.c - 1 : S.anchor.c + 1)
       canvas.focus()
     } else if (e.key === 'Escape') {
       _acHide()
@@ -1245,7 +1143,7 @@ export function createGrid(
       _clearPickerHighlight()
       render()
       canvas.focus()
-      onCancel?.(cellId(sel.r, sel.c))
+      onCancel?.(cellId(S.anchor.r, S.anchor.c))
     }
   })
 
@@ -1253,7 +1151,7 @@ export function createGrid(
     if (!editing) return
     _acHide()
     editing = false
-    const id = cellId(sel.r, sel.c)
+    const id = cellId(S.anchor.r, S.anchor.c)
     const val = overlay.getValue()
     overlay.hide()
     render()
@@ -1262,30 +1160,27 @@ export function createGrid(
 
   // ── Fill handle ──────────────────────────────────────────────────────────────
 
-  function _fillHandlePos() {
-    let { r1, c1 } = getSelRange()
-    // Extend to the merge's far corner so a single-merged-cell selection
-    // hit-tests at the same bottom-right point the painter draws the dot at.
-    // Without this, the dot rendered correctly but mousedowns landed on the
-    // master cell's bottom-right (mid-block) and the drag never engaged.
-    const m = getMergeInfo?.(cellId(r1, c1))
-    if (m) {
-      r1 += m.rowSpan - 1
-      c1 += m.colSpan - 1
-    }
-    return {
-      fx: geo.colX(c1) + geo.cw(c1),
-      fy: geo.rowY(r1) + geo.rh(r1),
-    }
-  }
-
+  // What's under the mouse, in one priority order: hit-test.ts.
+  const hits = createHitTester({
+    geo,
+    getZoom: () => _zoom,
+    fillCorner: () => {
+      if (editing) return null
+      let { r1, c1 } = getSelRange()
+      // Extend to the merge's far corner so a single-merged-cell selection
+      // hit-tests at the same bottom-right point the painter draws the dot at.
+      // Without this, the dot rendered correctly but mousedowns landed on the
+      // master cell's bottom-right (mid-block) and the drag never engaged.
+      const m = getMergeInfo?.(cellId(r1, c1))
+      if (m) {
+        r1 += m.rowSpan - 1
+        c1 += m.colSpan - 1
+      }
+      return { r: r1, c: c1 }
+    },
+  })
   function hitTestFillHandle(ex, ey, rect) {
-    if (editing) return false
-    // Mouse coords are physical CSS px; fillHandlePos is logical. Undo zoom.
-    const x = (ex - rect.left) / _zoom
-    const y = (ey - rect.top) / _zoom
-    const { fx, fy } = _fillHandlePos()
-    return Math.hypot(x - fx, y - fy) <= 6
+    return hits.onFillHandle(ex, ey, rect)
   }
 
   // Double-click-fill extent: pick a non-empty neighbour column (left, then
@@ -1397,14 +1292,10 @@ export function createGrid(
     const pickInput = _pickTarget()
     if (pickInput) {
       e.preventDefault()
-      // Resize edges / fill handle / corner are no-ops during pick.
-      if (geo.hitTestColResize(e.clientX, e.clientY, rect) !== null) return
-      if (geo.hitTestRowResize(e.clientX, e.clientY, rect) !== null) return
-      if (geo.hitTestCorner(e.clientX, e.clientY, rect)) return
-      if (hitTestFillHandle(e.clientX, e.clientY, rect)) return
-
-      const colHit = geo.hitTestColHeader(e.clientX, e.clientY, rect)
-      if (colHit !== null) {
+      const hit = hits.at(e.clientX, e.clientY, rect)
+      // Headers and cells insert a reference; everything else is a no-op.
+      if (hit.kind === 'colHeader') {
+        const colHit = hit.col
         // Full-column reference (`A:A`, with optional `Sheet1!` prefix when foreign).
         const ref = `${_sheetPrefixIfForeign()}${colLabel(colHit)}:${colLabel(colHit)}`
         _writeRef(pickInput, ref, _refReplaceStart(pickInput))
@@ -1413,8 +1304,8 @@ export function createGrid(
         render()
         return
       }
-      const rowHit = geo.hitTestRowHeader(e.clientX, e.clientY, rect)
-      if (rowHit !== null) {
+      if (hit.kind === 'rowHeader') {
+        const rowHit = hit.row
         // Full-row reference (`1:1`).
         const ref = `${_sheetPrefixIfForeign()}${rowHit + 1}:${rowHit + 1}`
         _writeRef(pickInput, ref, _refReplaceStart(pickInput))
@@ -1423,12 +1314,13 @@ export function createGrid(
         render()
         return
       }
-      const h = geo.hitTest(e.clientX, e.clientY, rect)
-      if (!h) return
+      // Resize edges, the fill handle and the corner do nothing while picking.
+      if (hit.kind !== 'cell') return
+      const h = hit
       // No self-reference — clicking the cell being edited is a no-op, but
       // only when we're on the editing-home sheet (clicking the same screen
       // cell on a *different* sheet is a legitimate cross-sheet reference).
-      if (editing && h.r === sel.r && h.c === sel.c && !_crossSheetName()) return
+      if (editing && h.r === S.anchor.r && h.c === S.anchor.c && !_crossSheetName()) return
       // Slave cells redirect to their merge master.
       let tr = h.r,
         tc = h.c
@@ -1477,8 +1369,12 @@ export function createGrid(
       return
     }
 
-    const resizeCol = canEdit() ? geo.hitTestColResize(e.clientX, e.clientY, rect) : null
-    if (resizeCol !== null) {
+    // Resize edges and the fill handle are targets only for editors; for a
+    // viewer the same press falls through to the header or cell beneath.
+    const hit = hits.at(e.clientX, e.clientY, rect, { resize: canEdit(), fill: canEdit() })
+
+    if (hit.kind === 'colResize') {
+      const resizeCol = hit.col
       e.preventDefault()
       // Broadcast resize: when the dragged column is part of a multi-column
       // selection (whole-grid via corner-click, or a header-drag column
@@ -1486,30 +1382,30 @@ export function createGrid(
       // Otherwise fall back to single-column resize.
       const range = getSelRange()
       const cols =
-        selMode === 'all'
+        S.mode === 'all'
           ? Array.from({ length: TOTAL_COLS }, (_, c) => c)
-          : selMode === 'col' && resizeCol >= range.c0 && resizeCol <= range.c1
+          : S.mode === 'col' && resizeCol >= range.c0 && resizeCol <= range.c1
             ? Array.from({ length: range.c1 - range.c0 + 1 }, (_, i) => range.c0 + i)
             : [resizeCol]
       resizing = { cols, startX: e.clientX, startW: colW[resizeCol] ?? 100 }
       return
     }
 
-    const resizeRowHit = canEdit() ? geo.hitTestRowResize(e.clientX, e.clientY, rect) : null
-    if (resizeRowHit !== null) {
+    if (hit.kind === 'rowResize') {
+      const resizeRowHit = hit.row
       e.preventDefault()
       const range = getSelRange()
       const rows =
-        selMode === 'all'
+        S.mode === 'all'
           ? Array.from({ length: TOTAL_ROWS }, (_, r) => r)
-          : selMode === 'row' && resizeRowHit >= range.r0 && resizeRowHit <= range.r1
+          : S.mode === 'row' && resizeRowHit >= range.r0 && resizeRowHit <= range.r1
             ? Array.from({ length: range.r1 - range.r0 + 1 }, (_, i) => range.r0 + i)
             : [resizeRowHit]
       resizingRow = { rows, startY: e.clientY, startH: rowH[resizeRowHit] ?? DEFAULT_ROW_H }
       return
     }
 
-    if (canEdit() && hitTestFillHandle(e.clientX, e.clientY, rect)) {
+    if (hit.kind === 'fillHandle') {
       const { r0, c0, r1, c1 } = getSelRange()
       // Track the mousedown screen position so mousemove can ignore sub-pixel
       // jitter — otherwise a 1px wobble during the click extends the selection
@@ -1519,29 +1415,29 @@ export function createGrid(
     }
 
     // Top-left corner cell → select the entire grid (Google Sheets behavior).
-    if (geo.hitTestCorner(e.clientX, e.clientY, rect)) {
+    if (hit.kind === 'corner') {
       if (editing) _commitAndHide()
-      selMode = 'all'
-      sel = { r: 0, c: 0 }
-      selEnd = { r: TOTAL_ROWS - 1, c: TOTAL_COLS - 1 }
+      S.mode = 'all'
+      S.anchor = { r: 0, c: 0 }
+      S.head = { r: TOTAL_ROWS - 1, c: TOTAL_COLS - 1 }
       canvas.focus()
       render()
       onSelect?.('A1')
       return
     }
 
-    const colHit = geo.hitTestColHeader(e.clientX, e.clientY, rect)
-    if (colHit !== null) {
+    if (hit.kind === 'colHeader') {
+      const colHit = hit.col
       if (editing) _commitAndHide()
       // Pressing inside an existing multi-column selection keeps it and arms a
       // block move; otherwise select the single column (and arm a 1-col move).
       const range = getSelRange()
       const inBlock =
-        selMode === 'col' && range.c1 > range.c0 && colHit >= range.c0 && colHit <= range.c1
+        S.mode === 'col' && range.c1 > range.c0 && colHit >= range.c0 && colHit <= range.c1
       if (!inBlock) {
-        selMode = 'col'
-        sel = { r: 0, c: colHit }
-        selEnd = { r: TOTAL_ROWS - 1, c: colHit }
+        S.mode = 'col'
+        S.anchor = { r: 0, c: colHit }
+        S.head = { r: TOTAL_ROWS - 1, c: colHit }
         onSelect?.(colLabel(colHit) + ':' + colLabel(colHit))
       }
       // Moving columns is a data mutation — arm the drag only with write access.
@@ -1569,12 +1465,12 @@ export function createGrid(
       return
     }
 
-    const rowHit = geo.hitTestRowHeader(e.clientX, e.clientY, rect)
-    if (rowHit !== null) {
+    if (hit.kind === 'rowHeader') {
+      const rowHit = hit.row
       if (editing) _commitAndHide()
-      selMode = 'row'
-      sel = { r: rowHit, c: 0 }
-      selEnd = { r: rowHit, c: TOTAL_COLS - 1 }
+      S.mode = 'row'
+      S.anchor = { r: rowHit, c: 0 }
+      S.head = { r: rowHit, c: TOTAL_COLS - 1 }
       canvas.focus()
       render()
       onSelect?.(String(rowHit + 1) + ':' + String(rowHit + 1))
@@ -1584,8 +1480,8 @@ export function createGrid(
     // Picker check moved to top of mousedown (PRIORITY 0) — by here we know
     // no =-formula input is focused, so a click is a real selection.
     if (editing) _commitAndHide()
-    const h = geo.hitTest(e.clientX, e.clientY, rect)
-    if (!h) return
+    if (hit.kind !== 'cell') return
+    const h = hit
     canvas.focus()
 
     const hId = cellId(h.r, h.c)
@@ -1674,9 +1570,11 @@ export function createGrid(
     // Read-only viewers: dbl-click neither edits a cell nor resizes/fills.
     if (!canEdit()) return
 
+    const hit = hits.at(e.clientX, e.clientY, rect)
+
     // Double-click on the fill handle → fill down to the bottom of the
     // adjacent column's contiguous data run (Google Sheets behaviour).
-    if (hitTestFillHandle(e.clientX, e.clientY, rect)) {
+    if (hit.kind === 'fillHandle') {
       const src = getSelRange()
       const end = _autoFillDownExtent(src)
       if (end > src.r1) {
@@ -1687,31 +1585,19 @@ export function createGrid(
     }
 
     // Double-click on the column resize edge or column header → auto-fit column width.
-    const resizeCol = geo.hitTestColResize(e.clientX, e.clientY, rect)
-    if (resizeCol !== null) {
-      autoFitCol(resizeCol)
-      return
-    }
-    const headerCol = geo.hitTestColHeader(e.clientX, e.clientY, rect)
-    if (headerCol !== null) {
-      autoFitCol(headerCol)
+    if (hit.kind === 'colResize' || hit.kind === 'colHeader') {
+      autoFitCol(hit.col)
       return
     }
 
     // Double-click on the row resize edge or row header → auto-fit row height.
-    const resizeRowHit = geo.hitTestRowResize(e.clientX, e.clientY, rect)
-    if (resizeRowHit !== null) {
-      autoFitRow(resizeRowHit)
-      return
-    }
-    const headerRow = geo.hitTestRowHeader(e.clientX, e.clientY, rect)
-    if (headerRow !== null) {
-      autoFitRow(headerRow)
+    if (hit.kind === 'rowResize' || hit.kind === 'rowHeader') {
+      autoFitRow(hit.row)
       return
     }
 
-    const h = geo.hitTest(e.clientX, e.clientY, rect)
-    if (!h) return
+    if (hit.kind !== 'cell') return
+    const h = hit
     // On a pivot output sheet, a double-click drills into the source rows
     // instead of editing the (regenerated) cell. The handler returns true
     // when it took over.
@@ -1949,8 +1835,8 @@ export function createGrid(
 
   canvas.setAttribute('tabindex', '0')
   canvas.addEventListener('keydown', (e) => {
-    const { r, c } = sel
-    const { r: er, c: ec } = selEnd
+    const { r, c } = S.anchor
+    const { r: er, c: ec } = S.head
     const mod = e.ctrlKey || e.metaKey
     const isArrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)
     const dirs = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
@@ -2045,24 +1931,24 @@ export function createGrid(
     // Ctrl/Cmd+Shift+Space — the entire sheet. Mirrors Google Sheets. Kept
     // above the printable-char handler below so the Space keystroke isn't
     // swallowed into cell-edit mode. The anchor stays on the active cell
-    // (r, c) — getSelRange() expands the perpendicular axis by selMode — so the
+    // (r, c) — getSelRange() expands the perpendicular axis by S.mode — so the
     // highlighted cell keeps its column/row and arrows + typing resume from
     // there, exactly like Sheets. A pre-existing range promotes its span.
     if (e.code === 'Space' || e.key === ' ') {
       if (mod && e.shiftKey) {
         e.preventDefault()
-        selMode = 'all'
-        sel = { r: 0, c: 0 }
-        selEnd = { r: TOTAL_ROWS - 1, c: TOTAL_COLS - 1 }
+        S.mode = 'all'
+        S.anchor = { r: 0, c: 0 }
+        S.head = { r: TOTAL_ROWS - 1, c: TOTAL_COLS - 1 }
         render()
         onSelect?.('A1')
         return
       }
       if (mod) {
         e.preventDefault()
-        selMode = 'col'
-        sel = { r, c }
-        selEnd = { r, c: ec }
+        S.mode = 'col'
+        S.anchor = { r, c }
+        S.head = { r, c: ec }
         const cc0 = Math.min(c, ec),
           cc1 = Math.max(c, ec)
         render()
@@ -2071,9 +1957,9 @@ export function createGrid(
       }
       if (e.shiftKey) {
         e.preventDefault()
-        selMode = 'row'
-        sel = { r, c }
-        selEnd = { r: er, c }
+        S.mode = 'row'
+        S.anchor = { r, c }
+        S.head = { r: er, c }
         const rr0 = Math.min(r, er),
           rr1 = Math.max(r, er)
         render()
@@ -2089,7 +1975,7 @@ export function createGrid(
       e.preventDefault()
       _tabAnchorCol = null
       const top = geo.firstVisRow()
-      const page = Math.max(1, geo.lastVisRow(top, cssH) - top)
+      const page = Math.max(1, geo.lastVisRow(top, vp.cssH) - top)
       const dir = e.key === 'PageDown' ? 1 : -1
       const from = e.shiftKey ? er : r
       const target = _skipHiddenR(from + dir * page, dir)
@@ -2152,31 +2038,15 @@ export function createGrid(
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
-  // Last viewport dimensions reported by the parent (gridWrap). Stored so we
-  // can re-apply the sheet-extent cap whenever column/row sizes change.
-  let _viewportW = 0,
-    _viewportH = 0
-
+  // The single choke point every size change (viewport, zoom, column/row
+  // sizes, freeze, hide, pixel ratio) goes through. viewport.ts computes the
+  // sizes; this applies them to the element.
   function _applyCanvasSize() {
-    // Logical viewport (cssW/cssH) shrinks with zoom so the geometry sees a
-    // smaller area while the on-screen pixels stay constant. The canvas's
-    // *physical* size is tied to the viewport (×dpr ×zoom), so high-DPI plus
-    // zoom both contribute to backing-store resolution.
-    _recomputeExtent()
-    const sheetW = _contentW
-    const sheetH = _contentH
-    const viewLogicalW = _viewportW / _zoom
-    const viewLogicalH = _viewportH / _zoom
-    cssW = Math.min(viewLogicalW, sheetW)
-    cssH = Math.min(viewLogicalH, sheetH)
-    // Physical CSS size is logical × zoom; backing store is that × dpr.
-    const physW = cssW * _zoom
-    const physH = cssH * _zoom
-    canvas.width = Math.round(physW * dpr)
-    canvas.height = Math.round(physH * dpr)
-    canvas.style.width = physW + 'px'
-    canvas.style.height = physH + 'px'
-    _clampScroll()
+    const size = vp.layout()
+    canvas.width = size.backingW
+    canvas.height = size.backingH
+    canvas.style.width = size.styleW + 'px'
+    canvas.style.height = size.styleH + 'px'
     // A viewport/zoom/extent change can re-clamp scroll and shift every cell;
     // repin the open editor so it doesn't strand at its pre-resize offset (e.g.
     // a ResizeObserver firing mid-edit when a side panel opens or the window
@@ -2189,8 +2059,7 @@ export function createGrid(
     // the sheet, the canvas is shrunk so nothing renders past column Z / row N,
     // and the surrounding wrap shows its own background. Matches the no-blank
     // behavior of Google Sheets.
-    _viewportW = w
-    _viewportH = h
+    vp.setViewportSize(w, h)
     _applyCanvasSize()
     render()
   }
@@ -2225,10 +2094,8 @@ export function createGrid(
     overlay.remove()
     scrollbars.destroy()
     _acEl?.remove()
-    if (_raf) {
-      cancelAnimationFrame(_raf)
-      _raf = null
-    }
+    loop.cancel()
+    _stopWatchingRatio()
     if (_marchRAF) {
       cancelAnimationFrame(_marchRAF)
       _marchRAF = null
@@ -2406,7 +2273,7 @@ export function createGrid(
   // that an "add more rows" affordance is worth showing. Threshold is in rows.
   function isNearBottom(threshold = 10) {
     const r0 = geo.firstVisRow()
-    const last = geo.lastVisRow(r0, cssH)
+    const last = geo.lastVisRow(r0, vp.cssH)
     return last >= TOTAL_ROWS - 1 - threshold
   }
 
@@ -2466,7 +2333,7 @@ export function createGrid(
     batchSetCells,
     clearAll,
     getCell: (id) => getValue(id) ?? '',
-    getActiveCell: () => cellId(sel.r, sel.c),
+    getActiveCell: () => cellId(S.anchor.r, S.anchor.c),
     // Whether the in-cell overlay is currently editing a `=…` formula —
     // SheetEditor uses this to keep the editor alive across sheet-tab clicks
     // for cross-sheet range picking.
@@ -2512,7 +2379,7 @@ export function createGrid(
     // Physical size of the visible grid viewport (the grid-wrap content box), in
     // CSS px. Cached in _applyCanvasSize, so reading it is reflow-free — used by
     // DOM overlays to clamp themselves to what's on screen.
-    getViewportSize: () => ({ w: _viewportW, h: _viewportH }),
+    getViewportSize: () => ({ w: vp.viewportW, h: vp.viewportH }),
     setDiffOverlay,
     setActiveDiffSheet,
     autoFitCol,
