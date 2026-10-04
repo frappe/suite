@@ -38,7 +38,7 @@ class CheckpointCase(IntegrationTestCase):
         frappe.db.set_single_value("Suite Collab Settings", "mode", "on")
         frappe.db.commit()
         scheduling.paused_until = 0.0
-        self.addCleanup(setattr, checkpoints, "paused_until", 0.0)
+        self.addCleanup(setattr, scheduling, "paused_until", 0.0)
         self.addCleanup(self.restore_mode)
         frappe.set_user(WRITER)
         self.addCleanup(frappe.set_user, "Administrator")
