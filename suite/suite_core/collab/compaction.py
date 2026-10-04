@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import pycrdt
 
 from suite.suite_core.collab import updates
+from suite.suite_core.collab.updates import Reader
 
 PYCRDT = "0.14.8"
 KERNEL = f"pycrdt {PYCRDT}"
@@ -46,7 +47,7 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type])
         merged = pycrdt.merge_updates(*parts)
         wanted = pycrdt.get_state(merged)
         # Structs past the state vector wait on a change no row holds yet
-        if varints(pycrdt.get_update(merged, wanted))():
+        if Reader(pycrdt.get_update(merged, wanted)).uint():
             raise CompactionFailed("missing_dependency")
         wanted = state_vector(wanted)
         doc = load(parts)
@@ -123,49 +124,32 @@ def content(doc: pycrdt.Doc, roots: dict[str, type]) -> str:
 
 def snapshot(doc: pycrdt.Doc) -> tuple[dict, dict]:
     """The state vector and the merged delete set, read from pycrdt's snapshot encoding."""
-    number = varints(pycrdt.Snapshot.from_doc(doc).encode())
+    reader = Reader(pycrdt.Snapshot.from_doc(doc).encode())
     deleted = {}
-    for _ in range(number()):
-        client = number()
+    for _ in range(reader.uint()):
+        client = reader.uint()
         merged = []
-        for start, length in sorted((number(), number()) for _ in range(number())):
+        for start, length in sorted((reader.uint(), reader.uint()) for _ in range(reader.uint())):
             if length and merged and start <= merged[-1][0] + merged[-1][1]:
                 merged[-1][1] = max(merged[-1][1], start + length - merged[-1][0])
             elif length:
                 merged.append([start, length])
         if merged:
             deleted[client] = [tuple(r) for r in merged]
-    return clocks(number), deleted
+    return clocks(reader), deleted
 
 
 def state_vector(encoded: bytes) -> dict:
-    return clocks(varints(encoded))
+    return clocks(Reader(encoded))
 
 
-def clocks(number) -> dict:
+def clocks(reader: Reader) -> dict:
     found = {}
-    for _ in range(number()):
-        client, clock = number(), number()
+    for _ in range(reader.uint()):
+        client, clock = reader.uint(), reader.uint()
         if clock:
             found[client] = clock
     return found
-
-
-def varints(data: bytes):
-    at = 0
-
-    def number() -> int:
-        nonlocal at
-        value = shift = 0
-        while True:
-            byte = data[at]
-            at += 1
-            value |= (byte & 0x7F) << shift
-            shift += 7
-            if byte < 0x80:
-                return value
-
-    return number
 
 
 def serialize(value):

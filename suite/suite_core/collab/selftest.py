@@ -16,7 +16,7 @@ import pycrdt
 from frappe.utils import now_datetime, sbool
 
 from suite.suite_core.collab import compaction
-from suite.suite_core.collab.checkpoints import TIMEOUT
+from suite.suite_core.collab.checkpoints import enqueue
 
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 # Two people edit one paragraph at once; one renames the first tab
@@ -36,14 +36,7 @@ DATABASE_VARIABLES = (
 @frappe.whitelist(methods=["POST"])
 def run_self_test() -> None:
     frappe.only_for("System Manager")
-    queue = "collab" if "collab" in frappe.conf.get("workers", {}) else "default"
-    frappe.enqueue(
-        "suite.suite_core.collab.selftest.self_test",
-        queue=queue,
-        timeout=TIMEOUT,
-        job_id="suite-collab-self-test",
-        deduplicate=True,
-    )
+    enqueue("suite.suite_core.collab.selftest.self_test", "suite-collab-self-test")
 
 
 def self_test() -> dict:

@@ -19,14 +19,20 @@ export interface RoomInit {
   sid: string
   // False while a clientID chosen offline waits for the server to accept it
   bound: boolean
-  appliedThrough?: number
+}
+
+// What a room opens on: the checkpoint covering revs through `base`, then the rows after it
+export interface Opening {
+  base: number
+  checkpoint: Uint8Array | null
+  rows: Row[]
 }
 
 export class Room implements CollabRoom {
   readonly doc: Y.Doc
   blocked: Blocked | null = null
   paused: string | null = null
-  appliedThrough: number
+  appliedThrough = 0
   private readonly lineage: string
   private writable: boolean
   private bound: boolean
@@ -60,19 +66,19 @@ export class Room implements CollabRoom {
     this.lineage = init.lineage
     this.writable = init.canWrite
     this.bound = init.bound
-    this.appliedThrough = init.appliedThrough ?? 0
     this.device = options.device ?? null
     this.own = new Outbox(init.sid, init.doc.clientID, () => {})
     this.boxes = [this.own]
   }
 
-  async start(rows: Row[], checkpoint: Uint8Array | null = null) {
+  async start(opening: Opening) {
     this.doc.on('update', this.capture)
     if (this.device && this.writable && this.bound) {
       await this.device.store.saveSession(this.session()).catch(() => this.lostStore())
     }
     this.own.release = (await holdLock(this.lockName(this.own.sid))) ?? (() => {})
-    this.apply(rows, true, checkpoint)
+    this.appliedThrough = opening.base
+    this.apply(opening.rows, opening)
     if (this.writable) await this.adopt()
     this.pollTimer = setInterval(() => void this.tick(), this.options.pollMs ?? 2000)
     document.addEventListener('visibilitychange', this.hidden)
@@ -242,7 +248,7 @@ export class Room implements CollabRoom {
   }
 
   // Rows are applied strictly in rev order; a hole waits for the next pull
-  private apply(rows: Row[], opening = false, checkpoint: Uint8Array | null = null) {
+  private apply(rows: Row[], opening?: Opening) {
     const next = rows.filter((row) => row.rev > this.appliedThrough).sort((a, b) => a.rev - b.rev)
     const run: Row[] = []
     for (const row of next) {
@@ -250,7 +256,7 @@ export class Room implements CollabRoom {
       run.push(row)
     }
     if (!run.length && !opening) return
-    const parts = [...(checkpoint ? [checkpoint] : []), ...run.map((row) => row.bytes)]
+    const parts = [...(opening?.checkpoint ? [opening.checkpoint] : []), ...run.map((row) => row.bytes)]
     const bytes = parts.length ? Y.mergeUpdates(parts) : null
     if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)
     if (run.length) this.appliedThrough = run[run.length - 1].rev

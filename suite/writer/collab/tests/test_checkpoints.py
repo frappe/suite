@@ -122,6 +122,11 @@ class CheckpointCase(IntegrationTestCase):
 
 
 class TestWriterCheckpoints(CheckpointCase):
+    def test_the_self_test_fixture_uses_the_roots_writer_writes(self):
+        from suite.suite_core.collab import selftest
+
+        self.assertEqual(selftest.ROOTS, writer_collab.ROOTS)
+
     def test_a_compaction_installs_a_checkpoint_of_every_row(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two ", "three"])
@@ -529,7 +534,6 @@ class TestWriterCompactionTriggers(CheckpointCase):
             state_bytes=checkpoints.STATE_MAX - 300 * 1024,
             tail_rows=0,
             tail_bytes=0,
-            tail_bound=0,
         )
 
         self.push_bytes(node, [8 * 1024] * 20)

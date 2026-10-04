@@ -310,9 +310,9 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
         )
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = %s, `head_chain` = UNHEX(%s),
-            `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s, `tail_bound` = `tail_bound` + %s
+            `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s
             WHERE `id` = %s""",
-            (rev, chain.hex(), len(payload), len(payload), doc_id),
+            (rev, chain.hex(), len(payload), doc_id),
         )
         frappe.db.sql(
             f"UPDATE `{table(adapter, 'session')}` SET `acked_seq` = %s, `last_push_at` = %s WHERE `doc_id` = %s AND `sid` = %s",

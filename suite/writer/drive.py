@@ -483,14 +483,18 @@ def _readable_body():
         raise UnreadableBody(_("This Writer document body cannot be read")) from unreadable
 
 
+def _reads_as_fragment(fragment) -> bool:
+    """False for a root written as another type: its length counts children it can't show."""
+    return len(fragment.children) == sum(1 for _child in fragment.children)
+
+
 def _loaded_body(raw: bytes):
     document = pycrdt.Doc()
     fragment = pycrdt.XmlFragment()
     document[BODY_FRAGMENT] = fragment
     with _readable_body():
         document.apply_update(raw)
-        # A root written as another type reads as a fragment whose length counts what it can't show
-        if len(fragment.children) != sum(1 for _child in fragment.children):
+        if not _reads_as_fragment(fragment):
             raise UnreadableBody(_("This Writer document body cannot be read"))
     return document, fragment
 

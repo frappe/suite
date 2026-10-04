@@ -38,7 +38,6 @@ def ensure_tables(adapter: str) -> None:
         "`state_bytes` bigint unsigned NOT NULL DEFAULT 0",
         "`tail_rows` bigint unsigned NOT NULL DEFAULT 0",
         "`tail_bytes` bigint unsigned NOT NULL DEFAULT 0",
-        "`tail_bound` bigint unsigned NOT NULL DEFAULT 0",
         "`compaction_failures` int unsigned NOT NULL DEFAULT 0",
         "`next_compaction_at` datetime(6) NULL",
         "`last_compaction_ms` int unsigned NULL",

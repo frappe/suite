@@ -33,11 +33,8 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     else if (answer.status === 403 || answer.status === 404) canWrite = false
     else throw openError(answer, options)
   }
-  const room = new Room(
-    { doc, lineage: header.lineage!, canWrite, sid, bound: true, appliedThrough: header.base ?? 0 },
-    options,
-  )
-  await room.start(rows, checkpoint)
+  const room = new Room({ doc, lineage: header.lineage!, canWrite, sid, bound: true }, options)
+  await room.start({ base: header.base ?? 0, checkpoint, rows })
   return { state: 'live', room }
 }
 
@@ -76,10 +73,9 @@ async function openOffline(copy: DeviceCopy, options: OpenOptions, unreachable: 
       canWrite: copy.canWrite,
       sid,
       bound: !copy.canWrite,
-      appliedThrough: copy.rev,
     },
     options,
   )
-  await room.start([])
+  await room.start({ base: copy.rev, checkpoint: null, rows: [] })
   return room
 }
