@@ -5,6 +5,7 @@ import { initSync } from '@ironcalc/wasm'
 import { createWorkerHost } from './worker.js'
 import { createWorkbookClient, WorkerRequestError } from './client.js'
 import { CommandTypes } from './commands.js'
+import { createDisplayCache } from './display-cache.js'
 
 const require = createRequire(import.meta.url)
 initSync({ module: fs.readFileSync(require.resolve('@ironcalc/wasm/wasm_bg.wasm')) })
@@ -22,15 +23,6 @@ function fakePort() {
 		},
 	}
 	return port
-}
-
-function fakeEcho() {
-	const cells = new Map()
-	return {
-		cells,
-		setProvisional: (sheet, row, col, display) => cells.set(`${sheet}:${row}:${col}`, display),
-		dropProvisional: (sheet, row, col) => cells.delete(`${sheet}:${row}:${col}`),
-	}
 }
 
 let seq = 0
@@ -133,33 +125,58 @@ describe('client — dispatch', () => {
 	})
 })
 
+// Wires a real DisplayCache the way the page will: echo in, clear on
+// every version bump, refill with readViewport.
+async function connected() {
+	const cache = createDisplayCache()
+	const wb = await createWorkbookClient({ port, echo: cache })
+	wb.onVersion(v => cache.clear(v))
+	const refill = async (r1, c1, r2, c2) => {
+		const v = wb.getVersion()
+		return cache.fill('Sheet1', r1, c1, await wb.readViewport({ sheet: 'Sheet1', r1, c1, r2, c2 }), v)
+	}
+	return { wb, cache, refill }
+}
+
 describe('client — optimistic echo', () => {
-	it('echoes setInput before the worker replies', async () => {
-		const echo = fakeEcho()
-		const wb = await createWorkbookClient({ port, echo })
+	it('echoes setInput before the worker replies, then shows the evaluated value', async () => {
+		const { wb, cache, refill } = await connected()
 		wb.dispatch(setInput('Sheet1', 1, 1, '=1+1'))
-		expect(echo.cells.get('Sheet1:1:1')).toBe('=1+1')
+		expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', provisional: true })
+
+		await wb.idle()
+		expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
+		await refill(1, 1, 1, 1)
+		expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '2' })
+	})
+
+	it('keeps text typed during an in-flight apply across its version bump', async () => {
+		const { wb, cache } = await connected()
+		wb.dispatch(setInput('Sheet1', 1, 1, 'first'))
+		await Promise.resolve() // first apply leaves
+		wb.dispatch(setInput('Sheet1', 2, 1, 'second'))
+
+		await new Promise(resolve => wb.onVersion(resolve)) // first apply's bump
+		expect(cache.get('Sheet1', 2, 1)).toEqual({ display: 'second', provisional: true })
 		await wb.idle()
 	})
 
 	it('does not echo other command types', async () => {
-		const echo = fakeEcho()
-		const wb = await createWorkbookClient({ port, echo })
+		const { wb, cache } = await connected()
 		wb.dispatch(cmd(CommandTypes.insertRows, { sheet: 'Sheet1', row: 1, count: 1 }))
-		expect(echo.cells.size).toBe(0)
+		expect(cache.size).toBe(0)
 		await wb.idle()
 	})
 
 	it('drops the echo and reports when the command fails', async () => {
-		const echo = fakeEcho()
-		const wb = await createWorkbookClient({ port, echo })
+		const { wb, cache } = await connected()
 		const failures = []
 		wb.onCommandError(f => failures.push(f))
 		const bad = setInput('Nope', 1, 1, 'x')
 		wb.dispatch(bad)
-		expect(echo.cells.has('Nope:1:1')).toBe(true)
+		expect(cache.get('Nope', 1, 1)?.provisional).toBe(true)
 		await wb.idle()
-		expect(echo.cells.has('Nope:1:1')).toBe(false)
+		expect(cache.get('Nope', 1, 1)).toBeUndefined()
 		expect(failures).toHaveLength(1)
 		expect(failures[0].command.id).toBe(bad.id)
 		expect(failures[0].error).toMatch(/unknown sheet/)

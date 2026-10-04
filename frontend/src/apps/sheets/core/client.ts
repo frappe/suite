@@ -28,10 +28,14 @@ export interface WorkerPort {
 	terminate?(): void
 }
 
-/** Where optimistic echoes go. DisplayCache implements this. */
+/**
+ * Where optimistic echoes go. DisplayCache implements this. Every
+ * setProvisional is matched by exactly one settleProvisional, sent when
+ * the command's apply returns (success or failure).
+ */
 export interface EchoTarget {
 	setProvisional(sheet: string, row: number, col: number, display: string): void
-	dropProvisional(sheet: string, row: number, col: number): void
+	settleProvisional(sheet: string, row: number, col: number): void
 }
 
 export interface ClientOptions {
@@ -144,12 +148,16 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
 		for (const cb of versionListeners) cb(v)
 	}
 
-	function reportFailure(command: Command, error: string): void {
-		// The echoed text never made it into the engine; take it back out.
-		if (echo && command.type === CommandTypes.setInput) {
+	function settle(batch: Command[]): void {
+		if (!echo) return
+		for (const command of batch) {
+			if (command.type !== CommandTypes.setInput) continue
 			const p = command.payload
-			echo.dropProvisional(p.sheet, p.row, p.col)
+			echo.settleProvisional(p.sheet, p.row, p.col)
 		}
+	}
+
+	function reportFailure(command: Command, error: string): void {
 		for (const cb of errorListeners) cb({ command, error })
 	}
 
@@ -194,6 +202,9 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
 		queue = []
 		try {
 			const res = await request<{ version: number; results: ApplyResult[] }>('apply', { commands: batch })
+			// Settle before the version listeners run, so their clear()
+			// drops these echoes and the refill shows evaluated values.
+			settle(batch)
 			res.results.forEach((r, i) => {
 				const command = batch[i]
 				if (!r.ok && command) reportFailure(command, r.error ?? 'unknown error')
@@ -201,6 +212,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
 			setVersion(res.version)
 		} catch (e) {
 			// The whole request failed, so none of the batch applied.
+			settle(batch)
 			const message = e instanceof Error ? e.message : String(e)
 			for (const command of batch) reportFailure(command, message)
 		} finally {
