@@ -22,8 +22,20 @@ function mount(opts = {}) {
     const target = grid.isEditing() ? editor()! : canvas
     target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }))
   }
-  return { grid, editor, press }
+  return { grid, editor, press, canvas }
 }
+
+// The tests below dispatch keys straight at the canvas, which works even when
+// a real browser could never focus it. Regression: the split dropped the
+// tabindex, so clicks didn't focus the grid and typing/Delete did nothing.
+describe('grid focus', () => {
+  it('lets the canvas take keyboard focus', () => {
+    document.body.innerHTML = ''
+    const { canvas } = mount()
+    canvas.focus()
+    expect(document.activeElement).toBe(canvas)
+  })
+})
 
 describe('Enter on the selected cell', () => {
   let h: ReturnType<typeof mount>
