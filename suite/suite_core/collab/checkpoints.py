@@ -146,14 +146,22 @@ def sweep(adapter: str, method: str, limit: int = 100) -> None:
 def request(adapter: str, doc_id: str, method: str) -> None:
     """Enqueue `method(doc_id)` once per document; it runs `run` with the product's roots."""
     queue = "collab" if "collab" in frappe.conf.get("workers", {}) else "default"
-    frappe.enqueue(
-        method,
-        queue=queue,
-        timeout=TIMEOUT,
-        job_id=f"suite-collab-compact-{adapter}-{doc_id}",
-        deduplicate=True,
-        doc_id=doc_id,
-    )
+    try:
+        frappe.enqueue(
+            method,
+            queue=queue,
+            timeout=TIMEOUT,
+            job_id=f"suite-collab-compact-{adapter}-{doc_id}",
+            deduplicate=True,
+            doc_id=doc_id,
+        )
+    except Exception:
+        # A request is only a hint, so the open or push that made it carries on
+        frappe.log_error(
+            title="Collab compaction: request failed",
+            reference_doctype="Suite Collab Settings",
+            defer_insert=True,
+        )
 
 
 def store(adapter: str, doc_id: str, through: int, chain: bytes, result, report: dict, roots) -> bytes:

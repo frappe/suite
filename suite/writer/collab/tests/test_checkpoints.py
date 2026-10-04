@@ -550,3 +550,18 @@ class TestWriterCompactionTriggers(CheckpointCase):
 
         self.assertIn(self.doc_row(waited).id, self.requested)
         self.assertNotIn(self.doc_row(fresh).id, self.requested)
+
+    def test_a_job_queue_outage_leaves_open_and_push_working(self):
+        node = self.new_document()
+        refused = []
+
+        def down(method, **kwargs):
+            refused.append(kwargs["doc_id"])
+            raise ConnectionError("queue down")
+
+        with patch.object(frappe, "enqueue", down):
+            self.push_bytes(node, [300 * 1024], final=True)
+            self.assertEqual(call(routes.collab_get, node).status_code, 200)
+
+        self.assertEqual(refused, [self.doc_row(node).id] * 2)
+        self.assertEqual(self.row_count(node), 1)
