@@ -16,7 +16,7 @@ import pycrdt
 from frappe.utils import now_datetime, sbool
 
 from suite.suite_core.collab import compaction
-from suite.suite_core.collab.checkpoints import enqueue
+from suite.suite_core.collab.scheduling import enqueue
 
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 # Two people edit one paragraph at once; one renames the first tab

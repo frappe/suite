@@ -14,7 +14,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
-from suite.suite_core.collab import checkpoints, compaction
+from suite.suite_core.collab import admission, checkpoints, compaction, scheduling
 from suite.suite_core.collab.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
@@ -37,11 +37,14 @@ class CheckpointCase(IntegrationTestCase):
         self.mode = frappe.db.get_single_value("Suite Collab Settings", "mode")
         frappe.db.set_single_value("Suite Collab Settings", "mode", "on")
         frappe.db.commit()
-        checkpoints.paused_until = 0.0
+        scheduling.paused_until = 0.0
         self.addCleanup(setattr, checkpoints, "paused_until", 0.0)
         self.addCleanup(self.restore_mode)
         frappe.set_user(WRITER)
         self.addCleanup(frappe.set_user, "Administrator")
+
+    def job(self, doc_id: str) -> checkpoints.Compaction:
+        return checkpoints.Compaction("writer", doc_id, writer_collab.ROOTS)
 
     def restore_mode(self):
         frappe.db.set_single_value("Suite Collab Settings", "mode", self.mode or "off")
@@ -234,9 +237,9 @@ class TestWriterCheckpoints(CheckpointCase):
 
         rows = [payload for _rev, payload in older["rows"]]
         result = compaction.compact(older["checkpoint"], rows, writer_collab.ROOTS)
-        report = {"ms": 1}
-        sha = checkpoints.store("writer", doc_id, 2, older["head_chain"], result, report, writer_collab.ROOTS)
-        checkpoints.install("writer", doc_id, older["lineage"], 2, older["head_chain"], sha, result, report)
+        job = self.job(doc_id)
+        sha = job.store(older, result)
+        job.install(older, sha, result)
 
         [(through, state, _integrated)] = self.checkpoints_of(node)
         self.assertEqual((through, self.doc_row(node).checkpoint_rev), (3, 3))
@@ -246,7 +249,7 @@ class TestWriterCheckpoints(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         redis = get_redis_conn()
-        for index in range(checkpoints.PLACES):
+        for index in range(admission.PLACES):
             redis.set(f"suite:collab:compaction:{index}", "elsewhere", ex=60)
         self.addCleanup(self.release_places)
 
@@ -276,9 +279,7 @@ class TestWriterCheckpoints(CheckpointCase):
         result = compaction.Compacted(state=state, integrated=True, report={})
         snapshot = routes.collab.read("writer", self.doc_row(node).id)
 
-        checkpoints.store(
-            "writer", self.doc_row(node).id, 1, snapshot["head_chain"], result, {}, writer_collab.ROOTS
-        )
+        self.job(self.doc_row(node).id).store(snapshot, result)
 
         self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
 
@@ -293,9 +294,7 @@ class TestWriterCheckpoints(CheckpointCase):
         snapshot = routes.collab.read("writer", self.doc_row(node).id)
 
         with self.assertRaises(compaction.CompactionFailed) as failed:
-            checkpoints.store(
-                "writer", self.doc_row(node).id, 1, snapshot["head_chain"], result, {}, writer_collab.ROOTS
-            )
+            self.job(self.doc_row(node).id).store(snapshot, result)
         frappe.db.rollback()
 
         self.assertEqual(failed.exception.reason, "too_large")
@@ -309,15 +308,8 @@ class TestWriterCheckpoints(CheckpointCase):
         result = compaction.compact(snapshot["checkpoint"], rows, writer_collab.ROOTS)
         if not integrated:
             result = compaction.Compacted(compaction.pycrdt.merge_updates(*rows), integrated=False)
-        sha = checkpoints.store(
-            "writer",
-            doc_id,
-            snapshot["head_rev"],
-            snapshot["head_chain"],
-            result,
-            {"ms": 1},
-            writer_collab.ROOTS,
-        )
+        result.ms = 1
+        sha = self.job(doc_id).store(snapshot, result)
         return snapshot, result, sha
 
     def test_a_checkpoint_row_gone_before_its_install_is_never_pointed_at(self):
@@ -328,16 +320,7 @@ class TestWriterCheckpoints(CheckpointCase):
         frappe.db.sql("DELETE FROM `__writer_collab_checkpoint` WHERE `doc_id` = %s", self.doc_row(node).id)
         frappe.db.commit()
 
-        checkpoints.install(
-            "writer",
-            self.doc_row(node).id,
-            snapshot["lineage"],
-            2,
-            snapshot["head_chain"],
-            sha,
-            result,
-            {"ms": 1},
-        )
+        self.job(self.doc_row(node).id).install(snapshot, sha, result)
 
         self.assertEqual(self.doc_row(node).checkpoint_rev, 0)
         self.assertEqual(self.opened(node)[2], "one two")
@@ -354,7 +337,9 @@ class TestWriterCheckpoints(CheckpointCase):
             try:
                 frappe.init(site)
                 frappe.connect()
-                with patch.object(checkpoints, "install", lambda *args: os.kill(os.getpid(), signal.SIGKILL)):
+                with patch.object(
+                    checkpoints.Compaction, "install", lambda *args: os.kill(os.getpid(), signal.SIGKILL)
+                ):
                     writer_collab.compact(doc_id)
             finally:
                 os._exit(0)
@@ -383,24 +368,24 @@ class TestWriterCheckpoints(CheckpointCase):
 
     def test_one_document_compacts_in_one_job_at_a_time(self):
         self.addCleanup(self.release_places)
-        first = checkpoints.take_place("writer", "doc-a")
+        first = admission.take_place("writer", "doc-a")
 
-        self.assertIsNone(checkpoints.take_place("writer", "doc-a"))
-        self.assertIsNotNone(checkpoints.take_place("writer", "doc-b"))
-        checkpoints.free_place(first)
-        self.assertIsNotNone(checkpoints.take_place("writer", "doc-a"))
+        self.assertIsNone(admission.take_place("writer", "doc-a"))
+        self.assertIsNotNone(admission.take_place("writer", "doc-b"))
+        admission.free_place(first)
+        self.assertIsNotNone(admission.take_place("writer", "doc-a"))
 
     def test_a_job_that_outlived_its_lease_frees_nothing_of_the_next(self):
         self.addCleanup(self.release_places)
-        stale = checkpoints.take_place("writer", "doc-a")
+        stale = admission.take_place("writer", "doc-a")
         self.release_places()  # the lease ran out
-        current = checkpoints.take_place("writer", "doc-a")
+        current = admission.take_place("writer", "doc-a")
 
-        checkpoints.free_place(stale)
+        admission.free_place(stale)
 
-        self.assertIsNone(checkpoints.take_place("writer", "doc-a"))
-        checkpoints.free_place(current)
-        self.assertIsNotNone(checkpoints.take_place("writer", "doc-a"))
+        self.assertIsNone(admission.take_place("writer", "doc-a"))
+        admission.free_place(current)
+        self.assertIsNotNone(admission.take_place("writer", "doc-a"))
 
     def test_a_host_short_of_memory_keeps_every_row_and_retries_later(self):
         node = self.new_document()
@@ -416,7 +401,7 @@ class TestWriterCheckpoints(CheckpointCase):
             with open(f"{cgroup}/memory.stat", "w") as stat:
                 stat.write(f"file 999\nanon {anon}\n")
             self.set_doc(node, next_compaction_at=None)
-            with patch.object(checkpoints, "CGROUP", cgroup):
+            with patch.object(admission, "CGROUP", cgroup):
                 self.compact(node)
             doc = self.doc_row(node)
             self.assertEqual(doc.checkpoint_rev == 1, compacts)
@@ -531,7 +516,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.set_doc(
             node,
             checkpoint_rev=1,
-            state_bytes=checkpoints.STATE_MAX - 300 * 1024,
+            state_bytes=scheduling.STATE_MAX - 300 * 1024,
             tail_rows=0,
             tail_bytes=0,
         )
@@ -559,7 +544,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.assertEqual(self.requested, [])
         frappe.db.sql(
             "UPDATE `__writer_collab_update` SET `created` = %s WHERE `doc_id` = %s",
-            (frappe.utils.now_datetime() - checkpoints.AGE, self.doc_row(node).id),
+            (frappe.utils.now_datetime() - scheduling.AGE, self.doc_row(node).id),
         )
         frappe.db.commit()
 
@@ -569,7 +554,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
 
     def test_a_backed_off_document_waits_for_its_retry_time(self):
         node = self.new_document()
-        self.set_doc(node, next_compaction_at=frappe.utils.now_datetime() + checkpoints.QUIET)
+        self.set_doc(node, next_compaction_at=frappe.utils.now_datetime() + scheduling.QUIET)
 
         self.push_bytes(node, [300 * 1024], final=True)
 
@@ -581,7 +566,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.push_bytes(fresh, [100])
         frappe.db.sql(
             "UPDATE `__writer_collab_update` SET `created` = %s WHERE `doc_id` = %s",
-            (frappe.utils.now_datetime() - checkpoints.SWEEP_AGE, self.doc_row(waited).id),
+            (frappe.utils.now_datetime() - scheduling.SWEEP_AGE, self.doc_row(waited).id),
         )
         frappe.db.commit()
 
@@ -614,7 +599,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
             for _ in range(50):
                 # Each request starts with an empty local cache
                 frappe.local.cache = {}
-                checkpoints.request(routes.ADAPTER, "outage", "unused")
+                scheduling.request(routes.ADAPTER, "outage", "unused")
 
         self.assertEqual(frappe.db.count("Error Log", logged), 1)
 
@@ -632,11 +617,11 @@ class TestWriterCompactionTriggers(CheckpointCase):
             raise ConnectionError("queue down")
 
         with patch.object(frappe, "enqueue", down):
-            checkpoints.request(routes.ADAPTER, "outage", "unused")
-            checkpoints.request(routes.ADAPTER, "outage", "unused")
-            later = checkpoints.time.monotonic() + checkpoints.QUEUE_PAUSE.total_seconds() + 1
-            with patch.object(checkpoints.time, "monotonic", lambda: later):
-                checkpoints.request(routes.ADAPTER, "outage", "unused")
+            scheduling.request(routes.ADAPTER, "outage", "unused")
+            scheduling.request(routes.ADAPTER, "outage", "unused")
+            later = scheduling.time.monotonic() + scheduling.QUEUE_PAUSE.total_seconds() + 1
+            with patch.object(scheduling.time, "monotonic", lambda: later):
+                scheduling.request(routes.ADAPTER, "outage", "unused")
 
         self.assertEqual(tried, ["outage", "outage"])
 

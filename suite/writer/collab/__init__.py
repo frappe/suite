@@ -3,7 +3,7 @@
 import pycrdt
 
 from suite.suite_core import collab
-from suite.suite_core.collab import checkpoints
+from suite.suite_core.collab import checkpoints, scheduling
 
 ADAPTER = "writer"
 # The editor's fragment, and tab labels
@@ -25,8 +25,8 @@ def compact(doc_id: str) -> None:
 
 
 def consider_compaction(doc_id: str, *, final_from: str | None = None) -> None:
-    checkpoints.consider(ADAPTER, doc_id, "suite.writer.collab.compact", final_from=final_from)
+    scheduling.consider(ADAPTER, doc_id, "suite.writer.collab.compact", final_from=final_from)
 
 
 def sweep() -> None:
-    checkpoints.sweep(ADAPTER, "suite.writer.collab.compact")
+    scheduling.sweep(ADAPTER, "suite.writer.collab.compact")

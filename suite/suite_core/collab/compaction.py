@@ -31,6 +31,8 @@ class Compacted:
     state: bytes
     integrated: bool
     report: dict = field(default_factory=dict)
+    # How long the job took, set by whoever ran it
+    ms: int = 0
 
 
 def compact(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type]) -> Compacted:
