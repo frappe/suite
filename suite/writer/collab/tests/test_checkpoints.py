@@ -261,6 +261,20 @@ class TestWriterCheckpoints(CheckpointCase):
         wait = (doc.next_compaction_at - frappe.utils.now_datetime()).total_seconds()
         self.assertGreater(wait, 50)
 
+    def test_a_state_larger_than_half_the_packet_limit_is_stored(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
+        state = os.urandom(packet // 2 + 2**20)
+        result = compaction.Compacted(state=state, integrated=True, report={})
+        snapshot = routes.collab.read("writer", self.doc_row(node).id)
+
+        checkpoints.store(
+            "writer", self.doc_row(node).id, 1, snapshot["head_chain"], result, {}, writer_collab.ROOTS
+        )
+
+        self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
+
     def stored(self, node: str, *, integrated: bool = True) -> tuple[dict, object, bytes]:
         """A compaction of the document through its head, stored as T2 leaves it, not yet installed."""
         doc_id = self.doc_row(node).id
