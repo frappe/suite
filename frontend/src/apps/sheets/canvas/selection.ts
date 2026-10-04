@@ -5,15 +5,13 @@
 // whether whole columns, rows or the sheet are selected; in those modes the
 // range spans the full perpendicular axis whatever the corners say.
 //
-// Rows and columns are 0-based here, like the rest of canvas/.
-// Painting, scrolling and notifying the host are the caller's job.
+// The state itself lives in the ViewModel (core/view-model.ts); this module
+// is the logic over it. Rows and columns are 0-based here, like the rest of
+// canvas/. Painting, scrolling and notifying the host are the caller's job.
 
-export type SelMode = 'cell' | 'col' | 'row' | 'all'
+import type { Cell, SelectionState, SelMode } from '../core/view-model.js'
 
-export interface Cell {
-  r: number
-  c: number
-}
+export type { Cell, SelMode }
 
 export interface SelRange {
   r0: number
@@ -24,10 +22,12 @@ export interface SelRange {
 }
 
 export interface SelectionOptions {
-  /** Keeps a cell inside the sheet (canvas/geometry.js `clamp`). */
+  /** Keeps a cell inside the sheet (geometry.ts `clamp`). */
   clamp(r: number, c: number): Cell
   totalRows(): number
   totalCols(): number
+  /** The state to work on; a fresh one when omitted (tests). */
+  state?: SelectionState
 }
 
 export interface Selection {
@@ -45,10 +45,30 @@ export interface Selection {
 }
 
 export function createSelection(o: SelectionOptions): Selection {
-  const s: Selection = {
+  const st: SelectionState = o.state ?? {
     anchor: { r: 0, c: 0 },
     head: { r: 0, c: 0 },
     mode: 'cell',
+  }
+  const s: Selection = {
+    get anchor() {
+      return st.anchor
+    },
+    set anchor(v) {
+      st.anchor = v
+    },
+    get head() {
+      return st.head
+    },
+    set head(v) {
+      st.head = v
+    },
+    get mode() {
+      return st.mode
+    },
+    set mode(v) {
+      st.mode = v
+    },
 
     range() {
       let r0 = Math.min(s.anchor.r, s.head.r),

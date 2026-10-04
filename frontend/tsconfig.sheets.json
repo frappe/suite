@@ -31,7 +31,8 @@
     "src/apps/sheets/core/**/*.ts",
     "src/apps/sheets/utils/sheet-codec.ts",
     "src/apps/sheets/canvas/*.ts",
-    "src/apps/sheets/canvas/input/*.ts"
+    "src/apps/sheets/canvas/input/*.ts",
+    "src/apps/sheets/canvas/painters/*.ts"
   ],
   // Canvas tests predate the strict config; the policy covers source.
   "exclude": ["src/apps/sheets/canvas/**/*.test.ts"]

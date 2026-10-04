@@ -1,10 +1,49 @@
 import { colLabel } from '../../utils/cells.js'
 import { COL_HEADER_H, COLORS, ROW_HEADER_W } from '../constants.js'
+import type { Geometry } from '../geometry.js'
+import type { Cell, SelMode } from '../selection.js'
+import type { CellBlock } from '../types.js'
 
-export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
+export interface HeaderPainter {
+  drawColHeaders(
+    c0Scroll: number,
+    c1Scroll: number,
+    fc: number,
+    mainX: number,
+    cssW: number,
+    sel: Cell,
+    range: CellBlock,
+    selMode: SelMode,
+  ): void
+  drawRowHeaders(
+    r0Scroll: number,
+    r1Scroll: number,
+    fr: number,
+    mainY: number,
+    cssH: number,
+    sel: Cell,
+    range: CellBlock,
+    selMode: SelMode,
+  ): void
+  drawCorner(): void
+}
+
+export function createHeaderPainter(
+  ctx: CanvasRenderingContext2D,
+  { cw, rh, colX, rowY }: Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY'>,
+): HeaderPainter {
   // ── Column headers ───────────────────────────────────────────────────────────
 
-  function drawColHeaders(c0Scroll, c1Scroll, fc, mainX, cssW, sel, range, selMode) {
+  function drawColHeaders(
+    c0Scroll: number,
+    c1Scroll: number,
+    fc: number,
+    mainX: number,
+    cssW: number,
+    sel: Cell,
+    range: CellBlock,
+    selMode: SelMode,
+  ): void {
     ctx.fillStyle = COLORS.headerBg
     ctx.fillRect(ROW_HEADER_W, 0, cssW, COL_HEADER_H)
     ctx.font = '12px InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
@@ -29,7 +68,7 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.stroke()
   }
 
-  function _drawOneColHeader(c, sel, range, selMode) {
+  function _drawOneColHeader(c: number, sel: Cell, range: CellBlock, selMode: SelMode): void {
     const x = colX(c),
       w = cw(c)
     const inRange = c >= range.c0 && c <= range.c1
@@ -41,7 +80,13 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     _drawColHeaderSeparator(x, w, c)
   }
 
-  function _drawColHeaderBackground(x, w, isSelected, isAnchor, inRange) {
+  function _drawColHeaderBackground(
+    x: number,
+    w: number,
+    isSelected: boolean,
+    isAnchor: boolean,
+    inRange: boolean,
+  ): void {
     if (isSelected || isAnchor) {
       ctx.fillStyle = COLORS.activeHeader
       ctx.fillRect(x, 0, w, COL_HEADER_H)
@@ -51,7 +96,7 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     }
   }
 
-  function _drawColHeaderSeparator(x, w, c) {
+  function _drawColHeaderSeparator(x: number, w: number, c: number): void {
     const nextHidden = cw(c + 1) === 0 && c + 1 < 9999
     if (w > 0 && nextHidden) {
       ctx.strokeStyle = COLORS.freezeLine
@@ -73,7 +118,16 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
 
   // ── Row headers ──────────────────────────────────────────────────────────────
 
-  function drawRowHeaders(r0Scroll, r1Scroll, fr, mainY, cssH, sel, range, selMode) {
+  function drawRowHeaders(
+    r0Scroll: number,
+    r1Scroll: number,
+    fr: number,
+    mainY: number,
+    cssH: number,
+    sel: Cell,
+    range: CellBlock,
+    selMode: SelMode,
+  ): void {
     ctx.fillStyle = COLORS.headerBg
     ctx.fillRect(0, COL_HEADER_H, ROW_HEADER_W, cssH)
     ctx.font = '12px InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
@@ -98,7 +152,7 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.stroke()
   }
 
-  function _drawOneRowHeader(r, sel, range, selMode) {
+  function _drawOneRowHeader(r: number, sel: Cell, range: CellBlock, selMode: SelMode): void {
     const y = rowY(r),
       h = rh(r)
     if (h === 0) return
@@ -111,7 +165,13 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     _drawRowHeaderSeparator(y, h, r)
   }
 
-  function _drawRowHeaderBackground(y, h, isSelected, isAnchor, inRange) {
+  function _drawRowHeaderBackground(
+    y: number,
+    h: number,
+    isSelected: boolean,
+    isAnchor: boolean,
+    inRange: boolean,
+  ): void {
     if (isSelected || isAnchor) {
       ctx.fillStyle = COLORS.activeHeader
       ctx.fillRect(0, y, ROW_HEADER_W, h)
@@ -121,7 +181,7 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     }
   }
 
-  function _drawRowHeaderSeparator(y, h, r) {
+  function _drawRowHeaderSeparator(y: number, h: number, r: number): void {
     const nextHidden = rh(r + 1) === 0 && r + 1 < 9999
     if (nextHidden) {
       ctx.strokeStyle = COLORS.freezeLine
@@ -143,7 +203,7 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
 
   // ── Corner & chevrons ────────────────────────────────────────────────────────
 
-  function drawCorner() {
+  function drawCorner(): void {
     ctx.fillStyle = COLORS.headerBg
     ctx.fillRect(0, 0, ROW_HEADER_W, COL_HEADER_H)
     ctx.strokeStyle = COLORS.gridLine
@@ -156,7 +216,7 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.stroke()
   }
 
-  function _drawHiddenChevronsV(bx, by) {
+  function _drawHiddenChevronsV(bx: number, by: number): void {
     const sz = 3
     ctx.fillStyle = COLORS.headerText
     ctx.beginPath()
@@ -173,7 +233,7 @@ export function createHeaderPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.fill()
   }
 
-  function _drawHiddenChevronsH(bx, by) {
+  function _drawHiddenChevronsH(bx: number, by: number): void {
     const sz = 3
     ctx.fillStyle = COLORS.headerText
     ctx.beginPath()

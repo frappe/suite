@@ -2191,8 +2191,8 @@ import { appPageMeta } from '@/platform/page-meta'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
 
-import { chipColor, chipPaletteColor } from '../../canvas/chip-geometry.js'
-import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
+import { chipColor, chipPaletteColor } from '../../canvas/chip-geometry'
+import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants'
 import { createGrid } from '../../canvas/index'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
@@ -4703,68 +4703,84 @@ function _previewSeriesKind(src) {
 
 function _setupGridInstance() {
   grid = createGrid(canvasRef.value, {
-    onSelect(id) {
-      activeCell.value = id
-      formulaValue.value = sheet.getCell(id)
-      _typedCell = null
-      refreshActiveFormat()
-      _syncNumberFormat(id)
-      computeSelectionStats()
-      if (isPaintingFormat.value) _applyPaintedFormat()
-      const p = parseCellId(id)
-      if (p) {
-        // Send the full selection rect so peers can paint a range outline,
-        // not just a single anchor cell.
-        const sel = grid?.getSelection?.()
-        const range = sel
-          ? {
-              r0: sel.r0,
-              c0: sel.c0,
-              r1: sel.r1,
-              c1: sel.c1,
-            }
-          : null
-        broadcastCursor(p.row, p.col, sheet.getCurrentSheet(), range)
-      }
+    // What the grid reads about cells (CellProvider).
+    cells: {
+      getStyle: (id) => formats.get(id, sheet.getCurrentSheet()),
+      // Lazy render value source (Phase 1, off by default). Mirrors exactly what
+      // _repopulateGrid / onCellChanged bake into the grid's eager `data` cache,
+      // so the lazy and eager render paths produce identical pixels. When enabled
+      // (grid.setLazyValues(true)), the grid pulls this per visible cell instead
+      // of materialising every cell up front.
+      getDisplay: _cellDisplay,
+      // The in-cell editor opens with the raw input (the formula, not its
+      // result), matching the formula bar set in onSelect.
+      getEditValue: (id) => sheet.getCell(id),
+      // Non-empty cell ids for the current sheet — the lazy path's source for
+      // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
+      // own `data` keys.
+      getCellIds: () => Object.keys(sheet.getRawData()),
+      getMergeInfo: (id) => merge.getMasterInfo(id, sheet.getCurrentSheet()),
+      isSlave: (id) => merge.isSlave(id, sheet.getCurrentSheet()),
+      getMasterId: (id) => merge.getMasterId(id, sheet.getCurrentSheet()),
+      getComment: (id) => comments.hasOpenComment(id, sheet.getCurrentSheet()),
+      getValidation: (id) => validation.get(id, sheet.getCurrentSheet()),
+      getCondFormat: (id, val) =>
+        condFormat.getFormatOverride(id, val, sheet.getCurrentSheet(), (cid) => _displayValue(cid)),
+      // A SPARKLINE formula evaluates to a spec object; the painter draws it.
+      // In show-formulas mode the cell shows its =SPARKLINE(...) text instead.
+      getSparkline: (id) => {
+        if (showFormulas.value) return null
+        const v = sheet.getCellValue(id, sheet.getCurrentSheet())
+        return v && v.__spark ? v : null
+      },
+      getRightInset: (id) => {
+        const range = sortFilter.getRange(sheet.getCurrentSheet())
+        if (!range) return 0
+        const p = parseCellId(id)
+        if (!p) return 0
+        // Reserve 19px right-padding in the filter header row inside the active range.
+        return p.row === range.r0 && p.col >= range.c0 && p.col <= range.c1 ? 19 : 0
+      },
+      isCellEditable: (r, c) => !protection.isProtected(r, c, sheet.getCurrentSheet()),
     },
-    onCommit(id, value) {
-      // Cross-sheet path: in-cell overlay was editing on `homeSheet`, user
-      // hopped over to another sheet to pick a range, then pressed Enter.
-      // Write the formula back to the home sheet and snap the canvas there
-      // so the next-row move-down on Enter lands on the home sheet too.
-      const homeSheet = editingHomeSheet.value
-      const writeSheet =
-        homeSheet && homeSheet !== sheet.getCurrentSheet() ? homeSheet : sheet.getCurrentSheet()
-
-      // Protection first — blocks writes AND clears (empty value) on a locked
-      // cell. Nothing was written, so repaint the pre-edit value and bail.
-      if (_cellBlocked(id, writeSheet)) {
-        grid?.render?.()
-        editingHomeSheet.value = null
-        editingHomeCell.value = null
+    // What the grid reports, and the app state it asks for (GridHost).
+    host: {
+      onSelect(id) {
+        activeCell.value = id
+        formulaValue.value = sheet.getCell(id)
         _typedCell = null
-        syncFlags()
-        return
-      }
+        refreshActiveFormat()
+        _syncNumberFormat(id)
+        computeSelectionStats()
+        if (isPaintingFormat.value) _applyPaintedFormat()
+        const p = parseCellId(id)
+        if (p) {
+          // Send the full selection rect so peers can paint a range outline,
+          // not just a single anchor cell.
+          const sel = grid?.getSelection?.()
+          const range = sel
+            ? {
+                r0: sel.r0,
+                c0: sel.c0,
+                r1: sel.r1,
+                c1: sel.c1,
+              }
+            : null
+          broadcastCursor(p.row, p.col, sheet.getCurrentSheet(), range)
+        }
+      },
+      onCommit(id, value) {
+        // Cross-sheet path: in-cell overlay was editing on `homeSheet`, user
+        // hopped over to another sheet to pick a range, then pressed Enter.
+        // Write the formula back to the home sheet and snap the canvas there
+        // so the next-row move-down on Enter lands on the home sheet too.
+        const homeSheet = editingHomeSheet.value
+        const writeSheet =
+          homeSheet && homeSheet !== sheet.getCurrentSheet() ? homeSheet : sheet.getCurrentSheet()
 
-      // Enforce data validation rules. The engine stores rules in the snapshot
-      // and the canvas paints a dropdown arrow for `list` rules, but until
-      // now nothing surfaced number / text_length rejection — so "between 1
-      // and 10" silently accepted any value. Skip the check for empty values
-      // so the user can always clear a cell (matches Google Sheets).
-      const trimmed = String(value ?? '').trim()
-      if (trimmed !== '') {
-        const v = validation.validate(id, value, writeSheet)
-        // 'warn' rules let the value through but surface a transient notice;
-        // 'reject' (default) blocks the edit and repaints the pre-edit value.
-        if (!v.valid && v.severity !== 'warn') {
-          const msg = v.message || 'Value rejected by data validation rule'
-          saveError.value = msg
-          setTimeout(() => {
-            if (saveError.value === msg) saveError.value = ''
-          }, 3500)
-          // Force a re-render so the canvas repaints with the pre-edit value
-          // (we never called sheet.setCell so the engine still has it).
+        // Protection first — blocks writes AND clears (empty value) on a locked
+        // cell. Nothing was written, so repaint the pre-edit value and bail.
+        if (_cellBlocked(id, writeSheet)) {
           grid?.render?.()
           editingHomeSheet.value = null
           editingHomeCell.value = null
@@ -4772,214 +4788,204 @@ function _setupGridInstance() {
           syncFlags()
           return
         }
-        if (!v.valid && v.severity === 'warn') {
-          const msg = v.message || 'Value flagged by data validation rule'
-          saveError.value = msg
-          setTimeout(() => {
-            if (saveError.value === msg) saveError.value = ''
-          }, 3500)
-        }
-      }
-      const before = sheet.getCell(id, writeSheet)
-      sheet.setCell(id, value, writeSheet)
-      if (writeSheet !== sheet.getCurrentSheet()) {
-        switchSheet(writeSheet, {
-          preserveEdit: true,
-        })
-      }
-      if (before !== value) {
-        // The same op shape feeds both server sync (_queueOp drains on
-        // autosave) and undo history (pushOp keeps it on the local stack).
-        // Op-based history replaces the old markEdited → snapshot path:
-        // ~750 ms (deep-clone every engine) → ~10 µs (push the op object).
-        const op = {
-          opType: 'edit',
-          subSheet: writeSheet,
-          cellRefs: [id],
-          before: {
-            [id]: before,
-          },
-          after: {
-            [id]: value,
-          },
-        }
-        // Multi-line value (Cmd+Enter) auto-grows its row like Google Sheets.
-        // The height diff rides the history op so undo/redo restores it;
-        // _queueOp destructures only the known keys, so server sync is
-        // unaffected. Row heights live in the current sheet's canvas view,
-        // hence the writeSheet guard.
-        if (writeSheet === sheet.getCurrentSheet()) {
-          const p = parseCellId(id)
-          const grow = p && grid?.autoGrowRowFor?.(p.row, p.col, value)
-          if (grow) {
-            op.beforeRowH = {
-              [p.row]: grow.before,
-            }
-            op.afterRowH = {
-              [p.row]: grow.after,
-            }
+
+        // Enforce data validation rules. The engine stores rules in the snapshot
+        // and the canvas paints a dropdown arrow for `list` rules, but until
+        // now nothing surfaced number / text_length rejection — so "between 1
+        // and 10" silently accepted any value. Skip the check for empty values
+        // so the user can always clear a cell (matches Google Sheets).
+        const trimmed = String(value ?? '').trim()
+        if (trimmed !== '') {
+          const v = validation.validate(id, value, writeSheet)
+          // 'warn' rules let the value through but surface a transient notice;
+          // 'reject' (default) blocks the edit and repaints the pre-edit value.
+          if (!v.valid && v.severity !== 'warn') {
+            const msg = v.message || 'Value rejected by data validation rule'
+            saveError.value = msg
+            setTimeout(() => {
+              if (saveError.value === msg) saveError.value = ''
+            }, 3500)
+            // Force a re-render so the canvas repaints with the pre-edit value
+            // (we never called sheet.setCell so the engine still has it).
+            grid?.render?.()
+            editingHomeSheet.value = null
+            editingHomeCell.value = null
+            _typedCell = null
+            syncFlags()
+            return
+          }
+          if (!v.valid && v.severity === 'warn') {
+            const msg = v.message || 'Value flagged by data validation rule'
+            saveError.value = msg
+            setTimeout(() => {
+              if (saveError.value === msg) saveError.value = ''
+            }, 3500)
           }
         }
-        _queueOp(op)
-        history.pushOp(op)
-        broadcastCellChange(writeSheet, id, value)
-      }
-      // Outside the changed-guard: re-committing an unchanged URL text (e.g.
-      // pre-existing "frappe.io" data) still picks up its link.
-      _maybeAutoLink(
-        [
-          {
+        const before = sheet.getCell(id, writeSheet)
+        sheet.setCell(id, value, writeSheet)
+        if (writeSheet !== sheet.getCurrentSheet()) {
+          switchSheet(writeSheet, {
+            preserveEdit: true,
+          })
+        }
+        if (before !== value) {
+          // The same op shape feeds both server sync (_queueOp drains on
+          // autosave) and undo history (pushOp keeps it on the local stack).
+          // Op-based history replaces the old markEdited → snapshot path:
+          // ~750 ms (deep-clone every engine) → ~10 µs (push the op object).
+          const op = {
+            opType: 'edit',
+            subSheet: writeSheet,
+            cellRefs: [id],
+            before: {
+              [id]: before,
+            },
+            after: {
+              [id]: value,
+            },
+          }
+          // Multi-line value (Cmd+Enter) auto-grows its row like Google Sheets.
+          // The height diff rides the history op so undo/redo restores it;
+          // _queueOp destructures only the known keys, so server sync is
+          // unaffected. Row heights live in the current sheet's canvas view,
+          // hence the writeSheet guard.
+          if (writeSheet === sheet.getCurrentSheet()) {
+            const p = parseCellId(id)
+            const grow = p && grid?.autoGrowRowFor?.(p.row, p.col, value)
+            if (grow) {
+              op.beforeRowH = {
+                [p.row]: grow.before,
+              }
+              op.afterRowH = {
+                [p.row]: grow.after,
+              }
+            }
+          }
+          _queueOp(op)
+          history.pushOp(op)
+          broadcastCellChange(writeSheet, id, value)
+        }
+        // Outside the changed-guard: re-committing an unchanged URL text (e.g.
+        // pre-existing "frappe.io" data) still picks up its link.
+        _maybeAutoLink(
+          [
+            {
+              id,
+              value,
+              before,
+            },
+          ],
+          writeSheet,
+        )
+        editingHomeSheet.value = null
+        editingHomeCell.value = null
+        _typedCell = null
+        syncFlags()
+        isDirty.value = true
+        recomputePivotsForSheet(writeSheet)
+      },
+      onInput(id, value) {
+        formulaValue.value = value
+        _typedCell = {
+          sheet: sheet.getCurrentSheet(),
+          cell: id,
+        }
+      },
+      onCancel(id) {
+        const homeSheet = editingHomeSheet.value
+        if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
+          switchSheet(homeSheet) // full reset so canvas snaps back to home cell
+        }
+        editingHomeSheet.value = null
+        editingHomeCell.value = null
+        _typedCell = null
+        formulaValue.value = sheet.getCell(id)
+      },
+      onHyperlinkClick(url) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+      },
+      onLinkHover: _onLinkHover,
+      onDropdownClick(id, rule, pos) {
+        openDropdown(id, rule, pos)
+      },
+      onCheckboxToggle(id) {
+        toggleCheckbox(id)
+      },
+      onPivotDrill(r, c) {
+        return drillDownAt(r, c)
+      },
+      getSheetNames() {
+        return sheetNames.value
+      },
+      // Cross-sheet picker — grid prefixes inserted refs with the current sheet
+      // when it differs from the edit's home sheet. Home is null outside of an
+      // active cross-sheet edit, in which case the prefix is omitted.
+      getCurrentSheet() {
+        return sheet.getCurrentSheet()
+      },
+      getEditingHomeSheet() {
+        return editingHomeSheet.value
+      },
+      onBlockedEdit: () => _flashProtected(sheet.getCurrentSheet()),
+      onFill(src, total, { withModifier = false } = {}) {
+        if (_fillDestBlocked(src, total)) return // only the destination cells, not the source
+        const series = _previewSeriesKind(src)
+        // Cmd/Ctrl held inverts the auto-detected mode — Google Sheets behaviour.
+        const mode = withModifier ? (series ? 'copy' : 'series') : 'auto'
+        _runFill(src, total, mode)
+      },
+      onBatchCommit(cells) {
+        if (_cellsBlocked(cells.map((c) => c.id))) return
+        const { before, after, refs } = diffCells(cells, (id) => sheet.getCell(id))
+        for (const { id, value } of cells) sheet.setCell(id, value)
+        if (refs.length) {
+          const op = {
+            opType: 'edit',
+            subSheet: sheet.getCurrentSheet(),
+            cellRefs: refs,
+            before,
+            after,
+            summary: refs.length > 1 ? `Edited ${refs.length} cells` : '',
+          }
+          _queueOp(op)
+          history.pushOp(op)
+          broadcastBatchChange(
+            sheet.getCurrentSheet(),
+            refs.map((id) => ({
+              id,
+              value: after[id],
+            })),
+          )
+        }
+        _maybeAutoLink(
+          cells.map(({ id, value }) => ({
             id,
             value,
-            before,
-          },
-        ],
-        writeSheet,
-      )
-      editingHomeSheet.value = null
-      editingHomeCell.value = null
-      _typedCell = null
-      syncFlags()
-      isDirty.value = true
-      recomputePivotsForSheet(writeSheet)
-    },
-    onInput(id, value) {
-      formulaValue.value = value
-      _typedCell = {
-        sheet: sheet.getCurrentSheet(),
-        cell: id,
-      }
-    },
-    onCancel(id) {
-      const homeSheet = editingHomeSheet.value
-      if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
-        switchSheet(homeSheet) // full reset so canvas snaps back to home cell
-      }
-      editingHomeSheet.value = null
-      editingHomeCell.value = null
-      _typedCell = null
-      formulaValue.value = sheet.getCell(id)
-    },
-    getFormat: (id) => formats.get(id, sheet.getCurrentSheet()),
-    // Lazy render value source (Phase 1, off by default). Mirrors exactly what
-    // _repopulateGrid / onCellChanged bake into the grid's eager `data` cache,
-    // so the lazy and eager render paths produce identical pixels. When enabled
-    // (grid.setLazyValues(true)), the grid pulls this per visible cell instead
-    // of materialising every cell up front.
-    getDisplay: _cellDisplay,
-    // The in-cell editor opens with the raw input (the formula, not its
-    // result), matching the formula bar set in onSelect.
-    getEditValue: (id) => sheet.getCell(id),
-    // Non-empty cell ids for the current sheet — the lazy path's source for
-    // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
-    // own `data` keys.
-    getCellIds: () => Object.keys(sheet.getRawData()),
-    getMergeInfo: (id) => merge.getMasterInfo(id, sheet.getCurrentSheet()),
-    isSlave: (id) => merge.isSlave(id, sheet.getCurrentSheet()),
-    getMasterId: (id) => merge.getMasterId(id, sheet.getCurrentSheet()),
-    getComment: (id) => comments.hasOpenComment(id, sheet.getCurrentSheet()),
-    getValidation: (id) => validation.get(id, sheet.getCurrentSheet()),
-    getCondFormat: (id, val) =>
-      condFormat.getFormatOverride(id, val, sheet.getCurrentSheet(), (cid) => _displayValue(cid)),
-    // A SPARKLINE formula evaluates to a spec object; the painter draws it.
-    // In show-formulas mode the cell shows its =SPARKLINE(...) text instead.
-    getSparkline: (id) => {
-      if (showFormulas.value) return null
-      const v = sheet.getCellValue(id, sheet.getCurrentSheet())
-      return v && v.__spark ? v : null
-    },
-    getRightInset: (id) => {
-      const range = sortFilter.getRange(sheet.getCurrentSheet())
-      if (!range) return 0
-      const p = parseCellId(id)
-      if (!p) return 0
-      // Reserve 19px right-padding in the filter header row inside the active range.
-      return p.row === range.r0 && p.col >= range.c0 && p.col <= range.c1 ? 19 : 0
-    },
-    onHyperlinkClick(url) {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    },
-    onLinkHover: _onLinkHover,
-    onDropdownClick(id, rule, pos) {
-      openDropdown(id, rule, pos)
-    },
-    onCheckboxToggle(id) {
-      toggleCheckbox(id)
-    },
-    onPivotDrill(r, c) {
-      return drillDownAt(r, c)
-    },
-    getSheetNames() {
-      return sheetNames.value
-    },
-    // Cross-sheet picker — grid prefixes inserted refs with the current sheet
-    // when it differs from the edit's home sheet. Home is null outside of an
-    // active cross-sheet edit, in which case the prefix is omitted.
-    getCurrentSheet() {
-      return sheet.getCurrentSheet()
-    },
-    getEditingHomeSheet() {
-      return editingHomeSheet.value
-    },
-    isCellEditable: (r, c) => !protection.isProtected(r, c, sheet.getCurrentSheet()),
-    onBlockedEdit: () => _flashProtected(sheet.getCurrentSheet()),
-    onFill(src, total, { withModifier = false } = {}) {
-      if (_fillDestBlocked(src, total)) return // only the destination cells, not the source
-      const series = _previewSeriesKind(src)
-      // Cmd/Ctrl held inverts the auto-detected mode — Google Sheets behaviour.
-      const mode = withModifier ? (series ? 'copy' : 'series') : 'auto'
-      _runFill(src, total, mode)
-    },
-    onBatchCommit(cells) {
-      if (_cellsBlocked(cells.map((c) => c.id))) return
-      const { before, after, refs } = diffCells(cells, (id) => sheet.getCell(id))
-      for (const { id, value } of cells) sheet.setCell(id, value)
-      if (refs.length) {
-        const op = {
-          opType: 'edit',
-          subSheet: sheet.getCurrentSheet(),
-          cellRefs: refs,
-          before,
-          after,
-          summary: refs.length > 1 ? `Edited ${refs.length} cells` : '',
-        }
-        _queueOp(op)
-        history.pushOp(op)
-        broadcastBatchChange(
-          sheet.getCurrentSheet(),
-          refs.map((id) => ({
-            id,
-            value: after[id],
+            before: before[id] !== undefined ? before[id] : value,
           })),
+          sheet.getCurrentSheet(),
         )
-      }
-      _maybeAutoLink(
-        cells.map(({ id, value }) => ({
-          id,
-          value,
-          before: before[id] !== undefined ? before[id] : value,
-        })),
-        sheet.getCurrentSheet(),
-      )
-      syncFlags()
-      isDirty.value = true
-      recomputePivotsForSheet(sheet.getCurrentSheet())
-    },
-    onResizeEnd() {
-      history.push()
-      isDirty.value = true
-    },
-    onColMove(fromCol, toCol, count) {
-      if (readOnly.value) return
-      doMoveCol(fromCol, toCol, count)
+        syncFlags()
+        isDirty.value = true
+        recomputePivotsForSheet(sheet.getCurrentSheet())
+      },
+      onResizeEnd() {
+        history.push()
+        isDirty.value = true
+      },
+      onColMove(fromCol, toCol, count) {
+        if (readOnly.value) return
+        doMoveCol(fromCol, toCol, count)
+      },
+      // Gate every in-canvas mutation (begin-edit, delete, fill, resize,
+      // checkbox/dropdown) on write permission. Read-only viewers keep
+      // selection, navigation and copy.
+      canEdit: () => !readOnly.value,
     },
     // Lazy render is the default; eager `data` cache stays as an opt-out
     // fallback (`?lazy=0`). See _lazyValuesEnabled.
     lazyValues: _lazyValuesEnabled(),
-    // Gate every in-canvas mutation (begin-edit, delete, fill, resize,
-    // checkbox/dropdown) on write permission. Read-only viewers keep
-    // selection, navigation and copy.
-    canEdit: () => !readOnly.value,
   })
   // Keep DOM overlays (filter chevrons) in sync with canvas scroll/resize/freeze.
   grid.onRender(() => {
@@ -10129,7 +10135,7 @@ body:has(.dialog-overlay) .co-layer {
 }
 
 /* Overlay scrollbars for the canvas grid. The elements are created imperatively
-   in canvas/scrollbars.js (appended to .sn-grid-wrap), so they carry no scoped
+   in canvas/scrollbars.ts (appended to .sn-grid-wrap), so they carry no scoped
    data-attr — these rules must live in the UNSCOPED block to reach them.
    z-index sits above the filter (14) / pivot (15) range outlines so the opaque
    track paints over any outline border that reaches the scrollbar gutter, but
@@ -10142,7 +10148,7 @@ body:has(.dialog-overlay) .co-layer {
   opacity: 1;
   transition: opacity 0.2s ease;
 }
-/* --sn-sb-thick is published by canvas/scrollbars.js from SCROLLBAR_THICK, the
+/* --sn-sb-thick is published by canvas/scrollbars.ts from SCROLLBAR_THICK, the
    single source of truth; the 12px fallback only covers the pre-mount frame. */
 .sn-sb-v {
   top: 0;
@@ -10170,7 +10176,7 @@ body:has(.dialog-overlay) .co-layer {
   transition: opacity 0.2s ease;
 }
 /* Auto-hidden state — faded out and click-through so cells under the gutter
-   stay reachable. JS (canvas/scrollbars.js) toggles this on inactivity. */
+   stay reachable. JS (canvas/scrollbars.ts) toggles this on inactivity. */
 .sn-sb--hidden {
   opacity: 0;
   pointer-events: none;

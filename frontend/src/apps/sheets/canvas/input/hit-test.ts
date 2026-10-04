@@ -4,7 +4,7 @@
 // is both the header and its resize edge), so the order decides:
 //   column resize edge > row resize edge > fill handle > corner >
 //   column header > row header > cell.
-// The pixel maths lives in canvas/geometry.js; this module only orders it.
+// The pixel maths lives in canvas/geometry.ts; this module only orders it.
 //
 // Rows and columns are 0-based. Coordinates are mouse clientX/clientY plus
 // the canvas's bounding rect, as the event handlers have them.
@@ -16,7 +16,7 @@ export interface CanvasRect {
   top: number
 }
 
-/** The parts of canvas/geometry.js hit testing needs. */
+/** The parts of canvas/geometry.ts hit testing needs. */
 export interface HitGeometry {
   hitTest(ex: number, ey: number, rect: CanvasRect): Cell | null
   hitTestCorner(ex: number, ey: number, rect: CanvasRect): boolean

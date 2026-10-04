@@ -3,18 +3,20 @@
 //
 // A press asks hit-test.ts what is under the pointer and starts one of:
 //   a formula pick (when a `=…` input is focused, every click picks),
-//   a column/row resize, a fill-handle drag, a column move,
+//   a column/row resize or column move (drag.ts), a fill (fill-handle.ts),
 //   a header/corner selection, or a cell selection drag.
 // Moves and the release finish whichever one started. Resizes and column
-// moves listen on the document, so they keep tracking outside the canvas.
+// moves are handed to drag.ts, which follows them across the whole page.
 //
-// Rows and columns are 0-based. Pixel deltas are divided by zoom before
-// they touch widths and heights, which are stored in logical units.
+// Rows and columns are 0-based.
 
 import { cellId, colLabel } from '../../utils/cells.js'
 import { checkboxRect } from '../checkbox-geometry.js'
 import type { Cell, Selection, SelRange } from '../selection.js'
+import type { DropdownPos, GridHost, ValidationRule } from '../types.js'
+import { createDrags, resizeTargets, type ColDrag } from './drag.js'
 import type { Editor } from './editor.js'
+import { createFillHandle } from './fill-handle.js'
 import type { CanvasRect, HitGeometry, HitTester } from './hit-test.js'
 import type { RangePicker } from './range-picker.js'
 
@@ -33,55 +35,19 @@ export interface MouseGeometry extends Pick<
   colInsertIndex(ex: number, rect: CanvasRect): number
 }
 
-export interface CellBlock {
-  r0: number
-  c0: number
-  r1: number
-  c1: number
-}
-
-/** A data-validation rule; only its type matters here. */
-export interface ValidationRule {
-  readonly type: string
-}
-
-/** Where a list dropdown opens, in page pixels. */
-export interface DropdownPos {
-  x: number
-  y: number
-  w: number
-}
-
-export interface LinkHover {
-  r: number
-  c: number
-  id: string
-  url: string
-}
-
-/** A column header press that may become a drag to move columns. */
-export interface ColDrag {
-  fromCol: number
-  count: number
-  startX: number
-  startY: number
-  moved: boolean
-  insertCol: number | null
-}
-
-/** What the host (SheetEditor) is told. All optional, as in createGrid. */
-export interface MouseHost {
-  onSelect?(label: string): void
-  onHyperlinkClick?(url: string): void
-  onCheckboxToggle?(id: string): void
-  onDropdownClick?(id: string, rule: ValidationRule, pos: DropdownPos): void
-  onFill?(src: CellBlock, total: SelRange, opts: { withModifier: boolean }): void
-  /** True when the host turned the double-click into a pivot drill-down. */
-  onPivotDrill?(r: number, c: number): boolean | undefined
-  onLinkHover?(info: LinkHover | null): void
-  onColMove?(fromCol: number, toCol: number, count: number): void
-  onResizeEnd?(): void
-}
+/** The host events a mouse can cause. */
+export type MouseHost = Pick<
+  GridHost,
+  | 'onSelect'
+  | 'onHyperlinkClick'
+  | 'onCheckboxToggle'
+  | 'onDropdownClick'
+  | 'onFill'
+  | 'onPivotDrill'
+  | 'onLinkHover'
+  | 'onColMove'
+  | 'onResizeEnd'
+>
 
 export interface MouseOptions {
   canvas: HTMLCanvasElement
@@ -124,7 +90,7 @@ export interface MouseOptions {
 }
 
 export interface Mouse {
-  /** The column drag in progress, for the renderer; null unless moved. */
+  /** The column drag, armed or moving (the renderer draws it once moved). */
   colDrag(): ColDrag | null
   /** The selection as it was before the last press (the context menu restores it). */
   preMousedownSel(): SelRange | null
@@ -132,58 +98,13 @@ export interface Mouse {
   destroy(): void
 }
 
-/** Minimum pointer travel, in px, before a press counts as a drag. */
-const FILL_DRAG_THRESHOLD = 4
-const COL_DRAG_THRESHOLD = 5
+/** A list-cell click still opens its dropdown if the pointer moved at most this far. */
 const LIST_CLICK_SLOP = 4
-const MIN_COL_W = 30
-const MIN_ROW_H = 16
-
-/**
- * Double-clicking the fill handle fills down as far as the neighbouring
- * column's data goes (left neighbour first, then right), Google Sheets'
- * rule. Returns the last row to fill; `src.r1` when there is nothing to follow.
- */
-export function autoFillDownExtent(
-  src: CellBlock,
-  hasValue: (r: number, c: number) => boolean,
-  totalRows: number,
-  totalCols: number,
-): number {
-  const filled = (r: number, c: number): boolean =>
-    r >= 0 && r < totalRows && c >= 0 && c < totalCols && hasValue(r, c)
-  let guide: number | null = null
-  if (filled(src.r1 + 1, src.c0 - 1)) guide = src.c0 - 1
-  else if (filled(src.r1 + 1, src.c1 + 1)) guide = src.c1 + 1
-  if (guide === null) return src.r1
-  let r = src.r1 + 1
-  while (r < totalRows && filled(r, guide)) r++
-  return r - 1
-}
-
-// Every column (or row) a resize applies to: the whole sheet, the selected
-// block when the dragged edge is inside it, or just the one.
-function resizeTargets(
-  i: number,
-  inBlock: boolean,
-  all: boolean,
-  lo: number,
-  hi: number,
-  total: number,
-): number[] {
-  if (all) return Array.from({ length: total }, (_, k) => k)
-  if (inBlock) return Array.from({ length: hi - lo + 1 }, (_, k) => lo + k)
-  return [i]
-}
 
 export function createMouse(o: MouseOptions): Mouse {
   const { canvas, geo, hits, picker, editor, sel: S, host } = o
 
   let dragging = false
-  let resizing: { cols: number[]; startX: number; startW: number } | null = null
-  let resizingRow: { rows: number[]; startY: number; startH: number } | null = null
-  let filling: { src: CellBlock; startX: number; startY: number; moved: boolean } | null = null
-  let colDrag: ColDrag | null = null
   let preSel: SelRange | null = null
   // A plain click in a list-validated cell opens its dropdown on release, so
   // a drag (selection) or a double-click (edit) can still cancel it.
@@ -199,6 +120,24 @@ export function createMouse(o: MouseOptions): Mouse {
   let lastLinkHover: string | null = null // 'r,c' of the linked cell under the pointer
 
   const rectOf = (): CanvasRect => canvas.getBoundingClientRect()
+  const drags = createDrags({
+    canvasRect: rectOf,
+    colInsertIndex: (ex, rect) => geo.colInsertIndex(ex, rect),
+    getZoom: o.getZoom,
+    setColWidths: o.setColWidths,
+    setRowHeights: o.setRowHeights,
+    onColMove: (from, to, count) => host.onColMove?.(from, to, count),
+    onResizeEnd: () => host.onResizeEnd?.(),
+    render: o.render,
+  })
+  const fill = createFillHandle({
+    range: () => S.range(),
+    extendSel: o.extendSel,
+    hasValue: o.hasValue,
+    totalRows: o.totalRows,
+    totalCols: o.totalCols,
+    onFill: host.onFill,
+  })
 
   function selectWhole(mode: 'all' | 'row', anchor: Cell, head: Cell, label: string): void {
     editor.commit()
@@ -267,7 +206,7 @@ export function createMouse(o: MouseOptions): Mouse {
           range.c1,
           o.totalCols(),
         )
-        resizing = { cols, startX: e.clientX, startW: o.colWidth(hit.col) }
+        drags.startColResize(cols, e.clientX, o.colWidth(hit.col))
         return
       }
       case 'rowResize': {
@@ -281,16 +220,12 @@ export function createMouse(o: MouseOptions): Mouse {
           range.r1,
           o.totalRows(),
         )
-        resizingRow = { rows, startY: e.clientY, startH: o.rowHeight(hit.row) }
+        drags.startRowResize(rows, e.clientY, o.rowHeight(hit.row))
         return
       }
-      case 'fillHandle': {
-        // Remember where the press started, so sub-pixel jitter during a
-        // click (or the first half of a double-click) isn't a fill.
-        const { r0, c0, r1, c1 } = range
-        filling = { src: { r0, c0, r1, c1 }, startX: e.clientX, startY: e.clientY, moved: false }
+      case 'fillHandle':
+        fill.start(e.clientX, e.clientY)
         return
-      }
       case 'corner':
         selectWhole('all', { r: 0, c: 0 }, { r: o.totalRows() - 1, c: o.totalCols() - 1 }, 'A1')
         return
@@ -310,23 +245,8 @@ export function createMouse(o: MouseOptions): Mouse {
         }
         // Moving columns changes data: only with write access.
         if (o.canEdit() && host.onColMove) {
-          colDrag = inBlock
-            ? {
-                fromCol: range.c0,
-                count: range.c1 - range.c0 + 1,
-                startX: e.clientX,
-                startY: e.clientY,
-                moved: false,
-                insertCol: null,
-              }
-            : {
-                fromCol: col,
-                count: 1,
-                startX: e.clientX,
-                startY: e.clientY,
-                moved: false,
-                insertCol: null,
-              }
+          if (inBlock) drags.armColMove(range.c0, range.c1 - range.c0 + 1, e.clientX, e.clientY)
+          else drags.armColMove(col, 1, e.clientX, e.clientY)
         }
         canvas.focus()
         o.render()
@@ -417,19 +337,9 @@ export function createMouse(o: MouseOptions): Mouse {
     if (!o.canEdit()) return
     const hit = hits.at(e.clientX, e.clientY, rectOf())
     switch (hit.kind) {
-      case 'fillHandle': {
-        const src = S.range()
-        const end = autoFillDownExtent(src, o.hasValue, o.totalRows(), o.totalCols())
-        if (end > src.r1) {
-          const { r0, c0, r1, c1 } = src
-          host.onFill?.(
-            { r0, c0, r1, c1 },
-            { ...src, r1: end },
-            { withModifier: e.metaKey || e.ctrlKey },
-          )
-        }
+      case 'fillHandle':
+        fill.fillDown(e.metaKey || e.ctrlKey)
         return
-      }
       case 'colResize':
       case 'colHeader':
         o.autoFitCol(hit.col)
@@ -455,18 +365,18 @@ export function createMouse(o: MouseOptions): Mouse {
     overLink: string | undefined,
   ): string {
     const resizeCol = geo.hitTestColResize(e.clientX, e.clientY, rect)
-    const resizeRow = resizing ? null : geo.hitTestRowResize(e.clientX, e.clientY, rect)
+    const resizing = drags.resizing()
+    const resizeRow = resizing === 'col' ? null : geo.hitTestRowResize(e.clientX, e.clientY, rect)
     // A column header (away from its edge) can be dragged; show it.
     const overColHeader =
       resizeCol === null &&
       !resizing &&
-      !resizingRow &&
       o.canEdit() &&
       !!host.onColMove &&
       geo.hitTestColHeader(e.clientX, e.clientY, rect) !== null
-    if (colDrag?.moved) return 'grabbing'
-    if (resizeCol !== null || resizing) return 'col-resize'
-    if (resizeRow !== null || resizingRow) return 'row-resize'
+    if (drags.colDrag()?.moved) return 'grabbing'
+    if (resizeCol !== null || resizing === 'col') return 'col-resize'
+    if (resizeRow !== null || resizing === 'row') return 'row-resize'
     if (overFill) return 'crosshair'
     if (overColHeader) return 'grab'
     if (overLink) return 'pointer'
@@ -475,7 +385,7 @@ export function createMouse(o: MouseOptions): Mouse {
 
   function onMouseMove(e: MouseEvent): void {
     const rect = rectOf()
-    const busy = !!resizing || !!resizingRow || dragging
+    const busy = drags.resizing() !== null || dragging
     const overFill = !busy && hits.onFillHandle(e.clientX, e.clientY, rect)
     const hover = !busy && !overFill ? geo.hitTest(e.clientX, e.clientY, rect) : null
     const overLink = hover ? o.hyperlinkAt(hover.r, hover.c) : undefined
@@ -492,16 +402,8 @@ export function createMouse(o: MouseOptions): Mouse {
       )
     }
 
-    if (filling) {
-      if (!filling.moved) {
-        if (
-          Math.hypot(e.clientX - filling.startX, e.clientY - filling.startY) < FILL_DRAG_THRESHOLD
-        )
-          return
-        filling.moved = true
-      }
-      const h = geo.hitTest(e.clientX, e.clientY, rect)
-      if (h) o.extendSel(h.r, h.c)
+    if (fill.active()) {
+      fill.move(e.clientX, e.clientY, geo.hitTest(e.clientX, e.clientY, rect))
       return
     }
     if (picker.isDragging()) {
@@ -515,15 +417,7 @@ export function createMouse(o: MouseOptions): Mouse {
   }
 
   function onMouseUp(e: MouseEvent): void {
-    if (filling) {
-      const { src } = filling
-      const total = S.range()
-      const changed =
-        total.r0 !== src.r0 || total.c0 !== src.c0 || total.r1 !== src.r1 || total.c1 !== src.c1
-      // Cmd/Ctrl held flips copy vs series, as in Google Sheets.
-      if (changed) host.onFill?.(src, total, { withModifier: e.metaKey || e.ctrlKey })
-      filling = null
-    }
+    fill.end(e.metaKey || e.ctrlKey)
     // Give focus back to whichever input the picker was writing into.
     picker.endDrag()
     if (pendingListOpen) {
@@ -551,66 +445,16 @@ export function createMouse(o: MouseOptions): Mouse {
     o.scrollBy(e.deltaX / z, e.deltaY / z)
   }
 
-  function onDocMouseMove(e: MouseEvent): void {
-    const z = o.getZoom()
-    if (colDrag) {
-      if (
-        colDrag.moved ||
-        Math.hypot(e.clientX - colDrag.startX, e.clientY - colDrag.startY) >= COL_DRAG_THRESHOLD
-      ) {
-        colDrag.moved = true
-        colDrag.insertCol = geo.colInsertIndex(e.clientX, rectOf())
-        document.body.style.cursor = 'grabbing'
-        o.render()
-      }
-    }
-    // Every column in the resize target gets the dragged column's new
-    // width (Sheets / Excel).
-    if (resizing) {
-      o.setColWidths(
-        resizing.cols,
-        Math.max(MIN_COL_W, resizing.startW + (e.clientX - resizing.startX) / z),
-      )
-      o.render()
-    }
-    if (resizingRow) {
-      o.setRowHeights(
-        resizingRow.rows,
-        Math.max(MIN_ROW_H, resizingRow.startH + (e.clientY - resizingRow.startY) / z),
-      )
-      o.render()
-    }
-  }
-
-  function onDocMouseUp(): void {
-    if (colDrag) {
-      const cd = colDrag
-      colDrag = null
-      document.body.style.cursor = ''
-      if (cd.moved && cd.insertCol !== null) host.onColMove?.(cd.fromCol, cd.insertCol, cd.count)
-      o.render()
-    }
-    const didResize = !!resizing || !!resizingRow
-    resizing = null
-    resizingRow = null
-    if (didResize) host.onResizeEnd?.()
-  }
-
   canvas.addEventListener('mousedown', onMouseDown)
   canvas.addEventListener('dblclick', onDblClick)
   canvas.addEventListener('mouseleave', onMouseLeave)
   canvas.addEventListener('mousemove', onMouseMove)
   canvas.addEventListener('mouseup', onMouseUp)
   canvas.addEventListener('wheel', onWheel, { passive: false })
-  document.addEventListener('mousemove', onDocMouseMove)
-  document.addEventListener('mouseup', onDocMouseUp)
 
   return {
-    colDrag: () => colDrag,
+    colDrag: () => drags.colDrag(),
     preMousedownSel: () => preSel,
-    destroy() {
-      document.removeEventListener('mousemove', onDocMouseMove)
-      document.removeEventListener('mouseup', onDocMouseUp)
-    },
+    destroy: () => drags.destroy(),
   }
 }

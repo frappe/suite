@@ -2,13 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createSelection } from '../selection.js'
 import type { Hit, HitTester } from './hit-test.js'
-import {
-  autoFillDownExtent,
-  createMouse,
-  type MouseGeometry,
-  type MouseHost,
-  type MouseOptions,
-} from './mouse.js'
+import { createMouse, type MouseGeometry, type MouseHost, type MouseOptions } from './mouse.js'
 
 // The hit tester is scripted per test (`next`), so these tests are about what
 // each press does, not the pixel maths (hit-test.test.ts covers that).
@@ -106,21 +100,6 @@ function setup(over: Partial<MouseOptions> = {}, host: MouseHost = {}) {
     dbl: () => fire(canvas, 'dblclick'),
   }
 }
-
-describe('autoFillDownExtent', () => {
-  const has = (cells: string[]) => (r: number, c: number) => cells.includes(`${r},${c}`)
-  it('follows the left neighbour column down', () => {
-    expect(
-      autoFillDownExtent({ r0: 0, c0: 1, r1: 0, c1: 1 }, has(['1,0', '2,0', '3,0']), 100, 26),
-    ).toBe(3)
-  })
-  it('falls back to the right neighbour', () => {
-    expect(autoFillDownExtent({ r0: 0, c0: 1, r1: 0, c1: 1 }, has(['1,2', '2,2']), 100, 26)).toBe(2)
-  })
-  it('returns r1 when neither neighbour has data below', () => {
-    expect(autoFillDownExtent({ r0: 0, c0: 1, r1: 0, c1: 1 }, has([]), 100, 26)).toBe(0)
-  })
-})
 
 describe('press', () => {
   it('on a cell commits the editor and selects it', () => {

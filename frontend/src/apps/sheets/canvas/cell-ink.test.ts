@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createCellPainter } from './painters/cell-painter.js'
 import { createMockCtx, createMockGeo } from './painters/test-utils.js'
+import type { CellFormat, CondFormat } from './types.js'
 
 const DARK_TOKENS = {
   '--ink-gray-9': '#f5f5f5', // near-white: dark mode's default cell ink
@@ -32,7 +33,11 @@ function setTheme(tokens: Record<string, string>) {
 }
 
 // Paints one cell and reports the fill style in force when its text was drawn.
-function inkPaintedFor({ value = '42', fmt = {}, condFmt = null as null | object }) {
+function inkPaintedFor({
+  value = '42',
+  fmt = {} as CellFormat,
+  condFmt = null as null | CondFormat,
+}) {
   const ctx = createMockCtx()
   const painted: string[] = []
   ctx.fillText = (text: string) => {
@@ -44,13 +49,12 @@ function inkPaintedFor({ value = '42', fmt = {}, condFmt = null as null | object
     0,
     0,
     0,
-    () => value, // getVal
-    () => fmt, // getFormat
+    () => value,
+    {
+      getStyle: () => fmt,
+      getCondFormat: () => condFmt,
+    },
     null,
-    null,
-    null,
-    null, // merge, slave, comment, validation
-    () => condFmt, // getCondFormat
   )
   expect(painted).toHaveLength(1)
   return painted[0]

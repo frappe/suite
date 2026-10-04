@@ -12,19 +12,24 @@ import { createMockCtx } from './painters/test-utils.js'
 const inputs: Record<string, string> = { A1: '=AVERAGE(B1:C1)' }
 const displays: Record<string, string> = { A1: '20' }
 
-function mount(opts = {}) {
+function mount({
+  onInput,
+  ...cellOpts
+}: { onInput?: (id: string, v: string) => void; getEditValue?: undefined } = {}) {
   const parent = document.createElement('div')
   const canvas = document.createElement('canvas')
   vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
   parent.appendChild(canvas)
   document.body.appendChild(parent)
   const grid = createGrid(canvas, {
-    getFormat: () => ({}),
-    canEdit: () => true,
+    cells: {
+      getStyle: () => ({}),
+      getDisplay: (id: string) => displays[id] ?? '',
+      getEditValue: (id: string) => inputs[id] ?? '',
+      ...cellOpts,
+    },
+    host: { canEdit: () => true, ...(onInput ? { onInput } : {}) },
     lazyValues: true,
-    getDisplay: (id: string) => displays[id] ?? '',
-    getEditValue: (id: string) => inputs[id] ?? '',
-    ...opts,
   })
   grid.resize(800, 600)
   const editor = () => parent.querySelector('textarea') as HTMLTextAreaElement | null

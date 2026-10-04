@@ -11,7 +11,7 @@ export interface Scroll {
   y: number
 }
 
-/** The geometry this module needs; canvas/geometry.js provides it. */
+/** The geometry this module needs; geometry.ts provides it. */
 export interface ViewportGeometry {
   colX(c: number): number
   rowY(r: number): number

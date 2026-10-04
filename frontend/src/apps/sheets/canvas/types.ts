@@ -1,16 +1,24 @@
-// The grid's contract with its host (SheetEditor): what createGrid is given
-// (GridOptions) and what it hands back (Grid).
+// The grid's contract with its host (SheetEditor).
 //
-// Cell ids are A1-style; rows and columns are 0-based. Rects returned to the
-// host are canvas-local CSS pixels with zoom already applied.
+// Two ports go in (spec §2): a CellProvider the grid reads cells through, and
+// a GridHost it reports to. The Grid object comes back. Cell ids are A1-style;
+// rows and columns are 0-based. Rects handed to the host are canvas-local CSS
+// pixels with zoom already applied.
 
-import type { CellBlock, DropdownPos, LinkHover, ValidationRule } from './input/mouse.js'
-import type { SelMode, SelRange } from './selection.js'
+import type { Cell, IndexMap, SelMode, ViewSnapshot } from '../core/view-model.js'
+import type { SparkSpec } from '../engine/sparkline.js'
+import type { ValidationRule } from '../engine/validation.js'
+import type { SelRange } from './selection.js'
 
 /** A cell's value as the grid holds or displays it. */
 export type CellValue = string | number | boolean | null | undefined
 
-/** The format fields the canvas itself reads; painters read more. */
+export interface BorderSpec {
+  style?: 'thin' | 'medium' | 'thick' | string
+  color?: string
+}
+
+/** The format fields the canvas reads. */
 export interface CellFormat {
   bold?: boolean
   italic?: boolean
@@ -19,12 +27,36 @@ export interface CellFormat {
   fontSize?: number
   fontFamily?: string
   align?: string
+  valign?: string
   color?: string
   backgroundColor?: string
   bg?: string
   textWrap?: string
   wrapText?: boolean
   hyperlink?: string
+  borderTop?: BorderSpec
+  borderBottom?: BorderSpec
+  borderLeft?: BorderSpec
+  borderRight?: BorderSpec
+}
+
+export interface DataBar {
+  /** 0..1 */
+  value?: number
+  negative?: boolean
+  negativeColor?: string
+  color?: string
+}
+
+export interface CondIcon {
+  shape: string
+  color?: string
+}
+
+/** A conditional-format result: format overrides plus bar/icon decorations. */
+export interface CondFormat extends CellFormat {
+  dataBar?: DataBar
+  icon?: CondIcon
 }
 
 export interface MergeInfo {
@@ -32,9 +64,53 @@ export interface MergeInfo {
   colSpan: number
 }
 
-/** Callbacks and data sources from the host. All optional. */
-export interface GridOptions {
-  // Edits and selection
+/** A block of cells, corners inclusive. */
+export interface CellBlock {
+  r0: number
+  c0: number
+  r1: number
+  c1: number
+}
+
+/** Where a list dropdown opens, in page pixels. */
+export interface DropdownPos {
+  x: number
+  y: number
+  w: number
+}
+
+export interface LinkHover {
+  r: number
+  c: number
+  id: string
+  url: string
+}
+
+/** Reads: everything the grid asks about cells. All optional. */
+export interface CellProvider {
+  /** Lazy mode: a cell's display text, read per visible cell. */
+  getDisplay?(id: string): CellValue
+  /** What the editor opens with (a formula's text, not its result). */
+  getEditValue?(id: string): CellValue
+  /** Every non-empty cell id on the sheet (Ctrl+A, Ctrl+End, autofit). */
+  getCellIds?(): string[]
+  getStyle?(id: string): CellFormat | null | undefined
+  getMergeInfo?(id: string): MergeInfo | null | undefined
+  isSlave?(id: string): boolean
+  getMasterId?(id: string): string | null | undefined
+  /** True when the cell has an open comment (draws the corner mark). */
+  getComment?(id: string): boolean | null | undefined
+  getValidation?(id: string): ValidationRule | null | undefined
+  getCondFormat?(id: string, value: CellValue): CondFormat | null | undefined
+  getSparkline?(id: string): SparkSpec | null | undefined
+  /** Px reserved on a cell's right (a filter button in the header row). */
+  getRightInset?(id: string): number
+  /** False for a protected cell. */
+  isCellEditable?(r: number, c: number): boolean
+}
+
+/** Events out, plus the bits of app state the editor needs. All optional. */
+export interface GridHost {
   onSelect?(label: string): void
   onInput?(id: string, value: string): void
   onCommit?(id: string, value: string): void
@@ -42,57 +118,28 @@ export interface GridOptions {
   onBatchCommit?(cells: { id: string; value: string }[]): void
   onFill?(src: CellBlock, total: SelRange, opts: { withModifier: boolean }): void
   onBlockedEdit?(): void
-  canEdit?(): boolean
-  isCellEditable?(r: number, c: number): boolean
-
-  // Values
-  /** Lazy mode: the display text for a cell, read on demand. */
-  getDisplay?(id: string): CellValue
-  /** Lazy mode: every non-empty cell id on the current sheet. */
-  getCellIds?(): string[]
-  /** What the editor opens with (a formula's text, not its result). */
-  getEditValue?(id: string): CellValue
-  lazyValues?: boolean
-
-  // Cell decoration, read by the painters
-  getFormat?(id: string): CellFormat | null | undefined
-  getMergeInfo?(id: string): MergeInfo | null | undefined
-  isSlave?(id: string): boolean
-  getMasterId?(id: string): string | null | undefined
-  getValidation?(id: string): ValidationRule | null | undefined
-  // Passed through to the painters; the grid doesn't look inside.
-  getComment?(id: string): unknown
-  getCondFormat?(id: string): unknown
-  getSparkline?(id: string): unknown
-  getRightInset?(id: string): number
-
-  // Pointer actions
   onHyperlinkClick?(url: string): void
   onLinkHover?(info: LinkHover | null): void
   onDropdownClick?(id: string, rule: ValidationRule, pos: DropdownPos): void
   onCheckboxToggle?(id: string): void
+  /** True when the host turned the double-click into a pivot drill-down. */
   onPivotDrill?(r: number, c: number): boolean | undefined
   onResizeEnd?(): void
   onColMove?(fromCol: number, toCol: number, count: number): void
 
-  // Cross-sheet formula picking
+  /** False for read-only viewers. Default true. */
+  canEdit?(): boolean
   getSheetNames?(): string[]
   getCurrentSheet?(): string
-  /** The sheet the formula being edited lives on. */
+  /** The sheet the formula being edited lives on, during a cross-sheet pick. */
   getEditingHomeSheet?(): string | null | undefined
 }
 
-/** Widths, heights, freeze, hides, size and zoom: saved with the sheet. */
-export interface ViewSnapshot {
-  colW: { [col: number]: number }
-  rowH: { [row: number]: number }
-  freezeRows: number
-  freezeCols: number
-  hiddenRows: number[]
-  hiddenCols: number[]
-  totalRows: number
-  totalCols: number
-  zoom: number
+export interface GridOptions {
+  cells?: CellProvider
+  host?: GridHost
+  /** Read values through cells.getDisplay instead of the grid's own cache. */
+  lazyValues?: boolean
 }
 
 export interface PxRect {
@@ -101,9 +148,6 @@ export interface PxRect {
   width: number
   height: number
 }
-
-/** Maps an old row/column index to its new one; null/negative drops it. */
-export type IndexMap = (i: number) => number | null | undefined
 
 export interface Grid {
   resize(w: number, h: number): void
@@ -134,7 +178,7 @@ export interface Grid {
   getHitRegion(
     ex: number,
     ey: number,
-  ): { headerCol: number | null; headerRow: number | null; cell: { r: number; c: number } | null }
+  ): { headerCol: number | null; headerRow: number | null; cell: Cell | null }
 
   setFreeze(rows: number, cols: number): void
   setHiddenRows(rows: Iterable<number>): void
@@ -174,4 +218,4 @@ export interface Grid {
   destroy(): void
 }
 
-export type { SelMode, SelRange }
+export type { Cell, IndexMap, SelMode, SelRange, SparkSpec, ValidationRule, ViewSnapshot }

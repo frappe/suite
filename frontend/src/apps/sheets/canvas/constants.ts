@@ -1,30 +1,17 @@
 export const COL_HEADER_H = 24
 export const ROW_HEADER_W = 50
-export const DEFAULT_COL_W = 100
-export const DEFAULT_ROW_H = 24
-// Thickness of the overlay scrollbars (see canvas/scrollbars.js). Shared so DOM
-// overlays (filter/pivot outlines) can keep clear of the scrollbar gutter.
+// Thickness of the overlay scrollbars (scrollbars.ts). Shared so DOM overlays
+// (filter/pivot outlines) can keep clear of the scrollbar gutter.
 export const SCROLLBAR_THICK = 12
-// Default grid size a fresh/empty sub-sheet shows (Google-Sheets-like). The
-// live counts below grow past these when a sheet's data needs it, and reset
-// back to them per sub-sheet on switch so a 100k-row source doesn't leave every
-// new / pivot / drill-down sheet stuck at 100k empty rows.
-export const DEFAULT_TOTAL_ROWS = 1000
-export const DEFAULT_TOTAL_COLS = 26
 
-// Live bindings — `let` so the row/column count can grow at runtime via the
-// grid's `expandRows` / `expandCols` API. ES modules expose live bindings, so
-// importers always see the current value.
-export let TOTAL_ROWS
-export let TOTAL_COLS
-export function setTotalRows(n) {
-  TOTAL_ROWS = Math.max(1, Math.floor(n))
-}
-export function setTotalCols(n) {
-  TOTAL_COLS = Math.max(1, Math.floor(n))
-}
-setTotalRows(DEFAULT_TOTAL_ROWS)
-setTotalCols(DEFAULT_TOTAL_COLS)
+// Default cell size and sheet size. The live sheet size is per grid, in the
+// ViewModel; a fresh, pivot or drill-down sheet starts at these.
+export {
+  DEFAULT_COL_W,
+  DEFAULT_ROW_H,
+  DEFAULT_TOTAL_ROWS,
+  DEFAULT_TOTAL_COLS,
+} from '../core/view-model.js'
 
 // Frappe Espresso palette — resolved hex values mirroring the frappe-ui
 // semantic tokens (surface-*, outline-*, ink-*). Canvas can't read CSS vars,
@@ -36,7 +23,7 @@ setTotalCols(DEFAULT_TOTAL_COLS)
 // Canvas API cannot read CSS variables directly, so we resolve them dynamically
 // from document.documentElement via getComputedStyle so canvas rendering stays
 // 100% aligned with frappe-ui design tokens in both light and dark modes.
-function _token(name, fallback) {
+function _token(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
   const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   return val || fallback
