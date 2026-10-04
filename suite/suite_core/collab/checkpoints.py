@@ -7,6 +7,7 @@ leaves every row and a retry time, never a loop. At most `PLACES` compactions
 run at once on a bench, because RQ's Redis is shared by every site on it.
 """
 
+import contextlib
 import gzip
 import hashlib
 import json
@@ -146,10 +147,10 @@ def sweep(adapter: str, method: str, limit: int = 100) -> None:
 
 def request(adapter: str, doc_id: str, method: str) -> None:
     """Enqueue `method(doc_id)` once per document; it runs `run` with the product's roots."""
-    if frappe.cache.get_value("suite-collab-queue-down", expires=True):
-        return
     queue = "collab" if "collab" in frappe.conf.get("workers", {}) else "default"
     try:
+        if frappe.cache.get_value("suite-collab-queue-down", expires=True):
+            return
         frappe.enqueue(
             method,
             queue=queue,
@@ -158,14 +159,15 @@ def request(adapter: str, doc_id: str, method: str) -> None:
             deduplicate=True,
             doc_id=doc_id,
         )
-    except Exception as error:
+    except Exception:
         # A request is only a hint, so the open or push that made it carries on and the queue rests a while
-        frappe.cache.set_value(
-            "suite-collab-queue-down", True, expires_in_sec=int(QUEUE_PAUSE.total_seconds())
-        )
+        with contextlib.suppress(Exception):
+            frappe.cache.set_value(
+                "suite-collab-queue-down", True, expires_in_sec=int(QUEUE_PAUSE.total_seconds())
+            )
         frappe.log_error(
             title="Collab compaction: request failed",
-            message=f"{adapter} document {doc_id}\n{error!r}",
+            message=f"{adapter} document {doc_id}\n{frappe.get_traceback()}",
             reference_doctype="Suite Collab Settings",
         )
 
