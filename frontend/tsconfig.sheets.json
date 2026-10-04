@@ -11,6 +11,9 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"allowJs": false,
+		// TS 6 deprecates `baseUrl`, inherited from ./tsconfig.json. Remove once
+		// the shared config drops it.
+		"ignoreDeprecations": "6.0",
 		// Beyond `strict`. Each of these catches a class of bug the sheets
 		// core is exposed to: sparse cell lookups, optional style paths,
 		// and message-protocol payloads.
