@@ -38,6 +38,7 @@ class CheckpointCase(IntegrationTestCase):
         frappe.db.set_single_value("Suite Collab Settings", "mode", "on")
         frappe.db.commit()
         checkpoints.paused_until = 0.0
+        self.addCleanup(setattr, checkpoints, "paused_until", 0.0)
         self.addCleanup(self.restore_mode)
         frappe.set_user(WRITER)
         self.addCleanup(frappe.set_user, "Administrator")
@@ -612,6 +613,28 @@ class TestWriterCompactionTriggers(CheckpointCase):
                 checkpoints.request(routes.ADAPTER, "outage", "unused")
 
         self.assertEqual(frappe.db.count("Error Log", logged), 1)
+
+    def test_requests_reach_the_queue_again_once_the_pause_ends(self):
+        tried = []
+        logged = {
+            "method": "Collab compaction: request failed",
+            "creation": (">=", frappe.utils.now_datetime()),
+        }
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(frappe.db.delete, "Error Log", logged)
+
+        def down(method, **kwargs):
+            tried.append(kwargs["doc_id"])
+            raise ConnectionError("queue down")
+
+        with patch.object(frappe, "enqueue", down):
+            checkpoints.request(routes.ADAPTER, "outage", "unused")
+            checkpoints.request(routes.ADAPTER, "outage", "unused")
+            later = checkpoints.time.monotonic() + checkpoints.QUEUE_PAUSE.total_seconds() + 1
+            with patch.object(checkpoints.time, "monotonic", lambda: later):
+                checkpoints.request(routes.ADAPTER, "outage", "unused")
+
+        self.assertEqual(tried, ["outage", "outage"])
 
     def test_a_job_queue_outage_leaves_open_and_push_working_and_is_logged_once(self):
         node, other = self.new_document(), self.new_document()
