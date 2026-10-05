@@ -33,7 +33,8 @@ async function show(seq: number) {
       extensions: [...writerSchema(), DriveMedia.configure({ media })],
       content,
       editable: false,
-      enableContentCheck: true,
+      // HTML parses as loosely as the live editor; only Yjs state is checked.
+      enableContentCheck: typeof content !== 'string',
       onContentError: () => {
         failed.value = true
       },

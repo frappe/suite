@@ -47,4 +47,16 @@ describe('VersionPreview', () => {
     expect(session.credentials.fetch).toHaveBeenCalledWith('/versions/4')
     preview.unmount()
   })
+
+  it('shows a version whose HTML holds a table', async () => {
+    const html =
+      '<table><colgroup><col><col></colgroup><tbody><tr><th><p>Owner</p></th><th><p>Due</p></th></tr>' +
+      '<tr><td><p>Asha</p></td><td><p>Friday</p></td></tr></tbody></table>'
+    const preview = mountPreview(fakeSession(async () => new Response(version(html))))
+
+    await vi.waitFor(() => expect(preview.root.querySelectorAll('td')).toHaveLength(2))
+    expect(preview.root.textContent).toContain('Friday')
+    expect(preview.root.textContent).not.toContain("can't be shown")
+    preview.unmount()
+  })
 })
