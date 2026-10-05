@@ -1,8 +1,8 @@
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab.compaction import state_vector
-from suite.suite_core.collab.updates import parse
+from suite.suite_core.collab.compaction import load, serialize, snapshot, state_vector
+from suite.suite_core.collab.updates import parse, rewrite_values
 
 
 def typed(text: str, client_id: int = 5) -> pycrdt.Doc:
@@ -49,3 +49,71 @@ class TestParse(UnitTestCase):
         for bad in (good[:-1], good + b"\x00", b"\x01\x01", b"\xff" * 12):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 parse(bad)
+
+
+def swap(value: str) -> str:
+    return value.replace("OLD", "NEW")
+
+
+def pictured(client_id: int = 5) -> pycrdt.Doc:
+    """Every kind of value a remap must reach, and text that names the same id."""
+    doc = pycrdt.Doc(client_id=client_id)
+    body = doc.get("default", type=pycrdt.XmlFragment)
+    body.children.append(
+        pycrdt.XmlElement("image", {"src": "/embed.get?id=OLD", "data-node": "OLD", "alt": "x"})
+    )
+    text = body.children.append(pycrdt.XmlText())
+    text.insert(0, "the OLD text stays")
+    text.format(0, 3, {"link": {"href": "/embed.get?id=OLD"}})
+    text.insert_embed(len(str(text)), {"src": "OLD"})
+    doc.get("meta", type=pycrdt.Map)["poster"] = {"src": "OLD", "sizes": ["OLD", 2], "keep": True}
+    return doc
+
+
+class TestRewriteValues(UnitTestCase):
+    def test_values_are_rewritten_and_text_and_structs_are_not(self):
+        doc = pictured()
+
+        rewritten = load([rewrite_values(doc.get_update(), swap)])
+
+        self.assertEqual(snapshot(rewritten), snapshot(doc))
+        body = rewritten.get("default", type=pycrdt.XmlFragment)
+        image, text = body.children
+        self.assertEqual(dict(image.attributes), {"src": "/embed.get?id=NEW", "data-node": "NEW", "alt": "x"})
+        self.assertEqual(
+            serialize(text)["text"],
+            [
+                {"insert": "the", "attributes": {"link": {"href": "/embed.get?id=NEW"}}},
+                {"insert": " OLD text stays"},
+                {"insert": {"src": "NEW"}},
+            ],
+        )
+        self.assertEqual(
+            rewritten.get("meta", type=pycrdt.Map)["poster"],
+            {"src": "NEW", "sizes": ["NEW", 2], "keep": True},
+        )
+
+    def test_concurrent_overwrites_leave_no_old_id_outside_the_text(self):
+        first, second = pictured(5), pycrdt.Doc(client_id=6)
+        second.apply_update(first.get_update())
+        before = first.get_state()
+        first.get("default", type=pycrdt.XmlFragment).children[0].attributes["src"] = "/embed.get?id=OLD&a"
+        second.get("default", type=pycrdt.XmlFragment).children[0].attributes["src"] = "/embed.get?id=OLD&b"
+        first.apply_update(second.get_update(before))
+
+        state = first.get_update()
+        rewritten = rewrite_values(state, swap)
+
+        self.assertEqual(rewritten.count(b"OLD"), 1, "only the text still says OLD")
+        self.assertEqual(snapshot(load([rewritten])), snapshot(first))
+
+    def test_nothing_to_rewrite_keeps_every_byte_and_a_rerun_changes_nothing(self):
+        state = pictured().get_update()
+
+        self.assertEqual(rewrite_values(state, lambda value: value), state)
+        once = rewrite_values(state, swap)
+        self.assertEqual(rewrite_values(once, swap), once)
+
+    def test_a_malformed_update_is_refused(self):
+        with self.assertRaises(ValueError):
+            rewrite_values(pictured().get_update()[:-1], swap)

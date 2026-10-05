@@ -2,11 +2,13 @@
 
 It reads what the compaction's guards need: each struct's writer and clocks,
 its origins, the text it inserts, and the delete set. Anything malformed,
-including trailing bytes, raises `ValueError`.
+including trailing bytes, raises `ValueError`. `rewrite_values` copies an update
+with its values changed and nothing else.
 """
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 MAX_SAFE = 2**53 - 1
@@ -229,3 +231,117 @@ def read_any(reader: Reader, depth: int = 0) -> None:
         reader.raw(reader.uint())
     else:
         raise ValueError(f"unknown value tag {tag}")
+
+
+def rewrite_values(data: bytes, rewrite: Callable[[str], str]) -> bytes:
+    """A copy of `data` with every string inside an attribute, mark or embed value passed through `rewrite`.
+
+    Text, names, keys, ids, clocks and origins are copied byte for byte, so the copy
+    holds the same structs and Yjs reads it as the same document with those values
+    rewritten. Values `rewrite` leaves alone keep their original bytes.
+    """
+    parse(data)
+    reader = Reader(data)
+    out = bytearray()
+    copied = 0
+
+    def replace(start: int, value: bytes) -> None:
+        nonlocal copied
+        if value != data[start : reader.at]:
+            out.extend(data[copied:start])
+            out.extend(value)
+            copied = reader.at
+
+    for _section in range(reader.uint()):
+        count = reader.uint()
+        reader.uint(), reader.uint()
+        for _struct in range(count):
+            info = reader.byte()
+            ref = info & 0x1F
+            if ref in (0, 10):
+                reader.uint()
+                continue
+            if info & 0x80:
+                reader.id()
+            if info & 0x40:
+                reader.id()
+            if info & 0xC0 == 0:
+                if reader.uint() == 1:
+                    reader.string()
+                else:
+                    reader.id()
+                if info & 0x20:
+                    reader.string()
+            if ref == 2:  # JSON
+                for _item in range(reader.uint()):
+                    start = reader.at
+                    value = reader.string()
+                    if value != "undefined":
+                        replace(start, encoded_string(rewritten_json(value, rewrite)))
+            elif ref == 5:  # embed
+                start = reader.at
+                replace(start, encoded_string(rewritten_json(reader.string(), rewrite)))
+            elif ref == 6:  # format
+                reader.string()
+                start = reader.at
+                replace(start, encoded_string(rewritten_json(reader.string(), rewrite)))
+            elif ref == 8:  # any
+                for _item in range(reader.uint()):
+                    start = reader.at
+                    replace(start, rewritten_any(reader, rewrite))
+            else:
+                read_content(reader, ref, Struct(0, 0, 0))
+    out.extend(data[copied:])
+    return bytes(out)
+
+
+def rewritten_json(text: str, rewrite: Callable[[str], str]) -> str:
+    def walk(value):
+        if isinstance(value, str):
+            return rewrite(value)
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        if isinstance(value, dict):
+            return {key: walk(item) for key, item in value.items()}
+        return value
+
+    value = json.loads(text, parse_constant=refuse_constant)
+    changed = walk(value)
+    return text if changed == value else json.dumps(changed, ensure_ascii=False, separators=(",", ":"))
+
+
+def rewritten_any(reader: Reader, rewrite: Callable[[str], str]) -> bytes:
+    """One value read from `reader`, encoded again with its strings rewritten and everything else as read."""
+    start = reader.at
+    tag = reader.byte()
+    if tag == 119:
+        return bytes([tag]) + encoded_string(rewrite(reader.string()))
+    if tag == 118:
+        out = bytearray([tag]) + encoded_uint(count := reader.uint())
+        for _key in range(count):
+            key_start = reader.at
+            reader.string()
+            out += reader.data[key_start : reader.at] + rewritten_any(reader, rewrite)
+        return bytes(out)
+    if tag == 117:
+        out = bytearray([tag]) + encoded_uint(count := reader.uint())
+        for _item in range(count):
+            out += rewritten_any(reader, rewrite)
+        return bytes(out)
+    reader.at = start
+    read_any(reader)
+    return reader.data[start : reader.at]
+
+
+def encoded_string(text: str) -> bytes:
+    raw = text.encode("utf-8")
+    return encoded_uint(len(raw)) + raw
+
+
+def encoded_uint(value: int) -> bytes:
+    out = bytearray()
+    while value > 0x7F:
+        out.append(0x80 | (value & 0x7F))
+        value >>= 7
+    out.append(value)
+    return bytes(out)
