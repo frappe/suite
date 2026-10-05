@@ -85,8 +85,10 @@ docstring-code-format = true
 
 [tool.bench]
 validation-ignore = [
-    # standalone SFU/STT services, not part of the Frappe app
-    "suite/meet/sfu-server/*",
+    # standalone services, each deployed and run outside the Frappe site
+    "suite/meet/sfu-server/*",  # includes the nested stt-server
+    "suite/meet/recorder-server/*",
+    "suite/sheets/collab-server/*",
 ]
 
 [tool.bench.assets]
