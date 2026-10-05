@@ -35,6 +35,7 @@ import { belowMinBuild } from '@/platform/build'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import { useWriterCollab } from './useWriterCollab'
+import VersionPreview from './VersionPreview.vue'
 import { createWriterDocument, isLocked, type WriterDocument } from './writerDocument'
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
 import { createWriteGate, type DocumentWrite } from './writes'
@@ -91,6 +92,7 @@ const showComments = ref(false)
 const showVersions = ref(false)
 const threads = ref<CommentThread[]>([])
 const versions = ref<VersionRow[]>([])
+const previewing = ref<VersionRow | null>(null)
 const versionsCursor = ref<string | null>(null)
 const loadingMoreVersions = ref(false)
 const panelLoading = ref(false)
@@ -222,6 +224,10 @@ async function loadPanel(kind: DocumentPanel) {
   } finally {
     panelLoading.value = false
   }
+}
+
+function versionLabel(version: VersionRow) {
+  return version.label || `Version ${version.seq}`
 }
 
 async function loadMoreVersions() {
@@ -388,35 +394,44 @@ onBeforeUnmount(() => {
         :style="{ width }"
       />
     </div>
-    <div v-else class="flex min-h-0 flex-1 overflow-hidden">
-      <CollabTextEditor
-        v-if="collabLive && room"
-        ref="editorSurface"
-        :room="room"
-        :file="fakeFileResource"
-        :document="documentResource"
-        :settings="settings"
-        :editable="editable"
+    <template v-else>
+      <VersionPreview
+        v-if="previewing"
+        :session="session"
+        :seq="previewing.seq"
+        :label="versionLabel(previewing)"
+        @close="previewing = null"
       />
-      <NonCollabEditor
-        v-else-if="documentResource.doc.collab === 0"
-        ref="editorSurface"
-        v-model:dirty="dirty"
-        :file="fakeFileResource.doc"
-        :document="documentResource"
-        :settings="settings"
-        :editable="editable"
-      />
-      <TextEditor
-        v-else
-        ref="editorSurface"
-        v-model:dirty="dirty"
-        :file="fakeFileResource"
-        :document="documentResource"
-        :settings="settings"
-        :editable="editable"
-      />
-    </div>
+      <div v-show="!previewing" class="flex min-h-0 flex-1 overflow-hidden">
+        <CollabTextEditor
+          v-if="collabLive && room"
+          ref="editorSurface"
+          :room="room"
+          :file="fakeFileResource"
+          :document="documentResource"
+          :settings="settings"
+          :editable="editable"
+        />
+        <NonCollabEditor
+          v-else-if="documentResource.doc.collab === 0"
+          ref="editorSurface"
+          v-model:dirty="dirty"
+          :file="fakeFileResource.doc"
+          :document="documentResource"
+          :settings="settings"
+          :editable="editable"
+        />
+        <TextEditor
+          v-else
+          ref="editorSurface"
+          v-model:dirty="dirty"
+          :file="fakeFileResource"
+          :document="documentResource"
+          :settings="settings"
+          :editable="editable"
+        />
+      </div>
+    </template>
 
     <aside
       v-if="showComments || showVersions"
@@ -484,18 +499,24 @@ onBeforeUnmount(() => {
           <p v-if="!threads.length" class="text-sm text-ink-gray-5">No comments yet.</p>
         </template>
         <template v-else>
-          <div
+          <button
             v-for="version in versions"
             :key="version.seq"
-            class="rounded-4 bg-surface-gray-1 p-3"
+            type="button"
+            class="block w-full rounded-4 p-3 text-left"
+            :class="
+              previewing?.seq === version.seq
+                ? 'bg-surface-gray-3'
+                : 'bg-surface-gray-1 hover:bg-surface-gray-2'
+            "
+            :aria-pressed="previewing?.seq === version.seq"
+            @click="previewing = version"
           >
-            <p class="text-sm-medium text-ink-gray-8">
-              {{ version.label || `Version ${version.seq}` }}
-            </p>
+            <p class="text-sm-medium text-ink-gray-8">{{ versionLabel(version) }}</p>
             <p class="text-p-xs text-ink-gray-5">
               {{ [version.actor, version.creation].filter(Boolean).join(' · ') }}
             </p>
-          </div>
+          </button>
           <p v-if="!versions.length" class="text-sm text-ink-gray-5">No versions yet.</p>
           <Button
             v-if="versionsCursor"

@@ -90,6 +90,23 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', () => ({
 vi.mock('@/apps/writer/components/TextEditor.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', () => ({ default: { render: () => null } }))
+vi.mock('./VersionPreview.vue', async () => {
+  const { defineComponent: define, h: render } = await import('vue')
+  return {
+    default: define({
+      props: { seq: Number, label: String },
+      emits: ['close'],
+      setup:
+        (props, { emit }) =>
+        () =>
+          render(
+            'button',
+            { 'data-preview': props.seq, onClick: () => emit('close') },
+            props.label,
+          ),
+    }),
+  }
+})
 
 const { default: WriterSurface } = await import('./WriterSurface.vue')
 const { watchBuild } = await import('@/platform/build')
@@ -172,5 +189,31 @@ describe('Writer surface', () => {
     await vi.waitFor(() => expect(root.textContent).toContain('Draft one'))
     expect(root.textContent).toContain('Draft two')
     expect(buttonLabelled(root, 'Load more')).toBeUndefined()
+  })
+
+  it('shows a version in place of the editor until Back to current', async () => {
+    const list = vi.fn(async () => ({
+      rows: [{ seq: 3, kind: 'named', label: 'Before review' }],
+      next_cursor: null,
+    }))
+    const root = await openedSurface({ list } as unknown as DocumentSession['versions'])
+    const editorShown = () =>
+      (root.querySelector('[data-editor]')!.parentElement as HTMLElement).style.display !== 'none'
+
+    root.querySelector<HTMLElement>('[data-open-versions]')!.click()
+    await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
+    ;[...root.querySelectorAll<HTMLElement>('aside button')]
+      .find((button) => button.textContent?.startsWith('Before review'))!
+      .click()
+    await nextTick()
+
+    const preview = root.querySelector<HTMLElement>('[data-preview]')!
+    expect(preview.getAttribute('data-preview')).toBe('3')
+    expect(editorShown()).toBe(false)
+
+    preview.click()
+    await nextTick()
+    expect(root.querySelector('[data-preview]')).toBeNull()
+    expect(editorShown()).toBe(true)
   })
 })
