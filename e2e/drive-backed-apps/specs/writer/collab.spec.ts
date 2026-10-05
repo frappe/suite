@@ -7,6 +7,7 @@ import {
 	expectConverged,
 	expectSaved,
 	serverText,
+	takeVersion,
 	typeParagraph,
 } from "../../helpers/collab";
 import { discardNode } from "../../helpers/drive";
@@ -15,6 +16,7 @@ import {
 	openWriterDocument,
 	shareWriterDocument,
 	uniqueWriterTitle,
+	writerEditor,
 } from "../../helpers/writer";
 
 test.describe("Writer collaboration", () => {
@@ -35,7 +37,7 @@ test.describe("Writer collaboration", () => {
 	});
 
 	test.afterEach(async ({ owner }) => {
-		await discardNode(owner.page.request, node);
+		await discardNode(owner.context.request, node);
 	});
 
 	test("two people typing at once end with the same document", async ({
@@ -120,5 +122,133 @@ test.describe("Writer collaboration", () => {
 			[owner.page, collaborator.page],
 			["Written before compaction", "Written after compaction"],
 		);
+	});
+
+	test("edits made offline reach everyone after reconnecting", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		// A failed pull retries after up to 30 s, so reconnecting can take that long
+		test.setTimeout(120_000);
+		await openWriterDocument(owner.page, node);
+		await openWriterDocument(collaborator.page, node);
+
+		await collaborator.context.setOffline(true);
+		await typeParagraph(collaborator.page, "Typed while offline");
+		await typeParagraph(owner.page, "Typed while the other tab was offline");
+		await expectSaved(owner.page);
+		await expect(collaborator.page.getByText("Saved", { exact: true })).toBeHidden();
+
+		await collaborator.context.setOffline(false);
+
+		await expectConverged(
+			testApi,
+			node,
+			[owner.page, collaborator.page],
+			["Typed while offline", "Typed while the other tab was offline"],
+			60_000,
+		);
+	});
+
+	test("closing the last tab compacts, and the document then opens from the checkpoint", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Typed just before the last tab closed");
+
+		// Closing with the edit still unsent sends it as the tab's final push, which asks for a compaction
+		await owner.page.close();
+
+		await expect
+			.poll(
+				async () => {
+					const state = await collabState(testApi, node);
+					return {
+						compacted: state.head_rev > 0 && state.checkpoint_rev === state.head_rev,
+						tail_rows: state.tail_rows,
+					};
+				},
+				{ timeout: 30_000 },
+			)
+			.toEqual({ compacted: true, tail_rows: 0 });
+		const stored = await serverText(testApi, node);
+		expect(stored.join("\n")).toContain("Typed just before the last tab closed");
+
+		await openWriterDocument(collaborator.page, node);
+		await expect.poll(() => editorBlocks(collaborator.page)).toEqual(stored);
+	});
+
+	test("a tab older than the minimum Writer build opens read-only", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		// Only this tab is told its build is too old; the site setting would reach every spec
+		await collaborator.context.route("**/api/**", async (route) => {
+			const response = await route.fetch();
+			await route.fulfill({
+				response,
+				headers: {
+					...response.headers(),
+					"x-suite-min-builds": JSON.stringify({ writer: "99999999999999" }),
+				},
+			});
+		});
+		await openWriterDocument(owner.page, node);
+		await openWriterDocument(collaborator.page, node);
+
+		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "false");
+		await writerEditor(collaborator.page).click();
+		await collaborator.page.keyboard.type("Typed in the old tab");
+		await expect(writerEditor(collaborator.page)).not.toContainText("Typed in the old tab");
+
+		await typeParagraph(owner.page, "Typed in the current tab");
+		await expectSaved(owner.page);
+		const blocks = await expectConverged(
+			testApi,
+			node,
+			[owner.page, collaborator.page],
+			["Typed in the current tab"],
+		);
+		expect(blocks.join("\n")).not.toContain("Typed in the old tab");
+	});
+
+	test("an edit made while another tab previews a version shows after Back to current", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Written before the version");
+		await expectSaved(owner.page);
+		await takeVersion(owner.context.request, node, "Before the preview");
+		await openWriterDocument(collaborator.page, node);
+
+		await owner.page.getByRole("button", { name: /versions/i }).first().click();
+		await owner.page
+			.getByRole("complementary", { name: "Versions" })
+			.getByRole("button", { name: /^Before the preview/ })
+			.click();
+		await expect(owner.page.getByText("Viewing Before the preview")).toBeVisible();
+
+		await typeParagraph(collaborator.page, "Typed during the preview");
+		await expectSaved(collaborator.page);
+		await expect
+			.poll(async () => (await serverText(testApi, node)).join("\n"))
+			.toContain("Typed during the preview");
+
+		await owner.page.getByRole("button", { name: "Back to current" }).click();
+
+		await expectConverged(
+			testApi,
+			node,
+			[owner.page, collaborator.page],
+			["Written before the version", "Typed during the preview"],
+		);
+		await expectSaved(owner.page);
+		await expect(owner.page.locator(".bg-surface-amber-2")).toHaveCount(0);
 	});
 });
