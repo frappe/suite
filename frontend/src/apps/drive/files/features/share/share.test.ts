@@ -386,6 +386,39 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     expect(share.changed.value).toBe(false)
   })
 
+  it('creates a link with the chosen access, expiry and password, and refreshes access', async () => {
+    const server = fakeServer((call) =>
+      call.id === 'node_get'
+        ? node('document')
+        : call.id === 'node_grants'
+          ? { grants: [], inherited: [] }
+          : grant('$LINK:new', 40, { url: '/l/new' }),
+    )
+    const share = useShare('doc', { transport: server.transport })
+    await share.load()
+
+    expect(
+      await share.newLink({
+        role: 40,
+        expires_on: '2027-01-15T23:59:59Z',
+        password: 'test-password',
+      }),
+    ).toBe('/l/new')
+    expect(
+      server.calls.filter((call) => call.id === 'node_put_grant').map((call) => call.input),
+    ).toEqual([
+      {
+        node: 'doc',
+        principal: '$LINK',
+        role: 40,
+        expires_on: '2027-01-15T23:59:59Z',
+        password: 'test-password',
+      },
+    ])
+    expect(server.calls.filter((call) => call.id === 'node_grants')).toHaveLength(2)
+    expect(share.changed.value).toBe(true)
+  })
+
   it('sends a link to an outsider and notifies only users', async () => {
     const server = fakeServer((call) =>
       call.id === 'node_get'

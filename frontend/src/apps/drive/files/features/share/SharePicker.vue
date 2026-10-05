@@ -6,62 +6,75 @@
         :model-value="null"
         v-model:query="query"
         class="min-w-0 flex-1"
+        size="sm"
+        variant="outline"
         :options="options"
-        :loading="loading"
+        :loading="loading && !rows.length"
         :filterable="false"
         :disabled="disabled"
-        placeholder="Add people"
-        empty-text="No people or groups found"
-        aria-label="Add people, groups or emails"
-        @update:query="onQuery"
+        :placeholder="__('Add people or groups')"
+        :empty-text="__('No people or groups found')"
+        :aria-label="__('Add people, groups or emails')"
         @update:open="onOpen"
-        @update:model-value="pick"
       />
       <Select
+        v-if="staged.length"
         v-model="role"
+        size="sm"
+        variant="outline"
+        :disabled="disabled"
         class="w-28 shrink-0"
         :options="roleOptions"
-        aria-label="Role for people you add"
+        :aria-label="__('Access for people you add')"
       />
     </div>
 
     <!-- People picked wait here, so Notify can be chosen before anyone is added (§7.8). -->
     <div v-if="staged.length" class="space-y-3">
-      <ul class="flex flex-wrap gap-1.5" aria-label="People to add">
+      <ul :aria-label="__('People to add')">
         <li
           v-for="person in staged"
           :key="person.principal"
-          class="flex h-7 min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-gray-2 pl-2.5 pr-0.5 text-sm text-ink-gray-8"
+          class="relative flex h-[60px] items-center gap-3 before:absolute before:left-11 before:right-0 before:top-0 before:border-t before:border-outline-gray-1 first:before:border-0"
         >
           <span
-            :class="[
-              person.kind === 'group' ? 'lucide-users' : 'lucide-user',
-              'size-3.5 shrink-0 text-ink-gray-5',
-            ]"
+            class="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
             aria-hidden="true"
-          />
-          <span class="truncate">{{ person.label }}</span>
+          >
+            <span :class="[person.kind === 'group' ? 'lucide-users' : 'lucide-user', 'size-4']" />
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-p-base-medium">{{ person.label }}</p>
+            <p
+              v-if="person.kind === 'user' && person.label !== person.principal"
+              class="mt-0.5 truncate text-p-sm text-ink-gray-5"
+            >
+              {{ person.principal }}
+            </p>
+          </div>
           <Button
             icon="lucide-x"
             variant="ghost"
-            size="xs"
-            class="shrink-0 rounded-full"
-            :aria-label="`Don't add ${person.label}`"
+            size="sm"
+            class="shrink-0"
+            :aria-label="__('Remove {0}', [person.label])"
             :disabled="disabled"
             @click="unstage(person.principal)"
           />
         </li>
       </ul>
-      <div class="flex flex-wrap items-center justify-end gap-2">
+      <div
+        class="flex flex-wrap items-center justify-end gap-2 border-t border-outline-gray-1 pt-4"
+      >
         <Checkbox
           v-if="staged.some((person) => person.kind === 'user')"
           v-model="notify"
           class="mr-auto"
-          label="Notify by email"
+          :label="__('Notify by email')"
           size="sm"
         />
-        <Button label="Cancel" :disabled="disabled" @click="staged = []" />
-        <Button variant="solid" label="Share" :loading="disabled" @click="submit" />
+        <Button :label="__('Cancel')" :disabled="disabled" @click="cancel" />
+        <Button variant="solid" :label="__('Share')" :loading="disabled" @click="submit" />
       </div>
     </div>
   </div>
@@ -74,6 +87,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch 
 
 import { groupPrincipal, rolesFor } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
+import { translate as __ } from '@/platform/translation'
 import { transport } from '@/platform/transport'
 import { api as suiteApi, type PeopleGetOutput } from '@/platform/transport/generated'
 
@@ -106,38 +120,52 @@ watch(
   () => staged.value.length > 0,
   (pending) => (picking.value = pending),
 )
-onUnmounted(() => (picking.value = false))
+onUnmounted(() => {
+  request += 1
+  picking.value = false
+})
 
 const roleOptions = computed(() =>
-  rolesFor('user', props.nodeKind).map((option) => ({ label: option.label, value: option.value })),
+  rolesFor('user', props.nodeKind).map((option) => ({
+    label: __(option.label),
+    value: option.value,
+  })),
 )
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const options = computed(() => [
-  ...rows.value.map((person) =>
-    person.kind === 'user'
-      ? {
-          label: person.full_name || person.email,
-          value: `user:${person.email}`,
-          description: person.email,
-          icon: 'lucide-user',
-        }
-      : {
-          label: person.name,
-          value: `group:${person.name}`,
-          description: `${person.member_count} ${person.member_count === 1 ? 'member' : 'members'}`,
-          icon: 'lucide-users',
-        },
-  ),
+  ...rows.value
+    .filter(
+      (person) =>
+        !staged.value.some(
+          (entry) =>
+            entry.principal ===
+            (person.kind === 'user' ? person.email : groupPrincipal(person.name)),
+        ),
+    )
+    .map((person) => ({
+      type: 'custom' as const,
+      key: person.kind === 'user' ? `user:${person.email}` : `group:${person.name}`,
+      label: person.kind === 'user' ? person.full_name || person.email : person.name,
+      description:
+        person.kind === 'user'
+          ? person.email
+          : person.member_count === 1
+            ? __('1 member')
+            : __('{0} members', [person.member_count]),
+      icon: person.kind === 'user' ? 'lucide-user' : 'lucide-users',
+      keepOpen: true,
+      onClick: () => pick(person.kind === 'user' ? `user:${person.email}` : `group:${person.name}`),
+    })),
   {
     type: 'custom' as const,
     key: 'send-link',
-    label: `Send a link to ${query.value.trim()}`,
+    label: __('Send a link to {0}', [query.value.trim()]),
     icon: 'lucide-mail',
     // A share link gives at most Edit (Drive spec §5.9).
     disabled: role.value > DRIVE_ROLES.edit,
-    description: role.value > DRIVE_ROLES.edit ? 'A link gives at most Edit' : undefined,
+    description: role.value > DRIVE_ROLES.edit ? __('A link gives at most Edit') : undefined,
     // A root holds no links (Drive spec §4.9).
     condition: ({ query: typed }: { query: string }) =>
       props.nodeKind !== 'root' &&
@@ -155,11 +183,11 @@ onMounted(() => {
 })
 
 let request = 0
-async function search(text: string) {
-  const id = ++request
+async function search(text: string, id: number) {
+  if (id !== request) return
   loading.value = true
   try {
-    const page = await transport.request(suiteApi.people_get, text.trim() ? { q: text.trim() } : {})
+    const page = await transport.request(suiteApi.people_get, text ? { q: text } : {})
     if (id === request) rows.value = page.rows
   } catch {
     if (id === request) rows.value = []
@@ -168,10 +196,19 @@ async function search(text: string) {
   }
 }
 
-const onQuery = useDebounceFn((text: string) => void search(text), 250)
+const searchLater = useDebounceFn((text: string, id: number) => void search(text, id), 250)
+// Invalidate in-flight results as soon as the query changes, before the debounce.
+watch(
+  () => query.value.trim(),
+  (text) => {
+    loading.value = true
+    void searchLater(text, ++request)
+  },
+  { flush: 'sync' },
+)
 
 function onOpen(open: boolean) {
-  if (open && !rows.value.length) void search(query.value)
+  if (open && !rows.value.length && !loading.value) void search(query.value.trim(), ++request)
 }
 
 function pick(value: string | number | null | undefined) {
@@ -190,9 +227,7 @@ function pick(value: string | number | null | undefined) {
       : { principal: groupPrincipal(id), kind: 'group', label: id, name: null }
   if (!staged.value.some((entry) => entry.principal === picked.principal))
     staged.value = [...staged.value, picked]
-  // The input shows the picked label first; clear it once the pick settles.
-  // A click on a row moves focus into the closing list, so focus comes back
-  // to the input and the next person can be typed straight away.
+  // Pointer selection moves focus to the option; return it to the open search.
   void nextTick(() => {
     query.value = ''
     combobox.value?.focus()
@@ -201,6 +236,12 @@ function pick(value: string | number | null | undefined) {
 
 function unstage(principal: string) {
   staged.value = staged.value.filter((person) => person.principal !== principal)
+  if (!staged.value.length) void nextTick(() => combobox.value?.focus())
+}
+
+function cancel() {
+  staged.value = []
+  void nextTick(() => combobox.value?.focus())
 }
 
 async function submit() {

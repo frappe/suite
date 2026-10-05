@@ -31,7 +31,7 @@ const nodeGet = driveOperation<{ node: string; expand: string }, DriveNode>(api.
   entity: true,
 })
 
-/** A row key: the principal, or a section key for the picker and + New link. */
+/** A row key: the principal, or a section key for the picker and link creation. */
 export type RowKey = string
 export const PICKER: RowKey = 'picker'
 export const NEW_LINK_ROW: RowKey = 'new-link'
@@ -274,11 +274,9 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     sendLink: (email: string, role: number) =>
       write(PICKER, () => grants.put(NEW_LINK, { role, send_to: email })),
 
-    /** A View link with no expiry and no password (§7.7). Resolves with its URL. */
-    async newLink(): Promise<string | undefined> {
-      const written = await write(NEW_LINK_ROW, () =>
-        grants.put(NEW_LINK, { role: DRIVE_ROLES.read }),
-      )
+    /** Creates a share link with the chosen access and protection (§7.7). Resolves with its URL. */
+    async newLink(options: GrantPatch = { role: DRIVE_ROLES.read }): Promise<string | undefined> {
+      const written = await write(NEW_LINK_ROW, () => grants.put(NEW_LINK, options))
       return written?.url
     },
 
