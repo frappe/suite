@@ -136,6 +136,25 @@
           @dragover.prevent
         />
       </div>
+      <div
+        v-else-if="anchors.length > 1"
+        class="table-of-contents flex flex-col gap-0.5 mb-2 px-0.5 pr-2.5"
+      >
+        <div v-for="anchor in anchors" :key="anchor.id" class="flex">
+          <Tooltip :text="anchor.textContent" class="min-w-0 grow">
+            <a
+              :href="'#' + anchor.id"
+              class="link block truncate text-sm leading-tighter text-ink-gray-5 hover:bg-surface-gray-2 px-2 py-1 rounded-1 cursor-pointer"
+              :data-item-index="anchor.itemIndex"
+              :class="anchor.isActive && 'text-ink-gray-8'"
+              :style="{ '--level': anchor.level - maxLevel }"
+              @click.prevent="onAnchorClick(anchor.id)"
+            >
+              {{ anchor.textContent }}
+            </a>
+          </Tooltip>
+        </div>
+      </div>
       <div v-if="editor.isEditable" class="flex items-center gap-1 pr-1">
         <Button
           class="grow !justify-start text-xs opacity-50 hover:opacity-100"
@@ -194,6 +213,8 @@ const tabs = ref([])
 
 const updateTabs = () => {
   tabs.value = listTabs(props.editor)
+  // The first tab alone is just the document, so it shows as plain headings
+  if (tabs.value.length === 1 && tabs.value[0].id === FIRST_TAB_ID) tabs.value = []
 }
 
 // Get active tab ID
