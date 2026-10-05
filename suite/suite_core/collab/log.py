@@ -25,6 +25,7 @@ PROTO = 1
 PACE_MS = 1000
 HEADER_MAX = 4096
 CLIENT_ID_MAX = 2**30
+PURGE_BATCH = 500
 
 
 class Refusal(Exception):
@@ -121,6 +122,33 @@ def replace_start(adapter: str, doc_id: str, state: bytes) -> None:
         `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s WHERE `id` = %(doc)s""",
         {"chain": chain.hex(), "kernel": KERNEL, "size": len(state), "doc": doc_id},
     )
+
+
+def mark_purged(adapter: str, node: str) -> str | None:
+    """Mark `node`'s log purged in the caller's transaction, for `delete_purged` to remove; answers its id."""
+    doc = find(adapter, node)
+    if not doc:
+        return None
+    frappe.db.sql(f"UPDATE `{table(adapter, 'doc')}` SET `mode` = 'purged' WHERE `id` = %s", doc.id)
+    return doc.id
+
+
+def delete_purged(adapter: str, doc_id: str) -> None:
+    """Delete a purged log's rows in batches, each committed, then its control row. Safe to run again."""
+    doc = table(adapter, "doc")
+    if not frappe.db.sql(f"SELECT 1 FROM `{doc}` WHERE `id` = %s AND `mode` = 'purged'", doc_id):
+        return
+    for kind in ("update", "checkpoint", "session"):
+        while True:
+            frappe.db.sql(
+                f"DELETE FROM `{table(adapter, kind)}` WHERE `doc_id` = %s LIMIT %s", (doc_id, PURGE_BATCH)
+            )
+            deleted = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+            frappe.db.commit()  # nosemgrep: frappe-manual-commit
+            if deleted < PURGE_BATCH:
+                break
+    frappe.db.sql(f"DELETE FROM `{doc}` WHERE `id` = %s AND `mode` = 'purged'", doc_id)
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def rows_after(adapter: str, doc_id: str, since: int) -> list[tuple[int, bytes]]:

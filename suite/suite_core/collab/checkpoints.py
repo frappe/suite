@@ -105,10 +105,12 @@ class Compaction:
                 (doc_id, through, bytes(sha).hex()),
             )
         sha = hashlib.sha256(result.state).digest()
+        # A locking read of the control row, so a purge either waits for this row or is seen here
         frappe.db.sql(
             f"""INSERT INTO `{checkpoint}`
             (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `report`, `created`)
-            VALUES (%s, %s, UNHEX(%s), UNHEX(%s), %s, '', %s, %s, %s, %s)""",
+            SELECT %s, %s, UNHEX(%s), UNHEX(%s), %s, '', %s, %s, %s, %s
+            FROM `{self.table("doc")}` WHERE `id` = %s AND `mode` != 'purged'""",
             (
                 doc_id,
                 through,
@@ -119,8 +121,11 @@ class Compaction:
                 compaction.KERNEL,
                 json.dumps({**result.report, "ms": result.ms}),
                 now_datetime(),
+                doc_id,
             ),
         )
+        if not frappe.db.sql("SELECT ROW_COUNT()")[0][0]:
+            raise compaction.CompactionFailed("purged")
         # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
         gz = gzip.compress(result.state)
         part = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0]) // 4

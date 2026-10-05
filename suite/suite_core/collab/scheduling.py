@@ -68,13 +68,19 @@ def due(doc, now, *, closing: bool = False) -> bool:
     )
 
 
-def sweep(adapter: str, method: str, limit: int = 100) -> None:
-    """Request compactions for documents whose tail has waited too long, whatever their traffic."""
+def sweep(adapter: str, method: str, limit: int = 100, *, purge_method: str | None = None) -> None:
+    """Request compactions for documents whose tail has waited too long, whatever their traffic,
+    and the deletion of purged logs a job has not finished."""
+    if purge_method:
+        for (doc_id,) in frappe.db.sql(
+            f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `mode` = 'purged' LIMIT %s", limit
+        ):
+            enqueue(purge_method, f"suite-collab-purge-{adapter}-{doc_id}", doc_id=doc_id)
     now = now_datetime()
     for (doc_id,) in frappe.db.sql(
         f"""SELECT `d`.`id` FROM `{table(adapter, "doc")}` `d` JOIN `{table(adapter, "update")}` `u`
         ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
-        WHERE `d`.`head_rev` > `d`.`checkpoint_rev` AND `u`.`created` <= %s
+        WHERE `d`.`head_rev` > `d`.`checkpoint_rev` AND `d`.`mode` != 'purged' AND `u`.`created` <= %s
         AND (`d`.`next_compaction_at` IS NULL OR `d`.`next_compaction_at` <= %s)
         ORDER BY `u`.`created` LIMIT %s""",
         (now - SWEEP_AGE, now, limit),

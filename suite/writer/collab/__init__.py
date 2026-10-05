@@ -138,6 +138,22 @@ def rewritten_view(content: str, rewrite) -> str:
     return json.dumps({name: node(root) for name, root in json.loads(content).items()}, ensure_ascii=False)
 
 
+def purge_log(node: str) -> None:
+    """Mark `node`'s log purged in Drive's transaction; a job deletes its rows once that commits."""
+    doc_id = collab.mark_purged(ADAPTER, node)
+    if doc_id:
+        scheduling.enqueue(
+            "suite.writer.collab.delete_purged",
+            f"suite-collab-purge-{ADAPTER}-{doc_id}",
+            doc_id=doc_id,
+            enqueue_after_commit=True,
+        )
+
+
+def delete_purged(doc_id: str) -> None:
+    collab.delete_purged(ADAPTER, doc_id)
+
+
 def compact(doc_id: str) -> None:
     checkpoints.run(ADAPTER, doc_id, ROOTS)
 
@@ -147,4 +163,4 @@ def consider_compaction(doc_id: str, *, final_from: str | None = None) -> None:
 
 
 def sweep() -> None:
-    scheduling.sweep(ADAPTER, "suite.writer.collab.compact")
+    scheduling.sweep(ADAPTER, "suite.writer.collab.compact", purge_method="suite.writer.collab.delete_purged")

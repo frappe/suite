@@ -42,6 +42,7 @@ def ensure_tables(adapter: str) -> None:
         "`next_compaction_at` datetime(6) NULL",
         "`last_compaction_ms` int unsigned NULL",
         "`last_compaction_error` varchar(140) NULL",
+        "`mode` varchar(20) NOT NULL DEFAULT 'active'",
     ):
         frappe.db.sql_ddl(f"ALTER TABLE `{table(adapter, 'doc')}` ADD COLUMN IF NOT EXISTS {column}")
     frappe.db.sql_ddl(

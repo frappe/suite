@@ -79,7 +79,15 @@ from frappe import _
 from suite import drive
 from suite.suite_core import collab
 from suite.suite_core.collab import compaction
-from suite.writer.collab import ADAPTER, copy_log, live_state, remap_log, start_log, version_payload
+from suite.writer.collab import (
+    ADAPTER,
+    copy_log,
+    live_state,
+    purge_log,
+    remap_log,
+    start_log,
+    version_payload,
+)
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
@@ -244,8 +252,9 @@ def on_purge(docname: str) -> None:
     the whole row as JSON in `Deleted Document`
     (`frappe/model/delete_doc.py:add_to_deleted_document`), so the body, its
     HTML, and the comment blob would all outlive the §8.8 purge that was meant
-    to remove them.
+    to remove them. A collab log is marked purged here and deleted by a job.
     """
+    node = frappe.db.get_value(DOCTYPE, docname, "node")
     frappe.delete_doc(
         DOCTYPE,
         docname,
@@ -254,6 +263,8 @@ def on_purge(docname: str) -> None:
         ignore_missing=True,
         delete_permanently=True,
     )
+    if node:
+        purge_log(node)
 
 
 def used_nodes(docname: str) -> set[str]:

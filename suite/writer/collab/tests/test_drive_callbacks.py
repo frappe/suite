@@ -14,10 +14,12 @@ from frappe.utils import now_datetime
 from suite import drive
 from suite.drive._core import content
 from suite.drive._core.errors import DriveConflict
-from suite.drive._core.nodes import create_file
+from suite.drive._core.nodes import _trash, create_file, purge
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import restore_version
 from suite.suite_core import collab
+from suite.suite_core.collab import log, scheduling
+from suite.writer import collab as writer_collab
 from suite.writer import drive as writer_drive
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
@@ -275,3 +277,70 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         frappe.db.rollback()
         self.assertEqual(frappe.db.count("Drive Node", {"parent_node": parent}), before)
+
+    def purged(self, node: str) -> str:
+        """Trash and purge `node` through Drive as its owner, then commit; answers its log's id."""
+        doc_id = self.doc_row(node).id
+        owner = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        with patch.object(scheduling, "enqueue") as enqueue:
+            _trash(owner, node)
+            purge(owner, node)
+            frappe.db.commit()
+        enqueue.assert_called_once()
+        self.assertEqual(enqueue.call_args.kwargs["enqueue_after_commit"], True)
+        return doc_id
+
+    def rows_of(self, doc_id: str) -> dict:
+        return {
+            kind: frappe.db.sql(
+                f"SELECT COUNT(*) FROM `__writer_collab_{kind}` WHERE `{'id' if kind == 'doc' else 'doc_id'}` = %s",
+                doc_id,
+            )[0][0]
+            for kind in ("doc", "update", "checkpoint", "session")
+        }
+
+    def test_a_purge_marks_the_log_and_its_job_deletes_every_row_in_batches(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two ", "three"])
+        self.compact(node)
+        self.type_into(node, [" four"])
+
+        doc_id = self.purged(node)
+
+        self.assertEqual(frappe.db.get_value("Drive Node", node, "name"), None, "Drive purged the node")
+        self.assertEqual(
+            frappe.db.sql("SELECT `mode` FROM `__writer_collab_doc` WHERE `id` = %s", doc_id)[0][0], "purged"
+        )
+        with patch.object(log, "PURGE_BATCH", 2):
+            writer_collab.delete_purged(doc_id)
+        self.assertEqual(self.rows_of(doc_id), {"doc": 0, "update": 0, "checkpoint": 0, "session": 0})
+
+    def test_the_sweeper_finishes_a_purge_whose_job_never_ran(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        doc_id = self.purged(node)
+
+        with patch.object(scheduling, "enqueue") as enqueue:
+            writer_collab.sweep()
+
+        self.assertIn(
+            (
+                ("suite.writer.collab.delete_purged", f"suite-collab-purge-writer-{doc_id}"),
+                {"doc_id": doc_id},
+            ),
+            [(call.args, call.kwargs) for call in enqueue.call_args_list],
+        )
+        writer_collab.delete_purged(doc_id)
+        self.assertEqual(self.rows_of(doc_id)["update"], 0)
+
+    def test_a_compaction_never_stores_a_checkpoint_for_a_purged_log(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        doc_id = self.doc_row(node).id
+        frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+        frappe.db.commit()
+
+        writer_collab.compact(doc_id)
+
+        self.assertEqual(self.rows_of(doc_id)["checkpoint"], 0)
+        writer_collab.delete_purged(doc_id)
