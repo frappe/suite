@@ -54,6 +54,7 @@ export async function expectConverged(
 	node: string,
 	pages: Page[],
 	texts: string[],
+	timeout?: number,
 ): Promise<string[]> {
 	let blocks: string[] = [];
 	await expect
@@ -65,7 +66,20 @@ export async function expectConverged(
 				matchesServer: shown.every((page) => JSON.stringify(page) === JSON.stringify(server)),
 				missing: texts.filter((text) => !server.join("\n").includes(text)),
 			};
-		})
+		}, { timeout })
 		.toEqual({ matchesServer: true, missing: [] });
 	return blocks;
+}
+
+/** Store the document's current bytes as a named version, through Drive's versions route. */
+export async function takeVersion(
+	request: APIRequestContext,
+	node: string,
+	label: string,
+): Promise<void> {
+	const response = await request.post(
+		`/api/suite/drive/nodes/${encodeURIComponent(node)}/versions`,
+		{ data: { kind: "named", label } },
+	);
+	expect(response.ok(), await response.text()).toBe(true);
 }
