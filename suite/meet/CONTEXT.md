@@ -79,6 +79,8 @@ _Avoid_: Server-side Encryption
 
 ## Relationships
 
+- Recent rooms are personal history of authenticated join access grants, ordered by the latest grant per room. Lobby previews, waiting requests, guests, and token refreshes do not create visits. The home page shows the latest 10 rooms visited within the past seven days, excluding deleted rooms and rooms that ban the user. Visits before history tracking was installed are not inferred from persistent membership.
+
 - Global recording availability gates new sessions; disabling it does not interrupt an active Recording Session.
 - An authenticated participant has at most one active **Participant Connection** to a Meet Room and switches explicitly between tabs or devices.
 - A **Meet Room** can have many **Recording Sessions** over its lifetime.

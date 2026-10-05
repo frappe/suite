@@ -8,7 +8,7 @@ const route = useRoute()
 </script>
 
 <template>
-  <nav class="space-y-0.5" aria-label="Meet views">
+  <nav class="space-y-0.5" :aria-label="__('Meet views')">
     <SidebarItem
       :label="__('Meetings')"
       icon="lucide-video"
@@ -16,7 +16,7 @@ const route = useRoute()
       :active="route.name === 'meet-home'"
     />
     <SidebarItem
-      label="Recordings"
+      :label="__('Recordings')"
       icon="lucide-circle-play"
       route="/meet/recordings"
       :active="route.name === 'meet-recordings'"

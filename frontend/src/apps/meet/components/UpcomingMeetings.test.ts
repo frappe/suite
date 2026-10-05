@@ -82,6 +82,13 @@ beforeEach(() => {
       links: [{ href: '/meet/mnop-qrst-uvwx' }],
     },
     { id: 'unrelated', title: 'Not a meeting', start: '2026-09-30T11:00:00', duration: 'PT1H' },
+    {
+      id: 'later',
+      title: 'Later meeting',
+      start: '2026-10-02T10:00:00',
+      duration: 'PT1H',
+      links: [{ href: '/meet/abcd-efgh-ijkl' }],
+    },
   ]
 })
 afterEach(() => {
@@ -105,12 +112,14 @@ async function mount() {
 }
 
 describe('Meet upcoming list', () => {
-  it('shows today and later Meet events together and joins the selected room', async () => {
+  it('shows today and tomorrow’s Meet events and joins the selected room', async () => {
     const root = await mount()
     expect(root.textContent).toContain('Design review')
-    expect(root.textContent).toContain('10:00 – 11:00')
+    expect(root.textContent).toContain('10:00 am – 11:00 am')
     expect(root.textContent).toContain('Team planning')
+    expect(root.textContent).toContain('2:00 pm – 2:30 pm')
     expect(root.textContent).not.toContain('Not a meeting')
+    expect(root.textContent).not.toContain('Later meeting')
     root.querySelector<HTMLButtonElement>('button[aria-label="Join Design review"]')!.click()
     expect(state.push).toHaveBeenCalledWith({
       name: 'meet-meeting',
@@ -118,16 +127,16 @@ describe('Meet upcoming list', () => {
     })
   })
 
-  it('shows meetings grouped by day within the next 30 days', async () => {
+  it('requests today through tomorrow and labels both day groups', async () => {
     const root = await mount()
     expect(root.textContent).toContain('Design review')
     expect(root.textContent).toContain('Team planning')
     expect(root.textContent).toContain('Today')
-    expect(root.textContent).toContain('Thu, 1 Oct')
+    expect(root.textContent).toContain('Tomorrow')
     expect(state.options!.params()).toMatchObject({
       account: 'personal',
       from_date: '2026-09-30T00:00:00',
-      to_date: '2026-10-30T23:59:59',
+      to_date: '2026-10-01T23:59:59',
     })
   })
 })

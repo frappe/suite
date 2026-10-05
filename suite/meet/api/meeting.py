@@ -11,6 +11,7 @@ import jwt
 from frappe import _
 
 from suite.meet import guest_access
+from suite.meet.api.recents import record_room_visit
 from suite.meet.api.recording import get_active_recording_state
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.utils.sfu_config import get_sfu_config
@@ -130,6 +131,8 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         is_cohost=is_cohost,
         e2ee_required=e2ee_required,
     )
+
+    record_room_visit(meeting.name, user)
 
     return {
         "sfu_url": sfu_config["sfu_server_url"],

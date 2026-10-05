@@ -81,7 +81,7 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 const session = useSession()
 const fromDate = dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss')
-const toDate = dayjs().add(30, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss')
+const toDate = dayjs().add(1, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss')
 const timeZone = timezone()
 
 const upcomingEvents = useCall({
@@ -115,29 +115,26 @@ const meetings = computed(() => {
     .filter((event) => {
       const start = dayjs(event.start)
       const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-      return getMeetingUrl(event) && end.isAfter(currentTime)
+      return (
+        getMeetingUrl(event) &&
+        end.isAfter(currentTime) &&
+        (start.isSame(currentTime, 'day') || start.isSame(currentTime.add(1, 'day'), 'day'))
+      )
     })
     .sort((left, right) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
 })
 
-const groups = computed(() => {
-  const result: { day: string; label: string; meetings: CalendarEvent[] }[] = []
-  for (const event of meetings.value) {
-    const start = dayjs(event.start)
-    const day = start.format('YYYY-MM-DD')
-    let group = result.find((item) => item.day === day)
-    if (!group) {
-      group = {
-        day,
-        label: start.isSame(dayjs(now.value), 'day') ? 'Today' : start.format('ddd, D MMM'),
-        meetings: [],
-      }
-      result.push(group)
-    }
-    group.meetings.push(event)
-  }
-  return result
-})
+const meetingGroups = computed(() =>
+  [
+    { day: 'Today', date: dayjs(now.value) },
+    { day: 'Tomorrow', date: dayjs(now.value).add(1, 'day') },
+  ]
+    .map(({ day, date }) => ({
+      day,
+      events: meetings.value.filter((event) => dayjs(event.start).isSame(date, 'day')),
+    }))
+    .filter((group) => group.events.length),
+)
 
 const isAllDayEvent = (event: CalendarEvent) => {
   const start = dayjs(event.start)
@@ -157,7 +154,7 @@ const formatMeetingTime = (event: CalendarEvent) => {
 
   const start = dayjs(event.start)
   const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-  return `${start.format('HH:mm')} – ${end.format('HH:mm')}`
+  return `${start.format('h:mm a')} – ${end.format('h:mm a')}`
 }
 
 const getMeetingUrl = (event: CalendarEvent) => {
@@ -214,43 +211,43 @@ defineExpose({ reload })
 </script>
 
 <template>
-  <section aria-label="Scheduled meetings">
+  <section :aria-label="__('Scheduled meetings')">
     <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Upcoming') }}</h2>
     <div
       v-if="(initializing || upcomingEvents.loading) && upcomingEvents.data == null"
       class="py-8 text-center text-base text-ink-gray-5"
       role="status"
     >
-      Loading meetings…
+      {{ __('Loading meetings…') }}
     </div>
     <div
       v-else-if="accountError || upcomingEvents.error"
       class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
       role="alert"
     >
-      Could not load meetings.
-      <Button variant="outline" label="Retry" @click="reload" />
+      {{ __('Could not load meetings.') }}
+      <Button variant="outline" :label="__('Retry')" @click="reload" />
     </div>
     <div
-      v-else-if="!groups.length"
+      v-else-if="!meetings.length"
       class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
     >
       {{
         !calendarStore.accountId
           ? __('Set up Calendar to see scheduled meetings.')
-          : __('Nothing scheduled in the next 30 days.')
+          : __('Nothing else scheduled today or tomorrow.')
       }}
     </div>
     <List
       v-else
       class="-mx-3 list-row-px-3"
       :columns="
-        isMobile ? ['6.5rem', 'minmax(0,1fr)', '4.5rem'] : ['7rem', 'minmax(0,1fr)', '5rem']
+        isMobile ? ['11rem', 'minmax(0,1fr)', '4.5rem'] : ['11rem', 'minmax(0,1fr)', '5rem']
       "
       :row-height="isMobile ? 52 : 40"
     >
-      <ListGroup v-for="group in groups" :key="group.day" :label="group.label">
-        <ListRow v-for="event in group.meetings" :key="event.id" :value="event.id">
+      <ListGroup v-for="group in meetingGroups" :key="group.day" :label="__(group.day)">
+        <ListRow v-for="event in group.events" :key="event.id" :value="event.id">
           <ListCell>
             <span class="whitespace-nowrap text-base text-ink-gray-5">{{
               formatMeetingTime(event)

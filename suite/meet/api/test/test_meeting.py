@@ -264,6 +264,9 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(result["meeting_id"], self.meeting.name)
         self.assertIn("sfu_url", result)
         self.assertIn("codec_strategy", result)
+        self.assertTrue(
+            frappe.db.exists("Meet Recent Room", {"user": self.member_email, "room": self.meeting.name})
+        )
 
         decoded = jwt.decode(
             result["auth_token"],
@@ -303,6 +306,9 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(result["status"], "waiting_for_approval")
         self.assertNotIn("auth_token", result)
         self.assertIn("lobby_token", result)
+        self.assertFalse(
+            frappe.db.exists("Meet Recent Room", {"user": self.outsider_email, "room": self.meeting.name})
+        )
 
         decoded = jwt.decode(
             result["lobby_token"],

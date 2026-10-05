@@ -72,21 +72,8 @@
         >
           {{ __('Loading meetings…') }}
         </p>
-        <section v-if="view === 'recordings'">
-          <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Recordings') }}</h2>
-          <div
-            class="flex flex-col items-center rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
-          >
-            <p>
-              {{
-                __(
-                  'Meeting recordings are saved in Files. A recordings list is not available here yet.',
-                )
-              }}
-            </p>
-            <Button class="mt-3" variant="outline" :label="__('Open Files')" route="/drive" />
-          </div>
-        </section>
+        <RecentMeetings v-if="view !== 'recordings'" />
+        <Recordings v-if="view === 'recordings'" />
       </div>
     </div>
 
@@ -161,6 +148,8 @@ import { useRootStore } from '@/stores/root'
 
 import MeetPanel from '../components/MeetPanel.vue'
 import NewMeetingMenu from '../components/NewMeetingMenu.vue'
+import RecentMeetings from '../components/RecentMeetings.vue'
+import Recordings from '../components/Recordings.vue'
 import UpcomingMeetings from '../components/UpcomingMeetings.vue'
 import { useStartMeeting } from '../composables/useStartMeeting'
 import { meetingCodeFrom } from '../utils/meetingCode'

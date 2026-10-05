@@ -1,0 +1,16 @@
+{
+ "doctype": "DocType",
+ "name": "Meet Recent Room",
+ "module": "Meet",
+ "autoname": "hash",
+ "engine": "InnoDB",
+ "field_order": ["user", "room", "last_joined"],
+ "fields": [
+  {"fieldname": "user", "fieldtype": "Link", "options": "User", "label": "User", "reqd": 1, "search_index": 1},
+  {"fieldname": "room", "fieldtype": "Link", "options": "Meet Room", "label": "Room", "reqd": 1},
+  {"fieldname": "last_joined", "fieldtype": "Datetime", "label": "Last joined", "reqd": 1}
+ ],
+ "permissions": [],
+ "sort_field": "last_joined",
+ "sort_order": "DESC"
+}
