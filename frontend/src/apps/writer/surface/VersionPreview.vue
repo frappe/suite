@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
       role="status"
     >
       <p class="truncate text-sm text-ink-gray-7">Viewing {{ label }}</p>
-      <Button size="sm" label="Back to current" @click="emit('close')" />
+      <Button size="sm" variant="outline" label="Back to current" @click="emit('close')" />
     </div>
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div v-if="loading" class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10">
