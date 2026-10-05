@@ -11,13 +11,15 @@ import pycrdt
 from frappe.storage.blob import put_blob
 from frappe.utils import now_datetime
 
+from suite import drive
 from suite.drive._core import content
 from suite.drive._core.errors import DriveConflict
 from suite.drive._core.nodes import create_file
 from suite.drive._core.principals import Principals
+from suite.drive._core.versions import restore_version
 from suite.writer import drive as writer_drive
 from suite.writer.collab import routes
-from suite.writer.collab.tests.test_checkpoints import CheckpointCase
+from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open
 
 
@@ -183,3 +185,18 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         with self.assertRaises(DriveConflict):
             version_of(self.docname(node))
+
+    def test_drive_refuses_to_restore_a_collab_version_and_the_log_is_untouched(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        seq = drive.take_version(node, kind="named", label="one")
+        self.type_into(node, [" two"])
+        head = self.doc_row(node).head_rev
+
+        writer = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        with self.assertRaisesRegex(DriveConflict, "Open the document to restore this version"):
+            restore_version(writer, node, seq)
+
+        frappe.db.rollback()
+        self.assertEqual((self.doc_row(node).head_rev, self.row_count(node)), (head, head))
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": node}), 1)

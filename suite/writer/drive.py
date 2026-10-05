@@ -79,7 +79,7 @@ from frappe import _
 from suite import drive
 from suite.suite_core import collab
 from suite.suite_core.collab import compaction
-from suite.writer.collab import live_state, start_log, version_payload
+from suite.writer.collab import ADAPTER, live_state, start_log, version_payload
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
@@ -211,7 +211,11 @@ def restore_version(docname: str, stream) -> None:
     Drive has already taken a version of the current state, so this is not
     destructive. Native envelopes restore every body field. Exact legacy HTML
     bytes restore as a non-collaborative document with an empty Yjs body.
+    A collab document's body is its log, so it is restored in the editor instead.
     """
+    node = frappe.db.get_value(DOCTYPE, docname, "node")
+    if collab.enabled() and collab.find(ADAPTER, node):
+        raise drive.DriveConflict(_("Open the document to restore this version"))
     payload = _version_payload(_read_bounded(stream))
     frappe.db.set_value(
         DOCTYPE,
