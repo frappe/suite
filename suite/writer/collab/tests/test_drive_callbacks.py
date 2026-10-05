@@ -344,3 +344,10 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         self.assertEqual(self.rows_of(doc_id)["checkpoint"], 0)
         writer_collab.delete_purged(doc_id)
+
+    def test_drive_refuses_to_export_a_collab_document(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+
+        with self.assertRaisesRegex(DriveConflict, "Open the document to download it"):
+            writer_drive.export(self.docname(node), "html")

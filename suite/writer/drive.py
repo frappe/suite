@@ -179,13 +179,19 @@ def duplicate(source_docname: str, node: str) -> str:
 
 
 def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
-    """Stream one document as HTML. `default_export` is None, so DAV never asks."""
+    """Stream one document as HTML. `default_export` is None, so DAV never asks.
+
+    A collab document has no checked readable copy yet (ticket 37), and its `html`
+    is stale, so it is downloaded from the editor instead.
+    """
     if format != HTML_FORMAT:
         frappe.throw(_("Writer exports {0} only").format(HTML_FORMAT), frappe.ValidationError)
-    html = frappe.db.get_value(DOCTYPE, docname, "html")
-    if html is None and not frappe.db.exists(DOCTYPE, docname):
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "html"), as_dict=True)
+    if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
-    return io.BytesIO((html or "").encode("utf-8")), HTML_MIME
+    if collab.enabled() and collab.find(ADAPTER, row.node):
+        raise drive.DriveConflict(_("Open the document to download it"))
+    return io.BytesIO((row.html or "").encode("utf-8")), HTML_MIME
 
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
