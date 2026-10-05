@@ -70,6 +70,11 @@ interface VersionRow {
   creation: string | null
 }
 
+interface VersionPage {
+  rows?: VersionRow[]
+  next_cursor?: string | null
+}
+
 /** What `TextEditor` and `NonCollabEditor` expose. */
 interface EditorSurface {
   editor?: Editor | null
@@ -86,6 +91,8 @@ const showComments = ref(false)
 const showVersions = ref(false)
 const threads = ref<CommentThread[]>([])
 const versions = ref<VersionRow[]>([])
+const versionsCursor = ref<string | null>(null)
+const loadingMoreVersions = ref(false)
 const panelLoading = ref(false)
 const commentText = ref('')
 // Guests may sign their comments. Signed-in users never see the field (spec §10.5).
@@ -206,13 +213,29 @@ async function loadPanel(kind: DocumentPanel) {
       const result = (await props.session.comments.list()) as { threads?: CommentThread[] }
       threads.value = result.threads ?? []
     } else {
-      const result = (await props.session.versions.list()) as { rows?: VersionRow[] }
-      versions.value = result.rows ?? []
+      const page = (await props.session.versions.list()) as VersionPage
+      versions.value = page.rows ?? []
+      versionsCursor.value = page.next_cursor ?? null
     }
   } catch (error) {
     toast.error(error instanceof Error ? error.message : 'Could not load this panel.')
   } finally {
     panelLoading.value = false
+  }
+}
+
+async function loadMoreVersions() {
+  if (!versionsCursor.value) return
+  loadingMoreVersions.value = true
+  try {
+    const page = (await props.session.versions.list(versionsCursor.value)) as VersionPage
+    versions.value = [...versions.value, ...(page.rows ?? [])]
+    versionsCursor.value = page.next_cursor ?? null
+  } catch (error) {
+    // A failed next page keeps the rows already shown.
+    toast.error(error instanceof Error ? error.message : 'Could not load more versions.')
+  } finally {
+    loadingMoreVersions.value = false
   }
 }
 
@@ -474,6 +497,13 @@ onBeforeUnmount(() => {
             </p>
           </div>
           <p v-if="!versions.length" class="text-sm text-ink-gray-5">No versions yet.</p>
+          <Button
+            v-if="versionsCursor"
+            class="w-full"
+            label="Load more"
+            :loading="loadingMoreVersions"
+            @click="loadMoreVersions"
+          />
         </template>
       </div>
     </aside>

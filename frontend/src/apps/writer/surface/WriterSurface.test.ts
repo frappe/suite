@@ -9,12 +9,20 @@ vi.hoisted(() => {
   vi.stubEnv('DEV', false)
 })
 
-vi.mock('frappe-ui', () => {
+vi.mock('frappe-ui', async () => {
+  const { defineComponent: define, h: render } = await import('vue')
   const blank = { render: () => null }
   return {
     Avatar: blank,
     Badge: blank,
-    Button: blank,
+    Button: define({
+      props: { label: String },
+      emits: ['click'],
+      setup:
+        (props, { emit }) =>
+        () =>
+          render('button', { onClick: () => emit('click') }, props.label),
+    }),
     Skeleton: blank,
     TextInput: blank,
     toast: { info: () => {}, warning: () => {}, error: () => {} },
@@ -24,7 +32,16 @@ vi.mock('frappe-ui', () => {
 vi.mock('@/apps/drive', async () => {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
   return {
-    DriveDocumentHeader: define({ setup: () => () => render('header') }),
+    DriveDocumentHeader: define({
+      emits: ['update:panel'],
+      setup:
+        (_, { emit }) =>
+        () =>
+          render('button', {
+            'data-open-versions': '',
+            onClick: () => emit('update:panel', 'versions'),
+          }),
+    }),
     DriveCommentAuthor: define({ setup: () => () => null }),
     GUEST_NAME_LIMIT: 140,
     useDriveGuestName: () => ({
@@ -89,13 +106,14 @@ async function serverMinBuilds(minBuilds: Record<string, string>) {
   await window.fetch('/api/method/ping')
 }
 
-async function openedEditor() {
+async function openedSurface(versions?: DocumentSession['versions']) {
   const session = {
     nodeId: 'node-1',
     title: ref('Quarterly plan'),
     state: ref('Active'),
     access: ref({ role: 50 }),
     refreshAccess: async () => {},
+    versions,
   } as unknown as DocumentSession
   const router = createRouter({
     history: createMemoryHistory(),
@@ -110,7 +128,15 @@ async function openedEditor() {
     .mount(root)
   await vi.waitFor(() => expect(root.querySelector('[data-editor]')).not.toBeNull())
   await nextTick()
-  return root.querySelector('[data-editor]')!
+  return root
+}
+
+async function openedEditor() {
+  return (await openedSurface()).querySelector('[data-editor]')!
+}
+
+function buttonLabelled(root: Element, label: string) {
+  return [...root.querySelectorAll('button')].find((button) => button.textContent === label)
 }
 
 afterEach(() => {
@@ -128,5 +154,23 @@ describe('Writer surface', () => {
     await serverMinBuilds({ writer: '150' })
 
     expect((await openedEditor()).getAttribute('data-editable')).toBe('false')
+  })
+
+  it('shows the next page of versions after Load more', async () => {
+    const pages: Record<string, unknown> = {
+      first: { rows: [{ seq: 2, kind: 'named', label: 'Draft two' }], next_cursor: 'page-2' },
+      'page-2': { rows: [{ seq: 1, kind: 'named', label: 'Draft one' }], next_cursor: null },
+    }
+    const list = vi.fn(async (cursor?: string) => pages[cursor ?? 'first'])
+    const root = await openedSurface({ list } as unknown as DocumentSession['versions'])
+
+    root.querySelector<HTMLElement>('[data-open-versions]')!.click()
+    await vi.waitFor(() => expect(root.textContent).toContain('Draft two'))
+    expect(root.textContent).not.toContain('Draft one')
+
+    buttonLabelled(root, 'Load more')!.click()
+    await vi.waitFor(() => expect(root.textContent).toContain('Draft one'))
+    expect(root.textContent).toContain('Draft two')
+    expect(buttonLabelled(root, 'Load more')).toBeUndefined()
   })
 })
