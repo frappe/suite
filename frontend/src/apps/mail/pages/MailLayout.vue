@@ -11,7 +11,7 @@
 
 <script setup lang="ts">
 import { providePortalTarget } from 'frappe-ui'
-import { computed, onMounted, onScopeDispose, onUnmounted, provide } from 'vue'
+import { computed, onMounted, onScopeDispose, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
@@ -24,6 +24,11 @@ import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
+import {
+  currentMailboxParam,
+  INBOX_FOLDER,
+  unifiedFolderRoute,
+} from '@/apps/mail/utils/unifiedFolders'
 import { mailServerUnavailable } from '@/boot/config'
 import { useRootStore } from '@/stores/root'
 
@@ -72,13 +77,13 @@ const gPrefix = useGPrefix()
 // folders at all — the merged list, the Screener and the Outbox — so the map holds routes, not
 // mailbox ids.
 //
-// `a` is All Inboxes (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
+// `a` is the Inbox of all accounts (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
 // already archives a thread, so one letter means archive throughout. The Screener takes `r` for
 // review: `s` is Sent, and `c` would collide with Contacts if that ever gets a jump.
 const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
 
 const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
-  a: () => ({ name: 'mail-all-inboxes' }),
+  a: () => unifiedFolderRoute(INBOX_FOLDER),
   r: () => ({ name: 'mail-screener', params: { accountId } }),
   o: () => ({ name: 'mail-outbox', params: { accountId } }),
   i: () => mailboxRoute(mailboxIds.inbox),
@@ -172,6 +177,30 @@ const resetDocumentScroll = () => {
     if (window.scrollY) window.scrollTo(0, 0)
   })
 }
+
+// The URL names an account's folder by its slug, which a rename changes — or a delete takes away —
+// while the folder is open. Follow it to its new name, or out to the account's default folder, rather
+// than leave the URL naming nothing (see utils/unifiedFolders).
+const mailStore = userStore()
+watch(
+  () => [route.name, route.params.mailbox, mailStore.mailboxes.data] as const,
+  ([name, param, mailboxes]) => {
+    if ((name !== 'mail-mailbox' && name !== 'mail-mail') || !mailboxes) return
+    const next = currentMailboxParam(route.params.accountId, param, mailboxes)
+    if (next === param) return
+    if (next === null)
+      return router.replace({
+        name: 'mail-account-shortcut',
+        params: { accountId: route.params.accountId },
+      })
+    router.replace({
+      name,
+      params: { ...route.params, mailbox: next },
+      query: route.query,
+      hash: route.hash,
+    })
+  },
+)
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalShortcuts)

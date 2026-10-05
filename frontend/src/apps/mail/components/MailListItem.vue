@@ -168,6 +168,7 @@ import {
   threadDisplayName,
   threadParticipants,
 } from '@/apps/mail/utils/participants'
+import { mailboxParam, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import HighlightedText from '@/components/HighlightedText.vue'
 
 const {
@@ -181,6 +182,7 @@ const {
   selectionMode = false,
   threadRouteName = 'mail-mail',
   hideAvatar = false,
+  outgoing,
 } = defineProps<{
   mailbox: string
   mail: Thread
@@ -199,11 +201,15 @@ const {
   draggable?: boolean
   // Mobile selection mode — forwarded to MailRow.
   selectionMode?: boolean
-  // Which route the row links to. All Inboxes points at its own thread route so opening a
-  // mail stays in the merged list instead of navigating into one account's mailbox.
+  // Which route the row links to. The unified folder view points at its own thread route so
+  // opening a mail stays in the merged list instead of navigating into one account's mailbox.
   threadRouteName?: string
   // Forwarded to MailRow — see there.
   hideAvatar?: boolean
+  // Set by the unified folder view, whose rows come from several accounts: the active account's
+  // Sent and Drafts ids can't say whether a row from another account is outgoing, so the view —
+  // which knows the folder — says it instead.
+  outgoing?: boolean
 }>()
 
 const emit = defineEmits([
@@ -218,14 +224,18 @@ const emit = defineEmits([
 ])
 
 const route = useRoute()
-const { mailboxIds } = userStore()
+const { mailboxes, mailboxIds } = userStore()
 const ownEmails = useOwnEmails()
 
+// An account's thread route names its folder by slug (see utils/unifiedFolders); the merged
+// folder's needs none, since its own folder param already says which one.
 const to = computed(() => ({
   name: threadRouteName,
   params: {
     accountId: accountId || route.params.accountId,
-    mailbox,
+    ...(threadRouteName === UNIFIED_THREAD_ROUTE
+      ? {}
+      : { mailbox: mailboxParam(mailbox, mailboxes.data) }),
     threadID: mail.thread_id,
   },
   query: route.query,
@@ -251,6 +261,7 @@ const attachments = computed(
 // participants to name, so there the message's own mailboxes still answer it — otherwise a mail you
 // sent, found in search, would go by your own name rather than by who you sent it to.
 const isOutgoing = computed(() => {
+  if (outgoing !== undefined) return outgoing
   if (mailbox === 'search')
     return mail.mailboxes.some(
       (m) => m.mailbox_id === mailboxIds.sent || m.mailbox_id === mailboxIds.drafts,

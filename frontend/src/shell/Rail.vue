@@ -31,8 +31,17 @@
             :icon="area.icon"
             :to="area.to"
             :badge="badges[area.id] ?? 0"
+            badge-style="dot"
             :progress="areaProgress?.progress(area.id) ?? null"
             @click="openProgress(area.id)"
+          />
+          <!-- Search reaches every area at once, so it closes the rail's list of
+               areas rather than sitting in each area's sidebar. -->
+          <RailItem
+            :label="__('Search')"
+            :description="searchShortcut"
+            :icon="SearchIcon"
+            @click="root.paletteOpen = true"
           />
         </nav>
       </ScrollArea>
@@ -78,8 +87,10 @@ import type { AreaDefinition } from '@/platform/contracts'
 import AccountMenu from '@/shell/AccountMenu.vue'
 import { useAreaProgress } from '@/shell/areaProgress'
 import RailItem from '@/shell/RailItem.vue'
+import SearchIcon from '@/shell/SearchIcon.vue'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useWorkspace } from '@/shell/useWorkspace'
+import { useRootStore } from '@/stores/root'
 
 defineProps<{
   areas: readonly AreaDefinition[]
@@ -92,6 +103,8 @@ const suiteLogo = '/assets/suite/frontend/logo.svg'
 const { workspaceName, workspaceLogo } = useWorkspace()
 const workspaceMark = computed(() => workspaceLogo.value || (workspaceName.value ? '' : suiteLogo))
 const areaProgress = useAreaProgress()
+const root = useRootStore()
+const searchShortcut = /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'
 
 // The item still navigates to its area. The source opens its own view there.
 function openProgress(area: string) {

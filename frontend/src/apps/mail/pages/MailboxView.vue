@@ -504,6 +504,7 @@ import {
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
+import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { stripShortcutHint } from '@/utils/actionLabel'
@@ -1333,13 +1334,24 @@ onUnmounted(() => {
   dropViewUndo()
 })
 
+// The URL names the folder by slug; this view works in its id (see utils/unifiedFolders).
+const mailboxInUrl = () => mailboxParam(mailbox, mailboxes.data)
+
 const goToMailbox = () =>
-  router.push({ name: 'mail-mailbox', params: { accountId, mailbox }, query: route.query })
+  router.push({
+    name: 'mail-mailbox',
+    params: { accountId, mailbox: mailboxInUrl() },
+    query: route.query,
+  })
 
 const goToThread = (threadID: string) => {
   threadSlide.value = pendingThreadSlide
   if (threadID)
-    router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
+    router.push({
+      name: 'mail-mail',
+      params: { accountId, mailbox: mailboxInUrl(), threadID },
+      query: route.query,
+    })
 }
 
 const goToThreadByOffset = (offset: number) => {

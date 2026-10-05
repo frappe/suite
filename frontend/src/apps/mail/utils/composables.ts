@@ -1,4 +1,4 @@
-import { createResource, toast } from 'frappe-ui'
+import { call, createResource, toast } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -8,6 +8,14 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
+import {
+  INBOX_FOLDER,
+  isUnifiedRoute,
+  mailboxForUnifiedFolder,
+  rememberUnified,
+  unifiedFolderFor,
+  unifiedFolderRoute,
+} from '@/apps/mail/utils/unifiedFolders'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme as useSuiteTheme } from '@/composables/useTheme'
 import { openSettings as openSuiteSettings } from '@/shell/settings/useSettingsDialog'
@@ -68,21 +76,36 @@ export const useToggleReadingPane = () => {
 /**
  * Switching accounts stays in place wherever the view allows it — shared by the
  * sidebar's account submenu and the mobile profile sheet. Account-scoped routes
- * swap the accountId param in their own URL. The account-agnostic All Inboxes
- * routes just re-resolve the active account (bouncing to the new account's inbox
- * threw the reader out of the merged list, which spans every account anyway).
- * Everything else goes through the account shortcut, which the guard resolves to
- * the new account's default mailbox.
+ * swap the accountId param in their own URL. Everything else goes through the
+ * account shortcut, which the guard resolves to the new account's default mailbox.
+ *
+ * "All accounts" is a mode of the same switcher, and the folder carries across it
+ * both ways: Sent in one account opens the merged Sent, and the merged Sent opens
+ * the chosen account's Sent — its inbox when it has no such folder.
  */
 export const useAccountSwitch = () => {
   const route = useRoute()
   const router = useRouter()
   const store = userStore()
 
-  const switchAccount = (accountId: string) => {
+  const switchAccount = async (accountId: string) => {
+    // Picking an account, anywhere, ends "All accounts".
+    rememberUnified(false)
+    if (isUnifiedRoute(route.name)) {
+      const mailboxes =
+        accountId === store.accountId
+          ? store.mailboxes.data
+          : await call('suite.mail.api.mail.get_mailboxes', { account: accountId }).catch(
+              () => null,
+            )
+      const mailbox = mailboxForUnifiedFolder(route.params.folder, mailboxes)
+      return router.push(
+        mailbox
+          ? { name: 'mail-mailbox', params: { accountId, mailbox } }
+          : { name: 'mail-account-shortcut', params: { accountId } },
+      )
+    }
     if (accountId === store.accountId) return
-    if ((route.name as string)?.startsWith('mail-all-inboxes'))
-      return store.resolveAccount(store.userResource.data?.accounts, accountId)
     router.push(
       route.params.accountId
         ? { name: route.name!, params: { ...route.params, accountId } }
@@ -90,7 +113,18 @@ export const useAccountSwitch = () => {
     )
   }
 
-  return { switchAccount }
+  const switchToAll = () => {
+    if (isUnifiedRoute(route.name)) return
+    rememberUnified(true)
+    const inMailbox = route.name === 'mail-mailbox' || route.name === 'mail-mail'
+    router.push(
+      unifiedFolderRoute(
+        inMailbox ? unifiedFolderFor(route.params.mailbox, store.mailboxes.data) : INBOX_FOLDER,
+      ),
+    )
+  }
+
+  return { switchAccount, switchToAll }
 }
 
 // Horizontal swipe-to-page detection, shared by the mailbox thread pane and the screener

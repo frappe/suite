@@ -8,7 +8,8 @@
   shell's bottom nav or the page header sends `openAreaSidebar(area)`.
 
   Content inside `<AreaSidebarFooter>` sits below the body. On desktop it stays
-  pinned to the bottom while the body scrolls.
+  pinned to the bottom while the body scrolls. The `actions` slot sits beside
+  the title on desktop, for the area's own menu.
 -->
 <template>
   <Teleport v-if="!isPhone" defer :to="`#${AREA_SIDEBAR_TARGET_ID}`">
@@ -20,8 +21,9 @@
       :data-area-sidebar="area"
       class="border-r border-outline-gray-1"
     >
-      <div class="flex h-12 shrink-0 items-center px-4">
+      <div class="flex h-12 shrink-0 items-center justify-between gap-2 pl-4 pr-2">
         <span class="truncate text-lg font-semibold text-ink-gray-9">{{ title }}</span>
+        <slot name="actions" />
       </div>
       <div class="relative min-h-0 flex-1">
         <ScrollArea ref="scrollArea" class="h-full" viewport-class="px-2 pt-0.5 pb-10">
@@ -91,7 +93,7 @@ const props = withDefaults(
   { loading: false },
 )
 
-defineSlots<{ default?: () => unknown }>()
+defineSlots<{ default?: () => unknown; actions?: () => unknown }>()
 
 const AREA_SIDEBAR_WIDTH = '14rem'
 const SKELETON_ROWS = 5

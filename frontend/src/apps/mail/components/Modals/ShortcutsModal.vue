@@ -116,7 +116,7 @@ const shortcutGroups = computed(() => [
         [['G', __('then'), 'J'], __('Go to {0}', [mailboxName('junk')])],
         [['G', __('then'), 'E'], __('Go to {0}', [mailboxName('archive')])],
         [['G', __('then'), 'T'], __('Go to {0}', [mailboxName('trash')])],
-        [['G', __('then'), 'A'], __('Go to All Inboxes')],
+        [['G', __('then'), 'A'], __('Go to All Accounts')],
         [['G', __('then'), 'R'], __('Go to Screener')],
       ],
     },

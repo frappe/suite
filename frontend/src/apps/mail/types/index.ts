@@ -202,10 +202,12 @@ export interface ComposeMailData {
 export interface Thread {
   name: string
   account: string
-  // Populated by the cross-account views (All Inboxes' get_all_inbox_threads and search's
-  // search_mails): the owning account's display name and its Inbox/Archive/Trash mailbox ids, so a
-  // merged row can be opened in / acted on within the correct JMAP account.
+  // Populated by the cross-account views (the unified folders' get_unified_threads and search's
+  // search_mails): the owning account's display name, the mailbox the row was listed from and the
+  // account's Archive/Trash mailbox ids, so a merged row can be opened in / acted on within the
+  // correct JMAP account.
   account_name?: string
+  view_mailbox?: string
   inbox?: string
   archive?: string
   trash?: string
@@ -238,11 +240,25 @@ export interface MailboxData {
   total_threads: number
   unread_threads: number
   _name: string
+  // What the folder is called in the unified views (see UnifiedFolder); null for the Screener.
+  slug: string | null
   subscribed: 0 | 1
   icon?: string
   color?: 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple'
   disable_push_notification?: 0 | 1
   automation_rules?: AutomationRules | null
+}
+
+/** One folder across all of the user's accounts, as get_unified_folders merges it. */
+export interface UnifiedFolder {
+  slug: string
+  name: string
+  role: string | null
+  unread_threads: number
+  // The accounts that have this folder.
+  accounts: string[]
+  icon: string | null
+  color: MailboxData['color'] | null
 }
 
 interface AutomationRules {

@@ -129,6 +129,12 @@ import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
+import {
+  mailboxForUnifiedFolder,
+  mailboxIdForParam,
+  UNIFIED_ROUTE,
+  UNIFIED_THREAD_ROUTE,
+} from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
 const { thread, threads, canGoNext } = defineProps<{
@@ -154,17 +160,22 @@ const route = useRoute()
 // when All Inboxes opened it, the active account otherwise.
 const { mailboxes, mailboxIds } = injectAccountScope()
 
-const mailbox = computed(() => route.params.mailbox as string)
+// The mailbox the thread was opened from, as an id. The URL names it by slug: the merged folder's
+// slug on its thread route, which in the thread's own account is that folder, and the account
+// folder's own param otherwise (see utils/unifiedFolders).
+const mailbox = computed(() =>
+  route.name === UNIFIED_THREAD_ROUTE
+    ? (mailboxForUnifiedFolder(route.params.folder, mailboxes.value.data as MailboxData[]) ?? '')
+    : mailboxIdForParam(route.params.mailbox, mailboxes.value.data as MailboxData[]),
+)
 const threadID = computed(() => route.params.threadID as string)
 
-// Back returns to the list the thread was opened from: the merged All Inboxes
-// list on its thread route (whose mailbox param is the thread's real folder —
-// usually an account's Inbox, which is where back used to land), the mailbox
-// list otherwise.
+// Back returns to the list the thread was opened from: the merged folder
+// list on its thread route, the mailbox list otherwise.
 const backRoute = computed(() =>
-  route.name === 'mail-all-inboxes-mail'
-    ? { name: 'mail-all-inboxes', query: route.query }
-    : { name: 'mail-mailbox', params: { mailbox: mailbox.value }, query: route.query },
+  route.name === UNIFIED_THREAD_ROUTE
+    ? { name: UNIFIED_ROUTE, params: { folder: route.params.folder }, query: route.query }
+    : { name: 'mail-mailbox', params: { mailbox: route.params.mailbox }, query: route.query },
 )
 
 // The mailboxes the whole thread sits in — the same intersection the list takes across a selection,

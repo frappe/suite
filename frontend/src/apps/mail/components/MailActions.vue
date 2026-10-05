@@ -60,6 +60,7 @@ import {
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
 const {
@@ -309,11 +310,11 @@ const setMailsSeen = createResource({
   onSuccess: (ids: string[]) => {
     raiseToast(__('{0} marked as unread.', [ids.length === 1 ? __('Mail') : __('Mails')]))
     // Leaving the thread is the point — staying would mark it read again. Return to whichever
-    // list we came from: hardcoding the mailbox route threw All Inboxes out of the merged view
+    // list we came from: hardcoding the mailbox route threw the unified folder out of the merged view
     // and into the owning account's mailbox, which read as the page reloading.
     router.push(
-      route.name === 'mail-all-inboxes-mail'
-        ? { name: 'mail-all-inboxes', query: route.query }
+      route.name === UNIFIED_THREAD_ROUTE
+        ? { name: UNIFIED_ROUTE, params: { folder: route.params.folder }, query: route.query }
         : {
             name: 'mail-mailbox',
             params: { accountId: route.params.accountId, mailbox },

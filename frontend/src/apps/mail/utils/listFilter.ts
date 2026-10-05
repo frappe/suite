@@ -14,7 +14,7 @@ export interface FilterOption {
 
 interface StoredFilterOptions {
   /**
-   * What the remembered choice is remembered FOR — a mailbox id, or 'all-inboxes' for the merged
+   * What the remembered choice is remembered FOR — a mailbox id, or 'unified:<folder>' for a merged
    * list. A getter, since the mailbox view switches mailbox without remounting.
    */
   scope: () => string

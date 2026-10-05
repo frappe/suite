@@ -41,3 +41,58 @@ describe('accountSubmenu', () => {
     expect(accountSubmenu(undefined, 'one', () => {})).toEqual([])
   })
 })
+
+describe('accountSubmenu with an all-accounts row', () => {
+  const all = (active: boolean, onSelect = () => {}) => ({
+    label: 'All accounts',
+    active,
+    onSelect,
+  })
+
+  it('ends with the all-accounts row', () => {
+    expect(accountSubmenu(accounts, 'one', () => {}, all(false)).map((r) => r.label)).toEqual([
+      'one@example.com',
+      'two@example.com',
+      'All accounts',
+    ])
+  })
+
+  it('ticks only the all-accounts row while it is picked', () => {
+    const ticked = accountSubmenu(accounts, 'one', () => {}, all(true)).map(
+      (r) => !!r.slots.suffix(),
+    )
+    expect(ticked).toEqual([false, false, true])
+  })
+
+  it('ticks the active account otherwise', () => {
+    const ticked = accountSubmenu(accounts, 'two', () => {}, all(false)).map(
+      (r) => !!r.slots.suffix(),
+    )
+    expect(ticked).toEqual([false, true, false])
+  })
+
+  it('selects all accounts from its row', () => {
+    const onSelect = vi.fn()
+    accountSubmenu(accounts, 'one', () => {}, all(false, onSelect))
+      .at(-1)!
+      .onClick()
+    expect(onSelect).toHaveBeenCalledOnce()
+  })
+
+  it('is left out when there is only one account to merge', () => {
+    expect(accountSubmenu(accounts.slice(0, 1), 'one', () => {}, all(false))).toHaveLength(1)
+  })
+})
+
+describe('accountSubmenu order', () => {
+  it("puts the reader's own account first", () => {
+    const mixed = [
+      { id: 'shared', _name: 'suite@example.com', is_personal: 0 as const },
+      { id: 'mine', _name: 'akash@example.com', is_personal: 1 as const },
+    ]
+    expect(accountSubmenu(mixed, 'mine', () => {}).map((r) => r.label)).toEqual([
+      'akash@example.com',
+      'suite@example.com',
+    ])
+  })
+})

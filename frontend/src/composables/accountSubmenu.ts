@@ -1,10 +1,21 @@
 import { Avatar } from 'frappe-ui'
-import { Check } from 'lucide-vue-next'
+import { Check, Mails } from 'lucide-vue-next'
 import { h } from 'vue'
 
 interface Account {
   id: string
   _name: string
+  is_personal?: boolean | 0 | 1
+}
+
+/**
+ * An "every account at once" row below the accounts, for an app that can merge them. While it is
+ * the one picked, no single account is ticked.
+ */
+interface AllAccountsOption {
+  label: string
+  active: boolean
+  onSelect: () => void
 }
 
 /**
@@ -27,15 +38,38 @@ export const accountSubmenu = (
   accounts: Account[] | undefined,
   activeId: string | undefined,
   onSelect: (id: string) => void,
-) =>
-  (accounts ?? []).map((account) => ({
+  all?: AllAccountsOption,
+) => {
+  const tick = (active: boolean) => () =>
+    active ? h(Check, { class: 'icon size-4 shrink-0 text-ink-gray-7' }) : null
+
+  // The reader's own account leads; the rest keep the order they came in.
+  const ordered = [...(accounts ?? [])].sort(
+    (a, b) => Number(!!b.is_personal) - Number(!!a.is_personal),
+  )
+
+  const rows = ordered.map((account) => ({
     label: account._name,
     onClick: () => onSelect(account.id),
     slots: {
-      prefix: () => h(Avatar, { label: account._name, size: 'md' }),
-      suffix: () =>
-        account.id === activeId
-          ? h(Check, { class: 'icon size-4 shrink-0 text-ink-gray-7' })
-          : null,
+      // Close to icon size: the menu's rows are built around a 16 px icon, and a larger avatar
+      // stretches them.
+      prefix: () => h(Avatar, { label: account._name, size: 'sm' }),
+      suffix: tick(!all?.active && account.id === activeId),
     },
   }))
+
+  if (!all || rows.length < 2) return rows
+
+  return [
+    ...rows,
+    {
+      label: all.label,
+      onClick: all.onSelect,
+      slots: {
+        prefix: () => h(Mails, { class: 'icon size-4 shrink-0 text-ink-gray-6' }),
+        suffix: tick(all.active),
+      },
+    },
+  ]
+}

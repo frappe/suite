@@ -12,12 +12,12 @@ from suite.mail.api.mail import (
     fetch_attachment,
     fetch_attachments_as_zip,
     fetch_mail_as_eml,
-    get_all_inbox_threads,
-    get_all_inbox_unread_count,
     get_mailboxes,
     get_mime_message,
     get_thread,
     get_threads,
+    get_unified_folders,
+    get_unified_threads,
     update_draft_mail,
 )
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
@@ -65,10 +65,12 @@ class TestMailSendReceive(StalwartIntegrationTestCase):
         self.assertIn(("Cc", self.sender.email), recipients)
         self.assertFalse(thread["seen"])
 
-        # The unread badge across all accounts counts it.
+        # The unified Inbox across all accounts lists it and counts it unread.
         with self.set_user(self.receiver.email):
-            self.assertGreaterEqual(get_all_inbox_unread_count(), 1)
-            merged = get_all_inbox_threads(limit=10)
+            inbox = next(f for f in get_unified_folders() if f["slug"] == "inbox")
+            self.assertGreaterEqual(inbox["unread_threads"], 1)
+            self.assertIn(self.receiver_account, inbox["accounts"])
+            merged = get_unified_threads("inbox", limit=10)
             self.assertIn(subject, [t["subject"] for t in merged])
             self.assertEqual(merged[0]["account"], self.receiver_account)
 

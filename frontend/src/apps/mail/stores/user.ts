@@ -87,8 +87,8 @@ export const userStore = defineStore('mail-user', () => {
       return data
     },
     onSuccess: (data) => {
-      // The unified All Inboxes badge only applies when there's more than one account to merge.
-      if ((data?.accounts?.length ?? 0) > 1) allInboxesUnread.fetch()
+      // The unified folders only apply when there's more than one account to merge.
+      if ((data?.accounts?.length ?? 0) > 1) unifiedFolders.fetch()
       resolveAccount(data?.accounts)
     },
     onError: (error) => {
@@ -97,22 +97,27 @@ export const userStore = defineStore('mail-user', () => {
     auto: true,
   })
 
-  // Total unread across every account's Inbox — drives the "All Inboxes" sidebar badge. Not scoped to
-  // the active account, so (unlike the per-account resources) it isn't re-fetched in setAccount().
-  const allInboxesUnread = createResource({ url: 'suite.mail.api.mail.get_all_inbox_unread_count' })
+  // Every account's folders merged by slug, with their unread counts summed — the folder list of the
+  // "All accounts" view. Not scoped to the active account, so (unlike the per-account resources) it
+  // isn't re-fetched in setAccount().
+  const unifiedFolders = createResource({
+    url: 'suite.mail.api.mail.get_unified_folders',
+    initialData: [],
+  })
 
-  // Keep the unified badge in step with the per-account mailbox counts: refresh it whenever the active
-  // account's mailboxes reload — i.e. after any thread action (read, move, archive, trash, …) and on
-  // the periodic poll, since every one of those calls mailboxes.reload(). Only relevant with >1 account.
-  const reloadAllInboxesUnread = () => {
-    if ((userResource.data?.accounts?.length ?? 0) > 1) allInboxesUnread.reload()
+  // Keep the unified counts in step with the per-account mailbox counts: refresh them whenever the
+  // active account's mailboxes reload — i.e. after any thread action (read, move, archive, trash, …)
+  // and on the periodic poll, since every one of those calls mailboxes.reload(). Only relevant with
+  // >1 account.
+  const reloadUnifiedFolders = () => {
+    if ((userResource.data?.accounts?.length ?? 0) > 1) unifiedFolders.reload()
   }
 
   const mailboxes = createResource({
     url: 'suite.mail.api.mail.get_mailboxes',
     makeParams: () => ({ account: accountId.value }),
     cache: ['mailboxes', accountId.value],
-    onSuccess: reloadAllInboxesUnread,
+    onSuccess: reloadUnifiedFolders,
   })
 
   const mailboxIds = computed(() => deriveMailboxIds(mailboxes.data))
@@ -186,7 +191,7 @@ export const userStore = defineStore('mail-user', () => {
     screenedAddresses.reset()
     globalScreenedAddresses.reset()
     sieveScripts.reset()
-    allInboxesUnread.reset()
+    unifiedFolders.reset()
   }
 
   return {
@@ -201,7 +206,7 @@ export const userStore = defineStore('mail-user', () => {
     sieveScripts,
     screenedAddresses,
     globalScreenedAddresses,
-    allInboxesUnread,
+    unifiedFolders,
     reset,
   }
 })

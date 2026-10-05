@@ -1,7 +1,7 @@
 <template>
   <!-- Mobile title header — no thread count since the merged view has no total.
 	     The toolbar below carries the bottom border, matching the mailbox structure. -->
-  <MobileTitleHeader v-if="isMobile" with-menu with-search :title="__('All Inboxes')" />
+  <MobileTitleHeader v-if="isMobile" with-menu with-search :title="folderLabel" />
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's
@@ -11,7 +11,7 @@
     <div class="flex items-center space-x-2">
       <!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
       <Breadcrumbs
-        :items="[{ label: __('All Inboxes'), route: { name: 'mail-all-inboxes' } }]"
+        :items="[{ label: folderLabel, route: unifiedFolderRoute(folder) }]"
         class="-ml-0.5"
       />
     </div>
@@ -62,8 +62,7 @@
               <template v-if="isMobile || !collapsedGroups.includes(key)">
                 <!-- A stack row stands in for a run of look-alike threads; when expanded, its
 								     members follow it as ordinary (indented) rows — the same model as the
-								     mailbox list. No delete handler: Delete only shows once every member is
-								     already in Trash, which the merged inbox list can't reach. -->
+								     mailbox list. -->
                 <template v-for="row in rows" :key="row.key">
                   <StackListItem
                     v-if="row.type === 'stack'"
@@ -79,16 +78,18 @@
                     @set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
                     @archive-threads="stackArchive(row.threads)"
                     @trash-threads="stackTrash(row.threads)"
+                    @delete-threads="confirmDelete(row.threads)"
                   />
                   <MailListItem
                     v-else
-                    :mailbox="row.thread.inbox || ''"
+                    :mailbox="row.thread.view_mailbox || ''"
                     :account-id="row.thread.account"
                     :account-label="shortAccountLabel(row.thread.account_name)"
                     :mail="row.thread"
                     :is-selected="false"
                     :selectable="false"
-                    thread-route-name="mail-all-inboxes-mail"
+                    :outgoing="isOutgoingFolder"
+                    :thread-route-name="UNIFIED_THREAD_ROUTE"
                     :hide-avatar="!isMobile"
                     :hide-sender="row.inStack"
                     :class="rowClasses(row)"
@@ -96,6 +97,7 @@
                     @set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
                     @archive-thread="handleArchive(row.thread)"
                     @trash-thread="handleTrash(row.thread)"
+                    @delete-thread="confirmDelete([row.thread])"
                     @set-flagged="(flagged: boolean) => handleSetFlagged(row.thread, flagged)"
                   />
                 </template>
@@ -123,7 +125,7 @@
           :slide="threadSlide"
           @slide-done="threadSlide = ''"
           :account="openRow?.account"
-          :mailbox="openRow?.inbox || ''"
+          :mailbox="openRow?.view_mailbox || ''"
           :thread-i-d="threadID"
           :threads="headerThreadIDs"
           :can-go-next="canGoNext"
@@ -134,7 +136,7 @@
             (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
           "
           @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
-          @delete-thread="handleTrash(openRow!)"
+          @delete-thread="isTrashFolder ? confirmDelete([openRow!]) : handleTrash(openRow!)"
           @archive-thread="handleArchive(openRow!)"
           @sync-unseen="handleSyncUnseen"
           @add-thread-to-mailbox="handleAddToMailbox"
@@ -152,7 +154,7 @@
     <!-- No mails -->
     <div v-else class="text-ink-gray-5 flex w-full flex-col items-center justify-center">
       <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
-      <p>{{ __('You have no mails in any inbox.') }}</p>
+      <p>{{ __('No mails in {0}.', [folderLabel]) }}</p>
       <Button
         class="mt-3"
         variant="ghost"
@@ -166,10 +168,12 @@
       </Button>
     </div>
   </div>
+
+  <Dialog v-model:open="showDelete" v-bind="deleteOptions" />
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, call, createResource, usePageMeta } from 'frappe-ui'
+import { Breadcrumbs, Button, call, createResource, Dialog, usePageMeta } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -188,7 +192,7 @@ import { useListRows } from '@/apps/mail/composables/useListRows'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { userStore } from '@/apps/mail/stores/user'
-import type { Mail, Mailbox, MailboxData, Thread, UserResource } from '@/apps/mail/types'
+import type { Mail, Mailbox, MailboxData, Thread, UnifiedFolder } from '@/apps/mail/types'
 import { isMac, raiseOptimisticToast, raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
 import { useListReload, useScreenSize, useSwipeNav, useUndo } from '@/apps/mail/utils/composables'
@@ -201,19 +205,28 @@ import {
   stepFromKey,
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
-import { mailCopyIds, rowMailIds } from '@/apps/mail/utils/mailCopies'
+import { mailCopies, mailCopyIds, rowMailIds } from '@/apps/mail/utils/mailCopies'
+import {
+  STARRED_FOLDER,
+  UNIFIED_ROUTE,
+  UNIFIED_THREAD_ROUTE,
+  unifiedFolderLabel,
+  unifiedFolderRoute,
+} from '@/apps/mail/utils/unifiedFolders'
 import { appPageMeta } from '@/utils/documentTitle'
 
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
 
-// The `mail-all-inboxes-mail` route carries the open thread's owning accountId and mailbox. The
+// The `mail-unified-mail` route carries the open thread's owning accountId and mailbox. The
 // mailbox falls through as a plain attribute — every row carries its own folder ids, which is what
 // the pane and its actions target — and this component (a fragment) cannot inherit attributes, so it
 // inherits nothing. accountId is read: it is half of the open thread's identity here (see openKey).
 defineOptions({ inheritAttrs: false })
 
-const { accountId, threadID } = defineProps<{
+const { folder, accountId, threadID } = defineProps<{
+  // The folder's slug, the same in every account (see utils/unifiedFolders).
+  folder: string
   accountId?: string
   threadID?: string
 }>()
@@ -221,9 +234,17 @@ const { accountId, threadID } = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const socket = inject('$socket')
-const user = inject('$user') as UserResource
 
 const store = userStore()
+
+const folderLabel = computed(() => unifiedFolderLabel(folder, store.unifiedFolders.data))
+
+// Read off the slug rather than any one account's mailbox ids, which differ from row to row.
+const isTrashFolder = computed(() => folder === 'trash')
+const isJunkFolder = computed(() => folder === 'junk')
+
+// Sent and Drafts are about who the mail is going to, so their rows name the recipients.
+const isOutgoingFolder = computed(() => folder === 'sent' || folder === 'drafts')
 
 // ── Infinite scroll ─────────────────────────────────────────────────────────────────────────────
 // The loaded list (threads.data) is the single source of truth; usePaginatedThreads owns everything
@@ -274,22 +295,25 @@ const {
 const isLoaded = ref(false)
 
 // The remembered All/Unread/Starred/Has-attachments choice, its menu, and its title (see
-// useStoredFilter) — all shared with the mailbox list.
+// useStoredFilter) — all shared with the mailbox list, and remembered per folder as it is there.
 const {
   filter,
   FILTER_OPTIONS,
   filterTitle: title,
+  reloadFilter,
 } = useStoredFilter({
-  scope: () => 'all-inboxes',
+  scope: () => `unified:${folder}`,
   onChange: () => resetThreads(),
+  starrable: () => folder !== STARRED_FOLDER && !isTrashFolder.value,
 })
 
 // Reset resource: the window starts at the top and runs as deep as the composable asks (see
 // resetLimit) — one page on a reset, the loaded list on a refresh, so a refresh can tell which loaded
 // rows are gone. Over-fetches one row to detect whether more exist without a total.
 const threads = createResource({
-  url: 'suite.mail.api.mail.get_all_inbox_threads',
+  url: 'suite.mail.api.mail.get_unified_threads',
   makeParams: () => ({
+    folder,
     limit: resetLimit(),
     start: 0,
     filter_by: filter.value,
@@ -303,8 +327,9 @@ const threads = createResource({
 })
 
 const loadMoreThreads = createResource({
-  url: 'suite.mail.api.mail.get_all_inbox_threads',
+  url: 'suite.mail.api.mail.get_unified_threads',
   makeParams: () => ({
+    folder,
     limit: PAGE_LENGTH + 1,
     start: threads.data?.length ?? 0,
     filter_by: filter.value,
@@ -316,7 +341,7 @@ const loadMoreThreads = createResource({
 const isLoading = computed(() => !isLoaded.value && threads.loading)
 
 // After an action, refresh the sidebar counts: the active account's per-mailbox counts, which via the
-// store's mailboxes.onSuccess hook also refreshes the unified All Inboxes badge.
+// store's mailboxes.onSuccess hook also refreshes the unified folders' counts.
 const refreshCounts = () => store.mailboxes.reload()
 
 // The row's account, by its short name: blank for the currently open account (only
@@ -325,7 +350,8 @@ const shortAccountLabel = (name?: string | null) =>
   name ? (store.accountShortNames[name] ?? name) : undefined
 
 // Reset-to-top: refetch only the first window, replacing the loaded list and scrolling to the top (via
-// onResetSuccess). Bumping `epoch` discards any append/refresh still in flight. Used on filter change.
+// onResetSuccess). Bumping `epoch` discards any append/refresh still in flight. Used on filter change
+// and on moving to another folder, which reuses this component.
 const resetThreads = () => {
   beginReset()
   // A reset replaces the list with a fresh first window, so any prior collapse or stack expansion no
@@ -370,7 +396,8 @@ const reloadPaneThread = () => {
 // The rendered rows and the keyboard cursor: date groups, stacks, and the marker that walks them —
 // all shared with the mailbox list (see useListRows). Chatty senders stack here exactly as they do
 // there: buildListRows keys runs by account + day + sender, so a run never mixes accounts even in
-// this merged list.
+// this merged list. And not in the same folders: every row in Sent or Drafts is from the reader, and
+// Starred is curated by hand (see MailboxView's stackingEnabled).
 const {
   groupMessagesBy,
   isLastGroup,
@@ -393,6 +420,7 @@ const {
   // on the right account's row when two of them share a thread id.
   rowKey: threadKey,
   threadKey,
+  stackingEnabled: () => !isOutgoingFolder.value && folder !== STARRED_FOLDER,
   openThreadID: () => openKey.value,
   onOpenThreadHidden: () => closeThread(),
   container: mailListRef,
@@ -478,7 +506,7 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   // unlike a move it works from a merged row.
   if (key === '!') {
     e.preventDefault()
-    handleSetSpamStatus(true, thread)
+    handleSetSpamStatus(!isJunkFolder.value, thread)
     return true
   }
 
@@ -564,10 +592,10 @@ const openThread = (key: string) => {
   const row = (threads.data ?? []).find((t: Thread) => threadKey(t) === key)
   if (!row) return
   router.push({
-    name: 'mail-all-inboxes-mail',
+    name: UNIFIED_THREAD_ROUTE,
     // The row's own ids, which is what the key was made of — and what the pane, its actions and
     // the URL all need in their plain form.
-    params: { accountId: row.account, mailbox: row.inbox, threadID: row.thread_id },
+    params: { folder, accountId: row.account, threadID: row.thread_id },
     query: route.query,
   })
 }
@@ -763,10 +791,7 @@ const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
 }
 
 // Per-message actions from a message's own menu, on the shared orchestration (see useMailRemoval).
-// The merged list is inbox-scoped, so its rows always describe the whole conversation — never a
-// folder's own latest message, as Sent and Drafts do — while taking their date from the account's
-// Inbox, which each row carries. No undo yet: the undo requests would have to be scoped to the
-// row's own account rather than the active one.
+// Each row carries the mailbox it was listed from, which is what it is summarised and dated by.
 const { setUndoAction } = useUndo()
 
 const { runMailRemoval } = useMailRemoval({
@@ -774,7 +799,8 @@ const { runMailRemoval } = useMailRemoval({
   mailThreadRef: mailThread,
   onEmptied: () => closeThread(),
   removeRow: (_mail, thread) => (thread ? removeFromList(thread) : () => {}),
-  viewMailbox: (thread) => thread.inbox,
+  viewMailbox: (thread) => thread.view_mailbox,
+  outgoing: () => isOutgoingFolder.value,
 })
 
 // The pane's folder menus are scoped to the thread's own account, so its ids have to be resolved
@@ -832,7 +858,8 @@ const handleMailDelete = (mail: Mail) =>
     __('Mail deleted.'),
   )
 
-const closeThread = () => router.push({ name: 'mail-all-inboxes', query: route.query })
+const closeThread = () =>
+  router.push({ name: UNIFIED_ROUTE, params: { folder }, query: route.query })
 
 const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
   if (thread.seen === (seen ? 1 : 0)) return
@@ -897,11 +924,16 @@ const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = rowM
 // Acting on the open thread from the pane should leave you on the next one, not on a thread that
 // is no longer in the list. Resolved before the row is removed, so the index is still meaningful;
 // falls back to closing the pane at the end of the list. Mirrors MailboxView.
-const goToNextThreadOrClose = (movedKey: string) => {
-  if (openKey.value !== movedKey) return
+const goToNextThreadOrClose = (moved: string | string[]) => {
+  const movedKeys = new Set(Array.isArray(moved) ? moved : [moved])
+  if (!openKey.value || !movedKeys.has(openKey.value)) return
   const keys = threadIDs.value
   // Below first, then above — the same turn-around the mailbox makes at the end of the list.
-  const next = neighbourAfterRemoval(keys, keys.indexOf(movedKey), (key) => key !== movedKey)
+  const next = neighbourAfterRemoval(
+    keys,
+    keys.indexOf(openKey.value),
+    (key) => !movedKeys.has(key),
+  )
   if (next) openThread(next)
   else closeThread()
 }
@@ -1018,11 +1050,78 @@ const stackArchive = (threads: Thread[]) =>
 const stackTrash = (threads: Thread[]) =>
   stackMoveOut(threads, threads[0].trash, __('Threads moved to Trash.'))
 
-const unreadPrefix = computed(() =>
-  store.allInboxesUnread.data ? `(${store.allInboxesUnread.data})` : '',
+// Permanent delete, offered once the threads are already in Trash. Each row names its own account,
+// and a stack never mixes accounts, so one request covers each confirmation. Only the copies in Trash
+// go: the rest of the conversation lives on in the folders it was filed in.
+const showDelete = ref(false)
+const toDelete = ref<Thread[]>([])
+
+const confirmDelete = (rows: Thread[]) => {
+  if (!rows.length) return
+  toDelete.value = rows
+  showDelete.value = true
+}
+
+const deleteOptions = computed(() => {
+  const many = toDelete.value.length > 1
+  return {
+    title: many ? __('Delete {0} Threads', [toDelete.value.length]) : __('Delete Thread'),
+    message: __('Are you sure you want to permanently delete the selected {0}?', [
+      many ? __('threads') : __('thread'),
+    ]),
+    actions: [
+      {
+        label: __('Confirm'),
+        variant: 'solid' as const,
+        autofocus: true,
+        onClick: () => {
+          showDelete.value = false
+          handleDelete(toDelete.value)
+        },
+      },
+    ],
+  }
+})
+
+const handleDelete = (rows: Thread[]) => {
+  const names = rows.flatMap((thread) =>
+    (thread.messages ?? [])
+      .flatMap(mailCopies)
+      .filter((copy) => copy.mailboxes.some((m) => m.mailbox_id === thread.view_mailbox))
+      .map((copy) => copy.name),
+  )
+  goToNextThreadOrClose(rows.map(threadKey))
+  closeComposeWindowFor(rows.flatMap(messageIds))
+  const restores = rows.map(removeFromList)
+  raiseOptimisticToast(
+    call('suite.mail.doctype.mail_message.mail_message.bulk_delete', { names }).then(
+      refreshCounts,
+      (error) => {
+        restores.reverse().forEach((restore) => restore())
+        throw error
+      },
+    ),
+    rows.length === 1 ? __('Thread deleted.') : __('Threads deleted.'),
+  )
+}
+
+// Another folder reuses this component, so it starts over: its own remembered filter, from the top.
+watch(
+  () => folder,
+  () => {
+    reloadFilter()
+    resetThreads()
+  },
 )
 
-usePageMeta(() => appPageMeta(`${unreadPrefix.value} ${__('All Inboxes')}`, 'Mail'))
+const unreadCount = computed(
+  () =>
+    store.unifiedFolders.data?.find((f: UnifiedFolder) => f.slug === folder)?.unread_threads ?? 0,
+)
+
+usePageMeta(() =>
+  appPageMeta(`${unreadCount.value ? `(${unreadCount.value})` : ''} ${folderLabel.value}`, 'Mail'),
+)
 
 // Keep the merged list fresh: poll periodically and react to push events — new mail, or mail changed
 // on another device — which can arrive for any account. Either way the newest window is merged into

@@ -27,7 +27,6 @@ import {
 } from '@/apps/calendar/utils/mobileView'
 import { accountSubmenu } from '@/composables/accountSubmenu'
 import { AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
-import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 
 const { events, selectedEvent, isMobile } = defineProps<{
   /** Whether the page is in its phone layout; the sheet then carries the view switcher. */
@@ -209,7 +208,6 @@ const selectView = (view: MobileView) => {
           </template>
         </SidebarItem>
       </Dropdown>
-      <CommandPaletteSidebarItem v-if="!isMobile" />
     </SidebarSection>
 
     <!-- The phone's views, and its search page. On a desktop the header's

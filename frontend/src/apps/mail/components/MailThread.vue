@@ -614,6 +614,7 @@ import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { isCollapsed as isCollapsedIn, lastMessageOf } from '@/apps/mail/utils/threadFolding'
+import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 
 const {
   mailbox,
@@ -790,12 +791,12 @@ const unseenMessage = computed(() =>
 const shouldShowUnseenMarker = (id: string) =>
   isSomeSeen.value && firstUnseenMail.value && id == firstUnseenMail.value
 
-// Bail to the list the thread was opened from — the merged All Inboxes list on
+// Bail to the list the thread was opened from — the merged folder list on
 // its thread route, the mailbox list otherwise.
 const goToMailbox = () =>
   router.push(
-    route.name === 'mail-all-inboxes-mail'
-      ? { name: 'mail-all-inboxes', query: route.query }
+    route.name === UNIFIED_THREAD_ROUTE
+      ? { name: UNIFIED_ROUTE, params: { folder: route.params.folder }, query: route.query }
       : { name: 'mail-mailbox', params: { mailbox }, query: route.query },
   )
 
