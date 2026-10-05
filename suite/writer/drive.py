@@ -79,7 +79,7 @@ from frappe import _
 from suite import drive
 from suite.suite_core import collab
 from suite.suite_core.collab import compaction
-from suite.writer.collab import ADAPTER, live_state, start_log, version_payload
+from suite.writer.collab import ADAPTER, copy_log, live_state, remap_log, start_log, version_payload
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
@@ -148,10 +148,11 @@ def duplicate(source_docname: str, node: str) -> str:
     """Copy one Writer body under a new node, for copy and new-from-template.
 
     The body, its HTML mirror, and the editor settings are carried. The
-    comment blob is not: §8.9 gives a copy no history and no comments.
+    comment blob is not: §8.9 gives a copy no history and no comments. A collab
+    document's log is copied as its state now, under a new lineage.
     """
     source = frappe.db.get_value(
-        DOCTYPE, source_docname, ("content", "html", "settings", "collab"), as_dict=True
+        DOCTYPE, source_docname, ("node", "content", "html", "settings", "collab"), as_dict=True
     )
     if not source:
         frappe.throw(_("The Writer document to copy was not found"), frappe.DoesNotExistError)
@@ -162,6 +163,10 @@ def duplicate(source_docname: str, node: str) -> str:
     document.settings = source.settings or DEFAULT_SETTINGS
     document.collab = source.collab
     document.insert(ignore_permissions=True)
+    try:
+        copy_log(source.node, node)
+    except (collab.ChainBroken, compaction.CompactionFailed) as unready:
+        raise drive.DriveConflict(_("This document cannot be copied right now")) from unready
     return document.name
 
 
@@ -280,6 +285,17 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
     if body is not None:
         values["content"] = body
     frappe.db.set_value(DOCTYPE, docname, values, update_modified=False)
+    node = frappe.db.get_value(DOCTYPE, docname, "node")
+    if collab.find(ADAPTER, node):
+        try:
+            remap_log(node, remap_rule(mapping))
+        except (ValueError, compaction.CompactionFailed) as refused:
+            raise drive.DriveConflict(_("The copy's pictures could not be moved to it")) from refused
+
+
+def remap_rule(mapping: dict[str, str]):
+    """How a stored value names a copied picture: a bare old id becomes the new id, and an embed URL is rewritten."""
+    return lambda value: mapping[value] if value in mapping else _remap_text(value, mapping)
 
 
 SPEC = drive.ContentTypeSpec(

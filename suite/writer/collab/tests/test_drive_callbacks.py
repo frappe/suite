@@ -17,6 +17,7 @@ from suite.drive._core.errors import DriveConflict
 from suite.drive._core.nodes import create_file
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import restore_version
+from suite.suite_core import collab
 from suite.writer import drive as writer_drive
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
@@ -200,3 +201,77 @@ class TestWriterDriveCallbacks(CheckpointCase):
         frappe.db.rollback()
         self.assertEqual((self.doc_row(node).head_rev, self.row_count(node)), (head, head))
         self.assertEqual(frappe.db.count("Drive Node Version", {"node": node}), 1)
+
+    def copy_of(self, node: str) -> str:
+        parent = frappe.db.get_value("Drive Node", node, "parent_node")
+        copied = drive.copy(node, parent)
+        frappe.db.commit()
+        self.addCleanup(self.forget, copied)
+        return copied
+
+    def opened(self, node: str) -> pycrdt.Doc:
+        _header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        doc = pycrdt.Doc()
+        for payload in [checkpoint, *(payload for _rev, payload in rows)]:
+            if payload:
+                doc.apply_update(payload)
+        return doc
+
+    def test_a_copy_carries_the_text_through_the_head_under_its_own_lineage(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two "])
+        self.compact(node)
+        self.type_into(node, ["three"])
+
+        copied = self.copy_of(node)
+
+        self.assertNotEqual(self.doc_row(copied).lineage, self.doc_row(node).lineage)
+        self.assertEqual(self.text_of(self.opened(copied).get_update()), "one two three")
+        self.assertEqual(self.type_into(copied, [" four"]), "one two three four")
+        self.assertEqual(self.text_of(self.opened(node).get_update()), "one two three")
+
+    def test_a_copy_names_its_own_pictures_and_keeps_its_text(self):
+        node = self.new_document()
+        picture = self.old_media(node, "picture.png")
+        self.edit(
+            node,
+            lambda body: [
+                body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)})),
+                body.children.append(pycrdt.XmlText(f"see {embed(picture)}")),
+            ],
+        )
+
+        copied = self.copy_of(node)
+
+        [copied_picture] = frappe.get_all("Drive Node", {"parent_node": copied, "kind": "file"}, pluck="name")
+        image, text = self.opened(copied).get("default", type=pycrdt.XmlFragment).children
+        self.assertEqual(dict(image.attributes), {"src": embed(copied_picture)})
+        self.assertEqual(str(text), f"see {embed(picture)}")
+        self.assertEqual(writer_drive.used_nodes(self.docname(copied)), {copied_picture})
+        source_image = self.opened(node).get("default", type=pycrdt.XmlFragment).children[0]
+        self.assertEqual(dict(source_image.attributes), {"src": embed(picture)})
+
+    def test_a_copys_start_cannot_change_once_a_tab_has_a_session(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        copied = self.copy_of(node)
+        call(routes.collab_sessions_post, copied, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
+
+        with self.assertRaises(ValueError):
+            collab.replace_start("writer", self.doc_row(copied).id, pycrdt.Doc().get_update())
+
+    def test_a_source_whose_log_cannot_be_read_is_not_copied(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        frappe.db.sql(
+            "UPDATE `__writer_collab_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
+        )
+        frappe.db.commit()
+        parent = frappe.db.get_value("Drive Node", node, "parent_node")
+        before = frappe.db.count("Drive Node", {"parent_node": parent})
+
+        with self.assertRaisesRegex(DriveConflict, "cannot be copied"):
+            drive.copy(node, parent)
+
+        frappe.db.rollback()
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": parent}), before)

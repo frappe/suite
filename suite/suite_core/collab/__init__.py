@@ -20,6 +20,7 @@ from suite.suite_core.collab.log import (
     parse_push,
     push,
     read,
+    replace_start,
     require_enabled,
     rows_after,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "parse_push",
     "push",
     "read",
+    "replace_start",
     "require_enabled",
     "rows_after",
 ]
