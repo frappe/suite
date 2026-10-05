@@ -83,6 +83,12 @@ quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
 
+[tool.bench]
+validation-ignore = [
+    # standalone SFU/STT services, not part of the Frappe app
+    "suite/meet/sfu-server/*",
+]
+
 [tool.bench.assets]
 build_dir = "./frontend"
 out_dir = "../suite/public/frontend"
