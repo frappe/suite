@@ -345,6 +345,20 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.assertEqual(self.rows_of(doc_id)["checkpoint"], 0)
         writer_collab.delete_purged(doc_id)
 
+    def test_a_compaction_during_a_purge_raises_no_alert(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two ", "three"])
+        doc_id = self.purged(node)
+        # The purge job has deleted the first rows and not yet the rest
+        frappe.db.sql("DELETE FROM `__writer_collab_update` WHERE `doc_id` = %s AND `rev` = 1", doc_id)
+        frappe.db.commit()
+        alerts = frappe.db.count("Error Log", {"method": "Collab compaction: chain_break"})
+
+        writer_collab.compact(doc_id)
+
+        self.assertEqual(frappe.db.count("Error Log", {"method": "Collab compaction: chain_break"}), alerts)
+        writer_collab.delete_purged(doc_id)
+
     def test_drive_refuses_to_export_a_collab_document(self):
         node = self.new_document()
         self.type_into(node, ["one"])

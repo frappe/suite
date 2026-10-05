@@ -411,7 +411,7 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
         with repeatable_read() if own_snapshot else contextlib.nullcontext():
             doc = frappe.db.sql(
                 f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `integrated_rev`
-                FROM `{table(adapter, "doc")}` WHERE `id` = %s""",
+                FROM `{table(adapter, "doc")}` WHERE `id` = %s AND `mode` != 'purged'""",
                 doc_id,
                 as_dict=True,
             )
