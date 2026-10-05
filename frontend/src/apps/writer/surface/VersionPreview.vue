@@ -23,9 +23,9 @@ async function show(seq: number) {
   loading.value = true
   failed.value = false
   try {
-    const response = await fetch(props.session.versions.contentUrl(String(seq)), {
-      credentials: 'same-origin',
-    })
+    const response = await props.session.credentials.fetch(
+      props.session.versions.contentUrl(String(seq)),
+    )
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const content = await readVersion(new Uint8Array(await response.arrayBuffer()))
     if (seq !== props.seq) return
