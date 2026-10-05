@@ -1,143 +1,114 @@
 <template>
-  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <!-- Meet's own sidebar, in the shell's sidebar slot on a desktop and in the
-		     bottom nav's sheet on a phone, like Drive's. -->
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base">
     <AreaSidebar area="meet" :title="__('Meet')">
-      <SidebarSection class="!mt-0">
-        <SidebarItem :label="__('Home')" icon="lucide-home" route="/meet" :active="true" />
-        <SidebarItem :label="__('Calendar')" icon="lucide-calendar" route="/calendar" />
-      </SidebarSection>
+      <MeetPanel />
     </AreaSidebar>
-    <PageHeader class="hidden md:flex">
-      <PageHeaderTitle :title="__('Home')" />
+    <PageHeader>
+      <div class="flex items-center gap-2">
+        <Button
+          class="md:hidden"
+          variant="ghost"
+          icon="lucide-menu"
+          :aria-label="__('Meet navigation')"
+          @click="openNavigation"
+        />
+        <h1 class="text-xl font-semibold text-ink-gray-9">{{ viewLabel }}</h1>
+      </div>
+      <NewMeetingMenu
+        :loading="isStartingMeeting"
+        variant="solid"
+        @instant="startInstantMeeting"
+        @restricted="startRestrictedMeeting"
+        @schedule="openScheduleDialog"
+      />
     </PageHeader>
-    <PageHeaderMobile class="md:hidden" :title="__('Meet')" />
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto w-[760px] max-w-full px-6 pb-12 pt-8 md:pt-[100px]">
-        <div class="mb-2 flex flex-col gap-0.5">
-          <h1 class="text-lg-semibold text-ink-gray-8 tracking-[0.2px]">Hey {{ firstName }},</h1>
-          <p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
-            Start an open meeting, create a restricted meeting, or join with a code.
-          </p>
-        </div>
-
-        <div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
-          <button
-            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-            @click="startInstantMeeting"
+      <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
+        <section v-if="view === 'upcoming'" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div class="hidden shrink-0 sm:block">
+            <NewMeetingMenu
+              :loading="isStartingMeeting"
+              variant="subtle"
+              size="md"
+              @instant="startInstantMeeting"
+              @restricted="startRestrictedMeeting"
+              @schedule="openScheduleDialog"
+            />
+          </div>
+          <form class="flex min-w-0 flex-1 items-start gap-2" @submit.prevent="joinWithCode">
+            <TextInput
+              v-model="meetingCode"
+              size="md"
+              class="min-w-0 flex-1"
+              :placeholder="__('Enter a code or link')"
+              :aria-label="__('Meeting code or link')"
+              :error="meetingCodeError"
+              data-testid="meeting-code-input"
+            >
+              <template #prefix
+                ><span class="lucide-keyboard size-4 text-ink-gray-5" aria-hidden="true"
+              /></template>
+            </TextInput>
+            <Button
+              type="submit"
+              size="md"
+              variant="outline"
+              :label="__('Join')"
+              :disabled="!parsedMeetingCode"
+              data-testid="join-meeting-button"
+            />
+          </form>
+        </section>
+        <UpcomingMeetings
+          v-if="view !== 'recordings' && calendarReady"
+          :key="calendarStore.accountId"
+          ref="upcomingMeetingsRef"
+        />
+        <p
+          v-else-if="view !== 'recordings'"
+          class="py-8 text-center text-base text-ink-gray-5"
+          role="status"
+        >
+          {{ __('Loading meetings…') }}
+        </p>
+        <section v-if="view === 'recordings'">
+          <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Recordings') }}</h2>
+          <div
+            class="flex flex-col items-center rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
           >
-            <div
-              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
-            >
-              <div
-                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
-              >
-                <LucideZap class="size-6 text-ink-gray-8" />
-              </div>
-            </div>
-            <span
-              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
-              >Instant meet</span
-            >
-          </button>
-
-          <button
-            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-            @click="startRestrictedMeeting"
-          >
-            <div
-              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
-            >
-              <div
-                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
-              >
-                <LucideLock class="size-6 text-ink-gray-8" />
-              </div>
-            </div>
-            <span
-              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
-              >Restricted meet</span
-            >
-          </button>
-
-          <button
-            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-            @click="openScheduleDialog"
-          >
-            <div
-              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
-            >
-              <div
-                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
-              >
-                <LucideCalendarPlus class="size-6 text-ink-gray-8" />
-              </div>
-            </div>
-            <span
-              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
-              >Schedule meet</span
-            >
-          </button>
-
-          <button
-            class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-            @click="showJoinDialog = true"
-          >
-            <div
-              class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base"
-            >
-              <div
-                class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105"
-              >
-                <LucideLink class="size-6 text-ink-gray-8" />
-              </div>
-            </div>
-            <span
-              class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]"
-              >Join with code</span
-            >
-          </button>
-        </div>
-
-        <UpcomingMeetings ref="upcomingMeetingsRef" />
+            <p>
+              {{
+                __(
+                  'Meeting recordings are saved in Files. A recordings list is not available here yet.',
+                )
+              }}
+            </p>
+            <Button class="mt-3" variant="outline" :label="__('Open Files')" route="/drive" />
+          </div>
+        </section>
       </div>
     </div>
 
-    <Dialog v-model:open="showJoinDialog" :title="'Join with meeting code'" dismissible>
-      <template #default>
-        <FormControl
-          v-model="meetingCode"
-          placeholder="abcd-efgh-ijkl"
-          :error="meetingCodeError"
-          @keydown.enter="joinWithCode"
-          data-testid="meeting-code-input"
-        />
-      </template>
-      <template #actions>
-        <div class="flex justify-end">
-          <Button variant="solid" @click="joinWithCode" data-testid="join-meeting-button">
-            Join
-          </Button>
-        </div>
-      </template>
-    </Dialog>
-
-    <Dialog v-model:open="showScheduleDialog" :title="'Schedule meet'" dismissible>
+    <Dialog v-model:open="showScheduleDialog" :title="__('Schedule meet')" dismissible>
       <template #default>
         <div class="space-y-4">
-          <FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />
+          <FormControl
+            v-model="scheduleTitle"
+            :label="__('Title')"
+            :placeholder="__('Team meeting')"
+          />
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
             <FormControl
               v-model="scheduleDate"
-              label="Date"
+              :label="__('Date')"
               type="date"
               format="MMM D, YYYY"
               :placeholder="__('Select date')"
             />
             <FormControl
               v-model="scheduleStartTime"
-              label="Start"
+              :label="__('Start')"
               type="time"
               :interval="15"
               format="h:mm A"
@@ -145,7 +116,7 @@
             />
             <FormControl
               v-model="scheduleEndTime"
-              label="End"
+              :label="__('End')"
               type="time"
               :interval="15"
               format="h:mm A"
@@ -167,9 +138,8 @@
             :loading="scheduleMeeting.loading"
             :disabled="!isScheduleTimeValid"
             @click="submitScheduledMeeting"
+            >{{ __('Schedule') }}</Button
           >
-            Schedule
-          </Button>
         </div>
       </template>
     </Dialog>
@@ -177,34 +147,23 @@
 </template>
 
 <script setup lang="ts">
-import LucideCalendarPlus from '~icons/lucide/calendar-plus'
-import LucideLink from '~icons/lucide/link'
-import LucideLock from '~icons/lucide/lock'
-import LucideZap from '~icons/lucide/zap'
-import {
-  Button,
-  Dialog,
-  FormControl,
-  PageHeader,
-  PageHeaderMobile,
-  PageHeaderTitle,
-  SidebarItem,
-  SidebarSection,
-  toast,
-  useCall,
-} from 'frappe-ui'
-import { computed, onScopeDispose, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { Button, Dialog, FormControl, PageHeader, TextInput, toast, useCall } from 'frappe-ui'
+import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { adjustScheduleEndTime, adjustScheduleStartTime } from '@/apps/calendar/utils/scheduleTime'
-import { AreaSidebar } from '@/platform/area-sidebar'
+import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
+import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 
+import MeetPanel from '../components/MeetPanel.vue'
+import NewMeetingMenu from '../components/NewMeetingMenu.vue'
 import UpcomingMeetings from '../components/UpcomingMeetings.vue'
 import { useStartMeeting } from '../composables/useStartMeeting'
+import { meetingCodeFrom } from '../utils/meetingCode'
 import { submit } from '../utils/request'
 
 interface CalendarParticipant {
@@ -217,12 +176,27 @@ interface CalendarParticipant {
 }
 
 const router = useRouter()
+const route = useRoute()
 const root = useRootStore()
 const { isStartingMeeting, startMeeting } = useStartMeeting()
+const view = computed(() => (route.name === 'meet-recordings' ? 'recordings' : 'upcoming'))
+const viewLabel = computed(() => (view.value === 'upcoming' ? __('Meet') : __('Recordings')))
+const openNavigation = () => openAreaSidebar('meet')
 const calendarStore = useCalendarUserStore()
+// useCall's cache key is fixed at creation; resolve the account before mounting the list.
+const calendarReady = ref(false)
+onMounted(async () => {
+  try {
+    await calendarStore.userResource.promise
+  } catch {
+    // The list owns the account error and retry UI.
+  } finally {
+    calendarReady.value = true
+  }
+})
 const meetingCode = ref('')
 const meetingCodeError = ref('')
-const showJoinDialog = ref(false)
+const parsedMeetingCode = computed(() => meetingCodeFrom(meetingCode.value, window.location.origin))
 const showScheduleDialog = ref(false)
 const scheduleTitle = ref('')
 const scheduleDate = ref(dayjs().format('YYYY-MM-DD'))
@@ -234,7 +208,6 @@ const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null)
 watch(scheduleStartTime, (startTime) => {
   scheduleEndTime.value = adjustScheduleEndTime(startTime, scheduleEndTime.value)
 })
-
 watch(scheduleEndTime, (endTime) => {
   scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime)
 })
@@ -242,15 +215,8 @@ watch(scheduleEndTime, (endTime) => {
 const userResource = useCall<{ name?: string; full_name?: string; user_image?: string }>({
   url: '/api/v2/method/suite.api.account.get_logged_in_user',
 })
-
-const firstName = computed(() => {
-  const name = userResource.data?.full_name || userResource.data?.name || ''
-  return name.split(' ')[0] || 'there'
-})
-
 const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`))
 const scheduleEnd = computed(() => dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`))
-
 const isScheduleTimeValid = computed(
   () =>
     Boolean(scheduleDate.value && scheduleStartTime.value && scheduleEndTime.value) &&
@@ -258,40 +224,30 @@ const isScheduleTimeValid = computed(
     scheduleEnd.value.isValid() &&
     scheduleEnd.value.isAfter(scheduleStart.value),
 )
-
 const scheduledDuration = computed(() => {
   if (!isScheduleTimeValid.value) return ''
-  const start = scheduleStart.value
-  const end = scheduleEnd.value
-  const diff = dayjs.duration(end.diff(start))
+  const diff = dayjs.duration(scheduleEnd.value.diff(scheduleStart.value))
   return dayjs
     .duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() })
     .toISOString()
 })
-
 const currentUserEmail = computed(
   () => calendarStore.userResource.data?.name || userResource.data?.name,
 )
-
 const scheduledParticipants = computed(() => {
-  const currentName = calendarStore.userResource.data?.full_name || userResource.data?.full_name
-  const currentImage = calendarStore.userResource.data?.user_image || userResource.data?.user_image
   const participants: CalendarParticipant[] = currentUserEmail.value
     ? [
         {
           email: currentUserEmail.value,
-          _name: currentName,
-          user_image: currentImage,
+          _name: calendarStore.userResource.data?.full_name || userResource.data?.full_name,
+          user_image: calendarStore.userResource.data?.user_image || userResource.data?.user_image,
           participation_status: 'ACCEPTED',
         },
       ]
     : []
-
   participants.push(...scheduleParticipants.value)
-
   return participants
 })
-
 const scheduleMeeting = useCall({
   url: '/api/suite/meet/calendar-meetings',
   method: 'POST',
@@ -307,70 +263,47 @@ const scheduleMeeting = useCall({
   immediate: false,
   onSuccess: () => {
     showScheduleDialog.value = false
-    toast.success('Meeting scheduled.')
+    toast.success(__('Meeting scheduled.'))
     upcomingMeetingsRef.value?.reload()
   },
-  onError: (error: unknown) => {
-    console.error('Error scheduling meeting:', error)
-  },
+  onError: (error: unknown) => console.error('Error scheduling meeting:', error),
 })
-
 const startInstantMeeting = () => startMeeting('open')
-
 const startRestrictedMeeting = () => startMeeting('restricted')
-
 const openScheduleDialog = async () => {
   try {
     await calendarStore.userResource.promise
     if (!calendarStore.accountId) {
-      toast.error('Set up Calendar before scheduling a Meet.')
+      toast.error(__('Set up Calendar before scheduling a Meet.'))
       return
     }
     showScheduleDialog.value = true
   } catch (error) {
     console.error('Failed to load calendar account:', error)
-    toast.error('Could not load Calendar account.')
+    toast.error(__('Could not load Calendar account.'))
   }
 }
-
 const submitScheduledMeeting = () => {
   if (!calendarStore.accountId) {
-    toast.error('Set up Calendar before scheduling a Meet.')
+    toast.error(__('Set up Calendar before scheduling a Meet.'))
     return
   }
   if (!isScheduleTimeValid.value) {
-    toast.error('Enter a valid date and an end time after the start time.')
+    toast.error(__('Enter a valid date and an end time after the start time.'))
     return
   }
   toast.promise(submit(scheduleMeeting), {
-    loading: 'Scheduling meeting...',
-    error: 'Failed to schedule meeting. Please try again.',
+    loading: __('Scheduling meeting...'),
+    error: __('Failed to schedule meeting. Please try again.'),
   })
 }
-
 const joinWithCode = () => {
   meetingCodeError.value = ''
-
-  if (!meetingCode.value.trim()) {
-    meetingCodeError.value = 'Please enter a meeting code'
+  if (!parsedMeetingCode.value) {
+    meetingCodeError.value = __('Please enter a valid meeting code (format: xxxx-xxxx-xxxx)')
     return
   }
-
-  if (!isMeetingCodeValid(meetingCode.value.trim())) {
-    meetingCodeError.value = 'Please enter a valid meeting code (format: xxxx-xxxx-xxxx)'
-    return
-  }
-
-  showJoinDialog.value = false
-  router.push({
-    name: 'meet-meeting',
-    params: { meetingId: meetingCode.value.trim() },
-  })
-}
-
-const isMeetingCodeValid = (code: string) => {
-  const regex = /^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/
-  return regex.test(code)
+  router.push({ name: 'meet-meeting', params: { meetingId: parsedMeetingCode.value } })
 }
 
 const unregisterPaletteGroups = root.registerPaletteGroups('meet-home', () => [
@@ -378,8 +311,8 @@ const unregisterPaletteGroups = root.registerPaletteGroups('meet-home', () => [
     commands: [
       {
         id: 'meet-start-open',
-        label: 'Start instant meet',
-        enterHint: 'start instant meet',
+        label: __('Start instant meet'),
+        enterHint: __('start instant meet'),
         icon: 'lucide-zap',
         keywords: ['new', 'instant', 'room'],
         disabled: isStartingMeeting.value,
@@ -387,8 +320,8 @@ const unregisterPaletteGroups = root.registerPaletteGroups('meet-home', () => [
       },
       {
         id: 'meet-start-restricted',
-        label: 'Start restricted meet',
-        enterHint: 'start restricted meet',
+        label: __('Start restricted meet'),
+        enterHint: __('start restricted meet'),
         icon: 'lucide-lock',
         keywords: ['new', 'private', 'room'],
         disabled: isStartingMeeting.value,
@@ -396,16 +329,22 @@ const unregisterPaletteGroups = root.registerPaletteGroups('meet-home', () => [
       },
       {
         id: 'meet-join-code',
-        label: 'Join with code',
-        enterHint: 'join with code',
+        label: __('Join with code'),
+        enterHint: __('join with code'),
         icon: 'lucide-link',
         keywords: ['room', 'call'],
-        run: () => (showJoinDialog.value = true),
+        run: async () => {
+          await router.push('/meet')
+          await nextTick()
+          document
+            .querySelector<HTMLInputElement>('[data-testid="meeting-code-input"] input')
+            ?.focus()
+        },
       },
       {
         id: 'meet-schedule',
-        label: 'Schedule meet',
-        enterHint: 'schedule meet',
+        label: __('Schedule meet'),
+        enterHint: __('schedule meet'),
         icon: 'lucide-calendar-plus',
         keywords: ['calendar', 'new'],
         run: openScheduleDialog,

@@ -3,23 +3,23 @@
   "exceptions": [
     {
       "path": "frontend/src/apps/meet/types.ts",
-		"line": 109,
-      "column": 13,
+      "line": 107,
+      "column": 59,
       "rule": "MTP001",
-      "lineText": "): value is Record<string, unknown> {",
+      "lineText": "export function isUnknownRecord(value: unknown): value is Record<string, unknown> {",
       "reason": "This central guard narrows untrusted values only for immediate field-by-field validation."
     },
     {
       "path": "frontend/src/apps/meet/utils/media/E2EEEpochSignalingController.ts",
-      "line": 640,
-      "column": 29,
+      "line": 587,
+      "column": 31,
       "rule": "MTP001",
-      "lineText": "\t\tconst envelope = value as Record<string, unknown>;",
+      "lineText": "    const envelope = value as Record<string, unknown>",
       "reason": "The assertion is contained inside an exhaustive discriminated runtime envelope validator."
     },
     {
       "path": "frontend/src/apps/meet/utils/SFUClient.ts",
-		"line": 255,
+      "line": 242,
       "column": 58,
       "rule": "MTP001",
       "lineText": "function requireObject(value: unknown, context: string): Record<string, unknown> {",

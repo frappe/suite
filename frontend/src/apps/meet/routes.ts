@@ -28,6 +28,17 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/apps/meet/pages/MeetLayout.vue'),
     children: [
       {
+        path: 'scheduled',
+        name: 'meet-scheduled',
+        redirect: { name: 'meet-home' },
+      },
+      {
+        path: 'recordings',
+        name: 'meet-recordings',
+        component: () => import('@/apps/meet/pages/Home.vue'),
+        meta: { title: 'Recordings' },
+      },
+      {
         path: '',
         name: 'meet-home',
         component: () => import('@/apps/meet/pages/Home.vue'),

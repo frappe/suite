@@ -37,6 +37,7 @@ const boundaryDebtGroups = [
     removal: 'Publish Calendar scheduling contracts before changing the existing Meet integration.',
     entries: [
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/stores/user',
+      'meet/components/UpcomingMeetings.test.ts|@/apps/calendar/stores/user',
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/utils/dayjs',
       'meet/pages/Home.vue|@/apps/calendar/stores/user',
       'meet/pages/Home.vue|@/apps/calendar/utils/dayjs',

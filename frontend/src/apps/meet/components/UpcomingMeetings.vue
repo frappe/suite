@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { useNow } from '@vueuse/core'
-import { useCall } from 'frappe-ui'
-import { computed, onMounted } from 'vue'
+import { useMediaQuery, useNow } from '@vueuse/core'
+import { Button, useCall } from 'frappe-ui'
+import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import AvatarGroup from '@/apps/meet/components/AvatarGroup.vue'
+import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
+import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+
+const initializing = ref(true)
+const accountError = ref(false)
 
 interface CalendarEventParticipant {
   email: string
@@ -70,17 +76,34 @@ const isCalendarEvent = (value: unknown): value is CalendarEvent =>
 const router = useRouter()
 const calendarStore = useCalendarUserStore()
 const now = useNow({ interval: 30_000 })
+const isMobile = useMediaQuery('(max-width: 767px)')
 
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
+const session = useSession()
+const fromDate = dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss')
+const toDate = dayjs().add(30, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss')
+const timeZone = timezone()
 
 const upcomingEvents = useCall({
   url: '/api/v2/method/suite.calendar.api.get_calendar_events',
   immediate: false,
+  cacheKey:
+    session.user.value?.id && calendarStore.accountId
+      ? [
+          'meet-calendar-events',
+          window.location.origin,
+          session.user.value.id,
+          calendarStore.accountId,
+          fromDate,
+          toDate,
+          timeZone,
+        ]
+      : undefined,
   params: () => ({
     account: calendarStore.accountId,
-    from_date: dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-    to_date: dayjs().endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-    time_zone: timezone(),
+    from_date: fromDate,
+    to_date: toDate,
+    time_zone: timeZone,
   }),
 })
 
@@ -92,14 +115,29 @@ const meetings = computed(() => {
     .filter((event) => {
       const start = dayjs(event.start)
       const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-      return getMeetingUrl(event) && start.isSame(currentTime, 'day') && end.isAfter(currentTime)
+      return getMeetingUrl(event) && end.isAfter(currentTime)
     })
     .sort((left, right) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
-    .slice(0, 4)
 })
 
-const formatMeetingMonth = (event: CalendarEvent) => dayjs(event.start).format('MMM')
-const formatMeetingDay = (event: CalendarEvent) => dayjs(event.start).format('D')
+const groups = computed(() => {
+  const result: { day: string; label: string; meetings: CalendarEvent[] }[] = []
+  for (const event of meetings.value) {
+    const start = dayjs(event.start)
+    const day = start.format('YYYY-MM-DD')
+    let group = result.find((item) => item.day === day)
+    if (!group) {
+      group = {
+        day,
+        label: start.isSame(dayjs(now.value), 'day') ? 'Today' : start.format('ddd, D MMM'),
+        meetings: [],
+      }
+      result.push(group)
+    }
+    group.meetings.push(event)
+  }
+  return result
+})
 
 const isAllDayEvent = (event: CalendarEvent) => {
   const start = dayjs(event.start)
@@ -119,23 +157,7 @@ const formatMeetingTime = (event: CalendarEvent) => {
 
   const start = dayjs(event.start)
   const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-  return `${start.format('h:mma')} - ${end.format('h:mma')}`
-}
-
-const eventParticipants = (event: CalendarEvent) => {
-  const participantsByEmail = new Map<
-    string,
-    { user_id: string; full_name: string; avatar_url?: string }
-  >()
-  for (const participant of event.participants || []) {
-    if (!participant.email || participantsByEmail.has(participant.email)) continue
-    participantsByEmail.set(participant.email, {
-      user_id: participant.email,
-      full_name: participant._name || participant.email || '?',
-      avatar_url: participant.user_image,
-    })
-  }
-  return [...participantsByEmail.values()]
+  return `${start.format('HH:mm')} – ${end.format('HH:mm')}`
 }
 
 const getMeetingUrl = (event: CalendarEvent) => {
@@ -153,7 +175,7 @@ const getTrustedMeetUrl = (url?: string | null) => {
 
   try {
     const parsed = new URL(value, window.location.origin)
-    if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/meet/'))
+    if (meetingCodeFrom(value, window.location.origin))
       return parsed.pathname + parsed.search + parsed.hash
   } catch {
     return ''
@@ -163,7 +185,7 @@ const getTrustedMeetUrl = (url?: string | null) => {
 }
 
 const getMeetingId = (event: CalendarEvent) =>
-  getMeetingUrl(event).split('/meet/').pop()?.replace(/\W+$/, '') || ''
+  meetingCodeFrom(getMeetingUrl(event), window.location.origin)
 
 const joinMeeting = (event: CalendarEvent) => {
   const meetingId = getMeetingId(event)
@@ -171,70 +193,89 @@ const joinMeeting = (event: CalendarEvent) => {
   router.push({ name: 'meet-meeting', params: { meetingId } })
 }
 
-const reload = () => {
-  if (calendarStore.accountId) upcomingEvents.reload()
+const reload = async () => {
+  initializing.value = true
+  try {
+    if (accountError.value) await calendarStore.userResource.reload()
+    else await calendarStore.userResource.promise
+    accountError.value = false
+    if (calendarStore.accountId) await upcomingEvents.reload()
+  } catch (error) {
+    accountError.value = true
+    console.warn('Could not load upcoming calendar meetings:', error)
+  } finally {
+    initializing.value = false
+  }
 }
 
-onMounted(() => {
-  const userPromise = calendarStore.userResource.promise
-  if (!userPromise) {
-    reload()
-    return
-  }
-  userPromise
-    .then(reload)
-    .catch((error: unknown) => console.warn('Could not load upcoming calendar meetings:', error))
-})
+onMounted(reload)
 
 defineExpose({ reload })
 </script>
 
 <template>
-  <div v-if="meetings.length" class="mt-10">
-    <h2 class="mb-3 text-base-medium text-ink-gray-8">Upcoming meetings</h2>
-    <div class="overflow-hidden rounded-7 border border-outline-gray-1 bg-surface-gray-1">
-      <button
-        v-for="(event, index) in meetings"
-        :key="event.id"
-        type="button"
-        class="flex min-h-[66px] w-full items-center gap-8 border-outline-gray-1 px-2.5 py-2.5 text-left transition-colors first:rounded-t-7 last:rounded-b-7 hover:bg-surface-gray-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink-gray-4"
-        :class="index !== meetings.length - 1 ? 'border-b' : ''"
-        @click="joinMeeting(event)"
-      >
-        <div class="flex min-w-0 flex-1 items-center gap-2.5">
-          <div
-            class="flex w-11 shrink-0 items-center justify-center rounded-6 border border-outline-gray-1 bg-surface-base p-1"
-          >
-            <div
-              class="flex h-[38px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-center"
-            >
-              <div class="w-full text-xs font-medium uppercase text-ink-red-5">
-                {{ formatMeetingMonth(event) }}
-              </div>
-              <div class="w-full text-md font-medium text-ink-gray-7">
-                {{ formatMeetingDay(event) }}
-              </div>
-            </div>
-          </div>
-
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm-medium text-ink-gray-8">
-              {{ event.title || 'Scheduled Meeting' }}
-            </div>
-            <div class="mt-1.5 flex min-w-0 items-center gap-0.5 text-sm text-ink-gray-6">
-              <span class="shrink-0">{{ formatMeetingTime(event) }}</span>
-              <span v-if="eventParticipants(event).length" class="shrink-0">・</span>
-              <AvatarGroup
-                v-if="eventParticipants(event).length"
-                :participants="eventParticipants(event)"
-                :error="null"
-                :max-displayed="2"
-                size="sm"
-              />
-            </div>
-          </div>
-        </div>
-      </button>
+  <section aria-label="Scheduled meetings">
+    <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Upcoming') }}</h2>
+    <div
+      v-if="(initializing || upcomingEvents.loading) && upcomingEvents.data == null"
+      class="py-8 text-center text-base text-ink-gray-5"
+      role="status"
+    >
+      Loading meetings…
     </div>
-  </div>
+    <div
+      v-else-if="accountError || upcomingEvents.error"
+      class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
+      role="alert"
+    >
+      Could not load meetings.
+      <Button variant="outline" label="Retry" @click="reload" />
+    </div>
+    <div
+      v-else-if="!groups.length"
+      class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
+    >
+      {{
+        !calendarStore.accountId
+          ? __('Set up Calendar to see scheduled meetings.')
+          : __('Nothing scheduled in the next 30 days.')
+      }}
+    </div>
+    <List
+      v-else
+      class="-mx-3 list-row-px-3"
+      :columns="
+        isMobile ? ['6.5rem', 'minmax(0,1fr)', '4.5rem'] : ['7rem', 'minmax(0,1fr)', '5rem']
+      "
+      :row-height="isMobile ? 52 : 40"
+    >
+      <ListGroup v-for="group in groups" :key="group.day" :label="group.label">
+        <ListRow v-for="event in group.meetings" :key="event.id" :value="event.id">
+          <ListCell>
+            <span class="whitespace-nowrap text-base text-ink-gray-5">{{
+              formatMeetingTime(event)
+            }}</span>
+          </ListCell>
+          <ListCell>
+            <span class="flex min-w-0 flex-col">
+              <span class="truncate text-base text-ink-gray-8">{{
+                event.title || __('Scheduled meeting')
+              }}</span>
+              <span v-if="isMobile" class="truncate text-xs text-ink-gray-5">{{
+                getMeetingId(event)
+              }}</span>
+            </span>
+          </ListCell>
+          <ListCell class="justify-end">
+            <Button
+              :label="__('Join')"
+              variant="outline"
+              :aria-label="__('Join {0}', [event.title || __('Scheduled meeting')])"
+              @click="joinMeeting(event)"
+            />
+          </ListCell>
+        </ListRow>
+      </ListGroup>
+    </List>
+  </section>
 </template>
