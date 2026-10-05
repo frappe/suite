@@ -18,7 +18,13 @@ export async function readVersion(bytes: Uint8Array): Promise<VersionContent> {
   }
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return text
   const version = payload as Record<string, unknown>
-  if (version.schema === 'writer-document/1' && typeof version.html === 'string') {
+  if (
+    version.schema === 'writer-document/1' &&
+    typeof version.content === 'string' &&
+    version.content &&
+    typeof version.html === 'string' &&
+    [0, 1, false, true, undefined].includes(version.collab as number | boolean | undefined)
+  ) {
     return version.html
   }
   if (

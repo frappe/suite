@@ -72,6 +72,21 @@ describe('readVersion', () => {
     expect(schema.nodeFromJSON(shown).eq(schema.nodeFromJSON(document))).toBe(true)
   })
 
+  it('refuses a writer-document/1 version that restoring it would refuse', async () => {
+    const saved = { schema: 'writer-document/1', content: 'AAA=', html: '<p>Saved</p>', collab: 0 }
+
+    for (const broken of [
+      { content: '' },
+      { content: undefined },
+      { collab: 2 },
+      { collab: '1' },
+    ]) {
+      await expect(readVersion(encode({ ...saved, ...broken }))).rejects.toThrow(
+        'This version cannot be read.',
+      )
+    }
+  })
+
   it('refuses a version with an unknown schema', async () => {
     await expect(
       readVersion(encode({ schema: 'writer-document/9', html: '<p>x</p>' })),
