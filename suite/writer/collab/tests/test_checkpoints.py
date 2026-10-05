@@ -312,6 +312,81 @@ class TestWriterCheckpoints(CheckpointCase):
         sha = self.job(doc_id).store(snapshot, result)
         return snapshot, result, sha
 
+    def test_typing_while_a_checkpoint_is_stored_is_accepted(self):
+        node = self.new_document()
+        self.type_into(node, ["one "])
+        doc_id, site = self.doc_row(node).id, frappe.local.site
+        snapshot = routes.collab.read("writer", doc_id)
+        result = compaction.compact(
+            None, [payload for _rev, payload in snapshot["rows"]], writer_collab.ROOTS
+        )
+        result.ms = 1
+        typed = []
+
+        def type_elsewhere():
+            frappe.init(site=site)
+            frappe.connect()
+            frappe.set_user(WRITER)
+            try:
+                typed.append(self.type_into(node, ["two"]))
+            except AssertionError as refused:
+                typed.append(str(refused))
+            finally:
+                frappe.destroy()
+
+        sql = frappe.db.sql
+
+        def type_while_storing(query, *args, **kwargs):
+            if "SET `gz` = CONCAT" in str(query) and not typed:
+                thread = threading.Thread(target=type_elsewhere)
+                thread.start()
+                thread.join()
+            return sql(query, *args, **kwargs)
+
+        with patch.object(frappe.db, "sql", type_while_storing):
+            self.job(doc_id).store(snapshot, result)
+
+        self.assertEqual(typed, ["one two"])
+
+    def test_a_purge_while_a_checkpoint_is_stored_leaves_no_checkpoint(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        doc_id, site = self.doc_row(node).id, frappe.local.site
+        snapshot = routes.collab.read("writer", doc_id)
+        result = compaction.compact(
+            None, [payload for _rev, payload in snapshot["rows"]], writer_collab.ROOTS
+        )
+        result.ms = 1
+        purged = []
+
+        def purge_elsewhere():
+            frappe.init(site=site)
+            frappe.connect()
+            try:
+                purged.append(routes.collab.mark_purged("writer", node))
+                frappe.db.commit()
+            finally:
+                frappe.destroy()
+
+        sql = frappe.db.sql
+
+        def purge_while_storing(query, *args, **kwargs):
+            if "SET `gz` = CONCAT" in str(query) and not purged:
+                thread = threading.Thread(target=purge_elsewhere)
+                thread.start()
+                thread.join()
+            return sql(query, *args, **kwargs)
+
+        with (
+            patch.object(frappe.db, "sql", purge_while_storing),
+            self.assertRaises(compaction.CompactionFailed),
+        ):
+            self.job(doc_id).store(snapshot, result)
+        frappe.db.rollback()
+
+        self.assertEqual(purged, [doc_id])
+        self.assertEqual(self.checkpoints_of(node), [])
+
     def test_a_checkpoint_row_gone_before_its_install_is_never_pointed_at(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two"])
