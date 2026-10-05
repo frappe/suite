@@ -82,3 +82,8 @@ typing-modules = ["frappe.types.DF"]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+
+[tool.bench.assets]
+build_dir = "./frontend"
+out_dir = "../suite/public/frontend"
+index_html_path = "../suite/www/suite.html"
