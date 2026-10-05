@@ -16,8 +16,10 @@ const media = inject(DOCUMENT_MEDIA, null)
 const editor = shallowRef<Editor | null>(null)
 const loading = ref(true)
 const failed = ref(false)
+let request = 0
 
 async function show(seq: number) {
+  const current = ++request
   editor.value?.destroy()
   editor.value = null
   loading.value = true
@@ -28,7 +30,7 @@ async function show(seq: number) {
     )
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const content = await readVersion(new Uint8Array(await response.arrayBuffer()))
-    if (seq !== props.seq) return
+    if (current !== request) return
     editor.value = new Editor({
       extensions: [...writerSchema(), DriveMedia.configure({ media })],
       content,
@@ -40,14 +42,17 @@ async function show(seq: number) {
       },
     })
   } catch {
-    if (seq === props.seq) failed.value = true
+    if (current === request) failed.value = true
   } finally {
-    if (seq === props.seq) loading.value = false
+    if (current === request) loading.value = false
   }
 }
 
 watch(() => props.seq, show, { immediate: true })
-onBeforeUnmount(() => editor.value?.destroy())
+onBeforeUnmount(() => {
+  request++
+  editor.value?.destroy()
+})
 </script>
 
 <template>

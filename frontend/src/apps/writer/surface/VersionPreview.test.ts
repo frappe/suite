@@ -1,12 +1,35 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, ref } from 'vue'
+import { createApp, h, nextTick, ref } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 
 import VersionPreview from './VersionPreview.vue'
 
+const live = vi.hoisted(() => new Set<object>())
+
+vi.mock('@tiptap/vue-3', async (importOriginal) => {
+  const tiptap = await importOriginal<typeof import('@tiptap/vue-3')>()
+  class Editor extends tiptap.Editor {
+    constructor(options: ConstructorParameters<typeof tiptap.Editor>[0]) {
+      super(options)
+      live.add(this)
+    }
+    destroy() {
+      live.delete(this)
+      super.destroy()
+    }
+  }
+  return { ...tiptap, Editor }
+})
+
 const version = (html: string) =>
   JSON.stringify({ schema: 'writer-document/1', content: 'AAA=', html, collab: 0 })
+
+function deferred() {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((done) => (resolve = done))
+  return { promise, resolve }
+}
 
 function fakeSession(fetch: (url: string) => Promise<Response>) {
   return {
@@ -33,8 +56,11 @@ function mountPreview(session: DocumentSession, seq = 1) {
   }
 }
 
+const settle = () => new Promise((done) => setTimeout(done, 0))
+
 afterEach(() => {
   vi.unstubAllGlobals()
+  live.clear()
 })
 
 describe('VersionPreview', () => {
@@ -58,5 +84,45 @@ describe('VersionPreview', () => {
     expect(preview.root.textContent).toContain('Friday')
     expect(preview.root.textContent).not.toContain("can't be shown")
     preview.unmount()
+  })
+
+  it('leaves no editor behind when closed before the version arrives', async () => {
+    const pending = deferred()
+    const preview = mountPreview(fakeSession(() => pending.promise))
+
+    preview.unmount()
+    pending.resolve(new Response(version('<p>Late</p>')))
+    await settle()
+    await settle()
+
+    expect(live.size).toBe(0)
+  })
+
+  it('keeps one editor when the user goes back to a version while it still loads', async () => {
+    const requests: ReturnType<typeof deferred>[] = []
+    const preview = mountPreview(
+      fakeSession(() => {
+        const request = deferred()
+        requests.push(request)
+        return request.promise
+      }),
+      1,
+    )
+    preview.shown.value = 2
+    await nextTick()
+    preview.shown.value = 1
+    await nextTick()
+
+    requests[0].resolve(new Response(version('<p>First</p>')))
+    await settle()
+    requests[2].resolve(new Response(version('<p>First again</p>')))
+    requests[1].resolve(new Response(version('<p>Second</p>')))
+    await vi.waitFor(() => expect(preview.root.textContent).toContain('First again'))
+    await settle()
+
+    expect(live.size).toBe(1)
+    expect(preview.root.textContent).not.toContain('Second')
+    preview.unmount()
+    expect(live.size).toBe(0)
   })
 })
