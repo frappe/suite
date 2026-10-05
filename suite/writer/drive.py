@@ -39,7 +39,8 @@ cleanly and panics on the first child read.
 ## Versions
 
 `version_bytes` writes one `writer-document/1` JSON envelope carrying the Yjs
-body, its HTML mirror, and the collaboration mode. `restore_version` also
+body, its HTML mirror, and the collaboration mode. A collab document's version
+is `writer-document/2`, built from its log by `suite.writer.collab`. `restore_version` also
 accepts the exact UTF-8 HTML bytes §14.6 copies from a legacy `Writer Version`.
 That legacy form becomes a non-collaborative body: Writer cannot reconstruct a
 historical Yjs document from HTML, and leaving the current Yjs state behind
@@ -65,6 +66,7 @@ caller's savepoint. Nothing here commits either way.
 
 import base64
 import binascii
+import gzip
 import io
 import json
 import re
@@ -75,7 +77,9 @@ import pycrdt
 from frappe import _
 
 from suite import drive
-from suite.writer.collab import live_state, start_log
+from suite.suite_core import collab
+from suite.suite_core.collab import compaction
+from suite.writer.collab import live_state, start_log, version_payload
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
@@ -172,10 +176,26 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
 
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
-    """Return the bytes Drive stores as one immutable version."""
-    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html", "collab"), as_dict=True)
+    """Return the bytes Drive stores as one immutable version.
+
+    A collab document's version is its log's state, with the pictures it shows.
+    """
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html", "collab"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
+    try:
+        payload = version_payload(row.node)
+    except (collab.ChainBroken, compaction.CompactionFailed) as unready:
+        raise drive.DriveConflict(
+            _("Version history is not available for this document right now")
+        ) from unready
+    if payload is not None:
+        state = gzip.decompress(base64.b64decode(payload["state"]))
+        with _readable_body():
+            payload["media"] = sorted(
+                _fragment_ids(compaction.load([state]).get(BODY_FRAGMENT, type=pycrdt.XmlFragment))
+            )
+        return io.BytesIO(json.dumps(payload).encode("utf-8")), VERSION_MIME
     payload = {
         "schema": VERSION_SCHEMA,
         "content": row.content or EMPTY_BODY,

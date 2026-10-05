@@ -260,8 +260,11 @@ class TestWriterDeclaration(UnitTestCase):
                 writer._version_payload(raw)
 
     def test_version_bytes_captures_collaboration_mode(self):
-        row = frappe._dict(content="body", html="<p>x</p>", collab=0)
-        with patch.object(writer.frappe.db, "get_value", return_value=row):
+        row = frappe._dict(node="node-1", content="body", html="<p>x</p>", collab=0)
+        with (
+            patch.object(writer.frappe.db, "get_value", return_value=row),
+            patch.object(writer, "version_payload", return_value=None),
+        ):
             stream, mime = writer.version_bytes("WR-1")
         self.assertEqual(mime, writer.VERSION_MIME)
         self.assertEqual(json.loads(stream.read())["collab"], 0)
@@ -457,6 +460,11 @@ class TestWriterInDrive(IntegrationTestCase):
         activation = activated()
         activation.__enter__()
         self.addCleanup(activation.__exit__, None, None, None)
+        # These tests keep the body in the document row, so no document may start a collab log
+        mode = frappe.db.get_single_value("Suite Collab Settings", "mode") or "off"
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(frappe.db.set_single_value, "Suite Collab Settings", "mode", mode)
+        frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
         # Registered before the first row exists, so a `setUp` that dies half
         # way still hands its roots back.
         self.addCleanup(self._remove_fixture_rows)

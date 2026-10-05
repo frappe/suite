@@ -1,3 +1,5 @@
+import base64
+import gzip
 import io
 import json
 import uuid
@@ -10,12 +12,19 @@ from frappe.storage.blob import put_blob
 from frappe.utils import now_datetime
 
 from suite.drive._core import content
+from suite.drive._core.errors import DriveConflict
 from suite.drive._core.nodes import create_file
 from suite.drive._core.principals import Principals
 from suite.writer import drive as writer_drive
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import CheckpointCase
 from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open
+
+
+def version_of(docname: str) -> dict:
+    stream, mime = writer_drive.version_bytes(docname)
+    assert mime == "application/json"
+    return json.loads(stream.getvalue())
 
 
 def embed(media: str) -> str:
@@ -96,3 +105,81 @@ class TestWriterDriveCallbacks(CheckpointCase):
         frappe.db.set_value("Drive Node", media, "creation", aged, update_modified=False)
         frappe.db.commit()
         return media
+
+    def test_a_collab_version_holds_the_state_through_the_head(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two "])
+        self.compact(node)
+        self.type_into(node, ["three"])
+        self.edit(node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed("pic")})))
+
+        version = version_of(self.docname(node))
+
+        doc = self.doc_row(node)
+        self.assertEqual(
+            {
+                key: version[key]
+                for key in ("schema", "codec", "lineage", "through_rev", "chain", "html", "media")
+            },
+            {
+                "schema": "writer-document/2",
+                "codec": "yjs1",
+                "lineage": doc.lineage,
+                "through_rev": doc.head_rev,
+                "chain": bytes(doc.head_chain).hex(),
+                "html": None,
+                "media": ["pic"],
+            },
+        )
+        self.assertEqual(
+            self.text_of(gzip.decompress(base64.b64decode(version["state"]))),
+            f'one two three<image src="{embed("pic")}"></image>',
+        )
+
+    def test_a_version_never_starts_from_a_fallback_checkpoint(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two "])
+        self.compact(node)
+        self.type_into(node, ["three"])
+        doc = self.doc_row(node)
+        fallback = pycrdt.Doc()
+        fallback.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText("deleted words"))
+        frappe.db.sql(
+            """INSERT INTO `__writer_collab_checkpoint`
+            (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `created`)
+            VALUES (%s, %s, UNHEX(%s), UNHEX(%s), 0, UNHEX(%s), 0, 'test', NOW())""",
+            (
+                doc.id,
+                doc.head_rev,
+                bytes(doc.head_chain).hex(),
+                "00" * 32,
+                gzip.compress(fallback.get_update()).hex(),
+            ),
+        )
+        self.set_doc(node, checkpoint_rev=doc.head_rev)
+
+        version = version_of(self.docname(node))
+
+        self.assertEqual(self.text_of(gzip.decompress(base64.b64decode(version["state"]))), "one two three")
+        self.assertEqual(version["through_rev"], doc.head_rev)
+
+    def test_with_collaboration_off_a_version_is_the_stored_body(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
+        frappe.db.commit()
+
+        version = version_of(self.docname(node))
+
+        self.assertEqual(version["schema"], "writer-document/1")
+
+    def test_a_broken_log_refuses_a_version_instead_of_storing_a_wrong_one(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        frappe.db.sql(
+            "UPDATE `__writer_collab_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
+        )
+        frappe.db.commit()
+
+        with self.assertRaises(DriveConflict):
+            version_of(self.docname(node))

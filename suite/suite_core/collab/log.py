@@ -325,17 +325,18 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
 
 
-def read(adapter: str, doc_id: str, *, own_snapshot: bool = True) -> dict | None:
+def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: bool = True) -> dict | None:
     """The checkpoint and every row after it through the head, from one snapshot, chain checked.
 
     Rows are gap-free and commit-ordered, so a break means the store changed under
     the read or was rewound; the read is tried once more before it gives up.
+    `integrated` starts from the newest integrated checkpoint, never a fallback one.
     A Drive callback may not commit, so it passes `own_snapshot=False` and reads in Drive's transaction.
     """
     for _try in range(2):
         with repeatable_read() if own_snapshot else contextlib.nullcontext():
             doc = frappe.db.sql(
-                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`
+                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `integrated_rev`
                 FROM `{table(adapter, "doc")}` WHERE `id` = %s""",
                 doc_id,
                 as_dict=True,
@@ -343,7 +344,7 @@ def read(adapter: str, doc_id: str, *, own_snapshot: bool = True) -> dict | None
             if not doc:
                 return None
             doc = doc[0]
-            base = int(doc.checkpoint_rev)
+            base = int(doc.integrated_rev if integrated else doc.checkpoint_rev)
             checkpoint = None
             chain = chain_seed(doc.lineage)
             if base:
