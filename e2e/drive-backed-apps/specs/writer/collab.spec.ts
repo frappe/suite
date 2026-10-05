@@ -233,6 +233,9 @@ test.describe("Writer collaboration", () => {
 			.getByRole("button", { name: /^Before the preview/ })
 			.click();
 		await expect(owner.page.getByText("Viewing Before the preview")).toBeVisible();
+		await expect(owner.page.getByLabel("Version preview")).toContainText(
+			"Written before the version",
+		);
 
 		await typeParagraph(collaborator.page, "Typed during the preview");
 		await expectSaved(collaborator.page);
