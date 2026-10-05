@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <div
-      class="flex shrink-0 items-center gap-3 border-b border-outline-gray-1 bg-surface-gray-1 px-5 py-2"
+      class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-gray-1 px-5 py-2"
       role="status"
     >
       <p class="truncate text-sm text-ink-gray-7">Viewing {{ label }}</p>

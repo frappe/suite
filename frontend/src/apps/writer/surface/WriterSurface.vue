@@ -409,6 +409,7 @@ onBeforeUnmount(() => {
         :session="session"
         :seq="previewing.seq"
         :label="versionLabel(previewing)"
+        :class="{ 'md:mr-80': showVersions }"
         @close="closePreview"
       />
       <div v-show="!previewing" class="flex min-h-0 flex-1 overflow-hidden">
