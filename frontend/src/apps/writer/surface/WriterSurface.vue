@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core'
 import { Avatar, Badge, Button, Skeleton, TextInput, toast } from 'frappe-ui'
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   provide,
@@ -230,6 +231,14 @@ function versionLabel(version: VersionRow) {
   return version.label || `Version ${version.seq}`
 }
 
+async function closePreview() {
+  const row = document.querySelector<HTMLElement>('aside button[aria-pressed="true"]')
+  previewing.value = null
+  await nextTick()
+  if (row) row.focus()
+  else editorSurface.value?.editor?.commands.focus()
+}
+
 async function loadMoreVersions() {
   if (!versionsCursor.value) return
   loadingMoreVersions.value = true
@@ -400,7 +409,7 @@ onBeforeUnmount(() => {
         :session="session"
         :seq="previewing.seq"
         :label="versionLabel(previewing)"
-        @close="previewing = null"
+        @close="closePreview"
       />
       <div v-show="!previewing" class="flex min-h-0 flex-1 overflow-hidden">
         <CollabTextEditor

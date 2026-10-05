@@ -215,5 +215,6 @@ describe('Writer surface', () => {
     await nextTick()
     expect(root.querySelector('[data-preview]')).toBeNull()
     expect(editorShown()).toBe(true)
+    expect(document.activeElement?.textContent).toMatch(/^Before review/)
   })
 })
