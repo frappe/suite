@@ -75,7 +75,7 @@ import pycrdt
 from frappe import _
 
 from suite import drive
-from suite.writer.collab import start_log
+from suite.writer.collab import live_state, start_log
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
@@ -228,11 +228,20 @@ def on_purge(docname: str) -> None:
 
 
 def used_nodes(docname: str) -> set[str]:
-    """Answer the media node ids this body still names (§10.6)."""
-    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html"), as_dict=True)
+    """Answer the media node ids this body still names (§10.6).
+
+    A collab document's body lives in its log, so its live state is read too. A log
+    that cannot be read raises, and Drive's sweep skips the document.
+    """
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         return set()
-    return _ids_in(row.html or "") | _body_ids(row.content)
+    found = _ids_in(row.html or "") | _body_ids(row.content)
+    with _readable_body():
+        state = live_state(row.node)
+        if state is not None:
+            found |= _fragment_ids(state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment))
+    return found
 
 
 def remap_media(docname: str, mapping: dict[str, str]) -> None:

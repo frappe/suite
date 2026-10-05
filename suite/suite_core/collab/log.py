@@ -325,14 +325,15 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
 
 
-def read(adapter: str, doc_id: str) -> dict | None:
+def read(adapter: str, doc_id: str, *, own_snapshot: bool = True) -> dict | None:
     """The checkpoint and every row after it through the head, from one snapshot, chain checked.
 
     Rows are gap-free and commit-ordered, so a break means the store changed under
     the read or was rewound; the read is tried once more before it gives up.
+    A Drive callback may not commit, so it passes `own_snapshot=False` and reads in Drive's transaction.
     """
     for _try in range(2):
-        with repeatable_read():
+        with repeatable_read() if own_snapshot else contextlib.nullcontext():
             doc = frappe.db.sql(
                 f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`
                 FROM `{table(adapter, "doc")}` WHERE `id` = %s""",

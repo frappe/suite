@@ -3,7 +3,7 @@
 import pycrdt
 
 from suite.suite_core import collab
-from suite.suite_core.collab import checkpoints, scheduling
+from suite.suite_core.collab import checkpoints, compaction, scheduling
 
 ADAPTER = "writer"
 # The editor's fragment, and tab labels
@@ -18,6 +18,16 @@ def start_log(node: str) -> None:
     """Make a new document collaborative from its first edit, while collaboration is on."""
     if collab.enabled():
         collab.create(ADAPTER, node)
+
+
+def live_state(node: str) -> pycrdt.Doc | None:
+    """The document as its log stands now, read in the caller's transaction; None when the node has no log."""
+    doc = collab.find(ADAPTER, node)
+    if not doc:
+        return None
+    read = collab.read(ADAPTER, doc.id, own_snapshot=False)
+    parts = ([read["checkpoint"]] if read["checkpoint"] else []) + [payload for _rev, payload in read["rows"]]
+    return compaction.load(parts)
 
 
 def compact(doc_id: str) -> None:

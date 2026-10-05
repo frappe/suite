@@ -383,10 +383,15 @@ class TestLegacyEmbedReferences(UnitTestCase):
             '<img src="/api/method/drive.api.embed.get_file_content'
             '?parent_entity_name=WR-1&embed_name=third">'
         )
-        with patch.object(writer, "frappe") as frappe_mock:
-            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+        with (
+            patch.object(writer, "frappe") as frappe_mock,
+            patch.object(writer, "live_state", return_value=None),
+        ):
+            frappe_mock.db.get_value.return_value = SimpleNamespace(node="node-1", content=None, html=html)
             self.assertEqual(writer.used_nodes("WR-1"), {"first", "second", "third"})
-        frappe_mock.db.get_value.assert_called_once_with(DOCTYPE, "WR-1", ("content", "html"), as_dict=True)
+        frappe_mock.db.get_value.assert_called_once_with(
+            DOCTYPE, "WR-1", ("node", "content", "html"), as_dict=True
+        )
 
     def test_remap_changes_only_the_old_embed_media_id(self):
         html = (

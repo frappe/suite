@@ -1,0 +1,98 @@
+import io
+import json
+import uuid
+from datetime import timedelta
+from unittest.mock import patch
+
+import frappe
+import pycrdt
+from frappe.storage.blob import put_blob
+from frappe.utils import now_datetime
+
+from suite.drive._core import content
+from suite.drive._core.nodes import create_file
+from suite.drive._core.principals import Principals
+from suite.writer import drive as writer_drive
+from suite.writer.collab import routes
+from suite.writer.collab.tests.test_checkpoints import CheckpointCase
+from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open
+
+
+def embed(media: str) -> str:
+    return f"/api/method/suite.writer.api.embed.get?id={media}"
+
+
+class TestWriterDriveCallbacks(CheckpointCase):
+    def edit(self, node: str, change) -> None:
+        """A tab opened on the document makes `change` to its fragment and pushes it as one row."""
+        sid = uuid.uuid4().hex
+        cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
+            "client_id"
+        ]
+        header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        doc = pycrdt.Doc(client_id=cid)
+        for payload in [checkpoint, *(payload for _rev, payload in rows)]:
+            if payload:
+                doc.apply_update(payload)
+        seen = doc.get_state()
+        change(doc.get("default", type=pycrdt.XmlFragment))
+        body = push_body(header["lineage"], sid, cid, 1, 0, doc.get_update(seen))
+        self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
+
+    def docname(self, node: str) -> str:
+        return frappe.db.get_value("Drive Node", node, "content_docname")
+
+    def test_used_nodes_reads_the_pictures_a_collab_document_holds_now(self):
+        node = self.new_document()
+        self.edit(
+            node,
+            lambda body: [
+                body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-kept")})),
+                body.children.append(pycrdt.XmlElement("image", {"src": "", "data-node": "pic-bare"})),
+                body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-removed")})),
+            ],
+        )
+        self.compact(node)
+        self.edit(
+            node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-new")}))
+        )
+        self.edit(node, lambda body: body.children.__delitem__(2))
+
+        found = writer_drive.used_nodes(self.docname(node))
+
+        self.assertEqual(found, {"pic-kept", "pic-bare", "pic-new"})
+
+    def test_used_nodes_raises_on_a_log_it_cannot_read_so_the_sweep_skips_it(self):
+        node = self.new_document()
+        self.edit(node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed("pic")})))
+        frappe.db.sql(
+            "UPDATE `__writer_collab_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
+        )
+        frappe.db.commit()
+
+        with self.assertRaises(writer_drive.UnreadableBody):
+            writer_drive.used_nodes(self.docname(node))
+
+    def test_the_media_sweep_keeps_a_picture_only_the_log_names(self):
+        node = self.new_document()
+        named, unnamed = self.old_media(node, "named.png"), self.old_media(node, "unnamed.png")
+        self.edit(node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(named)})))
+
+        spec = content.registry()[writer_drive.DOCTYPE]
+        trashed = content._sweep_document(spec, frappe._dict(name=node, content_docname=self.docname(node)))
+
+        self.assertEqual(trashed, 1)
+        self.assertEqual(frappe.db.get_value("Drive Node", named, "state"), "Active")
+        self.assertEqual(frappe.db.get_value("Drive Node", unnamed, "state"), "Trashed")
+
+    def old_media(self, document: str, title: str) -> str:
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        blob = put_blob(io.BytesIO(title.encode()), is_private=True, filename=title)
+        with patch("suite.drive._core.previews.enqueue_render"):
+            media = create_file(
+                admin, document, title, blob=blob.name, size=blob.file_size, mime=blob.mime_type
+            )
+        aged = now_datetime() - timedelta(days=content.UNUSED_MEDIA_GRACE_DAYS + 1)
+        frappe.db.set_value("Drive Node", media, "creation", aged, update_modified=False)
+        frappe.db.commit()
+        return media
