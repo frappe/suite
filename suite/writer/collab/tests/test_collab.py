@@ -95,6 +95,18 @@ def element(cid: int, tag: str) -> bytes:
     return doc.get_update()
 
 
+def in_body(cid: int, shared: int) -> bytes:
+    """The update that puts one shared type of kind `shared` (1 Map, 2 Text) straight in an empty document's body."""
+    return (
+        bytes([1, 1])
+        + encoded_uint(cid)
+        + bytes([0, 7, 1])
+        + encoded_string("default")
+        + encoded_uint(shared)
+        + bytes([0])
+    )
+
+
 def push_body(
     lineage: str,
     sid: str,
@@ -379,6 +391,28 @@ class TestWriterCollab(IntegrationTestCase):
         )
         self.assertEqual((other.status_code, stamped.status_code), (200, 200))
         self.assertEqual(len(self.open(node)[1]), 2)
+
+    def test_a_row_putting_a_type_the_editor_cannot_show_in_the_body_is_refused_and_stores_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+        sid, cid = self.session(node)
+
+        refused = [
+            call(
+                routes.collab_updates_post,
+                node,
+                body=push_body(lineage, sid, cid, 1, 0, in_body(cid, shared)),
+            )
+            for shared in (1, 2)
+        ]
+
+        self.assertEqual(
+            [(response.status_code, answer(response)) for response in refused],
+            [(409, {"collab": "poison"})] * 2,
+        )
+        self.assertEqual(self.open(node)[1], [])
+        self.assertEqual(self.push(node, sid, cid, 1, typed(cid, ["a"])[0])[0], 200)
 
     def test_the_highest_schema_steps_up_only_when_a_stored_row_raises_it(self):
         self.set_mode("on")

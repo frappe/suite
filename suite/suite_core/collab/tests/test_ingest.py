@@ -72,13 +72,30 @@ class TestIngest(UnitTestCase):
                 ingest.check(payload, 5)
 
     def test_a_row_may_hold_only_names_declared_at_or_below_its_stamp(self):
-        schema = ingest.EditorSchema(2, {"paragraph": 1, "callout": 2})
+        schema = ingest.EditorSchema(2, {"paragraph": 1, "callout": 2}, frozenset({3, 6}))
 
         self.assertTrue(schema.allows(set(), 1))
         self.assertTrue(schema.allows({"paragraph"}, 1))
         self.assertTrue(schema.allows({"paragraph", "callout"}, 2))
         self.assertFalse(schema.allows({"paragraph", "callout"}, 1))
         self.assertFalse(schema.allows({"marquee"}, 2))
+
+    def test_a_row_may_make_only_the_shared_types_the_editor_makes(self):
+        schema = ingest.EditorSchema(1, {}, frozenset({3, 6}))
+        doc = pycrdt.Doc(client_id=5)
+        doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlElement("paragraph"))
+        element_row = doc.get_update()
+        rows = {}
+        for name, shared in (("a map", pycrdt.Map()), ("a text", pycrdt.Text("x"))):
+            before = doc.get_state()
+            doc.get("t", type=pycrdt.Array).append(shared)
+            rows[name] = doc.get_update(before)
+
+        self.assertTrue(schema.could_write(ingest.check(element_row, 5).update))
+        self.assertTrue(schema.could_write(ingest.check(typed(5, ["a"])[0], 5).update))
+        for name, row in rows.items():
+            with self.subTest(name):
+                self.assertFalse(schema.could_write(ingest.check(row, 5).update))
 
     def test_a_row_over_the_size_cap_is_malformed(self):
         [payload] = typed(5, ["abc"])

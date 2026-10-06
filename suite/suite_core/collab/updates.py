@@ -30,6 +30,9 @@ class Struct:
     pairs: list[int] = field(default_factory=list)
     # Root, node, mark, attribute and map key names, which the editor's schema must declare
     names: list[str] = field(default_factory=list)
+    # For a type item, the shared type it holds: 0 Array, 1 Map, 2 Text, 3 XmlElement, 4 XmlFragment,
+    # 5 XmlHook, 6 XmlText
+    type: int | None = None
 
     def refs(self) -> list[tuple[int, int]]:
         """The ids this struct needs before it can integrate: its origins and its parent item."""
@@ -223,11 +226,11 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
             struct.names.extend(attributes)
         return 1
     if ref == 7:  # type
-        kind = reader.uint()
-        if kind in (3, 5):
+        struct.type = reader.uint()
+        if struct.type in (3, 5):
             struct.names.append(reader.string())
-        elif kind not in (0, 1, 2, 4, 6):
-            raise ValueError(f"unknown type {kind}")
+        elif struct.type not in (0, 1, 2, 4, 6):
+            raise ValueError(f"unknown type {struct.type}")
         return 1
     if ref == 8:  # any
         count = reader.uint()
