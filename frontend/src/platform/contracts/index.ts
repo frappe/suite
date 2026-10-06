@@ -35,7 +35,6 @@ declare module 'vue-router' {
     phoneChrome?: PhoneChromeOwner
     allowGuest?: boolean
     title?: string
-    favicon?: string
   }
 }
 

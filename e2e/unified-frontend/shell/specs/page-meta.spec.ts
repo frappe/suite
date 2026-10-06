@@ -2,27 +2,29 @@ import { expect, test } from "../../helpers/flips";
 
 import { adminApi, createDocument, purge, roots, runTag } from "../../helpers/drive";
 
-/** Ticket 002: every route sets its own page title and favicon. */
+/**
+ * Ticket 002: every route sets its own page title. The favicon is the Suite
+ * logo on every route, so a journey asserts it stays that way.
+ */
 
-const DRIVE_FAVICON = "/assets/suite/drive/images/logo.svg";
-const SUITE_FAVICON = "/assets/suite/frontend/logo.svg";
+const SUITE_FAVICON = "/src/platform/brand/suite.svg";
 
 function favicon(page: import("@playwright/test").Page) {
 	return page.locator("link[rel='icon']").first();
 }
 
-test("each area route sets its title and favicon", async ({ page }) => {
+test("each area route sets its title and keeps the Suite favicon", async ({ page }) => {
 	await page.goto("/home");
 	await expect(page).toHaveTitle("Home");
 	await expect(favicon(page)).toHaveAttribute("href", SUITE_FAVICON);
 
 	await page.goto("/drive");
 	await expect(page).toHaveTitle("My files");
-	await expect(favicon(page)).toHaveAttribute("href", DRIVE_FAVICON);
+	await expect(favicon(page)).toHaveAttribute("href", SUITE_FAVICON);
 
 	await page.goto("/drive/starred");
 	await expect(page).toHaveTitle("Starred");
-	await expect(favicon(page)).toHaveAttribute("href", DRIVE_FAVICON);
+	await expect(favicon(page)).toHaveAttribute("href", SUITE_FAVICON);
 
 	await page.goto("/drive/trash");
 	await expect(page).toHaveTitle("Trash");

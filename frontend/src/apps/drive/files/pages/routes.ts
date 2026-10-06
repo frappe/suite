@@ -1,9 +1,7 @@
 import type { RouteMeta, RouteRecordRaw } from 'vue-router'
 
-const favicon = '/assets/suite/drive/images/logo.svg'
-
 function meta(title: string, allowGuest = false): RouteMeta {
-  return { area: 'files', frame: 'shell', scroll: 'shell', allowGuest, title, favicon }
+  return { area: 'files', frame: 'shell', scroll: 'shell', allowGuest, title }
 }
 
 export const routes: RouteRecordRaw[] = [
