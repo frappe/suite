@@ -235,7 +235,7 @@ def get_user_info() -> dict | None:
     data.is_suite_cloud_configured = (
         data.is_suite_admin or data.is_system_manager
     ) and is_suite_cloud_configured()
-    data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account"])
+    data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account", "number"])
     # An account shared with the user is personal to its owner, not to them; see
     # pick_personal_account. And each app lists only the accounts with something for the user
     # in it (get_account_apps) — the rest stay linked, for what is shared from them.

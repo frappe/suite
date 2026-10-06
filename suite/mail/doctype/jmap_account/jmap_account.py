@@ -7,7 +7,11 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
-from suite.mail.doctype.user_account.user_account import account_apps_cache_key, get_user_jmap_accounts
+from suite.mail.doctype.user_account.user_account import (
+    account_apps_cache_key,
+    get_user_jmap_accounts,
+    number_accounts,
+)
 from suite.mail.jmap import (
     chunked_set,
     format_set_error,
@@ -369,10 +373,12 @@ def _sync_user_accounts(user: str, account_ids: set[str]) -> None:
 
     if accounts_to_add:
         user_settings = frappe.get_doc("User Settings", {"user": user})
+        numbers = number_accounts(user, accounts_to_add)
         for account_id in accounts_to_add:
             doc = frappe.new_doc("User Account")
             doc.user = user
             doc.account = account_id
+            doc.number = numbers[account_id]
             doc.user_settings = user_settings.name
             try:
                 doc.insert(ignore_permissions=True)

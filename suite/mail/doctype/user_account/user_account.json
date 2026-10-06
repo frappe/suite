@@ -8,7 +8,8 @@
   "user_settings",
   "user",
   "column_break_ukmq",
-  "account"
+  "account",
+  "number"
  ],
  "fields": [
   {
@@ -56,12 +57,22 @@
    "reqd": 1,
    "search_index": 1,
    "set_only_once": 1
+  },
+  {
+   "description": "The account's place in the user's URLs (/mail/a/0). 0 is their personal account; a number is never reused.",
+   "fieldname": "number",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Number",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-22 14:58:05.370582",
+ "modified": "2026-10-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Account",

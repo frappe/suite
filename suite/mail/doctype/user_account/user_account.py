@@ -2,11 +2,13 @@
 # For license information, please see license.txt
 
 
+from collections.abc import Iterable
 from uuid import uuid7
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import cint
 from frappe.utils.caching import request_cache
 
 from suite.utils.permissions import OwnerFromUser
@@ -23,6 +25,7 @@ class UserAccount(OwnerFromUser, Document):
         from frappe.types import DF
 
         account: DF.Link
+        number: DF.Int
         user: DF.Link
         user_settings: DF.Link
     # end: auto-generated types
@@ -151,6 +154,56 @@ def pick_personal_account(personal_accounts: list[dict], username: str | None) -
         return personal_accounts[0]["name"]
     own = [account["name"] for account in personal_accounts if username and account["_name"] == username]
     return own[0] if len(own) == 1 else None
+
+
+def number_accounts(user: str, accounts: Iterable[str]) -> dict[str, int]:
+    """The number each account about to be linked to the user goes by in their URLs (/mail/a/0).
+
+    A number is never given out twice, so a bookmark to an unlinked account cannot come to open
+    another. The links are deleted with the account, so User Settings remembers the last one.
+    """
+
+    linked = dict(frappe.db.get_all("User Account", {"user": user}, ["account", "number"], as_list=True))
+    personal = pick_personal_account(
+        frappe.db.get_all(
+            "JMAP Account", {"is_personal": True, "name": ("in", [*linked, *accounts])}, ["name", "_name"]
+        ),
+        get_username(user),
+    )
+    last = cint(frappe.db.get_value("User Settings", {"user": user}, "last_account_number"))
+
+    numbers = allot_account_numbers(sorted(accounts), personal, set(linked.values()), last)
+    frappe.db.set_value(
+        "User Settings",
+        {"user": user},
+        "last_account_number",
+        max([last, *linked.values(), *numbers.values()]),
+        update_modified=False,
+    )
+    return numbers
+
+
+def allot_account_numbers(
+    accounts: list[str], personal: str | None, taken: set[int], last: int
+) -> dict[str, int]:
+    """0 for the user's personal account, unless something already holds it; the rest count on
+    from the highest number yet given, `last` or one of those `taken`."""
+
+    last = max([last, *taken])
+    numbers = {}
+    for account in accounts:
+        if account == personal and 0 not in taken:
+            numbers[account] = 0
+        else:
+            last += 1
+            numbers[account] = last
+    return numbers
+
+
+def get_account_number(user: str, account: str) -> int | None:
+    """The number the account goes by in the user's URLs, or None when it is not linked to them."""
+
+    return frappe.db.get_value("User Account", {"user": user, "account": account}, "number")
 
 
 def _account_owner(account: str, users: list[str]) -> str:

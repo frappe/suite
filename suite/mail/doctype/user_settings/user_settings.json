@@ -21,6 +21,7 @@
   "column_break_klzk",
   "session_last_update",
   "jmap_session",
+  "last_account_number",
   "ui_tab",
   "appearance_section",
   "mail_list_section",
@@ -207,6 +208,16 @@
    "label": "Undo Send Period",
    "options": "5\n10\n20\n30",
    "reqd": 1
+  },
+  {
+   "description": "The highest number given to one of the user's accounts, kept so that an unlinked account's number is not given out again.",
+   "fieldname": "last_account_number",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Last Account Number",
+   "no_copy": 1,
+   "non_negative": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -218,7 +229,7 @@
    "link_fieldname": "user_settings"
   }
  ],
- "modified": "2026-09-17 12:30:00.000000",
+ "modified": "2026-10-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Settings",

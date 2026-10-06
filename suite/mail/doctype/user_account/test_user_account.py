@@ -3,7 +3,11 @@
 
 from frappe.tests import UnitTestCase
 
-from suite.mail.doctype.user_account.user_account import pick_account_user, pick_personal_account
+from suite.mail.doctype.user_account.user_account import (
+    allot_account_numbers,
+    pick_account_user,
+    pick_personal_account,
+)
 
 
 def account(name: str, login: str) -> dict:
@@ -61,3 +65,26 @@ class UnitTestPickAccountUser(UnitTestCase):
 
     def test_none_when_no_member_can_connect(self):
         self.assertIsNone(pick_account_user(["left@frappe.io"], {}, "support@frappe.io", False, set()))
+
+
+class UnitTestAllotAccountNumbers(UnitTestCase):
+    """`taken` holds the numbers of the accounts the user is already linked to, `last` the highest
+    number they have ever been given."""
+
+    def test_the_personal_account_is_zero_and_the_rest_count_from_one(self):
+        numbers = allot_account_numbers(["ab", "ih", "te"], "ih", set(), 0)
+        self.assertEqual(numbers, {"ih": 0, "ab": 1, "te": 2})
+
+    def test_an_account_linked_later_counts_on(self):
+        self.assertEqual(allot_account_numbers(["zz"], "ih", {0, 1, 2}, 2), {"zz": 3})
+
+    def test_an_unlinked_accounts_number_is_not_given_out_again(self):
+        # Accounts 2 and 3 were unlinked; only the personal account and 1 remain.
+        self.assertEqual(allot_account_numbers(["zz"], "ih", {0, 1}, 3), {"zz": 4})
+
+    def test_without_a_personal_account_zero_stays_free(self):
+        self.assertEqual(allot_account_numbers(["ab", "te"], None, set(), 0), {"ab": 1, "te": 2})
+
+    def test_zero_is_not_given_to_a_second_account(self):
+        # The login changed, and another account now counts as the personal one.
+        self.assertEqual(allot_account_numbers(["te"], "te", {0, 1}, 1), {"te": 2})
