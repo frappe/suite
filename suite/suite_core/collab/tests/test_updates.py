@@ -44,7 +44,7 @@ class TestParse(UnitTestCase):
 
         self.assertEqual(update.split_points(), {(5, 2), (5, 3)})
 
-    def test_values_nested_deeper_than_a_hundred_levels_are_refused(self):
+    def test_json_values_nested_deeper_than_a_hundred_levels_are_refused(self):
         def holding(ref: int, content: bytes) -> bytes:
             return bytes([1, 1, 5, 0, ref, 1]) + encoded_string("t") + content + bytes([0])
 
@@ -60,10 +60,10 @@ class TestParse(UnitTestCase):
 
         # Only containers count: what the innermost one holds does not change its level
         for inner in ("", "1"):
-            for kind, payload in kinds(nested(101, inner)).items():
+            for kind, payload in kinds(nested(100, inner)).items():
                 with self.subTest(kind, inner=inner):
                     self.assertEqual(parse(payload).structs[0].length, 1)
-            for depth in (102, 200_000):
+            for depth in (101, 200_000):
                 for kind, payload in kinds(nested(depth, inner)).items():
                     with self.subTest(kind, inner=inner, depth=depth), self.assertRaises(ValueError):
                         parse(payload)

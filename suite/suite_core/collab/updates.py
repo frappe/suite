@@ -120,7 +120,7 @@ def checked_json(text: str) -> None:
         raise ValueError("value nested too deep") from None
     while containers:
         value, depth = containers.pop()
-        if depth > MAX_DEPTH:
+        if depth >= MAX_DEPTH:
             raise ValueError("value nested too deep")
         items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
         containers.extend((item, depth + 1) for item in items if isinstance(item, dict | list))
