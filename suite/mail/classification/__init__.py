@@ -19,11 +19,12 @@ from collections.abc import Callable
 
 import frappe
 from frappe import _
+from jmap import MethodError
 from jmap.batch import ReadOnlyAccountError
 
 from suite.mail.classification.category import Category, get_category
 from suite.mail.classification.headers import classify_by_headers
-from suite.mail.jmap import SuiteJMAPClient, chunked_set
+from suite.mail.jmap import SetResult, SuiteJMAPClient, chunked_set
 from suite.mail.utils import get_config, log_mail_error
 
 __all__ = [
@@ -50,6 +51,11 @@ UNCLASSIFIED_ROLES = frozenset({"sent", "drafts", "junk", "trash"})
 ECHO_TTL = 60 * 60
 
 
+# The method errors that say the server could not make a change just now, where every other says
+# it will not (RFC 8620 §3.6.2). Only the first kind is worth asking again.
+PASSING_ERRORS = frozenset({"serverFail", "serverUnavailable", "serverPartialFail"})
+
+
 def is_enabled() -> bool:
     """Whether Mail Settings has incoming mail classified."""
 
@@ -66,7 +72,9 @@ def classify(email: dict) -> Category:
     return Category.PRIMARY
 
 
-def classify_emails(client: SuiteJMAPClient, account: str, emails: list[dict], mailboxes: list[dict]) -> None:
+def classify_emails(
+    client: SuiteJMAPClient, account: str, emails: list[dict], mailboxes: list[dict]
+) -> set[str]:
     """Give a category to each of `emails` that has none, on the server and in place.
 
     `emails` are as fetched - wire form, with `EMAIL_PROPERTIES` among their properties - and
@@ -75,6 +83,10 @@ def classify_emails(client: SuiteJMAPClient, account: str, emails: list[dict], m
     (a shared account the user may only read) the mail stays unclassified, and where it fails
     part-way the mail written before the failure does not.
 
+    Returns the ids of the emails still owed a category: those whose write failed in a way that
+    may pass, such as the server being out of reach. An email the server refused is not among
+    them, and nor is one that gets no category - asking again would be answered the same.
+
     Never raises. Classification is a nicety on the way to showing mail, not a reason to fail it.
     """
 
@@ -82,11 +94,12 @@ def classify_emails(client: SuiteJMAPClient, account: str, emails: list[dict], m
         skipped = {m["id"] for m in mailboxes if (m.get("role") or "").lower() in UNCLASSIFIED_ROLES}
         categories = {email["id"]: classify(email) for email in emails if _awaits_category(email, skipped)}
         if not categories:
-            return
+            return set()
 
         # Before the write, not after: its echo can reach a worker before this request resumes.
         _expect_echoes(account, list(categories))
 
+        owed: set[str] = set()
         try:
             written = chunked_set(
                 client,
@@ -94,18 +107,30 @@ def classify_emails(client: SuiteJMAPClient, account: str, emails: list[dict], m
                 {id: {f"keywords/{category.keyword}": True} for id, category in categories.items()},
             ).updated
         except ReadOnlyAccountError:
-            return
+            return set()
         except Exception as error:
             # A write goes out in chunks, and the ones before the chunk that failed stay written:
             # chunked_set hands their outcome over with the error.
-            written = error.applied.updated if hasattr(error, "applied") else {}
+            applied: SetResult = getattr(error, "applied", None) or SetResult()
+            written = applied.updated
+            if not _is_refusal(error):
+                owed = set(categories) - set(written) - set(applied.not_updated)
             log_mail_error(_("Failed to classify emails"), frappe.get_traceback(with_context=True))
 
         for email in emails:
             if email["id"] in written:
                 email["keywords"] = {**(email.get("keywords") or {}), categories[email["id"]].keyword: True}
+
+        return owed
     except Exception:
         log_mail_error(_("Failed to classify emails"), frappe.get_traceback(with_context=True))
+        return set()
+
+
+def _is_refusal(error: Exception) -> bool:
+    """Whether `error`, raised by the write of a category, is the server declining to make it."""
+
+    return isinstance(error, MethodError) and error.type not in PASSING_ERRORS
 
 
 def _awaits_category(email: dict, skipped_mailboxes: set[str]) -> bool:

@@ -929,17 +929,18 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
 
         # A message from the server is one the cache does not hold, or holds unclassified: new
         # mail, or old mail seen here for the first time. Either may still be without a category.
-        if classify:
-            classification.classify_emails(client, account, emails, mailboxes)
+        owed = classification.classify_emails(client, account, emails, mailboxes) if classify else set()
 
         mailbox_map = {mb["id"]: mb["name"] for mb in mailboxes}
 
         messages_to_cache = {}
         for email in emails:
             message = format_message(account, mailbox_map, email)
-            if classify:
+            if classify and message["id"] not in owed:
                 # Been through classification, whatever came of it: mail the user wrote gets no
                 # category and a write can be refused, and neither is a reason to fetch it again.
+                # A write that only failed is: left unmarked, the message is tried again when it
+                # is next read.
                 message["classified"] = 1
             messages_to_cache[message["id"]] = message
             messages[message["id"]] = message

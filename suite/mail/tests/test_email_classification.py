@@ -490,6 +490,55 @@ class ClassifyOnFetch(unittest.TestCase):
         self.assertEqual(_keywords(message), {})
         log_mail_error.assert_called_once()
 
+    def test_a_write_that_failed_is_tried_again_when_the_message_is_next_read(self):
+        # The server could not take the write just then. Cached as it is, the message would be
+        # left without a category - and out of every category's list - until something else
+        # changed it.
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER))
+        mail.server.fail("Email/set", "serverFail")
+        with mock.patch.object(classification, "log_mail_error"):
+            mail.fetch()
+        mail.server.errors.clear()
+
+        [message] = mail.fetch()
+
+        self.assertEqual(mail.emails["e1"]["keywords"], {"category_promotions": True})
+        self.assertEqual(_keywords(message), {"category_promotions": True})
+        self.assertEqual(_keywords(mail.cache["e1"]), {"category_promotions": True})
+
+    def test_a_write_the_server_declined_is_not_tried_again(self):
+        # Asked again it would decline again, at the cost of fetching the message each time.
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER))
+        mail.server.fail("Email/set", "forbidden")
+        with mock.patch.object(classification, "log_mail_error"):
+            mail.fetch()
+        mail.server.requests.clear()
+
+        mail.fetch()
+
+        self.assertEqual(mail.server.requests, [])
+
+    def test_only_the_mail_a_failed_write_left_out_is_tried_again(self):
+        mail = _Mail(
+            _email("e1", sender="hello@shop.example", headers=NEWSLETTER),
+            _email("e2", sender="noreply@bank.example"),
+            max_objects_in_set=1,
+        )
+        mail.sets_before_failure = 1
+        with mock.patch.object(classification, "log_mail_error"):
+            mail.fetch()
+        mail.server.errors.clear()
+        mail.server.requests.clear()
+
+        by_id = {message["id"]: message for message in mail.fetch()}
+
+        self.assertEqual([call["ids"] for call in mail.calls("Email/get")], [["e2"]])
+        self.assertEqual(
+            [call["update"] for call in mail.calls("Email/set")],
+            [{"e2": {"keywords/category_updates": True}}],
+        )
+        self.assertEqual(_keywords(by_id["e2"]), {"category_updates": True})
+
     def test_mail_written_before_a_write_failed_part_way_carries_its_category(self):
         # The write goes out a message at a time here, and the server takes only the first: what
         # is fetched and cached must still say what the server now holds for that one.
