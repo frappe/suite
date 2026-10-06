@@ -30,6 +30,7 @@
         "drive-backed-apps/global-setup.ts",
         "drive-backed-apps/global-teardown.ts",
         "meet/global-setup.ts",
+        "meet/captions/global-setup.ts",
         "meet/load/client.ts",
         "meet/load/*.test.mjs",
         "unified-frontend/global-setup.ts"
