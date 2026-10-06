@@ -14,6 +14,50 @@ def setUpModule():
         frappe.init(site="")
 
 
+def event(**overrides):
+    """A row as the Calendar read returns it, with every field CalendarEvent requires.
+
+    `recurrence_rule` is left out: the read may omit it, and each test sets the shape it needs.
+    """
+
+    return {
+        "name": "event",
+        "account": "a1",
+        "id": "event",
+        "uid": "event@example.com",
+        "title": "Event",
+        "start": "2026-09-15T09:00:00",
+        "duration": "PT1H",
+        "time_zone": "UTC",
+        "status": "confirmed",
+        "description": "",
+        "show_without_time": 0,
+        "recurrence_id": None,
+        "organizer": "a1@example.com",
+        "calendars": [],
+        "created": None,
+        "draft": 0,
+        "recurrence_id_time_zone": "",
+        "privacy": "public",
+        "free_busy_status": "busy",
+        "locations": [],
+        "alerts": [],
+        "use_default_alerts": 0,
+        "created_utc": "2026-09-01T00:00:00Z",
+        "updated_utc": "2026-09-01T00:00:00Z",
+        "origin": True,
+        "may_invite_self": 0,
+        "may_invite_others": 0,
+        "hide_attendees": 0,
+        "creation": "2026-09-01 00:00:00",
+        "modified": "2026-09-01 00:00:00",
+        "sequence": 0,
+        "links": [],
+        "participants": [],
+        **overrides,
+    }
+
+
 class TestHttpConformance(HttpConformanceMixin, UnitTestCase):
     HTTP = HTTP
 
@@ -44,18 +88,13 @@ class TestHandlers(UnitTestCase):
         weekly = {"@type": "RecurrenceRule", "frequency": "weekly"}
         get_events.return_value = [
             # Resolved through its series: the object itself.
-            {"account": "a1", "id": "1", "start": "2026-09-15T09:00:00", "recurrence_rule": weekly},
+            event(id="1", start="2026-09-15T09:00:00", recurrence_rule=weekly),
             # Not resolved yet: the stored JSON text.
-            {
-                "account": "a1",
-                "id": "2",
-                "start": "2026-09-15T10:00:00",
-                "recurrence_rule": '{"frequency": "daily"}',
-            },
+            event(id="2", start="2026-09-15T10:00:00", recurrence_rule='{"frequency": "daily"}'),
             # One-off events, in each shape the read hands over.
-            {"account": "a1", "id": "3", "start": "2026-09-15T11:00:00", "recurrence_rule": "{}"},
-            {"account": "a1", "id": "4", "start": "2026-09-15T12:00:00", "recurrence_rule": {}},
-            {"account": "a1", "id": "5", "start": "2026-09-15T13:00:00"},
+            event(id="3", start="2026-09-15T11:00:00", recurrence_rule="{}"),
+            event(id="4", start="2026-09-15T12:00:00", recurrence_rule={}),
+            event(id="5", start="2026-09-15T13:00:00"),
         ]
         rows = routes.events_get(to="2026-09-16T00:00:00", **{"from": "2026-09-15T00:00:00"})
         self.assertEqual(
