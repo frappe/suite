@@ -2,7 +2,7 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { frappeData } from "../../shared/frappe";
 import { writerEditor } from "./writer";
 
-/** Where a document's collab log stands, from `suite.drive.e2e_api.state`. */
+/** Where a document's collab log stands, from `suite.writer.collab.e2e_api.state`. */
 export interface CollabState {
 	checkpoint_rev: number;
 	head_rev: number;
@@ -11,7 +11,7 @@ export interface CollabState {
 
 async function hook<T>(api: APIRequestContext, name: string, node: string): Promise<T> {
 	return frappeData<T>(
-		await api.post(`/api/method/suite.drive.e2e_api.${name}`, { form: { node } }),
+		await api.post(`/api/method/suite.writer.collab.e2e_api.${name}`, { form: { node } }),
 	);
 }
 
@@ -29,7 +29,7 @@ export const logId = (api: APIRequestContext, node: string) => hook<string>(api,
 
 /** How many rows each collab table holds for a log, keyed by table kind. */
 export async function logRows(api: APIRequestContext, log: string): Promise<Record<string, number>> {
-	return frappeData(await api.post("/api/method/suite.drive.e2e_api.log_rows", { form: { log } }));
+	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.log_rows", { form: { log } }));
 }
 
 /** The text of each top-level block, as the server would serve it. */
