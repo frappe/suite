@@ -230,8 +230,6 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
 
 
 def read_any(reader: Reader, depth: int = 0) -> None:
-    if depth > MAX_DEPTH:
-        raise ValueError("value nested too deep")
     tag = reader.byte()
     if tag in (127, 126, 121, 120):  # undefined, null, true, false
         return
@@ -243,12 +241,12 @@ def read_any(reader: Reader, depth: int = 0) -> None:
         reader.raw(8)
     elif tag == 119:
         reader.string()
-    elif tag == 118:
-        for _key in range(reader.uint()):
-            reader.string()
-            read_any(reader, depth + 1)
-    elif tag == 117:
+    elif tag in (118, 117):  # object, array
+        if depth >= MAX_DEPTH:
+            raise ValueError("value nested too deep")
         for _item in range(reader.uint()):
+            if tag == 118:
+                reader.string()
             read_any(reader, depth + 1)
     elif tag == 116:
         reader.raw(reader.uint())

@@ -68,6 +68,22 @@ class TestParse(UnitTestCase):
                     with self.subTest(kind, inner=inner, depth=depth), self.assertRaises(ValueError):
                         parse(payload)
 
+    def test_any_values_nested_deeper_than_a_hundred_levels_are_refused(self):
+        def nested(depth: int, inner: bytes) -> bytes:
+            value = bytes([117, 1]) * (depth - 1) + inner
+            return bytes([1, 1, 5, 0, 8, 1]) + encoded_string("t") + bytes([1]) + value + bytes([0])
+
+        # Arrays, then an innermost array that is empty, holds a number, or an object holding a number
+        for inner in (
+            bytes([117, 0]),
+            bytes([117, 1, 125, 1]),
+            bytes([118, 1]) + encoded_string("k") + bytes([125, 1]),
+        ):
+            with self.subTest(inner=inner):
+                self.assertEqual(parse(nested(100, inner)).structs[0].length, 1)
+                with self.assertRaises(ValueError):
+                    parse(nested(101, inner))
+
     def test_integers_past_what_yjs_holds_exactly_are_refused(self):
         def written(client=5, clock=0, origin=None) -> bytes:
             if origin:
