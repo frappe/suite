@@ -1,5 +1,7 @@
 import json
+import tempfile
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
@@ -656,3 +658,22 @@ class TestSuspect(CheckpointCase):
             self.assertEqual(self.judge(node), "held")
 
         self.assertEqual((self.doc_row(node).judged, self.alerts("suspect held: no_node")), (1, before + 1))
+
+    def test_a_kernel_naming_no_row_holds_the_document_and_quarantines_nothing(self):
+        for index in ("-2", "3", "0.5", "true"):
+            with self.subTest(index=index), tempfile.TemporaryDirectory() as folder:
+                node = self.new_document()
+                pen = Pen(self, node)
+                for text in ("alpha", "beta", "gamma"):
+                    pen.adds(paragraph(text))
+                self.set_doc(node, suspect="unreadable")
+                bundle = Path(folder) / "kernel.cjs"
+                bundle.write_text(
+                    f"process.stdout.write(JSON.stringify({{ verdict: 'bad', index: {index}, reason: 'yjs' }}))"
+                )
+
+                with patch.object(writer_collab, "KERNEL", bundle):
+                    verdict = self.judge(node)
+
+                self.assertEqual((verdict, self.doc_row(node).suspect_held), ("held", "kernel_failed"))
+                self.assertEqual(self.states(node), ["ok", "ok", "ok"])

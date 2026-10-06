@@ -78,7 +78,10 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
         answer = json.loads(done.stdout)
         if answer["verdict"] == "clean":
             return Verdict(None)
-        return Verdict(int(answer["index"]), plain(str(answer["reason"])))
+        index = answer["index"]
+        if type(index) is not int or not -1 <= index < len(rows):
+            raise ValueError("the index names no row")
+        return Verdict(index, plain(str(answer["reason"])))
     except subprocess.CalledProcessError as error:
         last = error.stderr.strip().rsplit("\n", 1)[-1]
         raise KernelFailed(f"exit {error.returncode}: {plain(last)}") from error

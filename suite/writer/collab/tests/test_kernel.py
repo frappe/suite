@@ -103,7 +103,7 @@ class TestKernel(UnitTestCase):
             bundle = Path(folder) / "probe.cjs"
             bundle.write_text(probe)
             with patch.dict(os.environ, {"SUITE_KERNEL_SECRET": "x"}):
-                found = kernel.judge(bundle, None, []).reason
+                found = kernel.judge(bundle, None, [b"x"]).reason
         self.assertEqual(found, "env 0, read denied, write denied, spawn denied")
 
     def test_a_reason_keeps_no_document_text(self):
@@ -122,7 +122,7 @@ class TestKernel(UnitTestCase):
                     f"process.stdout.write(JSON.stringify({{ verdict: 'bad', index: 0, reason: {json.dumps(reason)} }}))"
                 )
                 with self.subTest(name):
-                    self.assertEqual(kernel.judge(bundle, None, []).reason, expected)
+                    self.assertEqual(kernel.judge(bundle, None, [b"x"]).reason, expected)
             bundle = Path(folder) / "loud.cjs"
             bundle.write_text("process.stderr.write('Error: <p>secret words</p>\\n'); process.exit(3)")
             with self.assertRaises(kernel.KernelFailed) as failed:
