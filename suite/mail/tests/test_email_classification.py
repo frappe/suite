@@ -182,14 +182,16 @@ class HeaderLayer(unittest.TestCase):
 class _Mail:
     """A fake JMAP server holding `emails`, with the caches `mail_message` reads replaced by a dict."""
 
-    def __init__(self, *emails: dict, enabled: bool = True) -> None:
+    def __init__(self, *emails: dict, enabled: bool = True, max_objects_in_set: int = 500) -> None:
         self.emails = {email["id"]: email for email in emails}
         self.enabled = enabled
         self.refused: set[str] = set()
+        #: How many `Email/set` calls the server answers before it starts failing them; None for all.
+        self.sets_before_failure: int | None = None
         self.cache: dict[str, dict] = {}
 
         self.server = FakeJMAPServer(
-            capabilities={CORE: {}, MAIL: {}},
+            capabilities={CORE: {"maxObjectsInSet": max_objects_in_set}, MAIL: {}},
             accounts={ACCOUNT: {"name": USER, "isPersonal": True, "accountCapabilities": {MAIL: {}}}},
             primary_accounts={CORE: ACCOUNT, MAIL: ACCOUNT},
         )
@@ -231,6 +233,11 @@ class _Mail:
             for path, value in patch.items():
                 self.emails[id]["keywords"][path.removeprefix("keywords/")] = value
             updated[id] = None
+
+        if self.sets_before_failure is not None:
+            self.sets_before_failure -= 1
+            if not self.sets_before_failure:
+                self.server.fail("Email/set", "serverFail")
 
         return {
             "accountId": ACCOUNT,
@@ -481,6 +488,25 @@ class ClassifyOnFetch(unittest.TestCase):
 
         self.assertEqual(message["id"], "e1")
         self.assertEqual(_keywords(message), {})
+        log_mail_error.assert_called_once()
+
+    def test_mail_written_before_a_write_failed_part_way_carries_its_category(self):
+        # The write goes out a message at a time here, and the server takes only the first: what
+        # is fetched and cached must still say what the server now holds for that one.
+        mail = _Mail(
+            _email("e1", sender="hello@shop.example", headers=NEWSLETTER),
+            _email("e2", sender="noreply@bank.example"),
+            max_objects_in_set=1,
+        )
+        mail.sets_before_failure = 1
+
+        with mock.patch.object(classification, "log_mail_error") as log_mail_error:
+            by_id = {message["id"]: message for message in mail.fetch()}
+
+        self.assertEqual(mail.emails["e1"]["keywords"], {"category_promotions": True})
+        self.assertEqual(_keywords(by_id["e1"]), {"category_promotions": True})
+        self.assertEqual(_keywords(mail.cache["e1"]), {"category_promotions": True})
+        self.assertEqual(_keywords(by_id["e2"]), {})
         log_mail_error.assert_called_once()
 
 
