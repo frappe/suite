@@ -6,12 +6,12 @@ state: the product supplies its table prefix and checks access through Drive
 itself, because `suite_core` never imports Drive or a product.
 """
 
+from suite.suite_core.collab.backfill import backfill_clocks
 from suite.suite_core.collab.checkpoints import replace_start
 from suite.suite_core.collab.log import (
     PROTO,
     ChainBroken,
     Refusal,
-    backfill_clocks,
     claim_session,
     create,
     delete_purged,

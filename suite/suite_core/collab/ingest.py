@@ -69,8 +69,8 @@ def close(adapter: str, doc_id: str, row: Row, cid: int, start: dict[int, int]) 
             raise Unclosed("clock_gap", clock=committed[cid])
         known[cid] = row.clock_to
     for struct in row.update.structs:
-        for ref in (struct.origin, struct.right_origin, struct.parent):
-            if ref and ref[1] >= known[ref[0]]:
+        for ref in struct.refs():
+            if ref[1] >= known[ref[0]]:
                 raise Unclosed("missing_dep", client=ref[0], clock=ref[1])
     for client, ranges in row.update.deletes.items():
         for clock, length in ranges:
@@ -93,5 +93,5 @@ def committed_clocks(adapter: str, doc_id: str, clients: set[int], start: dict[i
 def referenced_clients(row: Row, cid: int) -> set[int]:
     clients = {cid, *row.update.deletes}
     for struct in row.update.structs:
-        clients.update(ref[0] for ref in (struct.origin, struct.right_origin, struct.parent) if ref)
+        clients.update(client for client, _clock in struct.refs())
     return clients

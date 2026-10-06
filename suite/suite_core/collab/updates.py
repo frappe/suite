@@ -29,6 +29,10 @@ class Struct:
     # Clocks that fall between the two halves of a surrogate pair in a string item's text
     pairs: list[int] = field(default_factory=list)
 
+    def refs(self) -> list[tuple[int, int]]:
+        """The ids this struct needs before it can integrate: its origins and its parent item."""
+        return [ref for ref in (self.origin, self.right_origin, self.parent) if ref]
+
 
 @dataclass
 class Update:
