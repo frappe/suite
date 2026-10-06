@@ -7,7 +7,7 @@ import pycrdt
 
 from suite.suite_core.collab import quarantine
 from suite.suite_core.collab.log import chain_next
-from suite.suite_core.collab.tests.test_compaction import crafted
+from suite.suite_core.collab.tests.test_compaction import crafted, number
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.collab.tests.test_collab import answer, call, push_body, read_frame, read_open
@@ -338,6 +338,47 @@ class TestQuarantine(CheckpointCase):
 
         self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
         self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alpha gamma")
+
+    def test_a_compaction_quarantines_each_stored_row_the_push_gate_now_refuses(self):
+        def text(value: str) -> bytes:
+            return number(len(value.encode())) + value.encode()
+
+        def row(cid: int, *structs: bytes) -> bytes:
+            return number(1) + number(len(structs)) + number(cid) + number(0) + b"".join(structs) + number(0)
+
+        def under(root: str, kind: int, content: bytes) -> bytes:
+            return bytes([kind]) + number(1) + text(root) + content
+
+        for name, payload, reason in (
+            ("empty", lambda cid: b"\x00\x00", "refused_row"),
+            ("missing change", lambda cid: crafted(insert=(cid, 0, (cid + 1, 0), None, "x")), "missing_dep"),
+            ("JSON", lambda cid: row(cid, under("default", 2, number(1) + text('"1"'))), "refused_row"),
+            ("binary", lambda cid: row(cid, under("default", 3, number(3) + b"\x01\x02\x03")), "refused_row"),
+            (
+                "subdocument",
+                lambda cid: row(cid, under("default", 9, text("g") + bytes([118, 0]))),
+                "refused_row",
+            ),
+            (
+                "skip",
+                lambda cid: row(cid, bytes([10]) + number(2), under("default", 4, text("b"))),
+                "refused_row",
+            ),
+            ("unknown root", lambda cid: row(cid, under("elsewhere", 4, text("z"))), "unknown_root"),
+        ):
+            with self.subTest(name):
+                node = self.new_document()
+                a = Tab(self, node)
+                a.typed(0, "alpha")
+                b, c = Tab(self, node), Tab(self, node)
+                self.store_raw(node, b, payload(b.cid))
+                c.typed(5, " gamma")
+
+                self.compact(node)
+
+                self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
+                self.assertEqual(self.recovered(node), [(2, WRITER, reason, payload(b.cid))])
+                self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alpha gamma")
 
     def test_clocks_are_read_from_a_log_once_its_unreadable_row_is_quarantined(self):
         node = self.new_document()

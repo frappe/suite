@@ -79,17 +79,16 @@ class Compaction:
             self.failed(snapshot and snapshot["head_rev"], reason, error)
 
     def fit_snapshot(self) -> dict | None:
-        """A snapshot after quarantining, one at a time, each row that can't be read or splits a pair."""
+        """A snapshot after quarantining, one at a time, each row a compaction must not take."""
         while True:
             snapshot = read(self.adapter, self.doc_id)
             if snapshot is None:
                 return None
-            checkpoint = [snapshot["checkpoint"]] if snapshot["checkpoint"] else []
-            found = compaction.unfit(checkpoint + [payload for _rev, payload in snapshot["rows"]])
+            rows = [payload for _rev, payload in snapshot["rows"]]
+            found = quarantine.first_unfit(snapshot["checkpoint"], rows, set(self.roots))
             if not found:
                 return snapshot
             index, reason = found
-            index -= len(checkpoint)
             if index < 0:
                 raise compaction.CompactionFailed(reason)
             frappe.db.rollback()

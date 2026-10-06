@@ -30,6 +30,8 @@ class Struct:
     pairs: list[int] = field(default_factory=list)
     # Root, node, mark, attribute and map key names, which the editor's schema must declare
     names: list[str] = field(default_factory=list)
+    # The root type's name, for a struct whose parent is a root
+    root: str | None = None
     # For a type item, the shared type it holds: 0 Array, 1 Map, 2 Text, 3 XmlElement, 4 XmlFragment,
     # 5 XmlHook, 6 XmlText
     type: int | None = None
@@ -194,7 +196,8 @@ def read_struct(reader: Reader, client: int, clock: int) -> Struct:
         struct.right_origin = reader.id()
     if info & 0xC0 == 0:
         if reader.uint() == 1:
-            struct.names.append(reader.string())
+            struct.root = reader.string()
+            struct.names.append(struct.root)
         else:
             struct.parent = reader.id()
         if info & 0x20:

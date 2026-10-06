@@ -15,7 +15,7 @@ import frappe
 import pycrdt
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import compaction, updates
+from suite.suite_core.collab import compaction, ingest, updates
 from suite.suite_core.collab.log import start_clocks
 from suite.suite_core.collab.tables import table
 
@@ -120,6 +120,36 @@ def quarantine(adapter: str, doc_id: str, revs: set[int], reason: str) -> list[i
         frappe.db.rollback()
         raise
     return sorted(picked)
+
+
+def first_unfit(checkpoint: bytes | None, rows: list[bytes], roots: set[str]) -> tuple[int, str] | None:
+    """The index of the first of `rows` a compaction must not take, with the reason; -1 for the checkpoint.
+
+    On top of what the compaction refuses, a row the push gate would refuse today: rows stored
+    before a gate are never checked again on the write path.
+    """
+    parts = [checkpoint] if checkpoint else []
+    found = compaction.unfit(parts + rows)
+    if found and found[0] < len(parts):
+        return -1, found[1]
+    known = ingest.next_clocks(parts)
+    for index, payload in enumerate(rows):
+        if found and found[0] == len(parts) + index:
+            return index, found[1]
+        update = updates.parse(payload)
+        cid = update.structs[0].client if update.structs else 0
+        if any(struct.root is not None and struct.root not in roots for struct in update.structs):
+            return index, "unknown_root"
+        try:
+            row = ingest.admit(update, cid)
+            ingest.follows(row, cid, known)
+        except ValueError:
+            return index, "refused_row"
+        except ingest.Unclosed as error:
+            return index, error.reason
+        if update.structs:
+            known[cid] = row.clock_to
+    return None
 
 
 def readable(payload: bytes) -> updates.Update | None:
