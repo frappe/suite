@@ -25,7 +25,10 @@ def get_recordings() -> list[dict]:
     for recording in recordings:
         try:
             drive.check(recording.artifact, 1)
-        except (frappe.PermissionError, frappe.DoesNotExistError):
+        except drive.DriveError:
+            # Drive refuses with its own types, not Frappe's permission errors,
+            # so an artifact that is gone or unreadable skips one recording
+            # instead of failing the list.
             continue
         recording["room_title"] = frappe.db.get_value("Meet Room", recording.meet_room, "title")
         visible.append(recording)
