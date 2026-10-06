@@ -9,19 +9,21 @@ Bug numbers (B1, B2, …) refer to the local tracker at
 the repo because its rehearsal evidence refers to restored production data.
 Nothing from that data belongs in this file.
 
-## Where things stand (2026-10-04)
+## Where things stand (2026-10-06)
 
-- **Suite PR #881** (`forge/drive-layer` into `develop`): can merge, and
-  develop is merged in. CI fails at setup until the Frappe PR below is
-  merged, because CI installs a Frappe without `frappe.storage`.
+- **Suite PR #881** (`forge/drive-layer` into `develop`): conflicts with
+  develop again, in `pyproject.toml`. CI still fails at setup, because it
+  needs the Frappe PR below: CI installs a Frappe without `frappe.storage`.
 - **Frappe PR frappe/frappe#42407** (`forge/storage-v2`): adds the storage
   layer Drive needs. It now also serves sites whose folder is a symlink, and
   shows S3 files in the browser with their real type instead of always
-  downloading them.
+  downloading them. It also conflicts with its base branch.
 - **Migration:** one `bench migrate` runs Build, then Cleanup. Rollback is
   a backup restore. Legacy S3 objects are deleted only by the separate
   `delete_legacy_objects` command. Production is **no-go** until a fresh
-  rehearsal passes with the final patch set.
+  rehearsal passes with the final patch set. The rehearsal is parked
+  while Faris does UI polish. Its steps are in
+  [`rehearsal-runbook.md`](rehearsal-runbook.md).
 - **Preview site** (`rehearsal.localhost`): kept for Faris's testing. Mail
   and Calendar are connected to Faris's own mailbox. Remove the stored
   credentials and the mail server setting before the site is deleted.
@@ -31,12 +33,14 @@ Nothing from that data belongs in this file.
 | # | Step | Owner | Status |
 |---|---|---|---|
 | 1 | Load the latest code on the preview: rebuild the frontend and restart its server | orchestrator | waiting for Faris's go-ahead |
-| 2 | CORS rule on the rehearsal bucket (GET, HEAD, POST from the preview's origin), then retry text previews and uploads | Faris | open |
+| 2 | CORS rule on the rehearsal bucket (GET, HEAD, POST from the preview's origin), then retry text previews and uploads | Faris | done: Faris applied the rule |
 | 3 | Update the PR #881 description: new commits in Follow-ups, refreshed line counts | orchestrator | open |
 | 4 | Merge frappe/frappe#42407 | Faris | open |
-| 5 | Fresh full rehearsal from a new backup, with the checklist below | Codex | open |
-| 6 | Production prerequisites, listed below | Faris | open |
-| 7 | Production migration, then `delete_legacy_objects` once confirmed, then delete all restored production data from the laptop | Faris | open |
+| 5 | Thumbnail size: the preview-size patch passes through a legacy `preview_size` that is far too large, so previews come out nearly full size. Proposed fix: the patch maps any implausibly large value to the default of 512 | Faris decides, then orchestrator | waiting for Faris's decision on the proposed fix |
+| 6 | Video thumbnails: some MP4 files keep their index at the end of the file, and the renderer reads a stream it cannot seek, so their previews fail. Proposed fix: ffmpeg reads the video from a signed URL with range requests | Faris decides, then orchestrator | waiting for Faris's decision on the proposed fix |
+| 7 | Fresh full rehearsal from a new backup, with the checklist below. Steps: [`rehearsal-runbook.md`](rehearsal-runbook.md) | Codex | parked while Faris does UI polish |
+| 8 | Production prerequisites, listed below | Faris | open |
+| 9 | Production migration, then `delete_legacy_objects` once confirmed, then delete all restored production data from the laptop | Faris | open |
 
 ### Fresh rehearsal checklist
 
@@ -47,6 +51,8 @@ Nothing from that data belongs in this file.
 - Borrowed pictures get their own copy in current content, old versions
   and templates (B112). Pictures directly inside lists are kept (B113).
 - The thumbnail backfill runs to completion. Record how long it takes.
+  Previews come out at the configured size, and MP4 files with their
+  index at the end get previews (steps 5 and 6).
 - Browser checks also cover: PDFs open in the page, text and Markdown
   previews, uploads, Download saves the file, a picture inside a document
   opens by its own link.
