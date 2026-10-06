@@ -18,6 +18,8 @@ CONFIG_KEYS = [
     "spamd_port",
     "spamd_scanning_mode",
     "spamd_hybrid_scanning_threshold",
+    # Email classification
+    "enable_email_classification",
     # Defaults
     "default_disk_quota_gb",
     "enable_gravatar",

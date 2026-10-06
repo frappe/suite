@@ -21,6 +21,8 @@
   "column_break_njvq",
   "spamd_scanning_mode",
   "spamd_hybrid_scanning_threshold",
+  "classification_section",
+  "enable_email_classification",
   "accounts_tab",
   "defaults_section",
   "default_disk_quota_gb",
@@ -489,12 +491,24 @@
   {
    "fieldname": "column_break_sbzt",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "classification_section",
+   "fieldtype": "Section Break",
+   "label": "Email Classification"
+  },
+  {
+   "default": "1",
+   "description": "Sort incoming mail into categories (Primary, Promotions, Social, Updates and Forums) the first time it is fetched from the mail server. The category is saved on the message as a keyword, so each message is classified only once. Fetching mail that has no category yet takes slightly longer.",
+   "fieldname": "enable_email_classification",
+   "fieldtype": "Check",
+   "label": "Enable Email Classification"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-17 13:30:00.000000",
+ "modified": "2026-10-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",
