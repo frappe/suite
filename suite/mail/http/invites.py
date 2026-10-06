@@ -62,7 +62,13 @@ def send_invite(name: str) -> None:
 
 ROUTES = (
     Route(
-        "GET", "admin/invites/{name}", "invite", kind="query", public_name="admin.invites.get", output=Invite
+        "GET",
+        "admin/invites/{name}",
+        "invite",
+        kind="query",
+        public_name="admin.invites.get",
+        output=Invite,
+        errors=(frappe.PermissionError, frappe.DoesNotExistError),
     ),
     Route(
         "PATCH",
@@ -72,6 +78,7 @@ ROUTES = (
         public_name="admin.invites.update",
         body=UpdateInvite,
         output=type(None),
+        errors=(frappe.PermissionError, frappe.DoesNotExistError),
     ),
     Route(
         "POST",
@@ -81,5 +88,6 @@ ROUTES = (
         public_name="admin.invites.send",
         body=InviteName,
         output=type(None),
+        errors=(frappe.PermissionError, frappe.DoesNotExistError),
     ),
 )

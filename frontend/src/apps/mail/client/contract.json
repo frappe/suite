@@ -1158,7 +1158,7 @@
         "title": "Invite",
         "type": "object"
       },
-      "errors": [],
+      "errors": ["PermissionError", "DoesNotExistError"],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -1210,7 +1210,7 @@
       "output": {
         "type": "null"
       },
-      "errors": [],
+      "errors": ["PermissionError", "DoesNotExistError"],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -1240,7 +1240,7 @@
       "output": {
         "type": "null"
       },
-      "errors": [],
+      "errors": ["PermissionError", "DoesNotExistError"],
       "entity": null,
       "nodeParams": [],
       "stream": false,

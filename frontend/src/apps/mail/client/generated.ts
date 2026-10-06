@@ -479,7 +479,7 @@ export type InviteOutput = {
   mailing_lists: string | null
 }
 
-export type InviteError = never
+export type InviteError = 'PermissionError' | 'DoesNotExistError'
 
 const operationInvite: QueryRef<InviteInput, InviteOutput, InviteError> = {
   id: 'invite',
@@ -492,7 +492,7 @@ const operationInvite: QueryRef<InviteInput, InviteOutput, InviteError> = {
   pathParams: ['name'],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ['PermissionError', 'DoesNotExistError'],
   loadValidators: async () => (await import('./validators')).operationInvite,
 }
 
@@ -500,7 +500,7 @@ export type UpdateInviteInput = { name: string; expires_at: string | null; quota
 
 export type UpdateInviteOutput = null
 
-export type UpdateInviteError = never
+export type UpdateInviteError = 'PermissionError' | 'DoesNotExistError'
 
 const operationUpdateInvite: MutationRef<UpdateInviteInput, UpdateInviteOutput, UpdateInviteError> =
   {
@@ -515,7 +515,7 @@ const operationUpdateInvite: MutationRef<UpdateInviteInput, UpdateInviteOutput, 
     pathParams: ['name'],
     nodeParams: [],
     entity: null,
-    errors: [],
+    errors: ['PermissionError', 'DoesNotExistError'],
     loadValidators: async () => (await import('./validators')).operationUpdateInvite,
   }
 
@@ -523,7 +523,7 @@ export type SendInviteInput = { name: string }
 
 export type SendInviteOutput = null
 
-export type SendInviteError = never
+export type SendInviteError = 'PermissionError' | 'DoesNotExistError'
 
 const operationSendInvite: MutationRef<SendInviteInput, SendInviteOutput, SendInviteError> = {
   id: 'send_invite',
@@ -537,7 +537,7 @@ const operationSendInvite: MutationRef<SendInviteInput, SendInviteOutput, SendIn
   pathParams: ['name'],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ['PermissionError', 'DoesNotExistError'],
   loadValidators: async () => (await import('./validators')).operationSendInvite,
 }
 
