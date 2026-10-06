@@ -19,24 +19,36 @@ from suite.drive._core.roles import EDIT
 from suite.drive._core.roots import reject_illegal_root_operation
 
 PREVIEW_LONGEST_SIDE = 512
+# The range a `preview_size` may take, in pixels. A preview is a grid tile:
+# below 128 px it is blurry on a high-density screen, and above 2048 px it is
+# a full-size render, not a thumbnail. A PDF page at 2048 px is about 4 Mpx;
+# a stored value of 250000 asked pymupdf for a pixmap it refuses to make.
+MIN_PREVIEW_SIZE = 128
+MAX_PREVIEW_SIZE = 2048
 PREVIEW_TTL_SECONDS = 15 * 60
+
+
+def is_plausible_preview_size(value: int) -> bool:
+    """Whether `value` is a longest side, in pixels, that a preview may use."""
+    return MIN_PREVIEW_SIZE <= value <= MAX_PREVIEW_SIZE
 
 
 def _preview_longest_side() -> int:
     """Read the site's configured preview dimension, falling back safely.
 
-    `Drive Disk Settings.preview_size` is `reqd: 1` with `default: 512`
-    (§3.13, §9.2), but a Single field can still come back `None` or a stale
-    non-positive value before the site's first save. A render runs from a
-    background job, so there is no request to refuse; fall back to the spec
-    default rather than pass a bad size into PIL's `thumbnail()` or a
-    division in the PDF zoom maths.
+    `Drive Disk Settings.preview_size` is `reqd: 1` with `default: 512`, and
+    the doctype refuses a value outside `MIN_PREVIEW_SIZE..MAX_PREVIEW_SIZE`
+    (§3.13, §9.2). A Single field can still come back `None` before the
+    site's first save, or carry a value written without validation. A render
+    runs from a background job, so there is no request to refuse; fall back
+    to the spec default rather than pass a bad size into PIL's `thumbnail()`
+    or the PDF zoom maths.
     """
     try:
         value = int(frappe.db.get_single_value("Drive Disk Settings", "preview_size"))
     except TypeError, ValueError:
         return PREVIEW_LONGEST_SIDE
-    return value if value > 0 else PREVIEW_LONGEST_SIDE
+    return value if is_plausible_preview_size(value) else PREVIEW_LONGEST_SIDE
 
 
 # A pushed preview is an app-rendered thumbnail, not a photograph, so the bound

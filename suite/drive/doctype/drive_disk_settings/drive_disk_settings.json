@@ -23,7 +23,7 @@
   },
   {
    "default": "512",
-   "description": "Longest side, in pixels, of the generated preview image.",
+   "description": "Longest side, in pixels, of the generated preview image. Between 128 and 2048.",
    "fieldname": "preview_size",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -79,7 +79,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-08 00:00:00.000000",
+ "modified": "2026-10-06 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Disk Settings",

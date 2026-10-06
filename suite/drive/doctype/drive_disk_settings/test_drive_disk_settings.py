@@ -46,3 +46,18 @@ class IntegrationTestDriveDiskSettings(IntegrationTestCase):
             result = site_settings()
 
         self.assertEqual(result, {"is_admin": False, "preview_size": 512})
+
+    def test_saving_refuses_a_preview_size_outside_the_pixel_range(self):
+        for implausible in (0, 127, 2049, 250000):
+            with self.subTest(implausible=implausible):
+                settings = frappe.get_doc("Drive Disk Settings")
+                settings.preview_size = implausible
+                with self.assertRaises(frappe.ValidationError):
+                    settings.save()
+
+        for plausible in (128, 2048):
+            with self.subTest(plausible=plausible):
+                settings = frappe.get_doc("Drive Disk Settings")
+                settings.preview_size = plausible
+                settings.save()
+                self.assertEqual(frappe.db.get_single_value("Drive Disk Settings", "preview_size"), plausible)

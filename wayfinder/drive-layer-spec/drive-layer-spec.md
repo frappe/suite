@@ -529,7 +529,7 @@ node [010 §3].
 
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
-| `preview_size` | Int | | reqd 1, default 512 | Longest side of the preview, in px [006 §2]. |
+| `preview_size` | Int | | reqd 1, default 512 | Longest side of the preview, in px [006 §2]. Saving refuses a value outside 128 to 2048. A render reads a value outside that range as 512, and `migrate_preview_size_unit` resets one to 512: an older site stored a different unit in this field. |
 | `default_personal_quota` | Int, length 20 | | default 0 | Site default for a Personal root, in bytes. 0 is unlimited [010 §6]. |
 | `shared_quota` | Int, length 20 | | default 0 | Site default for the Shared root, in bytes. 0 is unlimited [010 §6]. |
 | `webdav_enabled` | Check | | default 0 | Site switch for the DAV mount. |

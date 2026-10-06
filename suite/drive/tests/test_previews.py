@@ -453,9 +453,9 @@ class TestPreviewContract(UnitTestCase):
         with _webp(payload) as image:
             self.assertEqual(image.size, (256, 192))
 
-    def test_an_unset_or_non_positive_preview_size_falls_back_to_512(self):
-        """A Single field that has never been saved must not reach `thumbnail()` as None."""
-        for stub in (None, "", 0, -10, "not-a-number"):
+    def test_an_unset_or_implausible_preview_size_falls_back_to_512(self):
+        """A Single field that has never been saved, or holds a legacy value, renders at 512."""
+        for stub in (None, "", 0, -10, "not-a-number", 250000):
             with self.subTest(stub=stub):
                 page = _FakePdfPage(1024, 768)
                 with (
