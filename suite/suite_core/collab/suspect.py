@@ -181,10 +181,10 @@ def rejudge(adapter: str, doc_id: str, method: str) -> bool:
 
 
 def release(adapter: str, doc_id: str) -> bool:
-    """An admin clears a suspect document without a verdict: saving and compactions go on and its rows stay."""
+    """An admin clears a suspect document as `unjudged`: saving and compactions go on and its rows stay."""
     if not suspect_of(adapter, doc_id):
         return False
-    clear(adapter, doc_id, "cleared")
+    clear(adapter, doc_id, "unjudged")
     alert(adapter, doc_id, "suspect cleared", f"{frappe.session.user} cleared it without a verdict")
     return True
 

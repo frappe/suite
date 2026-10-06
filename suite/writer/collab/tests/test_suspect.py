@@ -533,7 +533,9 @@ class TestSuspect(CheckpointCase):
         self.assertTrue(writer_collab.clear_suspect(doc_id))
 
         doc = self.doc_row(node)
-        self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "cleared", 1))
+        self.assertEqual(
+            (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "unjudged", 1)
+        )
         self.assertEqual(self.alerts("suspect cleared"), before + 1)
         self.assertEqual(self.requested, [])
         self.assertFalse(writer_collab.clear_suspect(doc_id))
