@@ -398,3 +398,40 @@ class TestSuspect(CheckpointCase):
 
         self.assertEqual(self.judge(node), "clean")
         self.assertIsNone(self.doc_row(node).suspect_held)
+
+    def test_a_fallback_judged_clean_is_not_judged_or_alerted_again_for_a_day(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        doc_id = self.doc_row(node).id
+
+        def merged(checkpoint, rows, roots):
+            updates = [checkpoint, *rows] if checkpoint else rows
+            return compaction.Compacted(compaction.pycrdt.merge_updates(*updates), integrated=False)
+
+        def falls_back() -> tuple[str | None, int, list]:
+            a.adds(paragraph("more"))
+            self.requested.clear()
+            with patch.object(compaction, "compact", merged):
+                self.job(doc_id).run()
+            alerts = frappe.db.count(
+                "Error Log", {"method": "Collab compaction: fallback", "error": ["like", f"%{doc_id}%"]}
+            )
+            return self.doc_row(node).suspect, alerts, self.requested
+
+        self.assertEqual(falls_back(), ("fallback", 1, [(JUDGE, doc_id)]))
+        self.assertEqual(self.judge(node), "clean")
+
+        self.assertEqual(falls_back(), (None, 1, []))
+        self.set_doc(node, fallback_judged_clean_at=now_datetime() - timedelta(hours=23))
+        self.assertEqual(falls_back(), (None, 1, []))
+        stamp = self.doc_row(node).fallback_judged_clean_at
+        a.adds(paragraph("unread"))
+        with self.refusing(a.sent[-1]):
+            self.job(doc_id).run()
+        self.assertEqual(self.doc_row(node).suspect, "unreadable")
+        self.assertEqual(self.judge(node), "clean")
+        self.assertEqual(self.doc_row(node).fallback_judged_clean_at, stamp)
+
+        self.set_doc(node, fallback_judged_clean_at=now_datetime() - timedelta(hours=25))
+        self.assertEqual(falls_back(), ("fallback", 2, [(JUDGE, doc_id)]))
+        self.assertEqual(self.states(node), ["ok"] * 5)

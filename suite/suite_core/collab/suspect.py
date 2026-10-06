@@ -121,7 +121,7 @@ def settle(adapter: str, doc_id: str, marked: str, roots: dict[str, type], bundl
     if index is None and marked in REASONS and judged_clean(adapter, doc_id):
         return hold(adapter, doc_id, "unreproduced", "Judged clean before, and the compaction still fails")
     verdict = "clean" if index is None else "quarantined"
-    clear(adapter, doc_id, verdict, compaction_clean=index is None and marked in REASONS)
+    clear(adapter, doc_id, verdict, clean_mark=marked if index is None and marked in REASONS else None)
     return verdict
 
 
@@ -161,6 +161,17 @@ def judged_clean(adapter: str, doc_id: str) -> bool:
     )
 
 
+def fallback_judged_lately(adapter: str, doc_id: str) -> bool:
+    """Whether a judge found a fallback clean in the last day, so another fallback needs no judge."""
+    return bool(
+        frappe.db.sql(
+            f"""SELECT 1 FROM `{table(adapter, "doc")}` WHERE `id` = %s
+            AND `fallback_judged_clean_at` > NOW(6) - INTERVAL 1 DAY""",
+            doc_id,
+        )
+    )
+
+
 def suspect_of(adapter: str, doc_id: str) -> str | None:
     found = frappe.db.sql(f"SELECT `suspect` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id)
     return found[0][0] if found else None
@@ -191,11 +202,13 @@ def unsettled(adapter: str, doc_id: str, marked: str, why: str, detail: str) -> 
     return "unjudged"
 
 
-def clear(adapter: str, doc_id: str, verdict: str, *, compaction_clean: bool = False) -> None:
+def clear(adapter: str, doc_id: str, verdict: str, *, clean_mark: str | None = None) -> None:
+    """`clean_mark` is the compaction's reason when a judge found its suspect clean."""
     frappe.db.sql(
         f"""UPDATE `{table(adapter, "doc")}` SET `suspect` = NULL, `suspect_held` = NULL, `verdict` = %s,
-        `judged` = `judged` + 1, `suspect_judged_clean` = `suspect_judged_clean` OR %s WHERE `id` = %s""",
-        (verdict, compaction_clean, doc_id),
+        `judged` = `judged` + 1, `suspect_judged_clean` = `suspect_judged_clean` OR %s,
+        `fallback_judged_clean_at` = IF(%s, NOW(6), `fallback_judged_clean_at`) WHERE `id` = %s""",
+        (verdict, clean_mark is not None, clean_mark == "fallback", doc_id),
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 

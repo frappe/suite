@@ -161,7 +161,11 @@ class Compaction:
                 frappe.db.rollback()
                 if attempt == 2 or not (frappe.db.is_deadlocked(error) or frappe.db.is_timedout(error)):
                     raise
-        if installed and not result.integrated:
+        if (
+            installed
+            and not result.integrated
+            and not suspect.fallback_judged_lately(self.adapter, self.doc_id)
+        ):
             self.alert("fallback", "The compaction kept the merged rows as an open base only")
             suspect.mark(self.adapter, self.doc_id, "fallback", self.judge_method)
 

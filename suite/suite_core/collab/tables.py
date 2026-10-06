@@ -58,6 +58,8 @@ def ensure_tables(adapter: str) -> None:
         "`judged` int unsigned NOT NULL DEFAULT 0",
         # A judge found a compaction's suspect clean and no checkpoint was installed since; a second mark holds it
         "`suspect_judged_clean` tinyint(1) NOT NULL DEFAULT 0",
+        # When a judge last found a fallback clean; fallbacks within a day of it are neither marked nor alerted
+        "`fallback_judged_clean_at` datetime(6) NULL",
         # When a tab last reported a row it couldn't apply; one report a minute is heard
         "`suspect_reported_at` datetime(6) NULL",
     ):
