@@ -1110,16 +1110,13 @@ watch(
 
 // Main data
 
-// The remembered All/Unread/Starred/Has-attachments or category choice, its menu, and its own title
-// (see useStoredFilter) — all shared with the merged All Inboxes list. Starred is not offered inside
-// Trash, nor inside the Starred list itself, where it would filter a list to itself. The categories
-// are not offered where mail is never given one.
+// The remembered All/Unread/Starred/Has-attachments choice, its menu, and its own title (see
+// useStoredFilter) — all shared with the merged All Inboxes list. Starred is not offered inside
+// Trash, nor inside the Starred list itself, where it would filter a list to itself.
 const { filter, reloadFilter, FILTER_OPTIONS, filterTitle } = useStoredFilter({
 	scope: () => mailbox,
 	onChange: () => resetThreads(false),
 	starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
-	categorizable: () =>
-		![mailboxIds.sent, mailboxIds.drafts, mailboxIds.junk, mailboxIds.trash].includes(mailbox),
 })
 
 const isMailboxLoaded = ref(false)

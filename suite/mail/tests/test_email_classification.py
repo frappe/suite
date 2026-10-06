@@ -13,7 +13,6 @@ from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail import classification
-from suite.mail.api import mail as mail_api
 from suite.mail.classification import Category, classify
 from suite.mail.doctype.mail_message import mail_message
 from suite.mail.jmap import SuiteJMAPClient
@@ -625,35 +624,3 @@ class ClassificationEcho(unittest.TestCase):
         mail.sync("e1")
 
         self.assertEqual(mail.calls("Email/get"), [])
-
-
-class CategoryFilter(unittest.TestCase):
-    """A list of threads is narrowed to a category by the keyword that marks it."""
-
-    def filter(self, filter_by: str | None) -> dict:
-        """The JMAP filter `get_threads` queries the inbox with when asked for `filter_by`."""
-
-        with (
-            mock.patch.object(mail_api, "fetch_threads", return_value={}) as fetch_threads,
-            mock.patch.object(mail_api, "get_cached_mailboxes", return_value=MAILBOXES),
-            mock.patch.object(mail_api, "add_user_images_to_emails"),
-        ):
-            mail_api.get_threads(ACCOUNT, "inbox", limit=20, filter_by=filter_by)
-
-        return fetch_threads.call_args.args[1]
-
-    def test_each_category_filters_by_its_keyword(self):
-        for category in Category:
-            with self.subTest(category=category):
-                self.assertEqual(
-                    self.filter(f"category_{category.value}"),
-                    {
-                        "operator": "AND",
-                        "conditions": [{"inMailbox": "inbox"}, {"hasKeyword": f"category_{category.value}"}],
-                    },
-                )
-
-    def test_a_keyword_that_is_no_category_is_not_filtered_by(self):
-        for filter_by in ("category_spam", "$seen", None):
-            with self.subTest(filter_by=filter_by):
-                self.assertEqual(self.filter(filter_by), {"inMailbox": "inbox"})
