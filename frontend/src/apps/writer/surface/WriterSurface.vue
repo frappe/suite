@@ -17,7 +17,7 @@ import {
 import {
   DriveCommentAuthor,
   DriveDocumentHeader,
-  formatDriveListingDate,
+  formatDriveDateTime,
   GUEST_NAME_LIMIT,
   useDriveGuestName,
   type DocumentPanel,
@@ -548,7 +548,7 @@ onBeforeUnmount(() => {
                             {{
                               [
                                 version.actor,
-                                version.creation && formatDriveListingDate(version.creation),
+                                version.creation && formatDriveDateTime(version.creation),
                               ]
                                 .filter(Boolean)
                                 .join(' · ')

@@ -44,7 +44,7 @@ vi.mock('@/apps/drive', async () => {
           }),
     }),
     DriveCommentAuthor: define({ setup: () => () => null }),
-    formatDriveListingDate: (await import('@/apps/drive/files/internal/format')).formatModified,
+    formatDriveDateTime: (await import('@/apps/drive/files/internal/format')).formatDate,
     GUEST_NAME_LIMIT: 140,
     useDriveGuestName: () => ({
       shown: state(false),
@@ -271,7 +271,8 @@ describe('Writer surface', () => {
     expect(buttonLabelled(root, 'Load more')).toBeUndefined()
   })
 
-  it('shows who took a version and its date as Drive lists dates', async () => {
+  it('shows who took a version and its exact date and time', async () => {
+    vi.stubEnv('TZ', 'UTC')
     const list = async () => ({
       rows: [
         {
@@ -279,7 +280,7 @@ describe('Writer surface', () => {
           kind: 'named',
           label: 'Before review',
           actor: 'ana@example.com',
-          creation: '2025-03-04T10:00:00Z',
+          creation: '2025-03-04T10:41:00Z',
         },
       ],
       next_cursor: null,
@@ -291,8 +292,11 @@ describe('Writer surface', () => {
     const row = [...root.querySelectorAll<HTMLElement>('aside button')].find((button) =>
       button.textContent?.startsWith('Before review'),
     )!
-    expect(row.textContent).toMatch(/ana@example\.com · (Mar 4, 2025|4 Mar 2025)$/)
-    expect(row.textContent).not.toContain('2025-03-04T10:00:00Z')
+    expect(row.textContent).toMatch(
+      /ana@example\.com · (Mar 4, 2025|4 Mar 2025), 10:41(\s(AM|am))?$/,
+    )
+    expect(row.textContent).not.toContain('2025-03-04T10:41:00Z')
+    vi.unstubAllEnvs()
   })
 
   it('shows a version in place of the editor until Back to current', async () => {
