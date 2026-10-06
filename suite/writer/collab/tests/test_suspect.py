@@ -317,3 +317,56 @@ class TestSuspect(CheckpointCase):
                 self.requested.clear()
                 writer_collab.sweep()
                 self.assertNotIn((JUDGE, doc_id), self.requested)
+
+    def test_a_compaction_that_fails_again_after_a_clean_verdict_holds_the_document(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        a.adds(paragraph("alpha"))
+        doc_id = self.doc_row(node).id
+        failing = [True]
+        real = compaction.compact
+
+        def compact(checkpoint, rows, roots):
+            if failing[0]:
+                raise compaction.CompactionFailed("unreadable")
+            return real(checkpoint, rows, roots)
+
+        def fails_then_judged() -> str | None:
+            a.adds(paragraph("more"))
+            failing[0] = True
+            self.job(doc_id).run()
+            self.assertEqual(self.doc_row(node).suspect, "unreadable")
+            failing[0] = False
+            return self.judge(node)
+
+        self.set_doc(node, compaction_failures=1)
+        with patch.object(compaction, "compact", compact):
+            self.assertEqual(fails_then_judged(), "clean")
+            a.adds(paragraph("beta"))
+            self.job(doc_id).run()
+            self.assertEqual(self.doc_row(node).compaction_failures, 0)
+            self.assertEqual(fails_then_judged(), "clean")
+            before = self.alerts("suspect held: unreproduced")
+
+            self.assertEqual(fails_then_judged(), "held")
+
+        self.assertEqual(self.doc_row(node).suspect_held, "unreproduced")
+        self.assertEqual(self.alerts("suspect held: unreproduced"), before + 1)
+        self.assertEqual(self.states(node), ["ok"] * 5)
+
+    def test_a_reader_who_keeps_reporting_a_good_row_never_pauses_saving(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        rev = a.adds(paragraph("alpha"))
+        doc_id = self.doc_row(node).id
+        self.set_doc(node, compaction_failures=5)
+
+        for judged in range(1, 5):
+            self.set_doc(node, suspect_reported_at=now_datetime() - timedelta(seconds=61))
+            self.assertEqual(self.report(node, rev)[0], 202)
+            writer_collab.judge(doc_id)
+            doc = self.doc_row(node)
+            self.assertEqual(
+                (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "clean", judged)
+            )
+        a.adds(paragraph("beta"))

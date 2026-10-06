@@ -5,8 +5,9 @@ suspect, and compactions skip it from then on. A job judges it: the product's No
 the first row the browsers' Yjs or the editor can't take, and when it finds none, pycrdt is
 probed the same way. That row and its dependents are quarantined, each with a recovery copy,
 and the document is cleared only if pycrdt then takes what is left. Without a verdict (no Node,
-a bad checkpoint, a kernel or a judge that fails) or when pycrdt still refuses, the document is held:
-its rows stay, pushes are refused and an admin reviews it.
+a bad checkpoint, a kernel or a judge that fails), when pycrdt still refuses, or when the
+compaction fails again after a clean verdict, the document is held: its rows stay, pushes are
+refused and an admin reviews it.
 A document only a tab's report marked is held only on what its rows show: without a verdict it
 is cleared as unjudged, so a report alone never pauses saving.
 """
@@ -115,6 +116,8 @@ def settle(adapter: str, doc_id: str, marked: str, roots: dict[str, type], bundl
             return hold(
                 adapter, doc_id, "still_refused", f"rev {revs[index]} quarantined, pycrdt still refuses"
             )
+    if index is None and marked in REASONS and failing_again(adapter, doc_id):
+        return hold(adapter, doc_id, "unreproduced", "Judged clean before, and the compaction still fails")
     verdict = "clean" if index is None else "quarantined"
     clear(adapter, doc_id, verdict)
     return verdict
@@ -145,6 +148,14 @@ def refused(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type])
         return not compaction.compact(checkpoint, rows, roots).integrated
     except compaction.CompactionFailed as error:
         return error.reason in REASONS
+
+
+def failing_again(adapter: str, doc_id: str) -> bool:
+    """Whether the compaction failed again since a judge last found the document clean; an install resets the count."""
+    verdict, failures = frappe.db.sql(
+        f"SELECT `verdict`, `compaction_failures` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id
+    )[0]
+    return verdict == "clean" and failures >= 2
 
 
 def suspect_of(adapter: str, doc_id: str) -> str | None:
