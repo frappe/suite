@@ -151,7 +151,8 @@ frontend/src/
     ├── slides/
     ├── meet/
     ├── mail/
-    └── calendar/
+    ├── calendar/
+    └── people/                      # contacts and address books, on Mail's backend
 ```
 
 This is a target shape, not a requirement to move every existing file immediately. New and rewritten code follows it; untouched products migrate when their owners work in the relevant area.

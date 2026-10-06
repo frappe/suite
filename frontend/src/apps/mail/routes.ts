@@ -1,4 +1,4 @@
-import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router'
+import type { RouteLocationNormalized, RouteParamsGeneric, RouteRecordRaw } from 'vue-router'
 
 import { userStore } from '@/apps/mail/stores/user'
 import { openedMailboxId } from '@/apps/mail/utils/unifiedFolders'
@@ -35,6 +35,14 @@ const mailboxProps = (route: RouteLocationNormalized) => ({
     userStore().mailboxes.data,
   ),
 })
+
+// The People path of an old Mail contacts or address-books URL. Without an account it is People's
+// shortcut, which opens the active one.
+const peopleLocation = (list: 'contacts' | 'address-books', params: RouteParamsGeneric) => {
+  const item = params.contactName ?? params.addressBookName
+  const path = params.accountId ? `/people/account/${params.accountId}/${list}` : `/people/${list}`
+  return item ? `${path}/${item}` : path
+}
 
 // Lightweight placeholder used by shortcut routes — the mail guard intercepts
 // them and redirects before any component ever mounts.
@@ -195,29 +203,14 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/apps/mail/pages/SubmissionDetailsView.vue'),
         props: true,
       },
+      // Contacts and address books moved to People. Old links land there.
       {
-        path: 'account/:accountId/address-books/',
-        name: 'mail-address-books',
-        component: () => import('@/apps/mail/pages/AddressBooksView.vue'),
-        props: true,
+        path: 'account/:accountId/address-books/:addressBookName?',
+        redirect: (to) => peopleLocation('address-books', to.params),
       },
       {
-        path: 'account/:accountId/address-books/:addressBookName',
-        name: 'mail-address-book',
-        component: () => import('@/apps/mail/pages/AddressBookView.vue'),
-        props: true,
-      },
-      {
-        path: 'account/:accountId/contacts/',
-        name: 'mail-contacts',
-        component: () => import('@/apps/mail/pages/ContactsView.vue'),
-        props: true,
-      },
-      {
-        path: 'account/:accountId/contacts/:contactName',
-        name: 'mail-contact',
-        component: () => import('@/apps/mail/pages/ContactView.vue'),
-        props: true,
+        path: 'account/:accountId/contacts/:contactName?',
+        redirect: (to) => peopleLocation('contacts', to.params),
       },
       {
         path: 'mail-exchanges',
@@ -371,15 +364,11 @@ export const routes: RouteRecordRaw[] = [
       },
       {
         path: 'address-books/:addressBookName?',
-        name: 'mail-address-books-shortcut',
-        component: ShortcutRedirect,
-        meta: { shortcut: true },
+        redirect: (to) => peopleLocation('address-books', to.params),
       },
       {
         path: 'contacts/:contactName?',
-        name: 'mail-contacts-shortcut',
-        component: ShortcutRedirect,
-        meta: { shortcut: true },
+        redirect: (to) => peopleLocation('contacts', to.params),
       },
     ],
   },

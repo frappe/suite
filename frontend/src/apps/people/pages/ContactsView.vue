@@ -1,5 +1,6 @@
 <template>
   <DashboardLayout
+area="people"
     :breadcrumbs="[{ label: __('Contacts') }]"
     :button-label="__('Add Contact')"
     :button-action="() => (showAddContact = true)"
@@ -51,15 +52,15 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref, useTemplateRef, watch } from 'vue'
 
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import AddContactModal from '@/apps/mail/components/Modals/AddContactModal.vue'
-import { userStore } from '@/apps/mail/stores/user'
-import { extractNameFromEmail, raiseToast } from '@/apps/mail/utils'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import AddContactModal from '@/apps/people/components/Modals/AddContactModal.vue'
+import { userStore } from '@/apps/people/stores/user'
+import { extractNameFromEmail, raiseToast } from '@/apps/people/utils'
 import { appPageMeta } from '@/utils/documentTitle'
 
 const { accountId } = defineProps<{ accountId: string }>()
 
-usePageMeta(() => appPageMeta(__('Contacts'), 'Mail'))
+usePageMeta(() => appPageMeta(__('Contacts'), 'People'))
 
 const store = userStore()
 
@@ -129,7 +130,7 @@ const listOptions = computed(() => ({
   showTooltip: false,
   emptyState: { description: contacts.loading ? __('Loading...') : __('No contacts found.') },
   getRowRoute: (row) => ({
-    name: 'mail-contact',
+    name: 'people-contact',
     params: { accountId, contactName: row.id },
   }),
 }))

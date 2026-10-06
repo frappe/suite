@@ -1,5 +1,6 @@
 <template>
   <DashboardLayout
+area="mail"
     :breadcrumbs="[{ label: __('Groups') }]"
     :button-label="__('Add Group')"
     :button-action="() => (showAddGroup = true)"
@@ -70,8 +71,8 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddGroupModal from '@/apps/mail/components/Modals/AddGroupModal.vue'
 import StorageBar from '@/apps/mail/components/StorageBar.vue'

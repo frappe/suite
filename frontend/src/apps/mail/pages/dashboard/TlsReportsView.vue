@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout :breadcrumbs="[{ label: __('TLS Reports') }]">
+  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('TLS Reports') }]">
     <!-- Filters in one row; the domain and period scope both the summary and the list. -->
     <div class="flex flex-wrap items-center justify-between gap-3">
       <FormControl v-model="search" :placeholder="__('Search reporter or domain')" class="w-80">
@@ -136,9 +136,9 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import TlsBreakdownRows from '@/apps/mail/components/TlsBreakdownRows.vue'
 import TlsStatTiles from '@/apps/mail/components/TlsStatTiles.vue'

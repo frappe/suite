@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!report.data">
+  <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!report.data">
     <template #default>
       <DashboardDetailHeader
         :title="report.data.domain"
@@ -129,9 +129,9 @@ import { Badge, createResource, usePageMeta } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import TlsStatTiles from '@/apps/mail/components/TlsStatTiles.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'

@@ -23,6 +23,14 @@
         viewport-class="px-[11px] pb-2.5 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <nav class="flex flex-col items-center gap-1" :aria-label="__('Areas')">
+          <!-- Search reaches every area at once, so it opens the rail's list of
+               areas rather than sitting in each area's sidebar. -->
+          <RailItem
+            :label="__('Search')"
+            :description="searchShortcut"
+            :icon="SearchIcon"
+            @click="root.paletteOpen = true"
+          />
           <RailItem
             v-for="area in areas"
             :key="area.id"
@@ -34,14 +42,6 @@
             badge-style="dot"
             :progress="areaProgress?.progress(area.id) ?? null"
             @click="openProgress(area.id)"
-          />
-          <!-- Search reaches every area at once, so it closes the rail's list of
-               areas rather than sitting in each area's sidebar. -->
-          <RailItem
-            :label="__('Search')"
-            :description="searchShortcut"
-            :icon="SearchIcon"
-            @click="root.paletteOpen = true"
           />
         </nav>
       </ScrollArea>
@@ -60,6 +60,15 @@
            lets the styles below size and ink it like the items around it. It
            also holds the bell's 34 px while the async component loads, so the
            group below does not move once the bell arrives. -->
+      <RailItem
+        v-if="hasAreaShortcuts"
+        :label="__('Shortcuts')"
+        description="?"
+        variant="ghost"
+        @click="openAreaShortcuts()"
+      >
+        <span class="lucide-keyboard size-4" aria-hidden="true" />
+      </RailItem>
       <div class="rail-bell flex min-h-[34px]">
         <slot name="bell" />
       </div>
@@ -84,6 +93,7 @@ import {
 } from 'vue'
 
 import type { AreaDefinition } from '@/platform/contracts'
+import { hasAreaShortcuts, openAreaShortcuts } from '@/platform/shortcuts'
 import AccountMenu from '@/shell/AccountMenu.vue'
 import { useAreaProgress } from '@/shell/areaProgress'
 import RailItem from '@/shell/RailItem.vue'

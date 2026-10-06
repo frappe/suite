@@ -1,6 +1,7 @@
 <template>
   <!-- todo: mobile responsive -->
   <DashboardLayout
+area="people"
     :breadcrumbs="[{ label: __('Address Books') }]"
     :button-label="__('Add Address Book')"
     :button-action="() => (showAddAddressBook = true)"
@@ -56,12 +57,12 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import AddAddressBookModal from '@/apps/mail/components/Modals/AddAddressBookModal.vue'
-import { userStore } from '@/apps/mail/stores/user'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import AddAddressBookModal from '@/apps/people/components/Modals/AddAddressBookModal.vue'
+import { userStore } from '@/apps/people/stores/user'
 import { appPageMeta } from '@/utils/documentTitle'
 
-usePageMeta(() => appPageMeta(__('Address Books'), 'Mail'))
+usePageMeta(() => appPageMeta(__('Address Books'), 'People'))
 
 const { addressBooks } = userStore()
 
@@ -84,7 +85,7 @@ const LIST_OPTIONS = {
   showTooltip: false,
   emptyState: { description: __('No address books found.') },
   getRowRoute: (row) => ({
-    name: 'mail-address-book',
+    name: 'people-address-book',
     params: { accountId, addressBookName: row.id },
   }),
 }

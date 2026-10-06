@@ -121,7 +121,7 @@ import { EllipsisVertical, Mail } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'

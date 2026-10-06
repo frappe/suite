@@ -1,6 +1,7 @@
 <template>
   <DashboardLayout
-    v-if="addressBook?.doc"
+v-if="addressBook?.doc"
+    area="people"
     :breadcrumbs
     :badge-label="addressBook.doc?.default ? __('Default') : ''"
     badge-theme="blue"
@@ -109,13 +110,13 @@ import { Pin, Trash2 } from 'lucide-vue-next'
 import { computed, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import InformationField from '@/apps/mail/components/InformationField.vue'
-import AddAddressBookContactsModal from '@/apps/mail/components/Modals/AddAddressBookContactsModal.vue'
-import EditAddressBookModal from '@/apps/mail/components/Modals/EditAddressBookModal.vue'
-import { userStore } from '@/apps/mail/stores/user'
-import { extractNameFromEmail, raiseToast } from '@/apps/mail/utils'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import InformationField from '@/components/dashboard/InformationField.vue'
+import AddAddressBookContactsModal from '@/apps/people/components/Modals/AddAddressBookContactsModal.vue'
+import EditAddressBookModal from '@/apps/people/components/Modals/EditAddressBookModal.vue'
+import { userStore } from '@/apps/people/stores/user'
+import { extractNameFromEmail, raiseToast } from '@/apps/people/utils'
 import { appPageMeta } from '@/utils/documentTitle'
 
 const { accountId, addressBookName } = defineProps<{
@@ -134,7 +135,7 @@ const showRemoveContacts = ref(false)
 const addressBook = createDocumentResource({
   doctype: 'Address Book',
   name: `${store.accountId}|${addressBookName}`,
-  onError: () => router.replace({ name: 'mail-address-books', params: { accountId } }),
+  onError: () => router.replace({ name: 'people-address-books', params: { accountId } }),
   setValue: {
     onSuccess: () => {
       raiseToast(__('Address book updated.'))
@@ -192,7 +193,7 @@ const loadMoreContacts = useDebounceFn((e) => {
 
 const addressBookDisplay = computed(() => addressBook.doc?._name || addressBookName)
 
-usePageMeta(() => appPageMeta(addressBookDisplay.value, 'Mail'))
+usePageMeta(() => appPageMeta(addressBookDisplay.value, 'People'))
 
 const breadcrumbs = computed(() => [
   { label: __('Address Books'), route: '/mail/address-books' },
@@ -206,7 +207,7 @@ const deleteAddressBook = createResource({
     showDeleteAddressBook.value = false
     raiseToast(__('Address book deleted.'))
     store.addressBooks.reload()
-    router.push({ name: 'mail-address-books', params: { accountId } })
+    router.push({ name: 'people-address-books', params: { accountId } })
   },
   onError: (error) => {
     showDeleteAddressBook.value = false
@@ -289,6 +290,6 @@ const LIST_COLUMNS = [
 const LIST_OPTIONS = {
   showTooltip: false,
   emptyState: { description: __('No contacts found.') },
-  getRowRoute: (row) => ({ name: 'mail-contact', params: { accountId, contactName: row.id } }),
+  getRowRoute: (row) => ({ name: 'people-contact', params: { accountId, contactName: row.id } }),
 }
 </script>

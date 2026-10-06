@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout v-if="contact?.doc" :breadcrumbs="breadcrumbs">
+  <DashboardLayout v-if="contact?.doc" area="people" :breadcrumbs="breadcrumbs">
     <template #actions>
       <Dropdown :options="DROPDOWN_OPTIONS">
         <Button icon="lucide-more-horizontal" class="text-ink-gray-5" />
@@ -223,25 +223,23 @@ import {
   ListView,
 } from 'frappe-ui/experimental'
 import { Trash2 } from 'lucide-vue-next'
-import { capitalize, computed, inject, ref, useTemplateRef } from 'vue'
+import dayjs from 'dayjs/esm'
+import { capitalize, computed, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import InformationField from '@/apps/mail/components/InformationField.vue'
-import AddContactAddressBookModal from '@/apps/mail/components/Modals/AddContactAddressBookModal.vue'
-import AddContactAddressModal from '@/apps/mail/components/Modals/AddContactAddressModal.vue'
-import AddContactEmailModal from '@/apps/mail/components/Modals/AddContactEmailModal.vue'
-import AddContactPhoneModal from '@/apps/mail/components/Modals/AddContactPhoneModal.vue'
-import EditContactModal from '@/apps/mail/components/Modals/EditContactModal.vue'
-import { userStore } from '@/apps/mail/stores/user'
-import { raiseToast } from '@/apps/mail/utils'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import InformationField from '@/components/dashboard/InformationField.vue'
+import AddContactAddressBookModal from '@/apps/people/components/Modals/AddContactAddressBookModal.vue'
+import AddContactAddressModal from '@/apps/people/components/Modals/AddContactAddressModal.vue'
+import AddContactEmailModal from '@/apps/people/components/Modals/AddContactEmailModal.vue'
+import AddContactPhoneModal from '@/apps/people/components/Modals/AddContactPhoneModal.vue'
+import EditContactModal from '@/apps/people/components/Modals/EditContactModal.vue'
+import { userStore } from '@/apps/people/stores/user'
+import { raiseToast } from '@/apps/people/utils'
 import { appPageMeta } from '@/utils/documentTitle'
 
 const { accountId, contactName } = defineProps<{ accountId: string; contactName: string }>()
-
-const user = inject('$user')
-const dayjs = inject('$dayjs')
 
 const router = useRouter()
 
@@ -261,7 +259,7 @@ const store = userStore()
 const contact = createDocumentResource({
   doctype: 'Contact Card',
   name: `${store.accountId}|${contactName}`,
-  onError: () => router.replace({ name: 'mail-contacts', params: { accountId } }),
+  onError: () => router.replace({ name: 'people-contacts', params: { accountId } }),
   setValue: {
     onSuccess: () => raiseToast(__('Contact updated.')),
     onError: (error) => {
@@ -277,7 +275,7 @@ const deleteContact = createResource({
   onSuccess: () => {
     showDeleteContact.value = false
     raiseToast(__('Contact deleted.'))
-    router.push({ name: 'mail-contacts', params: { accountId } })
+    router.push({ name: 'people-contacts', params: { accountId } })
   },
   onError: (error) => {
     showDeleteContact.value = false
@@ -385,7 +383,7 @@ const contactDisplay = computed(
   () => contact.doc?.full_name || contact.doc?.emails[0]?.address || contactName,
 )
 
-usePageMeta(() => appPageMeta(contactDisplay.value, 'Mail'))
+usePageMeta(() => appPageMeta(contactDisplay.value, 'People'))
 
 const breadcrumbs = computed(() => [
   { label: __('Contacts'), route: '/mail/contacts' },

@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout :breadcrumbs="[{ label: __('Overview') }]" :loading="!overview.data">
+  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('Overview') }]" :loading="!overview.data">
     <!-- One glanceable number per section, each a link into it. -->
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
       <RouterLink
@@ -182,8 +182,8 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import { formatGb } from '@/apps/mail/utils'
 import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'

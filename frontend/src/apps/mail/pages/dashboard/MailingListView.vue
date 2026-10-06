@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout :breadcrumbs="breadcrumbs" :loading="!list.data">
+  <DashboardLayout area="mail" :breadcrumbs="breadcrumbs" :loading="!list.data">
     <DashboardDetailHeader
       :title="list.data.email || list.data.name || listId"
       :meta="[list.data.description, recipientCountLabel]"
@@ -151,9 +151,9 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddMailingListEmailModal from '@/apps/mail/components/Modals/AddMailingListEmailModal.vue'
 import AddMailingListRecipientsModal from '@/apps/mail/components/Modals/AddMailingListRecipientsModal.vue'

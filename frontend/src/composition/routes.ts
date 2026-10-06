@@ -79,6 +79,11 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     'area-placeholder-calendar',
     areaMeta('calendar', 'Calendar', { scroll: 'content' }),
   ),
+  placeholder(
+    '/people/:pathMatch(.*)*',
+    'area-placeholder-people',
+    areaMeta('people', 'People', { scroll: 'content' }),
+  ),
   // One placeholder holds the whole prefix. A call (`/meet/:meetingId`) sets
   // its own frame `none` and admits guests in Meet's route module.
   placeholder(

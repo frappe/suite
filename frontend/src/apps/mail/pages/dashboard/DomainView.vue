@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!domain.data">
+  <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!domain.data">
     <template #default>
       <DashboardDetailHeader
         :title="domain.data.name"
@@ -72,7 +72,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
 import EditDomainModal from '@/apps/mail/components/Modals/EditDomainModal.vue'
 import { downloadUrlAsFile, raiseToast } from '@/apps/mail/utils'

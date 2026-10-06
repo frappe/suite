@@ -41,6 +41,17 @@ vi.mock('@/apps/calendar', () => ({
   },
 }))
 
+vi.mock('@/apps/people', () => ({
+  peopleArea: {
+    id: 'people',
+    label: () => 'people',
+    icon: {},
+    to: '/people',
+    requires: ['jmap'],
+    loadRoutes: vi.fn(),
+  },
+}))
+
 vi.mock('@/apps/meet', () => ({
   meetArea: {
     id: 'meet',
@@ -58,6 +69,7 @@ describe('app registry', () => {
       'files',
       'mail',
       'calendar',
+      'people',
       'meet',
     ])
   })
@@ -72,6 +84,7 @@ describe('app registry', () => {
       'files',
       'mail',
       'calendar',
+      'people',
       'meet',
     ])
   })

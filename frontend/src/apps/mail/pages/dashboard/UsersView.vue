@@ -123,7 +123,7 @@ import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import StorageBar from '@/apps/mail/components/StorageBar.vue'
 import { raiseToast } from '@/apps/mail/utils'

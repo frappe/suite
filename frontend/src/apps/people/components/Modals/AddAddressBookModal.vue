@@ -37,8 +37,8 @@ import { createResource, Dialog, FormControl } from 'frappe-ui'
 import { reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { userStore } from '@/apps/mail/stores/user'
-import { raiseToast } from '@/apps/mail/utils'
+import { userStore } from '@/apps/people/stores/user'
+import { raiseToast } from '@/apps/people/utils'
 
 const show = defineModel<boolean>()
 
@@ -61,7 +61,7 @@ const createAddressBook = createResource({
     raiseToast(__('Address book created.'))
     show.value = false
     store.addressBooks.reload()
-    router.push({ name: 'mail-address-book', params: { addressBookName: data } })
+    router.push({ name: 'people-address-book', params: { addressBookName: data } })
   },
   onError: (error) => raiseToast(error.message, 'error'),
 })

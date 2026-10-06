@@ -35,7 +35,7 @@ const buildDefaultRoute = (
   const firstMailbox = mailboxes.data?.[0]?.id
   if (firstMailbox) return { name: 'mail-mailbox', params: { accountId, mailbox: firstMailbox } }
 
-  return { name: 'mail-address-books', params: { accountId } }
+  return { name: 'people-address-books', params: { accountId } }
 }
 
 const resolveShortcut = (
@@ -49,13 +49,6 @@ const resolveShortcut = (
       if (params.threadID) return { name: 'mail-mail', params: { accountId, ...params } }
       if (params.mailbox) return { name: 'mail-mailbox', params: { accountId, ...params } }
       return defaultRoute
-    case 'mail-address-books-shortcut':
-      if (params.addressBookName)
-        return { name: 'mail-address-book', params: { accountId, ...params } }
-      return { name: 'mail-address-books', params: { accountId } }
-    case 'mail-contacts-shortcut':
-      if (params.contactName) return { name: 'mail-contact', params: { accountId, ...params } }
-      return { name: 'mail-contacts', params: { accountId } }
     default:
       return defaultRoute
   }

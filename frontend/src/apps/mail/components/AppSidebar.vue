@@ -3,15 +3,6 @@
 	     bottom nav's sheet on a phone. The page header's folder button and a tap
 	     on the active Mail tab open the sheet. -->
   <AreaSidebar area="mail" :title="__('Mail')">
-    <template #actions>
-      <Dropdown :options="mailMenu" align="end">
-        <Button variant="ghost" :aria-label="__('More')">
-          <template #icon>
-            <Ellipsis class="size-4 text-ink-gray-6" />
-          </template>
-        </Button>
-      </Dropdown>
-    </template>
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
          one account, or on the dashboard, there is nothing to pick: it is just named. -->
     <SidebarSection class="!mt-0">
@@ -45,12 +36,12 @@
         :class="
           threadDrag.overMailbox.value === item.mailboxId && 'ring-2 ring-outline-gray-3 ring-inset'
         "
-        @dragover="onFolderDragOver($event, item)"
-        @dragleave="onFolderDragLeave(item)"
-        @drop="onFolderDrop($event, item)"
         :active="item.activeFor?.includes(activeKey)"
         :on-click="item.onClick"
         class="group"
+        @dragover="onFolderDragOver($event, item)"
+        @dragleave="onFolderDragLeave(item)"
+        @drop="onFolderDrop($event, item)"
       >
         <template #suffix>
           <div class="flex items-center">
@@ -87,10 +78,8 @@
 <script setup lang="ts">
 import { useStorage } from '@vueuse/core'
 import ArrowLeft from '~icons/lucide/arrow-left'
-import BookUser from '~icons/lucide/book-user'
 import CalendarClock from '~icons/lucide/calendar-clock'
 import CircleUserRound from '~icons/lucide/circle-user-round'
-import ContactRound from '~icons/lucide/contact-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
@@ -106,7 +95,6 @@ import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
 import { Button, Dropdown, SidebarItem, SidebarSection } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { Keyboard } from 'lucide-vue-next'
 import { computed, h, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -119,7 +107,7 @@ import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
 import type { MailboxData, UnifiedFolder } from '@/apps/mail/types'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
-import { useAccountSwitch, useScreenSize, useShortcuts } from '@/apps/mail/utils/composables'
+import { useAccountSwitch, useScreenSize } from '@/apps/mail/utils/composables'
 import { canMoveToMailbox } from '@/apps/mail/utils/mailboxTargets'
 import {
   groupUnifiedFolders,
@@ -139,11 +127,10 @@ const { isMobile } = useScreenSize()
 const { switchAccount, switchToAll } = useAccountSwitch()
 
 // Per-section open/closed state for collapsible sections, keyed by the section's
-// stable `key` (labels are translated, so they can't be storage keys). More and
-// People start collapsed for new users; every toggle is remembered.
+// stable `key` (labels are translated, so they can't be storage keys). More
+// starts collapsed for new users; every toggle is remembered.
 const collapsedSections = useStorage<Record<string, boolean>>('mail-sidebar-collapsed-sections', {
   more: true,
-  people: true,
 })
 const setSectionCollapsed = (key: string | undefined, collapsed: boolean) => {
   if (key) collapsedSections.value[key] = collapsed
@@ -206,7 +193,6 @@ const user = inject('$user')
 const showFolderModal = ref(false)
 const selectedMailbox = ref()
 const showDeleteMailbox = ref(false)
-const { openShortcuts } = useShortcuts()
 
 // The account row shows the active mail account, not the Suite account [T010] — or that every
 // account is showing at once.
@@ -221,7 +207,7 @@ const showWidgets = computed(
 )
 
 // Leave the dashboard for the active account's default mailbox (or the address
-// books when no mailbox exists yet). Shared by the account menu item and the
+// books, in People, when no mailbox exists yet). Shared by the account menu item and the
 // pinned "Back to Mail" sidebar item.
 const goToMailbox = () => {
   const mailbox = mailboxes.data?.[0]?.id
@@ -232,13 +218,10 @@ const goToMailbox = () => {
     })
   else
     router.push({
-      name: 'mail-address-books',
+      name: 'people-address-books',
       params: { accountId: store.accountId },
     })
 }
-
-// Beside the title: what belongs to Mail as a whole rather than to an account.
-const mailMenu = [{ icon: Keyboard, label: __('Shortcuts'), onClick: openShortcuts }]
 
 // The account menu: the reader's own account first, the rest as they come, then all of them at
 // once. Empty when there is nothing to pick.
@@ -362,7 +345,7 @@ const screeningEnabled = computed(
 
 // The folder list of "All accounts", grouped as an account's is: system folders and Starred, then the
 // custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, the Screener,
-// People, New Folder — has a merged form, so none of it is offered here.
+// New Folder — has a merged form, so none of it is offered here.
 const unifiedSidebarItems = computed(() => {
   const folders: UnifiedFolder[] = unifiedFolders.data ?? []
   const toItem = (folder: UnifiedFolder) => ({
@@ -471,28 +454,12 @@ const sidebarItems = computed(() => {
   }
   const customItems = [...customMailboxes, addMailboxItem]
 
-  const contactsItems = [
-    {
-      label: __('Address Books'),
-      icon: BookUser,
-      to: { name: 'mail-address-books', params: { accountId: store.accountId } },
-      activeFor: ['mail-address-books', 'mail-address-book'],
-    },
-    {
-      label: __('Contacts'),
-      icon: ContactRound,
-      to: { name: 'mail-contacts', params: { accountId: store.accountId } },
-      activeFor: ['mail-contacts', 'mail-contact'],
-    },
-  ]
-
   const groups = [
     { label: __('Default'), items: defaultItems },
     { label: __('Custom'), items: customItems },
     ...(secondaryItems.length
       ? [{ label: __('More'), key: 'more', items: secondaryItems, collapsible: true }]
       : []),
-    { label: __('People'), key: 'people', items: contactsItems, collapsible: true },
   ]
 
   // The Screener is pinned in a nameless group above the folders, only when screening is enabled.

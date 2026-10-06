@@ -5,6 +5,7 @@ import { calendarArea } from '@/apps/calendar'
 import { driveUploadProgress, filesArea } from '@/apps/drive'
 import { mailArea, useInboxSummary } from '@/apps/mail'
 import { meetArea } from '@/apps/meet'
+import { peopleArea } from '@/apps/people'
 import { homeArea } from '@/composition/home'
 import type { AreaDefinition } from '@/platform/contracts'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
@@ -21,6 +22,7 @@ export const areaDefinitions: readonly AreaDefinition[] = [
   filesArea,
   mailArea,
   calendarArea,
+  peopleArea,
   meetArea,
 ]
 

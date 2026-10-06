@@ -6,6 +6,7 @@ import { useRoute } from 'vue-router'
 import { useKeyboardShortcuts } from '@/apps/meet/composables/useKeyboardShortcuts'
 import { disposeSocket, initSocket } from '@/apps/meet/socket'
 import { getPlatform } from '@/apps/meet/utils/device'
+import { provideAreaShortcuts } from '@/platform/shortcuts'
 
 // One site socket per mount, closed on unmount so a return to Meet does not add one.
 initSocket()
@@ -20,6 +21,7 @@ useKeyboardShortcuts(() => isInMeeting.value)
 
 const showShortcutsDialog = ref(false)
 provide('showShortcutsDialog', showShortcutsDialog)
+provideAreaShortcuts(() => (showShortcutsDialog.value = true))
 
 useKeyboardShortcut({
   combo: 'Shift+Slash',

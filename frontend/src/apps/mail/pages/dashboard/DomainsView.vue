@@ -1,5 +1,6 @@
 <template>
   <DashboardLayout
+area="mail"
     :breadcrumbs="[{ label: __('Domains') }]"
     :button-label="__('Add Domain')"
     :button-action="() => (showAddDomain = true)"
@@ -84,8 +85,8 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddDomainModal from '@/apps/mail/components/Modals/AddDomainModal.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'

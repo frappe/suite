@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!member.data">
+  <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!member.data">
     <DashboardDetailHeader
       :title="member.data.description || member.data.name"
       :badge-label="badge.label"
@@ -192,10 +192,10 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import InformationField from '@/apps/mail/components/InformationField.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import InformationField from '@/components/dashboard/InformationField.vue'
 import AddAccountEmailModal from '@/apps/mail/components/Modals/AddAccountEmailModal.vue'
 import AddAccountGroupsModal from '@/apps/mail/components/Modals/AddAccountGroupsModal.vue'
 import AddAccountMailingListsModal from '@/apps/mail/components/Modals/AddAccountMailingListsModal.vue'

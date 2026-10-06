@@ -27,8 +27,8 @@ import { createResource, Dialog, FormControl } from 'frappe-ui'
 import { ListEmptyState, ListHeader, ListRows, ListView } from 'frappe-ui/experimental'
 import { computed, ref, useTemplateRef } from 'vue'
 
-import { userStore } from '@/apps/mail/stores/user'
-import { extractNameFromEmail } from '@/apps/mail/utils'
+import { userStore } from '@/apps/people/stores/user'
+import { extractNameFromEmail } from '@/apps/people/utils'
 
 const store = userStore()
 

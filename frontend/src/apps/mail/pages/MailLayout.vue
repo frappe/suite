@@ -29,6 +29,7 @@ import {
   INBOX_FOLDER,
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
+import { provideAreaShortcuts } from '@/platform/shortcuts'
 import { mailServerUnavailable } from '@/boot/config'
 import { useRootStore } from '@/stores/root'
 
@@ -67,7 +68,8 @@ onScopeDispose(() => overlayLayer.remove())
 // list happens to be mounted: they were only reachable from a mailbox view before, so they
 // died in All Inboxes, the Screener and the settings pages. The admin dashboard sits under
 // its own layout and never sees these.
-const { showShortcuts } = useShortcuts()
+const { showShortcuts, openShortcuts } = useShortcuts()
+provideAreaShortcuts(openShortcuts)
 const gPrefix = useGPrefix()
 
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
