@@ -115,17 +115,15 @@ def refuse_constant(name: str):
 def checked_json(text: str) -> None:
     """Refuse text that is not JSON or nests deeper than a value may, so later walks over it can recurse."""
     try:
-        values = [(json.loads(text, parse_constant=refuse_constant), 0)]
+        containers = [(json.loads(text, parse_constant=refuse_constant), 0)]
     except RecursionError:
         raise ValueError("value nested too deep") from None
-    while values:
-        value, depth = values.pop()
+    while containers:
+        value, depth = containers.pop()
         if depth > MAX_DEPTH:
             raise ValueError("value nested too deep")
-        if isinstance(value, dict | list):
-            values.extend(
-                (item, depth + 1) for item in (value.values() if isinstance(value, dict) else value)
-            )
+        items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
+        containers.extend((item, depth + 1) for item in items if isinstance(item, dict | list))
 
 
 def string_length(struct: Struct, text: str) -> int:

@@ -48,8 +48,8 @@ class TestParse(UnitTestCase):
         def holding(ref: int, content: bytes) -> bytes:
             return bytes([1, 1, 5, 0, ref, 1]) + encoded_string("t") + content + bytes([0])
 
-        def nested(depth: int) -> str:
-            return "[" * depth + "]" * depth
+        def nested(depth: int, inner: str) -> str:
+            return "[" * depth + inner + "]" * depth
 
         def kinds(text: str) -> dict[str, bytes]:
             return {
@@ -58,13 +58,15 @@ class TestParse(UnitTestCase):
                 "format": holding(6, encoded_string("bold") + encoded_string(text)),
             }
 
-        for kind, payload in kinds(nested(101)).items():
-            with self.subTest(kind):
-                self.assertEqual(parse(payload).structs[0].length, 1)
-        for depth in (102, 200_000):
-            for kind, payload in kinds(nested(depth)).items():
-                with self.subTest(kind, depth=depth), self.assertRaises(ValueError):
-                    parse(payload)
+        # Only containers count: what the innermost one holds does not change its level
+        for inner in ("", "1"):
+            for kind, payload in kinds(nested(101, inner)).items():
+                with self.subTest(kind, inner=inner):
+                    self.assertEqual(parse(payload).structs[0].length, 1)
+            for depth in (102, 200_000):
+                for kind, payload in kinds(nested(depth, inner)).items():
+                    with self.subTest(kind, inner=inner, depth=depth), self.assertRaises(ValueError):
+                        parse(payload)
 
     def test_integers_past_what_yjs_holds_exactly_are_refused(self):
         def written(client=5, clock=0, origin=None) -> bytes:
