@@ -435,7 +435,7 @@ onBeforeUnmount(() => {
                 <p class="truncate text-sm text-ink-gray-7">
                   Viewing {{ versionLabel(previewing) }}
                 </p>
-                <Button size="sm" variant="outline" label="Back to current" @click="closePreview" />
+                <Button size="sm" variant="ghost" label="Back to current" @click="closePreview" />
               </div>
             </template>
             <template v-if="previewing" #cover>

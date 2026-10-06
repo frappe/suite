@@ -382,6 +382,7 @@ test.describe("Writer collaboration", () => {
 		for (const [i, theme] of themes.entries()) {
 			await page.evaluate((theme) => document.documentElement.setAttribute("data-theme", theme), theme);
 			expect(await look(bar)).toEqual(toolbarLooks[i]);
+			expect(await bar.getByRole("button", { name: "Back to current" }).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
 		}
 		// frappe-ui gives an empty read-only line a fixed height, so lines below one may sit a few px off.
 		expect(await place(previewText)).toMatchObject({ x: editing.x, width: editing.width, top: editing.top });
