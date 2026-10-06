@@ -94,12 +94,10 @@ const mailboxOptions = (mailbox: MailboxData) => [
     label: mailbox.subscribed ? __('Hide') : __('Show'),
     icon: mailbox.subscribed ? EyeOff : Eye,
     onClick: () =>
-      updateFolder
-        .run({
-          name: mailbox.name,
-          subscribed: mailbox.subscribed ? 0 : 1,
-        })
-        .catch(() => {}),
+      updateFolder.run({
+        name: mailbox.name,
+        subscribed: mailbox.subscribed ? 0 : 1,
+      }),
   },
   {
     label: __('Configure'),

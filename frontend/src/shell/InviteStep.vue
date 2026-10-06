@@ -64,7 +64,7 @@ const displayError = computed(() => {
   return error?.message ?? ''
 })
 
-function submit() {
+async function submit() {
   if (!canSubmit.value || invite.isPending) return
   clientError.value = ''
   const cleaned = splitEmails(emails.value)
@@ -76,24 +76,17 @@ function submit() {
         : __("These don't look like valid email addresses: {0}", [invalid.join(', ')])
     return
   }
-  // Errors surface inline via `invite.error`; swallow the rejection so the
-  // dialog action's awaited onClick doesn't raise it again unhandled.
-  return invite
-    .run({ emails: cleaned.join(', ') })
-    .then(() => {
-      const count = new Set(cleaned).size
-      const summary =
-        count === 1 ? __("We'll send 1 invite") : __("We'll send {0} invites", [count])
-      emails.value = ''
-      emit('sent', summary)
-    })
-    .catch(() => {})
+  await invite.run({ emails: cleaned.join(', ') })
+  const count = new Set(cleaned).size
+  const summary = count === 1 ? __("We'll send 1 invite") : __("We'll send {0} invites", [count])
+  emails.value = ''
+  emit('sent', summary)
 }
 
 function submitOnEnter(e: KeyboardEvent) {
   if (!e.metaKey && !e.ctrlKey) return
   e.preventDefault()
-  submit()
+  return submit()
 }
 
 defineExpose({

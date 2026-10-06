@@ -41,15 +41,16 @@
 </template>
 
 <script setup lang="ts">
-import { BottomSheet, Dropdown } from 'frappe-ui'
+import { BottomSheet } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { Check } from 'lucide-vue-next'
 import { computed, h, isVNode, type Component, type VNode } from 'vue'
 
 import { useScreenSize } from '@/composables/useScreenSize'
+import { Dropdown } from '@/platform/feedback'
 import { stripShortcutHint } from '@/utils/actionLabel'
 
-// Drop-in Dropdown replacement: desktop renders a frappe-ui Dropdown untouched,
+// Drop-in Dropdown replacement: desktop renders the shared Dropdown,
 // mobile renders the same options as a bottom sheet (popup menus at the bottom
 // edge are thumb-hostile). Supports flat and grouped option arrays.
 //
@@ -114,7 +115,7 @@ const iconOf = (icon: OptionItem['icon']) => {
 
 const run = (item: OptionItem) => {
   open.value = false
-  item.onClick?.()
+  return item.onClick?.()
 }
 
 const sheetLabel = stripShortcutHint

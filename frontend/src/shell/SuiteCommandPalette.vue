@@ -1068,103 +1068,99 @@ function isPaletteItem(value: CommandPaletteValue): value is PaletteItem {
 }
 
 async function selectItem(value: CommandPaletteValue, event: CommandPaletteSelectEvent) {
-  try {
-    if (!isPaletteItem(value)) return
-    const item = value
-    const originalEvent = event.detail.originalEvent
-    const openInNewTab = openSelectionInNewTab || originalEvent.metaKey || originalEvent.ctrlKey
-    openSelectionInNewTab = false
-    if ('resultType' in item && item.resultType === 'mail-contact') {
-      event.preventDefault()
-      selectMailContact(item)
-      return
-    }
-    if ('resultType' in item && item.resultType === 'mail-filter-suggestion') {
-      event.preventDefault()
-      selectMailFilterSuggestion(item)
-      return
-    }
-    if ('resultType' in item && item.resultType === 'mail-recent-search') {
-      event.preventDefault()
-      restoreMailSearch(item)
-      return
-    }
-    if ('resultType' in item && item.resultType === 'mail-search-page') {
-      if (openInNewTab) {
-        window.open(router.resolve(mailSearchLocation()).href, '_blank', 'noopener')
-        return
-      }
-      await goToMailSearch()
-      return
-    }
-    if ('run' in item) {
-      if (item.keepOpen) event.preventDefault()
-      await item.run({ query: query.value })
-      return
-    }
-    if ('area' in item) {
-      if (openInNewTab) {
-        window.open(router.resolve(item.area.to).href, '_blank', 'noopener')
-        return
-      }
-      await router.push(item.area.to)
-      return
-    }
-    let location: RouteLocationRaw
-    if (item.resultType === 'mail') {
-      rememberMailSearch()
-      location = {
-        name: 'mail-mail',
-        params: {
-          accountId: item.account,
-          mailbox: 'search',
-          threadID: item.thread_id,
-        },
-        query: mailSearchQuery.value,
-      }
-    } else if (item.resultType === 'calendar-event') {
-      const start = eventStartLocal(item)
-      // The view the reader is in is the view the result opens in — Agenda included.
-      // Left out, it fell through to the fallback, and searching from Agenda landed
-      // on a month grid nobody asked for.
-      const calendarRoute = [
-        'calendar-month',
-        'calendar-week',
-        'calendar-day',
-        'calendar-agenda',
-      ].includes(String(route.name))
-        ? String(route.name)
-        : 'calendar-month'
-      location = {
-        name: calendarRoute,
-        params: {
-          // The reader's own account, not the event's: a hit on a shared calendar
-          // belongs to whoever owns it, and routing there would switch the calendar
-          // to an account nobody thinks of as theirs. The grid shows the shared
-          // event inside the reader's view, and so does the link to it — which is
-          // what `account` is for, ids being unique only within an account.
-          accountId: route.params.accountId || item.account,
-          year: start.year(),
-          month: start.month() + 1,
-          day: start.date(),
-        },
-        query: {
-          event: item.master_id || item.id,
-          recurrence: item.recurrence_id || undefined,
-          account: item.account || undefined,
-        },
-      }
-    } else {
-      location = { name: 'meet-meeting', params: { meetingId: item.name } }
-    }
-    const href = router.resolve(location).href
-    if (openInNewTab) {
-      window.open(href, '_blank', 'noopener')
-    } else {
-      await router.push(location)
-    }
-  } catch {
+  if (!isPaletteItem(value)) return
+  const item = value
+  const originalEvent = event.detail.originalEvent
+  const openInNewTab = openSelectionInNewTab || originalEvent.metaKey || originalEvent.ctrlKey
+  openSelectionInNewTab = false
+  if ('resultType' in item && item.resultType === 'mail-contact') {
+    event.preventDefault()
+    selectMailContact(item)
     return
+  }
+  if ('resultType' in item && item.resultType === 'mail-filter-suggestion') {
+    event.preventDefault()
+    selectMailFilterSuggestion(item)
+    return
+  }
+  if ('resultType' in item && item.resultType === 'mail-recent-search') {
+    event.preventDefault()
+    restoreMailSearch(item)
+    return
+  }
+  if ('resultType' in item && item.resultType === 'mail-search-page') {
+    if (openInNewTab) {
+      window.open(router.resolve(mailSearchLocation()).href, '_blank', 'noopener')
+      return
+    }
+    await goToMailSearch()
+    return
+  }
+  if ('run' in item) {
+    if (item.keepOpen) event.preventDefault()
+    await item.run({ query: query.value })
+    return
+  }
+  if ('area' in item) {
+    if (openInNewTab) {
+      window.open(router.resolve(item.area.to).href, '_blank', 'noopener')
+      return
+    }
+    await router.push(item.area.to)
+    return
+  }
+  let location: RouteLocationRaw
+  if (item.resultType === 'mail') {
+    rememberMailSearch()
+    location = {
+      name: 'mail-mail',
+      params: {
+        accountId: item.account,
+        mailbox: 'search',
+        threadID: item.thread_id,
+      },
+      query: mailSearchQuery.value,
+    }
+  } else if (item.resultType === 'calendar-event') {
+    const start = eventStartLocal(item)
+    // The view the reader is in is the view the result opens in — Agenda included.
+    // Left out, it fell through to the fallback, and searching from Agenda landed
+    // on a month grid nobody asked for.
+    const calendarRoute = [
+      'calendar-month',
+      'calendar-week',
+      'calendar-day',
+      'calendar-agenda',
+    ].includes(String(route.name))
+      ? String(route.name)
+      : 'calendar-month'
+    location = {
+      name: calendarRoute,
+      params: {
+        // The reader's own account, not the event's: a hit on a shared calendar
+        // belongs to whoever owns it, and routing there would switch the calendar
+        // to an account nobody thinks of as theirs. The grid shows the shared
+        // event inside the reader's view, and so does the link to it — which is
+        // what `account` is for, ids being unique only within an account.
+        accountId: route.params.accountId || item.account,
+        year: start.year(),
+        month: start.month() + 1,
+        day: start.date(),
+      },
+      query: {
+        event: item.master_id || item.id,
+        recurrence: item.recurrence_id || undefined,
+        account: item.account || undefined,
+      },
+    }
+  } else {
+    location = { name: 'meet-meeting', params: { meetingId: item.name } }
+  }
+  const href = router.resolve(location).href
+  if (openInNewTab) {
+    window.open(href, '_blank', 'noopener')
+  } else {
+    await router.push(location)
   }
 }
 

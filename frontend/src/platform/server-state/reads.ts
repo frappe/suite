@@ -31,6 +31,11 @@ interface Flight {
   consumers: Set<symbol>
   work: Promise<unknown>
 }
+interface OptimisticRead {
+  before: unknown
+  pages: unknown[]
+  update(value: unknown): unknown
+}
 
 export class Reads {
   readonly partition: ShallowRef<string> = shallowRef(crypto.randomUUID())
@@ -40,6 +45,7 @@ export class Reads {
   private readonly pageRefreshes = new Map<string, number>()
   private readonly rooms = new Map<string, () => void>()
   private readonly gc = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly optimisticUpdates = new Map<ReadRecord, OptimisticRead>()
 
   constructor(
     private readonly transport: Transport,
@@ -75,14 +81,8 @@ export class Reads {
     this.collect(record)
   }
 
-  optimistic<I>(partition: string, input: I, effect: Effects<I>['optimisticReads']): () => void {
-    const changes: Array<{
-      record: ReadRecord
-      before: unknown
-      attempt: unknown
-      pages: unknown[]
-      nextPages: unknown[]
-    }> = []
+  optimistic<I>(partition: string, input: I, effect: Effects<I>['optimisticReads']) {
+    const changes = new Map<ReadRecord, OptimisticRead>()
     if (effect)
       for (const record of this.records.values()) {
         if (
@@ -90,21 +90,40 @@ export class Reads {
           !effect.references.includes(`${record.reference.owner}.${record.reference.id}`)
         )
           continue
-        const update = (value: unknown) =>
-          effect.update(input, record.input, this.entities.materialize(value)) ?? value
-        const next = update(record.value)
-        const pages = record.pages
-        const nextPages = pages.map(update)
-        const before = record.value
-        record.value = next
-        record.pages = nextPages
-        changes.push({ record, before, attempt: record.value, pages, nextPages: record.pages })
+        const change: OptimisticRead = {
+          before: record.value,
+          pages: record.pages,
+          update: (value) =>
+            effect.update(input, record.input, this.entities.materialize(value)) ?? value,
+        }
+        this.optimisticUpdates.set(record, change)
+        this.setValue(record, record.value, record.pages)
+        changes.set(record, change)
       }
-    return () => {
-      for (const { record, before, attempt, pages, nextPages } of changes) {
-        if (record.value === attempt) record.value = before
-        if (record.pages === nextPages) record.pages = pages
+    const finish = (rollback: boolean) => {
+      for (const [record, change] of changes) {
+        if (this.optimisticUpdates.get(record) !== change) continue
+        this.optimisticUpdates.delete(record)
+        if (rollback) {
+          record.value = change.before
+          record.pages = change.pages
+        }
       }
+    }
+    return { commit: () => finish(false), rollback: () => finish(true) }
+  }
+
+  /** A refresh can finish during a write; keep its answer underneath the pending change. */
+  private setValue(record: ReadRecord, value: unknown, pages: unknown[]): void {
+    const change = this.optimisticUpdates.get(record)
+    if (change) {
+      change.before = value
+      change.pages = pages
+      record.value = change.update(value)
+      record.pages = pages.map(change.update)
+    } else {
+      record.value = value
+      record.pages = pages
     }
   }
 
@@ -217,11 +236,13 @@ export class Reads {
         outcome.revision,
       )
       if (!apply) return normalized
-      if (next) record.pages.push(normalized)
-      else {
-        record.pages = [normalized]
-        record.value = normalized
-      }
+      if (next) {
+        const change = this.optimisticUpdates.get(record)
+        this.setValue(record, change?.before ?? record.value, [
+          ...(change?.pages ?? record.pages),
+          normalized,
+        ])
+      } else this.setValue(record, normalized, [normalized])
       record.status = 'success'
       record.stale = false
       record.updatedAt = Date.now()
@@ -277,8 +298,7 @@ export class Reads {
       throw abortError()
     if (this.pageRefreshes.get(record.key) !== generation) return
     if (record.pages.length > depth) return this.refreshPages(record, signal)
-    record.pages = pages
-    record.value = pages[0]
+    this.setValue(record, pages[0], pages)
     record.status = 'success'
     record.stale = false
     record.updatedAt = Date.now()
@@ -363,6 +383,7 @@ export class Reads {
     for (const flight of this.flights.values()) flight.controller.abort()
     this.flights.clear()
     this.records.clear()
+    this.optimisticUpdates.clear()
     this.pageRefreshes.clear()
     this.entities.clear()
     this.revision += 1

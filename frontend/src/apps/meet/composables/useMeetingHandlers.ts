@@ -215,32 +215,20 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
   }
 
   const handleApproveLobbyUser = async (participantId: string) => {
-    try {
-      await deps.lobby.approveUser(participantId)
-      deps.notifiedLobbyUsers.value.add(participantId)
-    } catch (error) {
-      console.error('Failed to approve lobby user:', error)
-    }
+    await deps.lobby.approveUser(participantId)
+    deps.notifiedLobbyUsers.value.add(participantId)
   }
 
   const handleApproveAllLobbyUsers = async (participantIds: string[]) => {
-    try {
-      await deps.lobby.approveAllUsers()
-      for (const userId of participantIds) {
-        deps.notifiedLobbyUsers.value.add(userId)
-      }
-    } catch (error) {
-      console.error('Failed to approve all lobby users:', error)
+    await deps.lobby.approveAllUsers()
+    for (const userId of participantIds) {
+      deps.notifiedLobbyUsers.value.add(userId)
     }
   }
 
   const handleRejectLobbyUser = async (participantId: string) => {
-    try {
-      await deps.lobby.rejectUser(participantId)
-      deps.notifiedLobbyUsers.value.add(participantId)
-    } catch (error) {
-      console.error('Failed to reject lobby user:', error)
-    }
+    await deps.lobby.rejectUser(participantId)
+    deps.notifiedLobbyUsers.value.add(participantId)
   }
 
   const toggleFullscreen = async () => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useNow, useStorage } from '@vueuse/core'
-import { Button, Dropdown, SidebarItem, SidebarSection, Tooltip } from 'frappe-ui'
+import { Button, SidebarItem, SidebarSection, Tooltip } from 'frappe-ui'
 import { Ellipsis, Plus } from 'lucide-vue-next'
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -26,6 +26,7 @@ import {
 } from '@/apps/calendar/utils/mobileView'
 import { accountSubmenu } from '@/composables/accountSubmenu'
 import { AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
+import { Dropdown } from '@/platform/feedback'
 
 const { events, selectedEvent, isMobile } = defineProps<{
   /** Whether the page is in its phone layout; the sheet then carries the view switcher. */
@@ -127,7 +128,6 @@ const subtitle = computed(() => {
   if (!currentAccount || currentAccount.is_personal) return toTitleCase(user.data.full_name)
   return currentAccount._name
 })
-
 
 const calendarActions = useCalendarActions()
 const {

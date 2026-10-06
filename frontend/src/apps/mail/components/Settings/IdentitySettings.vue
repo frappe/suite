@@ -8,7 +8,7 @@
         :size="isMobile ? 'md' : 'sm'"
         :disabled="identities.isFetching || JSON.stringify(draft) === JSON.stringify(selected)"
         :loading="saveIdentity.isPending"
-        @click="save().catch(() => {})"
+        @click="save()"
       />
       <Button
         icon-left="lucide-plus"
@@ -161,7 +161,7 @@
             variant: 'solid' as const,
             disabled: !newEmail,
             loading: addIdentity.isPending,
-            onClick: () => addIdentitySubmit().catch(() => {}),
+            onClick: () => addIdentitySubmit(),
           },
         ],
       }"
@@ -195,7 +195,7 @@
             variant: 'solid' as const,
             theme: 'red' as const,
             loading: deleteIdentity.isPending,
-            onClick: () => deleteIdentitySubmit().catch(() => {}),
+            onClick: () => deleteIdentitySubmit(),
           },
         ],
       }"

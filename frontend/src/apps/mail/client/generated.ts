@@ -887,7 +887,7 @@ export type GetMailboxesOutputMailbox = {
   total_threads: number
   unread_threads: number
   slug: string | null
-  subscribed: 0 | 1
+  subscribed: boolean
   icon?: string | null
   color?: ('Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
   disable_push_notification?: 0 | 1

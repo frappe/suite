@@ -66,12 +66,12 @@ class Participant(TypedDict):
     kind: str
     _name: str | None
     email: str
-    schedule_id: str
-    send_to: dict[str, str]
+    schedule_id: str | None
+    send_to: dict[str, str] | None
     participation_status: str
     expect_reply: Literal[0, 1]
-    description: str
-    comment: str
+    description: str | None
+    comment: str | None
     schedule_agent: str
     member_of: dict[str, bool]
     user_image: NotRequired[str | None]

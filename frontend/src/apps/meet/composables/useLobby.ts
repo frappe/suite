@@ -1,9 +1,7 @@
-import { toast } from 'frappe-ui'
 import { toValue, type MaybeRefOrGetter } from 'vue'
 
 import { api, client } from '@/api'
 
-import { getErrorMessage } from '../utils/error'
 import type { LobbyStore } from './useLobbyStore'
 
 interface LobbyAPI {
@@ -19,48 +17,21 @@ export function useLobby(deps: {
   const { lobbyStore, meetingId } = deps
 
   const approveUser = async (userId: string) => {
-    try {
-      await client.mutation(
-        api.meet.rooms.approve,
-        { name: toValue(meetingId), user_id: userId },
-        { silent: true },
-      )
+    await client.mutation(api.meet.rooms.approve, { name: toValue(meetingId), user_id: userId })
 
-      lobbyStore.removeLobbyUser(userId)
-    } catch (error) {
-      console.error('Failed to approve user:', error)
-      toast.error(getErrorMessage(error))
-    }
+    lobbyStore.removeLobbyUser(userId)
   }
 
   const approveAllUsers = async () => {
-    try {
-      await client.mutation(
-        api.meet.rooms.approveAll,
-        { name: toValue(meetingId) },
-        { silent: true },
-      )
+    await client.mutation(api.meet.rooms.approveAll, { name: toValue(meetingId) })
 
-      lobbyStore.setLobbyUsers([])
-    } catch (error) {
-      console.error('Failed to approve all users:', error)
-      toast.error(getErrorMessage(error))
-    }
+    lobbyStore.setLobbyUsers([])
   }
 
   const rejectUser = async (userId: string) => {
-    try {
-      await client.mutation(
-        api.meet.rooms.reject,
-        { name: toValue(meetingId), user_id: userId },
-        { silent: true },
-      )
+    await client.mutation(api.meet.rooms.reject, { name: toValue(meetingId), user_id: userId })
 
-      lobbyStore.removeLobbyUser(userId)
-    } catch (error) {
-      console.error('Failed to reject user:', error)
-      toast.error(getErrorMessage(error))
-    }
+    lobbyStore.removeLobbyUser(userId)
   }
 
   return {

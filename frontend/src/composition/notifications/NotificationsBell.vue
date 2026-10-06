@@ -119,24 +119,16 @@ const markAll = useMutation(api.drive.notifications.markAllRead)
 const unread = computed(() => count.data?.unread ?? 0)
 
 async function openNotification(notification: DriveNotification) {
-  try {
-    if (!notification.read) {
-      await markRead.run({ notifications: [notification.name] })
-    }
-    const node = await loadDriveNodeSummary(notification.activity.node)
-    open.value = false
-    await router.push(driveNodeRoute(node))
-  } catch {
-    return
+  if (!notification.read) {
+    await markRead.run({ notifications: [notification.name] })
   }
+  const node = await loadDriveNodeSummary(notification.activity.node)
+  open.value = false
+  await router.push(driveNodeRoute(node))
 }
 
 async function markAllRead() {
-  try {
-    if (!unread.value) return
-    await markAll.run({ all: true })
-  } catch {
-    return
-  }
+  if (!unread.value) return
+  await markAll.run({ all: true })
 }
 </script>

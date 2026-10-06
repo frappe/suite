@@ -9,7 +9,7 @@
           variant: 'solid' as const,
           disabled: !domainName,
           loading: addDomain.isPending,
-          onClick: () => addDomainSubmit().catch(() => {}),
+          onClick: () => addDomainSubmit(),
         },
       ],
     }"

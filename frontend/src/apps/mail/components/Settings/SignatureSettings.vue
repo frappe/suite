@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, toast } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
 import { ref } from 'vue'
 
@@ -79,7 +79,7 @@ const showSetSignature = ref(false)
 const showEditSignature = ref(false)
 
 const signatures = useQuery(api.mail.signatures.list)
-const deleteSignature = useMutation(api.mail.signatures.delete, { silent: true })
+const deleteSignature = useMutation(api.mail.signatures.delete)
 
 const editSignature = (signature: string) => {
   selectedSignature.value = signature
@@ -106,11 +106,7 @@ const signatureOptions = (signature: OutputOf<typeof api.mail.signatures.list>[n
     icon: Trash2,
     theme: 'red' as const,
     onClick: async () => {
-      try {
-        await deleteSignature.run({ name: signature.name })
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : __('Could not delete signature'))
-      }
+      await deleteSignature.run({ name: signature.name })
     },
   },
 ]

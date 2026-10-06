@@ -57,17 +57,13 @@ const addressBook = reactive({ ...defaultAddressBook })
 const createAddressBook = useMutation(api.mail.addressBooks.create)
 async function createAddressBookSubmit() {
   const account = store.accountId
-  try {
-    const id = await createAddressBook.run({ ...addressBook, account })
-    show.value = false
-    raiseToast(__('Address book created.'))
-    await router.push({
-      name: 'people-address-book',
-      params: { accountId: account, addressBookName: id },
-    })
-  } catch {
-    /* Keep the draft open after refusal. */
-  }
+  const id = await createAddressBook.run({ ...addressBook, account })
+  show.value = false
+  raiseToast(__('Address book created.'))
+  await router.push({
+    name: 'people-address-book',
+    params: { accountId: account, addressBookName: id },
+  })
 }
 
 watch(show, (val) => {

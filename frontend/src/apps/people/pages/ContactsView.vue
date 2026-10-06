@@ -89,17 +89,13 @@ function loadMoreContacts(event: Event) {
 }
 const removeContacts = useMutation(api.mail.contacts.delete)
 async function deleteContacts() {
-  try {
-    await removeContacts.run({
-      account: accountId,
-      ids: Array.from(listView.value?.selections ?? [], String),
-    })
-    showDeleteContacts.value = false
-    raiseToast(__('Contacts deleted.'))
-    listView.value?.toggleAllRows()
-  } catch {
-    /* Keep selections and the dialog after refusal. */
-  }
+  await removeContacts.run({
+    account: accountId,
+    ids: Array.from(listView.value?.selections ?? [], String),
+  })
+  showDeleteContacts.value = false
+  raiseToast(__('Contacts deleted.'))
+  listView.value?.toggleAllRows()
 }
 const listOptions = computed(() => ({
   showTooltip: false,

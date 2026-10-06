@@ -235,14 +235,10 @@ async function addAddress(value: NonNullable<Changes['addresses']>[number]) {
   await saveChanges({ addresses: [...(contact.data?.addresses ?? []), value] })
 }
 async function deleteContact() {
-  try {
-    await removeContact.run({ account: accountId, ids: [contactName] })
-    showDeleteContact.value = false
-    raiseToast(__('Contact deleted.'))
-    await router.push({ name: 'people-contacts', params: { accountId } })
-  } catch {
-    /* Keep the dialog open after refusal. */
-  }
+  await removeContact.run({ account: accountId, ids: [contactName] })
+  showDeleteContact.value = false
+  raiseToast(__('Contact deleted.'))
+  await router.push({ name: 'people-contacts', params: { accountId } })
 }
 
 const deleteContactOptions = computed(() => ({

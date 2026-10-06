@@ -2664,9 +2664,8 @@
                 "title": "Slug"
               },
               "subscribed": {
-                "enum": [0, 1],
                 "title": "Subscribed",
-                "type": "integer"
+                "type": "boolean"
               },
               "icon": {
                 "anyOf": [

@@ -341,7 +341,7 @@
               handleSetSeen({ [Number(seen)]: [threadID!] }, seen, ids)
           "
           @sync-unseen="handleSyncUnseen"
-          @set-flagged="(ids: string[], flagged: boolean) => setFlagged.submit({ ids, flagged })"
+          @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
           @move-thread="
             (moveToMailbox: string) => handleMoveThreads({ [moveToMailbox]: [threadID!] })
           "
@@ -509,6 +509,7 @@ import {
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
+import { threadRow } from '@/apps/mail/utils/threadRows'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
@@ -1336,7 +1337,7 @@ const {
   handleMailMove,
   handleMailSpam,
   handleMailDelete,
-  setFlagged,
+  setFlaggedSubmit,
   selectedRows,
   moveToOptions,
   addToOptions,

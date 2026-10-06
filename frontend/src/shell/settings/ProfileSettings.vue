@@ -272,16 +272,12 @@ const passwordDialogOptions = computed(() => ({
 
 const updatePassword = useMutation(api.suite.account.changePassword)
 async function changePassword() {
-  try {
-    await updatePassword.run({
-      old_password: currentPassword.value,
-      new_password: newPassword.value,
-    })
-    showPasswordDialog.value = false
-    toast.success(__('Password updated.'))
-  } catch {
-    /* The mutation keeps its error and reports the refusal. */
-  }
+  await updatePassword.run({
+    old_password: currentPassword.value,
+    new_password: newPassword.value,
+  })
+  showPasswordDialog.value = false
+  toast.success(__('Password updated.'))
 }
 
 watch(showPasswordDialog, (open) => {

@@ -89,7 +89,9 @@ const now = useNow({ interval: 30_000 })
 // — the Calendar that answers those questions is not mounted there.
 const anchorMonth = computed(() => {
   if (isMobile.value) return dayjs(mobileDate.value)
-  return dayjs().year(calendarRef.value?.currentYear).month(calendarRef.value?.currentMonth)
+  const calendar = calendarRef.value
+  if (calendar?.currentYear == null || calendar.currentMonth == null) return routeDate(route.params)
+  return dayjs().year(calendar.currentYear).month(calendar.currentMonth)
 })
 
 const pageTitle = computed(() => {

@@ -1133,8 +1133,7 @@ export function useThreadActions(deps: {
     handleMailMove,
     handleMailSpam,
     handleMailDelete,
-    // Resource exposed to the template (MailThread @set-flagged)
-    setFlagged,
+    setFlaggedSubmit,
     // Toolbar option lists
     selectedRows,
     moveToOptions,

@@ -183,42 +183,10 @@ export interface Thread {
   user_image?: string
   messages: Mail[]
 }
-export interface MailboxData {
-  name: string
-  id: string
-  role: string | null
-  total_emails: number
-  total_threads: number
-  unread_threads: number
-  _name: string
-  // What the folder is called in the unified views (see UnifiedFolder); null for the Screener.
-  slug: string | null
-  subscribed: 0 | 1
-  icon?: string | null
-  color?: 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple' | null
-  disable_push_notification?: 0 | 1
-  automation_rules?: AutomationRules | null
-}
+export type MailboxData = import('../client/generated').GetMailboxesOutput[number]
 
 /** One folder across all of the user's accounts, as get_unified_folders merges it. */
-export interface UnifiedFolder {
-  slug: string
-  name: string
-  role: string | null
-  unread_threads: number
-  // The accounts that have this folder.
-  accounts: string[]
-  icon: string | null
-  color: MailboxData['color'] | null
-}
-
-interface AutomationRules {
-  emails_from: string
-  subject_contains: string
-  match_if: 'any' | 'all'
-  mark_as_read: boolean
-  add_star: boolean
-}
+export type UnifiedFolder = import('../client/generated').GetUnifiedFoldersOutput[number]
 export interface QuotaUsage {
   total: number
   used: number

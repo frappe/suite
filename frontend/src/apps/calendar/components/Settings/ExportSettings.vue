@@ -63,7 +63,7 @@
         :disabled="
           ongoingExport.isFetching || Boolean(ongoingExport.error) || createCalendarExport.isPending
         "
-        @click="createCalendarExport.run(makeInput()).catch(() => {})"
+        @click="createCalendarExport.run(makeInput())"
       />
       <div class="!mt-3 space-x-1 text-base">
         <span class="text-ink-gray-5">{{ exportSubtitle }}</span>

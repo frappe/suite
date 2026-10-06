@@ -250,7 +250,6 @@
 import {
   Button,
   Dialog,
-  Dropdown,
   FormControl,
   PageHeader,
   PageHeaderMobile,
@@ -280,6 +279,7 @@ import {
   homeEventWindow,
   toLocalDateTimeInput,
 } from '@/composition/home/homeTime'
+import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
 import { translate as __ } from '@/platform/translation'
 import { isMobile } from '@/shell/useIsMobile'
@@ -361,24 +361,16 @@ const scheduleMenuItems = [
   },
 ]
 async function createDocument(contentDoctype: string) {
-  try {
-    const node = await createDocumentMutation.run({
-      content_doctype: contentDoctype,
-    })
-    if (node) await router.push(driveNodeRoute(node))
-  } catch {
-    return
-  }
+  const node = await createDocumentMutation.run({
+    content_doctype: contentDoctype,
+  })
+  if (node) await router.push(driveNodeRoute(node))
 }
 async function startMeeting(type: 'open' | 'restricted') {
-  try {
-    const room = await createRoomMutation.run({
-      type,
-    })
-    if (room) await router.push(meetRoute(room.code))
-  } catch {
-    return
-  }
+  const room = await createRoomMutation.run({
+    type,
+  })
+  if (room) await router.push(meetRoute(room.code))
 }
 function joinWithCode() {
   const code = meetingCode.value.trim()
@@ -391,27 +383,23 @@ function joinWithCode() {
   void router.push(meetRoute(code))
 }
 async function submitScheduledMeeting() {
-  try {
-    scheduleError.value = ''
-    const start = new Date(meetingStart.value)
-    const end = new Date(meetingEnd.value)
-    if (!meetingTitle.value.trim() || Number.isNaN(start.getTime()) || end <= start) {
-      scheduleError.value = __('Enter a title and an end time after the start time.')
-      return
-    }
-    await scheduleMeetingMutation.run({
-      title: meetingTitle.value.trim(),
-      start: start.toISOString(),
-      end: end.toISOString(),
-      attendees: [],
-    })
-    scheduleDialogOpen.value = false
-    meetingTitle.value = ''
-    toast.success(__('Meeting scheduled.'))
-    await upcomingQuery.refetch()
-  } catch {
+  scheduleError.value = ''
+  const start = new Date(meetingStart.value)
+  const end = new Date(meetingEnd.value)
+  if (!meetingTitle.value.trim() || Number.isNaN(start.getTime()) || end <= start) {
+    scheduleError.value = __('Enter a title and an end time after the start time.')
     return
   }
+  await scheduleMeetingMutation.run({
+    title: meetingTitle.value.trim(),
+    start: start.toISOString(),
+    end: end.toISOString(),
+    attendees: [],
+  })
+  scheduleDialogOpen.value = false
+  meetingTitle.value = ''
+  toast.success(__('Meeting scheduled.'))
+  await upcomingQuery.refetch()
 }
 function meetRoute(code: string): string {
   return `/meet/${encodeURIComponent(code)}`

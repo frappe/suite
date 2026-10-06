@@ -76,6 +76,87 @@ async function flush() {
 }
 
 describe('Suite API references and shared client', () => {
+  it('updates WebDAV switches immediately, rolls back refusals, and reconciles successful saves', async () => {
+    let globallyEnabled = true
+    let userEnabled = false
+    const writes = Array.from({ length: 5 }, () => deferred<Response>())
+    let write = 0
+    fetcher.mockImplementation(async (_url, init) => {
+      if (init?.method === 'PATCH') return writes[write++].promise
+      return answer({
+        globally_enabled: globallyEnabled,
+        is_admin: true,
+        server_url: 'https://suite.test/webdav',
+        username: 'alice',
+        enabled_for_user: userEnabled,
+        two_factor_blocked: false,
+        api_key: null,
+      })
+    })
+    const webdav = observe(() => engine.useQuery(api.drive.webdav.get, {}))
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ enabled_for_user: false }))
+
+    const user = engine.useMutation(api.drive.settings.update)
+    const refused = user.run({ webdav_enabled: true })
+    const rejection = expect(refused).rejects.toMatchObject({ status: 403 })
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ enabled_for_user: true }))
+    expect(user.isPending).toBe(true)
+    writes[0].resolve(answer({ type: 'Permission', message: 'Access refused' }, 403))
+    await rejection
+    expect(webdav.data).toMatchObject({ globally_enabled: true, enabled_for_user: false })
+    expect(user.isPending).toBe(false)
+    expect(feedback).toHaveBeenCalledOnce()
+
+    const saved = user.run({ webdav_enabled: true })
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ enabled_for_user: true }))
+    userEnabled = true
+    writes[1].resolve(answer({ webdav_enabled: true, writer_settings: {} }))
+    await saved
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ enabled_for_user: true }))
+
+    const site = engine.useMutation(api.drive.siteSettings.update)
+    const disabled = site.run({ webdav_enabled: false })
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ globally_enabled: false }))
+    expect(site.isPending).toBe(true)
+    globallyEnabled = false
+    writes[2].resolve(
+      answer({
+        is_admin: true,
+        preview_size: 1024,
+        webdav_enabled: false,
+        webdav_allowed_methods: 'GET',
+        default_personal_quota: 0,
+        shared_quota: 0,
+      }),
+    )
+    await disabled
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ globally_enabled: false }))
+    expect(site.isPending).toBe(false)
+    expect(feedback).toHaveBeenCalledOnce()
+
+    const refusedSite = site.run({ webdav_enabled: true })
+    const siteRejection = expect(refusedSite).rejects.toMatchObject({ status: 403 })
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ globally_enabled: true }))
+    await webdav.refetch()
+    expect(webdav.data).toMatchObject({ globally_enabled: true, enabled_for_user: true })
+    writes[3].resolve(answer({ type: 'Permission', message: 'Access refused' }, 403))
+    await siteRejection
+    expect(webdav.data).toMatchObject({ globally_enabled: false, enabled_for_user: true })
+    expect(feedback).toHaveBeenCalledTimes(2)
+
+    const cancellation = new AbortController()
+    const canceled = engine.client.mutation(
+      api.drive.siteSettings.update,
+      { webdav_enabled: true },
+      { signal: cancellation.signal },
+    )
+    const aborted = expect(canceled).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(webdav.data).toMatchObject({ globally_enabled: true }))
+    cancellation.abort()
+    await aborted
+    expect(webdav.data).toMatchObject({ globally_enabled: false, enabled_for_user: true })
+    expect(feedback).toHaveBeenCalledTimes(2)
+  })
   it('pages offset readers through exhaustion and discards pages from an old filter', async () => {
     const delayed = deferred<Response>()
     const members = ['alice', 'bob', 'cara'].map((name) => ({

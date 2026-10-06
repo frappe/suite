@@ -60,7 +60,7 @@
         class="text-left text-base text-ink-gray-6 hover:underline"
         type="button"
         :disabled="resendOtp.isPending"
-        @click="resendOtp.run({ account_request: accountRequest }).catch(() => {})"
+        @click="resendOtp.run({ account_request: accountRequest })"
       >
         {{ __('Resend code') }}
       </button>

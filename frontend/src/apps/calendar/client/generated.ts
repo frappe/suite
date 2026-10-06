@@ -63,12 +63,12 @@ export type EventsGetOutputParticipant = {
   kind: string
   _name: string | null
   email: string
-  schedule_id: string
-  send_to: { [key: string]: string }
+  schedule_id: string | null
+  send_to: { [key: string]: string } | null
   participation_status: string
   expect_reply: 0 | 1
-  description: string
-  comment: string
+  description: string | null
+  comment: string | null
   schedule_agent: string
   member_of: { [key: string]: boolean }
   user_image?: string | null
@@ -157,12 +157,12 @@ export type CalendarGetCalendarEventsOutputParticipant = {
   kind: string
   _name: string | null
   email: string
-  schedule_id: string
-  send_to: { [key: string]: string }
+  schedule_id: string | null
+  send_to: { [key: string]: string } | null
   participation_status: string
   expect_reply: 0 | 1
-  description: string
-  comment: string
+  description: string | null
+  comment: string | null
   schedule_agent: string
   member_of: { [key: string]: boolean }
   user_image?: string | null
@@ -299,12 +299,12 @@ export type GetCalendarEventsWithSharedOutputParticipant = {
   kind: string
   _name: string | null
   email: string
-  schedule_id: string
-  send_to: { [key: string]: string }
+  schedule_id: string | null
+  send_to: { [key: string]: string } | null
   participation_status: string
   expect_reply: 0 | 1
-  description: string
-  comment: string
+  description: string | null
+  comment: string | null
   schedule_agent: string
   member_of: { [key: string]: boolean }
   user_image?: string | null
@@ -446,12 +446,12 @@ export type SearchCalendarEventsWithSharedOutputParticipant = {
   kind: string
   _name: string | null
   email: string
-  schedule_id: string
-  send_to: { [key: string]: string }
+  schedule_id: string | null
+  send_to: { [key: string]: string } | null
   participation_status: string
   expect_reply: 0 | 1
-  description: string
-  comment: string
+  description: string | null
+  comment: string | null
   schedule_agent: string
   member_of: { [key: string]: boolean }
   user_image?: string | null
@@ -951,12 +951,12 @@ export type GetInviteDetailsOutputParticipant = {
   kind: string
   _name: string | null
   email: string
-  schedule_id: string
-  send_to: { [key: string]: string }
+  schedule_id: string | null
+  send_to: { [key: string]: string } | null
   participation_status: string
   expect_reply: 0 | 1
-  description: string
-  comment: string
+  description: string | null
+  comment: string | null
   schedule_agent: string
   member_of: { [key: string]: boolean }
   user_image?: string | null
@@ -1011,12 +1011,12 @@ export type AddInviteToCalendarOutputParticipant = {
   kind: string
   _name: string | null
   email: string
-  schedule_id: string
-  send_to: { [key: string]: string }
+  schedule_id: string | null
+  send_to: { [key: string]: string } | null
   participation_status: string
   expect_reply: 0 | 1
-  description: string
-  comment: string
+  description: string | null
+  comment: string | null
   schedule_agent: string
   member_of: { [key: string]: boolean }
   user_image?: string | null
@@ -1108,12 +1108,12 @@ export type RsvpToInviteOutputParticipant = {
   kind: string
   _name: string | null
   email: string
-  schedule_id: string
-  send_to: { [key: string]: string }
+  schedule_id: string | null
+  send_to: { [key: string]: string } | null
   participation_status: string
   expect_reply: 0 | 1
-  description: string
-  comment: string
+  description: string | null
+  comment: string | null
   schedule_agent: string
   member_of: { [key: string]: boolean }
   user_image?: string | null

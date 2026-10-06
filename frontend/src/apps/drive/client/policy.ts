@@ -115,8 +115,28 @@ export const mutationEffects: Readonly<Record<string, Effects | 'none'>> = {
   'root_patch.root_archive': { invalidates: ['roots_discover', 'root_usage', ...LISTS] },
   root_purge: { invalidates: ['roots_discover', 'root_usage', ...LISTS] },
   root_empty_trash: { invalidates: STORAGE },
-  settings_patch: { invalidates: ['settings_get', 'webdav_get'] },
-  site_settings_patch: { invalidates: ['site_settings_get', 'settings_get', 'webdav_get'] },
+  settings_patch: {
+    invalidates: ['settings_get', 'webdav_get'],
+    optimisticReads: {
+      references: ['drive.webdav_get'],
+      update(input, _query, data) {
+        const enabled = record(input).webdav_enabled
+        if (typeof enabled === 'boolean' && typeof record(data).enabled_for_user === 'boolean')
+          return { ...record(data), enabled_for_user: enabled }
+      },
+    },
+  },
+  site_settings_patch: {
+    invalidates: ['site_settings_get', 'settings_get', 'webdav_get'],
+    optimisticReads: {
+      references: ['drive.webdav_get'],
+      update(input, _query, data) {
+        const enabled = record(input).webdav_enabled
+        if (typeof enabled === 'boolean' && typeof record(data).globally_enabled === 'boolean')
+          return { ...record(data), globally_enabled: enabled }
+      },
+    },
+  },
 }
 
 export const registration: OwnerRegistration = {

@@ -316,6 +316,15 @@ frontend/src/
   `mutation.error`. Success UI runs only after the awaited command succeeds.
   The default error toast is on; pass `{ silent: true }` when the component
   shows the refusal itself (under a field, or as a toast with Retry).
+- Vue event handlers can await a mutation without a local catch when they need
+  only default feedback or an inline `mutation.error`. Return or await the
+  promise so Vue owns its rejection. Reset inline error state when the dialog
+  context changes. Keep local handling for recovery, partial results, and
+  background work that Vue does not await.
+- Async menus use `Dropdown` and `ContextMenu` from `@/platform/feedback`.
+  They preserve Frappe UI behavior and report callback rejections through the
+  application's error handler. `AdaptiveDropdown` uses this adapter on desktop
+  and returns the action promise from its mobile event handler.
 - User feedback goes through `@/platform/feedback`: `toast`, `confirm`,
   `prompt`. A destructive action confirms first; a reversible change reports
   in a toast with Undo (`features/changeToast.ts`).

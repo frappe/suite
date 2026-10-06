@@ -7,6 +7,7 @@ import App from '@/App.vue'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
 import { initializeCursor } from '@/platform/cursor'
+import { installApiErrorHandler } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { initializeTheme } from '@/platform/theme'
 import { translationPlugin, ready as translationsReady } from '@/platform/translation'
@@ -26,6 +27,8 @@ await Promise.all([
   initializeTheme(),
   import('@/boot/config'),
 ])
+
+installApiErrorHandler(app)
 
 app.use(createPinia())
 app.use(router)

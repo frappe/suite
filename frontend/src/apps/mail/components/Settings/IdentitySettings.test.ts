@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
+import { installApiErrorHandler } from '@/platform/server-state'
+
 import IdentitySettings from './IdentitySettings.vue'
 
 // Deferred command replies let each scenario observe the form before and after settlement.
 const resources = vi.hoisted(() => new Map<string, FakeResource>())
 const toasts = vi.hoisted(() => vi.fn())
+const diagnostics = vi.hoisted(() => vi.fn())
 const state = vi.hoisted(() => ({ store: null as unknown as Store }))
 
 type FakeResource = {
@@ -151,6 +154,8 @@ function mount(identities: IdentityRow[]) {
   }
   const root = document.createElement('div')
   const app = createApp(defineComponent({ render: () => h(IdentitySettings) }))
+  app.config.errorHandler = diagnostics
+  installApiErrorHandler(app)
   app.config.globalProperties.__ = window.__
   app.provide('$user', { data: { name: 'me@example.com' } })
   app.mount(root)
@@ -171,6 +176,7 @@ beforeEach(() => {
   window.__ = (message: string) => message
   resources.clear()
   toasts.mockReset()
+  diagnostics.mockReset()
 })
 afterEach(() => mounted?.app.unmount())
 
@@ -252,5 +258,7 @@ describe('IdentitySettings delete', () => {
     expect(confirmDialog(root)).not.toBeNull()
     expect(toasts).toHaveBeenCalledWith('Identity Deletion Error', 'error')
     expect(displayName(root)).toBe('Me')
+    // The fixture rejects with a plain Error, which still belongs to diagnostics.
+    expect(diagnostics.mock.calls[0]?.[0]).toEqual(new Error('Identity Deletion Error'))
   })
 })

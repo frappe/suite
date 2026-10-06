@@ -319,7 +319,6 @@ import {
   Avatar,
   Button,
   Checkbox,
-  Dropdown,
   ErrorMessage,
   LoadingIndicator,
   Skeleton,
@@ -340,6 +339,7 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
 import { nodeIcon, nodeIconTint, nodeTypeLabel } from '@/apps/drive/files/internal/icons'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
+import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 
 import FileCard from './FileCard.vue'

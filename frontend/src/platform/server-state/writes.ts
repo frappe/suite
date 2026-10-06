@@ -1,6 +1,7 @@
 /** Ordinary writes run in call order; challenge resolution releases the queue. */
 import { TransportError, type MutationRef, type Transport } from '@/platform/transport'
 
+import { recordMutationFailure } from './errors'
 import { canceled, isAbort, type Reads } from './reads'
 import type { ChallengeHandler, OwnerRegistration, WriteOptions } from './types'
 
@@ -31,7 +32,7 @@ export class Writes {
       const effects = policy.effects === 'none' ? {} : policy.effects
       const touched = effects.touches?.(input) ?? []
       const partition = this.reads.access(policy, input, options.context)
-      const restoreReads = this.reads.optimistic(partition, input, effects.optimisticReads)
+      const optimisticReads = this.reads.optimistic(partition, input, effects.optimisticReads)
       const rollback = this.reads.entities.optimistic(
         partition,
         reference.entity?.tag,
@@ -52,6 +53,7 @@ export class Writes {
         options.signal?.throwIfAborted()
         if (partition !== this.reads.access(policy, input, options.context))
           throw new DOMException('Aborted', 'AbortError')
+        optimisticReads.commit()
         this.reads.commit(output, reference.entity, partition)
         const invalidates =
           typeof effects.invalidates === 'function'
@@ -73,7 +75,7 @@ export class Writes {
           }
         return output
       } catch (cause) {
-        restoreReads()
+        optimisticReads.rollback()
         rollback()
         throw cause
       }
@@ -100,6 +102,7 @@ export class Writes {
         }
       }
       options.signal?.throwIfAborted()
+      recordMutationFailure(cause)
       if (!options.silent && cause instanceof Error) this.feedback(cause)
       throw cause
     }

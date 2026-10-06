@@ -85,7 +85,7 @@
 
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Button, Dialog, Dropdown, FormControl, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, FormControl, usePageMeta } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListEmptyState,
@@ -107,6 +107,7 @@ import { raiseToast } from '@/apps/people/utils'
 import DashboardCard from '@/components/dashboard/DashboardCard.vue'
 import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import InformationField from '@/components/dashboard/InformationField.vue'
+import { Dropdown } from '@/platform/feedback'
 import { appPageMeta } from '@/utils/documentTitle'
 
 const { accountId, addressBookName } = defineProps<{
@@ -173,22 +174,18 @@ const breadcrumbs = computed(() => [
 ])
 const deleteBook = useMutation(api.mail.addressBooks.delete)
 async function deleteAddressBook() {
-  try {
-    await deleteBook.run({
-      account: accountId,
-      ids: [addressBookName],
-    })
-    showDeleteAddressBook.value = false
-    raiseToast(__('Address book deleted.'))
-    await router.push({
-      name: 'people-address-books',
-      params: {
-        accountId,
-      },
-    })
-  } catch {
-    /* Keep the dialog open after refusal. */
-  }
+  await deleteBook.run({
+    account: accountId,
+    ids: [addressBookName],
+  })
+  showDeleteAddressBook.value = false
+  raiseToast(__('Address book deleted.'))
+  await router.push({
+    name: 'people-address-books',
+    params: {
+      accountId,
+    },
+  })
 }
 const listView = useTemplateRef('listView')
 const addToBook = useMutation(api.mail.contacts.addToBook)
@@ -202,18 +199,14 @@ async function addContacts(ids: string[]) {
   raiseToast(__('Contacts added.'))
 }
 async function removeContacts() {
-  try {
-    await removeFromBook.run({
-      account: accountId,
-      ids: Array.from(listView.value?.selections ?? [], String),
-      address_book_id: addressBookName,
-    })
-    showRemoveContacts.value = false
-    listView.value?.toggleAllRows()
-    raiseToast(__('Contacts removed.'))
-  } catch {
-    /* Keep selections after refusal. */
-  }
+  await removeFromBook.run({
+    account: accountId,
+    ids: Array.from(listView.value?.selections ?? [], String),
+    address_book_id: addressBookName,
+  })
+  showRemoveContacts.value = false
+  listView.value?.toggleAllRows()
+  raiseToast(__('Contacts removed.'))
 }
 const deleteAddressBookOptions = computed(() => ({
   title: __('Delete Address Book'),
@@ -245,17 +238,12 @@ const dropdownOptions = computed(() => [
   {
     label: __('Set as Default'),
     icon: Pin,
-    onClick: () => {
-      void updateBook
-        .run({
-          account: accountId,
-          id: addressBookName,
-          changes: {
-            default: true,
-          },
-        })
-        .catch(() => {})
-    },
+    onClick: () =>
+      updateBook.run({
+        account: accountId,
+        id: addressBookName,
+        changes: { default: true },
+      }),
     condition: () => !addressBook.data?.default,
   },
   {

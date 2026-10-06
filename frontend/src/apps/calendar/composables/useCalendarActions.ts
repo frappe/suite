@@ -20,16 +20,12 @@ export const useCalendarActions = () => {
   const showDelete = ref(false)
 
   const makeDefault = async (calendar: CalendarRow) => {
-    try {
-      await client.mutation(api.calendar.calendars.update, {
-        account: calendar.account,
-        id: calendar.id,
-        default: true,
-      })
-      raiseToast(__('Default calendar changed.'))
-    } catch {
-      /* The shared mutation feedback reports the refusal. */
-    }
+    await client.mutation(api.calendar.calendars.update, {
+      account: calendar.account,
+      id: calendar.id,
+      default: true,
+    })
+    raiseToast(__('Default calendar changed.'))
   }
 
   // Shown at once and saved behind: a toggle that waited on the server would feel broken,

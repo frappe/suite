@@ -242,7 +242,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
       },
       {
         label: __('Mark Domain as Trusted'),
-        onClick: () => trustDomain().catch(() => {}),
+        onClick: () => trustDomain(),
         icon: ShieldCheck,
         condition: () =>
           mailbox !== mailboxIds.value.screener &&

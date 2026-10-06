@@ -9,7 +9,7 @@
           variant: 'solid',
           disabled: !form.name.trim() || (!isNew && !isDirty),
           loading: savePending,
-          onClick: () => save().catch(() => {}),
+          onClick: () => save(),
         },
       ],
     }"
@@ -22,7 +22,7 @@
           :placeholder="__('Personal')"
           autofocus
           required
-          @keydown.enter="form.name.trim() && (isNew || isDirty) && save().catch(() => {})"
+          @keydown.enter="form.name.trim() && (isNew || isDirty) && save()"
         />
         <FormControl
           v-model="form.color"

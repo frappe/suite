@@ -62,7 +62,6 @@ const groupMessagesBy = ref<'None' | 'Day' | 'Month'>(
 function selectGrouping(value: unknown) {
   if (value === 'None' || value === 'Day' || value === 'Month') groupMessagesBy.value = value
 }
-const saving = ref(false)
 
 const isNotDirty = computed(
   () =>
@@ -71,20 +70,14 @@ const isNotDirty = computed(
 )
 
 const saveSettings = useMutation(api.mail.settings.updatePreferences)
+const saving = computed(() => saveSettings.isPending)
 
 const saveLayout = async () => {
-  saving.value = true
-  try {
-    await saveSettings.run({
-      show_reading_pane: showReadingPane.value ? 1 : 0,
-      group_messages_by: groupMessagesBy.value,
-    })
-    raiseToast(__('Mail layout updated.'))
-  } catch {
-    // The shared client reports a refused save.
-  } finally {
-    saving.value = false
-  }
+  await saveSettings.run({
+    show_reading_pane: showReadingPane.value ? 1 : 0,
+    group_messages_by: groupMessagesBy.value,
+  })
+  raiseToast(__('Mail layout updated.'))
 }
 
 const GROUP_MESSAGES_OPTIONS = [

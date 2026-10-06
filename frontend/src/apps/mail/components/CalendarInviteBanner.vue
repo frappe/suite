@@ -166,23 +166,19 @@ async function addInviteSubmit() {
     account,
     blob_id: attachment.blob_id,
   }
-  try {
-    const event = await addInvite.run(input)
-    const before = currentDetails.value
-    if (before)
-      confirmed.value = {
-        account: input.account,
-        blob: input.blob_id,
-        value: {
-          ...before,
-          exists: true,
-          event,
-        },
-      }
-    raiseToast(__('Event added to your calendar.'))
-  } catch {
-    /* The command reports the refusal. */
-  }
+  const event = await addInvite.run(input)
+  const before = currentDetails.value
+  if (before)
+    confirmed.value = {
+      account: input.account,
+      blob: input.blob_id,
+      value: {
+        ...before,
+        exists: true,
+        event,
+      },
+    }
+  raiseToast(__('Event added to your calendar.'))
 }
 
 // --- RSVP (the same segmented control the calendar app's event detail card uses) ---
@@ -210,33 +206,29 @@ async function respond(response: 'accepted' | 'tentative' | 'declined') {
     blob_id: attachment.blob_id,
     response,
   }
-  try {
-    const event = await rsvp.run(input)
-    const before = currentDetails.value
-    if (before)
-      confirmed.value = {
-        account: input.account,
-        blob: input.blob_id,
-        value: {
-          ...before,
-          exists: true,
-          event,
-          participant: before.participant
-            ? {
-                ...before.participant,
-                status: response.toUpperCase(),
-              }
-            : null,
-        },
-      }
-    raiseToast(__('Response sent.'))
-    if (isOpen.value)
-      openEvent(event, {
-        tracked: false,
-      })
-  } catch {
-    /* Keep the stored RSVP after refusal. */
-  }
+  const event = await rsvp.run(input)
+  const before = currentDetails.value
+  if (before)
+    confirmed.value = {
+      account: input.account,
+      blob: input.blob_id,
+      value: {
+        ...before,
+        exists: true,
+        event,
+        participant: before.participant
+          ? {
+              ...before.participant,
+              status: response.toUpperCase(),
+            }
+          : null,
+      },
+    }
+  raiseToast(__('Response sent.'))
+  if (isOpen.value)
+    openEvent(event, {
+      tracked: false,
+    })
 }
 
 // An RSVP is a state, so the control shows the answer as soon as it's tapped, and falls back to
@@ -248,7 +240,7 @@ const handleRsvp = (response?: string | number) => {
   if (typeof response !== 'string' || rsvp.isPending || response === currentResponse.value) return
   pendingResponse.value = response
   const value = response.toLowerCase()
-  if (value === 'accepted' || value === 'tentative' || value === 'declined') void respond(value)
+  if (value === 'accepted' || value === 'tentative' || value === 'declined') return respond(value)
 }
 
 // Opening the event — in the card or in the calendar — needs its own id, which only a copy on

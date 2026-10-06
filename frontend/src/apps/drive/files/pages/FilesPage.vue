@@ -240,8 +240,6 @@ import {
   Alert,
   Breadcrumbs,
   Button,
-  ContextMenu,
-  Dropdown,
   MultiSelect,
   PageHeader,
   PageHeaderBackButton,
@@ -255,7 +253,7 @@ import {
 import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
-import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
+import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
 import { archiveDownloadUrl } from '@/apps/drive/client/archives'
 import { nodeContentUrl } from '@/apps/drive/client/nodes'
@@ -263,7 +261,7 @@ import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
 import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
-import { confirm, toast } from '@/platform/feedback'
+import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
@@ -665,8 +663,8 @@ const emptyTitle = computed(() => empty.value.title)
 const emptyDescription = computed(() => empty.value.description)
 
 const batchMutation = useMutation(api.drive.nodes.batch)
-const moveMutation = useMutation(api.drive.nodes.move, { silent: true })
-const copyMutation = useMutation(api.drive.nodes.copy, { silent: true })
+const moveMutation = useMutation(api.drive.nodes.move)
+const copyMutation = useMutation(api.drive.nodes.copy)
 const trashMutation = useMutation(api.drive.nodes.trash)
 const starMutation = useMutation(api.drive.nodes.star)
 const unstarMutation = useMutation(api.drive.nodes.unstar)
@@ -1106,38 +1104,35 @@ function reload() {
 }
 
 async function openNode(row: DriveNode, newTab = false) {
-  try {
-    if (row.kind === 'link') {
-      if (!row.url) return
-      const origin = new URL(row.url, window.location.href).origin
-      const allowed = await confirm({
-        title: 'Open external link?',
-        message: `This link opens ${origin} in a new tab.`,
-        confirmLabel: 'Open',
-      })
-      if (!allowed) return
-      if (linkAccess(row, signedIn.value).visit) await visitMutation.run({ node: row.name })
-      window.open(row.url, '_blank', 'noopener,noreferrer')
-      return
-    }
-    // A folder keeps the user's view settings. A document's history entry
-    // carries its title, so its tab is named before it loads. A file keeps the
-    // type filter, so its preview steps through the files this listing shows.
-    const target: RouteLocationRaw =
-      row.kind === 'folder'
-        ? { path: nodePath(row), query: presentationQuery.value }
-        : row.kind === 'file'
-          ? { ...driveNodeRoute(row), query: { type: typeQuery(listingTypes.value) } }
-          : driveNodeRoute(row)
-    if (newTab) {
-      window.open(router.resolve(target).href, '_blank', 'noopener,noreferrer')
-      return
-    }
-    if (row.kind === 'folder') openedTrail.value = trailOf(row)
-    await router.push(target)
-  } catch {
+  if (row.kind === 'link') {
+    if (!row.url) return
+    const origin = new URL(row.url, window.location.href).origin
+    const allowed = await confirm({
+      title: 'Open external link?',
+      message: `This link opens ${origin} in a new tab.`,
+      confirmLabel: 'Open',
+    })
+    if (!allowed) return
+    if (linkAccess(row, signedIn.value).visit)
+      await client.mutation(api.drive.nodes.visit, { node: row.name })
+    window.open(row.url, '_blank', 'noopener,noreferrer')
     return
   }
+  // A folder keeps the user's view settings. A document's history entry
+  // carries its title, so its tab is named before it loads. A file keeps the
+  // type filter, so its preview steps through the files this listing shows.
+  const target: RouteLocationRaw =
+    row.kind === 'folder'
+      ? { path: nodePath(row), query: presentationQuery.value }
+      : row.kind === 'file'
+        ? { ...driveNodeRoute(row), query: { type: typeQuery(listingTypes.value) } }
+        : driveNodeRoute(row)
+  if (newTab) {
+    window.open(router.resolve(target).href, '_blank', 'noopener,noreferrer')
+    return
+  }
+  if (row.kind === 'folder') openedTrail.value = trailOf(row)
+  await router.push(target)
 }
 
 /**
@@ -1342,12 +1337,8 @@ async function runPurge() {
   await trash.purge(selectedRows.value.map(itemOf))
 }
 async function trashRow(row: DriveNode) {
-  try {
-    const item = itemOf(row)
-    if (await trashMutation.run({ node: row.name, state: 'Trashed' })) announceTrash([item])
-  } catch {
-    return
-  }
+  const item = itemOf(row)
+  if (await trashMutation.run({ node: row.name, state: 'Trashed' })) announceTrash([item])
 }
 /** A folder deleted forever is gone, so the page goes back to the Trash it was in. */
 async function purgeOpenFolder(item: { node: string; title: string }, folder: DriveNode) {
@@ -1370,47 +1361,39 @@ function beginBulkMove() {
   pickerOpen.value = true
 }
 async function applyPicker(parent: string, destination: string) {
-  try {
-    // Read before the move: a move changes each node's parent in place.
-    const moving: MovedItem[] = (
-      pickerBulk.value ? selectedRows.value : activeNode.value ? [activeNode.value] : []
-    ).flatMap((row) =>
-      row.parent_node
-        ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }]
-        : [],
+  // Read before the move: a move changes each node's parent in place.
+  const moving: MovedItem[] = (
+    pickerBulk.value ? selectedRows.value : activeNode.value ? [activeNode.value] : []
+  ).flatMap((row) =>
+    row.parent_node
+      ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }]
+      : [],
+  )
+  if (pickerBulk.value) {
+    const result = await runBatch(
+      moving.map((item) => item.node),
+      { parent_node: parent },
+      'moved',
     )
-    if (pickerBulk.value) {
-      const result = await runBatch(
-        moving.map((item) => item.node),
-        { parent_node: parent },
-        'moved',
-      )
-      if (!result) return
-      pickerOpen.value = false
-      announceMove(
-        moving.filter((item) => result.ok.includes(item.node)),
-        destination,
-      )
-      // The toast reports what moved. The alert stays only to list failures.
-      if (!result.failed.length) batchOutcome.value = null
-      return
-    }
-    if (!activeNode.value) return
-    const result =
-      pickerMode.value === 'move'
-        ? await moveMutation.run({ node: activeNode.value.name, parent_node: parent })
-        : await copyMutation.run({ node: activeNode.value.name, parent_node: parent })
-
-    if (pickerMode.value === 'move') announceMove(moving, destination)
-    else announceCopy({ node: result.name, title: result.title }, destination)
+    if (!result) return
     pickerOpen.value = false
-  } catch {
-    toast.error(
-      (pickerMode.value === 'move' ? moveMutation.error : copyMutation.error)?.message ??
-        'The action failed.',
+    announceMove(
+      moving.filter((item) => result.ok.includes(item.node)),
+      destination,
     )
+    // The toast reports what moved. The alert stays only to list failures.
+    if (!result.failed.length) batchOutcome.value = null
     return
   }
+  if (!activeNode.value) return
+  const result =
+    pickerMode.value === 'move'
+      ? await moveMutation.run({ node: activeNode.value.name, parent_node: parent })
+      : await copyMutation.run({ node: activeNode.value.name, parent_node: parent })
+
+  if (pickerMode.value === 'move') announceMove(moving, destination)
+  else announceCopy({ node: result.name, title: result.title }, destination)
+  pickerOpen.value = false
 }
 async function runBulkTrash() {
   const trashing = selectedRows.value.map(itemOf)
@@ -1440,32 +1423,24 @@ async function runBatch(
   }
 }
 async function toggleStar(row: DriveNode) {
-  try {
-    const starred = !row.favourite
-    const result = starred
-      ? await starMutation.run({ node: row.name })
-      : await unstarMutation.run({ node: row.name })
-    if (result) row.favourite = starred
-  } catch {
-    return
-  }
+  const starred = !row.favourite
+  const result = starred
+    ? await starMutation.run({ node: row.name })
+    : await unstarMutation.run({ node: row.name })
+  if (result) row.favourite = starred
 }
 /** A share write can change the caller's own access, so the listing is read again. */
 async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name)) void listing.refetch()
 }
 async function download(row: DriveNode) {
-  try {
-    if (row.kind === 'folder') {
-      const status = await archiveMutation.run({ node: row.name })
-      if (status?.status === 'ready') window.location.assign(archiveDownloadUrl(row.name))
-      else toast.info('The folder archive is being prepared. Try Download again shortly.')
-      return
-    }
-    window.location.assign(nodeContentUrl(row.name, { download: true }))
-  } catch {
+  if (row.kind === 'folder') {
+    const status = await archiveMutation.run({ node: row.name })
+    if (status?.status === 'ready') window.location.assign(archiveDownloadUrl(row.name))
+    else toast.info('The folder archive is being prepared. Try Download again shortly.')
     return
   }
+  window.location.assign(nodeContentUrl(row.name, { download: true }))
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return

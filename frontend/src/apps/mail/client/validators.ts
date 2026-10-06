@@ -1606,7 +1606,7 @@ export const operationGetMailboxes: Validators<GetMailboxesInput, GetMailboxesOu
               total_threads: { title: 'Total Threads', type: 'integer' },
               unread_threads: { title: 'Unread Threads', type: 'integer' },
               slug: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Slug' },
-              subscribed: { enum: [0, 1], title: 'Subscribed', type: 'integer' },
+              subscribed: { title: 'Subscribed', type: 'boolean' },
               icon: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Icon' },
               color: {
                 anyOf: [

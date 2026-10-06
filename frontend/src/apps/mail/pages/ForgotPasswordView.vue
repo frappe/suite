@@ -9,7 +9,7 @@
   </p>
 
   <template v-else>
-    <form class="flex flex-col space-y-4" @submit.prevent="send().catch(() => {})">
+    <form class="flex flex-col space-y-4" @submit.prevent="send()">
       <FormControl
         v-model="email"
         :label="__('Email')"

@@ -126,51 +126,27 @@ const saveSite = useMutation(api.drive.siteSettings.update)
 const saveUser = useMutation(api.drive.settings.update)
 const generate = useMutation(api.suite.account.generateKeys)
 
-// The switches show the new value at once; the answer refetch confirms it.
-const siteEnabled = ref(false)
-const userEnabled = ref(false)
-watch(
-  answer,
-  (value) => {
-    siteEnabled.value = value.globally_enabled === true
-    userEnabled.value = value.enabled_for_user === true
-  },
-  { immediate: true },
-)
+// The owner policy updates these reads immediately and rolls back refused writes.
+const siteEnabled = computed(() => answer.value.globally_enabled === true)
+const userEnabled = computed(() => answer.value.enabled_for_user === true)
 
 async function setSiteEnabled(value: boolean) {
-  try {
-    siteEnabled.value = value
-    await saveSite.run({ webdav_enabled: value })
-    if (saveSite.error) siteEnabled.value = !value
-  } catch {
-    return
-  }
+  await saveSite.run({ webdav_enabled: value })
 }
 
 async function setUserEnabled(value: boolean) {
-  try {
-    userEnabled.value = value
-    await saveUser.run({ webdav_enabled: value })
-    if (saveUser.error) userEnabled.value = !value
-  } catch {
-    return
-  }
+  await saveUser.run({ webdav_enabled: value })
 }
 
 const keys = ref<{ api_key: string; api_secret: string } | null>(null)
 const showSecret = ref(false)
 
 async function generateKeys() {
-  try {
-    if (!connection.value) return
-    const result = await generate.run({ user: connection.value.username })
+  if (!connection.value) return
+  const result = await generate.run({ user: connection.value.username })
 
-    keys.value = result
-    showSecret.value = true
-  } catch {
-    return
-  }
+  keys.value = result
+  showSecret.value = true
 }
 
 // The secret shows once. Drop it when the dialog closes.

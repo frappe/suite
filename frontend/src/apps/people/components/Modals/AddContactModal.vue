@@ -68,14 +68,10 @@ const contact = reactive({ ...defaultContact })
 const createContact = useMutation(api.mail.contacts.create)
 async function createContactSubmit() {
   const account = store.accountId
-  try {
-    const id = await createContact.run({ ...contact, account })
-    show.value = false
-    raiseToast(__('Contact created.'))
-    await router.push({ name: 'people-contact', params: { accountId: account, contactName: id } })
-  } catch {
-    /* Keep the draft open after refusal. */
-  }
+  const id = await createContact.run({ ...contact, account })
+  show.value = false
+  raiseToast(__('Contact created.'))
+  await router.push({ name: 'people-contact', params: { accountId: account, contactName: id } })
 }
 
 watch(show, (val) => {

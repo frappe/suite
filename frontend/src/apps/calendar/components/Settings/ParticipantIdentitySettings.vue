@@ -7,7 +7,7 @@
         variant="solid"
         :disabled="!changed"
         :loading="updateIdentity.isPending"
-        @click="save().catch(() => {})"
+        @click="save()"
       />
       <Button icon-left="lucide-plus" :label="__('New')" variant="outline" @click="showAddDialog" />
     </template>
@@ -81,7 +81,7 @@
             variant: 'solid',
             disabled: !newEmail,
             loading: addIdentity.isPending,
-            onClick: () => createIdentity().catch(() => {}),
+            onClick: () => createIdentity(),
           },
         ],
       }"
@@ -120,7 +120,7 @@
             variant: 'solid',
             theme: 'red',
             loading: deleteIdentity.isPending,
-            onClick: () => removeIdentity().catch(() => {}),
+            onClick: () => removeIdentity(),
           },
         ],
       }"

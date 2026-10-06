@@ -310,13 +310,9 @@ async function rescheduleMailSubmit({ send_at }: { send_at: string }) {
     id: submissionId,
     send_at,
   }
-  try {
-    const result = await rescheduleMail.run(input)
-    raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(result.send_at)]))
-    if (result.id) followReplacement(result.id)
-  } catch (error) {
-    throw error
-  }
+  const result = await rescheduleMail.run(input)
+  raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(result.send_at)]))
+  if (result.id) followReplacement(result.id)
 }
 const sendNow = useMutation(api.mail.scheduled.sendNow, {
   silent: true,

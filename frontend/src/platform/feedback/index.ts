@@ -8,6 +8,9 @@ import { defineComponent, h, type VNodeChild } from 'vue'
 
 import type { PlatformError } from '@/platform/transport'
 
+export { default as ContextMenu } from './ContextMenu.vue'
+export { default as Dropdown } from './Dropdown.vue'
+
 export interface ConfirmOptions {
   title: string
   message?: string

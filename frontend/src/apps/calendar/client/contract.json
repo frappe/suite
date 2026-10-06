@@ -399,15 +399,29 @@
                 "type": "string"
               },
               "schedule_id": {
-                "title": "Schedule Id",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Schedule Id"
               },
               "send_to": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "title": "Send To",
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Send To"
               },
               "participation_status": {
                 "title": "Participation Status",
@@ -419,12 +433,26 @@
                 "type": "integer"
               },
               "description": {
-                "title": "Description",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
               },
               "comment": {
-                "title": "Comment",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Comment"
               },
               "schedule_agent": {
                 "title": "Schedule Agent",
@@ -880,15 +908,29 @@
                 "type": "string"
               },
               "schedule_id": {
-                "title": "Schedule Id",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Schedule Id"
               },
               "send_to": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "title": "Send To",
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Send To"
               },
               "participation_status": {
                 "title": "Participation Status",
@@ -900,12 +942,26 @@
                 "type": "integer"
               },
               "description": {
-                "title": "Description",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
               },
               "comment": {
-                "title": "Comment",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Comment"
               },
               "schedule_agent": {
                 "title": "Schedule Agent",
@@ -1460,15 +1516,29 @@
                 "type": "string"
               },
               "schedule_id": {
-                "title": "Schedule Id",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Schedule Id"
               },
               "send_to": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "title": "Send To",
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Send To"
               },
               "participation_status": {
                 "title": "Participation Status",
@@ -1480,12 +1550,26 @@
                 "type": "integer"
               },
               "description": {
-                "title": "Description",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
               },
               "comment": {
-                "title": "Comment",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Comment"
               },
               "schedule_agent": {
                 "title": "Schedule Agent",
@@ -2060,15 +2144,29 @@
                 "type": "string"
               },
               "schedule_id": {
-                "title": "Schedule Id",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Schedule Id"
               },
               "send_to": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "title": "Send To",
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Send To"
               },
               "participation_status": {
                 "title": "Participation Status",
@@ -2080,12 +2178,26 @@
                 "type": "integer"
               },
               "description": {
-                "title": "Description",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
               },
               "comment": {
-                "title": "Comment",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Comment"
               },
               "schedule_agent": {
                 "title": "Schedule Agent",
@@ -3698,15 +3810,29 @@
                 "type": "string"
               },
               "schedule_id": {
-                "title": "Schedule Id",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Schedule Id"
               },
               "send_to": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "title": "Send To",
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Send To"
               },
               "participation_status": {
                 "title": "Participation Status",
@@ -3718,12 +3844,26 @@
                 "type": "integer"
               },
               "description": {
-                "title": "Description",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
               },
               "comment": {
-                "title": "Comment",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Comment"
               },
               "schedule_agent": {
                 "title": "Schedule Agent",
@@ -3946,15 +4086,29 @@
                 "type": "string"
               },
               "schedule_id": {
-                "title": "Schedule Id",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Schedule Id"
               },
               "send_to": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "title": "Send To",
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Send To"
               },
               "participation_status": {
                 "title": "Participation Status",
@@ -3966,12 +4120,26 @@
                 "type": "integer"
               },
               "description": {
-                "title": "Description",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
               },
               "comment": {
-                "title": "Comment",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Comment"
               },
               "schedule_agent": {
                 "title": "Schedule Agent",
@@ -4418,15 +4586,29 @@
                 "type": "string"
               },
               "schedule_id": {
-                "title": "Schedule Id",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Schedule Id"
               },
               "send_to": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "title": "Send To",
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Send To"
               },
               "participation_status": {
                 "title": "Participation Status",
@@ -4438,12 +4620,26 @@
                 "type": "integer"
               },
               "description": {
-                "title": "Description",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
               },
               "comment": {
-                "title": "Comment",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Comment"
               },
               "schedule_agent": {
                 "title": "Schedule Agent",

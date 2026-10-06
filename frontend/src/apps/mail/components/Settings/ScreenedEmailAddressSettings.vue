@@ -14,7 +14,11 @@
         )
       "
     >
-      <Switch v-model="screeningEnabled" :disabled="setScreening.isPending" />
+      <Switch
+        :model-value="screeningEnabled"
+        :disabled="setScreening.isPending"
+        @update:model-value="toggleScreening"
+      />
     </SettingsRow>
 
     <template v-if="screenedAddresses.data?.length">
@@ -151,32 +155,25 @@ const activeAccount = computed(() =>
   store.userResource?.data?.accounts?.find((a) => a.id === store.accountId),
 )
 const setScreening = useMutation(api.mail.settings.updateAccount)
-const screeningEnabled = computed({
-  get: () => !!activeAccount.value?.enable_screening,
-  set: (val: boolean) => toggleScreening(val),
-})
+const screeningEnabled = computed(() => !!activeAccount.value?.enable_screening)
 const toggleScreening = async (val: boolean) => {
   const account = activeAccount.value
   if (!account) return
   // Read the count before the reload below refreshes the data from the server.
   const waiting =
     mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.total_threads ?? 0
-  try {
-    await setScreening.run({
-      account: store.accountId,
-      changes: {
-        enable_screening: val ? 1 : 0,
-      },
-    })
-    // Enabling screening creates the Screening folder server-side; reload so it shows up.
-    mailboxes.refetch().catch(() => {})
-    raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
-    // Turning screening off leaves the already-screened mail in the Screening folder — offer to
-    // move it to the inbox (only worth asking when there's something there).
-    if (!val && waiting > 0) showMoveToInbox.value = true
-  } catch {
-    // The shared client restores the previous value and reports the refusal.
-  }
+  await setScreening.run({
+    account: store.accountId,
+    changes: {
+      enable_screening: val ? 1 : 0,
+    },
+  })
+  // Enabling screening creates the Screening folder server-side; reload so it shows up.
+  mailboxes.refetch().catch(() => {})
+  raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
+  // Turning screening off leaves the already-screened mail in the Screening folder — offer to
+  // move it to the inbox (only worth asking when there's something there).
+  if (!val && waiting > 0) showMoveToInbox.value = true
 }
 const showMoveToInbox = ref(false)
 const moveScreeningToInbox = useMutation(api.mail.screening.moveToInbox)

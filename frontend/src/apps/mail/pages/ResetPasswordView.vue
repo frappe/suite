@@ -1,5 +1,5 @@
 <template>
-  <form class="flex flex-col space-y-4" @submit.prevent="reset().catch(() => {})">
+  <form class="flex flex-col space-y-4" @submit.prevent="reset()">
     <FormControl
       :label="__('Email')"
       :value="user.data ?? ''"

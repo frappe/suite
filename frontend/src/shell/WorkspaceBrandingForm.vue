@@ -39,16 +39,12 @@ const saveWorkspace = useMutation(api.suite.site.updateSettings, { silent: true 
 
 async function save() {
   if (!canSave.value || saveWorkspace.isPending) return
-  try {
-    const site = await saveWorkspace.run({
-      workspace_name: name.value.trim(),
-      workspace_logo: logo.value,
-    })
-    setWorkspace(site)
-    emit('saved')
-  } catch {
-    /* The form shows the refusal inline. */
-  }
+  const site = await saveWorkspace.run({
+    workspace_name: name.value.trim(),
+    workspace_logo: logo.value,
+  })
+  setWorkspace(site)
+  emit('saved')
 }
 
 defineExpose({

@@ -10,6 +10,7 @@ import {
 } from '@/platform/transport'
 
 import { Entities } from './entities'
+import { recordMutationFailure } from './errors'
 import { mutationObserver, observe } from './observers'
 import { identityPartition } from './partition'
 import { Reads } from './reads'
@@ -26,6 +27,7 @@ import type {
 } from './types'
 import { Writes } from './writes'
 
+export { installApiErrorHandler } from './errors'
 export type {
   QueryState,
   InfiniteQueryState,
@@ -130,6 +132,7 @@ export function createApiClient(
           transport,
         })
       } catch (cause) {
+        recordMutationFailure(cause)
         if (!signal.aborted && !options.silent && cause instanceof Error) feedback(cause)
         throw cause
       }

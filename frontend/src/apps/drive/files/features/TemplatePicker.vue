@@ -147,24 +147,18 @@ function choose(row: DriveNode) {
 }
 function chooseAndCreate(row: DriveNode) {
   choose(row)
-  create()
+  return create()
 }
 async function create() {
-  try {
-    const template = selected.value
-    const name = title.value.trim()
-    if (!template || !name || copy.isPending) return
-    const created = await copy.run({
-      node: template.name,
-      parent_node: props.parent,
-      title: name,
-    })
-    // The platform reports a failed copy; the picker stays open for another try.
-
-    open.value = false
-    emit('created', created)
-  } catch {
-    return
-  }
+  const template = selected.value
+  const name = title.value.trim()
+  if (!template || !name || copy.isPending) return
+  const created = await copy.run({
+    node: template.name,
+    parent_node: props.parent,
+    title: name,
+  })
+  open.value = false
+  emit('created', created)
 }
 </script>

@@ -73,7 +73,7 @@ const addSignatureOptions = computed(() => ({
       label: __('Save'),
       variant: 'solid' as const,
       disabled: !draft.signature_name || !draft.html_body,
-      onClick: () => save().catch(() => {}),
+      onClick: () => save(),
     },
   ],
 }))

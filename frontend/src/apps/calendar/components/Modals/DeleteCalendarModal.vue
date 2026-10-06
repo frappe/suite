@@ -12,7 +12,7 @@
           variant: 'solid',
           theme: 'red',
           loading: deleteCalendar.isPending,
-          onClick: () => deleteCalendarSubmit().catch(() => {}),
+          onClick: () => deleteCalendarSubmit(),
         },
       ],
     }"

@@ -66,7 +66,7 @@ class Mailbox(TypedDict):
     unread_threads: int
     # What the folder is called in the unified views; None for the Screener.
     slug: str | None
-    subscribed: Flag
+    subscribed: bool
     icon: NotRequired[str | None]
     color: NotRequired[Literal["Blue", "Green", "Amber", "Red", "Purple"] | None]
     disable_push_notification: NotRequired[Flag]

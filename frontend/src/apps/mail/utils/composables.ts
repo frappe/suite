@@ -48,11 +48,9 @@ export const useToggleReadingPane = () => {
   return () => {
     const user = userResource.data
     if (!user) return
-    return client
-      .mutation(api.mail.settings.updatePreferences, {
-        show_reading_pane: user.show_reading_pane ? 0 : 1,
-      })
-      .catch(() => {})
+    return client.mutation(api.mail.settings.updatePreferences, {
+      show_reading_pane: user.show_reading_pane ? 0 : 1,
+    })
   }
 }
 

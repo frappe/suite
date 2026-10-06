@@ -44,7 +44,7 @@ for (const testFile of report.testResults) {
   }
 }
 
-if (!report.success && actual.length === 0) {
+if ((!report.success || result.status !== 0) && actual.length === 0) {
   console.error('Legacy Vitest failed without a file or assertion result.')
   process.exit(1)
 }

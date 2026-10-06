@@ -38,7 +38,7 @@
         variant="solid"
         :loading="Boolean(ongoingImport.data?.name) || createCalendarImport.isPending"
         :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !calendarImport.file"
-        @click="createCalendarImport.run(makeInput()).catch(() => {})"
+        @click="createCalendarImport.run(makeInput())"
       />
       <div class="!mt-3 space-x-1 text-base">
         <span class="text-ink-gray-5">{{ importSubtitle }}</span>
