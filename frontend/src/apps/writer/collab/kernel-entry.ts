@@ -2,6 +2,12 @@ import { judge } from '@suite/collab-client'
 
 import { writerFault } from '@/apps/writer/collab/fault'
 
+// Node's permission model can't block the network, so the child drops the globals the editor's
+// paste and upload code would reach it with; judging never calls them
+for (const name of ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']) {
+  Reflect.deleteProperty(globalThis, name)
+}
+
 // The Node child the server runs on demand: {checkpoint, rows} in base64 on stdin, a verdict on stdout
 const chunks: Buffer[] = []
 process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk))

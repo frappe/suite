@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -126,6 +128,23 @@ class TestKernel(UnitTestCase):
             with self.assertRaises(kernel.KernelFailed) as failed:
                 kernel.judge(bundle, None, [])
             self.assertEqual(str(failed.exception), "exit 3: Error:")
+
+    def test_the_bundle_has_no_way_to_the_network(self):
+        self.assertEqual(set(re.findall(r'\brequire\("([^"$]+)"\)', BUNDLE.read_text())), {"node:crypto"})
+        bundle = BUNDLE.resolve()
+        probe = f"""
+        require({json.dumps(str(bundle))})
+        const names = ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']
+        process.stdout.write(JSON.stringify(names.filter((name) => name in globalThis)) + '\\n')
+        """
+        done = subprocess.run(
+            [kernel.usable_node(), "--permission", f"--allow-fs-read={bundle}", "-e", probe],
+            input=json.dumps({"checkpoint": None, "rows": []}),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(done.stdout.splitlines(), ["[]", '{"verdict":"clean"}'])
 
     def test_a_child_that_hangs_or_crashes_fails_loudly(self):
         with tempfile.TemporaryDirectory() as folder:

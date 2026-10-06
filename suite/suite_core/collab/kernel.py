@@ -4,6 +4,15 @@ Node is optional: without Node 24 or later, or without the product's built bundl
 verdict and the caller keeps the document suspect. The child runs only from background jobs. It
 reads rows on stdin and answers on stdout, with an empty environment, a heap limit and a timeout,
 and it can't read files other than its bundle, write files or start processes.
+
+The permission model can't block the network. The bundle has no network code on the judging
+path, requires only node:crypto and drops fetch and WebSocket before it reads its input, which
+test_kernel checks against the built bundle.
+
+Bisecting peaks at about 30 times the input in resident memory, past the heap limit: 560 MB
+for a 19 MB checkpoint. Ticket 18's admission is to keep a document's state and tail under 4.5 MiB,
+about 140 MB; a document stored before that bound can need more. A child the host kills for
+memory fails as KernelFailed, and the document is held.
 """
 
 import base64
