@@ -343,8 +343,10 @@ class TestQuarantine(CheckpointCase):
         def text(value: str) -> bytes:
             return number(len(value.encode())) + value.encode()
 
-        def row(cid: int, *structs: bytes) -> bytes:
-            return number(1) + number(len(structs)) + number(cid) + number(0) + b"".join(structs) + number(0)
+        def row(cid: int, *structs: bytes, clock: int = 0) -> bytes:
+            return (
+                number(1) + number(len(structs)) + number(cid) + number(clock) + b"".join(structs) + number(0)
+            )
 
         def under(root: str, kind: int, content: bytes) -> bytes:
             return bytes([kind]) + number(1) + text(root) + content
@@ -365,6 +367,7 @@ class TestQuarantine(CheckpointCase):
                 "refused_row",
             ),
             ("unknown root", lambda cid: row(cid, under("elsewhere", 4, text("z"))), "unknown_root"),
+            ("clock gap", lambda cid: row(cid, under("default", 4, text("b")), clock=1), "clock_gap"),
         ):
             with self.subTest(name):
                 node = self.new_document()

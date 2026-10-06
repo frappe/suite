@@ -178,7 +178,8 @@ def dependents(tail: list[TailRow], revs: set[int], floor: dict[int, int]) -> tu
 
     A writer's clocks are contiguous, so its rows after a quarantined one go too. A row of another
     writer whose struct sits next to or inside content past that clock, or that deletes content past
-    it, goes, with its own later rows, until nothing changes.
+    it, goes, with its own later rows, until nothing changes. So a writer that re-sends whole delete
+    sets loses its own rows and their dependents too, each with its recovery copy.
     """
     picked = {row.rev for row in tail if row.rev in revs}
     while True:
