@@ -32,12 +32,12 @@ Nothing from that data belongs in this file.
 
 | # | Step | Owner | Status |
 |---|---|---|---|
-| 1 | Load the latest code on the preview: rebuild the frontend and restart its server | orchestrator | waiting for Faris's go-ahead |
+| 1 | Load the latest code on the preview: rebuild the frontend and restart its server | orchestrator | server restarted 2026-10-06; frontend rebuild waits until no other agent has uncommitted frontend changes |
 | 2 | CORS rule on the rehearsal bucket (GET, HEAD, POST from the preview's origin), then retry text previews and uploads | Faris | done: Faris applied the rule |
 | 3 | Update the PR #881 description: new commits in Follow-ups, refreshed line counts | orchestrator | open |
 | 4 | Merge frappe/frappe#42407 | Faris | open |
-| 5 | Thumbnail size: the preview-size patch passes through a legacy `preview_size` that is far too large, so previews come out nearly full size. Proposed fix: the patch maps any implausibly large value to the default of 512 | Faris decides, then orchestrator | waiting for Faris's decision on the proposed fix |
-| 6 | Video thumbnails: some MP4 files keep their index at the end of the file, and the renderer reads a stream it cannot seek, so their previews fail. Proposed fix: ffmpeg reads the video from a signed URL with range requests | Faris decides, then orchestrator | waiting for Faris's decision on the proposed fix |
+| 5 | Thumbnail size: the preview-size patch passed through a legacy `preview_size` that was far too large, so previews came out nearly full size | orchestrator | done: `921521654`. `preview_size` must be 128 to 2048 pixels; the patch sets any other value to 512 |
+| 6 | Video thumbnails: MP4 files with their index at the end failed, because the renderer read a stream it could not seek, and every video was downloaded in full | orchestrator | done: `ad0f94c02`. Videos on S3 open as a seekable file that fetches only the bytes it reads. On the preview every remaining failure came from a broken source file |
 | 7 | Fresh full rehearsal from a new backup, with the checklist below. Steps: [`rehearsal-runbook.md`](rehearsal-runbook.md) | Codex | parked while Faris does UI polish |
 | 8 | Production prerequisites, listed below | Faris | open |
 | 9 | Production migration, then `delete_legacy_objects` once confirmed, then delete all restored production data from the laptop | Faris | open |
