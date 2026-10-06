@@ -73,10 +73,10 @@ class Reader:
             byte = self.byte()
             value += (byte & 0x7F) * factor
             factor *= 128
-            if byte < 0x80:
-                return value
             if value > MAX_SAFE:
                 raise ValueError("integer out of range")
+            if byte < 0x80:
+                return value
 
     def int(self) -> None:
         byte = self.byte()
@@ -87,10 +87,10 @@ class Reader:
             byte = self.byte()
             value += (byte & 0x7F) * factor
             factor *= 128
-            if byte < 0x80:
-                return
             if value > MAX_SAFE:
                 raise ValueError("integer out of range")
+            if byte < 0x80:
+                return
 
     def raw(self, length: int) -> bytes:
         if self.at + length > len(self.data):
@@ -161,6 +161,8 @@ def parse(data: bytes) -> Update:
             clock, length = reader.uint(), reader.uint()
             if length == 0:
                 raise ValueError("empty delete range")
+            if clock + length > MAX_SAFE:
+                raise ValueError("clock out of range")
             ranges.append((clock, length))
     if reader.at != len(data):
         raise ValueError("trailing bytes")

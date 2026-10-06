@@ -66,6 +66,48 @@ class TestParse(UnitTestCase):
                 with self.subTest(kind, depth=depth), self.assertRaises(ValueError):
                     parse(payload)
 
+    def test_integers_past_what_yjs_holds_exactly_are_refused(self):
+        def written(client=5, clock=0, origin=None) -> bytes:
+            if origin:
+                content = bytes([0x84]) + encoded_uint(origin[0]) + encoded_uint(origin[1])
+            else:
+                content = bytes([4, 1]) + encoded_string("t")
+            return (
+                bytes([1, 1])
+                + encoded_uint(client)
+                + encoded_uint(clock)
+                + content
+                + encoded_string("a")
+                + bytes([0])
+            )
+
+        def deleted(client=5, clock=0, length=1) -> bytes:
+            return (
+                bytes([0, 1]) + encoded_uint(client) + bytes([1]) + encoded_uint(clock) + encoded_uint(length)
+            )
+
+        def counted(value: int) -> bytes:
+            signed = bytes([0x80 | value & 0x3F]) + encoded_uint(value >> 6)
+            return bytes([1, 1, 5, 0, 8, 1]) + encoded_string("t") + bytes([1, 125]) + signed + bytes([0])
+
+        top = 2**53 - 1
+        cases = {
+            "client": lambda n: written(client=n),
+            "clock": lambda n: written(clock=n - 1),
+            "origin client": lambda n: written(origin=(n, 0)),
+            "origin clock": lambda n: written(origin=(5, n)),
+            "delete client": lambda n: deleted(client=n),
+            "delete clock": lambda n: deleted(clock=n - 1),
+            "delete length": lambda n: deleted(length=n),
+            "number": counted,
+        }
+        for case, build in cases.items():
+            with self.subTest(case):
+                parse(build(top))
+                for past in (top + 1, 2**64):
+                    with self.assertRaises(ValueError):
+                        parse(build(past))
+
     def test_malformed_updates_are_refused(self):
         good = typed("abc").get_update()
         for bad in (good[:-1], good + b"\x00", b"\x01\x01", b"\xff" * 12):
