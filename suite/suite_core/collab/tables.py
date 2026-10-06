@@ -6,7 +6,7 @@ keyed on the control row's id, never on the Drive node.
 
 import frappe
 
-KINDS = ("doc", "update", "session", "checkpoint")
+KINDS = ("doc", "update", "session", "checkpoint", "recovery")
 
 
 def table(adapter: str, kind: str) -> str:
@@ -47,6 +47,8 @@ def ensure_tables(adapter: str) -> None:
         "`start_clocks` json NULL",
         # (first rev, new highest) for each rise in the highest schema a row was stamped with
         "`schema_steps` json NOT NULL DEFAULT '[[0, 1]]'",
+        # Rises with every quarantine, so a tab that may have applied a quarantined row rebuilds
+        "`q_epoch` int unsigned NOT NULL DEFAULT 0",
     ):
         frappe.db.sql_ddl(f"ALTER TABLE `{table(adapter, 'doc')}` ADD COLUMN IF NOT EXISTS {column}")
     frappe.db.sql_ddl(
@@ -77,6 +79,10 @@ def ensure_tables(adapter: str) -> None:
     frappe.db.sql_ddl(
         f"ALTER TABLE `{table(adapter, 'update')}` ADD COLUMN IF NOT EXISTS `schema` smallint unsigned NOT NULL DEFAULT 1 AFTER `client_id`"
     )
+    # A quarantined row keeps its rev, sha and chain; its payload is emptied and kept as a recovery row
+    frappe.db.sql_ddl(
+        f"ALTER TABLE `{table(adapter, 'update')}` ADD COLUMN IF NOT EXISTS `state` varchar(20) NOT NULL DEFAULT 'ok'"
+    )
     frappe.db.sql_ddl(
         f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "session")}` (
             `doc_id` varchar(20) NOT NULL,
@@ -94,6 +100,10 @@ def ensure_tables(adapter: str) -> None:
     frappe.db.sql_ddl(
         f"ALTER TABLE `{table(adapter, 'session')}` ADD COLUMN IF NOT EXISTS `next_clock` bigint unsigned NULL AFTER `acked_seq`"
     )
+    # A session that wrote a quarantined row may push no more
+    frappe.db.sql_ddl(
+        f"ALTER TABLE `{table(adapter, 'session')}` ADD COLUMN IF NOT EXISTS `closed` tinyint(1) NOT NULL DEFAULT 0"
+    )
     frappe.db.sql_ddl(
         f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "checkpoint")}` (
             `doc_id` varchar(20) NOT NULL,
@@ -107,5 +117,28 @@ def ensure_tables(adapter: str) -> None:
             `report` json NULL,
             `created` datetime(6) NOT NULL,
             PRIMARY KEY (`doc_id`, `through_rev`)
+        ) {options}"""
+    )
+    frappe.db.sql_ddl(
+        f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "recovery")}` (
+            `id` varchar(20) NOT NULL,
+            `doc_id` varchar(20) NOT NULL,
+            `node` varchar(140) NOT NULL,
+            `owner` varchar(140) NOT NULL,
+            `reason` varchar(40) NOT NULL,
+            `lineage` char(32) NOT NULL,
+            `seen_rev` bigint unsigned NULL,
+            `sha256` binary(32) NOT NULL,
+            `nbytes` bigint unsigned NOT NULL,
+            `payload` longblob NOT NULL,
+            `inserted` json NULL,
+            `context_rev` bigint unsigned NULL,
+            `media` json NULL,
+            `created` datetime(6) NOT NULL,
+            `resolved_at` datetime(6) NULL,
+            `resolution` varchar(40) NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `owner_sha` (`doc_id`, `owner`, `sha256`),
+            KEY `open` (`doc_id`, `owner`, `resolved_at`)
         ) {options}"""
     )

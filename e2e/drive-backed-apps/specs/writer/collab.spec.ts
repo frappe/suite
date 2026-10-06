@@ -463,7 +463,7 @@ test.describe("Writer collaboration", () => {
 		await expect.poll(() => canReadNode(page.request, node)).toBe(false);
 		await expect
 			.poll(() => logRows(testApi, log))
-			.toEqual({ doc: 0, update: 0, session: 0, checkpoint: 0 });
+			.toEqual({ doc: 0, update: 0, session: 0, checkpoint: 0, recovery: 0 });
 	});
 
 	test("Drive refuses to restore a version over a collab document", async ({ owner, testApi }) => {

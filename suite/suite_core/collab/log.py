@@ -97,7 +97,7 @@ def delete_purged(adapter: str, doc_id: str) -> None:
     doc = table(adapter, "doc")
     if not frappe.db.sql(f"SELECT 1 FROM `{doc}` WHERE `id` = %s AND `mode` = 'purged'", doc_id):
         return
-    for kind in ("update", "checkpoint", "session"):
+    for kind in ("update", "checkpoint", "session", "recovery"):
         while True:
             frappe.db.sql(
                 f"DELETE FROM `{table(adapter, kind)}` WHERE `doc_id` = %s LIMIT %s", (doc_id, PURGE_BATCH)
@@ -408,6 +408,7 @@ def start_clocks(doc: dict) -> dict[int, int]:
 
 def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: bool = True) -> dict | None:
     """The checkpoint and every row after it through the head, from one snapshot, chain checked.
+    `rows` leaves out quarantined rows; `quarantined` lists their revs.
 
     Rows are gap-free and commit-ordered, so a break means the store changed under
     the read or was rewound; the read is tried once more before it gives up.
@@ -417,7 +418,7 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
     for _try in range(2):
         with repeatable_read() if own_snapshot else contextlib.nullcontext():
             doc = frappe.db.sql(
-                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `integrated_rev`, `schema_steps`
+                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `integrated_rev`, `schema_steps`, `q_epoch`
                 FROM `{table(adapter, "doc")}` WHERE `id` = %s AND `mode` != 'purged'""",
                 doc_id,
                 as_dict=True,
@@ -434,10 +435,21 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
                     (doc_id, base),
                 )[0]
                 checkpoint, chain = gzip.decompress(bytes(gz)), bytes(chain)
-            rows = rows_after(adapter, doc_id, base)
-        revs = [rev for rev, _payload in rows]
-        for rev, payload in rows:
-            chain = chain_next(chain, rev, hashlib.sha256(payload).digest())
+            stored = frappe.db.sql(
+                f"""SELECT `rev`, `payload`, `sha256`, `state` FROM `{table(adapter, "update")}`
+                WHERE `doc_id` = %s AND `rev` > %s ORDER BY `rev`""",
+                (doc_id, base),
+            )
+        rows, quarantined = [], []
+        for rev, payload, sha, state in stored:
+            rev, payload = int(rev), bytes(payload)
+            if state == "quarantined":
+                quarantined.append(rev)
+                chain = chain_next(chain, rev, bytes(sha))
+            else:
+                rows.append((rev, payload))
+                chain = chain_next(chain, rev, hashlib.sha256(payload).digest())
+        revs = [int(row[0]) for row in stored]
         if revs == list(range(base + 1, int(doc.head_rev) + 1)) and chain == bytes(doc.head_chain):
             return {
                 "lineage": doc.lineage,
@@ -447,6 +459,8 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
                 "base": base,
                 "checkpoint": checkpoint,
                 "rows": rows,
+                "quarantined": quarantined,
+                "q_epoch": int(doc.q_epoch),
             }
     raise ChainBroken
 

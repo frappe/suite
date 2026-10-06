@@ -63,7 +63,7 @@ class CheckpointCase(IntegrationTestCase):
     def forget(self, node: str):
         doc = routes.collab.find(routes.ADAPTER, node)
         if doc:
-            for kind in ("update", "session", "checkpoint"):
+            for kind in ("update", "session", "checkpoint", "recovery"):
                 frappe.db.sql(f"DELETE FROM `__writer_collab_{kind}` WHERE `doc_id` = %s", doc.id)
             frappe.db.sql("DELETE FROM `__writer_collab_doc` WHERE `id` = %s", doc.id)
             frappe.db.commit()
