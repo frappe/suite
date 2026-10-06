@@ -42,18 +42,18 @@ def mark(adapter: str, doc_id: str, reason: str, method: str) -> None:
 def report(adapter: str, doc_id: str, rev: int, method: str) -> tuple[int, dict]:
     """A tab's report that row `rev` threw when it applied it; answers the status and body to send.
 
-    Rows up to the checkpoint already passed the compaction's checks, so the throw was the tab's own
+    Rows the checkpoint integrated already passed the compaction's checks, so the throw was the tab's own
     and the answer is `clean` at once. Otherwise the document is marked suspect and a job judges it;
     the tab reads the verdict on a pull once `judged` passes the number in the answer.
     """
     doc = frappe.db.sql(
-        f"SELECT `head_rev`, `checkpoint_rev`, `suspect_held`, `judged` FROM `{table(adapter, 'doc')}` WHERE `id` = %s",
+        f"SELECT `head_rev`, `integrated_rev`, `suspect_held`, `judged` FROM `{table(adapter, 'doc')}` WHERE `id` = %s",
         doc_id,
         as_dict=True,
     )[0]
     if not 0 < rev <= int(doc.head_rev):
         raise Refusal(400, "malformed")
-    if rev <= int(doc.checkpoint_rev):
+    if rev <= int(doc.integrated_rev):
         return 200, {"verdict": "clean", "judged": int(doc.judged)}
     if doc.suspect_held:
         raise Refusal(423, "paused", reason="suspect", retry_ms=SUSPECT_RETRY_MS)

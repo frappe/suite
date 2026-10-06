@@ -274,3 +274,21 @@ class TestSuspect(CheckpointCase):
                 self.assertEqual(self.alerts(f"suspect unjudged: {why}"), before + 1)
                 a.adds(paragraph("beta"))
                 self.assertEqual(self.states(node), ["ok", "ok"])
+
+    def test_a_row_a_fallback_checkpoint_only_merged_is_still_judged(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        rev = a.adds(paragraph("alpha"))
+        doc_id = self.doc_row(node).id
+
+        def merged(checkpoint, rows, roots):
+            return compaction.Compacted(compaction.pycrdt.merge_updates(*rows), integrated=False)
+
+        with patch.object(compaction, "compact", merged):
+            self.job(doc_id).run()
+        self.assertEqual((self.doc_row(node).checkpoint_rev, self.doc_row(node).suspect), (rev, "fallback"))
+        self.set_doc(node, suspect=None)
+        self.requested.clear()
+
+        self.assertEqual(self.report(node, rev), (202, {"collab": "judging", "judged": 0}))
+        self.assertEqual(self.requested, [(JUDGE, doc_id)])
