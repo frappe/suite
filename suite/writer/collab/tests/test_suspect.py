@@ -606,3 +606,53 @@ class TestSuspect(CheckpointCase):
         self.release_places()
         self.assertEqual(self.judge(node), "clean")
         self.assertFalse(redis.exists(f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}"))
+
+    def test_a_re_judge_asked_while_the_judge_runs_is_judged_before_the_judge_ends(self):
+        node, doc_id, _a = self.held_document()
+        self.set_doc(node, suspect_held=None)
+        real, calls = kernel.judge, []
+
+        def judged_while_asked(bundle, checkpoint, rows):
+            calls.append(1)
+            if len(calls) > 1:
+                return real(bundle, checkpoint, rows)
+            frappe.set_user(SUITE_ADMIN)
+            writer_collab.rejudge_suspect(doc_id)
+            frappe.set_user("Administrator")
+
+        with patch.object(kernel, "judge", judged_while_asked):
+            self.assertEqual(self.judge(node), "clean")
+
+        doc = self.doc_row(node)
+        self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "clean", 2))
+        self.assertEqual(self.judge(node), None)
+        self.assertEqual(len(calls), 2)
+
+    def test_a_judge_that_would_hold_a_document_an_admin_cleared_meanwhile_leaves_it_cleared(self):
+        node, doc_id, _a = self.held_document()
+        self.set_doc(node, suspect_held=None)
+        before = self.alerts("suspect held: no_node")
+
+        def cleared_meanwhile(bundle, checkpoint, rows):
+            frappe.set_user(SUITE_ADMIN)
+            writer_collab.clear_suspect(doc_id)
+            frappe.set_user("Administrator")
+
+        with patch.object(kernel, "judge", cleared_meanwhile):
+            self.assertIsNone(self.judge(node))
+
+        doc = self.doc_row(node)
+        self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "unjudged"))
+        self.assertEqual(self.alerts("suspect held: no_node"), before)
+
+    def test_a_re_judge_asked_before_the_judge_starts_is_judged_once(self):
+        node, doc_id, _a = self.held_document()
+        before = self.alerts("suspect held: no_node")
+        frappe.set_user(SUITE_ADMIN)
+        writer_collab.rejudge_suspect(doc_id)
+        frappe.set_user("Administrator")
+
+        with patch.object(kernel, "usable_node", lambda: None):
+            self.assertEqual(self.judge(node), "held")
+
+        self.assertEqual((self.doc_row(node).judged, self.alerts("suspect held: no_node")), (1, before + 1))

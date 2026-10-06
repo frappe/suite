@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import frappe
+from frappe.utils.background_jobs import get_redis_conn
 
 from suite.suite_core.collab import admission, compaction, kernel, quarantine
 from suite.suite_core.collab.log import SUSPECT_RETRY_MS, Refusal, read
@@ -82,6 +83,7 @@ def judge(
     """Judge a suspect document; answers `quarantined`, `clean`, `held` or `unjudged`, or None when it isn't suspect.
 
     A judge takes one of the bench's compaction places; with none free it answers `busy` and the sweep asks again.
+    An admin's re-judge asked while it runs finds its job queued already, so the judge judges again before it ends.
     """
     marked = suspect_of(adapter, doc_id)
     if not marked:
@@ -89,6 +91,25 @@ def judge(
     held = admission.take_place(adapter, doc_id)
     if held is None:
         return "busy"
+    redis, asked = get_redis_conn(), rejudge_asked(adapter, doc_id)
+    try:
+        redis.delete(asked)
+        verdict = verdict_of(adapter, doc_id, marked, roots, bundle, owner_of)
+        while redis.delete(asked) and (marked := suspect_of(adapter, doc_id)):
+            verdict = verdict_of(adapter, doc_id, marked, roots, bundle, owner_of)
+        return verdict
+    finally:
+        admission.free_place(held)
+
+
+def verdict_of(
+    adapter: str,
+    doc_id: str,
+    marked: str,
+    roots: dict[str, type],
+    bundle: Path,
+    owner_of: Callable[[str], str | None],
+) -> str | None:
     try:
         return settle(adapter, doc_id, marked, roots, bundle, owner_of)
     except BaseException as error:  # pycrdt panics derive from BaseException
@@ -96,8 +117,10 @@ def judge(
             raise
         frappe.db.rollback()
         return unsettled(adapter, doc_id, marked, "judge_failed", type(error).__name__)
-    finally:
-        admission.free_place(held)
+
+
+def rejudge_asked(adapter: str, doc_id: str) -> str:
+    return f"suite:collab:rejudge:{frappe.local.site}:{adapter}:{doc_id}"
 
 
 def settle(
@@ -175,6 +198,7 @@ def rejudge(adapter: str, doc_id: str, method: str) -> bool:
         return False
     frappe.db.sql(f"UPDATE `{table(adapter, 'doc')}` SET `suspect_held` = NULL WHERE `id` = %s", doc_id)
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    get_redis_conn().set(rejudge_asked(adapter, doc_id), 1, ex=admission.LEASE)
     alert(adapter, doc_id, "suspect re-judged", f"{frappe.session.user} asked for a new verdict")
     request(adapter, doc_id, method)
     return True
@@ -241,13 +265,17 @@ def suspect_of(adapter: str, doc_id: str) -> str | None:
     return found[0][0] if found else None
 
 
-def hold(adapter: str, doc_id: str, why: str, detail: str) -> str:
+def hold(adapter: str, doc_id: str, why: str, detail: str) -> str | None:
+    """Answers None when an admin cleared the document while it was judged."""
     frappe.db.sql(
         f"""UPDATE `{table(adapter, "doc")}` SET `suspect_held` = %s, `verdict` = 'held', `judged` = `judged` + 1
         WHERE `id` = %s AND `suspect` IS NOT NULL""",
         (why, doc_id),
     )
+    held = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    if not held:
+        return None
     alert(adapter, doc_id, f"suspect held: {why}", f"Saving is paused until an admin reviews it. {detail}")
     return "held"
 
