@@ -82,7 +82,7 @@ class EventFields(BaseModel):
     use_default_alerts: bool = False
 
     def for_service(self) -> dict:
-        """The fields as CalendarEventService.create/update read them."""
+        """The fields as jmap_events.create_events/update_events read them."""
 
         event = self.model_dump(exclude={"draft"})
         event.update(

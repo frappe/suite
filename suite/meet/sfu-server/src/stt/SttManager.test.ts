@@ -293,4 +293,82 @@ describe('SttManager', () => {
 		await Promise.all([firstStop, secondStop]);
 		expect(manager.beginSession('room-1', 'socket-2')).toBe(true);
 	});
+	async function recoveryFixture() {
+		vi.useFakeTimers();
+		const start = vi
+			.spyOn(AudioIngester.prototype, 'start')
+			.mockResolvedValue();
+		vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
+		const manager = new SttManager({ sttClient: createSttClient().client });
+		manager.setGetRouter(() => ({}) as Router);
+		manager.beginSession('room-1', 'socket-1');
+		const producer = { id: 'producer-a', closed: false } as Producer;
+		await manager.startTranscription(
+			'room-1',
+			'participant-a',
+			'Alice',
+			producer,
+		);
+		const sessions = (
+			manager as unknown as { activeSessions: Map<string, AudioIngester> }
+		).activeSessions;
+		const key = 'room-1:participant-a:producer-a';
+		const fail = async () => {
+			const current = sessions.get(key)!;
+			(
+				current as unknown as { onUnexpectedStreamClose(): void }
+			).onUnexpectedStreamClose();
+			await vi.advanceTimersByTimeAsync(0);
+		};
+		return { manager, producer, start, fail };
+	}
+
+	it('backs off repeated runtime failures across successful replacements and caps the delay', async () => {
+		const { manager, start, fail } = await recoveryFixture();
+		for (const expectedDelay of [0, 1000, 5000, 10_000, 10_000]) {
+			const startsBeforeFailure = start.mock.calls.length;
+			await fail();
+			if (expectedDelay > 0) {
+				await vi.advanceTimersByTimeAsync(expectedDelay - 1);
+				expect(start).toHaveBeenCalledTimes(startsBeforeFailure);
+				await vi.advanceTimersByTimeAsync(1);
+			}
+			expect(start).toHaveBeenCalledTimes(startsBeforeFailure + 1);
+		}
+		await manager.stopRoom('room-1');
+	});
+
+	it('resets backoff after a minute of stable operation', async () => {
+		const { manager, start, fail } = await recoveryFixture();
+		await fail(); // immediate first replacement
+		await fail();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(start).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(60_000);
+		await fail();
+		expect(start).toHaveBeenCalledTimes(4); // stable capture earns immediate retry
+		await manager.stopRoom('room-1');
+	});
+
+	it('cancels participant retries even when a rejected replacement left no active ingester', async () => {
+		const { manager, start, fail } = await recoveryFixture();
+		start.mockRejectedValueOnce(new Error('replacement failed'));
+		await fail();
+		expect(start).toHaveBeenCalledTimes(2);
+		await manager.stopTranscription('room-1', 'participant-a');
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(start).toHaveBeenCalledTimes(2);
+		await manager.stopRoom('room-1');
+	});
+
+	it('does not restart a producer that closes during its recovery delay', async () => {
+		const { manager, producer, start, fail } = await recoveryFixture();
+		await fail();
+		await fail();
+		expect(start).toHaveBeenCalledTimes(2);
+		(producer as unknown as { closed: boolean }).closed = true;
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(start).toHaveBeenCalledTimes(2);
+		await manager.stopRoom('room-1');
+	});
 });

@@ -9,8 +9,10 @@ from dateutil.rrule import rrulestr
 from frappe import _
 from frappe.utils import cint
 from icalendar.prop import vRecur
+from jmap import MethodError
 from pydantic import BaseModel
 
+from suite.calendar import jmap_events
 from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar.calendar import (
     add_calendar,
@@ -34,7 +36,12 @@ from suite.calendar.external import NAMESPACE as EXTERNAL
 from suite.calendar.external import calendar_rows as external_calendar_rows
 from suite.calendar.external import events_in_window as external_events
 from suite.calendar.external import search_events as external_search
-from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
+from suite.mail.jmap import (
+    format_method_error,
+    get_account_client,
+    get_across_accounts,
+    get_participant_identities,
+)
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.validation import parse, without_blanks
@@ -100,10 +107,14 @@ def _shared_calendars() -> list[str]:
     shared = []
     accounts = frappe.get_all("User Account", {"user": frappe.session.user}, pluck="account")
     if accounts:
-        try:
-            calendars = get_calendar_service(accounts[0]).get_across_accounts(accounts, ["id", "myRights"])
-        except NotImplementedError:
-            calendars = {}
+        client = get_account_client(accounts[0])
+        calendars = {}
+        if "calendars" in client.capabilities.attrs:
+            calendars = get_across_accounts(
+                client,
+                accounts,
+                lambda b, a: b.calendars.calendar.get(properties=["id", "myRights"], accountId=a),
+            )
         for account, rows in calendars.items():
             shared.extend(
                 f"{account}|{row['id']}"
@@ -190,17 +201,18 @@ def edit_calendar(
         patch["isVisible"] = visible
 
     kwargs = {"onSuccessSetIsDefault": id} if default else {}
-    service = get_calendar_service(account)
-    response = service._update({id: patch}, **kwargs)
+    client = get_account_client(account)
+    title = _("Calendar Update Error")
+    try:
+        with client.batch() as b:
+            h = b.calendars.calendar.set(update={id: patch}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
-    method_responses = response.get("methodResponses") or []
-    result = method_responses[0][1] if method_responses else {}
-    if id not in (result.get("updated") or {}):
-        error = (result.get("notUpdated") or {}).get(id) or result
-        frappe.throw(
-            error.get("description") or _("Could not update the calendar."),
-            title=_("Calendar Update Error"),
-        )
+    if id not in response.updated:
+        error = response.not_updated.get(id) or {}
+        frappe.throw(error.get("description") or _("Could not update the calendar."), title=title)
 
 
 @frappe.whitelist()
@@ -209,11 +221,14 @@ def delete_calendar(account: str, id: str) -> None:
     """Deletes a calendar and the events on it. The default calendar stays: it is
     where new events go, invitations included."""
 
-    service = get_calendar_service(account)
-    calendar = next((c for c in service.get([id])), None)
-    if not calendar:
+    try:
+        calendars = jmap_events.get_calendars(get_account_client(account), [id])
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Deletion Error"))
+
+    if not calendars:
         frappe.throw(_("Calendar not found."), frappe.DoesNotExistError)
-    if calendar.get("isDefault"):
+    if calendars[0].get("isDefault"):
         frappe.throw(_("The default calendar can't be deleted. Make another calendar the default first."))
 
     delete_calendars(account, [id], remove_events=True)
@@ -241,7 +256,7 @@ MAX_EVENTS_IN_WINDOW = 5000
 # What a search answers with when the caller names no count of its own.
 EVENT_SEARCH_LIMIT = 20
 
-# And the most it will answer with however large a count is asked for. The service walks the
+# And the most it will answer with however large a count is asked for. `query_events` walks the
 # server batch by batch until it has the number it was given, so an unbounded count is an
 # unbounded walk of the account's whole event store — from a whitelisted endpoint, for a
 # palette that shows ten. Bounded here for the same reason `MAX_EVENTS_IN_WINDOW` bounds the
@@ -595,7 +610,8 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
 
     account = events[0]["account"]
     now = datetime.now(UTC)
-    by_uid = get_calendar_event_service(account).occurrences_from(
+    by_uid = jmap_events.occurrences_from(
+        get_account_client(account),
         {event["uid"]: normalize_utc_z(now - _period(event)) for event in recurring},
         before=normalize_utc_z(now + timedelta(days=365 * RECURRENCE_HORIZON_YEARS)),
         # A period back reaches every occurrence of the last period and, over the extra day,
@@ -750,7 +766,8 @@ def _search_calendar_events(
     # it is asked for both halves — what is still to come, soonest first, and what has passed,
     # most recent first — each cut at `limit` on its own, which is the most of either the
     # answer could hold (see `query_around`).
-    ids = get_calendar_event_service(account).query_around(
+    ids = jmap_events.query_around(
+        get_account_client(account),
         conditions,
         normalize_utc_z(datetime.now(UTC)),
         limit,
@@ -898,16 +915,24 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
     if not events:
         return
 
-    service = get_calendar_event_service(account)
-    base_ids = service.get_base_event_ids([event["id"] for event in events])
-    if not base_ids:
-        return
+    client = get_account_client(account)
+    try:
+        base_ids = jmap_events.get_base_event_ids(client, [event["id"] for event in events])
+        if not base_ids:
+            return
 
-    master_ids = sorted(set(base_ids.values()))
-    # The raw copies carry recurrenceOverrides, which the formatter drops — and the override is
-    # the only thing that says which properties an occurrence owns rather than inherits.
-    overrides = {master["id"]: master.get("recurrenceOverrides") or {} for master in service.get(master_ids)}
-    masters = {master["id"]: master for master in get_calendar_events_by_ids(account, master_ids)}
+        master_ids = sorted(set(base_ids.values()))
+        # The raw copies carry recurrenceOverrides, which the formatter drops — and the override is
+        # the only thing that says which properties an occurrence owns rather than inherits.
+        overrides = {
+            master["id"]: master.get("recurrenceOverrides") or {}
+            for master in jmap_events.get_events(client, master_ids)
+        }
+        masters = {master["id"]: master for master in get_calendar_events_by_ids(account, master_ids)}
+    except MethodError:
+        # The events are the answer; what their series say about them is an addition to it. A
+        # lookup the server refuses leaves them as they came rather than failing the whole read.
+        return
 
     for event in events:
         master = masters.get(base_ids.get(event["id"]))
@@ -1074,12 +1099,12 @@ def enrich_participants_with_avatars(events: list[dict]) -> None:
 
 
 def _with_name(items: list[dict] | None) -> list[dict] | None:
-    """Map the formatter's ``_name`` onto the ``name`` key CalendarEventService reads.
+    """Map the formatter's ``_name`` onto the ``name`` key the event payload builders read.
 
     format_calendar_event emits locations and participants with ``_name`` (the desk field name) and
-    the frontend echoes that shape straight back. The service reads ``name``, so without this every
-    edit rewrote location names as null and replaced each participant's display name with their
-    email address - including on partial patches that never mentioned those fields.
+    the frontend echoes that shape straight back. The payload builders read ``name``, so without
+    this every edit rewrote location names as null and replaced each participant's display name
+    with their email address - including on partial patches that never mentioned those fields.
     """
 
     if not items:
@@ -1122,7 +1147,7 @@ def edit_calendar_event(account: str, id: str, send_scheduling_messages: bool = 
         **event,
         "calendar_ids": [calendar["calendar_id"] for calendar in event["calendars"]],
         "recurrence_rule": json.loads(event["recurrence_rule"]),
-        # An alert with a trigger this app cannot express would fail the update; the service has
+        # An alert with a trigger this app cannot express would fail the update; `alerts_map` has
         # always dropped such alerts on write, so they are left out here instead.
         "alerts": [alert for alert in event["alerts"] if alert["type"] in KNOWN_TRIGGERS],
     }
@@ -1216,7 +1241,6 @@ def split_calendar_event_series(
     tail_overrides = _end_series_before(
         account, master_id, rule, before, recurrence_id, send_scheduling_messages
     )
-    service = get_calendar_event_service(account)
 
     # Overrides the rule no longer generates are not dropped with it — RFC 8984 reads an override
     # on an ungenerated date as an occurrence in its own right, so leaving them would keep every
@@ -1241,7 +1265,7 @@ def split_calendar_event_series(
     # is trying to avoid everywhere else.
     rule_kept = spoken_rule(fields.get("recurrence_rule")) == spoken_rule(rule)
     if carried and rule_kept and fields.get("start") == recurrence_id:
-        service.set_overrides(new_id, carried)
+        jmap_events.set_overrides(get_account_client(account), new_id, carried)
 
     return new_id
 
@@ -1312,14 +1336,14 @@ def _end_series_before(
         account, master_id, send_scheduling_messages=send_scheduling_messages, recurrence_rule=head_rule
     )
 
-    service = get_calendar_event_service(account)
-    stored = service.get([master_id])
+    client = get_account_client(account)
+    stored = jmap_events.get_events(client, [master_id])
     overrides = (stored[0] if stored else {}).get("recurrenceOverrides") or {}
     tail_overrides = {
         rid: override for rid, override in overrides.items() if not _is_before(rid, recurrence_id)
     }
     if tail_overrides:
-        service.remove_overrides(master_id, list(tail_overrides))
+        jmap_events.remove_overrides(client, master_id, list(tail_overrides))
 
     return tail_overrides
 

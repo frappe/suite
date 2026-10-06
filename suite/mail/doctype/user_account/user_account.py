@@ -242,7 +242,7 @@ def get_account_apps(user: str | None = None) -> dict[str, dict[str, bool]]:
     user's accounts change.
     """
 
-    from suite.mail.jmap import get_calendar_service, get_mailbox_service
+    from suite.mail.jmap import get_account_client, get_across_accounts
 
     user = user or frappe.session.user
     cache_key = account_apps_cache_key(user)
@@ -255,11 +255,17 @@ def get_account_apps(user: str | None = None) -> dict[str, dict[str, bool]]:
     apps = {account: {"mail": True, "calendar": True} for account in accounts if account == personal}
     try:
         if others:
-            mailboxes = get_mailbox_service(others[0]).get_across_accounts(others, ["id"])
-            try:
-                calendars = get_calendar_service(others[0]).get_across_accounts(others, ["myRights"])
-            except NotImplementedError:
-                calendars = {}
+            client = get_account_client(others[0])
+            mailboxes = get_across_accounts(
+                client, others, lambda b, a: b.mail.mailbox.get(properties=["id"], accountId=a)
+            )
+            calendars = {}
+            if "calendars" in client.capabilities.attrs:
+                calendars = get_across_accounts(
+                    client,
+                    others,
+                    lambda b, a: b.calendars.calendar.get(properties=["myRights"], accountId=a),
+                )
             for account in others:
                 apps[account] = {
                     "mail": bool(mailboxes.get(account)),

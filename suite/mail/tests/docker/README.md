@@ -15,7 +15,9 @@ The backend tests in `suite/mail/tests/` and `suite/calendar/tests/` come in two
 The simplest setup is one bench with both apps on the same site: install `suite_cloud`, register a
 cluster and bootstrap a node as its README describes, create a Suite Site for this site (the desk
 form or `suite_cloud.api.fc.create_site`), and point Mail Settings and Suite Settings, or the site
-config, at it:
+config, at it. Test domains are made-up `*.example.test` names, which can neither publish the TXT
+record Suite Cloud asks for as proof of control nor verify DNS records, so turn on **Skip Domain
+Verification** in that Suite Cloud's Suite Cloud Settings (a development cloud only):
 
 ```sh
 bench --site <site> set-config allow_tests true

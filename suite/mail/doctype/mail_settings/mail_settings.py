@@ -2,11 +2,11 @@
 # For license information, please see license.txt
 
 import base64
-import os
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from jmap.push import PushKeyPair
 
 from suite.mail.directory import get_active_domain_names
 from suite.suite_core.utils import is_suite_cloud_configured
@@ -142,37 +142,17 @@ class MailSettings(Document):
         if set_count == 0:
             return
 
-        for value, label in (
-            (p256dh, _("P256DH")),
-            (private_key, _("Private Key")),
-            (auth, _("Auth")),
-        ):
-            if not self._is_urlsafe_base64(value):
-                frappe.throw(
-                    _("The JMAP Push Subscription {0} key must be URL-safe base64 encoded.").format(
-                        frappe.bold(label)
-                    )
-                )
-
         try:
-            from cryptography.hazmat.primitives.asymmetric import ec
-            from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+            pair = PushKeyPair(private_key, auth)
+            public_key = _unbase64(p256dh)
+        except ValueError as e:  # binascii.Error included
+            frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(e))
 
-            def _b64decode(s: str) -> bytes:
-                return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
-
-            priv_bytes = _b64decode(private_key)
-            priv = ec.derive_private_key(int.from_bytes(priv_bytes, "big"), ec.SECP256R1())
-            computed_pub = priv.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-            expected_pub = _b64decode(p256dh)
-            if computed_pub != expected_pub:
-                frappe.throw(
-                    _("The JMAP Push Subscription Private Key does not correspond to the P256DH public key.")
-                )
-        except frappe.exceptions.ValidationError:
-            raise
-        except Exception as e:
-            frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(str(e)))
+        # Either half may have been stored with base64 padding; compare the key bytes.
+        if _unbase64(pair.keys.p256dh) != public_key:
+            frappe.throw(
+                _("The JMAP Push Subscription Private Key does not correspond to the P256DH public key.")
+            )
 
     @frappe.whitelist()
     def generate_jmap_push_keys(self) -> None:
@@ -184,39 +164,26 @@ class MailSettings(Document):
     def _generate_jmap_push_keys(self) -> None:
         """Generates a new ECDH P-256 key pair and auth secret for JMAP push encryption and saves them."""
 
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        pair = PushKeyPair.generate()
 
-        private_key = ec.generate_private_key(ec.SECP256R1())
-        private_key_bytes = private_key.private_numbers().private_value.to_bytes(32, "big")
-        public_key_bytes = private_key.public_key().public_bytes(
-            Encoding.X962, PublicFormat.UncompressedPoint
-        )
-        auth_bytes = os.urandom(16)
-
-        self.jmap_push_p256dh = base64.urlsafe_b64encode(public_key_bytes).decode()
-        self.jmap_push_private_key = base64.urlsafe_b64encode(private_key_bytes).decode()
-        self.jmap_push_auth = base64.urlsafe_b64encode(auth_bytes).decode()
+        self.jmap_push_p256dh = pair.keys.p256dh
+        self.jmap_push_private_key = pair.private_key
+        self.jmap_push_auth = pair.auth
 
         self.flags.ignore_mandatory = True
         self.flags.ignore_validate = True
         self.save()
 
-    @staticmethod
-    def _is_urlsafe_base64(value: str) -> bool:
-        """Returns True if the given value is URL-safe base64 encoded."""
-
-        try:
-            padding = "=" * (-len(value) % 4)
-            base64.urlsafe_b64decode(f"{value}{padding}".encode())
-            return True
-        except Exception:
-            return False
-
     def clear_cache(self) -> None:
         """Clears the Cache."""
 
         frappe.cache.delete_value("mail-settings")
+
+
+def _unbase64(text: str) -> bytes:
+    """URL-safe base64 to bytes, whether or not the text kept its padding."""
+
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
 def get_signup_domains() -> list:

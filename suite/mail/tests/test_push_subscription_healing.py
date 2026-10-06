@@ -7,12 +7,18 @@ verifiable and recoverable without any locally stored record."""
 
 import unittest
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest import mock
 
 import frappe
+import httpx
 from frappe.utils.file_lock import LockTimeoutError
+from jmap.auth import BasicAuth
+from jmap.core.retry import RetryPolicy
+from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.doctype.push_subscription import push_subscription
+from suite.mail.jmap import MailServerUnavailableError, SetResult, SuiteJMAPClient
 from suite.utils.dt import get_utc_now
 
 USER = "user@example.test"
@@ -25,51 +31,51 @@ class EnsurePushSubscription(unittest.TestCase):
         url: str = "https://mail.example.test",
         disabled: bool = False,
         delete_error: Exception | None = None,
-    ) -> tuple[mock.Mock, mock.Mock]:
+    ) -> tuple[mock.Mock, mock.Mock, mock.Mock]:
         with (
             mock.patch.object(push_subscription.frappe.utils, "get_url", return_value=url),
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=disabled),
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
-            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(push_subscription, "_fetch_subscriptions", return_value=subscriptions) as fetch,
+            mock.patch.object(push_subscription, "_set_subscriptions", return_value=SetResult()) as delete,
             mock.patch.object(push_subscription, "_create_push_subscription") as add,
         ):
-            service.return_value.get.return_value = subscriptions
             if delete_error:
-                service.return_value.delete.side_effect = delete_error
+                delete.side_effect = delete_error
             push_subscription.ensure_push_subscription(USER)
 
-        return add, service
+        return add, fetch, delete
 
     def test_creates_when_no_subscription_exists(self):
-        add, _ = self._run([])
+        add, _, _ = self._run([])
 
         add.assert_called_once_with(USER, ignore_permissions=True)
 
     def test_skips_when_live_subscription_exists(self):
-        add, _ = self._run([{"deviceClientId": "site-device", "expires": "2999-01-01T00:00:00Z"}])
+        add, _, _ = self._run([{"deviceClientId": "site-device", "expires": "2999-01-01T00:00:00Z"}])
 
         add.assert_not_called()
 
     def test_skips_when_subscription_never_expires(self):
-        add, _ = self._run([{"deviceClientId": "site-device", "expires": None}])
+        add, _, _ = self._run([{"deviceClientId": "site-device", "expires": None}])
 
         add.assert_not_called()
 
     def test_other_devices_subscriptions_do_not_count(self):
-        add, _ = self._run([{"deviceClientId": "other-device", "expires": "2999-01-01T00:00:00Z"}])
+        add, _, _ = self._run([{"deviceClientId": "other-device", "expires": "2999-01-01T00:00:00Z"}])
 
         add.assert_called_once_with(USER, ignore_permissions=True)
 
     def test_recreates_when_subscription_expired(self):
-        add, service = self._run(
+        add, _, delete = self._run(
             [{"id": "sub-old", "deviceClientId": "site-device", "expires": "2000-01-01T00:00:00Z"}]
         )
 
         add.assert_called_once_with(USER, ignore_permissions=True)
-        service.return_value.delete.assert_called_once_with(["sub-old"])
+        delete.assert_called_once_with(USER, destroy=["sub-old"], ignore_permissions=True)
 
     def test_expired_duplicate_is_deleted_even_when_live_exists(self):
-        add, service = self._run(
+        add, _, delete = self._run(
             [
                 {"id": "sub-old", "deviceClientId": "site-device", "expires": "2000-01-01T00:00:00Z"},
                 {"deviceClientId": "site-device", "expires": "2999-01-01T00:00:00Z"},
@@ -77,10 +83,10 @@ class EnsurePushSubscription(unittest.TestCase):
         )
 
         add.assert_not_called()
-        service.return_value.delete.assert_called_once_with(["sub-old"])
+        delete.assert_called_once_with(USER, destroy=["sub-old"], ignore_permissions=True)
 
     def test_delete_failure_does_not_block_recreation(self):
-        add, _ = self._run(
+        add, _, _ = self._run(
             [{"id": "sub-old", "deviceClientId": "site-device", "expires": "2000-01-01T00:00:00Z"}],
             delete_error=RuntimeError("boom"),
         )
@@ -88,16 +94,16 @@ class EnsurePushSubscription(unittest.TestCase):
         add.assert_called_once_with(USER, ignore_permissions=True)
 
     def test_skips_on_non_https_site(self):
-        add, service = self._run([], url="http://site.localhost:8001")
+        add, fetch, _ = self._run([], url="http://site.localhost:8001")
 
         add.assert_not_called()
-        service.assert_not_called()
+        fetch.assert_not_called()
 
     def test_skips_when_user_disabled_push(self):
-        add, service = self._run([], disabled=True)
+        add, fetch, _ = self._run([], disabled=True)
 
         add.assert_not_called()
-        service.assert_not_called()
+        fetch.assert_not_called()
 
     def test_skips_when_concurrent_run_holds_the_lock(self):
         with (
@@ -106,16 +112,16 @@ class EnsurePushSubscription(unittest.TestCase):
             ),
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
             mock.patch.object(push_subscription, "filelock", side_effect=LockTimeoutError),
-            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(push_subscription, "_fetch_subscriptions") as fetch,
             mock.patch.object(push_subscription, "_create_push_subscription") as add,
         ):
             push_subscription.ensure_push_subscription(USER)
 
-        service.assert_not_called()
+        fetch.assert_not_called()
         add.assert_not_called()
 
     def test_surplus_live_duplicates_are_pruned_keeping_the_longest_lived(self):
-        add, service = self._run(
+        add, _, delete = self._run(
             [
                 {"id": "sub-a", "deviceClientId": "site-device", "expires": "2998-01-01T00:00:00Z"},
                 {"id": "sub-b", "deviceClientId": "site-device", "expires": None},
@@ -124,8 +130,8 @@ class EnsurePushSubscription(unittest.TestCase):
         )
 
         add.assert_not_called()
-        (deleted,), _ = service.return_value.delete.call_args
-        self.assertCountEqual(deleted, ["sub-a", "sub-c"])
+        _, kwargs = delete.call_args
+        self.assertCountEqual(kwargs["destroy"], ["sub-a", "sub-c"])
 
 
 class AddPushSubscription(unittest.TestCase):
@@ -143,12 +149,11 @@ class AddPushSubscription(unittest.TestCase):
             mock.patch.object(push_subscription, "filelock") as filelock,
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
-            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(push_subscription, "_fetch_subscriptions", return_value=subscriptions),
             mock.patch.object(
                 push_subscription, "_create_push_subscription", return_value="new-id"
             ) as create,
         ):
-            service.return_value.get.return_value = subscriptions
             result = push_subscription._add_push_subscription(
                 USER, device_client_id, url, types, ignore_permissions=True
             )
@@ -216,43 +221,43 @@ class CreatePushSubscription(unittest.TestCase):
             ),
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
             mock.patch.object(push_subscription, "get_push_subscription_keys", return_value=None),
-            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(push_subscription, "_set_subscriptions") as set_subscriptions,
         ):
-            service.return_value.create.side_effect = lambda subs: {
-                "created": {subs[0]["creation_id"]: {"id": "new-id"}}
-            }
+            set_subscriptions.side_effect = lambda user, create, **kw: SetResult(
+                created={next(iter(create)): SimpleNamespace(id="new-id")}
+            )
             push_subscription._create_push_subscription(USER, ignore_permissions=True, **kwargs)
-            (subs,), _ = service.return_value.create.call_args
+            _, call_kwargs = set_subscriptions.call_args
 
-        return subs[0]
+        return next(iter(call_kwargs["create"].values()))
 
     def test_default_creation_wears_the_site_device_id(self):
-        self.assertEqual(self._create()["device_client_id"], "site-device")
+        self.assertEqual(self._create()["deviceClientId"], "site-device")
 
     def test_custom_url_creation_gets_a_unique_device_id(self):
         sub = self._create(url="https://elsewhere.example.test/hook")
 
-        self.assertNotEqual(sub["device_client_id"], "site-device")
+        self.assertNotEqual(sub["deviceClientId"], "site-device")
 
     def test_custom_types_creation_gets_a_unique_device_id(self):
-        self.assertNotEqual(self._create(types=["Email"])["device_client_id"], "site-device")
+        self.assertNotEqual(self._create(types=["Email"])["deviceClientId"], "site-device")
 
     def test_site_device_id_with_custom_parameters_is_rejected(self):
         with (
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
-            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(push_subscription, "_set_subscriptions") as set_subscriptions,
             self.assertRaises(push_subscription.frappe.ValidationError),
         ):
             push_subscription._create_push_subscription(
                 USER, "site-device", "https://elsewhere.example.test/hook", ignore_permissions=True
             )
 
-        service.return_value.create.assert_not_called()
+        set_subscriptions.assert_not_called()
 
     def test_explicit_device_id_is_honored(self):
         sub = self._create(device_client_id="my-device", url="https://elsewhere.example.test/hook")
 
-        self.assertEqual(sub["device_client_id"], "my-device")
+        self.assertEqual(sub["deviceClientId"], "my-device")
 
 
 class RenewExpiringPushSubscriptions(unittest.TestCase):
@@ -266,51 +271,53 @@ class RenewExpiringPushSubscriptions(unittest.TestCase):
             mock.patch.object(push_subscription, "get_jmap_configured_users", return_value=[USER]),
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
-            mock.patch.object(push_subscription, "get_push_subscription_service") as service_factory,
+            mock.patch.object(push_subscription, "_fetch_subscriptions", return_value=subscriptions) as fetch,
+            mock.patch.object(
+                push_subscription, "_set_subscriptions", return_value=SetResult()
+            ) as set_subscriptions,
             mock.patch.object(push_subscription, "_create_push_subscription") as add,
             mock.patch.object(push_subscription, "log_mail_error") as log_mail_error,
         ):
-            service = service_factory.return_value
-            service.get.return_value = subscriptions
-            service.update.return_value = {"updated": {}}
             push_subscription.renew_expiring_push_subscriptions()
 
-        self.assertEqual(service.get.call_count, 1)
+        self.assertEqual(fetch.call_count, 1)
         log_mail_error.assert_not_called()
-        return service, add
+        return set_subscriptions, add
 
     def test_expiring_subscription_is_renewed_from_the_shared_fetch(self):
         expiring = (get_utc_now() + timedelta(days=1)).isoformat()
-        service, add = self._run(
+        set_subscriptions, add = self._run(
             [
                 {"id": "site-sub", "deviceClientId": "site-device", "expires": "2999-01-01T00:00:00Z"},
                 {"id": "exp-1", "deviceClientId": "other-device", "expires": expiring},
             ]
         )
 
-        service.update.assert_called_once_with([{"id": "exp-1"}])
+        set_subscriptions.assert_called_once_with(
+            USER, update={"exp-1": {"expires": None}}, ignore_permissions=True
+        )
         add.assert_not_called()
 
     def test_already_expired_foreign_subscription_is_not_renewed(self):
-        service, add = self._run(
+        set_subscriptions, add = self._run(
             [
                 {"id": "site-sub", "deviceClientId": "site-device", "expires": "2999-01-01T00:00:00Z"},
                 {"id": "dead-1", "deviceClientId": "other-device", "expires": "2000-01-01T00:00:00Z"},
             ]
         )
 
-        service.update.assert_not_called()
-        service.delete.assert_not_called()
+        # Neither renewed nor deleted.
+        set_subscriptions.assert_not_called()
         add.assert_not_called()
 
     def test_deleted_expired_subscription_is_not_renewed(self):
-        service, add = self._run(
+        set_subscriptions, add = self._run(
             [{"id": "sub-old", "deviceClientId": "site-device", "expires": "2000-01-01T00:00:00Z"}]
         )
 
-        service.delete.assert_called_once_with(["sub-old"])
+        # The one set call is healing's deletion; no renewal follows it.
+        set_subscriptions.assert_called_once_with(USER, destroy=["sub-old"], ignore_permissions=True)
         add.assert_called_once_with(USER, ignore_permissions=True)
-        service.update.assert_not_called()
 
 
 class OnLogin(unittest.TestCase):
@@ -343,19 +350,24 @@ class OnLogin(unittest.TestCase):
 
 
 class DeleteSitePushSubscriptions(unittest.TestCase):
-    def _run(self, subscriptions: list[dict], not_destroyed: dict | None = None) -> mock.Mock:
+    def _run(
+        self, subscriptions: list[dict], not_destroyed: dict | None = None
+    ) -> tuple[mock.Mock, mock.Mock]:
         with (
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
-            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(push_subscription, "_fetch_subscriptions", return_value=subscriptions) as fetch,
+            mock.patch.object(
+                push_subscription,
+                "_set_subscriptions",
+                return_value=SetResult(not_destroyed=not_destroyed or {}),
+            ) as delete,
         ):
-            service.return_value.get.return_value = subscriptions
-            service.return_value.delete.return_value = {"destroyed": [], "notDestroyed": not_destroyed or {}}
             push_subscription.delete_site_push_subscriptions(USER)
 
-        return service
+        return fetch, delete
 
     def test_deletes_only_the_site_subscriptions(self):
-        service = self._run(
+        fetch, delete = self._run(
             [
                 {"id": "site-1", "deviceClientId": "site-device"},
                 {"id": "custom", "deviceClientId": "other-device"},
@@ -363,13 +375,15 @@ class DeleteSitePushSubscriptions(unittest.TestCase):
             ]
         )
 
-        service.assert_called_once_with(USER, ignore_permissions=True, allow_disabled=True)
-        service.return_value.delete.assert_called_once_with(["site-1", "site-2"])
+        fetch.assert_called_once_with(USER, ignore_permissions=True, allow_disabled=True)
+        delete.assert_called_once_with(
+            USER, destroy=["site-1", "site-2"], ignore_permissions=True, allow_disabled=True
+        )
 
     def test_nothing_to_delete_skips_the_delete_call(self):
-        service = self._run([{"id": "custom", "deviceClientId": "other-device"}])
+        _, delete = self._run([{"id": "custom", "deviceClientId": "other-device"}])
 
-        service.return_value.delete.assert_not_called()
+        delete.assert_not_called()
 
     def test_server_side_delete_errors_surface(self):
         with self.assertRaises(push_subscription.frappe.ValidationError):
@@ -377,6 +391,131 @@ class DeleteSitePushSubscriptions(unittest.TestCase):
                 [{"id": "site-1", "deviceClientId": "site-device"}],
                 not_destroyed={"site-1": {"type": "notFound", "description": "gone"}},
             )
+
+
+class DeletePushSubscriptions(unittest.TestCase):
+    """``delete_push_subscriptions`` against a fake server that takes two ids to a set: a long
+    list goes out in several sets, and the ones before a refused set are already applied."""
+
+    IDS = ("sub-1", "sub-2", "sub-3", "sub-4", "sub-5")
+
+    def setUp(self) -> None:
+        core = "urn:ietf:params:jmap:core"
+        self.server = FakeJMAPServer(
+            capabilities={core: {"maxObjectsInSet": 2}},
+            accounts={"f7": {"name": USER, "isPersonal": True, "accountCapabilities": {}}},
+            primary_accounts={core: "f7"},
+        )
+        http = httpx.Client(auth=BasicAuth(USER, "pw"), **self.server.client_kwargs())
+        client = SuiteJMAPClient.connect(
+            "https://jmap.example.com/.well-known/jmap",
+            auth=BasicAuth(USER, "pw"),
+            http=http,
+            experimental=True,
+            retry_policy=RetryPolicy(max_attempts=1),
+        )
+        for patcher in (
+            mock.patch.object(push_subscription, "get_jmap_client", return_value=client),
+            mock.patch.object(push_subscription, "has_permission_for_user", return_value=True),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def refuse_after(self, answer: dict | None = None) -> None:
+        """Makes the server answer the first set (destroying all of it, unless `answer` says
+        otherwise) and refuse every set after it outright."""
+
+        def answer_then_refuse(arguments: dict, server: FakeJMAPServer) -> dict:
+            server.fail("PushSubscription/set", "serverFail", description="Storage is unavailable.")
+            return answer or {"destroyed": arguments["destroy"]}
+
+        self.server.handle("PushSubscription/set", answer_then_refuse)
+
+    def refusal(self) -> str:
+        with self.assertRaises(frappe.ValidationError) as refused:
+            push_subscription.delete_push_subscriptions(USER, list(self.IDS))
+
+        return str(refused.exception)
+
+    def test_every_id_is_destroyed_across_sets(self):
+        self.server.handle(
+            "PushSubscription/set", lambda arguments, server: {"destroyed": arguments["destroy"]}
+        )
+
+        push_subscription.delete_push_subscriptions(USER, list(self.IDS))
+
+        destroyed = [
+            call[1]["destroy"] for request in self.server.requests for call in request["methodCalls"]
+        ]
+        self.assertEqual(destroyed, [["sub-1", "sub-2"], ["sub-3", "sub-4"], ["sub-5"]])
+
+    def test_a_refusal_part_way_says_what_was_already_deleted(self):
+        self.refuse_after()
+
+        message = self.refusal()
+
+        self.assertIn("2 of 5 push subscription(s) were deleted", message)
+        self.assertIn("Storage is unavailable.", message)
+
+    def test_a_refusal_part_way_keeps_the_errors_of_the_applied_sets(self):
+        gone = {"type": "notFound", "description": "No such subscription."}
+        self.refuse_after({"destroyed": ["sub-1"], "notDestroyed": {"sub-2": gone}})
+
+        message = self.refusal()
+
+        self.assertIn("1 of 5 push subscription(s) were deleted", message)
+        self.assertIn("sub-2: No such subscription.", message)
+        self.assertIn("Storage is unavailable.", message)
+
+    def test_a_refusal_at_once_is_not_reported_as_partial(self):
+        self.server.fail("PushSubscription/set", "serverFail", description="Storage is unavailable.")
+
+        self.assertEqual(self.refusal(), "Storage is unavailable.")
+
+    def test_an_outage_part_way_says_what_was_already_deleted(self):
+        def answer_then_go_down(arguments: dict, server: FakeJMAPServer) -> dict:
+            server.intercept = lambda request: httpx.Response(503)
+            return {"destroyed": arguments["destroy"]}
+
+        self.server.handle("PushSubscription/set", answer_then_go_down)
+
+        message = self.refusal()
+
+        self.assertIn("2 of 5 push subscription(s) were deleted", message)
+        self.assertIn("mail server became unavailable", message)
+        # The set that went unanswered may have been applied.
+        self.assertIn("Some of the rest may have been deleted as well", message)
+
+    def test_a_server_that_turned_the_rest_away_leaves_no_doubt_about_them(self):
+        def answer_then_limit(arguments: dict, server: FakeJMAPServer) -> dict:
+            # A rate limit: the request it answers was not run.
+            server.intercept = lambda request: httpx.Response(429)
+            return {"destroyed": arguments["destroy"]}
+
+        self.server.handle("PushSubscription/set", answer_then_limit)
+
+        message = self.refusal()
+
+        self.assertIn("2 of 5 push subscription(s) were deleted", message)
+        self.assertIn("mail server became unavailable", message)
+        self.assertIn("The rest were not deleted", message)
+        self.assertNotIn("may have been deleted", message)
+
+    def test_an_outage_at_once_stays_an_outage(self):
+        self.server.intercept = mock.Mock(side_effect=httpx.ConnectError("connection refused"))
+
+        with self.assertRaises(MailServerUnavailableError):
+            push_subscription.delete_push_subscriptions(USER, list(self.IDS))
+
+    def test_ids_the_server_refuses_are_named_with_their_reasons(self):
+        gone = {"type": "notFound", "description": "No such subscription."}
+        self.server.respond("PushSubscription/set", {"destroyed": ["sub-1"], "notDestroyed": {"sub-2": gone}})
+
+        with self.assertRaises(frappe.ValidationError) as refused:
+            push_subscription.delete_push_subscriptions(USER, ["sub-1", "sub-2"])
+
+        self.assertIn("sub-2: No such subscription.", str(refused.exception))
+        self.assertNotIn("sub-1", str(refused.exception))
 
 
 class DeletePushSubscriptionsOnDisable(unittest.TestCase):
@@ -433,7 +572,7 @@ class DeletePushSubscriptionsOnDisable(unittest.TestCase):
         log_error.assert_called_once()
 
 
-class GetJMAPConnectionForDisabledUser(unittest.TestCase):
+class GetJMAPClientForDisabledUser(unittest.TestCase):
     """The factory refuses disabled users unless the caller says the disabled state is expected."""
 
     def _run(self, enabled: int | None, allow_disabled: bool = False) -> None:
@@ -445,7 +584,7 @@ class GetJMAPConnectionForDisabledUser(unittest.TestCase):
             mock.patch.object(jmap.frappe.db, "exists", return_value=None),
             self.assertRaises(frappe.ValidationError) as raised,
         ):
-            jmap.get_jmap_connection(USER, ignore_permissions=True, allow_disabled=allow_disabled)
+            jmap.get_jmap_client(USER, ignore_permissions=True, allow_disabled=allow_disabled)
 
         return str(raised.exception)
 

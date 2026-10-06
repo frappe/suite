@@ -1,4 +1,4 @@
-"""The shapes Mail Queue keeps in its JSON fields, and the JMAP models they become.
+"""The shapes Mail Queue keeps in its JSON fields, and the draft rows they become.
 
 The compose UI, the send API, replies, forwards and calendar invitations all build these, so they
 are parsed on the way in rather than trusted key by key when the mail is processed.
@@ -13,7 +13,6 @@ from frappe.utils import random_string, validate_email_address
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
-from suite.mail.jmap.models import EmailAddress, EmailAttachment, EmailRecipient
 from suite.utils.validation import without_blanks
 
 # Headers the draft builder writes itself; a caller may only add its own (X-...) ones.
@@ -60,15 +59,19 @@ class Address(BaseModel):
     email: Email
     display_name: str | None = None
 
-    def to_jmap(self) -> EmailAddress:
-        return EmailAddress(name=self.display_name, email=self.email.lower())
+    def to_jmap(self) -> dict:
+        """The `reply_to` row `build_email_draft` takes."""
+
+        return {"name": self.display_name, "email": self.email.lower()}
 
 
 class Recipient(Address):
     type: Literal["To", "Cc", "Bcc"]
 
-    def to_jmap(self) -> EmailRecipient:
-        return EmailRecipient(type=self.type.lower(), name=self.display_name, email=self.email.lower())
+    def to_jmap(self) -> dict:
+        """The `recipients` row `build_email_draft` takes."""
+
+        return {"type": self.type.lower(), "name": self.display_name, "email": self.email.lower()}
 
 
 class Attachment(BaseModel):
@@ -114,14 +117,16 @@ class Attachment(BaseModel):
     def is_private_file(self) -> bool:
         return not self.blob_id and self.file_url.startswith("/private/files")
 
-    def to_jmap(self) -> EmailAttachment:
-        return EmailAttachment(
-            name=self.filename,
-            type=self.type,
-            cid=self.cid,
-            blob_id=self.blob_id,
-            disposition=self.disposition,
-        )
+    def to_jmap(self) -> dict:
+        """The `attachments` row `build_email_draft` takes."""
+
+        return {
+            "name": self.filename,
+            "type": self.type,
+            "cid": self.cid,
+            "blob_id": self.blob_id,
+            "disposition": self.disposition,
+        }
 
 
 def _each_blob_once(attachments: list[Attachment]) -> list[Attachment]:

@@ -27,6 +27,7 @@ jobs:
   linter:
     name: Frappe Linter
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -43,9 +44,10 @@ jobs:
           pip install semgrep
           semgrep scan --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness .
 
-  ruff-format:
-    name: Ruff Format Check
+  python-checks:
+    name: Ruff Format and Vulnerable Dependency Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +55,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-          cache: pip
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
 
       - name: Install Ruff
         run: pip install ruff==0.12.3
@@ -70,9 +80,16 @@ jobs:
         run: |
           ruff check .
 
+      - name: Install and run pip-audit
+        if: ${{ !cancelled() }}
+        run: |
+          pip install pip-audit
+          pip-audit --desc on .
+
   javascript-health:
     name: JavaScript Health Baseline
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -121,28 +138,3 @@ jobs:
           path: test-results/yarn-audit.txt
           if-no-files-found: warn
           retention-days: 30
-
-  deps-vulnerable-check:
-    name: Vulnerable Dependency Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - uses: actions/checkout@v4
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-            ${{ runner.os }}-
-
-      - name: Install and run pip-audit
-        run: |
-          pip install pip-audit
-          pip-audit --desc on .

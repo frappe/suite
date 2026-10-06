@@ -1,5 +1,9 @@
 # STT capacity measurement
 
+For recognition, participant-name, and English/Hindi script evaluation, see
+[the accuracy benchmark](ACCURACY.md). Its evaluator supports paced replay and
+offline scoring against manually checked references.
+
 Run against an **isolated** STT replica with the production image, model, GPU,
 and configuration. Do not use the live service. The script sends 24 kHz mono
 PCM16 WAV audio over the public authenticated Realtime WebSocket. Each stream

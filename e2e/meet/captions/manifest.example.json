@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "clips": [
+    {
+      "id": "indian-english-names-001",
+      "audio": "audio/indian-english-names-001.wav",
+      "reference": "Siobhan, please send the report to Aarav.",
+      "speaker": "Aarav",
+      "speechStartSeconds": 0.5,
+      "speechEndSeconds": 4.2,
+      "consented": false,
+      "names": ["Aarav", "Siobhan", "Zubair"]
+    }
+  ]
+}
