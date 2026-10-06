@@ -82,7 +82,9 @@ def judge(adapter: str, doc_id: str, roots: dict[str, type], bundle: Path) -> st
         return None
     try:
         return settle(adapter, doc_id, marked, roots, bundle)
-    except Exception as error:
+    except BaseException as error:  # pycrdt panics derive from BaseException
+        if isinstance(error, KeyboardInterrupt | SystemExit):
+            raise
         frappe.db.rollback()
         return unsettled(adapter, doc_id, marked, "judge_failed", type(error).__name__)
 

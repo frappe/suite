@@ -294,11 +294,19 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.requested, [(JUDGE, doc_id)])
 
     def test_a_judge_that_fails_holds_a_compaction_suspect_once_and_clears_a_report(self):
-        def breaks(*args):
-            raise ValueError("unexpected")
+        class Panic(BaseException):
+            pass
 
-        for marked, held, verdict in (("unreadable", "judge_failed", "held"), ("client", None, "unjudged")):
-            with self.subTest(marked=marked):
+        for marked, held, verdict, error in (
+            ("unreadable", "judge_failed", "held", ValueError),
+            ("client", None, "unjudged", ValueError),
+            ("unreadable", "judge_failed", "held", Panic),
+        ):
+
+            def breaks(*args, error=error):
+                raise error("unexpected")
+
+            with self.subTest(marked=marked, error=error.__name__):
                 node = self.new_document()
                 Pen(self, node).adds(paragraph("alpha"))
                 doc_id = self.doc_row(node).id
@@ -313,7 +321,7 @@ class TestSuspect(CheckpointCase):
                 self.assertEqual((doc.suspect_held, doc.verdict), (held, verdict))
                 self.assertEqual(self.alerts(title), before + 1)
                 logged = frappe.get_last_doc("Error Log", {"method": f"Collab document {title}"}).error
-                self.assertEqual(("ValueError" in logged, "unexpected" in logged), (True, False))
+                self.assertEqual((error.__name__ in logged, "unexpected" in logged), (True, False))
                 self.requested.clear()
                 writer_collab.sweep()
                 self.assertNotIn((JUDGE, doc_id), self.requested)
