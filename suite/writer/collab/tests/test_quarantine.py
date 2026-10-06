@@ -251,3 +251,19 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual(read_frame(self.pull(node).get_data())[0]["state"], "live")
         response = self.pull(node, q_epoch="one")
         self.assertEqual((response.status_code, answer(response)["collab"]), (400, "malformed"))
+
+    def test_a_writer_that_lost_a_row_is_refused_even_for_a_push_already_stored(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        a.typed(5, " gamma")
+        b = Tab(self, node)
+        self.quarantine(node, {2})
+
+        # The tab never heard the answer to its second push and sends it again
+        body = push_body(a.header["lineage"], a.sid, a.cid, 2, 0, a.sent[1])
+        retried = call(routes.collab_updates_post, node, body=body)
+        self.assertEqual((retried.status_code, answer(retried)["collab"]), (409, "client_closed"))
+        typed = a.write(lambda text: text.insert(0, "zero "))
+        self.assertEqual((typed.status_code, answer(typed)["collab"]), (409, "client_closed"))
+        self.assertEqual(b.typed(0, "beta "), 3)

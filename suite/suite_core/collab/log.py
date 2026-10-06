@@ -157,7 +157,7 @@ def open_header(doc: dict, *, can_write: bool) -> dict:
 def load_session(adapter: str, doc_id: str, sid: str, principal: str):
     """The session row for `sid`, or None. Refused if it belongs to another principal."""
     rows = frappe.db.sql(
-        f"SELECT `client_id`, `principal`, `acked_seq`, `next_clock` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s AND `sid` = %s",
+        f"SELECT `client_id`, `principal`, `acked_seq`, `next_clock`, `closed` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s AND `sid` = %s",
         (doc_id, sid),
         as_dict=True,
     )
@@ -266,12 +266,15 @@ def parse_push(body: bytes) -> tuple[dict, bytes]:
 
 
 def session_for(adapter: str, doc_id: str, header: dict, principal: str):
-    """The pushing session, refused unless it is this principal's and bound to this clientID."""
+    """The pushing session, refused unless it is this principal's, bound to this clientID and open."""
     session = load_session(adapter, doc_id, header["sid"], principal)
     if session is None:
         raise Refusal(409, "session_unknown")
     if int(session.client_id) != header["cid"]:
         raise Refusal(409, "client_conflict")
+    if session.closed:
+        # Before any replay: an acked seq of a closed session may be quarantined
+        raise Refusal(409, "client_closed")
     return session
 
 
