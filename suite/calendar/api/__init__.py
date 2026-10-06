@@ -9,8 +9,12 @@ from dateutil.rrule import rrulestr
 from frappe import _
 from frappe.utils import cint
 from icalendar.prop import vRecur
+from jmap import Id, MethodError
+from jmap.capabilities.principals import PRINCIPALS_URN
+from jmap.sharing import principal_account
 from pydantic import BaseModel
 
+from suite.calendar import jmap_events
 from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar.calendar import (
     add_calendar,
@@ -32,10 +36,12 @@ from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFi
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
 from suite.calendar.sharing import holds_any_right, may_share, rights_for_role, role_for_rights
 from suite.mail.jmap import (
-    get_calendar_event_service,
-    get_calendar_service,
+    account_view,
+    format_method_error,
+    get_account_client,
+    get_across_accounts,
+    get_jmap_client,
     get_participant_identities,
-    get_principal_service,
 )
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -121,8 +127,6 @@ def _owner_side_names(account: str, calendars: list[dict]) -> dict[str, str]:
         return cached
 
     from suite.mail.doctype.user_account.user_account import get_enabled_account_user
-    from suite.mail.jmap import get_jmap_connection
-    from suite.mail.jmap.services.calendars.calendar import CalendarService
 
     # A personal account has one owner, and it is never a reader. A team account has none, and
     # any member's view carries the name. A reader is never linked, so they are never among these.
@@ -134,7 +138,9 @@ def _owner_side_names(account: str, calendars: list[dict]) -> dict[str, str]:
     names: dict[str, str] = {}
     for user in [user for user in candidates if user and user != frappe.session.user][:MAX_NAME_CANDIDATES]:
         try:
-            seen = CalendarService(account, get_jmap_connection(user, ignore_permissions=True)).get(unnamed)
+            seen = jmap_events.get_calendars(
+                account_view(get_jmap_client(user, ignore_permissions=True), account), unnamed
+            )
         except Exception:
             frappe.log_error(title="Calendar could not read a shared calendar's name")
             continue
@@ -192,10 +198,14 @@ def _shared_calendars() -> list[str]:
     shared = []
     accounts = list(_session_accounts())
     if accounts:
-        try:
-            calendars = get_calendar_service(accounts[0]).get_across_accounts(accounts, ["id", "myRights"])
-        except NotImplementedError:
-            calendars = {}
+        client = get_account_client(accounts[0])
+        calendars = {}
+        if "calendars" in client.capabilities.attrs:
+            calendars = get_across_accounts(
+                client,
+                accounts,
+                lambda b, a: b.calendars.calendar.get(properties=["id", "myRights"], accountId=a),
+            )
         for account, rows in calendars.items():
             shared.extend(
                 f"{account}|{row['id']}"
@@ -290,19 +300,23 @@ def delete_calendar(account: str, id: str) -> None:
     """Deletes a calendar and the events on it. The default calendar stays: it is
     where new events go, invitations included."""
 
-    if _calendar(account, id).get("isDefault"):
+    if _calendar(account, id, _("Calendar Deletion Error")).get("isDefault"):
         frappe.throw(_("The default calendar can't be deleted. Make another calendar the default first."))
 
     delete_calendars(account, [id], remove_events=True)
 
 
-def _calendar(account: str, id: str) -> dict:
-    """The calendar as the mail server has it — rights, sharees and all — or Calendar not found."""
+def _calendar(account: str, id: str, title: str | None = None) -> dict:
+    """The calendar as the mail server has it — rights, sharees and all — or Calendar not found.
+    A read the server refuses is reported in its words, under `title`."""
 
-    calendar = next(iter(get_calendar_service(account).get([id])), None)
-    if not calendar:
+    try:
+        calendars = jmap_events.get_calendars(get_account_client(account), [id])
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title or _("Calendar Error"))
+    if not calendars:
         frappe.throw(_("Calendar not found."), frappe.DoesNotExistError)
-    return calendar
+    return calendars[0]
 
 
 def _update_calendar(account: str, id: str, patch: dict, title: str, fallback: str, **kwargs) -> None:
@@ -312,11 +326,16 @@ def _update_calendar(account: str, id: str, patch: dict, title: str, fallback: s
     calendar may be shared with, say, which the server caps and does not say in its session.
     """
 
-    response = get_calendar_service(account)._update({id: patch}, **kwargs)
-    method_responses = response.get("methodResponses") or []
-    result = method_responses[0][1] if method_responses else {}
-    if id not in (result.get("updated") or {}):
-        error = (result.get("notUpdated") or {}).get(id) or result
+    client = get_account_client(account)
+    try:
+        with client.batch() as b:
+            h = b.calendars.calendar.set(update={id: patch}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id not in response.updated:
+        error = response.not_updated.get(id) or {}
         frappe.throw(error.get("description") or fallback, title=title)
 
 
@@ -327,13 +346,15 @@ class Sharee(BaseModel):
     role: Literal["view"]
 
 
-def _principal_service(account: str):
-    """The mail server's principal service, or None on a server without the capability."""
+def _principal_account(client) -> str | None:
+    """The account `Principal/*` calls are addressed at for this client's account — the one
+    that holds the principals, which the session names; the account itself where it names
+    none. None on a server without the capability."""
 
-    try:
-        return get_principal_service(account)
-    except NotImplementedError:
+    if PRINCIPALS_URN not in client.session.capabilities:
         return None
+    account = str(client.default_account)
+    return principal_account(client.session, account) or account
 
 
 def _principals(account: str, ids: list[str]) -> dict[str, dict]:
@@ -343,17 +364,22 @@ def _principals(account: str, ids: list[str]) -> dict[str, dict]:
     whose name cannot be looked up is still a sharee, and the id is what removing one needs.
     """
 
-    service = _principal_service(account) if ids else None
-    if not service:
+    if not ids:
+        return {}
+    client = get_account_client(account)
+    at = _principal_account(client)
+    if at is None:
         return {}
 
+    try:
+        with client.batch() as b:
+            h = b.add("Principal/get", {"ids": ids}, account_id=Id(at))
+        found = h.result.items
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Sharing Error"))
     return {
-        principal["id"]: {
-            "name": principal.get("name"),
-            "email": principal.get("email"),
-            "type": principal.get("type"),
-        }
-        for principal in service.get(ids)
+        principal.id: {"name": principal.name, "email": principal.email, "type": principal.type}
+        for principal in found
     }
 
 
@@ -465,12 +491,18 @@ def search_principals(account: str, text: str, limit: int = 10) -> list[dict]:
     if len(text) < MIN_PRINCIPAL_QUERY:
         return []
 
-    service = _principal_service(account)
-    if not service:
+    client = get_account_client(account)
+    at = _principal_account(client)
+    if at is None:
         frappe.throw(_("This mail server can't look up who to share with."))
 
     limit = min(cint(limit) or 10, MAX_PRINCIPAL_MATCHES)
-    matches = service.query({"text": text}, limit=limit)["ids"]
+    try:
+        with client.batch() as b:
+            h = b.add("Principal/query", {"filter": {"text": text}, "limit": limit}, account_id=Id(at))
+        matches = h.result.ids
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Sharing Error"))
     ids = [principal_id for principal_id in matches if principal_id != account]
     return [
         {"principal_id": principal_id, **details}
@@ -500,7 +532,7 @@ MAX_EVENTS_IN_WINDOW = 5000
 # What a search answers with when the caller names no count of its own.
 EVENT_SEARCH_LIMIT = 20
 
-# And the most it will answer with however large a count is asked for. The service walks the
+# And the most it will answer with however large a count is asked for. `query_events` walks the
 # server batch by batch until it has the number it was given, so an unbounded count is an
 # unbounded walk of the account's whole event store — from a whitelisted endpoint, for a
 # palette that shows ten. Bounded here for the same reason `MAX_EVENTS_IN_WINDOW` bounds the
@@ -789,7 +821,8 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
 
     account = events[0]["account"]
     now = datetime.now(UTC)
-    by_uid = get_calendar_event_service(account).occurrences_from(
+    by_uid = jmap_events.occurrences_from(
+        get_account_client(account),
         {event["uid"]: normalize_utc_z(now - _period(event)) for event in recurring},
         before=normalize_utc_z(now + timedelta(days=365 * RECURRENCE_HORIZON_YEARS)),
         # A period back reaches every occurrence of the last period and, over the extra day,
@@ -944,7 +977,8 @@ def _search_calendar_events(
     # it is asked for both halves — what is still to come, soonest first, and what has passed,
     # most recent first — each cut at `limit` on its own, which is the most of either the
     # answer could hold (see `query_around`).
-    ids = get_calendar_event_service(account).query_around(
+    ids = jmap_events.query_around(
+        get_account_client(account),
         conditions,
         normalize_utc_z(datetime.now(UTC)),
         limit,
@@ -1084,16 +1118,24 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
     if not events:
         return
 
-    service = get_calendar_event_service(account)
-    base_ids = service.get_base_event_ids([event["id"] for event in events])
-    if not base_ids:
-        return
+    client = get_account_client(account)
+    try:
+        base_ids = jmap_events.get_base_event_ids(client, [event["id"] for event in events])
+        if not base_ids:
+            return
 
-    master_ids = sorted(set(base_ids.values()))
-    # The raw copies carry recurrenceOverrides, which the formatter drops — and the override is
-    # the only thing that says which properties an occurrence owns rather than inherits.
-    overrides = {master["id"]: master.get("recurrenceOverrides") or {} for master in service.get(master_ids)}
-    masters = {master["id"]: master for master in get_calendar_events_by_ids(account, master_ids)}
+        master_ids = sorted(set(base_ids.values()))
+        # The raw copies carry recurrenceOverrides, which the formatter drops — and the override is
+        # the only thing that says which properties an occurrence owns rather than inherits.
+        overrides = {
+            master["id"]: master.get("recurrenceOverrides") or {}
+            for master in jmap_events.get_events(client, master_ids)
+        }
+        masters = {master["id"]: master for master in get_calendar_events_by_ids(account, master_ids)}
+    except MethodError:
+        # The events are the answer; what their series say about them is an addition to it. A
+        # lookup the server refuses leaves them as they came rather than failing the whole read.
+        return
 
     for event in events:
         master = masters.get(base_ids.get(event["id"]))
@@ -1260,12 +1302,12 @@ def enrich_participants_with_avatars(events: list[dict]) -> None:
 
 
 def _with_name(items: list[dict] | None) -> list[dict] | None:
-    """Map the formatter's ``_name`` onto the ``name`` key CalendarEventService reads.
+    """Map the formatter's ``_name`` onto the ``name`` key the event payload builders read.
 
     format_calendar_event emits locations and participants with ``_name`` (the desk field name) and
-    the frontend echoes that shape straight back. The service reads ``name``, so without this every
-    edit rewrote location names as null and replaced each participant's display name with their
-    email address - including on partial patches that never mentioned those fields.
+    the frontend echoes that shape straight back. The payload builders read ``name``, so without
+    this every edit rewrote location names as null and replaced each participant's display name
+    with their email address - including on partial patches that never mentioned those fields.
     """
 
     if not items:
@@ -1308,7 +1350,7 @@ def edit_calendar_event(account: str, id: str, send_scheduling_messages: bool = 
         **event,
         "calendar_ids": [calendar["calendar_id"] for calendar in event["calendars"]],
         "recurrence_rule": json.loads(event["recurrence_rule"]),
-        # An alert with a trigger this app cannot express would fail the update; the service has
+        # An alert with a trigger this app cannot express would fail the update; `alerts_map` has
         # always dropped such alerts on write, so they are left out here instead.
         "alerts": [alert for alert in event["alerts"] if alert["type"] in KNOWN_TRIGGERS],
     }
@@ -1402,7 +1444,6 @@ def split_calendar_event_series(
     tail_overrides = _end_series_before(
         account, master_id, rule, before, recurrence_id, send_scheduling_messages
     )
-    service = get_calendar_event_service(account)
 
     # Overrides the rule no longer generates are not dropped with it — RFC 8984 reads an override
     # on an ungenerated date as an occurrence in its own right, so leaving them would keep every
@@ -1427,7 +1468,7 @@ def split_calendar_event_series(
     # is trying to avoid everywhere else.
     rule_kept = spoken_rule(fields.get("recurrence_rule")) == spoken_rule(rule)
     if carried and rule_kept and fields.get("start") == recurrence_id:
-        service.set_overrides(new_id, carried)
+        jmap_events.set_overrides(get_account_client(account), new_id, carried)
 
     return new_id
 
@@ -1498,14 +1539,14 @@ def _end_series_before(
         account, master_id, send_scheduling_messages=send_scheduling_messages, recurrence_rule=head_rule
     )
 
-    service = get_calendar_event_service(account)
-    stored = service.get([master_id])
+    client = get_account_client(account)
+    stored = jmap_events.get_events(client, [master_id])
     overrides = (stored[0] if stored else {}).get("recurrenceOverrides") or {}
     tail_overrides = {
         rid: override for rid, override in overrides.items() if not _is_before(rid, recurrence_id)
     }
     if tail_overrides:
-        service.remove_overrides(master_id, list(tail_overrides))
+        jmap_events.remove_overrides(client, master_id, list(tail_overrides))
 
     return tail_overrides
 

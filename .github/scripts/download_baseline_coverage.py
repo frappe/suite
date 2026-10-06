@@ -32,7 +32,7 @@ def main() -> None:
 
     query = (
         f"repos/{args.repo}/actions/workflows/suite-ci.yml/runs"
-        f"?branch={quote(args.branch, safe='')}&event=push&status=success&per_page=100"
+        f"?branch={quote(args.branch, safe='')}&event=schedule&status=success&per_page=100"
     )
     runs = json.loads(gh(query))["workflow_runs"]
     remaining = dict(ARTIFACTS)

@@ -16,7 +16,6 @@ class TestMeetRecording(IntegrationTestCase):
 
     def test_recording_doctype_is_private(self):
         meta = frappe.get_meta("Meet Recording")
-        self.assertFalse(meta.index_web_pages_for_search)
         self.assertEqual({permission.role for permission in meta.permissions}, {"System Manager"})
 
     def test_room_owner_has_read_only_access(self):

@@ -1,129 +1,126 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
-"""How the push-sync path reacts when the JMAP server cannot answer an ``Email/changes`` call:
+"""How the push-sync path reacts to real ``Email/changes`` responses from a fake JMAP server:
 method-level errors surface as exceptions instead of flowing downstream as fake changes results,
-and the stored sync state is never advanced on failure."""
+and the stored sync state only advances after a successful response."""
 
 import unittest
 from unittest import mock
 
+import httpx
+from jmap.auth import BasicAuth
+from jmap.core.retry import RetryPolicy
+from jmap.testing.fake import FakeJMAPServer
+
 from suite.mail.doctype.mail_message import mail_message
-from suite.mail.jmap.services.mail.email import EmailService
+from suite.mail.jmap import SuiteJMAPClient
 
-FORBIDDEN = {"type": "forbidden", "description": "You are not authorized to perform this action"}
-
-
-class EmailServiceChanges(unittest.TestCase):
-    """``EmailService.changes`` — unwrap real results, raise on method-level errors."""
-
-    def _service(self, response: dict) -> EmailService:
-        service = EmailService("f7", mock.MagicMock())
-        service._exec = mock.MagicMock(return_value=response)
-        return service
-
-    def test_returns_first_method_response_body(self):
-        body = {"created": [], "updated": ["e1"], "destroyed": [], "newState": "s2", "hasMoreChanges": False}
-        service = self._service({"methodResponses": [["Email/changes", body, "0"]]})
-
-        self.assertEqual(service.changes("s1"), body)
-
-    def test_raises_on_method_level_error(self):
-        service = self._service({"methodResponses": [["error", FORBIDDEN, "0"]]})
-
-        with self.assertRaises(RuntimeError) as ctx:
-            service.changes("s1")
-
-        self.assertIn("Email/changes failed", str(ctx.exception))
-        self.assertIn("forbidden", str(ctx.exception))
-
-    def test_returns_empty_dict_without_method_responses(self):
-        self.assertEqual(self._service({}).changes("s1"), {})
+CORE = "urn:ietf:params:jmap:core"
+MAIL = "urn:ietf:params:jmap:mail"
+ACCOUNT = "f7"
+USER = "user@example.test"
 
 
-class EmailServiceGetState(unittest.TestCase):
-    """``CoreService.get_state`` — unwrap the state from an empty 'get', None when unavailable."""
+def _server() -> FakeJMAPServer:
+    return FakeJMAPServer(
+        capabilities={CORE: {}, MAIL: {}},
+        accounts={
+            ACCOUNT: {
+                "name": USER,
+                "isPersonal": True,
+                "accountCapabilities": {MAIL: {}},
+            }
+        },
+        primary_accounts={CORE: ACCOUNT, MAIL: ACCOUNT},
+    )
 
-    def _service(self, response: dict) -> EmailService:
-        service = EmailService("f7", mock.MagicMock())
-        service._exec = mock.MagicMock(return_value=response)
-        return service
 
-    def test_returns_state_from_first_method_response_via_an_empty_get(self):
-        body = {"accountId": "f7", "state": "s9", "list": [], "notFound": []}
-        service = self._service({"methodResponses": [["Email/get", body, "0"]]})
+def _client(server: FakeJMAPServer) -> SuiteJMAPClient:
+    http = httpx.Client(auth=BasicAuth(USER, "pw"), **server.client_kwargs())
+    return SuiteJMAPClient.connect(
+        "https://jmap.example.com/.well-known/jmap",
+        auth=BasicAuth(USER, "pw"),
+        http=http,
+        experimental=True,
+        retry_policy=RetryPolicy(max_attempts=1),
+    )
 
-        self.assertEqual(service.get_state(), "s9")
-        service._exec.assert_called_once_with("get", ids=[], properties=["id"])
 
-    def test_error_response_yields_none(self):
-        service = self._service({"methodResponses": [["error", FORBIDDEN, "0"]]})
+def _changes(**changes: list[str]) -> dict:
+    """An ``Email/changes`` response from s1 to s2 carrying ``changes``."""
 
-        self.assertIsNone(service.get_state())
-
-    def test_missing_method_responses_yield_none(self):
-        self.assertIsNone(self._service({}).get_state())
+    result = {
+        "accountId": ACCOUNT,
+        "oldState": "s1",
+        "newState": "s2",
+        "hasMoreChanges": False,
+        "created": [],
+        "updated": [],
+        "destroyed": [],
+    }
+    result.update(changes)
+    return result
 
 
 class FetchChanges(unittest.TestCase):
     """``fetch_changes`` — server failures are logged and leave the sync state untouched."""
 
-    def _run(self, changes: mock.Mock) -> tuple[mock.Mock, mock.Mock]:
+    def _run(self, server: FakeJMAPServer) -> tuple[mock.Mock, mock.Mock]:
+        client = _client(server)
         with (
             mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
             mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
-            mock.patch.object(mail_message, "get_jmap_connection"),
-            mock.patch.object(mail_message, "MailboxService"),
-            mock.patch.object(mail_message, "EmailService") as email_service,
+            mock.patch.object(mail_message, "get_jmap_client", return_value=client),
             mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
         ):
-            email_service.return_value.changes = changes
-            mail_message.fetch_changes("user@example.test", "f7", email_state="s2")
+            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
 
         return update_sync_state, log_mail_error
 
     def test_method_level_error_is_logged_and_preserves_state(self):
-        changes = mock.MagicMock(side_effect=RuntimeError(f"Email/changes failed: {FORBIDDEN}"))
+        server = _server()
+        server.fail("Email/changes", "forbidden")
 
-        update_sync_state, log_mail_error = self._run(changes)
+        update_sync_state, log_mail_error = self._run(server)
 
         log_mail_error.assert_called_once()
         update_sync_state.assert_not_called()
 
-    def test_empty_response_is_not_an_error_and_preserves_state(self):
-        update_sync_state, log_mail_error = self._run(mock.MagicMock(return_value={}))
+    def test_no_changes_response_advances_state(self):
+        server = _server()
+        server.respond("Email/changes", _changes())
+
+        update_sync_state, log_mail_error = self._run(server)
 
         log_mail_error.assert_not_called()
-        update_sync_state.assert_not_called()
+        update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s2")
 
 
 class FetchChangesRealtime(unittest.TestCase):
     """``fetch_changes`` — a change made on one device reaches the user's other open clients."""
 
     def _events(self, **changes: list[str]) -> list[mock.call]:
-        result = {"created": [], "updated": [], "destroyed": [], "newState": "s2", "hasMoreChanges": False}
-        result.update(changes)
+        server = _server()
+        server.respond("Email/changes", _changes(**changes))
 
         with (
             mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
             mock.patch.object(mail_message, "update_sync_state"),
-            mock.patch.object(mail_message, "get_jmap_connection"),
-            mock.patch.object(mail_message, "MailboxService"),
-            mock.patch.object(mail_message, "EmailService") as email_service,
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
             mock.patch.object(mail_message, "_remove_cached_messages"),
+            mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
             mock.patch.object(mail_message.frappe, "publish_realtime") as publish_realtime,
         ):
-            email_service.return_value.changes = mock.MagicMock(return_value=result)
-            mail_message.fetch_changes("user@example.test", "f7", email_state="s2")
+            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
 
+        log_mail_error.assert_not_called()
         return publish_realtime.call_args_list
 
     def test_deleted_mail_is_announced_to_the_user(self):
-        self.assertEqual(
-            self._events(destroyed=["e1"]), [mock.call("mail_changed", user="user@example.test")]
-        )
+        self.assertEqual(self._events(destroyed=["e1"]), [mock.call("mail_changed", user=USER)])
 
     def test_updated_mail_is_announced_to_the_user(self):
-        self.assertEqual(self._events(updated=["e1"]), [mock.call("mail_changed", user="user@example.test")])
+        self.assertEqual(self._events(updated=["e1"]), [mock.call("mail_changed", user=USER)])
 
     def test_nothing_is_announced_when_nothing_changed(self):
         self.assertEqual(self._events(), [])
@@ -135,50 +132,66 @@ class FetchChangesInit(unittest.TestCase):
     A webhook carries the new state and initializes from it directly. A manual or
     scheduled run carries none; storing that None would leave the account
     re-"initializing" on every run with changes never fetched, so the state is seeded
-    from the server instead.
+    from the server instead, read off an empty ``Email/get``.
     """
 
     def _run(
-        self, email_state: str | None, server_state: str | mock.Mock | None
-    ) -> tuple[mock.Mock, mock.Mock, mock.Mock]:
+        self,
+        email_state: str | None,
+        server_state: str = "unused",
+        refused: bool = False,
+        unreachable: bool = False,
+    ) -> tuple[mock.Mock, mock.Mock, list[dict]]:
+        server = _server()
+        if refused:
+            server.fail("Email/get", "forbidden")
+        else:
+            server.respond(
+                "Email/get", {"accountId": ACCOUNT, "state": server_state, "list": [], "notFound": []}
+            )
+        client = _client(server)
+        if unreachable:
+            server.quirks.scripted_failures.append(httpx.Response(503))
+
         with (
             mock.patch.object(mail_message, "get_sync_state", return_value=None),
             mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
-            mock.patch.object(mail_message, "get_jmap_connection"),
-            mock.patch.object(mail_message, "EmailService") as email_service,
+            mock.patch.object(mail_message, "get_jmap_client", return_value=client),
             mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
         ):
-            if isinstance(server_state, mock.Mock):
-                email_service.return_value.get_state = server_state
-            else:
-                email_service.return_value.get_state = mock.MagicMock(return_value=server_state)
-            mail_message.fetch_changes("user@example.test", "f7", email_state=email_state)
+            mail_message.fetch_changes(USER, ACCOUNT, email_state=email_state)
 
-        return update_sync_state, log_mail_error, email_service.return_value.get_state
+        gets = [
+            call[1]
+            for request in server.requests
+            for call in request["methodCalls"]
+            if call[0] == "Email/get"
+        ]
+        return update_sync_state, log_mail_error, gets
 
     def test_webhook_state_initializes_directly(self):
-        update_sync_state, log_mail_error, get_state = self._run("s2", "unused")
+        update_sync_state, log_mail_error, gets = self._run("s2")
 
-        update_sync_state.assert_called_once_with("f7", type="email", state="s2")
-        get_state.assert_not_called()
+        update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s2")
+        self.assertEqual(gets, [])
         log_mail_error.assert_not_called()
 
     def test_missing_state_is_seeded_from_server(self):
-        update_sync_state, log_mail_error, _ = self._run(None, "s5")
+        update_sync_state, log_mail_error, gets = self._run(None, server_state="s5")
 
-        update_sync_state.assert_called_once_with("f7", type="email", state="s5")
+        update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s5")
+        # Only the state is wanted, so no message is asked for.
+        self.assertEqual([get["ids"] for get in gets], [[]])
         log_mail_error.assert_not_called()
 
     def test_unavailable_server_state_is_not_stored(self):
-        update_sync_state, log_mail_error, _ = self._run(None, None)
+        update_sync_state, log_mail_error, _ = self._run(None, refused=True)
 
         update_sync_state.assert_not_called()
         log_mail_error.assert_not_called()
 
     def test_seed_failure_is_logged_and_not_stored(self):
-        update_sync_state, log_mail_error, _ = self._run(
-            None, mock.MagicMock(side_effect=RuntimeError("boom"))
-        )
+        update_sync_state, log_mail_error, _ = self._run(None, unreachable=True)
 
         update_sync_state.assert_not_called()
         log_mail_error.assert_called_once()

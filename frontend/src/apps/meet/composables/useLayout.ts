@@ -62,6 +62,9 @@ export function useLayout(
 	// ── Slot persistence ──────────────────────────────────────────────────────
 
 	let slotAssignments: Map<string, number> = new Map();
+	const lastPromotion = new Map<string, number>();
+	let previousPriorities = new Map<string, number>();
+	let promotionSequence = 0;
 
 	// ── Priority ──────────────────────────────────────────────────────────────
 
@@ -77,11 +80,11 @@ export function useLayout(
 		const hasHand = !!raisedHands[p.user_id];
 		if (isActive && hasVideo) return 0;
 		if (isActive) return 1;
-		if (isStable && hasVideo) return 0;
-		if (isStable) return 2;
-		if (hasVideo) return 3;
-		if (hasHand) return 4;
-		return 5;
+		if (hasHand) return 2;
+		if (isStable && hasVideo) return 3;
+		if (isStable) return 4;
+		if (hasVideo) return 5;
+		return 6;
 	};
 
 	const getPinnedParticipantId = (): string[] =>
@@ -136,6 +139,9 @@ export function useLayout(
 		for (const id of slotAssignments.keys()) {
 			if (!currentIds.has(id)) slotAssignments.delete(id);
 		}
+		for (const id of lastPromotion.keys()) {
+			if (!currentIds.has(id)) lastPromotion.delete(id);
+		}
 	};
 
 	const getCurrentlyVisibleIds = (remoteCapacity: number): Set<string> => {
@@ -150,15 +156,33 @@ export function useLayout(
 		remotes: Participant[],
 		priorityMap: Map<string, number>,
 		currentlyVisible: Set<string>,
+		raisedHands: Record<string, string>,
 	): Participant[] => {
 		return [...remotes].sort((left, right) => {
 			const leftPriority = priorityMap.get(left.user_id) ?? 4;
 			const rightPriority = priorityMap.get(right.user_id) ?? 4;
 			if (leftPriority !== rightPriority) return leftPriority - rightPriority;
 
+			// Raised hands form the same earliest-first queue as the People panel.
+			if (raisedHands[left.user_id] && raisedHands[right.user_id]) {
+				const handOrder =
+					new Date(raisedHands[left.user_id]).getTime() -
+					new Date(raisedHands[right.user_id]).getTime();
+				if (handOrder) return handOrder;
+			}
+
 			const leftVisible = currentlyVisible.has(left.user_id);
 			const rightVisible = currentlyVisible.has(right.user_id);
 			if (leftVisible !== rightVisible) return leftVisible ? -1 : 1;
+
+			// Among equally ranked visible tiles, retain the most recently
+			// promoted one instead of always evicting the same physical slot.
+			if (leftVisible && rightVisible) {
+				const promotionOrder =
+					(lastPromotion.get(right.user_id) ?? 0) -
+					(lastPromotion.get(left.user_id) ?? 0);
+				if (promotionOrder) return promotionOrder;
+			}
 
 			const leftSlot = slotAssignments.get(left.user_id) ?? 9999;
 			const rightSlot = slotAssignments.get(right.user_id) ?? 9999;
@@ -283,10 +307,23 @@ export function useLayout(
 		);
 		pruneSlotAssignments(remotes);
 		const currentlyVisible = getCurrentlyVisibleIds(remoteCapacity);
+		promotionSequence++;
+		for (const id of currentlyVisible) {
+			const previousPriority = previousPriorities.get(id);
+			const currentPriority = priorityMap.get(id);
+			if (
+				previousPriority !== undefined &&
+				currentPriority !== undefined &&
+				currentPriority < previousPriority
+			) {
+				lastPromotion.set(id, promotionSequence);
+			}
+		}
 		const sortedRemotes = sortRemotesByPriority(
 			remotes,
 			priorityMap,
 			currentlyVisible,
+			raisedHands,
 		);
 		const partitioned = partitionVisibleAndHidden(
 			sortedRemotes,
@@ -294,6 +331,13 @@ export function useLayout(
 			remotes,
 			pinnedParticipantIds,
 		);
+
+		for (const participant of partitioned.list) {
+			if (!currentlyVisible.has(participant.user_id)) {
+				lastPromotion.set(participant.user_id, promotionSequence);
+			}
+		}
+		previousPriorities = priorityMap;
 
 		return {
 			...partitioned,

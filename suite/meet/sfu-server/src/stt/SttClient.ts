@@ -1,11 +1,13 @@
 import WebSocket from 'ws';
 import { loggers } from '../utils/logger';
+import type { SttDiagnostics } from './SttDiagnostics';
 
 export interface SttStreamMetadata {
 	sessionId: string;
 	sampleRate: number;
 	language?: string;
 	getNames?: () => string[];
+	diagnostics?: SttDiagnostics;
 }
 
 export interface SttTranscriptEvent {
@@ -269,6 +271,7 @@ class SttStream implements ISttStream {
 			})
 		)
 			return false;
+		this.metadata.diagnostics?.pcm('stt-sent', frame);
 		this.bufferedBytes += frame.length;
 		return true;
 	}
@@ -287,6 +290,7 @@ class SttStream implements ISttStream {
 			return;
 		}
 		if (this.sendEvent({ type: 'input_audio_buffer.commit' })) {
+			this.metadata.diagnostics?.commit();
 			this.pendingDurations.push(durationMs);
 			this.pendingCommits++;
 			this.bufferedBytes = 0;
@@ -317,6 +321,19 @@ class SttStream implements ISttStream {
 		} catch {
 			loggers.stt.warn('Dropping malformed STT Realtime message');
 			return;
+		}
+
+		if (
+			message.type === 'input_audio_buffer.committed' ||
+			(typeof message.type === 'string' &&
+				message.type.startsWith('conversation.item.input_audio_transcription.'))
+		) {
+			this.metadata.diagnostics?.event('stt.received', {
+				eventType: message.type,
+				itemId: message.item_id,
+				delta: message.delta,
+				transcript: message.transcript,
+			});
 		}
 
 		if (message.type === 'session.created') {
@@ -366,7 +383,7 @@ class SttStream implements ISttStream {
 			message.type === 'conversation.item.input_audio_transcription.completed'
 		) {
 			this.emitTranscript(
-				(message.transcript || this.textByItem.get(itemId) || '').trim(),
+				(message.transcript ?? this.textByItem.get(itemId) ?? '').trim(),
 				true,
 				this.durationByItem.get(itemId) || 0,
 			);
@@ -384,24 +401,30 @@ class SttStream implements ISttStream {
 	}
 
 	private sendSessionUpdate(names: string[]): void {
-		this.sendEvent({
-			type: 'session.update',
-			session: {
-				type: 'transcription',
-				audio: {
-					input: {
-						format: { type: 'audio/pcm', rate: this.metadata.sampleRate },
-						transcription: {
-							model:
-								process.env.NEMOTRON_MODEL || 'nemotron-3.5-asr-streaming-0.6b',
-							language: this.metadata.language || 'en-US',
-							names,
+		const model =
+			process.env.NEMOTRON_MODEL || 'nemotron-3.5-asr-streaming-0.6b';
+		const language = this.metadata.language || 'en-US';
+		if (
+			this.sendEvent({
+				type: 'session.update',
+				session: {
+					type: 'transcription',
+					audio: {
+						input: {
+							format: { type: 'audio/pcm', rate: this.metadata.sampleRate },
+							transcription: { model, language, names },
+							turn_detection: null,
 						},
-						turn_detection: null,
 					},
 				},
-			},
-		});
+			})
+		)
+			this.metadata.diagnostics?.event('stt.session.update.sent', {
+				model,
+				language,
+				sampleRate: this.metadata.sampleRate,
+				names,
+			});
 	}
 
 	private emitTranscript(
@@ -410,6 +433,11 @@ class SttStream implements ISttStream {
 		durationMs: number,
 	): void {
 		if (!text && !isFinal) return;
+		this.metadata.diagnostics?.event('stt.emitted', {
+			text,
+			isFinal,
+			durationMs,
+		});
 		this.sequence++;
 		this.onTranscript({ text, isFinal, durationMs, sequence: this.sequence });
 	}

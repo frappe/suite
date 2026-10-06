@@ -13,8 +13,19 @@ from frappe.model.document import Document
 from frappe.utils import cint, today
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
+from jmap import MethodError
+from jmap.models.push import CalendarAlert, PushVerification, StateChange
+from jmap.push import PushKeyPair, PushPayloadError, read_push
 
-from suite.mail.jmap import get_push_subscription_service
+from suite.mail.jmap import (
+    MailServerUnavailableError,
+    SetResult,
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_jmap_client,
+    never_applied,
+)
 from suite.mail.utils import generate_uuid_style_hash, log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.user import get_jmap_configured_users, is_jmap_configured
@@ -118,6 +129,45 @@ def _get_total_cache_key(user: str) -> str:
     return f"{user}:push_subscriptions:total"
 
 
+def _fetch_subscriptions(
+    user: str,
+    ids: list[str] | None = None,
+    ignore_permissions: bool = False,
+    allow_disabled: bool = False,
+) -> list[dict]:
+    """Returns raw PushSubscription objects for the user, all of them when `ids` is None.
+
+    PushSubscription is user-scoped, not account-scoped — requests carry no accountId, so the
+    user client is used directly (never an account view).
+    """
+
+    client = get_jmap_client(user, ignore_permissions=ignore_permissions, allow_disabled=allow_disabled)
+    with client.batch() as b:
+        h = b.core.push_subscription.get(ids=ids) if ids is not None else b.core.push_subscription.get()
+
+    return [s.to_wire() for s in h.result.items]
+
+
+def _set_subscriptions(
+    user: str,
+    *,
+    create: dict | None = None,
+    update: dict | None = None,
+    destroy: list[str] | None = None,
+    ignore_permissions: bool = False,
+    allow_disabled: bool = False,
+) -> SetResult:
+    """Runs a PushSubscription/set for the user, chunked by the server's set limit."""
+
+    client = get_jmap_client(user, ignore_permissions=ignore_permissions, allow_disabled=allow_disabled)
+
+    if create is not None:
+        return chunked_set(client, lambda b, chunk: b.core.push_subscription.set(create=chunk), create)
+    if update is not None:
+        return chunked_set(client, lambda b, chunk: b.core.push_subscription.set(update=chunk), update)
+    return chunked_set(client, lambda b, chunk: b.core.push_subscription.set(destroy=chunk), destroy or [])
+
+
 def is_push_subscription_disabled(user: str, raise_exception: bool = False) -> bool:
     """Returns True if push subscriptions are disabled for the given user in their User Settings."""
 
@@ -177,13 +227,12 @@ def ensure_push_subscription(user: str) -> None:
 
     try:
         with filelock(f"ensure_push_subscription_{user}"):
-            service = get_push_subscription_service(user, ignore_permissions=True)
-            _heal_push_subscription(user, service, service.get())
+            _heal_push_subscription(user, _fetch_subscriptions(user, ignore_permissions=True))
     except LockTimeoutError:
         return
 
 
-def _heal_push_subscription(user: str, service, subscriptions: list[dict]) -> list[str]:
+def _heal_push_subscription(user: str, subscriptions: list[dict]) -> list[str]:
     """Healing core over an already-fetched subscription list; call under the per-user lock.
 
     Deletes this site's expired subscriptions and, when duplicates exist, every live one
@@ -222,7 +271,7 @@ def _heal_push_subscription(user: str, service, subscriptions: list[dict]) -> li
 
     if delete_ids := expired_ids + surplus_ids:
         with suppress(Exception):
-            service.delete(delete_ids)
+            _set_subscriptions(user, destroy=delete_ids, ignore_permissions=True)
 
     if not live:
         _create_push_subscription(user, ignore_permissions=True)
@@ -363,25 +412,27 @@ def _create_push_subscription(
 
     types = types or None
 
+    title = _("Push Subscription Creation Error")
     creation_id = str(uuid7())
-    push_subscription = {
-        "creation_id": creation_id,
-        "device_client_id": device_client_id,
+    creation = {
+        "deviceClientId": device_client_id,
         "url": url,
-        "types": types,
+        # None values go out as null: null keys means no encryption, null types means all types.
         "keys": get_push_subscription_keys(),
+        "types": types,
     }
 
-    service = get_push_subscription_service(user, ignore_permissions=ignore_permissions)
-    response = service.create([push_subscription])
+    try:
+        result = _set_subscriptions(
+            user, create={creation_id: creation}, ignore_permissions=ignore_permissions
+        )
+    except MethodError as e:
+        frappe.throw(format_method_error(e), title=title)
 
-    title = _("Push Subscription Creation Error")
-    if response.get("created"):
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    if created := result.created.get(creation_id):
+        return created.id
+
+    frappe.throw(_(format_set_error(result.not_created.get(creation_id))), title=title)
 
 
 def _live_site_subscription_id(user: str, ignore_permissions: bool = False) -> str | None:
@@ -392,7 +443,7 @@ def _live_site_subscription_id(user: str, ignore_permissions: bool = False) -> s
     now = get_utc_now()
 
     live = []
-    for subscription in get_push_subscription_service(user, ignore_permissions=ignore_permissions).get():
+    for subscription in _fetch_subscriptions(user, ignore_permissions=ignore_permissions):
         if subscription.get("deviceClientId") != device_client_id:
             continue
         expires = subscription.get("expires")
@@ -409,8 +460,7 @@ def get_push_subscription(user: str, id: str, raise_exception: bool = True) -> d
 
     has_permission_for_user(user, raise_exception=raise_exception)
 
-    service = get_push_subscription_service(user)
-    if subscriptions := service.get([id]):
+    if subscriptions := _fetch_subscriptions(user, [id]):
         return format_push_subscription(user, subscriptions[0])
 
     if raise_exception:
@@ -430,17 +480,16 @@ def verify_push_subscription(user: str, id: str, verification_code: str) -> None
 
     is_jmap_configured(user, raise_exception=True)
 
-    push_subscription = {"id": id, "verification_code": verification_code}
-
-    service = get_push_subscription_service(user, ignore_permissions=True)
-    response = service.update([push_subscription])
-
     title = _("Push Subscription Renewal Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        result = _set_subscriptions(
+            user, update={id: {"verificationCode": verification_code}}, ignore_permissions=True
+        )
+    except MethodError as e:
+        frappe.throw(format_method_error(e), title=title)
+
+    if id not in result.updated:
+        frappe.throw(_(format_set_error(result.not_updated.get(id))), title=title)
 
 
 @frappe.whitelist()
@@ -451,15 +500,16 @@ def renew_push_subscription(user: str, id: str) -> None:
 
     is_push_subscription_disabled(user, raise_exception=True)
 
-    service = get_push_subscription_service(user)
-    response = service.update([{"id": id}])
-
     title = _("Push Subscription Renewal Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        # A bare {"expires": null} renewal makes the server bump the subscription to its
+        # maximum lifetime.
+        result = _set_subscriptions(user, update={id: {"expires": None}})
+    except MethodError as e:
+        frappe.throw(format_method_error(e), title=title)
+
+    if id not in result.updated:
+        frappe.throw(_(format_set_error(result.not_updated.get(id))), title=title)
 
 
 def renew_expiring_push_subscriptions() -> None:
@@ -486,11 +536,9 @@ def renew_expiring_push_subscriptions() -> None:
             continue
 
         try:
-            service = get_push_subscription_service(user, ignore_permissions=True)
-
             with filelock(f"ensure_push_subscription_{user}"):
-                subscriptions = service.get()
-                deleted_ids = _heal_push_subscription(user, service, subscriptions)
+                subscriptions = _fetch_subscriptions(user, ignore_permissions=True)
+                deleted_ids = _heal_push_subscription(user, subscriptions)
 
             expiring_ids = []
             for subscription in subscriptions:
@@ -503,9 +551,11 @@ def renew_expiring_push_subscriptions() -> None:
             if not expiring_ids:
                 continue
 
-            response = service.update([{"id": id} for id in expiring_ids])
-            if not_updated := response.get("notUpdated"):
-                errors = "<br>".join(f"{id}: {error['description']}" for id, error in not_updated.items())
+            result = _set_subscriptions(
+                user, update={id: {"expires": None} for id in expiring_ids}, ignore_permissions=True
+            )
+            if not_updated := result.not_updated:
+                errors = "<br>".join(f"{id}: {format_set_error(error)}" for id, error in not_updated.items())
                 log_mail_error(
                     _("Push Subscription Renewal Failed"),
                     _("Failed to renew push subscriptions for user {0}:<br>{1}").format(user, errors),
@@ -527,8 +577,42 @@ def delete_push_subscriptions(user: str, ids: list[str]) -> None:
 
     has_permission_for_user(user, raise_exception=True)
 
-    service = get_push_subscription_service(user)
-    _raise_for_not_destroyed(service.delete(ids))
+    try:
+        result = _set_subscriptions(user, destroy=ids)
+    except MethodError as e:
+        # The chunks before the refused one are applied: say what was deleted, not only what failed.
+        applied = getattr(e, "applied", None) or SetResult()
+        messages = [format_method_error(e), *_not_destroyed_messages(applied)]
+        if applied.destroyed:
+            messages.insert(
+                0,
+                _(
+                    "{0} of {1} push subscription(s) were deleted before the mail server refused the rest:"
+                ).format(len(applied.destroyed), len(ids)),
+            )
+        frappe.throw("<br>".join(messages), title=_("Push Subscription Deletion Error"))
+    except MailServerUnavailableError as e:
+        # An outage is the frontend's to report, which it does by this exception's type - unless
+        # chunks before it were applied: only a message of ours can say that, and whether the
+        # chunk the outage met may have been applied too.
+        applied = getattr(e, "applied", None) or SetResult()
+        if not (applied.destroyed or applied.not_destroyed):
+            raise
+        if never_applied(e):
+            deleted = _(
+                "{0} of {1} push subscription(s) were deleted before the mail server became "
+                "unavailable. The rest were not deleted: try again in a moment."
+            )
+        else:
+            deleted = _(
+                "{0} of {1} push subscription(s) were deleted before the mail server became "
+                "unavailable. Some of the rest may have been deleted as well: reload the list "
+                "before trying again."
+            )
+        messages = [deleted.format(len(applied.destroyed), len(ids)), *_not_destroyed_messages(applied)]
+        frappe.throw("<br>".join(messages), title=_("Push Subscription Deletion Error"))
+
+    _raise_for_not_destroyed(result)
 
 
 def delete_site_push_subscriptions(user: str) -> None:
@@ -538,32 +622,38 @@ def delete_site_push_subscriptions(user: str) -> None:
     for an account the site no longer serves, and the server only purges them at expiry.
     Custom subscriptions carry their own device client id and are left alone. Login healing
     recreates the site's subscription once the user is enabled again. The user is already
-    disabled when this runs, so the connection is opened with that allowed explicitly.
+    disabled when this runs, so the client is opened with that allowed explicitly.
     """
 
     device_client_id = get_site_device_client_id(user)
-    service = get_push_subscription_service(user, ignore_permissions=True, allow_disabled=True)
 
     ids = [
         subscription["id"]
-        for subscription in service.get()
+        for subscription in _fetch_subscriptions(user, ignore_permissions=True, allow_disabled=True)
         if subscription.get("deviceClientId") == device_client_id
     ]
     if ids:
-        _raise_for_not_destroyed(service.delete(ids))
+        _raise_for_not_destroyed(
+            _set_subscriptions(user, destroy=ids, ignore_permissions=True, allow_disabled=True)
+        )
 
 
-def _raise_for_not_destroyed(response: dict) -> None:
-    """Surfaces the server's per-id errors from a delete response, if any."""
+def _raise_for_not_destroyed(result: SetResult) -> None:
+    """Surfaces the server's per-id errors from a destroy, if any."""
 
-    if not (not_destroyed := response.get("notDestroyed")):
+    if not result.not_destroyed:
         return
 
-    error_messages = [f"{id}: {error['description']}" for id, error in not_destroyed.items()]
     frappe.throw(
-        _("Push Subscription Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
+        _("Push Subscription Deletion Error(s):<br>{0}").format("<br>".join(_not_destroyed_messages(result))),
         title=_("Push Subscription Deletion Error"),
     )
+
+
+def _not_destroyed_messages(result: SetResult) -> list[str]:
+    """One line per id the server refused to destroy, with its reason."""
+
+    return [f"{id}: {format_set_error(error)}" for id, error in result.not_destroyed.items()]
 
 
 @frappe.whitelist()
@@ -572,8 +662,7 @@ def fetch_push_subscriptions(user: str, page: int = 1, limit: int = 10) -> list:
 
     has_permission_for_user(user, raise_exception=True)
 
-    service = get_push_subscription_service(user)
-    subscriptions = service.get()
+    subscriptions = _fetch_subscriptions(user)
     formatted_subscriptions = [format_push_subscription(user, sub) for sub in subscriptions]
     frappe.cache.set_value(_get_total_cache_key(user), len(subscriptions), expires_in_sec=600)
 
@@ -629,155 +718,36 @@ def _decode_encrypted_push_body(raw_body: bytes) -> bytes:
         return raw_body
 
 
-def decrypt_jmap_push_payload(raw_body: bytes) -> dict:
-    """Decrypts the JMAP push notification payload using the encryption keys from Mail Settings and returns the decrypted data as a dictionary."""
+def read_jmap_push(body: bytes, encrypted: bool) -> StateChange | PushVerification | CalendarAlert:
+    """The object one POST to the push endpoint carries - a StateChange, the PushVerification of
+    a new subscription or a CalendarAlert - decrypted with the site's keys from Mail Settings when
+    the server encrypted it (RFC 8291 aes128gcm)."""
 
-    import struct
+    keys = None
+    if encrypted:
+        keys = _site_push_key_pair()
+        body = _decode_encrypted_push_body(body)
 
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.hazmat.primitives.asymmetric.ec import ECDH
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.primitives.hashes import SHA256
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    try:
+        return read_push(body, keys)
+    except PushPayloadError as e:
+        frappe.throw(_("Invalid push notification: {0}").format(e))
 
-    def _b64decode(s: str) -> bytes:
-        s = s.strip()
-        return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
+def _site_push_key_pair() -> PushKeyPair:
     settings = frappe.get_cached_doc("Mail Settings")
-
-    private_key_b64 = (
+    private_key = (
         settings.get_password("jmap_push_private_key") if settings.get("jmap_push_private_key") else ""
     ).strip()
+    auth = (settings.get_password("jmap_push_auth") if settings.get("jmap_push_auth") else "").strip()
 
-    auth_b64 = (settings.get_password("jmap_push_auth") if settings.get("jmap_push_auth") else "").strip()
-
-    if not private_key_b64 or not auth_b64:
+    if not private_key or not auth:
         frappe.throw(_("JMAP Push Subscription decryption keys are not configured in Mail Settings."))
 
     try:
-        auth_bytes = _b64decode(auth_b64)
-        priv_bytes = _b64decode(private_key_b64)
-    except Exception:
-        frappe.throw(_("Invalid base64 encoding in JMAP push keys."))
-
-    if len(priv_bytes) != 32:
-        frappe.throw(_("Invalid JMAP push private key length (must be 32 bytes)."))
-
-    try:
-        private_key = ec.derive_private_key(int.from_bytes(priv_bytes, "big"), ec.SECP256R1())
-    except Exception:
-        frappe.throw(_("Failed to construct EC private key."))
-
-    raw_body = _decode_encrypted_push_body(raw_body)
-
-    if len(raw_body) < 21:
-        frappe.throw(_("Encrypted push payload is too short."))
-
-    salt = raw_body[:16]
-    rs = struct.unpack_from(">I", raw_body, 16)[0]
-    idlen = raw_body[20]
-
-    if rs <= 0:
-        frappe.throw(_("Invalid record size in encrypted payload."))
-
-    if len(raw_body) < 21 + idlen:
-        frappe.throw(_("Malformed encrypted payload (invalid key length)."))
-
-    sender_pub_bytes = raw_body[21 : 21 + idlen]
-    ciphertext_data = raw_body[21 + idlen :]
-
-    if not ciphertext_data:
-        frappe.throw(_("Encrypted payload missing ciphertext data."))
-
-    try:
-        sender_pub = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), sender_pub_bytes)
-    except Exception:
-        frappe.throw(_("Invalid sender public key in encrypted payload."))
-
-    try:
-        shared_secret = private_key.exchange(ECDH(), sender_pub)
-    except Exception:
-        frappe.throw(_("ECDH key exchange failed."))
-
-    receiver_pub_bytes = private_key.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-
-    auth_info = b"WebPush: info\x00" + receiver_pub_bytes + sender_pub_bytes
-
-    try:
-        ikm = HKDF(
-            algorithm=SHA256(),
-            length=32,
-            salt=auth_bytes,
-            info=auth_info,
-        ).derive(shared_secret)
-
-        cek = HKDF(
-            algorithm=SHA256(),
-            length=16,
-            salt=salt,
-            info=b"Content-Encoding: aes128gcm\x00",
-        ).derive(ikm)
-
-        nonce_base = HKDF(
-            algorithm=SHA256(),
-            length=12,
-            salt=salt,
-            info=b"Content-Encoding: nonce\x00",
-        ).derive(ikm)
-    except Exception:
-        frappe.throw(_("Key derivation failed."))
-
-    if len(nonce_base) != 12:
-        frappe.throw(_("Invalid nonce base length derived."))
-
-    aesgcm = AESGCM(cek)
-
-    plaintext = bytearray()
-    seq = 0
-    pos = 0
-
-    MAX_PLAINTEXT_SIZE = 1024 * 1024
-
-    while pos < len(ciphertext_data):
-        record = ciphertext_data[pos : pos + rs]
-        pos += rs
-
-        if not record:
-            break
-
-        # Nonce = nonce_base XOR seq (12 bytes)
-        seq_bytes = seq.to_bytes(12, "big")
-        nonce = bytes(a ^ b for a, b in zip(nonce_base, seq_bytes, strict=False))
-
-        try:
-            decrypted = aesgcm.decrypt(nonce, record, None)
-        except Exception:
-            frappe.throw(_("Failed to decrypt push payload (authentication failed)."))
-
-        i = len(decrypted) - 1
-        while i >= 0 and decrypted[i] == 0x00:
-            i -= 1
-
-        if i < 0:
-            frappe.throw(_("Invalid padding in decrypted record."))
-
-        pad_delimiter = decrypted[i]
-        if pad_delimiter not in (0x01, 0x02):
-            frappe.throw(_("Invalid padding delimiter in decrypted record."))
-
-        plaintext.extend(decrypted[:i])
-
-        if len(plaintext) > MAX_PLAINTEXT_SIZE:
-            frappe.throw(_("Decrypted payload exceeds maximum allowed size."))
-
-        seq += 1
-
-    try:
-        return json.loads(bytes(plaintext))
-    except json.JSONDecodeError:
-        frappe.throw(_("Decrypted push payload is not valid JSON."))
+        return PushKeyPair(private_key, auth)
+    except ValueError as e:
+        frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(e))
 
 
 def freeze_jmap_push_notifications(user: str) -> None:

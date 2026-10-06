@@ -3,18 +3,6 @@ name: Suite CI
 on:
   schedule:
     - cron: "17 22 * * *"
-  push:
-    branches:
-      - develop
-    paths:
-      - "suite/**"
-      - "frontend/**"
-      - "realtime/**"
-      - "package.json"
-      - "yarn.lock"
-      - "pyproject.toml"
-      - ".github/scripts/**"
-      - ".github/workflows/suite-ci.yml"
   pull_request:
     paths:
       - "suite/**"
@@ -40,6 +28,7 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     name: Backend
+    timeout-minutes: 20
 
     services:
       redis-cache:
@@ -118,8 +107,10 @@ jobs:
       - name: Install MariaDB Client
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
+          sudo apt-get install -y --no-install-recommends mariadb-client || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends mariadb-client
+          }
 
       - name: Setup Bench
         if: steps.backend-changes.outputs.run == '1'
@@ -194,7 +185,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Backend Coverage
-        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
         uses: actions/upload-artifact@v7
         with:
           name: suite-backend-coverage
@@ -205,6 +196,7 @@ jobs:
   node-servers:
     runs-on: ubuntu-latest
     name: Node Servers
+    timeout-minutes: 30
 
     steps:
       - name: Clone
@@ -277,6 +269,10 @@ jobs:
         if: always() && steps.node-server-changes.outputs.run_meet == '1'
         working-directory: suite/meet/sfu-server
         run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
           yarn install --frozen-lockfile
           mkdir -p test-results
           yarn test:ci
@@ -318,6 +314,7 @@ jobs:
   mail-calendar:
     runs-on: ubuntu-latest
     name: ${{ matrix.name }}
+    timeout-minutes: 20
 
     # One matrix leg per module; both legs run whenever either module changes,
     # since the calendar tests build on the mail harness and Stalwart accounts.
@@ -414,8 +411,10 @@ jobs:
       - name: Install MariaDB Client
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
+          sudo apt-get install -y --no-install-recommends mariadb-client || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends mariadb-client
+          }
 
       - name: Setup Bench
         if: steps.mail-calendar-changes.outputs.run == '1'
@@ -485,6 +484,7 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     name: Frontend
+    timeout-minutes: 15
 
     steps:
       - name: Clone
@@ -555,7 +555,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Frontend Coverage
-        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push') && steps.frontend-changes.outputs.run == '1'
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule') && steps.frontend-changes.outputs.run == '1'
         uses: actions/upload-artifact@v7
         with:
           name: suite-frontend-coverage

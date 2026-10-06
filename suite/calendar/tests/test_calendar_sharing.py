@@ -11,7 +11,7 @@ from suite.calendar.api import (
 )
 from suite.calendar.doctype.calendar.calendar import add_calendar, delete_calendars
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_service
+from suite.mail.jmap import get_account_client
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 
@@ -109,9 +109,10 @@ class TestCalendarSharing(StalwartIntegrationTestCase):
         principal_id = self._reader_principal()
         with self.set_user(self.owner.email):
             # As another CalDAV client would: read the events, and nothing about free-busy.
-            get_calendar_service(self.owner_account)._update(
-                {self.calendar_id: {"shareWith": {principal_id: {"mayReadItems": True}}}}
-            )
+            with get_account_client(self.owner_account).batch() as b:
+                b.calendars.calendar.set(
+                    update={self.calendar_id: {"shareWith": {principal_id: {"mayReadItems": True}}}}
+                )
             sharing = get_calendar_sharing(self.owner_account, self.calendar_id)
             self.assertEqual([s["role"] for s in sharing["sharees"]], [None])
 

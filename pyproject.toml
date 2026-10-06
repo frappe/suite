@@ -27,6 +27,7 @@ dependencies = [
     "tantivy~=0.26.0",
     "icalendar~=6.1.0",
     "pydenticon~=0.3.1",
+    "jmaplib[push]~=3.0.1",
     # sheets — AI Assist (Claude)
     "anthropic>=0.40",
 ]
@@ -81,3 +82,16 @@ typing-modules = ["frappe.types.DF"]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+
+[tool.bench]
+validation-ignore = [
+    # standalone services, each deployed and run outside the Frappe site
+    "suite/meet/sfu-server/*",  # includes the nested stt-server
+    "suite/meet/recorder-server/*",
+    "suite/sheets/collab-server/*",
+]
+
+[tool.bench.assets]
+build_dir = "./frontend"
+out_dir = "../suite/public/frontend"
+index_html_path = "../suite/www/suite.html"

@@ -18,7 +18,7 @@ from suite.calendar.doctype.calendar.calendar import (
     get_calendar,
     update_calendar,
 )
-from suite.mail.jmap import get_calendar_service
+from suite.mail.jmap import get_account_client
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 
@@ -74,10 +74,9 @@ class TestCalendarCalendars(StalwartIntegrationTestCase):
             row = next(c for c in get_calendars(self.account) if c["name"] == calendar)
             self.assertEqual((row["_name"], row["color"], row["default"]), (name, "#336699", 0))
             # Listed straight after, it has the reminders every other calendar was seeded with.
-            response = get_calendar_service(self.account)._get(
-                [calendar_id], properties=["defaultAlertsWithTime"]
-            )
-            self.assertTrue(response["methodResponses"][0][1]["list"][0].get("defaultAlertsWithTime"))
+            with get_account_client(self.account).batch() as b:
+                h = b.calendars.calendar.get(ids=[calendar_id], properties=["defaultAlertsWithTime"])
+            self.assertTrue(h.result.items[0].to_wire().get("defaultAlertsWithTime"))
 
             # Set wherever else, as another client would.
             update_calendar(
@@ -135,9 +134,11 @@ class TestCalendarCalendars(StalwartIntegrationTestCase):
 
     def test_foreign_account_denied(self):
         other = self.create_member()
+        # Refused for whose account it is, not for anything about the calendar asked for.
+        denied = (frappe.ValidationError, "does not belong")
         with self.set_user(other.email):
-            self.assertRaises(Exception, add_calendar, self.account, unique_name("cal"))
-            self.assertRaises(Exception, create_calendar, self.account, unique_name("cal"))
-            self.assertRaises(Exception, edit_calendar, self.account, "b", name=unique_name("cal"))
-            self.assertRaises(Exception, delete_calendar, self.account, "b")
-            self.assertRaises(Exception, get_calendars_with_shared, self.account)
+            self.assertRaisesRegex(*denied, add_calendar, self.account, unique_name("cal"))
+            self.assertRaisesRegex(*denied, create_calendar, self.account, unique_name("cal"))
+            self.assertRaisesRegex(*denied, edit_calendar, self.account, "b", name=unique_name("cal"))
+            self.assertRaisesRegex(*denied, delete_calendar, self.account, "b")
+            self.assertRaisesRegex(*denied, get_calendars_with_shared, self.account)
