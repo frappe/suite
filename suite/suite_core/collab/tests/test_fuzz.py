@@ -39,7 +39,11 @@ def summary(update: updates.Update) -> dict:
     """What the gate read from an update, in the shape fuzz.cjs reports Yjs's reading."""
     return {
         "structs": [
-            [s.client, s.clock, s.length, s.kind, pair(s.origin), pair(s.right_origin), pair(s.parent)]
+            [
+                *(s.client, s.clock, s.length, s.kind),
+                *(pair(s.origin), pair(s.right_origin), pair(s.parent)),
+                *(s.type, s.node, s.format_key, s.names),
+            ]
             for s in update.structs
         ],
         "deletes": sorted(
