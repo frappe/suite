@@ -272,7 +272,10 @@
                 "type": "string"
               }
             },
-            "required": ["name", "language_name"],
+            "required": [
+              "name",
+              "language_name"
+            ],
             "title": "Language",
             "type": "object"
           }
@@ -334,7 +337,14 @@
                 "type": "boolean"
               }
             },
-            "required": ["name", "email", "full_name", "avatar", "roles", "is_jmap_configured"],
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "avatar",
+              "roles",
+              "is_jmap_configured"
+            ],
             "title": "Account",
             "type": "object"
           },
@@ -345,7 +355,9 @@
                 "type": "boolean"
               }
             },
-            "required": ["system_manager"],
+            "required": [
+              "system_manager"
+            ],
             "title": "AccountRoles",
             "type": "object"
           }
@@ -395,7 +407,12 @@
             "type": "string"
           }
         },
-        "required": ["is_onboarded", "can_onboard", "workspace_name", "workspace_logo"],
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
         "title": "Site",
         "type": "object"
       },
@@ -427,7 +444,9 @@
             "type": "string"
           }
         },
-        "required": ["is_onboarded"],
+        "required": [
+          "is_onboarded"
+        ],
         "title": "CompleteOnboarding",
         "type": "object"
       },
@@ -450,11 +469,19 @@
             "type": "string"
           }
         },
-        "required": ["is_onboarded", "can_onboard", "workspace_name", "workspace_logo"],
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
         "title": "Site",
         "type": "object"
       },
-      "errors": ["BadRequest", "PermissionError"],
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -481,7 +508,9 @@
             "type": "string"
           }
         },
-        "required": ["workspace_name"],
+        "required": [
+          "workspace_name"
+        ],
         "title": "UpdateSiteSettings",
         "type": "object"
       },
@@ -504,11 +533,19 @@
             "type": "string"
           }
         },
-        "required": ["is_onboarded", "can_onboard", "workspace_name", "workspace_logo"],
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
         "title": "Site",
         "type": "object"
       },
-      "errors": ["BadRequest", "PermissionError"],
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -557,7 +594,13 @@
                 "type": "boolean"
               }
             },
-            "required": ["name", "email", "full_name", "user_image", "is_admin"],
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "user_image",
+              "is_admin"
+            ],
             "title": "User",
             "type": "object"
           }
@@ -567,7 +610,9 @@
         },
         "type": "array"
       },
-      "errors": ["PermissionError"],
+      "errors": [
+        "PermissionError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -616,7 +661,13 @@
                 "title": "Invited By Name"
               }
             },
-            "required": ["name", "email", "creation", "invited_by", "invited_by_name"],
+            "required": [
+              "name",
+              "email",
+              "creation",
+              "invited_by",
+              "invited_by_name"
+            ],
             "title": "Invitation",
             "type": "object"
           }
@@ -626,7 +677,9 @@
         },
         "type": "array"
       },
-      "errors": ["PermissionError"],
+      "errors": [
+        "PermissionError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -649,7 +702,9 @@
             "type": "string"
           }
         },
-        "required": ["emails"],
+        "required": [
+          "emails"
+        ],
         "title": "InviteUsers",
         "type": "object"
       },
@@ -693,7 +748,10 @@
         "title": "InvitationResult",
         "type": "object"
       },
-      "errors": ["BadRequest", "PermissionError"],
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -745,7 +803,11 @@
                 "type": "integer"
               }
             },
-            "required": ["kind", "name", "member_count"],
+            "required": [
+              "kind",
+              "name",
+              "member_count"
+            ],
             "title": "PersonGroup",
             "type": "object"
           },
@@ -787,7 +849,13 @@
                 "title": "User Image"
               }
             },
-            "required": ["kind", "name", "email", "full_name", "user_image"],
+            "required": [
+              "kind",
+              "name",
+              "email",
+              "full_name",
+              "user_image"
+            ],
             "title": "PersonUser",
             "type": "object"
           }
@@ -819,11 +887,18 @@
             "title": "Next Cursor"
           }
         },
-        "required": ["rows", "next_cursor"],
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
         "title": "PeoplePage",
         "type": "object"
       },
-      "errors": ["BadRequest", "BadCursor", "PermissionError"],
+      "errors": [
+        "BadRequest",
+        "BadCursor",
+        "PermissionError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -850,7 +925,10 @@
             "type": "string"
           }
         },
-        "required": ["usr", "pwd"],
+        "required": [
+          "usr",
+          "pwd"
+        ],
         "title": "LoginInput",
         "type": "object"
       },
@@ -922,7 +1000,10 @@
             "type": "string"
           }
         },
-        "required": ["fcm_token", "project_name"],
+        "required": [
+          "fcm_token",
+          "project_name"
+        ],
         "title": "PushToken",
         "type": "object"
       },
@@ -938,7 +1019,10 @@
             "type": "string"
           }
         },
-        "required": ["success", "message"],
+        "required": [
+          "success",
+          "message"
+        ],
         "title": "PushResult",
         "type": "object"
       },
@@ -968,7 +1052,10 @@
             "type": "string"
           }
         },
-        "required": ["fcm_token", "project_name"],
+        "required": [
+          "fcm_token",
+          "project_name"
+        ],
         "title": "PushToken",
         "type": "object"
       },
@@ -984,7 +1071,10 @@
             "type": "string"
           }
         },
-        "required": ["success", "message"],
+        "required": [
+          "success",
+          "message"
+        ],
         "title": "PushResult",
         "type": "object"
       },
@@ -1007,12 +1097,18 @@
       "body": {
         "properties": {
           "theme": {
-            "enum": ["Light", "Dark", "Automatic"],
+            "enum": [
+              "Light",
+              "Dark",
+              "Automatic"
+            ],
             "title": "Theme",
             "type": "string"
           }
         },
-        "required": ["theme"],
+        "required": [
+          "theme"
+        ],
         "title": "ThemeChange",
         "type": "object"
       },
@@ -1046,14 +1142,20 @@
             "type": "string"
           }
         },
-        "required": ["key", "new_password"],
+        "required": [
+          "key",
+          "new_password"
+        ],
         "title": "PasswordReset",
         "type": "object"
       },
       "output": {
         "type": "string"
       },
-      "errors": ["AuthenticationError", "ValidationError"],
+      "errors": [
+        "AuthenticationError",
+        "ValidationError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -1080,7 +1182,9 @@
             "type": "array"
           }
         },
-        "required": ["timezones"],
+        "required": [
+          "timezones"
+        ],
         "title": "Timezones",
         "type": "object"
       },
@@ -1111,14 +1215,20 @@
             "type": "string"
           }
         },
-        "required": ["old_password", "new_password"],
+        "required": [
+          "old_password",
+          "new_password"
+        ],
         "title": "PasswordChange",
         "type": "object"
       },
       "output": {
         "type": "string"
       },
-      "errors": ["AuthenticationError", "ValidationError"],
+      "errors": [
+        "AuthenticationError",
+        "ValidationError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -1141,7 +1251,9 @@
             "type": "string"
           }
         },
-        "required": ["user"],
+        "required": [
+          "user"
+        ],
         "title": "UserKeysInput",
         "type": "object"
       },
@@ -1156,11 +1268,16 @@
             "type": "string"
           }
         },
-        "required": ["api_key", "api_secret"],
+        "required": [
+          "api_key",
+          "api_secret"
+        ],
         "title": "UserKeys",
         "type": "object"
       },
-      "errors": ["PermissionError"],
+      "errors": [
+        "PermissionError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,

@@ -18,12 +18,17 @@
             "type": "string"
           },
           "compressed": {
-            "enum": [0, 1],
+            "enum": [
+              0,
+              1
+            ],
             "title": "Compressed",
             "type": "integer"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "title": "SheetInput",
         "type": "object"
       },
@@ -62,7 +67,14 @@
             "type": "string"
           }
         },
-        "required": ["name", "title", "can_write", "sheets_data", "owner", "node"],
+        "required": [
+          "name",
+          "title",
+          "can_write",
+          "sheets_data",
+          "owner",
+          "node"
+        ],
         "title": "SheetBody",
         "type": "object"
       },
@@ -105,7 +117,10 @@
             "type": "string"
           }
         },
-        "required": ["name", "sheets_data"],
+        "required": [
+          "name",
+          "sheets_data"
+        ],
         "title": "SaveSheet",
         "type": "object"
       },
@@ -120,7 +135,10 @@
             "type": "integer"
           }
         },
-        "required": ["name", "head_seq"],
+        "required": [
+          "name",
+          "head_seq"
+        ],
         "title": "SavedSheet",
         "type": "object"
       },
@@ -158,7 +176,10 @@
             "type": "integer"
           }
         },
-        "required": ["sheet", "cell_id"],
+        "required": [
+          "sheet",
+          "cell_id"
+        ],
         "title": "CellInput",
         "type": "object"
       },
@@ -289,7 +310,11 @@
             "type": "boolean"
           }
         },
-        "required": ["enabled", "model", "keyIsSet"],
+        "required": [
+          "enabled",
+          "model",
+          "keyIsSet"
+        ],
         "title": "AISettings",
         "type": "object"
       },
@@ -316,7 +341,10 @@
             "type": "string"
           },
           "enabled": {
-            "enum": [0, 1],
+            "enum": [
+              0,
+              1
+            ],
             "title": "Enabled",
             "type": "integer"
           },
@@ -343,7 +371,11 @@
             "type": "boolean"
           }
         },
-        "required": ["enabled", "model", "keyIsSet"],
+        "required": [
+          "enabled",
+          "model",
+          "keyIsSet"
+        ],
         "title": "AISettings",
         "type": "object"
       },
@@ -378,7 +410,11 @@
             "type": "string"
           }
         },
-        "required": ["name", "prompt", "selection"],
+        "required": [
+          "name",
+          "prompt",
+          "selection"
+        ],
         "title": "AssistInput",
         "type": "object"
       },
@@ -401,7 +437,11 @@
             "type": "string"
           }
         },
-        "required": ["actions", "model", "source"],
+        "required": [
+          "actions",
+          "model",
+          "source"
+        ],
         "title": "AssistResult",
         "type": "object"
       },
@@ -427,7 +467,9 @@
             "type": "string"
           }
         },
-        "required": ["url"],
+        "required": [
+          "url"
+        ],
         "title": "LinkInput",
         "type": "object"
       },
@@ -442,7 +484,9 @@
                 "type": "boolean"
               }
             },
-            "required": ["error"],
+            "required": [
+              "error"
+            ],
             "title": "LinkFailure",
             "type": "object"
           },
@@ -465,7 +509,12 @@
                 "type": "string"
               }
             },
-            "required": ["title", "description", "favicon", "host"],
+            "required": [
+              "title",
+              "description",
+              "favicon",
+              "host"
+            ],
             "title": "LinkPreview",
             "type": "object"
           }

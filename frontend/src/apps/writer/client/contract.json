@@ -10,7 +10,9 @@
       "envelope": "data",
       "method": "GET",
       "path": "/api/v2/document/Writer Document/{name}",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": null,
       "output": {
@@ -72,7 +74,9 @@
             "title": "Settings"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "title": "WriterRow",
         "type": "object"
       },
@@ -90,7 +94,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Writer Document/{name}/method/save_doc",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -103,7 +109,9 @@
             "type": "string"
           }
         },
-        "required": ["data"],
+        "required": [
+          "data"
+        ],
         "title": "SaveBody",
         "type": "object"
       },
@@ -124,7 +132,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Writer Document/{name}/method/save_html",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -133,7 +143,9 @@
             "type": "string"
           }
         },
-        "required": ["html"],
+        "required": [
+          "html"
+        ],
         "title": "SaveHTML",
         "type": "object"
       },
@@ -154,7 +166,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Writer Document/{name}/method/update_settings",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -163,7 +177,9 @@
             "type": "string"
           }
         },
-        "required": ["data"],
+        "required": [
+          "data"
+        ],
         "title": "SaveSettings",
         "type": "object"
       },
@@ -197,7 +213,10 @@
             "type": "string"
           }
         },
-        "required": ["doc", "data"],
+        "required": [
+          "doc",
+          "data"
+        ],
         "title": "SaveComments",
         "type": "object"
       },

@@ -15,12 +15,17 @@
       "body": {
         "properties": {
           "type": {
-            "enum": ["open", "restricted"],
+            "enum": [
+              "open",
+              "restricted"
+            ],
             "title": "Type",
             "type": "string"
           }
         },
-        "required": ["type"],
+        "required": [
+          "type"
+        ],
         "title": "CreateRoom",
         "type": "object"
       },
@@ -35,11 +40,16 @@
             "type": "string"
           }
         },
-        "required": ["code", "url"],
+        "required": [
+          "code",
+          "url"
+        ],
         "title": "Room",
         "type": "object"
       },
-      "errors": ["BadRequest"],
+      "errors": [
+        "BadRequest"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -68,7 +78,9 @@
                 "type": "string"
               }
             },
-            "required": ["email"],
+            "required": [
+              "email"
+            ],
             "title": "Attendee",
             "type": "object"
           }
@@ -94,7 +106,12 @@
             "type": "array"
           }
         },
-        "required": ["title", "start", "end", "attendees"],
+        "required": [
+          "title",
+          "start",
+          "end",
+          "attendees"
+        ],
         "title": "ScheduleMeeting",
         "type": "object"
       },
@@ -111,7 +128,10 @@
                 "type": "string"
               }
             },
-            "required": ["code", "url"],
+            "required": [
+              "code",
+              "url"
+            ],
             "title": "Room",
             "type": "object"
           }
@@ -125,11 +145,16 @@
             "type": "string"
           }
         },
-        "required": ["meeting", "calendar_event_id"],
+        "required": [
+          "meeting",
+          "calendar_event_id"
+        ],
         "title": "ScheduledMeeting",
         "type": "object"
       },
-      "errors": ["BadRequest"],
+      "errors": [
+        "BadRequest"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -151,7 +176,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -163,7 +190,9 @@
             "type": "string"
           }
         },
-        "required": ["title"],
+        "required": [
+          "title"
+        ],
         "title": "Preview",
         "type": "object"
       },
@@ -189,7 +218,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -205,7 +236,9 @@
             "type": "boolean"
           }
         },
-        "required": ["allow_guest"],
+        "required": [
+          "allow_guest"
+        ],
         "title": "Access",
         "type": "object"
       },
@@ -232,7 +265,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -262,7 +297,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -323,7 +360,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -366,7 +405,10 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "guest_name"],
+        "required": [
+          "meeting_id",
+          "guest_name"
+        ],
         "title": "GuestJoin",
         "type": "object"
       },
@@ -405,7 +447,11 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "guest_id", "guest_session_token"],
+        "required": [
+          "meeting_id",
+          "guest_id",
+          "guest_session_token"
+        ],
         "title": "GuestRoomRef",
         "type": "object"
       },
@@ -444,7 +490,11 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "guest_id", "guest_session_token"],
+        "required": [
+          "meeting_id",
+          "guest_id",
+          "guest_session_token"
+        ],
         "title": "GuestRoomRef",
         "type": "object"
       },
@@ -475,7 +525,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -510,7 +562,10 @@
             "type": "string"
           }
         },
-        "required": ["device_id", "ed25519_public_key"],
+        "required": [
+          "device_id",
+          "ed25519_public_key"
+        ],
         "title": "E2EEDevice",
         "type": "object"
       },
@@ -540,7 +595,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -629,7 +686,11 @@
                 "title": "Interruption Deadline"
               }
             },
-            "required": ["name", "status", "state_revision"],
+            "required": [
+              "name",
+              "status",
+              "state_revision"
+            ],
             "title": "RecordingState",
             "type": "object"
           }
@@ -665,7 +726,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -760,7 +823,10 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "request_id"],
+        "required": [
+          "meeting_id",
+          "request_id"
+        ],
         "title": "RecordingStart",
         "type": "object"
       },
@@ -793,7 +859,10 @@
                 "type": "boolean"
               }
             },
-            "required": ["name", "status"],
+            "required": [
+              "name",
+              "status"
+            ],
             "title": "RecordingCommand",
             "type": "object"
           },
@@ -805,7 +874,9 @@
                 "type": "string"
               }
             },
-            "required": ["status"],
+            "required": [
+              "status"
+            ],
             "title": "RejectedRecording",
             "type": "object"
           }
@@ -842,7 +913,9 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id"],
+        "required": [
+          "meeting_id"
+        ],
         "title": "RoomRef",
         "type": "object"
       },
@@ -875,7 +948,10 @@
                 "type": "boolean"
               }
             },
-            "required": ["name", "status"],
+            "required": [
+              "name",
+              "status"
+            ],
             "title": "RecordingCommand",
             "type": "object"
           }
@@ -1008,7 +1084,9 @@
             "type": "string"
           }
         },
-        "required": ["account"],
+        "required": [
+          "account"
+        ],
         "title": "CalendarMeeting",
         "type": "object"
       },
@@ -1027,7 +1105,11 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "meeting_url", "event_id"],
+        "required": [
+          "meeting_id",
+          "meeting_url",
+          "event_id"
+        ],
         "title": "CalendarMeetingResult",
         "type": "object"
       },
@@ -1062,7 +1144,9 @@
             "type": "string"
           }
         },
-        "required": ["account"],
+        "required": [
+          "account"
+        ],
         "title": "RoomLink",
         "type": "object"
       },
@@ -1077,7 +1161,10 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "meeting_url"],
+        "required": [
+          "meeting_id",
+          "meeting_url"
+        ],
         "title": "RoomLinkResult",
         "type": "object"
       },
@@ -1133,7 +1220,12 @@
                 "title": "Recording"
               }
             },
-            "required": ["id", "title", "last_joined", "recording"],
+            "required": [
+              "id",
+              "title",
+              "last_joined",
+              "recording"
+            ],
             "title": "RecentRoom",
             "type": "object"
           }
@@ -1210,7 +1302,10 @@
                 "title": "Artifact Duration"
               },
               "status": {
-                "enum": ["Ready", "Partial"],
+                "enum": [
+                  "Ready",
+                  "Partial"
+                ],
                 "title": "Status",
                 "type": "string"
               }
@@ -1255,7 +1350,9 @@
             "type": "string"
           }
         },
-        "required": ["q"],
+        "required": [
+          "q"
+        ],
         "title": "RoomSearch",
         "type": "object"
       },
@@ -1280,7 +1377,10 @@
                 "title": "Title"
               }
             },
-            "required": ["name", "title"],
+            "required": [
+              "name",
+              "title"
+            ],
             "title": "RoomSummary",
             "type": "object"
           }
@@ -1304,7 +1404,9 @@
       "envelope": "data",
       "method": "GET",
       "path": "/api/v2/document/Meet Room/{name}",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": null,
       "output": {
@@ -1316,7 +1418,9 @@
                 "type": "string"
               }
             },
-            "required": ["user"],
+            "required": [
+              "user"
+            ],
             "title": "RoomUser",
             "type": "object"
           }
@@ -1354,14 +1458,20 @@
                 "type": "boolean"
               },
               {
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "type": "integer"
               }
             ],
             "title": "Allow Guest"
           },
           "meeting_type": {
-            "enum": ["open", "restricted"],
+            "enum": [
+              "open",
+              "restricted"
+            ],
             "title": "Meeting Type",
             "type": "string"
           },
@@ -1371,7 +1481,10 @@
                 "type": "boolean"
               },
               {
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "type": "integer"
               }
             ],
@@ -1383,7 +1496,10 @@
                 "type": "boolean"
               },
               {
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "type": "integer"
               }
             ],
@@ -1417,7 +1533,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/approve_join_request",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -1426,7 +1544,9 @@
             "type": "string"
           }
         },
-        "required": ["user_id"],
+        "required": [
+          "user_id"
+        ],
         "title": "UserCommand",
         "type": "object"
       },
@@ -1445,7 +1565,10 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "message"],
+        "required": [
+          "meeting_id",
+          "message"
+        ],
         "title": "CommandResult",
         "type": "object"
       },
@@ -1463,7 +1586,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/approve_all_join_requests",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": null,
       "output": {
@@ -1481,7 +1606,10 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "message"],
+        "required": [
+          "meeting_id",
+          "message"
+        ],
         "title": "CommandResult",
         "type": "object"
       },
@@ -1499,7 +1627,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/reject_join_request",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -1508,7 +1638,9 @@
             "type": "string"
           }
         },
-        "required": ["user_id"],
+        "required": [
+          "user_id"
+        ],
         "title": "UserCommand",
         "type": "object"
       },
@@ -1527,7 +1659,10 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "message"],
+        "required": [
+          "meeting_id",
+          "message"
+        ],
         "title": "CommandResult",
         "type": "object"
       },
@@ -1545,7 +1680,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/get_waiting_room_details",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": null,
       "output": {
@@ -1580,7 +1717,13 @@
                 "type": "boolean"
               }
             },
-            "required": ["user_id", "full_name", "user_name", "user_image", "is_guest"],
+            "required": [
+              "user_id",
+              "full_name",
+              "user_name",
+              "user_image",
+              "is_guest"
+            ],
             "title": "WaitingUser",
             "type": "object"
           }
@@ -1598,7 +1741,10 @@
             "type": "array"
           }
         },
-        "required": ["meeting_id", "waiting_users"],
+        "required": [
+          "meeting_id",
+          "waiting_users"
+        ],
         "title": "WaitingRoom",
         "type": "object"
       },
@@ -1616,7 +1762,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/ban_guest",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -1625,7 +1773,9 @@
             "type": "string"
           }
         },
-        "required": ["guest_id"],
+        "required": [
+          "guest_id"
+        ],
         "title": "GuestCommand",
         "type": "object"
       },
@@ -1645,7 +1795,11 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "guest_id", "status"],
+        "required": [
+          "meeting_id",
+          "guest_id",
+          "status"
+        ],
         "title": "BanResult",
         "type": "object"
       },
@@ -1663,7 +1817,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/promote_to_cohost",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -1672,7 +1828,9 @@
             "type": "string"
           }
         },
-        "required": ["user_id"],
+        "required": [
+          "user_id"
+        ],
         "title": "UserCommand",
         "type": "object"
       },
@@ -1691,7 +1849,10 @@
             "type": "string"
           }
         },
-        "required": ["meeting_id", "message"],
+        "required": [
+          "meeting_id",
+          "message"
+        ],
         "title": "CommandResult",
         "type": "object"
       },
@@ -1709,7 +1870,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/enable_e2ee",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": null,
       "output": {
@@ -1729,7 +1892,9 @@
       "envelope": "data",
       "method": "POST",
       "path": "/api/v2/document/Meet Room/{name}/method/update_settings",
-      "pathParams": ["name"],
+      "pathParams": [
+        "name"
+      ],
       "query": null,
       "body": {
         "properties": {
@@ -1739,14 +1904,20 @@
                 "type": "boolean"
               },
               {
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "type": "integer"
               }
             ],
             "title": "Allow Guest"
           },
           "meeting_type": {
-            "enum": ["open", "restricted"],
+            "enum": [
+              "open",
+              "restricted"
+            ],
             "title": "Meeting Type",
             "type": "string"
           },
@@ -1756,7 +1927,10 @@
                 "type": "boolean"
               },
               {
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "type": "integer"
               }
             ],
@@ -1773,7 +1947,10 @@
             "type": "boolean"
           },
           "meeting_type": {
-            "enum": ["open", "restricted"],
+            "enum": [
+              "open",
+              "restricted"
+            ],
             "title": "Meeting Type",
             "type": "string"
           },

@@ -18,7 +18,9 @@
             "type": "string"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "title": "DeckInput",
         "type": "object"
       },
@@ -195,7 +197,10 @@
                     "type": "boolean"
                   },
                   {
-                    "enum": [0, 1],
+                    "enum": [
+                      0,
+                      1
+                    ],
                     "type": "integer"
                   }
                 ],
@@ -243,7 +248,10 @@
                 "type": "boolean"
               },
               {
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "type": "integer"
               }
             ],
@@ -275,7 +283,15 @@
             "type": "array"
           }
         },
-        "required": ["name", "modified", "modified_by", "node", "is_composite", "theme", "slides"],
+        "required": [
+          "name",
+          "modified",
+          "modified_by",
+          "node",
+          "is_composite",
+          "theme",
+          "slides"
+        ],
         "title": "Deck",
         "type": "object"
       },
@@ -301,7 +317,9 @@
             "type": "string"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "title": "DeckInput",
         "type": "object"
       },
@@ -478,7 +496,10 @@
                     "type": "boolean"
                   },
                   {
-                    "enum": [0, 1],
+                    "enum": [
+                      0,
+                      1
+                    ],
                     "type": "integer"
                   }
                 ],
@@ -526,7 +547,10 @@
                 "type": "boolean"
               },
               {
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "type": "integer"
               }
             ],
@@ -558,7 +582,15 @@
             "type": "array"
           }
         },
-        "required": ["name", "modified", "modified_by", "node", "is_composite", "theme", "slides"],
+        "required": [
+          "name",
+          "modified",
+          "modified_by",
+          "node",
+          "is_composite",
+          "theme",
+          "slides"
+        ],
         "title": "Deck",
         "type": "object"
       },
@@ -584,7 +616,9 @@
             "type": "string"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "title": "DeckInput",
         "type": "object"
       },
@@ -683,7 +717,10 @@
                     "type": "boolean"
                   },
                   {
-                    "enum": [0, 1],
+                    "enum": [
+                      0,
+                      1
+                    ],
                     "type": "integer"
                   }
                 ],
@@ -725,7 +762,11 @@
             "type": "string"
           }
         },
-        "required": ["name", "slides", "base_modified"],
+        "required": [
+          "name",
+          "slides",
+          "base_modified"
+        ],
         "title": "SaveDeck",
         "type": "object"
       },
@@ -736,7 +777,9 @@
             "type": "string"
           }
         },
-        "required": ["modified"],
+        "required": [
+          "modified"
+        ],
         "title": "SavedDeck",
         "type": "object"
       },
@@ -855,7 +898,10 @@
                     "type": "boolean"
                   },
                   {
-                    "enum": [0, 1],
+                    "enum": [
+                      0,
+                      1
+                    ],
                     "type": "integer"
                   }
                 ],
@@ -910,7 +956,14 @@
                 "type": "array"
               }
             },
-            "required": ["name", "title", "slug", "creation", "is_template", "layouts"],
+            "required": [
+              "name",
+              "title",
+              "slug",
+              "creation",
+              "is_template",
+              "layouts"
+            ],
             "title": "Template",
             "type": "object"
           }
@@ -951,7 +1004,10 @@
             "type": "array"
           }
         },
-        "required": ["presentation", "elements"],
+        "required": [
+          "presentation",
+          "elements"
+        ],
         "title": "AdoptElements",
         "type": "object"
       },
@@ -997,7 +1053,10 @@
             "title": "Slide"
           }
         },
-        "required": ["parent", "slide"],
+        "required": [
+          "parent",
+          "slide"
+        ],
         "title": "AdoptSlide",
         "type": "object"
       },
@@ -1027,7 +1086,9 @@
             "type": "string"
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "title": "DeckInput",
         "type": "object"
       },
@@ -1067,7 +1128,12 @@
                 "title": "Node"
               }
             },
-            "required": ["reference", "index", "presentation", "node"],
+            "required": [
+              "reference",
+              "index",
+              "presentation",
+              "node"
+            ],
             "title": "Reference",
             "type": "object"
           }
@@ -1149,7 +1215,10 @@
             "title": "References"
           }
         },
-        "required": ["name", "references"],
+        "required": [
+          "name",
+          "references"
+        ],
         "title": "GroupInput",
         "type": "object"
       },
@@ -1325,7 +1394,10 @@
                     "type": "boolean"
                   },
                   {
-                    "enum": [0, 1],
+                    "enum": [
+                      0,
+                      1
+                    ],
                     "type": "integer"
                   }
                 ],
@@ -1367,7 +1439,11 @@
             "type": "array"
           }
         },
-        "required": ["presentation", "node", "references"],
+        "required": [
+          "presentation",
+          "node",
+          "references"
+        ],
         "title": "GroupResult",
         "type": "object"
       },
@@ -1393,13 +1469,19 @@
             "type": "string"
           }
         },
-        "required": ["presentation_id"],
+        "required": [
+          "presentation_id"
+        ],
         "title": "AccessInput",
         "type": "object"
       },
       "body": null,
       "output": {
-        "enum": ["edit", "view", "none"],
+        "enum": [
+          "edit",
+          "view",
+          "none"
+        ],
         "type": "string"
       },
       "errors": [],
