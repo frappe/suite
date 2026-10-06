@@ -295,7 +295,7 @@ def insert_checkpoint(
 def replace_start(adapter: str, doc_id: str, state: bytes, schema: int) -> None:
     """Make `state` the integrated checkpoint a fresh log starts from, at rev 1, in the caller's transaction.
 
-    `schema` is the highest stamp of the rows `state` was built from.
+    `schema` is at least the highest stamp of the rows `state` was built from.
 
     The caller has checked `state`. Once a tab has a session or a row exists, a tab may
     hold the old start, so the start can no longer change.
