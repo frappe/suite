@@ -225,6 +225,25 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.assertEqual((self.doc_row(node).head_rev, self.row_count(node)), (head, head))
         self.assertEqual(frappe.db.count("Drive Node Version", {"node": node}), 1)
 
+    def test_with_collaboration_off_drive_refuses_a_version_saved_while_it_was_on(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        seq = drive.take_version(node, kind="named", label="one")
+        frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
+        frappe.db.commit()
+        fields = ("content", "html", "collab")
+        before = frappe.db.get_value("Writer Document", self.docname(node), fields)
+
+        writer = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        with self.assertRaisesRegex(
+            DriveConflict, "This version can be restored only while collaboration is on"
+        ):
+            restore_version(writer, node, seq)
+
+        frappe.db.rollback()
+        self.assertEqual(frappe.db.get_value("Writer Document", self.docname(node), fields), before)
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": node}), 1)
+
     def copy_of(self, node: str) -> str:
         parent = frappe.db.get_value("Drive Node", node, "parent_node")
         copied = drive.copy(node, parent)

@@ -379,6 +379,8 @@ def _version_payload(raw: bytes) -> dict:
     # restore its own source text as HTML.
     if not isinstance(payload, dict):
         return {"content": EMPTY_BODY, "html": text, "collab": 0}
+    if payload.get("schema") == "writer-document/2":
+        raise drive.DriveConflict(_("This version can be restored only while collaboration is on"))
     if payload.get("schema") != VERSION_SCHEMA:
         frappe.throw(
             _("This Writer version declares an unknown schema"),
