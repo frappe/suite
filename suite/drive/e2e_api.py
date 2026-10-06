@@ -139,7 +139,7 @@ def cleanup_users(run_id: str) -> dict:
 def collab_doc(node: str) -> dict:
     doc = collab.find(writer_collab.ADAPTER, node)
     if doc is None:
-        frappe.throw(f"{node} has no collab log")
+        raise frappe.DoesNotExistError(f"{node} has no collab log")
     return doc
 
 
@@ -194,6 +194,8 @@ def log_rows(log: str) -> dict:
 def server_text(node: str) -> list[str]:
     """The text of each top-level block of `node`, read from the checkpoint and the rows after it."""
     stored = collab.read(writer_collab.ADAPTER, collab_doc(node)["id"])
+    if stored is None:
+        raise frappe.DoesNotExistError(f"{node} has no collab log")
     parts = ([stored["checkpoint"]] if stored["checkpoint"] else []) + [row for _rev, row in stored["rows"]]
     fragment = compaction.load(parts).get("default", type=pycrdt.XmlFragment)
     return [block_text(block) for block in fragment.children]
