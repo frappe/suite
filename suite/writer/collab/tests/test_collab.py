@@ -88,6 +88,13 @@ def embedded(cid: int, value: str) -> bytes:
     )
 
 
+def element(cid: int, tag: str) -> bytes:
+    """The update a tab writing as `cid` sends as it adds one `tag` node to an empty document."""
+    doc = pycrdt.Doc(client_id=cid)
+    doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlElement(tag))
+    return doc.get_update()
+
+
 def push_body(
     lineage: str,
     sid: str,
@@ -231,7 +238,7 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         sid, cid = self.session(node)
         doc = pycrdt.Doc(client_id=cid)
-        doc.get("meta", type=pycrdt.Map)["blob"] = bytes(range(256)) * 1024
+        doc.get("meta", type=pycrdt.Map)["firstTabLabel"] = bytes(range(256)) * 1024
         payload = doc.get_update()
 
         self.assertEqual(self.push(node, sid, cid, 1, payload)[0], 200)
@@ -344,6 +351,35 @@ class TestWriterCollab(IntegrationTestCase):
             ((newer,),),
         )
 
+    def test_a_row_naming_what_its_schema_does_not_declare_is_refused_and_other_tabs_keep_saving(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+        (sid, cid), (other_sid, other_cid) = self.session(node), self.session(node)
+        marquee = push_body(lineage, sid, cid, 1, 0, element(cid, "marquee"))
+        stepped = replace(routes.SCHEMA, version=2, features={**routes.SCHEMA.features, "marquee": 2})
+
+        undeclared = call(routes.collab_updates_post, node, body=marquee)
+        with patch.object(routes, "SCHEMA", stepped):
+            too_early = call(routes.collab_updates_post, node, body=marquee)
+            other = call(
+                routes.collab_updates_post,
+                node,
+                body=push_body(lineage, other_sid, other_cid, 1, 0, typed(other_cid, ["b"])[0]),
+            )
+            stamped = call(
+                routes.collab_updates_post,
+                node,
+                body=push_body(lineage, sid, cid, 1, 0, element(cid, "marquee"), schema=2),
+            )
+
+        self.assertEqual(
+            [(response.status_code, answer(response)) for response in (undeclared, too_early)],
+            [(409, {"collab": "poison"})] * 2,
+        )
+        self.assertEqual((other.status_code, stamped.status_code), (200, 200))
+        self.assertEqual(len(self.open(node)[1]), 2)
+
     def test_a_push_that_does_not_continue_its_writers_clocks_is_refused_and_stores_nothing(self):
         self.set_mode("on")
         node = self.new_document()
@@ -391,7 +427,7 @@ class TestWriterCollab(IntegrationTestCase):
         def after(clock: int, text: str) -> bytes:
             return bytes([0x84]) + encoded_uint(cid) + encoded_uint(clock) + encoded_string(text)
 
-        in_root = bytes([4, 1]) + encoded_string("t") + encoded_string("b")
+        in_root = bytes([4, 1]) + encoded_string("default") + encoded_string("b")
         rows = {
             # "a" at clock 0 placed after clock 0, itself
             "itself": bytes([1, 1]) + encoded_uint(cid) + bytes([0]) + after(0, "a") + bytes([0]),

@@ -319,6 +319,8 @@ def push(
         row = ingest.check(payload, header["cid"])
     except ValueError:
         raise Refusal(400, "malformed") from None
+    if not schema.allows(row.update.names, header["schema"]):
+        raise Refusal(409, "poison")
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(

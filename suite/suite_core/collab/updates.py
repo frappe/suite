@@ -1,7 +1,7 @@
 """A strict reader for Yjs v1 updates, in pure Python, so no native code sees a row first.
 
 It reads what the compaction's guards need: each struct's writer and clocks,
-its origins, the text it inserts, and the delete set. Anything malformed,
+its origins, the text it inserts, the names it carries, and the delete set. Anything malformed,
 including trailing bytes, raises `ValueError`. `rewrite_values` copies an update
 with its values changed and nothing else.
 """
@@ -28,6 +28,8 @@ class Struct:
     parent: tuple[int, int] | None = None
     # Clocks that fall between the two halves of a surrogate pair in a string item's text
     pairs: list[int] = field(default_factory=list)
+    # Root, node, mark, attribute and map key names, which the editor's schema must declare
+    names: list[str] = field(default_factory=list)
 
     def refs(self) -> list[tuple[int, int]]:
         """The ids this struct needs before it can integrate: its origins and its parent item."""
@@ -38,6 +40,10 @@ class Struct:
 class Update:
     structs: list[Struct] = field(default_factory=list)
     deletes: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
+
+    @property
+    def names(self) -> set[str]:
+        return {name for struct in self.structs for name in struct.names}
 
     def split_points(self) -> set[tuple[int, int]]:
         """Every position where this update can split an existing struct: after each origin, at each right
@@ -101,8 +107,8 @@ class Reader:
     def string(self) -> str:
         return self.raw(self.uint()).decode("utf-8")
 
-    def json(self) -> None:
-        checked_json(self.string())
+    def json(self):
+        return checked_json(self.string())
 
     def id(self) -> tuple[int, int]:
         return self.uint(), self.uint()
@@ -112,18 +118,21 @@ def refuse_constant(name: str):
     raise ValueError(f"not JSON: {name}")
 
 
-def checked_json(text: str) -> None:
-    """Refuse text that is not JSON or nests deeper than a value may, so later walks over it can recurse."""
+def checked_json(text: str):
+    """The value `text` holds, refusing text that is not JSON or nests deeper than a value may, so later
+    walks over it can recurse."""
     try:
-        containers = [(json.loads(text, parse_constant=refuse_constant), 0)]
+        parsed = json.loads(text, parse_constant=refuse_constant)
     except RecursionError:
         raise ValueError("value nested too deep") from None
+    containers = [(parsed, 0)]
     while containers:
         value, depth = containers.pop()
         if depth >= MAX_DEPTH:
             raise ValueError("value nested too deep")
         items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
         containers.extend((item, depth + 1) for item in items if isinstance(item, dict | list))
+    return parsed
 
 
 def string_length(struct: Struct, text: str) -> int:
@@ -179,11 +188,11 @@ def read_struct(reader: Reader, client: int, clock: int) -> Struct:
         struct.right_origin = reader.id()
     if info & 0xC0 == 0:
         if reader.uint() == 1:
-            reader.string()
+            struct.names.append(reader.string())
         else:
             struct.parent = reader.id()
         if info & 0x20:
-            reader.string()
+            struct.names.append(reader.string())
     struct.length = read_content(reader, ref, struct)
     return struct
 
@@ -207,13 +216,16 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
         reader.json()
         return 1
     if ref == 6:  # format
-        reader.string()
-        reader.json()
+        # A mark that may overlap itself is keyed `name--<hash>`
+        struct.names.append(reader.string().split("--", 1)[0])
+        attributes = reader.json()
+        if isinstance(attributes, dict):
+            struct.names.extend(attributes)
         return 1
     if ref == 7:  # type
         kind = reader.uint()
         if kind in (3, 5):
-            reader.string()
+            struct.names.append(reader.string())
         elif kind not in (0, 1, 2, 4, 6):
             raise ValueError(f"unknown type {kind}")
         return 1

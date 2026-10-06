@@ -44,6 +44,21 @@ class TestParse(UnitTestCase):
 
         self.assertEqual(update.split_points(), {(5, 2), (5, 3)})
 
+    def test_a_row_names_its_roots_nodes_marks_attributes_and_map_keys_but_not_its_values(self):
+        doc = pycrdt.Doc(client_id=5)
+        body = doc.get("default", type=pycrdt.XmlFragment)
+        paragraph = body.children.append(pycrdt.XmlElement("paragraph", {"textAlign": "left"}))
+        text = paragraph.children.append(pycrdt.XmlText())
+        text.insert(0, "hi", {"link": {"href": "https://x"}, "comment--a1b2": {"id": "c1"}})
+        doc.get("meta", type=pycrdt.Map)["firstTabLabel"] = {"value": "One"}
+
+        names = parse(doc.get_update()).names
+
+        self.assertEqual(
+            names,
+            {"default", "paragraph", "textAlign", "link", "href", "comment", "id", "meta", "firstTabLabel"},
+        )
+
     def test_json_values_nested_deeper_than_a_hundred_levels_are_refused(self):
         def holding(ref: int, content: bytes) -> bytes:
             return bytes([1, 1, 5, 0, ref, 1]) + encoded_string("t") + content + bytes([0])

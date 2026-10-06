@@ -71,6 +71,15 @@ class TestIngest(UnitTestCase):
             with self.subTest(case), self.assertRaises(ValueError):
                 ingest.check(payload, 5)
 
+    def test_a_row_may_hold_only_names_declared_at_or_below_its_stamp(self):
+        schema = ingest.EditorSchema(2, {"paragraph": 1, "callout": 2})
+
+        self.assertTrue(schema.allows(set(), 1))
+        self.assertTrue(schema.allows({"paragraph"}, 1))
+        self.assertTrue(schema.allows({"paragraph", "callout"}, 2))
+        self.assertFalse(schema.allows({"paragraph", "callout"}, 1))
+        self.assertFalse(schema.allows({"marquee"}, 2))
+
     def test_a_row_over_the_size_cap_is_malformed(self):
         [payload] = typed(5, ["abc"])
 

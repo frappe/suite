@@ -31,6 +31,10 @@ class EditorSchema:
     version: int
     features: dict[str, int]
 
+    def allows(self, names: Iterable[str], stamp: int) -> bool:
+        """Whether a row stamped `stamp` may hold every one of `names`: each declared at or below it."""
+        return all(self.features.get(name, stamp + 1) <= stamp for name in names)
+
 
 @dataclass
 class Row:

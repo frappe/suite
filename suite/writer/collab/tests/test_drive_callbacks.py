@@ -3,6 +3,7 @@ import gzip
 import io
 import json
 import uuid
+from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -32,6 +33,12 @@ def version_of(docname: str) -> dict:
     return json.loads(stream.getvalue())
 
 
+def declaring(*names: str):
+    """Writer's schema with `names` declared too, so a row may hold a shape the editor does not write today."""
+    features = {**routes.SCHEMA.features, **dict.fromkeys(names, 1)}
+    return patch.object(routes, "SCHEMA", replace(routes.SCHEMA, features=features))
+
+
 def embed(media: str) -> str:
     return f"/api/method/suite.writer.api.embed.get?id={media}"
 
@@ -58,14 +65,15 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
     def test_used_nodes_reads_the_pictures_a_collab_document_holds_now(self):
         node = self.new_document()
-        self.edit(
-            node,
-            lambda body: [
-                body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-kept")})),
-                body.children.append(pycrdt.XmlElement("image", {"src": "", "data-node": "pic-bare"})),
-                body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-removed")})),
-            ],
-        )
+        with declaring("data-node"):
+            self.edit(
+                node,
+                lambda body: [
+                    body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-kept")})),
+                    body.children.append(pycrdt.XmlElement("image", {"src": "", "data-node": "pic-bare"})),
+                    body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-removed")})),
+                ],
+            )
         self.compact(node)
         self.edit(
             node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-new")}))
@@ -303,7 +311,8 @@ class TestWriterDriveCallbacks(CheckpointCase):
             meta["pictures"] = pycrdt.Array([embed(picture), [picture]])
             meta["note"] = pycrdt.Text(embed(picture))
 
-        self.edit(node, change)
+        with declaring("pictures", "note"):
+            self.edit(node, change)
 
         copied = self.copy_of(node)
 
