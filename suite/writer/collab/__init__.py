@@ -32,7 +32,11 @@ SCHEMA = collab.EditorSchema(
 
 def ensure_tables() -> None:
     collab.ensure_tables(ADAPTER)
-    collab.backfill_clocks(ADAPTER)
+    collab.backfill_clocks(ADAPTER, document_owner)
+
+
+def document_owner(node: str) -> str | None:
+    return frappe.db.get_value("Drive Node", node, "owner")
 
 
 def start_log(node: str) -> None:
@@ -144,11 +148,11 @@ def delete_purged(doc_id: str) -> None:
 
 
 def compact(doc_id: str) -> None:
-    checkpoints.run(ADAPTER, doc_id, ROOTS, "suite.writer.collab.judge")
+    checkpoints.run(ADAPTER, doc_id, ROOTS, "suite.writer.collab.judge", document_owner)
 
 
 def judge(doc_id: str) -> None:
-    if suspect.judge(ADAPTER, doc_id, ROOTS, KERNEL) in ("clean", "quarantined"):
+    if suspect.judge(ADAPTER, doc_id, ROOTS, KERNEL, document_owner) in ("clean", "quarantined"):
         consider_compaction(doc_id)
 
 

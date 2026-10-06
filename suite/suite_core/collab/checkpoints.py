@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -26,19 +27,26 @@ PACED_FROM = 512 * 2**10
 ALERT_AT = 3
 
 
-def run(adapter: str, doc_id: str, roots: dict[str, type], judge_method: str) -> None:
-    Compaction(adapter, doc_id, roots, judge_method).run()
+def run(
+    adapter: str,
+    doc_id: str,
+    roots: dict[str, type],
+    judge_method: str,
+    owner_of: Callable[[str], str | None],
+) -> None:
+    Compaction(adapter, doc_id, roots, judge_method, owner_of).run()
 
 
 @dataclass
 class Compaction:
     """One document's compaction. `roots` names every root type its product writes; `judge_method` judges
-    the document when the compaction can't take its rows."""
+    the document when the compaction can't take its rows; `owner_of` names a document's owner from its node."""
 
     adapter: str
     doc_id: str
     roots: dict[str, type]
     judge_method: str
+    owner_of: Callable[[str], str | None]
 
     def table(self, kind: str) -> str:
         return table(self.adapter, kind)
@@ -98,7 +106,9 @@ class Compaction:
             if index < 0:
                 raise compaction.CompactionFailed(reason)
             frappe.db.rollback()
-            if not quarantine.quarantine(self.adapter, self.doc_id, {snapshot["rows"][index][0]}, reason):
+            if not quarantine.quarantine(
+                self.adapter, self.doc_id, {snapshot["rows"][index][0]}, reason, self.owner_of
+            ):
                 raise compaction.CompactionFailed(reason)
 
     def store(self, snapshot: dict, result: compaction.Compacted) -> bytes:

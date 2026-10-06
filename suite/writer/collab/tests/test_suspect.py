@@ -79,7 +79,13 @@ class TestSuspect(CheckpointCase):
         return patch.object(compaction, "compact", compact)
 
     def judge(self, node: str) -> str | None:
-        return suspect.judge(routes.ADAPTER, self.doc_row(node).id, writer_collab.ROOTS, writer_collab.KERNEL)
+        return suspect.judge(
+            routes.ADAPTER,
+            self.doc_row(node).id,
+            writer_collab.ROOTS,
+            writer_collab.KERNEL,
+            writer_collab.document_owner,
+        )
 
     def alerts(self, title: str) -> int:
         return frappe.db.count("Error Log", {"method": f"Collab document {title}"})
@@ -532,3 +538,18 @@ class TestSuspect(CheckpointCase):
         frappe.set_user(WRITER)
         Pen(self, node).adds(paragraph("beta"))
         self.assertEqual(self.states(node), ["ok", "ok"])
+
+    def test_a_refused_row_whose_session_is_gone_is_quarantined_for_the_document_owner(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        a.adds(paragraph("alpha"))
+        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        self.set_doc(node, suspect="unreadable")
+        frappe.set_user("Administrator")
+
+        with self.refusing(a.sent[0]):
+            self.assertEqual(self.judge(node), "quarantined")
+
+        self.assertEqual(self.recovered(node), [(1, WRITER, "pycrdt_refused", a.sent[0])])
+        doc = self.doc_row(node)
+        self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "quarantined"))

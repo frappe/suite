@@ -9,6 +9,7 @@ it rebuilds.
 
 import gzip
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import frappe
@@ -28,10 +29,13 @@ class TailRow:
     update: updates.Update | None
 
 
-def quarantine(adapter: str, doc_id: str, revs: set[int], reason: str) -> list[int]:
+def quarantine(
+    adapter: str, doc_id: str, revs: set[int], reason: str, owner_of: Callable[[str], str | None]
+) -> list[int]:
     """Quarantine `revs` and every row that depends on them; answers every rev quarantined.
 
     Only rows after the checkpoint can be taken out: content already in it is not a row any more.
+    A row whose session is gone has its recovery copy kept for `owner_of(node)`, the document's owner.
     """
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
@@ -62,11 +66,13 @@ def quarantine(adapter: str, doc_id: str, revs: set[int], reason: str) -> list[i
             frappe.db.rollback()
             return []
         now = now_datetime()
+        sessionless = [int(row.rev) for row in rows if int(row.rev) in picked and not row.principal]
+        document_owner = owner_of(doc.node) if sessionless else None
+        if sessionless and not document_owner:
+            raise RuntimeError(f"revs {sessionless} have no session and the document no owner")
         for row in rows:
             if int(row.rev) not in picked:
                 continue
-            if not row.principal:
-                raise RuntimeError(f"rev {row.rev} has no session, so its recovery copy would have no owner")
             payload = bytes(row.payload)
             try:
                 frappe.db.sql(
@@ -77,7 +83,7 @@ def quarantine(adapter: str, doc_id: str, revs: set[int], reason: str) -> list[i
                         frappe.generate_hash(length=20),
                         doc_id,
                         doc.node,
-                        row.principal,
+                        row.principal or document_owner,
                         reason,
                         doc.lineage,
                         hashlib.sha256(payload).hexdigest(),
@@ -115,6 +121,12 @@ def quarantine(adapter: str, doc_id: str, revs: set[int], reason: str) -> list[i
             message=f"{adapter} document {doc_id}: revs {sorted(picked)} quarantined, {len(cut)} sessions closed",
             reference_doctype="Suite Collab Settings",
         )
+        if sessionless:
+            frappe.log_error(
+                title="Collab recovery copies kept for the document owner",
+                message=f"{adapter} document {doc_id}: revs {sessionless} had no session, so {document_owner} keeps their copies",
+                reference_doctype="Suite Collab Settings",
+            )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
     except BaseException:
         frappe.db.rollback()

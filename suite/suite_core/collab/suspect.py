@@ -12,6 +12,7 @@ A document only a tab's report marked is held only on what its rows show: withou
 is cleared as unjudged, so a report alone never pauses saving.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 import frappe
@@ -75,13 +76,15 @@ def request(adapter: str, doc_id: str, method: str) -> None:
     enqueue(method, f"suite-collab-judge-{adapter}-{doc_id}", doc_id=doc_id)
 
 
-def judge(adapter: str, doc_id: str, roots: dict[str, type], bundle: Path) -> str | None:
+def judge(
+    adapter: str, doc_id: str, roots: dict[str, type], bundle: Path, owner_of: Callable[[str], str | None]
+) -> str | None:
     """Judge a suspect document; answers `quarantined`, `clean`, `held` or `unjudged`, or None when it isn't suspect."""
     marked = suspect_of(adapter, doc_id)
     if not marked:
         return None
     try:
-        return settle(adapter, doc_id, marked, roots, bundle)
+        return settle(adapter, doc_id, marked, roots, bundle, owner_of)
     except BaseException as error:  # pycrdt panics derive from BaseException
         if isinstance(error, KeyboardInterrupt | SystemExit):
             raise
@@ -89,7 +92,14 @@ def judge(adapter: str, doc_id: str, roots: dict[str, type], bundle: Path) -> st
         return unsettled(adapter, doc_id, marked, "judge_failed", type(error).__name__)
 
 
-def settle(adapter: str, doc_id: str, marked: str, roots: dict[str, type], bundle: Path) -> str | None:
+def settle(
+    adapter: str,
+    doc_id: str,
+    marked: str,
+    roots: dict[str, type],
+    bundle: Path,
+    owner_of: Callable[[str], str | None],
+) -> str | None:
     snapshot = read(adapter, doc_id)
     if snapshot is None:
         return None
@@ -110,7 +120,7 @@ def settle(adapter: str, doc_id: str, marked: str, roots: dict[str, type], bundl
         return hold(adapter, doc_id, "bad_checkpoint", verdict.reason or "pycrdt refuses the checkpoint")
     if index is not None:
         try:
-            quarantine.quarantine(adapter, doc_id, {revs[index]}, reason)
+            quarantine.quarantine(adapter, doc_id, {revs[index]}, reason, owner_of)
         except RuntimeError as error:
             return hold(adapter, doc_id, "unowned_row", repr(error))
         after = read(adapter, doc_id)

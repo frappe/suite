@@ -19,6 +19,7 @@ from suite.drive._core.principals import Principals
 from suite.suite_core.collab.log import chain_next, chain_seed
 from suite.suite_core.collab.updates import encoded_string, encoded_uint
 from suite.tests.utils import ensure_user
+from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
 
 WRITER = "writer-collab-writer@example.com"
@@ -632,7 +633,7 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        routes.collab.backfill_clocks(routes.ADAPTER)
+        routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         self.assertEqual(self.push(node, sid, cid, 3, a), (409, {"collab": "clock_gap", "clock": 3}))
         self.assertEqual(self.push(node, sid, cid, 3, c)[0], 200)

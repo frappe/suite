@@ -8,6 +8,7 @@ import pycrdt
 from suite.suite_core.collab import quarantine
 from suite.suite_core.collab.log import chain_next
 from suite.suite_core.collab.tests.test_compaction import crafted, number
+from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.collab.tests.test_collab import answer, call, push_body, read_frame, read_open
@@ -61,7 +62,9 @@ class Tab:
 
 class TestQuarantine(CheckpointCase):
     def quarantine(self, node: str, revs: set[int], reason: str = "test") -> list[int]:
-        return quarantine.quarantine(routes.ADAPTER, self.doc_row(node).id, revs, reason)
+        return quarantine.quarantine(
+            routes.ADAPTER, self.doc_row(node).id, revs, reason, writer_collab.document_owner
+        )
 
     def stored_text(self, node: str) -> str:
         read = routes.collab.read(routes.ADAPTER, self.doc_row(node).id)
@@ -284,7 +287,30 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual((typed.status_code, answer(typed)["collab"]), (409, "client_closed"))
         self.assertEqual(b.typed(0, "beta "), 3)
 
-    def test_a_row_whose_writer_is_unknown_is_not_quarantined(self):
+    def test_a_row_whose_session_is_gone_is_kept_for_the_document_owner(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        a.typed(5, " beta")
+        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        frappe.db.commit()
+        frappe.set_user("Administrator")
+        logged = frappe.db.count(
+            "Error Log", {"method": "Collab recovery copies kept for the document owner"}
+        )
+
+        self.assertEqual(self.quarantine(node, {1}), [1, 2])
+
+        self.assertEqual(
+            self.recovered(node), [(1, WRITER, "test", a.sent[0]), (2, WRITER, "test", a.sent[1])]
+        )
+        self.assertEqual((self.states(node), self.stored_text(node)), (["quarantined", "quarantined"], ""))
+        self.assertEqual(
+            frappe.db.count("Error Log", {"method": "Collab recovery copies kept for the document owner"}),
+            logged + 1,
+        )
+
+    def test_a_row_with_no_session_and_no_document_owner_is_not_quarantined(self):
         node = self.new_document()
         a = Tab(self, node)
         a.typed(0, "alpha")
@@ -292,7 +318,7 @@ class TestQuarantine(CheckpointCase):
         frappe.db.commit()
 
         with self.assertRaises(RuntimeError):
-            self.quarantine(node, {1})
+            quarantine.quarantine(routes.ADAPTER, self.doc_row(node).id, {1}, "test", lambda node: None)
 
         doc = self.doc_row(node)
         self.assertEqual((doc.q_epoch, self.recovered(node), self.stored_text(node)), (0, [], "alpha"))
@@ -395,10 +421,28 @@ class TestQuarantine(CheckpointCase):
         frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        routes.collab.backfill_clocks(routes.ADAPTER)
+        routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         self.assertEqual(
             (self.states(node), self.doc_row(node).start_clocks), (["ok", "ok", "quarantined"], "{}")
         )
         self.assertEqual(b.typed(10, " gamma"), 4)
         self.assertEqual(self.stored_text(node), "beta alpha gamma")
+
+    def test_a_log_whose_unreadable_row_has_no_owner_is_left_for_later_and_the_rest_are_read(self):
+        orphan, other = self.new_document(), self.new_document()
+        a = Tab(self, orphan)
+        a.typed(0, "alpha")
+        self.store_raw(orphan, a, b"\x01\x01garbage")
+        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        Tab(self, other).typed(0, "beta")
+        ids = (self.doc_row(orphan).id, self.doc_row(other).id)
+        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
+        frappe.db.commit()
+        logged = f"Collab clocks not read for writer log {ids[0]}"
+
+        routes.collab.backfill_clocks(routes.ADAPTER, lambda node: None)
+
+        self.assertEqual((self.states(orphan), self.doc_row(orphan).start_clocks), (["ok", "ok"], None))
+        self.assertEqual(frappe.db.count("Error Log", {"method": logged}), 1)
+        self.assertIsNotNone(self.doc_row(other).start_clocks)
