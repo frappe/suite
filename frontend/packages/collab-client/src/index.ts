@@ -1,5 +1,6 @@
 export { decodeFrame, encodePush, type FrameHeader, type OpenState, type Row } from './frames'
 export { CollabOpenError } from './answers'
+export { judge, type Fault, type Verdict } from './judge'
 export { openCollabRoom } from './open'
 export { REMOTE } from './room'
 export {

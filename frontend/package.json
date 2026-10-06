@@ -10,7 +10,7 @@
     "dev": "node scripts/copy-noise-suppression-assets.mjs && node scripts/unlink-frappe-ui.mjs && vite --host",
     "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
     "prebuild": "node scripts/copy-noise-suppression-assets.mjs",
-    "build": "vite build && vite build --config vite.sw.config.ts",
+    "build": "vite build && vite build --config vite.sw.config.ts && vite build --config vite.kernel.config.ts",
     "build:recorder": "vite build --config vite.recorder.config.ts",
     "watch:service-worker": "vite build --config vite.sw.config.ts --watch",
     "dev:recorder": "vite --config vite.recorder.config.ts --host",
