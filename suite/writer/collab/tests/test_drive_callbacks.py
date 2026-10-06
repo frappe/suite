@@ -293,6 +293,22 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.assertEqual(meta["pictures"].to_py(), [embed(copied_picture), [copied_picture]])
         self.assertEqual(str(meta["note"]), embed(picture))
 
+    def test_with_collaboration_off_every_callback_leaves_the_log_alone(self):
+        node = self.new_document()
+        picture = self.old_media(node, "picture.png")
+        self.edit(
+            node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)}))
+        )
+        before = self.checkpoints_of(node), self.row_count(node)
+        frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
+        frappe.db.commit()
+
+        writer_drive.remap_media(self.docname(node), {picture: "elsewhere"})
+        writer_drive.export(self.docname(node), "html")
+        self.assertEqual(version_of(self.docname(node))["schema"], "writer-document/1")
+
+        self.assertEqual((self.checkpoints_of(node), self.row_count(node)), before)
+
     def test_a_copys_start_cannot_change_once_a_tab_has_a_session(self):
         node = self.new_document()
         self.type_into(node, ["one"])

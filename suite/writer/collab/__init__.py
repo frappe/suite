@@ -23,8 +23,16 @@ def start_log(node: str) -> None:
         collab.create(ADAPTER, node)
 
 
+def log_of(node: str) -> dict | None:
+    """`node`'s log while collaboration is on: then its body lives there, not in the document row."""
+    return collab.find(ADAPTER, node) if collab.enabled() else None
+
+
 def live_state(node: str) -> pycrdt.Doc | None:
-    """The document as its log stands now, read in the caller's transaction; None when the node has no log."""
+    """The document as its log stands now, read in the caller's transaction; None when the node has no log.
+
+    Read whether collaboration is on or not, so the media sweep keeps what a log names.
+    """
     doc = collab.find(ADAPTER, node)
     if not doc:
         return None
@@ -40,9 +48,7 @@ def live_checkpoint(node: str) -> tuple[dict, bytes] | None:
     checkpoint, never a fallback one, and only an integrated result is answered.
     A state or tail larger than a compaction job would take is refused.
     """
-    if not collab.enabled():
-        return None
-    doc = collab.find(ADAPTER, node)
+    doc = log_of(node)
     if not doc:
         return None
     read = collab.read(ADAPTER, doc.id, integrated=True, own_snapshot=False)

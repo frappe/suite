@@ -79,10 +79,10 @@ from suite import drive
 from suite.suite_core import collab
 from suite.suite_core.collab import compaction
 from suite.writer.collab import (
-    ADAPTER,
     copy_log,
     live_checkpoint,
     live_state,
+    log_of,
     purge_log,
     remap_log,
     start_log,
@@ -189,7 +189,7 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
-    if collab.enabled() and collab.find(ADAPTER, row.node):
+    if log_of(row.node):
         raise drive.DriveConflict(_("Open the document to download it"))
     return io.BytesIO((row.html or "").encode("utf-8")), HTML_MIME
 
@@ -234,7 +234,7 @@ def restore_version(docname: str, stream) -> None:
     A collab document's body is its log, so it is restored in the editor instead.
     """
     node = frappe.db.get_value(DOCTYPE, docname, "node")
-    if collab.enabled() and collab.find(ADAPTER, node):
+    if log_of(node):
         raise drive.DriveConflict(_("Open the document to restore this version"))
     payload = _version_payload(_read_bounded(stream))
     frappe.db.set_value(
@@ -304,7 +304,7 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
         values["content"] = body
     frappe.db.set_value(DOCTYPE, docname, values, update_modified=False)
     node = frappe.db.get_value(DOCTYPE, docname, "node")
-    if collab.find(ADAPTER, node):
+    if log_of(node):
         try:
             remap_log(node, remap_rule(mapping))
         except (ValueError, compaction.CompactionFailed) as refused:
