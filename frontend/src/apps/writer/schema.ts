@@ -1,5 +1,5 @@
 import { Node } from '@tiptap/core'
-import { Heading, RichTextKit } from 'frappe-ui/editor'
+import { Heading, Image, ImageGroup, RichTextKit, Video } from 'frappe-ui/editor'
 
 import ExtendedParagraph from '@/apps/writer/extensions/extended-paragraph'
 import FontFamily from '@/apps/writer/extensions/font-family'
@@ -55,7 +55,15 @@ export const EmbedNode = Node.create({ name: 'embed' })
 export const WRITER_STARTER_KIT = { paragraph: false } as const
 
 export const writerSchema = () => [
-  RichTextKit.configure({ starterKit: WRITER_STARTER_KIT, heading: false }),
+  RichTextKit.configure({
+    starterKit: WRITER_STARTER_KIT,
+    heading: false,
+    image: false,
+    video: false,
+  }),
+  Image,
+  ImageGroup,
+  Video,
   Heading,
   FontSize,
   FontFamily,

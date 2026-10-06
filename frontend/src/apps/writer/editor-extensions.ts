@@ -1,7 +1,13 @@
 import type { AnyExtension } from '@tiptap/core'
 import { getHierarchicalIndexes } from '@tiptap/extension-table-of-contents'
 import { CharacterCount, Selection } from '@tiptap/extensions'
-import { Heading, RichTextKit, type MentionSuggestionItem } from 'frappe-ui/editor'
+import {
+  Heading,
+  ImageGroup,
+  ImageViewer,
+  RichTextKit,
+  type MentionSuggestionItem,
+} from 'frappe-ui/editor'
 import type { Ref } from 'vue'
 
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
@@ -16,6 +22,7 @@ import { HeadingAnchors } from '@/apps/writer/extensions/heading-anchors'
 import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
 import { ListJoin } from '@/apps/writer/extensions/list-join'
 import MediaDownload from '@/apps/writer/extensions/media-download'
+import { Image, Video } from '@/apps/writer/extensions/media-sizes'
 import { MentionSearch } from '@/apps/writer/extensions/mention-search'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
@@ -51,9 +58,15 @@ export const writerEditorExtensions = (options: WriterEditorOptions): AnyExtensi
       ...(options.collaborative && { undoRedo: false }),
     },
     heading: false,
+    image: false,
+    video: false,
     mention: { items: options.mentionItems },
     styleClipboard: {},
   }),
+  Image,
+  ImageGroup,
+  ImageViewer,
+  Video,
   MentionSearch.configure({ onQuery: options.onMentionQuery }),
   Heading,
   ListJoin,
