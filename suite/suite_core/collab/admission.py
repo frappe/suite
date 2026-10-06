@@ -48,14 +48,14 @@ def enough_memory() -> bool:
     """With every place compacting, 20% of the container must stay free. True where the cgroup can't be read."""
     try:
         with open(f"{CGROUP}/memory.max") as limit_file:
-            limit = limit_file.read().strip()
+            max_text = limit_file.read().strip()
         with open(f"{CGROUP}/memory.stat") as stat_file:
             anon = next(int(line.split()[1]) for line in stat_file if line.startswith("anon "))
     except (OSError, StopIteration, ValueError):
         return True
-    if limit == "max":
+    if max_text == "max":
         return True
-    limit = int(limit)
+    limit = int(max_text)
     return limit - anon - PLACES * PER_COMPACTION >= limit // 5
 
 

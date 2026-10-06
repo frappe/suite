@@ -46,11 +46,11 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: Mapping[str, typ
         raise CompactionFailed(found[1])
     try:
         merged = pycrdt.merge_updates(*parts)
-        wanted = pycrdt.get_state(merged)
+        merged_state = pycrdt.get_state(merged)
         # Structs past the state vector wait on a change no row holds yet
-        if Reader(pycrdt.get_update(merged, wanted)).uint():
+        if Reader(pycrdt.get_update(merged, merged_state)).uint():
             raise CompactionFailed("missing_dependency")
-        wanted = state_vector(wanted)
+        wanted = state_vector(merged_state)
         doc = load(parts)
         state = doc.get_update()
         report = {"rows": len(rows)}

@@ -161,9 +161,9 @@ def settle(
             )
     if index is None and marked in REASONS and judged_clean(adapter, doc_id):
         return hold(adapter, doc_id, "unreproduced", "Judged clean before, and the compaction still fails")
-    verdict = "clean" if index is None else "quarantined"
-    clear(adapter, doc_id, verdict, clean_mark=marked if index is None and marked in REASONS else None)
-    return verdict
+    settled = "clean" if index is None else "quarantined"
+    clear(adapter, doc_id, settled, clean_mark=marked if index is None and marked in REASONS else None)
+    return settled
 
 
 # What an admin sees of a suspect document: never its content
