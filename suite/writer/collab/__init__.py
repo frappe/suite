@@ -83,7 +83,7 @@ def copy_log(source_node: str, node: str) -> bool:
     live = live_checkpoint(source_node)
     if live is None:
         return False
-    collab.create(ADAPTER, node, state=live[1])
+    collab.replace_start(ADAPTER, collab.create(ADAPTER, node), live[1])
     return True
 
 

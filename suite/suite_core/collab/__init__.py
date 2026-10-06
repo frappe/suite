@@ -6,6 +6,7 @@ state: the product supplies its table prefix and checks access through Drive
 itself, because `suite_core` never imports Drive or a product.
 """
 
+from suite.suite_core.collab.checkpoints import replace_start
 from suite.suite_core.collab.log import (
     PROTO,
     ChainBroken,
@@ -22,7 +23,6 @@ from suite.suite_core.collab.log import (
     parse_push,
     push,
     read,
-    replace_start,
     require_enabled,
     rows_after,
 )

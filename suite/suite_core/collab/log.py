@@ -18,7 +18,6 @@ import struct
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab.compaction import KERNEL
 from suite.suite_core.collab.tables import table
 
 PROTO = 1
@@ -69,8 +68,8 @@ def find(adapter: str, node: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def create(adapter: str, node: str, state: bytes | None = None) -> str:
-    """Start a log for `node` in the caller's transaction: empty, or starting from `state` at rev 1."""
+def create(adapter: str, node: str) -> str:
+    """Start an empty log for `node` in the caller's transaction; answers its id."""
     doc_id = frappe.generate_hash(length=20)
     lineage = secrets.token_hex(16)
     frappe.db.sql(
@@ -78,52 +77,7 @@ def create(adapter: str, node: str, state: bytes | None = None) -> str:
         VALUES (%s, %s, %s, 0, UNHEX(%s), %s)""",
         (doc_id, node, lineage, chain_seed(lineage).hex(), now_datetime()),
     )
-    if state is not None:
-        replace_start(adapter, doc_id, state)
     return doc_id
-
-
-def replace_start(adapter: str, doc_id: str, state: bytes) -> None:
-    """Make `state` the integrated checkpoint a fresh log starts from, at rev 1, in the caller's transaction.
-
-    The caller has checked `state`. Once a tab has a session or a row exists, a tab may
-    hold the old start, so the start can no longer change.
-    """
-    doc = frappe.db.sql(
-        f"SELECT `lineage`, `head_rev` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE",
-        doc_id,
-        as_dict=True,
-    )[0]
-    sessions = frappe.db.sql(
-        f"SELECT 1 FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s LIMIT 1", doc_id
-    )
-    if int(doc.head_rev) > 1 or sessions or rows_after(adapter, doc_id, 0):
-        raise ValueError("this log's start is already in use")
-    sha = hashlib.sha256(state).digest()
-    chain = chain_next(chain_seed(doc.lineage), 1, sha)
-    checkpoint = table(adapter, "checkpoint")
-    frappe.db.sql(f"DELETE FROM `{checkpoint}` WHERE `doc_id` = %s", doc_id)
-    frappe.db.sql(
-        f"""INSERT INTO `{checkpoint}`
-        (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `report`, `created`)
-        VALUES (%s, 1, UNHEX(%s), UNHEX(%s), %s, UNHEX(%s), 1, %s, %s, %s)""",
-        (
-            doc_id,
-            chain.hex(),
-            sha.hex(),
-            len(state),
-            gzip.compress(state).hex(),
-            KERNEL,
-            json.dumps({"start": True}),
-            now_datetime(),
-        ),
-    )
-    frappe.db.sql(
-        f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = 1, `head_chain` = UNHEX(%(chain)s),
-        `checkpoint_rev` = 1, `checkpoint_chain` = UNHEX(%(chain)s), `integrated_rev` = 1,
-        `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s WHERE `id` = %(doc)s""",
-        {"chain": chain.hex(), "kernel": KERNEL, "size": len(state), "doc": doc_id},
-    )
 
 
 def mark_purged(adapter: str, node: str) -> str | None:

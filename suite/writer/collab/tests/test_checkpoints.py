@@ -283,6 +283,15 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
 
+    def test_a_start_state_larger_than_half_the_packet_limit_is_stored(self):
+        node = self.new_document()
+        packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
+        state = os.urandom(packet // 2 + 2**20)
+
+        checkpoints.replace_start("writer", self.doc_row(node).id, state)
+
+        self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
+
     def test_a_state_too_large_to_store_whole_is_refused(self):
         node = self.new_document()
         self.type_into(node, ["one"])

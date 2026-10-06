@@ -19,7 +19,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from suite.suite_core.collab import admission, compaction
-from suite.suite_core.collab.log import ChainBroken, read
+from suite.suite_core.collab.log import ChainBroken, chain_next, chain_seed, read, rows_after
 from suite.suite_core.collab.tables import table
 
 PACED_FROM = 512 * 2**10
@@ -105,38 +105,16 @@ class Compaction:
                 (doc_id, through, bytes(sha).hex()),
             )
         sha = hashlib.sha256(result.state).digest()
-        frappe.db.sql(
-            f"""INSERT INTO `{checkpoint}`
-            (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `report`, `created`)
-            VALUES (%s, %s, UNHEX(%s), UNHEX(%s), %s, '', %s, %s, %s, %s)""",
-            (
-                doc_id,
-                through,
-                chain.hex(),
-                sha.hex(),
-                len(result.state),
-                int(result.integrated),
-                compaction.KERNEL,
-                json.dumps({**result.report, "ms": result.ms}),
-                now_datetime(),
-            ),
+        insert_checkpoint(
+            self.adapter,
+            doc_id,
+            through,
+            chain,
+            sha,
+            result.state,
+            result.integrated,
+            {**result.report, "ms": result.ms},
         )
-        # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
-        gz = gzip.compress(result.state)
-        part = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0]) // 4
-        for start in range(0, len(gz), part):
-            frappe.db.sql(
-                f"""UPDATE `{checkpoint}` SET `gz` = CONCAT(`gz`, UNHEX(%s))
-                WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = UNHEX(%s)""",
-                (gz[start : start + part].hex(), doc_id, through, sha.hex()),
-            )
-        # A server not in strict mode empties a CONCAT past max_allowed_packet with only a warning
-        stored = frappe.db.sql(
-            f"SELECT LENGTH(`gz`) FROM `{checkpoint}` WHERE `doc_id` = %s AND `through_rev` = %s",
-            (doc_id, through),
-        )[0][0]
-        if stored != len(gz):
-            raise compaction.CompactionFailed("too_large")
         # Locked only until the commit below, so a purge either waits for this row or is seen here
         mode = frappe.db.sql(
             f"SELECT `mode` FROM `{self.table('doc')}` WHERE `id` = %s LOCK IN SHARE MODE", doc_id
@@ -266,6 +244,80 @@ class Compaction:
             reference_doctype="Suite Collab Settings",
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+
+def insert_checkpoint(
+    adapter: str,
+    doc_id: str,
+    through: int,
+    chain: bytes,
+    sha: bytes,
+    state: bytes,
+    integrated: bool,
+    report: dict,
+) -> None:
+    """Write a checkpoint row for `state`, unreferenced, in the caller's transaction."""
+    checkpoint = table(adapter, "checkpoint")
+    frappe.db.sql(
+        f"""INSERT INTO `{checkpoint}`
+        (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `report`, `created`)
+        VALUES (%s, %s, UNHEX(%s), UNHEX(%s), %s, '', %s, %s, %s, %s)""",
+        (
+            doc_id,
+            through,
+            chain.hex(),
+            sha.hex(),
+            len(state),
+            int(integrated),
+            compaction.KERNEL,
+            json.dumps(report),
+            now_datetime(),
+        ),
+    )
+    # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
+    gz = gzip.compress(state)
+    part = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0]) // 4
+    for start in range(0, len(gz), part):
+        frappe.db.sql(
+            f"""UPDATE `{checkpoint}` SET `gz` = CONCAT(`gz`, UNHEX(%s))
+            WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = UNHEX(%s)""",
+            (gz[start : start + part].hex(), doc_id, through, sha.hex()),
+        )
+    # A server not in strict mode empties a CONCAT past max_allowed_packet with only a warning
+    stored = frappe.db.sql(
+        f"SELECT LENGTH(`gz`) FROM `{checkpoint}` WHERE `doc_id` = %s AND `through_rev` = %s",
+        (doc_id, through),
+    )[0][0]
+    if stored != len(gz):
+        raise compaction.CompactionFailed("too_large")
+
+
+def replace_start(adapter: str, doc_id: str, state: bytes) -> None:
+    """Make `state` the integrated checkpoint a fresh log starts from, at rev 1, in the caller's transaction.
+
+    The caller has checked `state`. Once a tab has a session or a row exists, a tab may
+    hold the old start, so the start can no longer change.
+    """
+    doc = frappe.db.sql(
+        f"SELECT `lineage`, `head_rev` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE",
+        doc_id,
+        as_dict=True,
+    )[0]
+    sessions = frappe.db.sql(
+        f"SELECT 1 FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s LIMIT 1", doc_id
+    )
+    if int(doc.head_rev) > 1 or sessions or rows_after(adapter, doc_id, 0):
+        raise ValueError("this log's start is already in use")
+    sha = hashlib.sha256(state).digest()
+    chain = chain_next(chain_seed(doc.lineage), 1, sha)
+    frappe.db.sql(f"DELETE FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s", doc_id)
+    insert_checkpoint(adapter, doc_id, 1, chain, sha, state, True, {"start": True})
+    frappe.db.sql(
+        f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = 1, `head_chain` = UNHEX(%(chain)s),
+        `checkpoint_rev` = 1, `checkpoint_chain` = UNHEX(%(chain)s), `integrated_rev` = 1,
+        `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s WHERE `id` = %(doc)s""",
+        {"chain": chain.hex(), "kernel": compaction.KERNEL, "size": len(state), "doc": doc_id},
+    )
 
 
 def backoff(count: int):
