@@ -27,6 +27,7 @@ from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.sieve_script.sieve_script import SCREENER_MAILBOX_NAME
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
+    SuiteJMAPClient,
     account_view,
     chunked_get,
     chunked_set,
@@ -1528,6 +1529,47 @@ def _message_addresses(messages: list[dict]) -> list[dict]:
     return addresses
 
 
+def _without_classification_echoes(
+    account: str, client: SuiteJMAPClient, updated_ids: list[str]
+) -> list[str]:
+    """Returns `updated_ids` less the messages whose only change is the category this site gave them.
+
+    Giving a message its category changes it on the server, so the write comes back through
+    Email/changes like an update from anywhere else - and would evict a message cached a moment
+    ago with that very category, to be fetched whole a second time, and tell every open client
+    to reload for it.
+
+    The cached copy is checked against the server rather than taken on trust: the same run of
+    changes can hold a real one, such as the message being read on another device, and that
+    still has to evict it. Keywords and mailboxes are all that can change on an Email.
+    """
+
+    updated_ids = list(updated_ids or [])
+    echoes = classification.take_echoes(account, updated_ids) if updated_ids else set()
+    cached = {id: m for id, m in _get_cached_messages(account, list(echoes)).items() if m} if echoes else {}
+    if not cached:
+        return updated_ids
+
+    emails = chunked_get(
+        client,
+        lambda b, chunk: b.mail.email.get(ids=chunk, properties=["id", "keywords", "mailboxIds"]),
+        list(cached),
+    )
+
+    def held(values: dict) -> set[str]:
+        return {key for key, value in values.items() if value}
+
+    unchanged = set()
+    for email in (e.to_wire() for e in emails):
+        message = cached[email["id"]]
+        same_keywords = held(json.loads(message["keywords"])) == held(email["keywords"])
+        same_mailboxes = {m["mailbox_id"] for m in message["mailboxes"]} == held(email["mailboxIds"])
+        if same_keywords and same_mailboxes:
+            unchanged.add(email["id"])
+
+    return [id for id in updated_ids if id not in unchanged]
+
+
 def _get_cached_blobs(account: str, blob_ids: list[str]) -> dict[str, bytes | None]:
     """Returns a dictionary of cached blobs for the provided blob IDs."""
 
@@ -1664,7 +1706,7 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 if mailboxes_to_reload:
                     frappe.publish_realtime("new_mail_created", list(mailboxes_to_reload), user=user)
 
-        if updated_ids := result.updated:
+        if updated_ids := _without_classification_echoes(account, client, result.updated):
             logger.info("messages-updated", count=len(updated_ids))
             _remove_cached_messages(account, updated_ids)
 

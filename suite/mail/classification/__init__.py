@@ -33,6 +33,7 @@ __all__ = [
     "classify_emails",
     "get_category",
     "is_enabled",
+    "take_echoes",
 ]
 
 # What the layers read of an Email beyond what a message is fetched with anyway.
@@ -43,6 +44,10 @@ LAYERS: tuple[Callable[[dict], Category | None], ...] = (classify_by_headers,)
 # Mail the user wrote has no category, and mail thrown out or held as spam is not worth giving
 # one: moved back to the inbox it is fetched afresh, and classified then.
 UNCLASSIFIED_ROLES = frozenset({"sent", "drafts", "junk", "trash"})
+
+# How long a category written to the server is waited for to come back as a change. One that
+# outlasts this is treated like any other update, at the cost of fetching the message again.
+ECHO_TTL = 60 * 60
 
 
 def is_enabled() -> bool:
@@ -78,6 +83,9 @@ def classify_emails(client: SuiteJMAPClient, account: str, emails: list[dict], m
         if not categories:
             return
 
+        # Before the write, not after: its echo can reach a worker before this request resumes.
+        _expect_echoes(account, list(categories))
+
         result = chunked_set(
             client,
             lambda b, chunk: b.mail.email.set(update=chunk),
@@ -99,3 +107,26 @@ def _awaits_category(email: dict, skipped_mailboxes: set[str]) -> bool:
         return False
 
     return skipped_mailboxes.isdisjoint(id for id, held in (email.get("mailboxIds") or {}).items() if held)
+
+
+def _echo_key(account: str) -> str:
+    return f"mail:classification:echo:{account}"
+
+
+def _expect_echoes(account: str, ids: list[str]) -> None:
+    """Note that `ids` are about to be given a category, a change the server will report back."""
+
+    frappe.cache.sadd(_echo_key(account), *ids)
+    frappe.cache.expire_key(_echo_key(account), ECHO_TTL)
+
+
+def take_echoes(account: str, ids: list[str]) -> set[str]:
+    """Which of `ids`, reported changed by the server, this site gave a category and has not
+    heard back about. Each is forgotten as it is taken: a later change to it is someone else's."""
+
+    expected = {frappe.safe_decode(id) for id in frappe.cache.smembers(_echo_key(account))}
+    echoes = expected.intersection(ids)
+    if echoes:
+        frappe.cache.srem(_echo_key(account), *echoes)
+
+    return echoes

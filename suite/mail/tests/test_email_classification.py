@@ -205,6 +205,9 @@ class _Mail:
             retry_policy=RetryPolicy(max_attempts=1),
         )
 
+        # No category this site wrote in an earlier test is still awaited.
+        classification.take_echoes(ACCOUNT, list(self.emails))
+
     def _get(self, arguments: dict, _server: FakeJMAPServer) -> dict:
         properties = arguments["properties"]
         return {
@@ -254,9 +257,13 @@ class _Mail:
             mail_message,
             get_user_for_jmap_account=mock.Mock(return_value=USER),
             get_account_client=mock.Mock(return_value=mail_message.account_view(self.client, ACCOUNT)),
+            get_jmap_client=mock.Mock(return_value=self.client),
             get_cached_mailboxes=mock.Mock(return_value=MAILBOXES),
             _get_cached_messages=lambda account, ids: {id: self.cache.get(id) for id in ids},
             _cache_messages=lambda account, messages: self.cache.update(messages),
+            _remove_cached_messages=lambda account, ids: [self.cache.pop(id, None) for id in ids],
+            get_sync_state=mock.Mock(return_value="s1"),
+            update_sync_state=mock.Mock(),
         )
 
     def fetch(self, *ids: str) -> list[dict]:
@@ -267,6 +274,32 @@ class _Mail:
             mock.patch.object(classification, "get_config", return_value=int(self.enabled)),
         ):
             return mail_message.get_messages(ACCOUNT, list(ids or self.emails))
+
+    def sync(self, *updated: str) -> list[mock.call]:
+        """`fetch_changes` over a run of changes that updated `updated`; returns what it announced."""
+
+        self.server.respond(
+            "Email/changes",
+            {
+                "accountId": ACCOUNT,
+                "oldState": "s1",
+                "newState": "s2",
+                "hasMoreChanges": False,
+                "created": [],
+                "updated": list(updated),
+                "destroyed": [],
+            },
+        )
+
+        with (
+            self.patched(),
+            mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
+            mock.patch.object(mail_message.frappe, "publish_realtime") as publish_realtime,
+        ):
+            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        log_mail_error.assert_not_called()
+        return publish_realtime.call_args_list
 
 
 def _keywords(message: dict) -> dict:
@@ -399,3 +432,70 @@ class ClassifyOnFetch(unittest.TestCase):
         self.assertEqual(message["id"], "e1")
         self.assertEqual(_keywords(message), {})
         log_mail_error.assert_called_once()
+
+
+class ClassificationEcho(unittest.TestCase):
+    """The category this site writes comes back from the server as a change to the message. It is
+    not news: the message was cached with its category, and no open client has anything to reload."""
+
+    def test_a_category_this_site_wrote_does_not_evict_or_announce_the_message(self):
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER))
+        mail.fetch()
+
+        announced = mail.sync("e1")
+
+        self.assertIn("e1", mail.cache)
+        self.assertEqual(announced, [])
+
+    def test_a_message_changed_elsewhere_as_well_is_evicted(self):
+        # Classified here and, before the changes were fetched, read on another device.
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER))
+        mail.fetch()
+        mail.emails["e1"]["keywords"]["$seen"] = True
+
+        announced = mail.sync("e1")
+
+        self.assertNotIn("e1", mail.cache)
+        self.assertEqual(announced, [mock.call("mail_changed", user=USER)])
+
+    def test_a_message_moved_elsewhere_as_well_is_evicted(self):
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER))
+        mail.fetch()
+        mail.emails["e1"]["mailboxIds"] = {"projects": True}
+
+        mail.sync("e1")
+
+        self.assertNotIn("e1", mail.cache)
+
+    def test_only_the_first_change_after_classifying_is_taken_for_the_echo(self):
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER))
+        mail.fetch()
+        mail.sync("e1")
+
+        # Whatever changed it this time was not this site giving it a category.
+        announced = mail.sync("e1")
+
+        self.assertNotIn("e1", mail.cache)
+        self.assertEqual(announced, [mock.call("mail_changed", user=USER)])
+
+    def test_other_updates_in_the_same_run_are_still_evicted(self):
+        mail = _Mail(
+            _email("e1", sender="hello@shop.example", headers=NEWSLETTER),
+            _email("e2", sender="alice@example.org", keywords={"category_primary": True}),
+        )
+        mail.fetch()
+
+        announced = mail.sync("e1", "e2")
+
+        self.assertIn("e1", mail.cache)
+        self.assertNotIn("e2", mail.cache)
+        self.assertEqual(announced, [mock.call("mail_changed", user=USER)])
+
+    def test_an_update_that_is_no_echo_costs_no_extra_request(self):
+        mail = _Mail(_email("e1", sender="alice@example.org", keywords={"category_primary": True}))
+        mail.fetch()
+        mail.server.requests.clear()
+
+        mail.sync("e1")
+
+        self.assertEqual(mail.calls("Email/get"), [])
