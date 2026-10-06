@@ -22,6 +22,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import { toTitleCase } from '@/apps/calendar/utils/format'
 import { brandingStore } from '@/apps/calendar/stores/branding'
 import { userStore } from '@/apps/calendar/stores/user'
+import { accountNumber } from '@/apps/calendar/utils/locations'
 import CalendarLogo from '@/apps/calendar/components/Icons/CalendarLogo.vue'
 import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
@@ -175,7 +176,10 @@ const menuItems = computed(() => [
 				icon: User,
 				label: __('Accounts'),
 				submenu: accountSubmenu(user.data.accounts, store.accountId, (accountId) =>
-					router.push({ name: route.name, params: { ...route.params, accountId } }),
+					router.push({
+						name: route.name,
+						params: { ...route.params, account: accountNumber(accountId) },
+					}),
 				),
 				condition: () => user.data.accounts?.length > 1,
 			},

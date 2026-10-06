@@ -25,7 +25,7 @@ from suite.calendar.doctype.calendar_event.invitations import (
     mail_attendees,
 )
 from suite.calendar.doctype.calendar_event.mailing_lists import expand_mailing_list_participants
-from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.doctype.user_account.user_account import get_account_number, get_user_for_jmap_account
 from suite.mail.jmap import (
     SetResult,
     SuiteJMAPClient,
@@ -908,8 +908,10 @@ def send_event_alert_notification(user: str, alert: dict, ctx: dict | None = Non
                 start_dt.strftime("%a, %d %b"), start_dt.strftime("%I:%M %p").lstrip("0")
             )
 
+        # The plain path form of /calendar/a/0/#day/…, which the app's router is handed as it
+        # is and a browser opening it rewrites.
         url = frappe.utils.get_url()
-        link = f"{url}/calendar/account/{account}"
+        link = f"{url}/calendar/a/{cint(get_account_number(user, account))}"
         if start_dt:
             link += f"/day/{start_dt.year}/{start_dt.month}/{start_dt.day}?event={quote(event_id, safe='')}"
             if recurrence_id:

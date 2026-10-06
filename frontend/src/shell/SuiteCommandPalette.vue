@@ -128,7 +128,7 @@
 			v-if="calendarSearchActive && showFilters"
 			:filter="calendarFilter"
 			:focus-field="calendarFilterToEdit"
-			:account="String(route.params.accountId || '')"
+			:account="routeAccountId"
 			:calendar-options="calendarFilterOptions"
 		/>
 
@@ -533,6 +533,10 @@ import type {
 import { getRecents } from '@/apps/drive/resources/files'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
+import {
+	accountIdAt as calendarAccountIdAt,
+	accountRoute as calendarAccountRoute,
+} from '@/apps/calendar/utils/locations'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
 import type { CalendarSearchResult as CalendarSearchResultItem } from '@/apps/calendar/components/CommandPalette/types'
 import { eventStartLocal } from '@/apps/calendar/utils/eventTime'
@@ -719,6 +723,8 @@ const {
 // Reached for only once the calendar is the app in view, which is the only time its panel is
 // on screen — the store is the calendar app's, and the shell outlives every app in it.
 let calendarUser: ReturnType<typeof calendarUserStore> | undefined
+// The account the page is on, which its URL names by the user's number for it.
+const routeAccountId = computed(() => calendarAccountIdAt(route.params.account) ?? '')
 const calendarFilterOptions = computed(() =>
 	calendarSearchActive.value ? ((calendarUser ??= calendarUserStore()).calendarOptions ?? []) : []
 )
@@ -1180,7 +1186,7 @@ watch(
 			})
 		} else if (calendarSearchActive.value) {
 			calendarSearch.submit({
-				account: String(route.params.accountId || ''),
+				account: routeAccountId.value,
 				text,
 				limit: CALENDAR_RESULT_LIMIT,
 				time_zone: dayjs.tz.guess(),
@@ -1451,18 +1457,16 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 				? String(route.name)
 				: 'calendar-month'
 			location = {
-				name: calendarRoute,
-				params: {
-					// The reader's own account, not the event's: a hit on a shared calendar
-					// belongs to whoever owns it, and routing there would switch the calendar
-					// to an account nobody thinks of as theirs. The grid shows the shared
-					// event inside the reader's view, and so does the link to it — which is
-					// what `account` is for, ids being unique only within an account.
-					accountId: route.params.accountId || item.account,
+				// The reader's own account, not the event's: a hit on a shared calendar
+				// belongs to whoever owns it, and routing there would switch the calendar
+				// to an account nobody thinks of as theirs. The grid shows the shared
+				// event inside the reader's view, and so does the link to it — which is
+				// what `account` is for, ids being unique only within an account.
+				...calendarAccountRoute(calendarRoute, routeAccountId.value || item.account, {
 					year: start.year(),
 					month: start.month() + 1,
 					day: start.date(),
-				},
+				}),
 				query: {
 					event: item.master_id || item.id,
 					recurrence: item.recurrence_id || undefined,

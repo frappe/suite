@@ -164,7 +164,7 @@ const setRoute = () => {
 	const target = dayjs().year(year).month(month).date(day)
 	const view = calendarRef.value?.activeView as 'Month' | 'Week' | 'Day' | 'Agenda'
 	const name = routeForMode(view)
-	const accountId = route.params.accountId
+	const account = route.params.account
 
 	// The other three view names double as dayjs units; Agenda does not, and an
 	// unknown unit quietly turns isSame into a millisecond comparison — never
@@ -176,8 +176,8 @@ const setRoute = () => {
 	// Today's period gets the bare URL. Query carries the open event's deep
 	// link; date/view navigation keeps it.
 	const location = dayjs().isSame(target, unit)
-		? { name, params: { accountId }, query: route.query }
-		: { name, params: { accountId, year, month: month + 1, day }, query: route.query }
+		? { name, params: { account }, query: route.query }
+		: { name, params: { account, year, month: month + 1, day }, query: route.query }
 
 	// Every change of view or period is a history entry, so Back retraces it.
 	// The one exception is when the URL already shows this view and period —
@@ -909,7 +909,7 @@ const findLinkedEvent = (
 	sources: any[][],
 	id,
 	recurrence,
-	account = (route.query.account || route.params.accountId) as string,
+	account = (route.query.account || store.accountId) as string,
 ) => {
 	if (!id) return null
 	const lists = sources.filter((data) => Array.isArray(data) && data.length)

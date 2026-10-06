@@ -6,6 +6,8 @@ import type { RouterHistory } from 'vue-router'
  *   /mail/a/0/#inbox/<thread>    in the address bar
  *   /mail/a/0/inbox/<thread>     to the router
  *
+ * and likewise /calendar/a/0/#week/2026/10/6.
+ *
  * The router still matches plain paths, so routes, guards and params know
  * nothing of the fragment. The history is the one place a URL passes between
  * the router and the browser, and the two forms are swapped there.

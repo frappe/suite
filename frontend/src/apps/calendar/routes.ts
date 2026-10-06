@@ -10,6 +10,11 @@ import type { RouteRecordRaw } from 'vue-router'
  * calendar guard once the active accountId is known (see ./router.ts). They use
  * a no-op render component since the guard always redirects them.
  *
+ * The pages of an account sit under `a/:account`, the user's number for it, and
+ * the suite history shows whatever follows in the URL's fragment: `a/0/week` here
+ * is /calendar/a/0/#week in the address bar (see @/router/fragmentHistory and
+ * utils/locations).
+ *
  * All real routes nest under a layout route (CalendarLayout) which provides the
  * calendar-local `$user` / `$dayjs` injections the views depend on.
  */
@@ -22,22 +27,22 @@ export const routes: RouteRecordRaw[] = [
 		component: () => import('@/apps/calendar/pages/CalendarLayout.vue'),
 		children: [
 			{
-				path: 'account/:accountId/month/:year?/:month?/:day?',
+				path: 'a/:account/month/:year?/:month?/:day?',
 				name: 'calendar-month',
 				component: () => import('@/apps/calendar/pages/CalendarView.vue'),
 			},
 			{
-				path: 'account/:accountId/week/:year?/:month?/:day?',
+				path: 'a/:account/week/:year?/:month?/:day?',
 				name: 'calendar-week',
 				component: () => import('@/apps/calendar/pages/CalendarView.vue'),
 			},
 			{
-				path: 'account/:accountId/day/:year?/:month?/:day?',
+				path: 'a/:account/day/:year?/:month?/:day?',
 				name: 'calendar-day',
 				component: () => import('@/apps/calendar/pages/CalendarView.vue'),
 			},
 			{
-				path: 'account/:accountId/agenda/:year?/:month?/:day?',
+				path: 'a/:account/agenda/:year?/:month?/:day?',
 				name: 'calendar-agenda',
 				component: () => import('@/apps/calendar/pages/CalendarView.vue'),
 			},
@@ -45,14 +50,14 @@ export const routes: RouteRecordRaw[] = [
 			// than the palette raised over the calendar, so a result opens where it was
 			// found and Back returns to the search. On a desktop search is the palette.
 			{
-				path: 'account/:accountId/search',
+				path: 'a/:account/search',
 				name: 'calendar-search',
 				component: () => import('@/apps/calendar/pages/CalendarView.vue'),
 			},
 			// Phone-only destination: the tab bar's third tab. On a desktop the same
 			// settings are the SettingsDialog the sidebar opens.
 			{
-				path: 'account/:accountId/profile',
+				path: 'a/:account/profile',
 				name: 'calendar-profile',
 				component: () => import('@/apps/calendar/pages/ProfileView.vue'),
 			},
@@ -65,7 +70,7 @@ export const routes: RouteRecordRaw[] = [
 				meta: { shortcut: true },
 			},
 			{
-				path: 'account/:accountId?',
+				path: 'a/:account?',
 				name: 'calendar-account-shortcut',
 				component: ShortcutRedirect,
 				meta: { shortcut: true },

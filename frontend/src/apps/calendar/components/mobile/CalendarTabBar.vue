@@ -65,7 +65,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Avatar, Button } from 'frappe-ui'
 import { CalendarPlus, Search } from 'lucide-vue-next'
 
-import { userStore } from '@/apps/calendar/stores/user'
+import { accountRoute } from '@/apps/calendar/utils/locations'
 import { useViewSheet } from '@/apps/calendar/composables/useViewSheet'
 import MobileViewSheet from '@/apps/calendar/components/mobile/MobileViewSheet.vue'
 import MobileAppTab from '@/components/mobile/MobileAppTab.vue'
@@ -75,7 +75,6 @@ import { routeForView, viewForRoute, viewIcon, viewLabel } from '@/apps/calendar
 
 const route = useRoute()
 const router = useRouter()
-const store = userStore()
 const user = inject('$user') as { data?: Record<string, any> } | undefined
 const { openViewSheet } = useViewSheet()
 
@@ -106,7 +105,7 @@ const calendarActive = computed(() => !offCalendar.value)
 // Re-tapping Search while on it is nothing to do: the field is already there to type in.
 const openSearch = () => {
 	if (searchActive.value) return
-	router.push({ name: 'calendar-search', params: { accountId: store.accountId } })
+	router.push(accountRoute('calendar-search'))
 }
 
 /**
@@ -114,10 +113,7 @@ const openSearch = () => {
  * the calendar, not a reason to be put back at its front door. The agenda is
  * home only when nothing is remembered. A date-less route means today.
  */
-const calendarRoute = () => ({
-	name: lastCalendarView() ?? routeForView('agenda'),
-	params: { accountId: store.accountId },
-})
+const calendarRoute = () => accountRoute(lastCalendarView() ?? routeForView('agenda'))
 
 // Re-tapping the Calendar tab opens the view switcher, as re-tapping mail's Mail
 // tab opens the folder switcher: the tab you are already on offers the one thing
@@ -138,7 +134,7 @@ const openProfile = () => {
 		if (route.query.tab) router.replace({ query: {} })
 		return
 	}
-	router.push({ name: 'calendar-profile', params: { accountId: store.accountId } })
+	router.push(accountRoute('calendar-profile'))
 }
 
 // Creating is a query the calendar view answers, the way mail's compose is a route:

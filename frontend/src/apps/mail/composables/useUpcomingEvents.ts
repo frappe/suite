@@ -4,6 +4,7 @@ import { createResource } from 'frappe-ui'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
+import { accountNumber } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 
 // Module singletons: the sidebar widget renders the list while DefaultLayout
@@ -117,7 +118,7 @@ export const eventDayRoute = (event: any, accountId: string) => {
 			: dayjs(event.start)
 	const day = `${start.year()}/${start.month() + 1}/${start.date()}`
 	return {
-		path: `/calendar/account/${encodeURIComponent(accountId)}/day/${day}`,
+		path: `/calendar/a/${accountNumber(accountId)}/day/${day}`,
 		query: { event: event.id, recurrence: event.recurrence_id || undefined },
 	}
 }

@@ -17,6 +17,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useSessionStore } from '@/boot/session'
 import { userStore } from '@/apps/calendar/stores/user'
+import { accountNumber } from '@/apps/calendar/utils/locations'
 import { useSettingsTabs } from '@/apps/calendar/composables/useSettingsTabs'
 import MobileProfilePage from '@/components/MobileProfilePage.vue'
 
@@ -32,6 +33,7 @@ const accounts = computed(() => store.userResource?.data?.accounts ?? [])
 
 const switchAccount = (accountId: string) => {
 	if (accountId === store.accountId) return
-	router.push({ name: route.name!, params: { ...route.params, accountId }, query: route.query })
+	const account = accountNumber(accountId)
+	router.push({ name: route.name!, params: { ...route.params, account }, query: route.query })
 }
 </script>

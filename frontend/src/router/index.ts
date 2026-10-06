@@ -155,9 +155,10 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  // Served at site root; the SPA owns all the app prefixes below '/'. Mail's account
-  // pages are addressed by fragment (/mail/a/0/#inbox), which the router never sees.
-  history: withAccountFragments(createWebHistory('/'), ['mail']),
+  // Served at site root; the SPA owns all the app prefixes below '/'. The account pages
+  // of Mail and Calendar are addressed by fragment (/mail/a/0/#inbox), which the router
+  // never sees.
+  history: withAccountFragments(createWebHistory('/'), ['mail', 'calendar']),
   routes,
 })
 
