@@ -80,13 +80,20 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 const session = useSession()
-const fromDate = dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss')
-const toDate = dayjs().add(1, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss')
+// The window follows the same clock as the Today/Tomorrow groups below, so a tab
+// left open across midnight asks for the new tomorrow instead of the one it
+// fetched when it mounted. `refetch` sends that request when the window moves.
+const today = computed(() => dayjs(now.value).startOf('day'))
+const fromDate = computed(() => today.value.format('YYYY-MM-DD[T]HH:mm:ss'))
+const toDate = computed(() =>
+  today.value.add(1, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
+)
 const timeZone = timezone()
 
 const upcomingEvents = useCall({
   url: '/api/v2/method/suite.calendar.api.get_calendar_events',
   immediate: false,
+  refetch: true,
   cacheKey:
     session.user.value?.id && calendarStore.accountId
       ? [
@@ -94,15 +101,15 @@ const upcomingEvents = useCall({
           window.location.origin,
           session.user.value.id,
           calendarStore.accountId,
-          fromDate,
-          toDate,
+          fromDate.value,
+          toDate.value,
           timeZone,
         ]
       : undefined,
   params: () => ({
     account: calendarStore.accountId,
-    from_date: fromDate,
-    to_date: toDate,
+    from_date: fromDate.value,
+    to_date: toDate.value,
     time_zone: timeZone,
   }),
 })

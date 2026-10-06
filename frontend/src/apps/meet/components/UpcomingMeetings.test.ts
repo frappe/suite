@@ -58,7 +58,7 @@ vi.mock('frappe-ui/list', () => {
 
 let cleanup: (() => void) | undefined
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval'] })
   vi.setSystemTime(new Date(2026, 8, 30, 8, 0))
   state.push.mockClear()
   state.events = [
@@ -138,5 +138,22 @@ describe('Meet upcoming list', () => {
       from_date: '2026-09-30T00:00:00',
       to_date: '2026-10-01T23:59:59',
     })
+  })
+
+  it('requests the next day when midnight passes while the tab stays open', async () => {
+    const root = await mount()
+    expect(root.textContent).toContain('Design review')
+
+    vi.setSystemTime(new Date(2026, 9, 1, 8, 0))
+    vi.advanceTimersByTime(30_000)
+    await nextTick()
+
+    // The window the groups below read has moved, so the request must move too.
+    expect(state.options!.params()).toMatchObject({
+      from_date: '2026-10-01T00:00:00',
+      to_date: '2026-10-02T23:59:59',
+    })
+    expect(root.textContent).toContain('Team planning')
+    expect(root.textContent).not.toContain('Design review')
   })
 })
