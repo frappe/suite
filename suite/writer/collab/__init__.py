@@ -56,9 +56,9 @@ def live_state(node: str) -> pycrdt.Doc | None:
     Read whether collaboration is on or not, so the media sweep keeps what a log names.
     """
     doc = collab.find(ADAPTER, node)
-    if not doc:
+    read = collab.read(ADAPTER, doc.id, own_snapshot=False) if doc else None
+    if read is None:
         return None
-    read = collab.read(ADAPTER, doc.id, own_snapshot=False)
     parts = ([read["checkpoint"]] if read["checkpoint"] else []) + [payload for _rev, payload in read["rows"]]
     return compaction.load(parts)
 
@@ -71,9 +71,9 @@ def live_checkpoint(node: str) -> tuple[dict, bytes] | None:
     A state or tail larger than a compaction job would take is refused.
     """
     doc = log_of(node)
-    if not doc:
+    read = collab.read(ADAPTER, doc.id, integrated=True, own_snapshot=False) if doc else None
+    if read is None:
         return None
-    read = collab.read(ADAPTER, doc.id, integrated=True, own_snapshot=False)
     rows = [payload for _rev, payload in read["rows"]]
     if not rows:
         return read, read["checkpoint"] or pycrdt.Doc().get_update()
@@ -116,7 +116,11 @@ def remap_log(node: str, rewrite) -> None:
     attribute, mark and embed value, and give nothing more to rewrite.
     """
     doc = collab.find(ADAPTER, node)
+    if not doc:
+        return
     read = collab.read(ADAPTER, doc.id, own_snapshot=False)
+    if read is None:
+        return
     state = read["checkpoint"]
     remapped = updates.rewrite_values(state, rewrite)
     if remapped == state:

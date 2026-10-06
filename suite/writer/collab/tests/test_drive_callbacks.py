@@ -511,3 +511,34 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         with self.assertRaisesRegex(drive.DriveConflict, "Open the document to download it"):
             writer_drive.export(self.docname(node), "html")
+
+    def purging_on_find(self):
+        """A purge that lands after a log is found and before it is read."""
+        found = collab.find
+
+        def find(adapter: str, node: str):
+            doc = found(adapter, node)
+            if doc:
+                frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc.id)
+                self.addCleanup(writer_collab.delete_purged, doc.id)
+            return doc
+
+        return patch.object(collab, "find", find)
+
+    def test_a_log_purged_between_finding_and_reading_it_reads_as_missing(self):
+        reads = (
+            (
+                "open",
+                lambda node: read_open(call(routes.collab_get, node).get_data())[0]["state"],
+                "unconverted",
+            ),
+            ("live state", writer_collab.live_state, None),
+            ("live checkpoint", writer_collab.live_checkpoint, None),
+            ("remap", lambda node: writer_collab.remap_log(node, lambda value: value), None),
+        )
+        for name, read, expected in reads:
+            with self.subTest(read=name):
+                node = self.new_document()
+                self.type_into(node, ["one"])
+                with self.purging_on_find():
+                    self.assertEqual(read(node), expected)

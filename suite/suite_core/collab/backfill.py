@@ -18,10 +18,14 @@ def backfill_clocks(adapter: str, owner_of: Callable[[str], str | None]) -> None
     ):
         try:
             log = read(adapter, doc_id)
+            if log is None:
+                continue
             unreadable = {rev for rev, payload in log["rows"] if quarantine.readable(payload) is None}
             if unreadable:
                 quarantine.quarantine(adapter, doc_id, unreadable, "malformed_row", owner_of)
                 log = read(adapter, doc_id)
+                if log is None:
+                    continue
             clocks = ingest.next_clocks(
                 ([log["checkpoint"]] if log["checkpoint"] else [])
                 + [payload for _rev, payload in log["rows"]]

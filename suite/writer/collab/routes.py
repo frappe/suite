@@ -126,6 +126,8 @@ def _open(node: str) -> Response:
     except collab.ChainBroken:
         frappe.log_error(title="Collab open: chain_break", message=f"{ADAPTER} document {doc.id}")
         raise collab.Refusal(503, "chain_break") from None
+    if snapshot is None:
+        return _frame({"state": "unconverted", "proto": collab.PROTO})
     consider_compaction(doc.id)
     return _frame(
         collab.open_header(snapshot, can_write=can_write),
