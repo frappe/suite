@@ -21,8 +21,11 @@ class Struct:
     client: int
     clock: int
     length: int
+    # The content ref from the info byte: 0 for GC, 10 for Skip
+    kind: int = 0
     origin: tuple[int, int] | None = None
     right_origin: tuple[int, int] | None = None
+    parent: tuple[int, int] | None = None
     # Clocks that fall between the two halves of a surrogate pair in a string item's text
     pairs: list[int] = field(default_factory=list)
 
@@ -148,8 +151,8 @@ def read_struct(reader: Reader, client: int, clock: int) -> Struct:
     info = reader.byte()
     ref = info & 0x1F
     if ref in (0, 10):  # GC and Skip
-        return Struct(client, clock, reader.uint())
-    struct = Struct(client, clock, 0)
+        return Struct(client, clock, reader.uint(), ref)
+    struct = Struct(client, clock, 0, ref)
     if info & 0x80:
         struct.origin = reader.id()
     if info & 0x40:
@@ -158,7 +161,7 @@ def read_struct(reader: Reader, client: int, clock: int) -> Struct:
         if reader.uint() == 1:
             reader.string()
         else:
-            reader.id()
+            struct.parent = reader.id()
         if info & 0x20:
             reader.string()
     struct.length = read_content(reader, ref, struct)

@@ -19,7 +19,7 @@ from suite.suite_core.collab.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
-from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open
+from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open, typed
 
 WRITER = "writer-collab-writer@example.com"
 
@@ -576,8 +576,8 @@ class TestWriterCompactionTriggers(CheckpointCase):
             "client_id"
         ]
         lineage = self.doc_row(node).lineage
-        for seq, size in enumerate(sizes, start=1):
-            body = push_body(lineage, sid, cid, seq, 0, os.urandom(size))
+        for seq, update in enumerate(typed(cid, ["x" * size for size in sizes]), start=1):
+            body = push_body(lineage, sid, cid, seq, 0, update)
             if final and seq == len(sizes):
                 length = int.from_bytes(body[:4], "big")
                 header = json.loads(body[4 : 4 + length]) | {"final": True}

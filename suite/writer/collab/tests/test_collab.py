@@ -7,6 +7,7 @@ import uuid
 from unittest.mock import patch
 
 import frappe
+import pycrdt
 from frappe.tests import IntegrationTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
@@ -60,6 +61,19 @@ def read_open(data: bytes) -> tuple[dict, bytes, list[tuple[int, bytes]]]:
     return header, checkpoint, rows
 
 
+def typed(cid: int, texts: list[str]) -> list[bytes]:
+    """The updates a tab writing as `cid` sends as it types each text in turn, each continuing the clocks before it."""
+    doc = pycrdt.Doc(client_id=cid)
+    seen = doc.get_state()
+    text = doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText())
+    updates = []
+    for each in texts:
+        text.insert(len(str(text)), each)
+        updates.append(doc.get_update(seen))
+        seen = doc.get_state()
+    return updates
+
+
 def push_body(
     lineage: str,
     sid: str,
@@ -104,6 +118,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.addCleanup(self.restore_mode)
         frappe.set_user(WRITER)
         self.addCleanup(frappe.set_user, "Administrator")
+        self.tabs = {}
 
     def restore_mode(self):
         frappe.db.set_single_value("Suite Collab Settings", "mode", self.mode or "off")
@@ -143,7 +158,14 @@ class TestWriterCollab(IntegrationTestCase):
             "client_id"
         ]
 
-    def push(self, node: str, sid: str, cid: int, seq: int, payload: bytes = b"\x00", entries=None):
+    def typed(self, cid: int, seq: int, text: str) -> bytes:
+        """What the tab writing as `cid` sends as `seq`: `text`, typed after what it sent as each earlier seq."""
+        texts = self.tabs.setdefault(cid, {})
+        texts[seq] = text
+        return typed(cid, [texts.setdefault(earlier, str(earlier)) for earlier in range(1, seq + 1)])[-1]
+
+    def push(self, node: str, sid: str, cid: int, seq: int, payload: bytes | None = None, entries=None):
+        payload = payload or self.typed(cid, seq, str(seq))
         header, rows = self.open(node)
         body = push_body(
             header["lineage"], sid, cid, seq, rows[-1][0] if rows else 0, payload, entries=entries
@@ -178,20 +200,25 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(self.open(node)[0]["state"], "live")
         first, second = self.session(node), self.session(node)
 
+        sent = []
         for seq in (1, 2):
-            self.assertEqual(self.push(node, *first, seq, b"a%d" % seq)[0], 200)
-            self.assertEqual(self.push(node, *second, seq, b"b%d" % seq)[0], 200)
+            for sid, cid in (first, second):
+                sent.append(self.typed(cid, seq, f"{cid}:{seq}"))
+                self.assertEqual(self.push(node, sid, cid, seq, sent[-1])[0], 200)
 
         _header, rows = self.open(node)
-        self.assertEqual([payload for _, payload in rows], [b"a1", b"b1", b"a2", b"b2"])
+        self.assertEqual([payload for _, payload in rows], sent)
         self.assert_one_order(node, 4)
 
     def test_a_push_at_the_size_cap_keeps_every_byte_value(self):
         self.set_mode("on")
         node = self.new_document()
-        payload = bytes(range(256)) * 1024
+        sid, cid = self.session(node)
+        doc = pycrdt.Doc(client_id=cid)
+        doc.get("meta", type=pycrdt.Map)["blob"] = bytes(range(256)) * 1024
+        payload = doc.get_update()
 
-        self.assertEqual(self.push(node, *self.session(node), 1, payload)[0], 200)
+        self.assertEqual(self.push(node, sid, cid, 1, payload)[0], 200)
 
         self.assertEqual(self.open(node)[1], [(1, payload)])
         self.assert_one_order(node, 1)
@@ -214,9 +241,12 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         sid, cid = self.session(node)
 
-        first = self.push(node, sid, cid, 1, b"a")
-        status, body = self.push(node, sid, cid, 1, b"ab", entries=[b"a", b"b"])
-        rest = self.push(node, sid, cid, 2, b"b")
+        a, b = typed(cid, ["a", "b"])
+        both = pycrdt.merge_updates(a, b)
+
+        first = self.push(node, sid, cid, 1, a)
+        status, body = self.push(node, sid, cid, 1, both, entries=[a, b])
+        rest = self.push(node, sid, cid, 2, b)
 
         self.assertEqual((status, body["dup"], body["acked"], body["rev"]), (200, True, 1, first[1]["rev"]))
         self.assertEqual((rest[0], rest[1]["rev"], rest[1]["acked"]), (200, 2, 2))
@@ -227,29 +257,48 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         sid, cid = self.session(node)
 
-        self.push(node, sid, cid, 1, b"a")
-        status, body = self.push(node, sid, cid, 1, b"c")
+        a = self.typed(cid, 1, "a")
+        self.push(node, sid, cid, 1, a)
+        status, body = self.push(node, sid, cid, 1, self.typed(cid, 1, "c"))
 
         self.assertEqual((status, body), (409, {"collab": "seq_conflict"}))
-        self.assertEqual([payload for _, payload in self.open(node)[1]], [b"a"])
+        self.assertEqual([payload for _, payload in self.open(node)[1]], [a])
 
     def test_a_push_that_skips_seqs_is_out_of_another_lineage_or_ahead_of_the_log_is_refused(self):
         self.set_mode("on")
         node = self.new_document()
         sid, cid = self.session(node)
         lineage = self.open(node)[0]["lineage"]
+        first, second = typed(cid, ["a", "b"])
 
         for body, refusal in (
-            (push_body(lineage, sid, cid, 2, 0, b"a"), {"collab": "seq", "acked": 0}),
-            (push_body("0" * 32, sid, cid, 1, 0, b"a"), {"collab": "lineage"}),
-            (push_body(lineage, sid, cid, 1, 1, b"a"), {"collab": "diverged"}),
+            (push_body(lineage, sid, cid, 2, 0, second), {"collab": "seq", "acked": 0}),
+            (push_body("0" * 32, sid, cid, 1, 0, first), {"collab": "lineage"}),
+            (push_body(lineage, sid, cid, 1, 1, first), {"collab": "diverged"}),
         ):
             with self.subTest(refusal=refusal):
                 response = call(routes.collab_updates_post, node, body=body)
                 self.assertEqual((response.status_code, answer(response)), (409, refusal))
 
         self.assertEqual(self.open(node)[1], [])
-        self.assertEqual(self.push(node, sid, cid, 1, b"a")[1]["rev"], 1)
+        self.assertEqual(self.push(node, sid, cid, 1, first)[1]["rev"], 1)
+
+    def test_a_push_of_bytes_no_tab_of_this_writer_could_send_is_refused_and_stores_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        lineage = self.open(node)[0]["lineage"]
+        [own] = typed(cid, ["a"])
+
+        for case, payload in (("not an update", b"\x00\x01"), ("another writer's", typed(cid + 1, ["a"])[0])):
+            with self.subTest(case):
+                response = call(
+                    routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, payload)
+                )
+                self.assertEqual((response.status_code, answer(response)), (400, {"collab": "malformed"}))
+
+        self.assertEqual(self.open(node)[1], [])
+        self.assertEqual(self.push(node, sid, cid, 1, own)[0], 200)
 
     def test_a_push_that_fails_midway_leaves_no_trace(self):
         self.set_mode("on")
@@ -263,11 +312,12 @@ class TestWriterCollab(IntegrationTestCase):
             return sql(query, *args, **kwargs)
 
         with patch.object(frappe.db, "sql", failing), self.assertRaises(RuntimeError):
-            self.push(node, sid, cid, 1, b"a")
+            self.push(node, sid, cid, 1, self.typed(cid, 1, "a"))
 
         self.assertEqual(self.open(node)[1], [])
-        self.assertEqual(self.push(node, sid, cid, 1, b"b")[1]["rev"], 1)
-        self.assertEqual(self.open(node)[1], [(1, b"b")])
+        b = self.typed(cid, 1, "b")
+        self.assertEqual(self.push(node, sid, cid, 1, b)[1]["rev"], 1)
+        self.assertEqual(self.open(node)[1], [(1, b)])
         self.assert_one_order(node, 1)
 
     def test_a_worker_killed_at_any_step_loses_and_duplicates_nothing(self):
@@ -295,7 +345,7 @@ class TestWriterCollab(IntegrationTestCase):
                 patch.object(frappe.db, "sql", counted(sql, after=False)),
                 patch.object(frappe.db, "commit", counted(commit, after=True)),
             ):
-                return self.push(node, sid, cid, seq, b"%d" % seq)
+                return self.push(node, sid, cid, seq)
 
         kill_at = 0
         self.assertEqual(push_counted(1)[0], 200)
@@ -307,11 +357,12 @@ class TestWriterCollab(IntegrationTestCase):
                     push_counted(seq)
                 except RuntimeError:
                     frappe.db.rollback()
-                self.assertEqual(self.push(node, sid, cid, seq, b"%d" % seq)[0], 200)
+                self.assertEqual(self.push(node, sid, cid, seq)[0], 200)
 
         self.assert_one_order(node, steps + 1)
         self.assertEqual(
-            [payload for _, payload in self.open(node)[1]], [b"%d" % seq for seq in range(1, steps + 2)]
+            [payload for _, payload in self.open(node)[1]],
+            typed(cid, [str(seq) for seq in range(1, steps + 2)]),
         )
 
     def test_a_user_without_edit_access_cannot_push(self):
@@ -402,8 +453,9 @@ class TestWriterCollab(IntegrationTestCase):
 
         self.assertEqual(self.claim(node, sid, cid, lineage), (200, {"claim": "ok"}))
         self.assertEqual(self.claim(node, sid, cid, lineage), (200, {"claim": "ok"}))
-        self.assertEqual(self.push(node, sid, cid, 1, b"offline")[0], 200)
-        self.assertEqual([payload for _, payload in self.open(node)[1]], [b"offline"])
+        offline = self.typed(cid, 1, "offline")
+        self.assertEqual(self.push(node, sid, cid, 1, offline)[0], 200)
+        self.assertEqual([payload for _, payload in self.open(node)[1]], [offline])
 
     def test_a_claim_on_a_taken_id_or_another_lineage_binds_nothing(self):
         self.set_mode("on")
@@ -439,10 +491,11 @@ class TestWriterCollab(IntegrationTestCase):
             frappe.init(site=site)
             frappe.connect()
             frappe.set_user(WRITER)
+            sent = typed(cid, [str(seq) for seq in range(1, pushes + 1)])
             try:
                 seq = 1
                 while seq <= pushes:
-                    body = push_body(lineage, sid, cid, seq, 0, uuid.uuid4().bytes)
+                    body = push_body(lineage, sid, cid, seq, 0, sent[seq - 1])
                     response = call(routes.collab_updates_post, node, body=body)
                     if response.status_code == 200:
                         seq += 1

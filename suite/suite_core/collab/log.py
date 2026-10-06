@@ -18,6 +18,7 @@ import struct
 import frappe
 from frappe.utils import now_datetime
 
+from suite.suite_core.collab import ingest
 from suite.suite_core.collab.tables import table
 
 PROTO = 1
@@ -291,6 +292,10 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
     answer = replay(adapter, doc_id, header, int(session.acked_seq), int(head))
     if answer:
         return answer
+    try:
+        ingest.check(payload, header["cid"])
+    except ValueError:
+        raise Refusal(400, "malformed") from None
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
