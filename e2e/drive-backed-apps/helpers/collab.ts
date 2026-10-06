@@ -71,15 +71,39 @@ export async function expectConverged(
 	return blocks;
 }
 
-/** Store the document's current bytes as a named version, through Drive's versions route. */
+/** Store the document's current bytes as a named version, through Drive's versions route; answers its seq. */
 export async function takeVersion(
 	request: APIRequestContext,
 	node: string,
 	label: string,
-): Promise<void> {
+): Promise<string> {
 	const response = await request.post(
 		`/api/suite/drive/nodes/${encodeURIComponent(node)}/versions`,
 		{ data: { kind: "named", label } },
 	);
 	expect(response.ok(), await response.text()).toBe(true);
+	return ((await response.json()) as { data: { seq: string } }).data.seq;
+}
+
+/** Paste a 16 px PNG at the cursor, as a picture copied from another app would be. */
+export async function pastePicture(page: Page): Promise<void> {
+	await writerEditor(page).evaluate((editor) => {
+		const png =
+			"iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGklEQVR4nGP4z8BAEhrVMKphVMOohlENQ1UDAOWw/wF6FG3VAAAAAElFTkSuQmCC";
+		const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+		const data = new DataTransfer();
+		data.items.add(new File([bytes], "dot.png", { type: "image/png" }));
+		editor.dispatchEvent(
+			new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+		);
+	});
+}
+
+/** Whether each picture the editor shows has loaded. */
+export function picturesLoaded(page: Page): Promise<boolean[]> {
+	return writerEditor(page)
+		.locator("img[src]")
+		.evaluateAll((images) =>
+			(images as HTMLImageElement[]).map((image) => image.complete && image.naturalWidth > 0),
+		);
 }
