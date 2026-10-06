@@ -38,6 +38,7 @@ from suite.calendar.sharing import holds_any_right, may_share, rights_for_role, 
 from suite.mail.jmap import (
     account_view,
     format_method_error,
+    format_set_error,
     get_account_client,
     get_across_accounts,
     get_jmap_client,
@@ -335,8 +336,8 @@ def _update_calendar(account: str, id: str, patch: dict, title: str, fallback: s
         frappe.throw(_(format_method_error(e)), title=title)
 
     if id not in response.updated:
-        error = response.not_updated.get(id) or {}
-        frappe.throw(error.get("description") or fallback, title=title)
+        error = response.not_updated.get(id)
+        frappe.throw(_(format_set_error(error)) if error else fallback, title=title)
 
 
 class Sharee(BaseModel):
