@@ -50,6 +50,9 @@ declare global {
 
   /** Build time stamped by Vite; the server sends its own as `X-Suite-Build`. */
   const __SUITE_BUILD__: string
+
+  /** The Yjs version the collab kernel bundles, injected by vite.kernel.config.ts. */
+  const __KERNEL_YJS__: string
 }
 
 export {}

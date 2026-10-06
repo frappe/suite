@@ -8,7 +8,8 @@ for (const name of ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']) {
   Reflect.deleteProperty(globalThis, name)
 }
 
-// The Node child the server runs on demand: {checkpoint, rows} in base64 on stdin, a verdict on stdout
+// The Node child the server runs on demand: {checkpoint, rows} in base64 on stdin, a verdict
+// and the bundled Yjs version on stdout
 const chunks: Buffer[] = []
 process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk))
 process.stdin.on('end', () => {
@@ -22,5 +23,5 @@ process.stdin.on('end', () => {
     input.rows.map(bytes),
     writerFault,
   )
-  process.stdout.write(JSON.stringify(verdict))
+  process.stdout.write(JSON.stringify({ ...verdict, yjs: __KERNEL_YJS__ }))
 })

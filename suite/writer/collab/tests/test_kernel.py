@@ -144,7 +144,20 @@ class TestKernel(UnitTestCase):
             text=True,
             check=True,
         )
-        self.assertEqual(done.stdout.splitlines(), ["[]", '{"verdict":"clean"}'])
+        found, verdict = done.stdout.splitlines()
+        self.assertEqual((found, json.loads(verdict)["verdict"]), ("[]", "clean"))
+
+    def test_the_bundle_runs_the_yjs_the_browsers_get(self):
+        lockfile = (Path(__file__).parents[4] / "yarn.lock").read_text()
+        locked = set(re.findall(r'^"?yjs@[^\n]*\n\s+version "([^"]+)"', lockfile, re.M))
+        done = subprocess.run(
+            [kernel.usable_node(), str(BUNDLE)],
+            input=json.dumps({"checkpoint": None, "rows": []}),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual({json.loads(done.stdout)["yjs"]}, locked)
 
     def test_a_child_that_hangs_or_crashes_fails_loudly(self):
         with tempfile.TemporaryDirectory() as folder:
