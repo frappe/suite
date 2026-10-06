@@ -59,8 +59,10 @@ def chain_next(previous: bytes, rev: int, payload_sha: bytes) -> bytes:
 
 
 def find(adapter: str, node: str) -> dict | None:
+    """`node`'s log, or None when it has none or its log is purged."""
     rows = frappe.db.sql(
-        f"SELECT `id`, `lineage`, `head_rev`, `head_chain` FROM `{table(adapter, 'doc')}` WHERE `node` = %s",
+        f"""SELECT `id`, `lineage`, `head_rev`, `head_chain` FROM `{table(adapter, "doc")}`
+        WHERE `node` = %s AND `mode` != 'purged'""",
         node,
         as_dict=True,
     )
@@ -338,7 +340,7 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
-        f"SELECT `lineage`, `head_rev`, `head_chain` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
+        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
         doc_id,
         as_dict=True,
     )
@@ -346,6 +348,8 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
         raise busy()
     doc = locked[0]
     try:
+        if doc.mode == "purged":
+            raise Refusal(404, "not_found")
         if header["lineage"] != doc.lineage:
             raise Refusal(409, "lineage")
         session = session_for(adapter, doc_id, header, principal)

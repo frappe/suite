@@ -359,6 +359,48 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.assertEqual(frappe.db.count("Error Log", {"method": "Collab compaction: chain_break"}), alerts)
         writer_collab.delete_purged(doc_id)
 
+    def test_a_purged_log_reads_as_missing_on_every_route(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        doc_id = self.doc_row(node).id
+        sid = uuid.uuid4().hex
+        frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+        frappe.db.commit()
+        self.addCleanup(writer_collab.delete_purged, doc_id)
+
+        header, _checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        self.assertEqual((header["state"], rows), ("unconverted", []))
+        for handler, body in (
+            (routes.collab_updates_get, b""),
+            (routes.collab_sessions_post, json.dumps({"sid": sid}).encode()),
+            (routes.collab_updates_post, push_body("x", sid, 1, 1, 0, b"\x00")),
+        ):
+            self.assertEqual(answer(call(handler, node, body=body)), {"collab": "unconverted"})
+        self.assertEqual(self.rows_of(doc_id)["update"], 1)
+        self.assertEqual(self.rows_of(doc_id)["session"], 1)
+
+    def test_a_push_that_meets_a_purge_is_refused_and_writes_nothing(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        doc_id = self.doc_row(node).id
+        sid = uuid.uuid4().hex
+        cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
+            "client_id"
+        ]
+        lineage = self.doc_row(node).lineage
+        frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+        frappe.db.commit()
+        self.addCleanup(writer_collab.delete_purged, doc_id)
+        doc = pycrdt.Doc(client_id=cid)
+        doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText("two"))
+        header, payload = collab.parse_push(push_body(lineage, sid, cid, 1, 1, doc.get_update()))
+
+        with self.assertRaises(collab.Refusal) as refused:
+            collab.push(routes.ADAPTER, doc_id, header, payload, WRITER)
+
+        self.assertEqual((refused.exception.status, refused.exception.body), (404, {"collab": "not_found"}))
+        self.assertEqual(self.rows_of(doc_id)["update"], 1)
+
     def test_drive_refuses_to_export_a_collab_document(self):
         node = self.new_document()
         self.type_into(node, ["one"])
