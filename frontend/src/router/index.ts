@@ -19,6 +19,7 @@ import { routes as sheetsRoutes } from '@/apps/sheets/routes'
 import { routes as slidesRoutes } from '@/apps/slides/routes'
 import { routes as writerRoutes } from '@/apps/writer/routes'
 import { hasServerBoot, useSessionStore } from '@/boot/session'
+import { withAccountFragments } from './fragmentHistory'
 import APPLE_SPLASH_DEVICES from './pwa-splash-devices.json'
 
 declare module 'vue-router' {
@@ -154,8 +155,9 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  // Served at site root; the SPA owns all the app prefixes below '/'.
-  history: createWebHistory('/'),
+  // Served at site root; the SPA owns all the app prefixes below '/'. Mail's account
+  // pages are addressed by fragment (/mail/a/0/#inbox), which the router never sees.
+  history: withAccountFragments(createWebHistory('/'), ['mail']),
   routes,
 })
 
