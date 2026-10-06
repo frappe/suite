@@ -3,13 +3,15 @@
 import io
 import time
 from collections.abc import Iterable
-from typing import Literal
+from contextlib import closing
+from typing import IO, Literal
 
 import frappe
 from frappe import _
 from frappe.storage.blob import put_blob, revive_blob
-from frappe.storage.driver import get_driver
+from frappe.storage.driver import StorageDriver, get_driver
 from frappe.storage.url import signed_url_for_blob
+from frappe.utils import cint
 from PIL import Image, ImageOps
 
 from suite.drive._core.access import require
@@ -26,6 +28,9 @@ PREVIEW_LONGEST_SIDE = 512
 MIN_PREVIEW_SIZE = 128
 MAX_PREVIEW_SIZE = 2048
 PREVIEW_TTL_SECONDS = 15 * 60
+# One ranged read of a video's source blob. PyAV reads 32 KB at a time; a
+# larger buffer turns those reads into a few requests, not hundreds.
+RANGE_READ_BYTES = 1024 * 1024
 
 
 def is_plausible_preview_size(value: int) -> bool:
@@ -173,14 +178,13 @@ def render(node: str) -> None:
     source = frappe.db.get_value(
         "File Blob",
         source_blob,
-        ["name", "key", "driver", "is_private", "status"],
+        ["name", "key", "driver", "is_private", "status", "file_size"],
         as_dict=True,
     )
     if not source or source.status != "Ready" or not source.is_private:
         raise DriveNotFound(_("The Drive preview source blob was not found"))
 
-    driver = get_driver(source.driver)
-    with driver.read(source.key, is_private=True) as stream:
+    with _open_source(source, snapshot.mime) as stream:
         preview_bytes = _render_webp(stream, snapshot.mime)
     preview = put_blob(io.BytesIO(preview_bytes), is_private=True, filename=f"{node}.webp")
     _publish_rendered(node, source_blob, preview.name)
@@ -366,6 +370,78 @@ def _renderable_file(node: frappe._dict | None) -> bool:
         and node.blob
         and node.mime in RENDERABLE_MIMES
     )
+
+
+def _open_source(source: frappe._dict, mime: str) -> IO[bytes]:
+    """Open a source blob for its render.
+
+    An image or a PDF is read from start to end, so a plain stream does.
+    A video is not: PyAV reads the index, which an MP4 can keep at the end
+    of the file, then seeks to the middle frame. On a driver with native
+    ranged reads, such as S3, a video gets a seekable view that fetches only
+    the parts PyAV reads. Its plain stream cannot seek, and reading it would
+    download the whole file. A local or in-memory driver's stream is a
+    seekable file already.
+    """
+    driver = get_driver(source.driver)
+    if mime in VIDEO_MIMES and _reads_ranges(driver):
+        return io.BufferedReader(
+            _BlobRanges(driver, source.key, cint(source.file_size)),
+            buffer_size=RANGE_READ_BYTES,
+        )
+    return driver.read(source.key, is_private=True)
+
+
+def _reads_ranges(driver: StorageDriver) -> bool:
+    """Whether the driver fetches a byte range without reading the whole blob.
+
+    `StorageDriver.read_range` reads the whole blob and slices it, so only a
+    driver that overrides it reads ranges natively.
+    """
+    return isinstance(driver, StorageDriver) and type(driver).read_range is not StorageDriver.read_range
+
+
+class _BlobRanges(io.RawIOBase):
+    """A seekable, read-only view of one private blob, fetched range by range.
+
+    `io.BufferedReader` wraps it, so PyAV's small reads share one request
+    per `RANGE_READ_BYTES`, and a seek within the buffer fetches nothing.
+    """
+
+    def __init__(self, driver: StorageDriver, key: str, size: int) -> None:
+        self._driver = driver
+        self._key = key
+        self._size = size
+        self._position = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self._position
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        bases = {io.SEEK_SET: 0, io.SEEK_CUR: self._position, io.SEEK_END: self._size}
+        if whence not in bases:
+            raise ValueError(f"Unsupported whence: {whence}")
+        position = bases[whence] + offset
+        if position < 0:
+            raise ValueError("Cannot seek before the start of the blob")
+        self._position = position
+        return position
+
+    def readinto(self, buffer) -> int:
+        if self._position >= self._size or not len(buffer):
+            return 0
+        end = min(self._position + len(buffer), self._size) - 1
+        with closing(self._driver.read_range(self._key, self._position, end, is_private=True)) as body:
+            data = body.read()
+        buffer[: len(data)] = data
+        self._position += len(data)
+        return len(data)
 
 
 def _render_webp(stream, mime: str) -> bytes:

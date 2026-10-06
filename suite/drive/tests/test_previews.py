@@ -1,6 +1,10 @@
+import importlib.util
 import io
 import json
+import os
+import struct
 import sys
+import unittest
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +14,7 @@ import frappe
 from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
 from frappe.storage.gc import blob_reference_columns
+from frappe.storage.memory_driver import MemoryDriver
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime
 from PIL import Image
@@ -46,6 +51,68 @@ def _png(width: int = 1024, height: int = 256, color: str = "red") -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (width, height), color).save(output, format="PNG")
     return output.getvalue()
+
+
+def _mp4_with_its_index_at_the_end(size: tuple[int, int] = (640, 360), frames: int = 48) -> bytes:
+    """A real MP4 that a camera or a plain export writes: frames first, index last.
+
+    Noise frames keep the file large, a few megabytes, so a reader that
+    cannot seek fails on it and a ranged reader reads only part of it.
+    """
+    import av
+
+    output = io.BytesIO()
+    with av.open(output, "w", format="mp4") as container:
+        stream = container.add_stream("mpeg4", rate=24)
+        stream.width, stream.height = size
+        stream.pix_fmt = "yuv420p"
+        stream.gop_size = 12
+        stream.bit_rate = 20_000_000
+        for _ in range(frames):
+            image = Image.frombytes("RGB", size, os.urandom(size[0] * size[1] * 3))
+            for packet in stream.encode(av.VideoFrame.from_image(image)):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+    return output.getvalue()
+
+
+def _top_level_boxes(mp4: bytes) -> list[str]:
+    boxes, position = [], 0
+    while position < len(mp4):
+        length, kind = struct.unpack(">I4s", mp4[position : position + 8])
+        boxes.append(kind.decode())
+        position += length
+    return boxes
+
+
+class _OneWayStream(io.RawIOBase):
+    """A stream that reads forward only, as an S3 object body does."""
+
+    def __init__(self, content: bytes):
+        self._content = io.BytesIO(content)
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer) -> int:
+        return self._content.readinto(buffer)
+
+
+class _RangedStore(MemoryDriver):
+    """A store shaped like S3: its plain stream cannot seek, and it serves byte ranges."""
+
+    def __init__(self):
+        super().__init__()
+        self.ranged_bytes: dict[str, int] = {}
+
+    def read(self, key: str, *, is_private: bool = False):
+        return io.BufferedReader(_OneWayStream(super().read(key, is_private=is_private).read()))
+
+    def read_range(self, key: str, start: int, end: int | None, *, is_private: bool = False):
+        content = self.blobs[(bool(is_private), key)][start : None if end is None else end + 1]
+        self.ranged_bytes[key] = self.ranged_bytes.get(key, 0) + len(content)
+        return io.BytesIO(content)
 
 
 # PyAV and pymupdf are optional native packages. The fakes below stand in for
@@ -645,6 +712,35 @@ class TestPreviews(IntegrationTestCase):
         self.assertEqual(self._preview_image(node).size, (PREVIEW_LONGEST_SIDE, 128))
         self.assertEqual(frappe.get_doc("File Blob", row.blob).mime_type, "image/webp")
         self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), usage)
+
+    @unittest.skipUnless(importlib.util.find_spec("av"), "PyAV is not installed")
+    def test_a_video_with_its_index_at_the_end_renders_from_ranged_reads(self):
+        """An S3 object body cannot seek, and reading it all is slow.
+
+        PyAV must seek to an MP4's index at the end and back to the middle
+        frame, so the render reads byte ranges and fetches only part of the file.
+        """
+        content = _mp4_with_its_index_at_the_end()
+        self.assertEqual(_top_level_boxes(content)[-1], "moov")
+        store = _RangedStore()
+        previous = getattr(frappe.local, "storage_driver_override", None)
+        frappe.local.storage_driver_override = store
+        self.addCleanup(setattr, frappe.local, "storage_driver_override", previous)
+        blob = self._blob(content, "clip.mp4")
+        with patch("suite.drive._core.previews.enqueue_render"):
+            node = create_file(
+                self.admin, self.root.name, "clip.mp4", blob=blob.name, size=blob.file_size, mime="video/mp4"
+            )
+
+        render(node)
+
+        preview_blob = frappe.db.get_value(
+            "Drive Node Preview", {"node": node, "source_blob": blob.name}, "blob"
+        )
+        preview_key = frappe.db.get_value("File Blob", preview_blob, "key")
+        with Image.open(io.BytesIO(store.blobs[(True, preview_key)])) as image:
+            self.assertEqual((image.format, image.size), ("WEBP", (PREVIEW_LONGEST_SIDE, 288)))
+        self.assertLess(store.ranged_bytes[blob.key], len(content))
 
     def test_duplicate_source_reuses_the_preview_blob_without_rendering(self):
         content = _png(640, 320)

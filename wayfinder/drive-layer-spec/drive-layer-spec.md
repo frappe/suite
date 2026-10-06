@@ -2434,7 +2434,13 @@ Render pipeline, for nodes with bytes.
    preview blob and runs no render [006 §1].
 3. Otherwise it renders by mime: image through PIL, a video frame through
    PyAV, a PDF page through pymupdf, as today. An unsupported mime writes
-   no row.
+   no row. A video is read from a seekable source, because PyAV reads the
+   index first, which an MP4 can keep at the end of the file, and then
+   seeks to the middle frame. On a driver with native ranged reads, such
+   as S3, the source is a buffered view over `read_range` that fetches only
+   the parts PyAV reads. Its plain stream cannot seek, and reading it would
+   download the whole file. A local or in-memory driver's stream is a
+   seekable file already.
 4. The preview blob is stored with `frappe.storage.blob.put_blob(stream,
    is_private=True, filename=...)`.
 
