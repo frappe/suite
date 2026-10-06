@@ -26,6 +26,8 @@ export interface CollabEndpoints {
 export interface OpenOptions {
   endpoints: CollabEndpoints
   principal: string
+  // The schema of the editor that writes this document; the server refuses names its rows may not hold yet
+  schema: number
   // Who the browser is signed in as now, or 'Guest'
   signedIn: () => string
   // Where unsent work and the last committed copy survive the tab; without it they live only in memory

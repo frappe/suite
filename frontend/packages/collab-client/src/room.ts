@@ -361,6 +361,7 @@ export class Room implements CollabRoom {
       proto: 1,
       lineage: this.lineage,
       principal: this.options.principal,
+      schema: this.options.schema,
       sid: box.sid,
       from: batch[0].seq,
       to: batch[batch.length - 1].seq,

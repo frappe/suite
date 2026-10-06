@@ -71,6 +71,10 @@ def ensure_tables(adapter: str) -> None:
     frappe.db.sql_ddl(
         f"ALTER TABLE `{table(adapter, 'update')}` ADD COLUMN IF NOT EXISTS `seq_shas` longblob NOT NULL AFTER `sha256`"
     )
+    # The schema of the build that wrote each row; every row before stamps came from the first
+    frappe.db.sql_ddl(
+        f"ALTER TABLE `{table(adapter, 'update')}` ADD COLUMN IF NOT EXISTS `schema` smallint unsigned NOT NULL DEFAULT 1 AFTER `client_id`"
+    )
     frappe.db.sql_ddl(
         f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "session")}` (
             `doc_id` varchar(20) NOT NULL,

@@ -23,6 +23,15 @@ class Unclosed(Exception):
         self.extra = extra
 
 
+@dataclass(frozen=True)
+class EditorSchema:
+    """What a collab adapter's editor writes: its current schema and, for each node, mark, attribute or
+    map key a row may name, the schema that introduced it."""
+
+    version: int
+    features: dict[str, int]
+
+
 @dataclass
 class Row:
     update: updates.Update

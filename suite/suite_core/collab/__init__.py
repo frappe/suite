@@ -8,6 +8,7 @@ itself, because `suite_core` never imports Drive or a product.
 
 from suite.suite_core.collab.backfill import backfill_clocks
 from suite.suite_core.collab.checkpoints import replace_start
+from suite.suite_core.collab.ingest import EditorSchema
 from suite.suite_core.collab.log import (
     PROTO,
     ChainBroken,
@@ -32,6 +33,7 @@ from suite.suite_core.collab.tables import ensure_tables
 __all__ = [
     "PROTO",
     "ChainBroken",
+    "EditorSchema",
     "Refusal",
     "backfill_clocks",
     "claim_session",

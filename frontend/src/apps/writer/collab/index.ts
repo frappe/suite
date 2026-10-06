@@ -13,6 +13,9 @@ import { createTransport, type HttpMethod, type Operation } from '@/platform/tra
 // The fragment every Writer document has always kept its body in
 export const FIELD = 'default'
 
+// Raise with suite/writer/collab/features.json whenever the editor learns a new node, mark or attribute
+export const WRITER_SCHEMA = 1
+
 const route = (id: string, method: HttpMethod, path: string): Operation => ({
   id,
   owner: 'writer',
@@ -73,6 +76,7 @@ export async function openWriterRoom(session: DocumentSession): Promise<Opened> 
   return openCollabRoom({
     endpoints: writerEndpoints(session, principal),
     principal,
+    schema: WRITER_SCHEMA,
     signedIn,
     device: store && { store, doc: session.nodeId },
   })

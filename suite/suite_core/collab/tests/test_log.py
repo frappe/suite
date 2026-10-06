@@ -21,6 +21,7 @@ def header(**changes) -> dict:
         "to": 1,
         "cid": 7,
         "seen_rev": 0,
+        "schema": 1,
         "shas": [sha],
         **changes,
     }
@@ -44,6 +45,10 @@ class TestParsePush(UnitTestCase):
             header(shas=sha),
             header(**{"from": 0}),
             header(cid=True),
+            header(schema=0),
+            header(schema=True),
+            header(schema="1"),
+            {key: value for key, value in header().items() if key != "schema"},
         ):
             with self.subTest(case=case), self.assertRaises(Refusal) as refused:
                 parse_push(body(case))

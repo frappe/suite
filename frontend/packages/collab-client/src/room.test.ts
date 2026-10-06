@@ -52,6 +52,7 @@ function fakeServer(state = 'live') {
   const calls: string[] = []
   const pulls: number[] = []
   const finals: boolean[] = []
+  const schemas: number[] = []
   // Rows through `base` folded into one state, as a compaction leaves them
   const checkpoint = { base: 0, bytes: new Uint8Array() }
   let nextClient = 1
@@ -104,6 +105,7 @@ function fakeServer(state = 'live') {
       const length = view.getUint32(0)
       const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
       finals.push(header.final)
+      schemas.push(header.schema)
       const session = sessions.get(header.sid)
       if (length > 4096 || header.shas?.length !== header.to - header.from + 1)
         return reply(400, { collab: 'malformed' })
@@ -127,7 +129,7 @@ function fakeServer(state = 'live') {
     checkpoint.bytes = Y.mergeUpdates(rows.map((row) => row.bytes))
     checkpoint.base = rows.length
   }
-  return { rows, sessions, endpoints, access, calls, pulls, finals, compact }
+  return { rows, sessions, endpoints, access, calls, pulls, finals, schemas, compact }
 }
 
 const rooms: CollabRoom[] = []
@@ -143,6 +145,7 @@ async function join(endpoints: CollabEndpoints, extra: Partial<OpenOptions> = {}
   const opened = await openCollabRoom({
     endpoints,
     principal: 'a@x.com',
+    schema: 1,
     signedIn: () => signedIn,
     pollMs: 60_000,
     sendDelayMs: 0,
@@ -165,6 +168,17 @@ async function device() {
 }
 
 describe('collab room', () => {
+  it('stamps every push with the schema of the editor that wrote it', async () => {
+    const server = fakeServer()
+    const a = await join(server.endpoints(), { schema: 3 })
+    a.doc.getText('t').insert(0, 'one')
+    await a.flush()
+    a.doc.getText('t').insert(3, ' two')
+    await a.flush()
+
+    expect(server.schemas).toEqual([3, 3])
+  })
+
   it('marks only the push of a closing tab as final', async () => {
     const server = fakeServer()
     const a = await join(server.endpoints())
@@ -665,7 +679,12 @@ describe('collab room', () => {
     const endpoints = fakeServer().endpoints()
     endpoints.session = async () => reply(400, { exc_type: 'CSRFTokenError' })
 
-    const opened = openCollabRoom({ endpoints, principal: 'a@x.com', signedIn: () => 'a@x.com' })
+    const opened = openCollabRoom({
+      endpoints,
+      principal: 'a@x.com',
+      schema: 1,
+      signedIn: () => 'a@x.com',
+    })
 
     await expect(opened).rejects.toEqual(new CollabOpenError(400, 'stale_session'))
   })
@@ -687,6 +706,7 @@ describe('collab room', () => {
       const opened = openCollabRoom({
         endpoints: fakeServer(state).endpoints(),
         principal: 'a@x.com',
+        schema: 1,
         signedIn: () => 'a@x.com',
       })
       await expect(opened).resolves.toEqual({

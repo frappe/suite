@@ -26,6 +26,8 @@ PACE_MS = 1000
 HEADER_MAX = 4096
 CLIENT_ID_MAX = 2**30
 PURGE_BATCH = 500
+# A push stamped by a newer build than this server waits out the deploy
+UPGRADING_RETRY_MS = 30_000
 
 
 class Refusal(Exception):
@@ -229,13 +231,22 @@ def parse_push(body: bytes) -> tuple[dict, bytes]:
     except ValueError:
         raise Refusal(400, "malformed") from None
     payload = body[4 + length :]
-    required = {"lineage": str, "sid": str, "from": int, "to": int, "cid": int, "seen_rev": int, "shas": list}
+    required = {
+        "lineage": str,
+        "sid": str,
+        "from": int,
+        "to": int,
+        "cid": int,
+        "seen_rev": int,
+        "schema": int,
+        "shas": list,
+    }
     if not isinstance(header, dict) or any(
         not isinstance(header.get(key), kind) or isinstance(header.get(key), bool)
         for key, kind in required.items()
     ):
         raise Refusal(400, "malformed")
-    if header["from"] < 1 or header["to"] < header["from"] or not payload:
+    if header["from"] < 1 or header["to"] < header["from"] or header["schema"] < 1 or not payload:
         raise Refusal(400, "malformed")
     if len(header["shas"]) != header["to"] - header["from"] + 1:
         raise Refusal(400, "malformed")
@@ -293,13 +304,17 @@ def busy() -> Refusal:
     return Refusal(423, "busy", retry_ms=PACE_MS // 2 + secrets.randbelow(PACE_MS // 2 + 1))
 
 
-def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str) -> dict:
+def push(
+    adapter: str, doc_id: str, header: dict, payload: bytes, principal: str, schema: ingest.EditorSchema
+) -> dict:
     """Commit one session's contiguous seq range as the next rev, or refuse it."""
     session = session_for(adapter, doc_id, header, principal)
     head = frappe.db.sql(f"SELECT `head_rev` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id)[0][0]
     answer = replay(adapter, doc_id, header, int(session.acked_seq), int(head))
     if answer:
         return answer
+    if header["schema"] > schema.version:
+        raise Refusal(423, "upgrading", retry_ms=UPGRADING_RETRY_MS)
     try:
         row = ingest.check(payload, header["cid"])
     except ValueError:
@@ -341,8 +356,8 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
         now = now_datetime()
         frappe.db.sql(
             f"""INSERT INTO `{table(adapter, "update")}`
-            (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`, `payload`, `sha256`, `seq_shas`, `chain`, `created`)
-            VALUES (%s, %s, %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), UNHEX(%s), %s)""",
+            (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`, `schema`, `payload`, `sha256`, `seq_shas`, `chain`, `created`)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), UNHEX(%s), %s)""",
             (
                 doc_id,
                 rev,
@@ -350,6 +365,7 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
                 header["from"],
                 header["to"],
                 header["cid"],
+                header["schema"],
                 payload.hex(),
                 payload_sha.hex(),
                 b"".join(header["shas"]).hex(),

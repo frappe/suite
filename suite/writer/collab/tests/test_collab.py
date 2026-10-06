@@ -4,6 +4,7 @@ import struct
 import threading
 import time
 import uuid
+from dataclasses import replace
 from unittest.mock import patch
 
 import frappe
@@ -97,6 +98,7 @@ def push_body(
     principal: str | None = None,
     *,
     entries: list[bytes] | None = None,
+    schema: int = 1,
 ) -> bytes:
     """One push of `entries` (or `payload` alone) as seqs from `seq`; the body sent is `payload`."""
     entries = entries or [payload]
@@ -109,6 +111,7 @@ def push_body(
             "to": seq + len(entries) - 1,
             "cid": cid,
             "seen_rev": seen_rev,
+            "schema": schema,
             "shas": [hashlib.sha256(entry).hexdigest() for entry in entries],
         }
     ).encode()
@@ -318,6 +321,28 @@ class TestWriterCollab(IntegrationTestCase):
 
         self.assertEqual(self.open(node)[1], [])
         self.assertEqual(self.push(node, sid, cid, 1, own)[0], 200)
+
+    def test_a_push_from_a_build_newer_than_the_server_waits_and_is_stored_with_its_schema(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        lineage = self.open(node)[0]["lineage"]
+        newer = routes.SCHEMA.version + 1
+        body = push_body(lineage, sid, cid, 1, 0, typed(cid, ["a"])[0], schema=newer)
+
+        response = call(routes.collab_updates_post, node, body=body)
+
+        self.assertEqual(
+            (response.status_code, answer(response)), (423, {"collab": "upgrading", "retry_ms": 30_000})
+        )
+        self.assertEqual(self.open(node)[1], [])
+        with patch.object(routes, "SCHEMA", replace(routes.SCHEMA, version=newer)):
+            self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
+        doc_id = routes.collab.find(routes.ADAPTER, node).id
+        self.assertEqual(
+            frappe.db.sql("SELECT `schema` FROM `__writer_collab_update` WHERE `doc_id` = %s", doc_id),
+            ((newer,),),
+        )
 
     def test_a_push_that_does_not_continue_its_writers_clocks_is_refused_and_stores_nothing(self):
         self.set_mode("on")

@@ -16,7 +16,7 @@ from werkzeug.wrappers import Response
 from suite import drive
 from suite.composition.http import HttpOwner, Route
 from suite.suite_core import collab
-from suite.writer.collab import ADAPTER, consider_compaction
+from suite.writer.collab import ADAPTER, SCHEMA, consider_compaction
 
 # Every row reads or writes its own bytes, so each is a stream; a POST answers JSON
 ROUTES = (
@@ -134,7 +134,7 @@ def _push(node: str) -> Response:
     header, payload = collab.parse_push(frappe.request.get_data())
     _authorize(node, drive.EDIT, header.get("principal"))
     doc = _doc(node)
-    answer = collab.push(ADAPTER, doc.id, header, payload, frappe.session.user)
+    answer = collab.push(ADAPTER, doc.id, header, payload, frappe.session.user, SCHEMA)
     consider_compaction(doc.id, final_from=header["sid"] if header.get("final") is True else None)
     return _json(200, answer)
 

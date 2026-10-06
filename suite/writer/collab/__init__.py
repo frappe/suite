@@ -2,6 +2,8 @@
 
 import base64
 import gzip
+import json
+from pathlib import Path
 
 import pycrdt
 
@@ -11,6 +13,8 @@ from suite.suite_core.collab import checkpoints, compaction, scheduling, updates
 ADAPTER = "writer"
 # The editor's fragment, and tab labels
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
+DECLARED = json.loads(Path(__file__).with_name("features.json").read_text())
+SCHEMA = collab.EditorSchema(DECLARED["schema"], DECLARED["features"])
 
 
 def ensure_tables() -> None:

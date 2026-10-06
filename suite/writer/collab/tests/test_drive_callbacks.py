@@ -471,7 +471,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         header, payload = collab.parse_push(push_body(lineage, sid, cid, 1, 1, doc.get_update()))
 
         with self.assertRaises(collab.Refusal) as refused:
-            collab.push(routes.ADAPTER, doc_id, header, payload, WRITER)
+            collab.push(routes.ADAPTER, doc_id, header, payload, WRITER, routes.SCHEMA)
 
         self.assertEqual((refused.exception.status, refused.exception.body), (404, {"collab": "not_found"}))
         self.assertEqual(self.rows_of(doc_id)["update"], 1)
