@@ -292,3 +292,28 @@ class TestSuspect(CheckpointCase):
 
         self.assertEqual(self.report(node, rev), (202, {"collab": "judging", "judged": 0}))
         self.assertEqual(self.requested, [(JUDGE, doc_id)])
+
+    def test_a_judge_that_fails_holds_a_compaction_suspect_once_and_clears_a_report(self):
+        def breaks(*args):
+            raise ValueError("unexpected")
+
+        for marked, held, verdict in (("unreadable", "judge_failed", "held"), ("client", None, "unjudged")):
+            with self.subTest(marked=marked):
+                node = self.new_document()
+                Pen(self, node).adds(paragraph("alpha"))
+                doc_id = self.doc_row(node).id
+                self.set_doc(node, suspect=marked)
+                title = "suspect held: judge_failed" if held else "suspect unjudged: judge_failed"
+                before = self.alerts(title)
+
+                with patch.object(suspect, "read", breaks):
+                    self.assertEqual(self.judge(node), verdict)
+
+                doc = self.doc_row(node)
+                self.assertEqual((doc.suspect_held, doc.verdict), (held, verdict))
+                self.assertEqual(self.alerts(title), before + 1)
+                logged = frappe.get_last_doc("Error Log", {"method": f"Collab document {title}"}).error
+                self.assertEqual(("ValueError" in logged, "unexpected" in logged), (True, False))
+                self.requested.clear()
+                writer_collab.sweep()
+                self.assertNotIn((JUDGE, doc_id), self.requested)

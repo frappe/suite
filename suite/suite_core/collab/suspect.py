@@ -5,7 +5,7 @@ suspect, and compactions skip it from then on. A job judges it: the product's No
 the first row the browsers' Yjs or the editor can't take, and when it finds none, pycrdt is
 probed the same way. That row and its dependents are quarantined, each with a recovery copy,
 and the document is cleared only if pycrdt then takes what is left. Without a verdict (no Node,
-a bad checkpoint, a kernel that fails) or when pycrdt still refuses, the document is held:
+a bad checkpoint, a kernel or a judge that fails) or when pycrdt still refuses, the document is held:
 its rows stay, pushes are refused and an admin reviews it.
 A document only a tab's report marked is held only on what its rows show: without a verdict it
 is cleared as unjudged, so a report alone never pauses saving.
@@ -79,6 +79,14 @@ def judge(adapter: str, doc_id: str, roots: dict[str, type], bundle: Path) -> st
     marked = suspect_of(adapter, doc_id)
     if not marked:
         return None
+    try:
+        return settle(adapter, doc_id, marked, roots, bundle)
+    except Exception as error:
+        frappe.db.rollback()
+        return unsettled(adapter, doc_id, marked, "judge_failed", type(error).__name__)
+
+
+def settle(adapter: str, doc_id: str, marked: str, roots: dict[str, type], bundle: Path) -> str | None:
     snapshot = read(adapter, doc_id)
     if snapshot is None:
         return None
