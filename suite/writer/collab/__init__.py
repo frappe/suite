@@ -152,7 +152,7 @@ def compact(doc_id: str) -> None:
 
 
 def judge(doc_id: str) -> None:
-    if suspect.judge(ADAPTER, doc_id, ROOTS, KERNEL, document_owner) in ("clean", "quarantined"):
+    if suspect.judge(ADAPTER, doc_id, ROOTS, KERNEL, document_owner) in {"clean", "quarantined"}:
         consider_compaction(doc_id)
 
 

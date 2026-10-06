@@ -65,12 +65,12 @@ def self_test() -> dict:
 
 def fixture() -> list[bytes]:
     rows = []
-    first = pycrdt.Doc(client_id=1)
+    first: pycrdt.Doc = pycrdt.Doc(client_id=1)
     first.observe(lambda event: rows.append(event.update))
     paragraph = first.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlElement("paragraph"))
     text = paragraph.children.append(pycrdt.XmlText())
     text.insert(0, "Hello world 😀")
-    second = pycrdt.Doc(client_id=2)
+    second: pycrdt.Doc = pycrdt.Doc(client_id=2)
     second.apply_update(first.get_update())
     second.observe(lambda event: rows.append(event.update))
     second.get("default", type=pycrdt.XmlFragment).children[0].children[0].insert(0, "Oh, ")

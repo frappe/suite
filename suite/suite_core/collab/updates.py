@@ -6,6 +6,7 @@ including trailing bytes, raises `ValueError`. `rewrite_values` copies an update
 with its values changed and nothing else.
 """
 
+import builtins
 import json
 import re
 from collections.abc import Callable
@@ -106,7 +107,7 @@ class Reader:
             if byte < 0x80:
                 return
 
-    def raw(self, length: int) -> bytes:
+    def raw(self, length: builtins.int) -> bytes:
         if self.at + length > len(self.data):
             raise ValueError("unexpected end of update")
         self.at += length
@@ -118,7 +119,7 @@ class Reader:
     def json(self):
         return checked_json(self.string())
 
-    def id(self) -> tuple[int, int]:
+    def id(self) -> tuple[builtins.int, builtins.int]:
         return self.uint(), self.uint()
 
 

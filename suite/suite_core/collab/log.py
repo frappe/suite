@@ -14,6 +14,7 @@ import hashlib
 import json
 import secrets
 import struct
+from collections.abc import Sequence
 
 import frappe
 from frappe.utils import now_datetime
@@ -127,7 +128,7 @@ def with_tombstones(read: dict) -> list[tuple[int, bytes]]:
     return sorted([*read["rows"], *((rev, b"") for rev in read["quarantined"])])
 
 
-def frame(header: dict, rows: list[tuple[int, bytes]] = (), checkpoint: bytes | None = None) -> bytes:
+def frame(header: dict, rows: Sequence[tuple[int, bytes]] = (), checkpoint: bytes | None = None) -> bytes:
     """`u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`"""
     encoded = json.dumps(header, separators=(",", ":")).encode()
     checkpoint = checkpoint or b""

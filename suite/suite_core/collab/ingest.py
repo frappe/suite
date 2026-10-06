@@ -87,7 +87,7 @@ def admit(update: updates.Update, cid: int) -> Row:
 
 def next_clocks(payloads: Iterable[bytes]) -> dict[int, int]:
     """Each writer's next clock once `payloads` are stored: every clock below it is in them."""
-    clocks = {}
+    clocks: dict[int, int] = {}
     for payload in payloads:
         for struct in updates.parse(payload).structs:
             clocks[struct.client] = max(clocks.get(struct.client, 0), struct.clock + struct.length)

@@ -89,7 +89,7 @@ def unfit(parts: list[bytes]) -> tuple[int, str] | None:
     Yjs turns both halves of a split pair into replacement characters and yrs does
     not, so the compaction would no longer match what browsers hold.
     """
-    pairs = set()
+    pairs: set[tuple[int, int]] = set()
     for index, part in enumerate(parts):
         try:
             update = updates.parse(part)
@@ -107,7 +107,7 @@ def same(left: bytes, right: bytes, roots: Mapping[str, type]) -> bool:
 
 
 def load(parts: list[bytes]) -> pycrdt.Doc:
-    doc = pycrdt.Doc()
+    doc: pycrdt.Doc = pycrdt.Doc()
     for part in parts:
         doc.apply_update(part)
     return doc
@@ -134,7 +134,7 @@ def snapshot(doc: pycrdt.Doc) -> tuple[dict, dict]:
     deleted = {}
     for _ in range(reader.uint()):
         client = reader.uint()
-        merged = []
+        merged: list[list[int]] = []
         for start, length in sorted((reader.uint(), reader.uint()) for _ in range(reader.uint())):
             if length and merged and start <= merged[-1][0] + merged[-1][1]:
                 merged[-1][1] = max(merged[-1][1], start + length - merged[-1][0])
@@ -182,7 +182,7 @@ def serialize(value, rewrite=None):
 
 
 def delta(diff, rewrite=None) -> list:
-    out = []
+    out: list[dict] = []
     for insert, attributes in diff:
         item = insert if isinstance(insert, str) else plain(insert, rewrite)
         attributes = plain(dict(attributes), rewrite) if attributes else None

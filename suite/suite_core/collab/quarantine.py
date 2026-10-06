@@ -195,7 +195,7 @@ def dependents(tail: list[TailRow], revs: set[int], floor: dict[int, int]) -> tu
     """
     picked = {row.rev for row in tail if row.rev in revs}
     while True:
-        first = {}
+        first: dict[int, int] = {}
         for row in tail:
             if row.rev in picked:
                 first.setdefault(row.client, row.rev)
