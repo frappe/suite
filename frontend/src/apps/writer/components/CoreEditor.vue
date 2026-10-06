@@ -61,9 +61,11 @@
           </div>
         </div>
       </div>
+      <div v-if="sidePanel" class="hidden md:block w-56 shrink-0" />
       <div
         v-if="commentsPainted && comments._map.size"
-        class="hidden md:block absolute top-4 right-4"
+        class="hidden md:block absolute top-4"
+        :class="sidePanel ? 'right-60' : 'right-4'"
       >
         <Dropdown :options="commentFilterOptions" align="end">
           <Button
@@ -102,6 +104,7 @@ import emitter from '@/apps/writer/emitter'
 import { rebuild } from '@/apps/writer/extensions/comments'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
+import { SIDE_PANEL } from '@/apps/writer/sidePanel'
 import { isModKey, printDoc } from '@/apps/writer/utils'
 import { cssLineHeight } from '@/apps/writer/utils/typography'
 import { useSessionStore } from '@/boot/session'
@@ -227,6 +230,7 @@ const onCommentActivated = (id) => {
 const hasCollaboration = props.extensions?.some((ext) => ext?.name === 'collaboration')
 const { users } = useUsers()
 const renameDocument = inject(RENAME_DOCUMENT, null)
+const sidePanel = inject(SIDE_PANEL, ref(false))
 
 const editorExtensions = [
   ...writerEditorExtensions({

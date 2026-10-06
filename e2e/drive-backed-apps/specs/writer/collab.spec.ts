@@ -265,6 +265,28 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 		await expect(owner.page.locator(".bg-surface-amber-2")).toHaveCount(0);
 	});
+
+	test("the Versions panel takes the table of contents' place on the right and moves the text like it", async ({
+		owner,
+	}) => {
+		const { page } = owner;
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await openWriterDocument(page, node);
+		await typeParagraph(page, "Centred text");
+		await expectSaved(page);
+		const text = page.getByLabel("Document editor").locator("p").first();
+		const before = await text.boundingBox();
+		const column = await page.locator("#editor-scroll-container").boundingBox();
+
+		await page.getByRole("button", { name: /versions/i }).first().click();
+		const panel = await page.getByRole("complementary", { name: "Versions" }).boundingBox();
+		expect(panel).toMatchObject({ y: column!.y, height: column!.height, width: 224 });
+		expect(panel!.x + panel!.width).toBe(column!.x + column!.width);
+		expect((await text.boundingBox())!.x).toBe(before!.x - 112);
+
+		await page.getByRole("button", { name: "Close panel" }).click();
+		expect(await text.boundingBox()).toEqual(before);
+	});
 	test("a copy made in Drive keeps the text and its pictures, and takes its own edits", async ({
 		owner,
 		testApi,

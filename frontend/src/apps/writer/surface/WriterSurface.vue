@@ -31,6 +31,7 @@ import type { CollaborationUser } from '@/apps/writer/composables/useCollaborati
 import emitter from '@/apps/writer/emitter'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
+import { SIDE_PANEL } from '@/apps/writer/sidePanel'
 import { belowMinBuild } from '@/platform/build'
 
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
@@ -94,6 +95,7 @@ const showVersions = ref(false)
 const threads = ref<CommentThread[]>([])
 const versions = ref<VersionRow[]>([])
 const previewing = ref<VersionRow | null>(null)
+const sidePanel = computed(() => showComments.value || showVersions.value)
 const versionsCursor = ref<string | null>(null)
 const loadingMoreVersions = ref(false)
 const panelLoading = ref(false)
@@ -191,6 +193,7 @@ provide(
 provide(RENAME_DOCUMENT, async (title) => {
   await props.session.rename(title)
 })
+provide(SIDE_PANEL, sidePanel)
 provide(DOCUMENT_MEDIA, (id) => props.session.media(id))
 
 // A save that lands with edit access makes the recovery copy stale.
@@ -382,161 +385,168 @@ onBeforeUnmount(() => {
       >{{ banner.after }}
     </div>
 
-    <div v-if="!readable" class="m-auto text-center">
-      <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
-      <p class="mt-2 text-p-sm text-ink-gray-6">
-        You no longer have permission to read this document.
-      </p>
-    </div>
-    <div v-else-if="collab === 'failed'" class="m-auto text-center">
-      <p class="text-p-sm text-ink-gray-6">{{ openFailure }}</p>
-      <Button class="mt-3" label="Try again" @click="openCollab" />
-    </div>
-    <div
-      v-else-if="!documentResource.doc || collab === 'opening'"
-      class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10"
-    >
-      <Skeleton
-        v-for="width in ['70%', '92%', '84%', '60%', '88%']"
-        :key="width"
-        class="h-3.5 rounded-4"
-        :style="{ width }"
-      />
-    </div>
-    <template v-else>
-      <VersionPreview
-        v-if="previewing"
-        :session="session"
-        :seq="previewing.seq"
-        :label="versionLabel(previewing)"
-        :class="{ 'md:mr-80': showVersions }"
-        @close="closePreview"
-      />
-      <div v-show="!previewing" class="flex min-h-0 flex-1 overflow-hidden">
-        <CollabTextEditor
-          v-if="collabLive && room"
-          ref="editorSurface"
-          :room="room"
-          :file="fakeFileResource"
-          :document="documentResource"
-          :settings="settings"
-          :editable="editable"
-        />
-        <NonCollabEditor
-          v-else-if="documentResource.doc.collab === 0"
-          ref="editorSurface"
-          v-model:dirty="dirty"
-          :file="fakeFileResource.doc"
-          :document="documentResource"
-          :settings="settings"
-          :editable="editable"
-        />
-        <TextEditor
-          v-else
-          ref="editorSurface"
-          v-model:dirty="dirty"
-          :file="fakeFileResource"
-          :document="documentResource"
-          :settings="settings"
-          :editable="editable"
+    <div class="relative flex min-h-0 flex-1 flex-col">
+      <div v-if="!readable" class="m-auto text-center">
+        <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
+        <p class="mt-2 text-p-sm text-ink-gray-6">
+          You no longer have permission to read this document.
+        </p>
+      </div>
+      <div v-else-if="collab === 'failed'" class="m-auto text-center">
+        <p class="text-p-sm text-ink-gray-6">{{ openFailure }}</p>
+        <Button class="mt-3" label="Try again" @click="openCollab" />
+      </div>
+      <div
+        v-else-if="!documentResource.doc || collab === 'opening'"
+        class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10"
+      >
+        <Skeleton
+          v-for="width in ['70%', '92%', '84%', '60%', '88%']"
+          :key="width"
+          class="h-3.5 rounded-4"
+          :style="{ width }"
         />
       </div>
-    </template>
-
-    <aside
-      v-if="showComments || showVersions"
-      :aria-label="showComments ? 'Comments' : 'Versions'"
-      class="absolute bottom-0 right-0 top-12 z-20 flex w-full flex-col md:w-80 border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
-    >
-      <div class="flex min-h-12 items-center justify-between border-b px-4">
-        <h2 class="text-lg-semibold">{{ showComments ? 'Comments' : 'Versions' }}</h2>
-        <Button
-          icon="lucide-x"
-          aria-label="Close panel"
-          variant="ghost"
-          @click="showComments = showVersions = false"
+      <template v-else>
+        <VersionPreview
+          v-if="previewing"
+          :session="session"
+          :seq="previewing.seq"
+          :label="versionLabel(previewing)"
+          @close="closePreview"
         />
-      </div>
-      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
-        <template v-else-if="showComments">
-          <form v-if="canComment" class="space-y-2" @submit.prevent="addComment">
-            <TextInput
-              v-if="showGuestName"
-              v-model="guestName"
-              label="Your name"
-              placeholder="Guest"
-              autocomplete="name"
-              :maxlength="guestNameMaxLength"
-              :description="
-                guestNameAtLimit
-                  ? `Names can have up to ${GUEST_NAME_LIMIT} characters.`
-                  : 'Optional. Shown with your comments.'
-              "
-            />
-            <div class="flex gap-2">
-              <TextInput
-                v-model="commentText"
-                class="flex-1"
-                placeholder="Add a comment"
-                aria-label="New comment"
-              />
-              <Button type="submit" label="Add" :disabled="!commentText.trim()" />
-            </div>
-          </form>
-          <article
-            v-for="thread in threads"
-            :key="thread.name"
-            class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
-            :class="thread.resolved && 'opacity-60'"
-          >
-            <div v-for="comment in thread.comments" :key="comment.name">
-              <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
-                <Avatar
-                  v-if="comment.person"
-                  :image="comment.person.user_image ?? undefined"
-                  :label="comment.person.full_name"
-                  size="sm"
-                  shape="circle"
-                />
-                <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                  comment.person?.full_name || comment.author || 'Someone'
-                }}</DriveCommentAuthor>
-              </p>
-              <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
-            </div>
-          </article>
-          <p v-if="!threads.length" class="text-sm text-ink-gray-5">No comments yet.</p>
-        </template>
-        <template v-else>
-          <button
-            v-for="version in versions"
-            :key="version.seq"
-            type="button"
-            class="block w-full rounded-4 p-3 text-left"
-            :class="
-              previewing?.seq === version.seq
-                ? 'bg-surface-gray-3'
-                : 'bg-surface-gray-1 hover:bg-surface-gray-2'
-            "
-            :aria-pressed="previewing?.seq === version.seq"
-            @click="previewing = version"
-          >
-            <p class="text-sm-medium text-ink-gray-8">{{ versionLabel(version) }}</p>
-            <p class="text-p-xs text-ink-gray-5">
-              {{ [version.actor, version.creation].filter(Boolean).join(' · ') }}
-            </p>
-          </button>
-          <p v-if="!versions.length" class="text-sm text-ink-gray-5">No versions yet.</p>
-          <Button
-            v-if="versionsCursor"
-            class="w-full"
-            label="Load more"
-            :loading="loadingMoreVersions"
-            @click="loadMoreVersions"
+        <div v-show="!previewing" class="flex min-h-0 flex-1 overflow-hidden">
+          <CollabTextEditor
+            v-if="collabLive && room"
+            ref="editorSurface"
+            :room="room"
+            :file="fakeFileResource"
+            :document="documentResource"
+            :settings="settings"
+            :editable="editable"
           />
-        </template>
-      </div>
-    </aside>
+          <NonCollabEditor
+            v-else-if="documentResource.doc.collab === 0"
+            ref="editorSurface"
+            v-model:dirty="dirty"
+            :file="fakeFileResource.doc"
+            :document="documentResource"
+            :settings="settings"
+            :editable="editable"
+          />
+          <TextEditor
+            v-else
+            ref="editorSurface"
+            v-model:dirty="dirty"
+            :file="fakeFileResource"
+            :document="documentResource"
+            :settings="settings"
+            :editable="editable"
+          />
+        </div>
+      </template>
+
+      <aside
+        v-if="sidePanel"
+        :aria-label="showComments ? 'Comments' : 'Versions'"
+        class="absolute bottom-0 right-0 top-0 z-20 flex w-full flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl md:w-56 md:border-outline-gray-2 md:bg-surface-base md:p-2 md:shadow-none"
+        :class="previewing || editable ? 'md:top-[41px]' : 'md:top-0'"
+      >
+        <div
+          class="flex min-h-12 items-center justify-between border-b px-4 md:min-h-0 md:border-b-0 md:pb-1 md:pl-2 md:pr-1"
+        >
+          <h2 class="text-lg-semibold md:text-base-medium md:text-ink-gray-8">
+            {{ showComments ? 'Comments' : 'Versions' }}
+          </h2>
+          <Button
+            icon="lucide-panel-right-close"
+            aria-label="Close panel"
+            tooltip="Hide"
+            variant="ghost"
+            @click="showComments = showVersions = false"
+          />
+        </div>
+        <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 md:px-0 md:py-1">
+          <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
+          <template v-else-if="showComments">
+            <form v-if="canComment" class="space-y-2" @submit.prevent="addComment">
+              <TextInput
+                v-if="showGuestName"
+                v-model="guestName"
+                label="Your name"
+                placeholder="Guest"
+                autocomplete="name"
+                :maxlength="guestNameMaxLength"
+                :description="
+                  guestNameAtLimit
+                    ? `Names can have up to ${GUEST_NAME_LIMIT} characters.`
+                    : 'Optional. Shown with your comments.'
+                "
+              />
+              <div class="flex gap-2">
+                <TextInput
+                  v-model="commentText"
+                  class="flex-1"
+                  placeholder="Add a comment"
+                  aria-label="New comment"
+                />
+                <Button type="submit" label="Add" :disabled="!commentText.trim()" />
+              </div>
+            </form>
+            <article
+              v-for="thread in threads"
+              :key="thread.name"
+              class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
+              :class="thread.resolved && 'opacity-60'"
+            >
+              <div v-for="comment in thread.comments" :key="comment.name">
+                <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
+                  <Avatar
+                    v-if="comment.person"
+                    :image="comment.person.user_image ?? undefined"
+                    :label="comment.person.full_name"
+                    size="sm"
+                    shape="circle"
+                  />
+                  <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
+                    comment.person?.full_name || comment.author || 'Someone'
+                  }}</DriveCommentAuthor>
+                </p>
+                <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
+              </div>
+            </article>
+            <p v-if="!threads.length" class="text-sm text-ink-gray-5">No comments yet.</p>
+          </template>
+          <template v-else>
+            <button
+              v-for="version in versions"
+              :key="version.seq"
+              type="button"
+              class="block w-full rounded-4 p-3 text-left"
+              :class="
+                previewing?.seq === version.seq
+                  ? 'bg-surface-gray-3'
+                  : 'bg-surface-gray-1 hover:bg-surface-gray-2'
+              "
+              :aria-pressed="previewing?.seq === version.seq"
+              @click="previewing = version"
+            >
+              <p class="text-sm-medium text-ink-gray-8">{{ versionLabel(version) }}</p>
+              <p class="text-p-xs text-ink-gray-5">
+                {{ [version.actor, version.creation].filter(Boolean).join(' · ') }}
+              </p>
+            </button>
+            <p v-if="!versions.length" class="text-sm text-ink-gray-5">No versions yet.</p>
+            <Button
+              v-if="versionsCursor"
+              class="w-full"
+              label="Load more"
+              :loading="loadingMoreVersions"
+              @click="loadMoreVersions"
+            />
+          </template>
+        </div>
+      </aside>
+    </div>
   </div>
 </template>
