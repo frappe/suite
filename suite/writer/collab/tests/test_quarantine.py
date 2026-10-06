@@ -36,10 +36,13 @@ class Tab:
         return fragment.children[0] if len(fragment.children) else fragment.children.append(pycrdt.XmlText())
 
     def write(self, edit) -> object:
-        """Push what `edit(text)` changes; answers the response."""
-        before = self.doc.get_state()
-        edit(self.text)
-        update = self.doc.get_update(before)
+        """Push what `edit(text)` changes, with only its own deletes, as a browser does; answers the response."""
+        updates = []
+        subscription = self.doc.observe(lambda event: updates.append(event.update))
+        with self.doc.transaction():
+            edit(self.text)
+        self.doc.unobserve(subscription)
+        [update] = updates
         self.seq += 1
         self.sent.append(update)
         body = push_body(self.header["lineage"], self.sid, self.cid, self.seq, 0, update)
@@ -141,7 +144,7 @@ class TestQuarantine(CheckpointCase):
         self.compact(node)
         self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alXpha")
 
-    def test_a_row_that_deletes_quarantined_text_stays_and_the_document_compacts(self):
+    def test_a_row_that_deletes_quarantined_text_goes_with_it(self):
         node = self.new_document()
         a = Tab(self, node)
         a.typed(0, "alpha")
@@ -149,12 +152,15 @@ class TestQuarantine(CheckpointCase):
         b = Tab(self, node)
         b.write(lambda text: text.__delitem__(slice(5, 11)))
         b.typed(0, "beta ")
+        c = Tab(self, node)
+        c.typed(7, "!")
 
-        self.assertEqual(self.quarantine(node, {2}), [2])
+        self.assertEqual(self.quarantine(node, {2}), [2, 3, 4])
 
-        self.assertEqual(self.stored_text(node), "beta alpha")
+        self.assertEqual((self.closed(node, b), self.closed(node, c)), (True, False))
+        self.assertEqual(self.stored_text(node), "al!pha")
         self.compact(node)
-        self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "beta alpha")
+        self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "al!pha")
 
     def test_a_push_that_needs_quarantined_text_is_refused(self):
         node = self.new_document()

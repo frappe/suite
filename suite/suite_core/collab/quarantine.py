@@ -147,9 +147,8 @@ def dependents(tail: list[TailRow], revs: set[int], floor: dict[int, int]) -> tu
     content ends at.
 
     A writer's clocks are contiguous, so its rows after a quarantined one go too. A row of another
-    writer whose struct sits next to or inside content past that clock goes, with its own later rows,
-    until nothing changes. Delete ranges are not followed: Yjs keeps a delete of a missing struct
-    pending without blocking the rest of the row.
+    writer whose struct sits next to or inside content past that clock, or that deletes content past
+    it, goes, with its own later rows, until nothing changes.
     """
     picked = {row.rev for row in tail if row.rev in revs}
     while True:
@@ -163,17 +162,18 @@ def dependents(tail: list[TailRow], revs: set[int], floor: dict[int, int]) -> tu
             if row.client in cut and row.rev not in picked and row.update and row.update.structs:
                 last = row.update.structs[-1]
                 cut[row.client] = max(cut[row.client], last.clock + last.length)
-        grown = {
-            row.rev
-            for row in tail
-            if row.rev not in picked
-            and row.update
-            and any(
-                client in cut and clock >= cut[client]
-                for struct in row.update.structs
-                for client, clock in struct.refs()
-            )
-        }
+        grown = {row.rev for row in tail if row.rev not in picked and row.update and reaches(row.update, cut)}
         if not grown:
             return picked, cut
         picked |= grown
+
+
+def reaches(update: updates.Update, cut: dict[int, int]) -> bool:
+    """Whether `update` needs or deletes a writer's content at or past its clock in `cut`."""
+    return any(
+        client in cut and clock >= cut[client] for struct in update.structs for client, clock in struct.refs()
+    ) or any(
+        client in cut and clock + length > cut[client]
+        for client, ranges in update.deletes.items()
+        for clock, length in ranges
+    )
