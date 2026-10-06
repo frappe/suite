@@ -34,8 +34,8 @@ def editor(version: int = 1, features: dict[str, int] | None = None) -> ingest.E
     return ingest.EditorSchema(
         version,
         features or {},
-        kinds=frozenset({0, 1, 4, 6, 7, 8}),
-        types=frozenset({3, 6}),
+        content_refs=frozenset({0, 1, 4, 6, 7, 8}),
+        shared_types=frozenset({3, 6}),
         nodes=frozenset({"paragraph"}),
         marks=frozenset({"bold"}),
     )

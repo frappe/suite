@@ -31,8 +31,8 @@ class EditorSchema:
 
     version: int
     features: dict[str, int]
-    kinds: frozenset[int]
-    types: frozenset[int]
+    content_refs: frozenset[int]
+    shared_types: frozenset[int]
     nodes: frozenset[str]
     marks: frozenset[str]
 
@@ -44,10 +44,10 @@ class EditorSchema:
         """Whether the editor could have written `update`: every struct is content the editor makes,
         with each name in its role."""
         return all(
-            struct.kind in self.kinds
-            and (struct.type is None or struct.type in self.types)
+            struct.kind in self.content_refs
+            and (struct.type is None or struct.type in self.shared_types)
             and (struct.node is None or struct.node in self.nodes)
-            and (struct.mark is None or struct.mark in self.marks)
+            and (struct.format_key is None or struct.format_key in self.marks)
             for struct in update.structs
         )
 

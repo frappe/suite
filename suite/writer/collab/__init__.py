@@ -15,12 +15,13 @@ ADAPTER = "writer"
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 DECLARED = json.loads(Path(__file__).with_name("features.json").read_text())
 # y-prosemirror writes only GC, deleted, string, format, type and any content, and only XmlElement and
-# XmlText shared types
+# XmlText shared types. `meta` holds only plain values; if it ever nests a Map, Array or Text,
+# `shared_types` must change in the same commit
 SCHEMA = collab.EditorSchema(
     DECLARED["schema"],
     DECLARED["features"],
-    kinds=frozenset({0, 1, 4, 6, 7, 8}),
-    types=frozenset({3, 6}),
+    content_refs=frozenset({0, 1, 4, 6, 7, 8}),
+    shared_types=frozenset({3, 6}),
     nodes=frozenset(DECLARED["nodes"]),
     marks=frozenset(DECLARED["marks"]),
 )

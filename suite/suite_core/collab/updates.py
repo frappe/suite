@@ -35,7 +35,7 @@ class Struct:
     type: int | None = None
     # An XmlElement's or XmlHook's name, and a format item's key as written
     node: str | None = None
-    mark: str | None = None
+    format_key: str | None = None
 
     def refs(self) -> list[tuple[int, int]]:
         """The ids this struct needs before it can integrate: its origins and its parent item."""
@@ -223,8 +223,8 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
         return 1
     if ref == 6:  # format
         # A mark that may overlap itself is keyed `name--<hash>`
-        struct.mark = reader.string()
-        struct.names.append(struct.mark.split("--", 1)[0])
+        struct.format_key = reader.string()
+        struct.names.append(struct.format_key.split("--", 1)[0])
         attributes = reader.json()
         if isinstance(attributes, dict):
             struct.names.extend(attributes)
