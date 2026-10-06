@@ -9,7 +9,7 @@ import { writerSchema } from '@/apps/writer/schema'
 // The server refuses a row naming anything this file does not declare at or below the row's schema
 const declared = JSON.parse(
   readFileSync(resolve(__dirname, '../../../../../suite/writer/collab/features.json'), 'utf8'),
-) as { schema: number; features: Record<string, number> }
+) as { schema: number; features: Record<string, number>; nodes: string[]; marks: string[] }
 
 const editorNames = () => {
   const schema = getSchema(writerSchema())
@@ -25,6 +25,19 @@ describe('writer collab features', () => {
   it('declares every node, mark and attribute the editor can write', () => {
     const missing = [...editorNames()].filter((name) => !(name in declared.features))
     expect(missing).toEqual([])
+  })
+
+  it('lists the names the server takes as elements and as marks', () => {
+    const schema = getSchema(writerSchema())
+    // The binding makes no element for the document or for text
+    const nodes = Object.keys(schema.nodes).filter((name) => name !== 'doc' && name !== 'text')
+    expect(declared.nodes).toEqual(nodes.sort())
+    expect(declared.marks).toEqual(Object.keys(schema.marks).sort())
+  })
+
+  it('has no mark that overlaps itself, so every mark key is a plain mark name', () => {
+    const marks = Object.values(getSchema(writerSchema()).marks)
+    expect(marks.filter((mark) => !mark.excludes(mark)).map((mark) => mark.name)).toEqual([])
   })
 
   it('declares the document roots and the tab label key', () => {

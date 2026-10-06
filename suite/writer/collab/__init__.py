@@ -14,8 +14,16 @@ ADAPTER = "writer"
 # The editor's fragment, and tab labels
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 DECLARED = json.loads(Path(__file__).with_name("features.json").read_text())
-# y-prosemirror makes only XmlElement (3) and XmlText (6) shared types
-SCHEMA = collab.EditorSchema(DECLARED["schema"], DECLARED["features"], frozenset({3, 6}))
+# y-prosemirror writes only GC, deleted, string, format, type and any content, and only XmlElement and
+# XmlText shared types
+SCHEMA = collab.EditorSchema(
+    DECLARED["schema"],
+    DECLARED["features"],
+    kinds=frozenset({0, 1, 4, 6, 7, 8}),
+    types=frozenset({3, 6}),
+    nodes=frozenset(DECLARED["nodes"]),
+    marks=frozenset(DECLARED["marks"]),
+)
 
 
 def ensure_tables() -> None:

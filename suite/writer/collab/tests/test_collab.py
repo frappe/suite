@@ -95,16 +95,23 @@ def element(cid: int, tag: str) -> bytes:
     return doc.get_update()
 
 
-def in_body(cid: int, shared: int) -> bytes:
-    """The update that puts one shared type of kind `shared` (1 Map, 2 Text) straight in an empty document's body."""
+def in_body(cid: int, kind: int, content: bytes) -> bytes:
+    """The update that puts one item of content `kind` straight in an empty document's body."""
     return (
         bytes([1, 1])
         + encoded_uint(cid)
-        + bytes([0, 7, 1])
+        + bytes([0, kind, 1])
         + encoded_string("default")
-        + encoded_uint(shared)
+        + content
         + bytes([0])
     )
+
+
+def formatted(cid: int, key: str) -> bytes:
+    """The update a tab writing as `cid` sends as it types one character carrying the format `key`."""
+    doc = pycrdt.Doc(client_id=cid)
+    doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText()).insert(0, "x", {key: {}})
+    return doc.get_update()
 
 
 def push_body(
@@ -369,7 +376,12 @@ class TestWriterCollab(IntegrationTestCase):
         lineage = self.open(node)[0]["lineage"]
         (sid, cid), (other_sid, other_cid) = self.session(node), self.session(node)
         marquee = push_body(lineage, sid, cid, 1, 0, element(cid, "marquee"))
-        stepped = replace(routes.SCHEMA, version=2, features={**routes.SCHEMA.features, "marquee": 2})
+        stepped = replace(
+            routes.SCHEMA,
+            version=2,
+            features={**routes.SCHEMA.features, "marquee": 2},
+            nodes=routes.SCHEMA.nodes | {"marquee"},
+        )
 
         undeclared = call(routes.collab_updates_post, node, body=marquee)
         with patch.object(routes, "SCHEMA", stepped):
@@ -402,8 +414,9 @@ class TestWriterCollab(IntegrationTestCase):
             call(
                 routes.collab_updates_post,
                 node,
-                body=push_body(lineage, sid, cid, 1, 0, in_body(cid, shared)),
+                body=push_body(lineage, sid, cid, 1, 0, in_body(cid, 7, encoded_uint(shared))),
             )
+            # A Map, then a Text
             for shared in (1, 2)
         ]
 
@@ -414,12 +427,38 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(self.open(node)[1], [])
         self.assertEqual(self.push(node, sid, cid, 1, typed(cid, ["a"])[0])[0], 200)
 
+    def test_a_row_using_a_name_in_the_wrong_role_or_an_embed_is_refused_and_stores_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+        sid, cid = self.session(node)
+        rows = {
+            "a mark name as a node": element(cid, "bold"),
+            "a node name as a mark": formatted(cid, "paragraph"),
+            "an overlapping mark's key": formatted(cid, "bold--abc"),
+            "an embed": in_body(cid, 5, encoded_string("{}")),
+        }
+
+        for case, row in rows.items():
+            with self.subTest(case):
+                response = call(
+                    routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, row)
+                )
+                self.assertEqual((response.status_code, answer(response)), (409, {"collab": "poison"}))
+        self.assertEqual(self.open(node)[1], [])
+        self.assertEqual(self.push(node, sid, cid, 1, formatted(cid, "bold"))[0], 200)
+
     def test_the_highest_schema_steps_up_only_when_a_stored_row_raises_it(self):
         self.set_mode("on")
         node = self.new_document()
         lineage = self.open(node)[0]["lineage"]
         (sid, cid), (newer_sid, newer), (later_sid, later) = (self.session(node) for _tab in range(3))
-        stepped = replace(routes.SCHEMA, version=2, features={**routes.SCHEMA.features, "marquee": 2})
+        stepped = replace(
+            routes.SCHEMA,
+            version=2,
+            features={**routes.SCHEMA.features, "marquee": 2},
+            nodes=routes.SCHEMA.nodes | {"marquee"},
+        )
 
         def steps():
             [(value,)] = frappe.db.sql(

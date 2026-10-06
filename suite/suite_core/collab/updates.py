@@ -33,6 +33,9 @@ class Struct:
     # For a type item, the shared type it holds: 0 Array, 1 Map, 2 Text, 3 XmlElement, 4 XmlFragment,
     # 5 XmlHook, 6 XmlText
     type: int | None = None
+    # An XmlElement's or XmlHook's name, and a format item's key as written
+    node: str | None = None
+    mark: str | None = None
 
     def refs(self) -> list[tuple[int, int]]:
         """The ids this struct needs before it can integrate: its origins and its parent item."""
@@ -220,7 +223,8 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
         return 1
     if ref == 6:  # format
         # A mark that may overlap itself is keyed `name--<hash>`
-        struct.names.append(reader.string().split("--", 1)[0])
+        struct.mark = reader.string()
+        struct.names.append(struct.mark.split("--", 1)[0])
         attributes = reader.json()
         if isinstance(attributes, dict):
             struct.names.extend(attributes)
@@ -228,7 +232,8 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
     if ref == 7:  # type
         struct.type = reader.uint()
         if struct.type in (3, 5):
-            struct.names.append(reader.string())
+            struct.node = reader.string()
+            struct.names.append(struct.node)
         elif struct.type not in (0, 1, 2, 4, 6):
             raise ValueError(f"unknown type {struct.type}")
         return 1

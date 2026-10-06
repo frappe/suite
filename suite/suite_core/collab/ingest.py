@@ -26,19 +26,30 @@ class Unclosed(Exception):
 @dataclass(frozen=True)
 class EditorSchema:
     """What a collab adapter's editor writes: its current schema, for each node, mark, attribute or
-    map key a row may name the schema that introduced it, and the shared types it makes."""
+    map key a row may name the schema that introduced it, the content kinds and shared types it makes,
+    and the names it gives elements and format items."""
 
     version: int
     features: dict[str, int]
+    kinds: frozenset[int]
     types: frozenset[int]
+    nodes: frozenset[str]
+    marks: frozenset[str]
 
     def allows(self, names: Iterable[str], stamp: int) -> bool:
         """Whether a row stamped `stamp` may hold every one of `names`: each declared at or below it."""
         return all(self.features.get(name, stamp + 1) <= stamp for name in names)
 
     def could_write(self, update: updates.Update) -> bool:
-        """Whether the editor could have written `update`: it makes no shared type the editor doesn't."""
-        return all(struct.type is None or struct.type in self.types for struct in update.structs)
+        """Whether the editor could have written `update`: every struct is content the editor makes,
+        with each name in its role."""
+        return all(
+            struct.kind in self.kinds
+            and (struct.type is None or struct.type in self.types)
+            and (struct.node is None or struct.node in self.nodes)
+            and (struct.mark is None or struct.mark in self.marks)
+            for struct in update.structs
+        )
 
 
 @dataclass

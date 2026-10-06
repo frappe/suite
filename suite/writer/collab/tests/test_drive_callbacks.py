@@ -34,9 +34,11 @@ def version_of(docname: str) -> dict:
 
 
 def declaring(*names: str):
-    """Writer's schema with `names` declared too, so a row may hold a shape the editor does not write today."""
+    """Writer's schema with `names` declared and Arrays, Maps and Texts allowed, so a row may hold a shape the
+    editor does not write today."""
     features = {**routes.SCHEMA.features, **dict.fromkeys(names, 1)}
-    return patch.object(routes, "SCHEMA", replace(routes.SCHEMA, features=features))
+    types = routes.SCHEMA.types | {0, 1, 2}
+    return patch.object(routes, "SCHEMA", replace(routes.SCHEMA, features=features, types=types))
 
 
 def embed(media: str) -> str:

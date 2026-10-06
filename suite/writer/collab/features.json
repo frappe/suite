@@ -91,5 +91,43 @@
     "uploadId": 1,
     "video": 1,
     "width": 1
-  }
+  },
+  "nodes": [
+    "attachment",
+    "blockquote",
+    "bulletList",
+    "codeBlock",
+    "embed",
+    "hardBreak",
+    "heading",
+    "horizontalRule",
+    "iframe",
+    "image",
+    "imageGroup",
+    "listItem",
+    "mention",
+    "orderedList",
+    "pageBreak",
+    "paragraph",
+    "tab",
+    "table",
+    "tableCell",
+    "tableHeader",
+    "tableRow",
+    "tagItem",
+    "taskItem",
+    "taskList",
+    "video"
+  ],
+  "marks": [
+    "bold",
+    "code",
+    "comment",
+    "italic",
+    "link",
+    "namedHighlight",
+    "strike",
+    "textStyle",
+    "underline"
+  ]
 }
