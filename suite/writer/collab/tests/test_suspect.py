@@ -507,6 +507,32 @@ class TestSuspect(CheckpointCase):
         frappe.set_user(NO_ROLE)
         self.assertRaises(frappe.PermissionError, writer_collab.suspect_documents)
 
+    def test_listing_is_open_to_system_managers_and_acting_to_suite_admins_and_administrator(self):
+        node = self.new_document()
+        Pen(self, node).adds(paragraph("alpha"))
+        doc_id = self.doc_row(node).id
+        methods = (
+            ("list", writer_collab.suspect_documents),
+            ("rejudge", lambda: writer_collab.rejudge_suspect(doc_id)),
+            ("clear", lambda: writer_collab.clear_suspect(doc_id)),
+        )
+        may = {
+            SYSTEM_MANAGER: (True, False, False),
+            SUITE_ADMIN: (True, True, True),
+            "Administrator": (True, True, True),
+            NO_ROLE: (False, False, False),
+            "Guest": (False, False, False),
+        }
+        for user, allowed in may.items():
+            for (name, method), expected in zip(methods, allowed, strict=True):
+                with self.subTest(user=user, method=name):
+                    frappe.set_user(user)
+                    if expected:
+                        method()
+                    else:
+                        self.assertRaises(frappe.PermissionError, method)
+        self.assertEqual((self.doc_row(node).suspect, self.requested), (None, []))
+
     def test_a_suite_admin_asks_for_a_new_verdict_on_a_held_document(self):
         node, doc_id, _a = self.held_document()
         before = self.alerts("suspect re-judged")
