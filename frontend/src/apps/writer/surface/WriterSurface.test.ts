@@ -78,6 +78,7 @@ vi.mock('@/apps/writer/components/NonCollabEditor.vue', async () => {
             style: slots.cover && { display: 'none' },
           }),
           slots.cover?.(),
+          slots.aside?.(),
         ],
     }),
   }
@@ -127,6 +128,7 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async () => {
             render(EditorContent, { editor: editor.value }),
           ]),
           slots.cover?.(),
+          slots.aside?.(),
         ]
       },
     }),

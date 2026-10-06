@@ -8,77 +8,78 @@
         :items="menuButtons"
       />
     </slot>
-    <div class="relative flex flex-1 overflow-hidden">
+    <div class="flex flex-1 overflow-hidden">
       <ToC v-if="editor" :editor :anchors :class="$slots.cover && 'invisible'" />
-      <div
-        v-show="!$slots.cover"
-        id="editor-scroll-container"
-        class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
-      >
+      <div class="relative flex flex-1 min-w-0">
         <div
-          class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
-          :style="gridStyle"
-          @click="onBackgroundClick"
+          v-show="!$slots.cover"
+          id="editor-scroll-container"
+          class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
         >
-          <div class="hidden md:block" />
-          <div class="flex flex-col grow min-w-0">
-            <FTextEditor
-              ref="textEditor"
-              v-model="localContent"
-              :upload-function="uploadFunction"
-              :autofocus="true"
-              placeholder="Start thinking…"
-              :extensions="editorExtensions"
-              :editable
-              @change="handleEditorChange"
-            >
-              <template #default="{ editor }">
-                <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
-                <EditorTableMenu :editor />
-                <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
-                  <EditorContent
-                    :editor
-                    role="textbox"
-                    aria-label="Document editor"
-                    aria-multiline="true"
-                    :class="[EDITOR_TEXT_CLASS, isPainting && 'cursor-crosshair']"
-                    :style="editorStyle"
-                  />
-                </EditorDropZone>
-              </template>
-            </FTextEditor>
-          </div>
-          <div class="relative hidden md:block min-w-0">
-            <FloatingComments
-              v-if="commentsPainted"
-              v-model:active-comment="activeComment"
-              :y-comments="comments"
-              :file
-              :show-comments
-              :show-resolved
-              :show-unanchored
-              :editor
-              @save="saveComments"
-            />
+          <div
+            class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
+            :style="gridStyle"
+            @click="onBackgroundClick"
+          >
+            <div class="hidden md:block" />
+            <div class="flex flex-col grow min-w-0">
+              <FTextEditor
+                ref="textEditor"
+                v-model="localContent"
+                :upload-function="uploadFunction"
+                :autofocus="true"
+                placeholder="Start thinking…"
+                :extensions="editorExtensions"
+                :editable
+                @change="handleEditorChange"
+              >
+                <template #default="{ editor }">
+                  <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
+                  <EditorTableMenu :editor />
+                  <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
+                    <EditorContent
+                      :editor
+                      role="textbox"
+                      aria-label="Document editor"
+                      aria-multiline="true"
+                      :class="[EDITOR_TEXT_CLASS, isPainting && 'cursor-crosshair']"
+                      :style="editorStyle"
+                    />
+                  </EditorDropZone>
+                </template>
+              </FTextEditor>
+            </div>
+            <div class="relative hidden md:block min-w-0">
+              <FloatingComments
+                v-if="commentsPainted"
+                v-model:active-comment="activeComment"
+                :y-comments="comments"
+                :file
+                :show-comments
+                :show-resolved
+                :show-unanchored
+                :editor
+                @save="saveComments"
+              />
+            </div>
           </div>
         </div>
+        <slot name="cover" />
+        <div
+          v-if="commentsPainted && comments._map.size && !$slots.cover"
+          class="hidden md:block absolute top-4 right-4"
+        >
+          <Dropdown :options="commentFilterOptions" align="end">
+            <Button
+              :icon="LucideMessageSquareQuote"
+              variant="outline"
+              label="Comment visibility"
+              tooltip="Comment visibility"
+            />
+          </Dropdown>
+        </div>
       </div>
-      <slot name="cover" />
-      <div v-if="sidePanel" class="hidden md:block w-80 shrink-0" />
-      <div
-        v-if="commentsPainted && comments._map.size && !$slots.cover"
-        class="hidden md:block absolute top-4"
-        :class="sidePanel ? 'right-[21rem]' : 'right-4'"
-      >
-        <Dropdown :options="commentFilterOptions" align="end">
-          <Button
-            :icon="LucideMessageSquareQuote"
-            variant="outline"
-            label="Comment visibility"
-            tooltip="Comment visibility"
-          />
-        </Dropdown>
-      </div>
+      <slot name="aside" />
     </div>
     <ToCMobile v-if="editor && !$slots.cover" :editor />
   </div>
@@ -107,7 +108,6 @@ import emitter from '@/apps/writer/emitter'
 import { rebuild } from '@/apps/writer/extensions/comments'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
-import { SIDE_PANEL } from '@/apps/writer/sidePanel'
 import { isModKey, printDoc } from '@/apps/writer/utils'
 import {
   EDITOR_TEXT_CLASS,
@@ -237,7 +237,6 @@ const onCommentActivated = (id) => {
 const hasCollaboration = props.extensions?.some((ext) => ext?.name === 'collaboration')
 const { users } = useUsers()
 const renameDocument = inject(RENAME_DOCUMENT, null)
-const sidePanel = inject(SIDE_PANEL, ref(false))
 
 const editorExtensions = [
   ...writerEditorExtensions({
