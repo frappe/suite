@@ -3,9 +3,6 @@ import { createApp, defineComponent, h, nextTick } from 'vue'
 
 import UpcomingMeetings from './UpcomingMeetings.vue'
 
-interface CallOptions {
-  params: () => { account: string; from_date: string; to_date: string }
-}
 interface MeetingEvent {
   id: string
   title: string
@@ -16,27 +13,27 @@ interface MeetingEvent {
 }
 
 const state = vi.hoisted(() => ({
-  options: null as CallOptions | null,
   push: vi.fn(),
-  account: { accountId: 'personal', userResource: { promise: Promise.resolve(), reload: vi.fn() } },
+  request: vi.fn(),
+  account: { accountId: 'personal', loadUser: () => Promise.resolve() },
   events: [] as MeetingEvent[],
 }))
 
+// The window the component last asked the calendar for.
+const requested = () => state.request.mock.lastCall?.[1]
+
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: state.push }) }))
-vi.mock('@/platform/session', () => ({
-  useSession: () => ({ user: { value: { id: 'faris@example.com' } } }),
-}))
 vi.mock('@/apps/calendar/stores/user', () => ({ userStore: () => state.account }))
+vi.mock('@/api', async () => {
+  const { api } = await vi.importActual<typeof import('@/api')>('@/api')
+  const { createApiClient } = await import('@/platform/server-state')
+  const engine = createApiClient(
+    { calendar: async () => ({ policy: () => ({ staleTime: 0 }) }) },
+    { persistence: false, transport: { request: state.request } },
+  )
+  return { api, useQuery: engine.useQuery }
+})
 vi.mock('frappe-ui', () => ({
-  useCall: (options: CallOptions) => {
-    state.options = options
-    return {
-      data: state.events,
-      loading: false,
-      error: null,
-      reload: vi.fn().mockResolvedValue(undefined),
-    }
-  },
   Button: defineComponent({
     props: ['label', 'ariaLabel'],
     setup:
@@ -61,6 +58,11 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setInterval'] })
   vi.setSystemTime(new Date(2026, 8, 30, 8, 0))
   state.push.mockClear()
+  state.request.mockReset()
+  state.request.mockImplementation(async (reference: { id: string }) => {
+    expect(reference.id).toBe('calendar.get_calendar_events')
+    return state.events
+  })
   state.events = [
     {
       id: 'today',
@@ -105,9 +107,7 @@ async function mount() {
     app.unmount()
     root.remove()
   }
-  await Promise.resolve()
-  await Promise.resolve()
-  await nextTick()
+  await vi.waitFor(() => expect(root.textContent).toContain('Design review'))
   return root
 }
 
@@ -133,7 +133,7 @@ describe('Meet upcoming list', () => {
     expect(root.textContent).toContain('Team planning')
     expect(root.textContent).toContain('Today')
     expect(root.textContent).toContain('Tomorrow')
-    expect(state.options!.params()).toMatchObject({
+    expect(requested()).toMatchObject({
       account: 'personal',
       from_date: '2026-09-30T00:00:00',
       to_date: '2026-10-01T23:59:59',
@@ -149,11 +149,13 @@ describe('Meet upcoming list', () => {
     await nextTick()
 
     // The window the groups below read has moved, so the request must move too.
-    expect(state.options!.params()).toMatchObject({
-      from_date: '2026-10-01T00:00:00',
-      to_date: '2026-10-02T23:59:59',
-    })
-    expect(root.textContent).toContain('Team planning')
+    await vi.waitFor(() =>
+      expect(requested()).toMatchObject({
+        from_date: '2026-10-01T00:00:00',
+        to_date: '2026-10-02T23:59:59',
+      }),
+    )
+    await vi.waitFor(() => expect(root.textContent).toContain('Team planning'))
     expect(root.textContent).not.toContain('Design review')
   })
 })

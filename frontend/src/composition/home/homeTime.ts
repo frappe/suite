@@ -1,8 +1,8 @@
 import type { CalendarEvent } from '@/apps/calendar'
 
-export interface HomeEventGroup {
+export interface HomeEventGroup<Event = CalendarEvent> {
   day: 'Today' | 'Tomorrow'
-  events: CalendarEvent[]
+  events: Event[]
 }
 
 export function homeEventWindow(now = new Date()): {
@@ -14,14 +14,14 @@ export function homeEventWindow(now = new Date()): {
   return { from: now.toISOString(), to: end.toISOString() }
 }
 
-export function groupHomeEvents(
-  events: readonly CalendarEvent[],
+export function groupHomeEvents<Event extends Pick<CalendarEvent, 'start'>>(
+  events: readonly Event[],
   now = new Date(),
-): HomeEventGroup[] {
+): HomeEventGroup<Event>[] {
   const today = localDayKey(now)
   const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
   const tomorrow = localDayKey(tomorrowDate)
-  const groups: Record<HomeEventGroup['day'], CalendarEvent[]> = {
+  const groups: Record<HomeEventGroup['day'], Event[]> = {
     Today: [],
     Tomorrow: [],
   }
@@ -57,7 +57,10 @@ export function toLocalDateTimeInput(date: Date): string {
   return shifted.toISOString().slice(0, 16)
 }
 
-function compareEventStart(left: CalendarEvent, right: CalendarEvent): number {
+function compareEventStart(
+  left: Pick<CalendarEvent, 'start'>,
+  right: Pick<CalendarEvent, 'start'>,
+): number {
   return (parseDate(left.start)?.getTime() ?? 0) - (parseDate(right.start)?.getTime() ?? 0)
 }
 

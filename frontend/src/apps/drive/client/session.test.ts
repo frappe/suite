@@ -4,6 +4,7 @@ import { createTransport, type Transport } from '@/platform/transport'
 
 import { driveLinks } from './links'
 import { MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
+import { testClient } from './testClient'
 
 const documentNode = (name: string) => ({
   name,
@@ -43,7 +44,7 @@ describe('document session credentials', () => {
     driveLinks.seed(code(0), 'deck')
     const ids = Array.from({ length: 21 }, (_, index) => `n${index}`)
     ids.forEach((id, index) => driveLinks.seed(code(index + 1), id))
-    const session = await openDriveDocumentSession('deck', { transport: requester })
+    const session = await openDriveDocumentSession('deck', { client: testClient(requester) })
 
     const groups = session.credentials.group(ids)
 
@@ -71,7 +72,7 @@ describe('document session credentials', () => {
     driveLinks.seed(code(0), 'deck')
     driveLinks.seed(code(1), 'part-a')
     driveLinks.seed(code(2), 'part-b')
-    const session = await openDriveDocumentSession('deck', { transport: requester })
+    const session = await openDriveDocumentSession('deck', { client: testClient(requester) })
     const sent: string[] = []
     vi.stubGlobal(
       'fetch',
@@ -107,7 +108,7 @@ describe('document session credentials', () => {
     vi.stubGlobal('fetch', vi.fn(record))
     driveLinks.seed(code(0), 'deck')
     const session = await openDriveDocumentSession('deck', {
-      transport: createTransport({ fetch: record }),
+      client: testClient(createTransport({ fetch: record })),
     })
 
     await session.comments.reply('missing-thread', 'Hello').catch(() => null)
@@ -124,12 +125,14 @@ describe('document session visits', () => {
     const visits: string[] = []
     const open = (viaLink: string | null) =>
       openDriveDocumentSession(viaLink ? 'linked' : 'own', {
-        transport: transport((id, input) => {
-          if (id === 'node_visit') visits.push(input.node)
-          return id === 'node_get'
-            ? { ...documentNode(input.node), access: { role: 20, via_link: viaLink } }
-            : {}
-        }),
+        client: testClient(
+          transport((id, input) => {
+            if (id === 'node_visit') visits.push(input.node)
+            return id === 'node_get'
+              ? { ...documentNode(input.node), access: { role: 20, via_link: viaLink } }
+              : {}
+          }),
+        ),
       })
 
     const own = await open(null)
@@ -153,10 +156,10 @@ describe('document session media', () => {
       }
       return {}
     })
-    const session = await openDriveDocumentSession('root', { transport: requester })
+    const session = await openDriveDocumentSession('root', { client: testClient(requester) })
     const handle = session.media('m1')
     await vi.runAllTicks()
-    await Promise.resolve()
+    for (let i = 0; i < 15; i++) await Promise.resolve()
     expect(handle.cacheKey.value).toBe('drive-media:/f/blob')
     await vi.advanceTimersByTimeAsync(MEDIA_REFRESH_MS)
     expect(mediaCalls).toBeGreaterThanOrEqual(2)

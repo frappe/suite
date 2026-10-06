@@ -11,6 +11,7 @@ import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
 import { flattenMentions } from '@/apps/mail/utils/mentions'
+import { reportMutationError } from '@/platform/feedback'
 
 export const toTitleCase = (str: string) =>
   str
@@ -82,46 +83,63 @@ export const raiseToast = (
   toast.error(text)
 }
 
-export const raisePromiseToast = (
+/** Report a refusal once, whether it came from the engine or an owner workflow. */
+export function raiseError(error: unknown): void {
+  if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError')
+    return
+  const cause =
+    error instanceof Error
+      ? error
+      : new Error(
+          typeof error === 'object' &&
+            error !== null &&
+            'message' in error &&
+            typeof error.message === 'string'
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : __('Action failed. Please try again later.'),
+        )
+  reportMutationError(cause)
+}
+
+export const raisePromiseToast = async (
   action: () => Promise<unknown>,
   loading: string,
   success: string,
   undoAction?: () => void,
 ) => {
   toast.dismiss()
-
-  const error = __('Action failed. Please try again later.')
-
-  if (undoAction)
-    return toast.promise(action(), {
-      loading,
-      success: {
-        message: success,
-        action: { label: __('Undo'), onClick: () => undoAction() },
-      },
-      error,
-    })
-
-  toast.promise(action(), { loading, success, error })
+  const id = toast.loading(loading)
+  try {
+    const result = await action()
+    toast.dismiss(id)
+    toast.success(
+      success,
+      undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined,
+    )
+    return result
+  } catch (error) {
+    toast.dismiss(id)
+    raiseError(error)
+  }
 }
 
-// Toast for an OPTIMISTIC action: the UI has already updated, so show the success message (with an
-// optional Undo) immediately — no "…ing" loading phase. If the (already in-flight) request fails, the
-// caller rolls the UI back; this only swaps the confirmation for an error toast.
+// Rows can update optimistically; confirmation follows the successful server write.
 export const raiseOptimisticToast = (
   forward: Promise<unknown>,
   success: string,
   undoAction?: () => void,
 ) => {
   toast.dismiss()
-  const id = toast.success(
-    success,
-    undoAction ? { action: { label: __('Undo'), onClick: () => undoAction() } } : undefined,
+  void forward.then(
+    () =>
+      toast.success(
+        success,
+        undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined,
+      ),
+    raiseError,
   )
-  forward.catch(() => {
-    toast.dismiss(id)
-    raiseToast(__('Action failed. Please try again later.'), 'error')
-  })
 }
 
 export const copyToClipBoard = async (text: string) => {
@@ -133,11 +151,21 @@ export const copyToClipBoard = async (text: string) => {
   }
 }
 
-export const getGroupedRecipients = (
+export function getGroupedRecipients(
+  recipients: Recipient[],
+  formatToString: false,
+  showEmail?: boolean,
+): { to: Recipient[]; cc: Recipient[]; bcc: Recipient[] }
+export function getGroupedRecipients(
+  recipients: Recipient[],
+  formatToString?: true,
+  showEmail?: boolean,
+): { to: string; cc: string; bcc: string }
+export function getGroupedRecipients(
   recipients: Recipient[],
   formatToString = true,
   showEmail = false,
-) => {
+) {
   const to = []
   const cc = []
   const bcc = []
@@ -413,13 +441,18 @@ export const isSystemScript = (scriptName: string) =>
 
 export { decodeHtmlEntities, hasHtmlContent, plainTextToHtml } from '@/apps/mail/utils/html'
 
-export const getIcon = (mailbox: MailboxData) => {
+export const getIcon = (mailbox: {
+  _name?: string
+  icon?: string | null
+  role?: string | null
+}) => {
   // The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
   // stray Mailbox Settings icon (it must never render as a generic folder).
   if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
   if (mailbox.icon === 'spam') return 'mail-warning'
   if (mailbox.icon) return mailbox.icon
-  if (mailbox.role && mailbox.role in FOLDER_ICON_MAP) return FOLDER_ICON_MAP[mailbox.role]
+  if (mailbox.role && mailbox.role in FOLDER_ICON_MAP)
+    return FOLDER_ICON_MAP[mailbox.role as keyof typeof FOLDER_ICON_MAP]
   return 'folder'
 }
 

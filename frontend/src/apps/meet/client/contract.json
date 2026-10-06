@@ -4,6 +4,10 @@
   "operations": [
     {
       "id": "rooms_post",
+      "kind": "mutation",
+      "publicName": "rooms.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "rooms",
       "pathParams": [],
@@ -11,17 +15,12 @@
       "body": {
         "properties": {
           "type": {
-            "enum": [
-              "open",
-              "restricted"
-            ],
+            "enum": ["open", "restricted"],
             "title": "Type",
             "type": "string"
           }
         },
-        "required": [
-          "type"
-        ],
+        "required": ["type"],
         "title": "CreateRoom",
         "type": "object"
       },
@@ -36,22 +35,22 @@
             "type": "string"
           }
         },
-        "required": [
-          "code",
-          "url"
-        ],
+        "required": ["code", "url"],
         "title": "Room",
         "type": "object"
       },
-      "errors": [
-        "BadRequest"
-      ],
+      "errors": ["BadRequest"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "scheduled_meetings_post",
+      "kind": "mutation",
+      "publicName": "meetings.schedule",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "scheduled-meetings",
       "pathParams": [],
@@ -69,9 +68,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "email"
-            ],
+            "required": ["email"],
             "title": "Attendee",
             "type": "object"
           }
@@ -97,12 +94,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "title",
-          "start",
-          "end",
-          "attendees"
-        ],
+        "required": ["title", "start", "end", "attendees"],
         "title": "ScheduleMeeting",
         "type": "object"
       },
@@ -119,10 +111,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "code",
-              "url"
-            ],
+            "required": ["code", "url"],
             "title": "Room",
             "type": "object"
           }
@@ -136,22 +125,22 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting",
-          "calendar_event_id"
-        ],
+        "required": ["meeting", "calendar_event_id"],
         "title": "ScheduledMeeting",
         "type": "object"
       },
-      "errors": [
-        "BadRequest"
-      ],
+      "errors": ["BadRequest"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "room_preview",
+      "kind": "query",
+      "publicName": "rooms.preview",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "rooms/preview",
       "pathParams": [],
@@ -162,24 +151,34 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": ["title"],
+        "title": "Preview",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "room_access",
+      "kind": "query",
+      "publicName": "rooms.access",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "rooms/access",
       "pathParams": [],
@@ -190,24 +189,38 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "properties": {
+          "allow_guest": {
+            "title": "Allow Guest",
+            "type": "boolean"
+          },
+          "host_only_chat": {
+            "title": "Host Only Chat",
+            "type": "boolean"
+          }
+        },
+        "required": ["allow_guest"],
+        "title": "Access",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "room_connection",
+      "kind": "mutation",
+      "publicName": "rooms.connect",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "rooms/connections",
       "pathParams": [],
@@ -219,9 +232,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
@@ -232,10 +243,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "room_presence_token",
+      "kind": "query",
+      "publicName": "rooms.presenceToken",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "rooms/presence-tokens",
       "pathParams": [],
@@ -246,24 +262,56 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "properties": {
+          "restricted_preview": {
+            "title": "Restricted Preview",
+            "type": "boolean"
+          },
+          "auth_token": {
+            "title": "Auth Token",
+            "type": "string"
+          },
+          "sfu_url": {
+            "title": "Sfu Url",
+            "type": "string"
+          },
+          "sfu_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfu Port"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          }
+        },
+        "title": "PresenceToken",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "room_join",
+      "kind": "mutation",
+      "publicName": "rooms.join",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "rooms/joins",
       "pathParams": [],
@@ -275,9 +323,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
@@ -288,10 +334,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "guest_room_join",
+      "kind": "mutation",
+      "publicName": "guests.join",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "rooms/guest-joins",
       "pathParams": [],
@@ -315,10 +366,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id",
-          "guest_name"
-        ],
+        "required": ["meeting_id", "guest_name"],
         "title": "GuestJoin",
         "type": "object"
       },
@@ -329,10 +377,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "guest_room_connection",
+      "kind": "mutation",
+      "publicName": "guests.connect",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "rooms/guest-connections",
       "pathParams": [],
@@ -352,11 +405,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id",
-          "guest_id",
-          "guest_session_token"
-        ],
+        "required": ["meeting_id", "guest_id", "guest_session_token"],
         "title": "GuestRoomRef",
         "type": "object"
       },
@@ -367,10 +416,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "guest_room_token",
+      "kind": "mutation",
+      "publicName": "guests.refreshToken",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "rooms/guest-tokens",
       "pathParams": [],
@@ -390,11 +444,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id",
-          "guest_id",
-          "guest_session_token"
-        ],
+        "required": ["meeting_id", "guest_id", "guest_session_token"],
         "title": "GuestRoomRef",
         "type": "object"
       },
@@ -405,10 +455,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "room_token",
+      "kind": "mutation",
+      "publicName": "rooms.refreshToken",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "rooms/tokens",
       "pathParams": [],
@@ -420,9 +475,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
@@ -433,10 +486,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "e2ee_device",
+      "kind": "mutation",
+      "publicName": "devices.register",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "e2ee-devices",
       "pathParams": [],
@@ -452,10 +510,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "device_id",
-          "ed25519_public_key"
-        ],
+        "required": ["device_id", "ed25519_public_key"],
         "title": "E2EEDevice",
         "type": "object"
       },
@@ -466,10 +521,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "recording_state",
+      "kind": "query",
+      "publicName": "recordings.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "recordings/state",
       "pathParams": [],
@@ -480,18 +540,103 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
       "body": null,
       "output": {
+        "$defs": {
+          "RecordingState": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "Pending",
+                  "Starting",
+                  "Recording",
+                  "Interrupted",
+                  "Stopping",
+                  "Processing",
+                  "Ready",
+                  "Partial",
+                  "Failed",
+                  "Cancelled"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "state_revision": {
+                "title": "State Revision",
+                "type": "integer"
+              },
+              "started_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Started At"
+              },
+              "capture_started_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Capture Started At"
+              },
+              "interruption_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Interruption Id"
+              },
+              "interrupted_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Interrupted At"
+              },
+              "interruption_deadline": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Interruption Deadline"
+              }
+            },
+            "required": ["name", "status", "state_revision"],
+            "title": "RecordingState",
+            "type": "object"
+          }
+        },
         "anyOf": [
           {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/$defs/RecordingState"
           },
           {
             "type": "null"
@@ -501,10 +646,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "recording_preflight",
+      "kind": "query",
+      "publicName": "recordings.preflight",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "recordings/preflight",
       "pathParams": [],
@@ -515,24 +665,86 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
       "body": null,
       "output": {
-        "additionalProperties": true,
+        "properties": {
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "global_enabled": {
+            "title": "Global Enabled",
+            "type": "boolean"
+          },
+          "e2ee_conflict": {
+            "title": "E2Ee Conflict",
+            "type": "boolean"
+          },
+          "storage_available": {
+            "title": "Storage Available",
+            "type": "boolean"
+          },
+          "recorder_available": {
+            "title": "Recorder Available",
+            "type": "boolean"
+          },
+          "estimated_seconds": {
+            "title": "Estimated Seconds",
+            "type": "integer"
+          },
+          "estimated_bytes": {
+            "title": "Estimated Bytes",
+            "type": "integer"
+          },
+          "free_bytes": {
+            "title": "Free Bytes",
+            "type": "integer"
+          },
+          "budget_bytes": {
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "budget_seconds": {
+            "title": "Budget Seconds",
+            "type": "integer"
+          },
+          "maximum_seconds": {
+            "title": "Maximum Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "eligible",
+          "global_enabled",
+          "e2ee_conflict",
+          "storage_available",
+          "recorder_available",
+          "estimated_seconds",
+          "estimated_bytes",
+          "free_bytes",
+          "budget_bytes",
+          "budget_seconds",
+          "maximum_seconds"
+        ],
+        "title": "RecordingPreflight",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "recording_start",
+      "kind": "mutation",
+      "publicName": "recordings.start",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "recordings/starts",
       "pathParams": [],
@@ -548,24 +760,77 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id",
-          "request_id"
-        ],
+        "required": ["meeting_id", "request_id"],
         "title": "RecordingStart",
         "type": "object"
       },
       "output": {
-        "additionalProperties": true,
-        "type": "object"
+        "$defs": {
+          "RecordingCommand": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "Pending",
+                  "Starting",
+                  "Recording",
+                  "Interrupted",
+                  "Stopping",
+                  "Processing",
+                  "Ready",
+                  "Partial",
+                  "Failed",
+                  "Cancelled"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "grant_delivered": {
+                "title": "Grant Delivered",
+                "type": "boolean"
+              }
+            },
+            "required": ["name", "status"],
+            "title": "RecordingCommand",
+            "type": "object"
+          },
+          "RejectedRecording": {
+            "properties": {
+              "status": {
+                "const": "Rejected",
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": ["status"],
+            "title": "RejectedRecording",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/RecordingCommand"
+          },
+          {
+            "$ref": "#/$defs/RejectedRecording"
+          }
+        ]
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "recording_stop",
+      "kind": "mutation",
+      "publicName": "recordings.stop",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "recordings/stops",
       "pathParams": [],
@@ -577,17 +842,47 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id"
-        ],
+        "required": ["meeting_id"],
         "title": "RoomRef",
         "type": "object"
       },
       "output": {
+        "$defs": {
+          "RecordingCommand": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "Pending",
+                  "Starting",
+                  "Recording",
+                  "Interrupted",
+                  "Stopping",
+                  "Processing",
+                  "Ready",
+                  "Partial",
+                  "Failed",
+                  "Cancelled"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "grant_delivered": {
+                "title": "Grant Delivered",
+                "type": "boolean"
+              }
+            },
+            "required": ["name", "status"],
+            "title": "RecordingCommand",
+            "type": "object"
+          }
+        },
         "anyOf": [
           {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/$defs/RecordingCommand"
           },
           {
             "type": "null"
@@ -597,10 +892,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "calendar_meeting",
+      "kind": "mutation",
+      "publicName": "meetings.createCalendar",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "calendar-meetings",
       "pathParams": [],
@@ -708,9 +1008,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "account"
-        ],
+        "required": ["account"],
         "title": "CalendarMeeting",
         "type": "object"
       },
@@ -729,21 +1027,22 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id",
-          "meeting_url",
-          "event_id"
-        ],
+        "required": ["meeting_id", "meeting_url", "event_id"],
         "title": "CalendarMeetingResult",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "room_link",
+      "kind": "mutation",
+      "publicName": "rooms.createLink",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "room-links",
       "pathParams": [],
@@ -763,9 +1062,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "account"
-        ],
+        "required": ["account"],
         "title": "RoomLink",
         "type": "object"
       },
@@ -780,17 +1077,719 @@
             "type": "string"
           }
         },
-        "required": [
-          "meeting_id",
-          "meeting_url"
-        ],
+        "required": ["meeting_id", "meeting_url"],
         "title": "RoomLinkResult",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "recent_rooms",
+      "kind": "query",
+      "publicName": "rooms.recent",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "rooms/recent",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "RecentRoom": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Title"
+              },
+              "last_joined": {
+                "title": "Last Joined",
+                "type": "string"
+              },
+              "recording": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recording"
+              }
+            },
+            "required": ["id", "title", "last_joined", "recording"],
+            "title": "RecentRoom",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/RecentRoom"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "recording_list",
+      "kind": "query",
+      "publicName": "recordings.list",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "recordings",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "RecordingSummary": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "meet_room": {
+                "title": "Meet Room",
+                "type": "string"
+              },
+              "room_title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Room Title"
+              },
+              "started_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Started At"
+              },
+              "artifact": {
+                "title": "Artifact",
+                "type": "string"
+              },
+              "artifact_duration": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Artifact Duration"
+              },
+              "status": {
+                "enum": ["Ready", "Partial"],
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "meet_room",
+              "room_title",
+              "started_at",
+              "artifact",
+              "artifact_duration",
+              "status"
+            ],
+            "title": "RecordingSummary",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/RecordingSummary"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "room_search",
+      "kind": "query",
+      "publicName": "rooms.search",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "rooms/search",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "q": {
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        "required": ["q"],
+        "title": "RoomSearch",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "RoomSummary": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Title"
+              }
+            },
+            "required": ["name", "title"],
+            "title": "RoomSummary",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/RoomSummary"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "room_document",
+      "kind": "query",
+      "publicName": "rooms.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "/api/v2/document/Meet Room/{name}",
+      "pathParams": ["name"],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "RoomUser": {
+            "properties": {
+              "user": {
+                "title": "User",
+                "type": "string"
+              }
+            },
+            "required": ["user"],
+            "title": "RoomUser",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "co_hosts": {
+            "items": {
+              "$ref": "#/$defs/RoomUser"
+            },
+            "title": "Co Hosts",
+            "type": "array"
+          },
+          "allow_guest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "enum": [0, 1],
+                "type": "integer"
+              }
+            ],
+            "title": "Allow Guest"
+          },
+          "meeting_type": {
+            "enum": ["open", "restricted"],
+            "title": "Meeting Type",
+            "type": "string"
+          },
+          "host_only_chat": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "enum": [0, 1],
+                "type": "integer"
+              }
+            ],
+            "title": "Host Only Chat"
+          },
+          "e2ee_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "enum": [0, 1],
+                "type": "integer"
+              }
+            ],
+            "title": "E2Ee Enabled"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "title",
+          "co_hosts",
+          "allow_guest",
+          "meeting_type",
+          "host_only_chat",
+          "e2ee_enabled"
+        ],
+        "title": "RoomDocument",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "approve_join_request",
+      "kind": "mutation",
+      "publicName": "rooms.approve",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/approve_join_request",
+      "pathParams": ["name"],
+      "query": null,
+      "body": {
+        "properties": {
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": ["user_id"],
+        "title": "UserCommand",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": ["meeting_id", "message"],
+        "title": "CommandResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "approve_all_join_requests",
+      "kind": "mutation",
+      "publicName": "rooms.approveAll",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/approve_all_join_requests",
+      "pathParams": ["name"],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": ["meeting_id", "message"],
+        "title": "CommandResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "reject_join_request",
+      "kind": "mutation",
+      "publicName": "rooms.reject",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/reject_join_request",
+      "pathParams": ["name"],
+      "query": null,
+      "body": {
+        "properties": {
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": ["user_id"],
+        "title": "UserCommand",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": ["meeting_id", "message"],
+        "title": "CommandResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_waiting_room_details",
+      "kind": "query",
+      "publicName": "rooms.waiting",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/get_waiting_room_details",
+      "pathParams": ["name"],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "WaitingUser": {
+            "properties": {
+              "user_id": {
+                "title": "User Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_name": {
+                "title": "User Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "is_guest": {
+                "title": "Is Guest",
+                "type": "boolean"
+              }
+            },
+            "required": ["user_id", "full_name", "user_name", "user_image", "is_guest"],
+            "title": "WaitingUser",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "waiting_users": {
+            "items": {
+              "$ref": "#/$defs/WaitingUser"
+            },
+            "title": "Waiting Users",
+            "type": "array"
+          }
+        },
+        "required": ["meeting_id", "waiting_users"],
+        "title": "WaitingRoom",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "ban_guest",
+      "kind": "mutation",
+      "publicName": "rooms.banGuest",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/ban_guest",
+      "pathParams": ["name"],
+      "query": null,
+      "body": {
+        "properties": {
+          "guest_id": {
+            "title": "Guest Id",
+            "type": "string"
+          }
+        },
+        "required": ["guest_id"],
+        "title": "GuestCommand",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "guest_id": {
+            "title": "Guest Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "banned",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["meeting_id", "guest_id", "status"],
+        "title": "BanResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "promote_to_cohost",
+      "kind": "mutation",
+      "publicName": "rooms.promote",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/promote_to_cohost",
+      "pathParams": ["name"],
+      "query": null,
+      "body": {
+        "properties": {
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": ["user_id"],
+        "title": "UserCommand",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": ["meeting_id", "message"],
+        "title": "CommandResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "enable_e2ee",
+      "kind": "mutation",
+      "publicName": "rooms.enableEncryption",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/enable_e2ee",
+      "pathParams": ["name"],
+      "query": null,
+      "body": null,
+      "output": {
+        "type": "boolean"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_settings",
+      "kind": "mutation",
+      "publicName": "rooms.updateSettings",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Meet Room/{name}/method/update_settings",
+      "pathParams": ["name"],
+      "query": null,
+      "body": {
+        "properties": {
+          "allow_guest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "enum": [0, 1],
+                "type": "integer"
+              }
+            ],
+            "title": "Allow Guest"
+          },
+          "meeting_type": {
+            "enum": ["open", "restricted"],
+            "title": "Meeting Type",
+            "type": "string"
+          },
+          "host_only_chat": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "enum": [0, 1],
+                "type": "integer"
+              }
+            ],
+            "title": "Host Only Chat"
+          }
+        },
+        "title": "SettingsCommand",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "allow_guest": {
+            "title": "Allow Guest",
+            "type": "boolean"
+          },
+          "meeting_type": {
+            "enum": ["open", "restricted"],
+            "title": "Meeting Type",
+            "type": "string"
+          },
+          "host_only_chat": {
+            "title": "Host Only Chat",
+            "type": "boolean"
+          }
+        },
+        "title": "SettingsResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
     }
   ]
 }

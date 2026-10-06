@@ -1,11 +1,8 @@
 import { computed, getCurrentInstance, ref } from 'vue'
 
-import { batchNodes, node, purgeNodes } from '@/apps/drive/client/nodes'
-import { emptyTrash } from '@/apps/drive/client/roots'
+import { api, useMutation, useQuery } from '@/api'
 import { DRIVE_ROLES, hasRole, type DriveBatchResult } from '@/apps/drive/client/types'
 import { confirm, toast } from '@/platform/feedback'
-import { useMutation, useQuery } from '@/platform/server-state'
-import type { PlatformError } from '@/platform/transport'
 
 import { announceRestore, subject, type ChangedItem } from '../changeToast'
 import { presentDialog } from '../dialogHost'
@@ -24,12 +21,23 @@ export function useTrashActions(root: () => string | null) {
   const outcome = ref<DriveBatchResult | null>(null)
   const verb = ref('')
   // Silent: a failed request gets a toast with Retry below, not the default one.
-  const restoring = useMutation(batchNodes(), { silent: true })
-  const purging = useMutation(purgeNodes(), { silent: true })
-  const emptying = useMutation(emptyTrash(), { silent: true })
-  const rootDetail = useQuery(() => {
+  const restoring = useMutation(api.drive.nodes.batch, {
+    silent: true,
+  })
+  const purging = useMutation(api.drive.nodes.purgeBatch, {
+    silent: true,
+  })
+  const emptying = useMutation(api.drive.roots.emptyTrash, {
+    silent: true,
+  })
+  const rootDetail = useQuery(api.drive.nodes.get, () => {
     const id = root()
-    return id ? node(id, 'access') : false
+    return id
+      ? {
+          node: id,
+          expand: 'access',
+        }
+      : false
   })
   /** Empty trash deletes other people's items too, so it needs MANAGE on the root. */
   const canEmptyTrash = computed(() => hasRole(rootDetail.data, DRIVE_ROLES.manage))
@@ -41,31 +49,37 @@ export function useTrashActions(root: () => string | null) {
    * same root for all of them. Cancel leaves them in Trash.
    */
   async function restore(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
-    const first = await restoring.run({
-      nodes: items.map((item) => item.node),
-      patch: { state: 'Active' },
-    })
-    if (!first) {
+    try {
+      const first = await restoring.run({
+        nodes: items.map((item) => item.node),
+        patch: {
+          state: 'Active',
+        },
+      })
+      const homeless = first.failed.filter((failure) => failure.type === DESTINATION_REQUIRED)
+      const rootId = root()
+      if (!homeless.length || !rootId) return reportRestore(items, first)
+      const parent = await presentDialog<string>(
+        context,
+        () => import('./RestoreDestinationDialog.vue'),
+        {
+          root: rootId,
+          count: homeless.length,
+        },
+        'choose',
+      )
+      // Cancel leaves them in Trash, listed as failed in the outcome.
+      if (!parent) return reportRestore(items, first)
+      return restoreInto(
+        items,
+        first,
+        homeless.map((failure) => failure.node),
+        parent,
+      )
+    } catch {
       offerRetry(restoring.error, () => restore(items))
       return null
     }
-    const homeless = first.failed.filter((failure) => failure.type === DESTINATION_REQUIRED)
-    const rootId = root()
-    if (!homeless.length || !rootId) return reportRestore(items, first)
-    const parent = await presentDialog<string>(
-      context,
-      () => import('./RestoreDestinationDialog.vue'),
-      { root: rootId, count: homeless.length },
-      'choose',
-    )
-    // Cancel leaves them in Trash, listed as failed in the outcome.
-    if (!parent) return reportRestore(items, first)
-    return restoreInto(
-      items,
-      first,
-      homeless.map((failure) => failure.node),
-      parent,
-    )
   }
 
   /** The second restore: items whose folder is gone, into the folder the user picked. */
@@ -75,18 +89,25 @@ export function useTrashActions(root: () => string | null) {
     nodes: string[],
     parent: string,
   ): Promise<DriveBatchResult | null> {
-    const second = await restoring.run({ nodes, patch: { state: 'Active', parent_node: parent } })
-    if (!second) {
+    try {
+      const second = await restoring.run({
+        nodes,
+        patch: {
+          state: 'Active',
+          parent_node: parent,
+        },
+      })
+      return reportRestore(items, {
+        ok: [...first.ok, ...second.ok],
+        failed: [
+          ...first.failed.filter((failure) => failure.type !== DESTINATION_REQUIRED),
+          ...second.failed,
+        ],
+      })
+    } catch {
       offerRetry(restoring.error, () => restoreInto(items, first, nodes, parent))
       return null
     }
-    return reportRestore(items, {
-      ok: [...first.ok, ...second.ok],
-      failed: [
-        ...first.failed.filter((failure) => failure.type !== DESTINATION_REQUIRED),
-        ...second.failed,
-      ],
-    })
   }
 
   /** A toast with Undo names what came back. The alert stays only to list failures. */
@@ -98,7 +119,6 @@ export function useTrashActions(root: () => string | null) {
     show(result, 'restored')
     return result
   }
-
   async function purge(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
     const agreed = await confirm({
       title: items.length === 1 ? 'Delete forever?' : `Delete ${items.length} items forever?`,
@@ -112,17 +132,19 @@ export function useTrashActions(root: () => string | null) {
 
   /** Deleting forever cannot be undone, so its toast offers no Undo. */
   async function runPurge(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
-    const result = await purging.run({ nodes: items.map((item) => item.node) })
-    if (!result) {
+    try {
+      const result = await purging.run({
+        nodes: items.map((item) => item.node),
+      })
+      const deleted = items.filter((item) => result.ok.includes(item.node))
+      if (deleted.length) toast.success(`Deleted ${subject(deleted)} forever`)
+      show(result, 'deleted forever')
+      return result
+    } catch {
       offerRetry(purging.error, () => runPurge(items))
       return null
     }
-    const deleted = items.filter((item) => result.ok.includes(item.node))
-    if (deleted.length) toast.success(`Deleted ${subject(deleted)} forever`)
-    show(result, 'deleted forever')
-    return result
   }
-
   async function emptyAll(): Promise<number | null> {
     const rootId = root()
     if (!rootId || !canEmptyTrash.value) return null
@@ -135,33 +157,36 @@ export function useTrashActions(root: () => string | null) {
     if (!agreed) return null
     return runEmpty(rootId)
   }
-
   async function runEmpty(rootId: string): Promise<number | null> {
-    const result = await emptying.run({ root: rootId })
-    if (!result) {
+    try {
+      const result = await emptying.run({
+        root: rootId,
+      })
+      outcome.value = null
+      toast.success(
+        result.count === 1 ? 'Deleted 1 item forever' : `Deleted ${result.count} items forever`,
+      )
+      return result.count
+    } catch {
       offerRetry(emptying.error, () => runEmpty(rootId))
       return null
     }
-    outcome.value = null
-    toast.success(
-      result.count === 1 ? 'Deleted 1 item forever' : `Deleted ${result.count} items forever`,
-    )
-    return result.count
   }
 
   /** A whole request failed. Retry sends the same request, with no new questions. */
-  function offerRetry(error: PlatformError | null, again: () => unknown) {
+  function offerRetry(error: Error | null, again: () => unknown) {
     toast.error(error?.message ?? 'The request failed.', {
       duration: 10_000,
-      action: { label: 'Retry', onClick: () => void again() },
+      action: {
+        label: 'Retry',
+        onClick: () => void again(),
+      },
     })
   }
-
   function show(result: DriveBatchResult, nextVerb: string) {
     outcome.value = result
     verb.value = nextVerb
   }
-
   return {
     outcome,
     verb,

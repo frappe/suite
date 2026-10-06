@@ -1,15 +1,6 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
-import {
-  Avatar,
-  Button,
-  createResource,
-  Dialog,
-  Dropdown,
-  TabButtons,
-  toast,
-  Tooltip,
-} from 'frappe-ui'
+import { Avatar, Button, Dialog, Dropdown, TabButtons, toast, Tooltip } from 'frappe-ui'
 import {
   Bell,
   Briefcase,
@@ -31,6 +22,7 @@ import {
 import { computed, inject, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation } from '@/api'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
@@ -94,18 +86,18 @@ const RSVP_OPTIONS = [
 // RSVPs go through the dedicated endpoint rather than a whole-event edit: it patches only the
 // caller's own participationStatus, and routes the organizer's notification through the custom
 // event_response template when custom event invites are enabled.
-const rsvpEvent = createResource({
-  url: 'suite.calendar.api.rsvp_calendar_event',
-  makeParams: ({ response, scope }: { response: string; scope: RecurringScope }) => ({
+const rsvpEvent = useMutation(api.calendar.events.respond, { silent: true })
+async function respond(response: string, scope: RecurringScope) {
+  const id = serverEventId(calendarEvent)
+  if (!id || !calendarEvent.account) throw new Error('An RSVP requires an account and event ID')
+  await rsvpEvent.run({
     account: calendarEvent.account,
-    id: serverEventId(calendarEvent),
+    id,
     response: response.toLowerCase(),
-    // One occurrence answered on its own is an override on the series, addressed by this
-    // occurrence's recurrence id. The whole series is the same call without one.
     recurrence_id: scope === 'instance' ? calendarEvent.recurrence_id : null,
-  }),
-  onSuccess: () => emit('reloadEvents'),
-})
+  })
+  emit('reloadEvents')
+}
 
 // A recurring event asks the same question an edit or a delete asks — a standup you miss one
 // week is not a standup you have left. Only the series-wide answer reaches the server so far,
@@ -116,7 +108,7 @@ const pendingResponse = ref('')
 
 const submitResponse = (response: string, scope: RecurringScope) => {
   showRsvpScopeModal.value = false
-  toast.promise(rsvpEvent.submit({ response, scope }), {
+  toast.promise(respond(response, scope), {
     loading: __('Sending response...'),
     success: __('Response sent.'),
     error: __('Action failed. Please try again in some time.'),
@@ -160,7 +152,7 @@ const rsvpScopeModalProps = computed(() => ({
     unavailable: isOwnEvent.value ? [] : ['instance'],
   }).filter((option) => option.value !== 'following'),
   confirmLabel: __('Send response'),
-  loading: rsvpEvent.loading,
+  loading: rsvpEvent.isPending,
 }))
 
 // An occurrence whose series has no readable rule left has nothing to say here,

@@ -71,8 +71,8 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   if (!isLoggedIn) return
 
   // Wait for user data.
-  const { userResource, mailboxes, resolveAccount } = userStore()
-  await userResource.promise
+  const { userResource, mailboxes, resolveAccount, loadUser } = userStore()
+  await loadUser()
   const user = userResource.data
 
   // The Admin Dashboard is Suite Cloud's face on the site: it is for admins, and only on a
@@ -100,7 +100,7 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   // Wait for mailbox list. The fetch rejects when the mail server is temporarily down;
   // swallow that so navigation still completes — otherwise the initial navigation aborts,
   // the app never mounts and the user gets a blank page instead of the unavailable banner.
-  await mailboxes.promise?.catch(() => {})
+  await mailboxes.refetch().catch(() => {})
   const defaultRoute = buildDefaultRoute(accountId, mailboxes)
 
   if (to.meta.isDashboard && !canAdminister) return defaultRoute

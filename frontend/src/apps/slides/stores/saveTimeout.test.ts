@@ -1,23 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
-const server = vi.hoisted(() => ({ answer: null as ((options: any) => any) | null }))
-
-vi.mock('frappe-ui', () => ({
-  createResource: () => ({}),
-  call: vi.fn(),
-  frappeRequest: (options: any) =>
-    server.answer
-      ? Promise.resolve().then(() => server.answer!(options))
-      : new Promise((_, reject) => {
-          options.signal?.addEventListener('abort', () => reject(options.signal.reason))
-        }),
-  toast: { warning: vi.fn(), error: vi.fn() },
+const server = vi.hoisted(() => ({
+  answer: null as
+    | ((options: { url: string; params: Record<string, unknown>; signal?: AbortSignal }) => unknown)
+    | null,
 }))
+
+vi.mock('@/api', async () => {
+  const { api: slidesAPI } = await import('@/apps/slides/client/generated')
+  const send = (
+    reference: { path: string },
+    params: Record<string, unknown>,
+    options: { signal?: AbortSignal } = {},
+  ) =>
+    server.answer
+      ? Promise.resolve().then(() =>
+          server.answer!({ url: reference.path.replace('/api/method/', ''), params, ...options }),
+        )
+      : new Promise((_, reject) =>
+          options.signal?.addEventListener('abort', () => reject(options.signal?.reason)),
+        )
+  return { api: { slides: slidesAPI }, client: { query: send, mutation: send } }
+})
+vi.mock('frappe-ui', () => ({ toast: { warning: vi.fn(), error: vi.fn() } }))
 vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { query: {} } } } }))
 vi.mock('@/apps/slides/stores/slide', () => ({ slides: ref([]) }))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({ commandHistory: { clearHistory: vi.fn() } }))
-vi.mock('@/apps/slides/stores/element', () => ({ normalizeZIndices: (els: any) => els }))
+vi.mock('@/apps/slides/stores/element', () => ({ normalizeZIndices: (els: unknown[]) => els }))
 vi.mock('@/boot/session', () => ({ getSessionUser: () => 'me@example.com' }))
 vi.mock('@/apps/slides/stores/saving', () => ({
   markDirty: vi.fn(),
@@ -58,7 +68,7 @@ describe('savePresentationDoc', () => {
     expect(presentationDoc.value.modified).toBe('N1')
   })
 
-  const stale = () => Object.assign(new Error('stale'), { exc_type: 'TimestampMismatchError' })
+  const stale = () => Object.assign(new Error('stale'), { type: 'TimestampMismatchError' })
   const slide = {
     clientId: 'c1',
     background: '#ff0000ff',
@@ -149,7 +159,7 @@ describe('savePresentationDoc', () => {
 
     try {
       await expect(savePresentationDoc('p1', [slide], 'M1')).rejects.toMatchObject({
-        exc_type: 'TimestampMismatchError',
+        type: 'TimestampMismatchError',
       })
     } finally {
       server.answer = null
@@ -175,7 +185,7 @@ describe('savePresentationDoc', () => {
     }
     try {
       await expect(savePresentationDoc('p1', [edited], 'M1')).rejects.toMatchObject({
-        exc_type: 'TimestampMismatchError',
+        type: 'TimestampMismatchError',
       })
     } finally {
       server.answer = null
@@ -200,7 +210,7 @@ describe('savePresentationDoc', () => {
 
     try {
       await expect(savePresentationDoc('p1', [slide], 'M1')).rejects.toMatchObject({
-        exc_type: 'TimestampMismatchError',
+        type: 'TimestampMismatchError',
       })
     } finally {
       server.answer = null

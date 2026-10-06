@@ -2,8 +2,7 @@ import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
 
-export { upcomingEvents } from '@/apps/calendar/client/events'
-export type { CalendarEvent, UpcomingEventsInput } from '@/apps/calendar/client/events'
+export type { CalendarEvent } from '@/apps/calendar/client/events'
 
 export const calendarArea: AreaDefinition = {
   id: 'calendar',

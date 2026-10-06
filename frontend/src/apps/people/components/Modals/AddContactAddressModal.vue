@@ -24,7 +24,16 @@ import { computed, reactive, watch } from 'vue'
 
 const show = defineModel<boolean>()
 
-const emit = defineEmits(['add'])
+const { save } = defineProps<{
+  save: (value: {
+    type: string
+    street: string
+    locality: string
+    region: string
+    postcode: string
+    country: string
+  }) => Promise<void>
+}>()
 
 const DEFAULT_ADDRESS = {
   type: 'Personal',
@@ -42,11 +51,15 @@ const options = computed(() => ({
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled: !(address.type && address.street),
-      onClick: () => {
-        emit('add', address)
-        show.value = false
+      onClick: async () => {
+        try {
+          await save({ ...address })
+          show.value = false
+        } catch {
+          /* The command reports the refusal. Keep the draft open. */
+        }
       },
     },
   ],

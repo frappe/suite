@@ -4,16 +4,16 @@
       <div class="space-y-4">
         <FormControl v-model="search" :placeholder="__('Search...')" />
         <ListView
-          v-if="contacts?.data"
+          v-if="rows"
           ref="listView"
           class="h-60 shrink-0"
           :columns="LIST_COLUMNS"
-          :rows="contacts.data"
+          :rows="rows"
           :options="LIST_OPTIONS"
           row-key="id"
         >
           <ListHeader />
-          <ListRows v-if="contacts.data.length" @scroll="loadMoreContacts" />
+          <ListRows v-if="rows.length" @scroll="loadMoreContacts" />
           <ListEmptyState v-else />
         </ListView>
       </div>
@@ -22,76 +22,72 @@
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn, watchDebounced } from '@vueuse/core'
-import { createResource, Dialog, FormControl } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Dialog, FormControl } from 'frappe-ui'
 import { ListEmptyState, ListHeader, ListRows, ListView } from 'frappe-ui/experimental'
 import { computed, ref, useTemplateRef } from 'vue'
 
+import { api, useInfiniteQuery } from '@/api'
+import { contactRow } from '@/apps/people/contactRows'
 import { userStore } from '@/apps/people/stores/user'
-import { extractNameFromEmail } from '@/apps/people/utils'
 
 const store = userStore()
-
 const show = defineModel<boolean>()
-
-const emit = defineEmits(['add'])
-
+const { save } = defineProps<{
+  save: (ids: string[]) => Promise<void>
+}>()
 const listView = useTemplateRef('listView')
-
 const options = computed(() => ({
   title: __('Select Contacts'),
   actions: [
     {
       label: __('Add'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled: listView.value?.selections.size === 0,
-      onClick: () => {
-        emit('add', Array.from(listView.value?.selections))
-        show.value = false
+      onClick: async () => {
+        try {
+          await save(Array.from(listView.value?.selections ?? [], String))
+          show.value = false
+        } catch {
+          /* Keep selections after refusal. */
+        }
       },
     },
   ],
 }))
-
 const search = ref('')
-const limit = ref(50)
-
-const contacts = createResource({
-  url: 'suite.mail.api.contacts.get_contact_cards',
-  auto: true,
-  makeParams: () => ({
-    account: store.accountId,
-    filter: { text: search.value },
-    limit: limit.value,
-  }),
-  transform: (data) =>
-    data.map((c) => {
-      const full_name = c.full_name || extractNameFromEmail(c.emails[0]?.address || '')
-
-      let email = ''
-      if (c.emails.length === 1) email = c.emails[0].address
-      else if (c.emails.length > 1)
-        email = __('{0} + {1} more', [c.emails[0].address, c.emails.length - 1])
-
-      return { ...c, full_name, email }
-    }),
-})
-
-watchDebounced(() => search.value, contacts.reload, { debounce: 300 })
-
-const loadMoreContacts = useDebounceFn((e) => {
-  const { scrollTop, scrollHeight, clientHeight } = e.target
-  if (scrollTop + clientHeight >= scrollHeight - 10 && contacts.data?.length === limit.value) {
-    limit.value += 50
-    contacts.reload()
-    setTimeout(() => e.target.scrollTo({ top: e.target.scrollHeight, behavior: 'smooth' }), 100)
-  }
-}, 500)
-
+const debouncedSearch = refDebounced(search, 300)
+const contacts = useInfiniteQuery(api.mail.contacts.list, () => ({
+  account: store.accountId,
+  filter: {
+    text: debouncedSearch.value,
+  },
+  start: 0,
+  limit: 50,
+}))
+const rows = computed(() => contacts.rows.map(contactRow))
+function loadMoreContacts(event: Event) {
+  const target = event.target
+  if (
+    target instanceof HTMLElement &&
+    target.scrollTop + target.clientHeight >= target.scrollHeight - 10
+  )
+    void contacts.fetchNext().catch(() => {})
+}
 const LIST_COLUMNS = [
-  { label: __('Name'), key: 'full_name' },
-  { label: __('Email'), key: 'email' },
+  {
+    label: __('Name'),
+    key: 'full_name',
+  },
+  {
+    label: __('Email'),
+    key: 'email',
+  },
 ]
-
-const LIST_OPTIONS = { showTooltip: false, emptyState: { description: __('No contacts to add.') } }
+const LIST_OPTIONS = {
+  showTooltip: false,
+  emptyState: {
+    description: __('No contacts to add.'),
+  },
+}
 </script>

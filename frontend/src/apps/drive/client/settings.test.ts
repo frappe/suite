@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { api } from './generated'
+import { operationRootUsage as usage, operationWebdavGet as webdav } from './validators'
 
 const connection = {
   globally_enabled: true,
@@ -14,9 +14,9 @@ const connection = {
 
 describe('GET /webdav output contract', () => {
   it('accepts each of the three answers the route gives', () => {
-    expect(api.webdav_get.validateOutput).toBeDefined()
+    expect(webdav.validateOutput).toBeDefined()
     for (const answer of [{}, { globally_enabled: false, is_admin: true }, connection]) {
-      expect(() => api.webdav_get.validateOutput?.(answer)).not.toThrow()
+      expect(() => webdav.validateOutput?.(answer)).not.toThrow()
     }
   })
 
@@ -26,7 +26,7 @@ describe('GET /webdav output contract', () => {
       { globally_enabled: false, is_admin: true, api_secret: 'secret' },
       { ...connection, api_secret: 'secret' },
     ]) {
-      expect(() => api.webdav_get.validateOutput?.(answer)).toThrow()
+      expect(() => webdav.validateOutput?.(answer)).toThrow()
     }
   })
 })
@@ -50,19 +50,17 @@ describe('GET /roots/<id>/usage output contract', () => {
       ],
     }
     for (const answer of [totals, breakdown]) {
-      expect(() => api.root_usage.validateOutput?.(answer)).not.toThrow()
+      expect(() => usage.validateOutput?.(answer)).not.toThrow()
     }
   })
 
   it('refuses a largest entry that is a folder', () => {
     const folder = { node: 'n1', title: 'F', size: 0, mime: null, kind: 'folder', type: 'Folder' }
-    expect(() =>
-      api.root_usage.validateOutput?.({ ...totals, by_type: [], largest: [folder] }),
-    ).toThrow()
+    expect(() => usage.validateOutput?.({ ...totals, by_type: [], largest: [folder] })).toThrow()
   })
 
   it('sends only the breakdown expansion', () => {
-    expect(() => api.root_usage.validateInput?.({ root: 'r1', expand: 'breakdown' })).not.toThrow()
-    expect(() => api.root_usage.validateInput?.({ root: 'r1', expand: 'access' })).toThrow()
+    expect(() => usage.validateInput?.({ root: 'r1', expand: 'breakdown' })).not.toThrow()
+    expect(() => usage.validateInput?.({ root: 'r1', expand: 'access' })).toThrow()
   })
 })

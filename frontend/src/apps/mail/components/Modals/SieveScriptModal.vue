@@ -3,13 +3,13 @@
     v-model:open="show"
     v-bind="{
       title: selectedScript ? __('Edit Sieve Script') : __('New Sieve Script'),
-      size: '3xl',
+      size: '3xl' as const,
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !script._name || !script.content || (selectedScript && isNotDirty),
-          onClick: () => (selectedScript ? updateScript.submit() : createScript.submit()),
+          onClick: () => (selectedScript ? updateScriptSubmit() : createScriptSubmit()),
         },
       ],
     }"
@@ -58,53 +58,58 @@
 </template>
 
 <script setup lang="ts">
-import { Alert, createResource, Dialog, FormControl, Switch } from 'frappe-ui'
+import { Alert, Dialog, FormControl, Switch } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
 import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { selectedScript } = defineProps<{ selectedScript?: SieveScript }>()
-
+const { selectedScript } = defineProps<{
+  selectedScript?: SieveScript
+}>()
 const store = userStore()
 const activeScript = computed(() => store.sieveScripts.data?.find((s) => s.active)?._name)
-
-const DEFAULT_SCRIPT = { _name: '', content: '', active: false }
-
-const script = reactive({ ...DEFAULT_SCRIPT })
-const original = reactive({ ...DEFAULT_SCRIPT })
-
+const DEFAULT_SCRIPT = {
+  _name: '',
+  content: '',
+  active: false,
+}
+const script = reactive({
+  ...DEFAULT_SCRIPT,
+})
+const original = reactive({
+  ...DEFAULT_SCRIPT,
+})
 const isNotDirty = computed(
   () =>
     script._name === original._name &&
     script.content === original.content &&
     script.active === original.active,
 )
-
-const createScript = createResource({
-  url: 'suite.mail.api.sieve.create_sieve_script',
-  makeParams: () => ({ account: store.accountId, ...script }),
-  onSuccess: () => {
-    raiseToast(__('Sieve script created.'))
-    store.sieveScripts.reload()
-    show.value = false
-  },
-  onError: (e) => raiseToast(e.messages[0], 'error'),
-})
-
-const updateScript = createResource({
-  url: 'suite.mail.api.sieve.update_sieve_script',
-  makeParams: () => ({ account: store.accountId, id: selectedScript!.id, ...script }),
-  onSuccess: () => {
-    raiseToast(__('Sieve script updated.'))
-    store.sieveScripts.reload()
-    show.value = false
-  },
-  onError: (e) => raiseToast(e.messages[0], 'error'),
-})
-
+const createScript = useMutation(api.mail.sieve.create)
+async function createScriptSubmit() {
+  const input: InputOf<typeof api.mail.sieve.create> = {
+    account: store.accountId,
+    ...script,
+  }
+  await createScript.run(input)
+  raiseToast(__('Sieve script created.'))
+  show.value = false
+}
+const updateScript = useMutation(api.mail.sieve.update)
+async function updateScriptSubmit() {
+  const input: InputOf<typeof api.mail.sieve.update> = {
+    account: store.accountId,
+    id: selectedScript!.id,
+    ...script,
+  }
+  await updateScript.run(input)
+  raiseToast(__('Sieve script updated.'))
+  show.value = false
+}
 watch(show, (val) => {
   if (!val) {
     Object.assign(script, DEFAULT_SCRIPT)

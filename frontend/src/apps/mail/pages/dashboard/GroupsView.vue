@@ -1,6 +1,6 @@
 <template>
   <DashboardLayout
-area="mail"
+    area="mail"
     :breadcrumbs="[{ label: __('Groups') }]"
     :button-label="__('Add Group')"
     :button-action="() => (showAddGroup = true)"
@@ -13,7 +13,7 @@ area="mail"
       </FormControl>
     </div>
     <ListView
-      v-if="list.loaded"
+      v-if="list.status === 'success'"
       class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
       :columns="LIST_COLUMNS"
       :rows="list.rows"
@@ -45,20 +45,20 @@ area="mail"
     </ListView>
     <DashboardListSkeleton v-else :columns="4" />
     <DashboardPager
-      v-if="list.loaded && list.total"
+      v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
-      :total="list.total"
-      :page-length="list.pageLength"
-      :has-more="list.hasMore"
-      :loading="list.loading"
-      @update:page-length="list.setPageLength"
-      @load-more="list.loadMore"
+      :total="list.total ?? 0"
+      :page-length="pageLength"
+      :has-more="list.hasNext"
+      :loading="list.isFetching"
+      @update:page-length="(value) => (pageLength = value)"
+      @load-more="list.fetchNext().catch(() => {})"
     />
   </DashboardLayout>
-  <AddGroupModal v-model="showAddGroup" @reload="list.reload()" />
+  <AddGroupModal v-model="showAddGroup" @reload="list.refetch().catch(() => {})" />
 </template>
 <script setup lang="ts">
-import { watchDebounced } from '@vueuse/core'
+import { refDebounced } from '@vueuse/core'
 import { FormControl, usePageMeta } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
@@ -71,28 +71,28 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
+import { api, useInfiniteQuery } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddGroupModal from '@/apps/mail/components/Modals/AddGroupModal.vue'
 import StorageBar from '@/apps/mail/components/StorageBar.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
-import { usePagedList } from '@/apps/mail/utils/pagedList'
+import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
 usePageMeta(() => appPageMeta(__('Groups'), 'Mail'))
-
 const showAddGroup = ref(false)
 useAddOnArrival(showAddGroup)
 const search = ref('')
-
-const list = usePagedList<GroupRow>('suite.mail.api.admin.get_groups', () => ({
-  search: search.value,
+const debouncedSearch = refDebounced(search, 300)
+const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
+const list = useInfiniteQuery(api.mail.admin.groups.list, () => ({
+  search: debouncedSearch.value,
+  start: 0,
+  page_length: pageLength.value,
 }))
-
-watchDebounced(() => search.value, list.reload, { debounce: 300 })
-
 type GroupRow = {
   id: string
   name: string
@@ -102,16 +102,25 @@ type GroupRow = {
   used_bytes?: number | null
   created_at?: string
 }
-
 const LIST_COLUMNS = [
-  { label: __('Email'), key: 'email' },
-  { label: __('Description'), key: 'description' },
-  { label: __('Storage'), key: 'quota_gb' },
-  { label: __('Created At'), key: 'created_at' },
+  {
+    label: __('Email'),
+    key: 'email',
+  },
+  {
+    label: __('Description'),
+    key: 'description',
+  },
+  {
+    label: __('Storage'),
+    key: 'quota_gb',
+  },
+  {
+    label: __('Created At'),
+    key: 'created_at',
+  },
 ]
-
 const hasActiveFilters = computed(() => !!search.value)
-
 const listOptions = computed(() => ({
   selectable: false,
   showTooltip: false,
@@ -125,12 +134,16 @@ const listOptions = computed(() => ({
         description: __('Create a group to give a team a shared address and mailbox.'),
         button: {
           label: __('Add Group'),
-          variant: 'solid',
+          variant: 'solid' as const,
           onClick: () => (showAddGroup.value = true),
         },
       },
-  getRowRoute: (row: GroupRow) => ({ name: 'mail-group', params: { groupId: row.id } }),
+  getRowRoute: (row: GroupRow) => ({
+    name: 'mail-group',
+    params: {
+      groupId: row.id,
+    },
+  }),
 }))
-
 const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '—'
 </script>

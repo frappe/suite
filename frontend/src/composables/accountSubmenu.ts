@@ -4,7 +4,7 @@ import { h } from 'vue'
 
 interface Account {
   id: string
-  _name: string
+  _name: string | null
   is_personal?: boolean | 0 | 1
 }
 
@@ -49,12 +49,12 @@ export const accountSubmenu = (
   )
 
   const rows = ordered.map((account) => ({
-    label: account._name,
+    label: account._name ?? account.id,
     onClick: () => onSelect(account.id),
     slots: {
       // Close to icon size: the menu's rows are built around a 16 px icon, and a larger avatar
       // stretches them.
-      prefix: () => h(Avatar, { label: account._name, size: 'sm' }),
+      prefix: () => h(Avatar, { label: account._name ?? account.id, size: 'sm' }),
       suffix: tick(!all?.active && account.id === activeId),
     },
   }))

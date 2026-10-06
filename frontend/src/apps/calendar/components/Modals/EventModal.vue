@@ -1,15 +1,5 @@
 <script setup lang="ts">
-import {
-  Button,
-  createResource,
-  Dialog,
-  Dropdown,
-  FormControl,
-  Switch,
-  toast,
-  Tooltip,
-  useCall,
-} from 'frappe-ui'
+import { Button, Dialog, Dropdown, FormControl, Switch, toast, Tooltip } from 'frappe-ui'
 import {
   AlignLeft,
   Bell,
@@ -25,8 +15,9 @@ import {
   X,
 } from 'lucide-vue-next'
 import { DialogDescription } from 'reka-ui'
-import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 
+import { api, useMutation } from '@/api'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import MobileEventForm from '@/apps/calendar/components/mobile/MobileEventForm.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
@@ -44,6 +35,7 @@ import {
   inUserTimeZone,
   shiftedMasterStart,
 } from '@/apps/calendar/utils/datetime'
+import dayjs from '@/apps/calendar/utils/dayjs'
 import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
@@ -53,20 +45,18 @@ import {
   scopeOptions,
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
-import { submit as submitCall } from '@/apps/meet/utils/request'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { meetLogo } from '@/platform/brand'
 
 const show = defineModel<boolean>()
-const { selectedEvent } = defineProps<{ selectedEvent: any }>()
+const { selectedEvent } = defineProps<{
+  selectedEvent: any
+}>()
 const emit = defineEmits(['reloadEvents'])
-
-const user = inject('$user')
-const dayjs = inject('$dayjs')
 const store = userStore()
+const user = store.userResource
 const { participantIdentities, calendars } = store
 const { isMobile } = useScreenSize()
-
 const isNew = computed(() => !selectedEvent?.calendarEvent)
 // A saved draft: the server holds it but has sent nothing. Only a new event can become
 // one (the server refuses to turn a published event back into a draft), and saving it
@@ -92,15 +82,12 @@ const isTitleFocused = ref(false)
 // (saving re-zones them to it, see eventParams); all-day events keep their calendar date.
 const occurrenceStart = (ev: any) =>
   ev.isAllDay ? dayjs(ev.start) : fromEventZone(ev.start, ev.time_zone)
-
 const getEventData = () => {
   if (isNew.value) return getDefaultEventData()
-
   const { calendarEvent: ev } = selectedEvent
   const start = occurrenceStart(ev)
   const end = start.add(dayjs.duration(ev.duration))
   const displayEnd = ev.isAllDay ? end.subtract(1, 'day') : end
-
   return {
     title: ev.title || '',
     organizer: ev.organizer,
@@ -137,7 +124,12 @@ const DEFAULT_DURATION_MINUTES = 60
 // as a concrete date and time, which reads better than '9 hours after start'.
 const defaultAlert = (isAllDay: boolean, startDate: string) =>
   isAllDay
-    ? { type: 'AbsoluteTrigger', action: 'Display', date: startDate, time: '09:00' }
+    ? {
+        type: 'AbsoluteTrigger',
+        action: 'Display',
+        date: startDate,
+        time: '09:00',
+      }
     : {
         type: 'OffsetTrigger',
         action: 'Display',
@@ -157,7 +149,6 @@ const defaultStartTime = (date: string) =>
 // half of the row, which the whole-hour formats cannot parse: 'h a' against
 // "7:30 am" reads the 7 and stops.
 const SLOT_TIME_FORMATS = ['h:mm a', 'h a', 'HH:mm']
-
 const getDefaultEventData = () => {
   const startTime = selectedEvent?.time
     ? dayjs(selectedEvent.time, SLOT_TIME_FORMATS).format('HH:mm')
@@ -172,7 +163,6 @@ const getDefaultEventData = () => {
   // Shared calendars are never writable, so the default is always the account's own.
   const calendar = defaultCalendar(calendars.data)
   const identity = store.organizerIdentity
-
   return {
     title: '',
     organizer: identity?.email,
@@ -206,7 +196,6 @@ const organizerParticipant = (identity: ParticipantIdentity) => ({
   _name: identity._name || user.data.full_name,
   participation_status: 'ACCEPTED',
 })
-
 const event = reactive({})
 let originalParams = {}
 
@@ -220,17 +209,24 @@ const missingOrganizer = computed(() => isNew.value && !event.organizer)
 const duration = computed(() => {
   if (event.isAllDay) {
     const days = dayjs(event.endDate).diff(dayjs(event.startDate), 'day') + 1
-    return dayjs.duration({ days }).toISOString()
+    return dayjs
+      .duration({
+        days,
+      })
+      .toISOString()
   }
-
   const start = dayjs(`${event.startDate}T${event.startTime}`)
   const end = dayjs(`${event.endDate}T${event.endTime}`)
   const diff = dayjs.duration(end.diff(start))
   const hours = Math.floor(diff.asHours())
   const minutes = diff.minutes()
-  return dayjs.duration({ hours, minutes }).toISOString()
+  return dayjs
+    .duration({
+      hours,
+      minutes,
+    })
+    .toISOString()
 })
-
 const startsAt = computed(() =>
   dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
 )
@@ -242,7 +238,6 @@ const isDateTimeValid = computed(() => {
   if (event.isAllDay) return !endsAt.value.isBefore(startsAt.value, 'day')
   return endsAt.value.isAfter(startsAt.value)
 })
-
 const participants = computed(() =>
   getReorderedParticipants(
     event.participants,
@@ -250,7 +245,6 @@ const participants = computed(() =>
     selectedEvent?.calendarEvent?.participants,
   ),
 )
-
 const eventParams = computed(() => {
   const params: Record<string, any> = {
     user: user.data.name,
@@ -261,7 +255,6 @@ const eventParams = computed(() => {
     // wrong default alert (10 mins before instead of 9am day-of).
     show_without_time: event.isAllDay,
   }
-
   if (event.title) params.title = event.title
   // Updates are a full replace: an event saved without its calendars lands in the default one.
   if (event.calendar_ids?.length) params.calendar_ids = event.calendar_ids
@@ -303,24 +296,34 @@ const eventParams = computed(() => {
   if (event.free_busy_status) params.free_busy_status = event.free_busy_status
   if (event.description) params.description = event.description
   if (event.locations?.some((l) => l?.trim()))
-    params.locations = event.locations.filter((l) => l?.trim()).map((name) => ({ name }))
+    params.locations = event.locations
+      .filter((l) => l?.trim())
+      .map((name) => ({
+        name,
+      }))
   // Always carry existing links on updates — the JMAP update is a full replace,
   // so omitting them would strip Meet links from the event.
   if (event.links?.length) params.links = event.links
   if (event.participants?.length) params.participants = event.participants
   if (event.alerts?.length) {
     params.alerts = event.alerts.map((a) => {
-      const base = { action: a.action, type: a.type }
+      const base = {
+        action: a.action,
+        type: a.type,
+      }
       if (a.type === 'AbsoluteTrigger')
         return {
           ...base,
           // The date/time inputs are a wall clock in the user's zone; the API takes UTC.
           when: fromWallClock(`${a.date}T${a.time}`),
         }
-
       return {
         ...base,
-        offset: dayjs.duration({ [a.unit]: a.number * a.direction }).toISOString(),
+        offset: dayjs
+          .duration({
+            [a.unit]: a.number * a.direction,
+          })
+          .toISOString(),
         relative_to: a.relative_to,
       }
     })
@@ -333,10 +336,8 @@ const eventParams = computed(() => {
     // no reminder at all, so the clear must reach the server.
     params.alerts = []
   }
-
   return params
 })
-
 const patch = computed(() => {
   const changed = Object.fromEntries(
     [...new Set([...Object.keys(eventParams.value), ...Object.keys(originalParams)])]
@@ -363,12 +364,10 @@ const parseAlert = (a: any) => {
       date: inUserTimeZone(a.when).format('YYYY-MM-DD'),
       time: inUserTimeZone(a.when).format('HH:mm'),
     }
-
   const d = dayjs.duration(a.offset).$d
   const units = ['weeks', 'days', 'hours', 'minutes']
   const unit = units.find((u) => d[u]) ?? 'minutes'
   const number = d[unit]
-
   return {
     type: a.type,
     action: a.action,
@@ -378,10 +377,8 @@ const parseAlert = (a: any) => {
     relative_to: a.relative_to,
   }
 }
-
 const hasParticipantsOtherThanUser = (participants: any[]) =>
   participants?.some((p) => participantIdentities.data.every((i) => i.email !== p.email)) ?? false
-
 const hasMeetLink = (ev: any) =>
   (ev?.links || []).some((link: any) => link?.href?.includes('/meet/')) ||
   !!ev?.description?.includes('/meet/')
@@ -397,7 +394,6 @@ const meetUrl = computed(() => {
   if (!href) return ''
   return getMeetUrl(href) || href.replace(/\W+$/, '')
 })
-
 const joinMeet = () => {
   if (meetUrl.value) window.open(meetUrl.value, '_blank', 'noopener')
 }
@@ -407,12 +403,10 @@ const joinMeet = () => {
 const pendingMeetAttach = computed(
   () => !isNew.value && event.addMeetLink && !hasMeetLink(selectedEvent?.calendarEvent),
 )
-
 const copyMeetLink = async () => {
   await navigator.clipboard.writeText(new URL(meetUrl.value, window.location.origin).href)
   toast.success(__('Frappe Meet link copied.'))
 }
-
 const meetLinkDisplay = computed(() =>
   meetUrl.value
     ? new URL(meetUrl.value, window.location.origin).href.replace(/^https?:\/\//, '')
@@ -424,13 +418,15 @@ const meetLinkDisplay = computed(() =>
 // Moving the start drags the end along, keeping the gap the user set. A gap that
 // hasn't been set — or one the start has overtaken — falls back to the default.
 let previousStart = null
-
 watch(show, (val) => {
   if (!val) return
   Object.assign(event, getEventData())
   // Reopening the same event leaves the start untouched, so the watcher below
   // won't fire — seed the baseline here or the first edit has nothing to move from.
-  previousStart = { date: event.startDate, time: event.startTime }
+  previousStart = {
+    date: event.startDate,
+    time: event.startTime,
+  }
   originalParams = JSON.parse(JSON.stringify(eventParams.value))
 })
 
@@ -444,13 +440,14 @@ watch(
     event.participants = [organizerParticipant(identity), ...(event.participants ?? [])]
   },
 )
-
 watch(
   () => [event.startDate, event.startTime],
   ([startDate, startTime]) => {
     const previous = previousStart
-    previousStart = { date: startDate, time: startTime }
-
+    previousStart = {
+      date: startDate,
+      time: startTime,
+    }
     if (!previous?.date || !startDate) return
     if (previous.date === startDate && previous.time === startTime) return
 
@@ -461,16 +458,13 @@ watch(
       JSON.stringify(event.alerts[0]) === JSON.stringify(defaultAlert(true, previous.date))
     )
       event.alerts = [defaultAlert(true, startDate)]
-
     if (event.isAllDay) {
       const days = dayjs(event.endDate).diff(dayjs(previous.date), 'day')
       event.endDate = dayjs(startDate).add(Math.max(days, 0), 'day').format('YYYY-MM-DD')
       return
     }
-
     const start = dayjs(`${startDate}T${startTime}`)
     if (!start.isValid()) return
-
     const gap = dayjs(`${event.endDate}T${event.endTime}`).diff(
       dayjs(`${previous.date}T${previous.time}`),
       'minute',
@@ -480,7 +474,6 @@ watch(
     event.endTime = end.format('HH:mm')
   },
 )
-
 watch(
   () => [event.endDate, event.endTime],
   ([endDate, endTime]) => {
@@ -492,14 +485,11 @@ watch(
     event.startTime = start.format('HH:mm')
   },
 )
-
 const showRepeatSettings = ref(false)
 watch(showRepeatSettings, (val) => {
   if (!val && !event.recurrence_rule?.frequency) event.repeat = false
 })
-
 const locationsEl = ref<HTMLElement | null>(null)
-
 const addLocation = async () => {
   event.locations.push('')
   await nextTick()
@@ -537,7 +527,6 @@ const eventCalendarOptions = computed(() =>
     (option) => option.account === event.account,
   ),
 )
-
 const repeatLabel = computed(() => {
   if (!event.recurrence_rule?.frequency) return __('Repeat')
   const message = getRepeatMessage(event.recurrence_rule)
@@ -550,34 +539,35 @@ const handleSuccess = () => {
   show.value = false
   emit('reloadEvents')
 }
-
-const createEvent = createResource({
-  url: 'suite.calendar.doctype.calendar_event.calendar_event.add_calendar_event',
-  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+const createEvent = useMutation(api.calendar.events.create, {
+  silent: true,
+})
+const createEventInput = ({ sendEmail }: { sendEmail: boolean }) => ({
+  account: event.account,
+  ...eventParams.value,
+  draft: savingDraft.value,
+  send_scheduling_messages: sendEmail,
+})
+async function createEventSubmit({ sendEmail }: { sendEmail: boolean }) {
+  const result = await createEvent.run(
+    createEventInput({
+      sendEmail,
+    }),
+  )
+  handleSuccess()
+  return result
+}
+const createMeetEvent = useMutation(api.meet.meetings.createCalendar, {
+  silent: true,
+})
+async function createMeetEventSubmit({ sendEmail }: { sendEmail: boolean }) {
+  const result = await createMeetEvent.run({
     account: event.account,
     ...eventParams.value,
-    draft: savingDraft.value,
     send_scheduling_messages: sendEmail,
-  }),
-  onSuccess: handleSuccess,
-})
-
-const createMeetEventCall = useCall({
-  url: '/api/suite/meet/calendar-meetings',
-  method: 'POST',
-  immediate: false,
-  onSuccess: handleSuccess,
-})
-const createMeetEvent = {
-  get loading() {
-    return createMeetEventCall.loading
-  },
-  submit: ({ sendEmail }: { sendEmail: boolean }) =>
-    submitCall(createMeetEventCall, {
-      account: event.account,
-      ...eventParams.value,
-      send_scheduling_messages: sendEmail,
-    }),
+  })
+  handleSuccess()
+  return result
 }
 
 // One occurrence's override keeps the series' zone. An occurrence is keyed by the start it was
@@ -592,7 +582,6 @@ const instancePatch = computed(() => {
   // An all-day start is a date, held and shown in the event's own terms — there is no viewer
   // clock to translate, and translating anyway moves the occurrence off its day.
   if (!('start' in rest) || !eventZone || !dayjs?.tz || event.isAllDay) return rest
-
   return {
     ...rest,
     start: dayjs
@@ -601,73 +590,100 @@ const instancePatch = computed(() => {
       .format('YYYY-MM-DD[T]HH:mm:ss'),
   }
 })
-
-const editEventInstance = createResource({
-  url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
-  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-    account: event.account,
-    master_id: selectedEvent.calendarEvent.master_id,
-    recurrence_id: selectedEvent.calendarEvent.recurrence_id,
-    patch: instancePatch.value,
-    send_scheduling_messages: sendEmail,
-  }),
-  onSuccess: handleSuccess,
+const editEventInstance = useMutation(api.calendar.events.updateInstance, {
+  silent: true,
 })
+const editEventInstanceInput = ({ sendEmail }: { sendEmail: boolean }) => ({
+  account: event.account,
+  master_id: selectedEvent.calendarEvent.master_id,
+  recurrence_id: selectedEvent.calendarEvent.recurrence_id,
+  patch: instancePatch.value,
+  send_scheduling_messages: sendEmail,
+})
+async function editEventInstanceSubmit({ sendEmail }: { sendEmail: boolean }) {
+  const result = await editEventInstance.run(
+    editEventInstanceInput({
+      sendEmail,
+    }),
+  )
+  handleSuccess()
+  return result
+}
 
 // "This and following" is neither of the other two writes: JSCalendar can say "this date" or
 // "the series" and nothing in between, so the server cuts the series in two and this edit
 // starts the second half.
-const splitSeries = createResource({
-  url: 'suite.calendar.api.split_calendar_event_series',
-  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-    account: event.account,
-    master_id: selectedEvent.calendarEvent.master_id,
-    recurrence_id: selectedEvent.calendarEvent.recurrence_id,
-    ...eventParams.value,
-    send_scheduling_messages: sendEmail,
-  }),
-  onSuccess: handleSuccess,
+const splitSeries = useMutation(api.calendar.events.splitSeries, {
+  silent: true,
 })
-
-const editEvent = createResource({
-  url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
-  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-    account: event.account,
-    id: serverEventId(selectedEvent.calendarEvent),
-    uid: selectedEvent.calendarEvent.uid,
-    ...eventParams.value,
-    draft: savingDraft.value,
-    send_scheduling_messages: sendEmail,
-  }),
-  onSuccess: handleSuccess,
+const splitSeriesInput = ({ sendEmail }: { sendEmail: boolean }) => ({
+  account: event.account,
+  master_id: selectedEvent.calendarEvent.master_id,
+  recurrence_id: selectedEvent.calendarEvent.recurrence_id,
+  ...eventParams.value,
+  send_scheduling_messages: sendEmail,
 })
-
-const createMeetLink = useCall<{ meeting_url: string }>({
-  url: '/api/suite/meet/room-links',
-  method: 'POST',
-  immediate: false,
+async function splitSeriesSubmit({ sendEmail }: { sendEmail: boolean }) {
+  const result = await splitSeries.run(
+    splitSeriesInput({
+      sendEmail,
+    }),
+  )
+  handleSuccess()
+  return result
+}
+const editEvent = useMutation(api.calendar.events.update, {
+  silent: true,
+})
+const editEventInput = ({ sendEmail }: { sendEmail: boolean }) => ({
+  account: event.account,
+  id: serverEventId(selectedEvent.calendarEvent),
+  uid: selectedEvent.calendarEvent.uid,
+  ...eventParams.value,
+  draft: savingDraft.value,
+  send_scheduling_messages: sendEmail,
+})
+async function editEventSubmit({ sendEmail }: { sendEmail: boolean }) {
+  const result = await editEvent.run(
+    editEventInput({
+      sendEmail,
+    }),
+  )
+  handleSuccess()
+  return result
+}
+const createMeetLink = useMutation(api.meet.rooms.createLink, {
+  silent: true,
 })
 
 // How far the save reaches. A one-off event is its own series, so nothing asks and nothing
 // else reads this.
 const editScope = ref<RecurringScope>('series')
-
 const submitEvent = (sendEmail: boolean) => {
   const recurring = !!selectedEvent.calendarEvent?.recurrence_id
-  const resource = isNew.value
+  const sendEvent = isNew.value
     ? event.addMeetLink
-      ? createMeetEvent
-      : createEvent
+      ? createMeetEventSubmit
+      : createEventSubmit
     : recurring && editScope.value === 'instance'
-      ? editEventInstance
+      ? editEventInstanceSubmit
       : recurring && editScope.value === 'following'
-        ? splitSeries
-        : editEvent
+        ? splitSeriesSubmit
+        : editEventSubmit
   const messages = isDraft.value
-    ? { loading: __('Sending event...'), success: __('Event sent.') }
+    ? {
+        loading: __('Sending event...'),
+        success: __('Event sent.'),
+      }
     : isNew.value
-      ? { loading: __('Creating event...'), success: __('Event created.') }
-      : { loading: __('Updating event...'), success: __('Event updated.') }
+      ? {
+          loading: __('Creating event...'),
+          success: __('Event created.'),
+        }
+      : {
+          loading: __('Updating event...'),
+          success: __('Event updated.'),
+        }
 
   // Attaching a Meet link to an existing event: mint the room first, then send the
   // regular update with the link included (creation bundles this server-side).
@@ -677,15 +693,22 @@ const submitEvent = (sendEmail: boolean) => {
     // retry rather than creating an orphaned duplicate.
     const alreadyMinted = (event.links || []).some((l: any) => l?.href?.includes('/meet/'))
     if (attachMeetLink && !alreadyMinted) {
-      const { meeting_url } = await submitCall(createMeetLink, {
+      const { meeting_url } = await createMeetLink.run({
         account: event.account,
         title: event.title,
       })
-      event.links = [...(event.links || []), { href: meeting_url, content_type: 'text/html' }]
+      event.links = [
+        ...(event.links || []),
+        {
+          href: meeting_url,
+          content_type: 'text/html',
+        },
+      ]
     }
-    return resource.submit({ sendEmail })
+    return sendEvent({
+      sendEmail,
+    })
   }
-
   toast.promise(submit(), {
     ...messages,
     error: __('Action failed. Please try again in some time.'),
@@ -705,9 +728,7 @@ const submitEvent = (sendEmail: boolean) => {
 // draft, so unsent edits there get the same question Cancel asks.
 
 const isDirty = computed(() => Object.keys(patch.value).length > 0 || pendingMeetAttach.value)
-
 const showDiscardModal = ref(false)
-
 const cancel = () => {
   if (isDirty.value) showDiscardModal.value = true
   else show.value = false
@@ -716,19 +737,16 @@ const cancel = () => {
 // The draft is only ever offered where it can actually be written: a published event
 // cannot go back to being one, and without an organizer there is nothing to save it as.
 const canKeepAsDraft = computed(() => canSaveDraft.value && !missingOrganizer.value)
-
 const saveDraftFromDiscard = () => {
   showDiscardModal.value = false
   // Puts the question back up itself when the dates don't hold, so this closing it first
   // is not the last word.
   saveDraftAndLeave()
 }
-
 const discardChanges = () => {
   showDiscardModal.value = false
   show.value = false
 }
-
 const leave = () => {
   if (!isDirty.value) {
     show.value = false
@@ -737,20 +755,20 @@ const leave = () => {
   if (canSaveDraft.value && !missingOrganizer.value) saveDraftAndLeave()
   else showDiscardModal.value = true
 }
-
-const discardDraft = createResource({
-  url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
-  makeParams: ({ id, account }: { id: string; account: string }) => ({
-    account,
-    ids: [id],
-    send_scheduling_messages: false,
-  }),
-  onSuccess: () => {
-    toast.success(__('Draft discarded.'))
-    emit('reloadEvents')
-  },
+const discardDraft = useMutation(api.calendar.events.delete, {
+  silent: true,
 })
-
+const discardDraftInput = ({ id, account }: { id: string; account: string }) => ({
+  account,
+  ids: [id],
+  send_scheduling_messages: false,
+})
+async function discardDraftSubmit(input: { id: string; account: string }) {
+  const result = await discardDraft.run(discardDraftInput(input))
+  toast.success(__('Draft discarded.'))
+  emit('reloadEvents')
+  return result
+}
 const saveDraftAndLeave = async () => {
   if (!isDateTimeValid.value) {
     // Nothing the server would keep; the form's own validation says why.
@@ -762,10 +780,19 @@ const saveDraftAndLeave = async () => {
   const account = event.account
   try {
     // The plain create/update: a draft has no Meet room and no per-instance edit.
-    const result = await (isNew.value ? createEvent : editEvent).submit({ sendEmail: false })
+    const result = await (isNew.value ? createEventSubmit : editEventSubmit)({
+      sendEmail: false,
+    })
     const id = isNew.value ? result : serverEventId(selectedEvent.calendarEvent)
     toast.success(__('Draft saved.'), {
-      action: { label: __('Discard'), onClick: () => discardDraft.submit({ id, account }) },
+      action: {
+        label: __('Discard'),
+        onClick: () =>
+          discardDraftSubmit({
+            id,
+            account,
+          }).catch(() => toast.error(__('Could not discard the draft. Please try again.'))),
+      },
     })
   } catch {
     toast.error(__('Could not save the draft. Please try again.'))
@@ -773,29 +800,24 @@ const saveDraftAndLeave = async () => {
     savingDraft.value = false
   }
 }
-
 const showNotifyParticipantsModal = ref(false)
 const showRecurringEventModal = ref(false)
-
 const handleSave = () => {
   if (!isDateTimeValid.value) {
     toast.error(__('Enter a valid date and an end time after the start time.'))
     return
   }
-
   const needsEmail =
     hasParticipantsOtherThanUser(selectedEvent?.calendarEvent?.participants) ||
     hasParticipantsOtherThanUser(event.participants)
   if (needsEmail) showNotifyParticipantsModal.value = true
   else submitEvent(false)
 }
-
 const handleSaveRecurringEvent = (scope: RecurringScope) => {
   editScope.value = scope
   showRecurringEventModal.value = false
   handleSave()
 }
-
 const shouldShowRecurringEventModal = computed(
   () =>
     selectedEvent?.calendarEvent?.recurrence_id &&
@@ -817,7 +839,6 @@ const setAlerts = (alerts: object[]) => {
   event.followsDefaults = false
   event.alerts = alerts
 }
-
 const addAlertOptions = computed(() => [
   {
     label: __('Relative to Event'),
@@ -886,20 +907,18 @@ const {
     emit('reloadEvents')
   },
 )
-
 const eventOptions = computed(() => [deleteOption.value])
 
 // --- Dialog options ---
 
 const isSaving = computed(
   () =>
-    createEvent.loading ||
-    editEvent.loading ||
-    editEventInstance.loading ||
-    splitSeries.loading ||
-    createMeetEvent.loading,
+    createEvent.isPending ||
+    editEvent.isPending ||
+    editEventInstance.isPending ||
+    splitSeries.isPending ||
+    createMeetEvent.isPending,
 )
-
 const disableSave = computed(() => {
   if (isSaving.value || missingOrganizer.value) return true
   if (!isDateTimeValid.value) return true
@@ -918,9 +937,12 @@ const disableSave = computed(() => {
 // being one, so it gets a plain button.
 const canSaveDraft = computed(() => isNew.value || isDraft.value)
 const draftOptions = computed(() => [
-  { label: __('Save as draft'), icon: 'lucide-file-pen-line', onClick: saveDraftAndLeave },
+  {
+    label: __('Save as draft'),
+    icon: 'lucide-file-pen-line',
+    onClick: saveDraftAndLeave,
+  },
 ])
-
 const handleSaveClick = () => {
   if (shouldShowRecurringEventModal.value) return (showRecurringEventModal.value = true)
   // Nothing to ask, so nothing may be left over from the last time it was asked: an answer
@@ -928,16 +950,19 @@ const handleSaveClick = () => {
   editScope.value = 'series'
   handleSave()
 }
-
 const dialogTitle = computed(() =>
   isNew.value ? __('New Event') : isDraft.value ? __('Edit Draft') : __('Edit Event'),
 )
-
 const AVAILABILITY_OPTIONS = [
-  { label: __('Free'), value: 'Free' },
-  { label: __('Busy'), value: 'Busy' },
+  {
+    label: __('Free'),
+    value: 'Free',
+  },
+  {
+    label: __('Busy'),
+    value: 'Busy',
+  },
 ]
-
 const showNotifyParticipantsOptions = computed(() => ({
   title: __('Notify Participants'),
   icon: 'lucide-bell',
@@ -946,7 +971,6 @@ const showNotifyParticipantsOptions = computed(() => ({
       ? __("Send an email to let attendees know they've been invited?")
       : __('Send an email to let attendees know this event has been updated?'),
 }))
-
 const DISCARD_MODAL_OPTIONS = computed(() => ({
   title: __('Discard changes?'),
   icon: 'lucide-trash-2',
@@ -954,7 +978,6 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
     ? __('This event has not been saved and will be lost.')
     : __('Your unsaved edits to this event will be lost.'),
 }))
-
 const recurringScopeModalProps = computed(() => ({
   title: __('Update repeating event'),
   // At the head of a series "this and following" reaches exactly what "all events"
@@ -1335,12 +1358,12 @@ const recurringScopeModalProps = computed(() => ({
   </Dialog>
   <MobileEventForm
     v-else-if="show"
+    v-model:calendar="eventCalendar"
     :event="event"
     :title="dialogTitle"
     :is-new="isNew"
     :disable-save="disableSave"
     :participants="participants"
-    v-model:calendar="eventCalendar"
     :calendar-choices="eventCalendarOptions"
     :meet-url="meetUrl"
     :meet-link-display="meetLinkDisplay"

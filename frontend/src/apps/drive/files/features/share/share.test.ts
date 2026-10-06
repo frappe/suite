@@ -7,6 +7,7 @@ import {
   type GrantList,
 } from '@/apps/drive/client/grants'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
+import { testClient } from '@/apps/drive/client/testClient'
 import type { Transport } from '@/platform/transport'
 
 import { shareSections } from './shareModel'
@@ -254,7 +255,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
           ? { grants: [link], inherited: [] }
           : link,
     )
-    const share = useShare('doc', { transport: server.transport })
+    const share = useShare('doc', { client: testClient(server.transport) })
     await share.load()
     const row = share.sections.value!.links![0]!
 
@@ -266,9 +267,15 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       .filter((call) => call.id.startsWith('grant_'))
       .map((call) => [call.id, call.input])
     expect(writes).toEqual([
-      ['grant_patch', { grant: link.name, role: 20, expires_on: endOfDay(2027, 1, 15) }],
-      ['grant_patch', { grant: link.name, role: 40, expires_on: endOfDay(2026, 12, 31) }],
-      ['grant_delete', { grant: link.name }],
+      [
+        'grant_patch',
+        { node: 'doc', grant: link.name, role: 20, expires_on: endOfDay(2027, 1, 15) },
+      ],
+      [
+        'grant_patch',
+        { node: 'doc', grant: link.name, role: 40, expires_on: endOfDay(2026, 12, 31) },
+      ],
+      ['grant_delete', { node: 'doc', grant: link.name }],
     ])
     expect(
       server.calls.some((call) => call.id === 'node_put_grant' || call.id === 'node_delete_grant'),
@@ -305,7 +312,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       }
       return { grants, inherited: [] }
     })
-    const share = useShare('doc', { transport: server.transport })
+    const share = useShare('doc', { client: testClient(server.transport) })
     share.rememberName('asha@example.com', 'Asha')
     await share.load()
 
@@ -326,14 +333,14 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
             owner: { id: 'faris@example.com', full_name: 'Faris Ansari', user_image: null },
           },
     )
-    const share = useShare('doc', { transport: server.transport, workspace: 'Frappe' })
+    const share = useShare('doc', { client: testClient(server.transport), workspace: 'Frappe' })
     await share.load()
 
     expect(share.label('faris@example.com')).toBe('Faris Ansari')
     expect(share.label(asha.id)).toBe('Asha Rao')
     expect(share.sections.value!.people[0]!.grant.person).toEqual(asha)
     expect(share.organization.value).toBe('Everyone at Frappe')
-    expect(useShare('doc', { transport: server.transport }).organization.value).toBe(
+    expect(useShare('doc', { client: testClient(server.transport) }).organization.value).toBe(
       'Everyone in your organization',
     )
   })
@@ -357,7 +364,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     )
     const placeTitle = (place: { name: string; title: string }) =>
       place.name === 'root' ? 'My files' : place.title
-    const share = useShare('doc', { transport: server.transport, placeTitle })
+    const share = useShare('doc', { client: testClient(server.transport), placeTitle })
     await share.load()
 
     expect(share.sections.value!.inherited.map((part) => part.title)).toEqual(['My files'])
@@ -375,7 +382,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       reads += 1
       return { grants: [grant('asha@example.com', 10)], inherited: [] }
     })
-    const share = useShare('doc', { transport: server.transport })
+    const share = useShare('doc', { client: testClient(server.transport) })
     await share.load()
 
     await share.setRole(share.sections.value!.people[0]!, 40)
@@ -394,7 +401,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
           ? { grants: [], inherited: [] }
           : grant('$LINK:new', 40, { url: '/l/new' }),
     )
-    const share = useShare('doc', { transport: server.transport })
+    const share = useShare('doc', { client: testClient(server.transport) })
     await share.load()
 
     expect(
@@ -427,7 +434,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
           ? { grants: [], inherited: [] }
           : grant('x', 10),
     )
-    const share = useShare('doc', { transport: server.transport })
+    const share = useShare('doc', { client: testClient(server.transport) })
     await share.load()
 
     await share.sendLink('guest@example.com', 20)
@@ -451,7 +458,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
         ? { grants: [], inherited: [] }
         : { grant: grant('leah@example.com', 20) }
     })
-    const share = useShare('doc', { transport: server.transport })
+    const share = useShare('doc', { client: testClient(server.transport) })
     share.rememberName('maya@example.com', 'Maya Rao')
     await share.load()
 
@@ -500,7 +507,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const asked: number[] = []
     let answer = false
     const share = useShare('doc', {
-      transport: server.transport,
+      client: testClient(server.transport),
       me: ME,
       confirmLoss: async () => {
         asked.push(1)
@@ -573,23 +580,22 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     expect(share.notice.value).toMatch(/^Removed from 2 items inside\./)
   })
 
-  it('keeps the newest read when an older one answers last', async () => {
-    const answers: ((value: unknown) => void)[] = []
+  it('shares concurrent reads while only the newest load publishes', async () => {
+    let answer: ((value: unknown) => void) | undefined
     const transport: Transport = {
       request: (operation) =>
         operation.id === 'node_get'
-          ? (new Promise((resolve) => answers.push(resolve)) as never)
+          ? (new Promise((resolve) => {
+              answer = resolve
+            }) as never)
           : (Promise.resolve({ grants: [], inherited: [] }) as never),
     }
-    const share = useShare('doc', { transport })
-
+    const share = useShare('doc', { client: testClient(transport) })
     const first = share.load()
     const second = share.load()
-    answers[1]!({ ...node('document'), title: 'New' })
-    await second
-    answers[0]!({ ...node('document'), title: 'Old' })
-    await first
-
+    await vi.waitFor(() => expect(answer).toBeDefined())
+    answer!({ ...node('document'), title: 'New' })
+    await Promise.all([first, second])
     expect(share.node.value?.title).toBe('New')
   })
 })
@@ -606,11 +612,11 @@ describe('document session share (spec §8.6, §8.8)', () => {
     })
     let whileOpen: boolean | undefined
     const session = await openDriveDocumentSession('doc', {
-      transport: server.transport,
+      client: testClient(server.transport),
       setInterval: vi.fn() as unknown as typeof setInterval,
       clearInterval: vi.fn() as unknown as typeof clearInterval,
       share: async (id) => {
-        const share = useShare(id, { transport: server.transport })
+        const share = useShare(id, { client: testClient(server.transport) })
         await share.load()
         await share.setRole(share.sections.value!.people[0]!, 40)
         await Promise.resolve()

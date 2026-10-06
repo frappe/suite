@@ -59,8 +59,8 @@
         v-else-if="!invite.exists"
         class="max-sm:!h-10 max-sm:w-full"
         :label="__('Add to Calendar')"
-        :loading="addInvite.loading"
-        @click="addInvite.submit()"
+        :loading="addInvite.isPending"
+        @click="addInviteSubmit()"
       />
       <Button
         v-else
@@ -74,11 +74,12 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, TabButtons } from 'frappe-ui'
+import { Button, TabButtons } from 'frappe-ui'
 import { ArrowRight } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import DateChip from '@/apps/calendar/components/DateChip.vue'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { eventLastDay, formatEventWhen, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
@@ -87,45 +88,34 @@ import type { Attachment } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 
-// The slice of the formatted calendar event the banner reads; the full shape comes from the
-// backend's format_calendar_event, identical for a parsed preview and an existing event.
-interface InviteEvent {
-  id: string
-  title: string
-  start: string
-  duration: string
-  time_zone: string
-  show_without_time: 0 | 1
-  recurrence_id?: string | null
-  locations: { _name?: string }[]
-}
-
-interface InviteDetails {
-  uid: string
-  method: string
-  exists: boolean
-  event: InviteEvent
-  // The viewer's own entry on the event — present when they're invited, carrying their
-  // current response (e.g. 'ACCEPTED', or '' when they haven't answered yet).
-  participant: { uid: string; email: string; status: string } | null
-}
-
-const { attachment, account } = defineProps<{ attachment: Attachment; account: string }>()
-
+type InviteDetails = NonNullable<OutputOf<typeof api.calendar.invites.get>>
+const { attachment, account } = defineProps<{
+  attachment: Attachment
+  account: string
+}>()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { events: calendarEvents, selectedEvent, openEvent } = useUpcomingEvents()
-
-const details = createResource({
-  url: 'suite.calendar.api.invites.get_invite_details',
-  params: { account, blob_id: attachment.blob_id },
-  auto: true,
-})
+const { selectedEvent, openEvent } = useUpcomingEvents()
+const details = useQuery(api.calendar.invites.get, () => ({
+  account,
+  blob_id: attachment.blob_id,
+}))
+// A just-created calendar copy is confirmed, but the server's UID index may lag.
+const confirmed = ref<{
+  account: string
+  blob: string
+  value: InviteDetails
+}>()
+const currentDetails = computed(() =>
+  confirmed.value?.account === account && confirmed.value.blob === attachment.blob_id
+    ? confirmed.value.value
+    : details.data,
+)
 
 // Only an invitation (or a plain published event) is addable — a cancellation or an attendee's
 // reply also travels as text/calendar, and a banner offering to add those would be nonsense.
 const invite = computed<InviteDetails | null>(() => {
-  const data = details.data
+  const data = currentDetails.value
   if (!data?.event) return null
   if (data.method && !['request', 'publish'].includes(data.method)) return null
   return data
@@ -134,9 +124,7 @@ const invite = computed<InviteDetails | null>(() => {
 // JSCalendar start/duration are a wall clock in the event's own zone; render them in the
 // reader's, mirroring the calendar app (see @/apps/calendar/utils/datetime).
 const localZone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
-
 const isAllDay = computed(() => !!invite.value?.event && isAllDayEvent(invite.value.event))
-
 const start = computed(() => {
   const event = invite.value?.event
   if (!event?.start) return null
@@ -158,7 +146,6 @@ const chips = computed(() => {
     day: day.format('D'),
   }))
 })
-
 const whenLabel = computed(() =>
   start.value
     ? formatEventWhen(start.value, invite.value?.event.duration, {
@@ -167,74 +154,106 @@ const whenLabel = computed(() =>
       })
     : '',
 )
-
 const locationLabel = computed(() =>
   (invite.value?.event.locations || [])
     .map((location) => location._name)
     .filter(Boolean)
     .join(', '),
 )
-
-const addInvite = createResource({
-  url: 'suite.calendar.api.invites.add_invite_to_calendar',
-  makeParams: () => ({ account, blob_id: attachment.blob_id }),
-  onSuccess: (event: InviteEvent) => {
-    // Flip to the "added" state with the created copy (which has the id the deep link needs)
-    // instead of refetching — the server's uid index updates asynchronously, so an immediate
-    // refetch could still report the event as missing.
-    details.data = { ...details.data, exists: true, event }
+const addInvite = useMutation(api.calendar.invites.add)
+async function addInviteSubmit() {
+  const input = {
+    account,
+    blob_id: attachment.blob_id,
+  }
+  try {
+    const event = await addInvite.run(input)
+    const before = currentDetails.value
+    if (before)
+      confirmed.value = {
+        account: input.account,
+        blob: input.blob_id,
+        value: {
+          ...before,
+          exists: true,
+          event,
+        },
+      }
     raiseToast(__('Event added to your calendar.'))
-    calendarEvents.reload()
-  },
-  onError: (error: { message?: string }) => raiseToast(error.message || '', 'error'),
-})
+  } catch {
+    /* The command reports the refusal. */
+  }
+}
 
 // --- RSVP (the same segmented control the calendar app's event detail card uses) ---
 
 const RSVP_OPTIONS = [
-  { label: __('Yes'), value: 'ACCEPTED' },
-  { label: __('Maybe'), value: 'TENTATIVE' },
-  { label: __('No'), value: 'DECLINED' },
+  {
+    label: __('Yes'),
+    value: 'ACCEPTED',
+  },
+  {
+    label: __('Maybe'),
+    value: 'TENTATIVE',
+  },
+  {
+    label: __('No'),
+    value: 'DECLINED',
+  },
 ]
-
 const currentResponse = computed(() => invite.value?.participant?.status || '')
 const pendingResponse = ref('')
-
-const rsvp = createResource({
-  url: 'suite.calendar.api.invites.rsvp_to_invite',
-  makeParams: (response: string) => ({ account, blob_id: attachment.blob_id, response }),
-  onSuccess: (event: InviteEvent) => {
-    details.data = {
-      ...details.data,
-      exists: true,
-      event,
-      participant: { ...details.data.participant, status: pendingResponse.value },
-    }
+const rsvp = useMutation(api.calendar.invites.respond)
+async function respond(response: 'accepted' | 'tentative' | 'declined') {
+  const input = {
+    account,
+    blob_id: attachment.blob_id,
+    response,
+  }
+  try {
+    const event = await rsvp.run(input)
+    const before = currentDetails.value
+    if (before)
+      confirmed.value = {
+        account: input.account,
+        blob: input.blob_id,
+        value: {
+          ...before,
+          exists: true,
+          event,
+          participant: before.participant
+            ? {
+                ...before.participant,
+                status: response.toUpperCase(),
+              }
+            : null,
+        },
+      }
     raiseToast(__('Response sent.'))
-    calendarEvents.reload()
-    // The panel isn't fed by that resource when it was opened from here (untracked), so hand it
-    // the fresh copy directly or it would keep showing the previous answer.
-    if (isOpen.value) openEvent(event, { tracked: false })
-  },
-  onError: (error: { message?: string }) => raiseToast(error.message || '', 'error'),
-})
+    if (isOpen.value)
+      openEvent(event, {
+        tracked: false,
+      })
+  } catch {
+    /* Keep the stored RSVP after refusal. */
+  }
+}
 
 // An RSVP is a state, so the control shows the answer as soon as it's tapped, and falls back to
 // the stored one if the request fails.
 const selectedResponse = computed(() =>
-  rsvp.loading ? pendingResponse.value : currentResponse.value,
+  rsvp.isPending ? pendingResponse.value : currentResponse.value,
 )
-
 const handleRsvp = (response?: string | number) => {
-  if (typeof response !== 'string' || rsvp.loading || response === currentResponse.value) return
+  if (typeof response !== 'string' || rsvp.isPending || response === currentResponse.value) return
   pendingResponse.value = response
-  rsvp.submit(response.toLowerCase())
+  const value = response.toLowerCase()
+  if (value === 'accepted' || value === 'tentative' || value === 'declined') void respond(value)
 }
 
 // Opening the event — in the card or in the calendar — needs its own id, which only a copy on
 // one of the reader's calendars has; a parsed preview of an invite they haven't added yet has none.
 const canViewEvent = computed(() => !!invite.value?.exists && !!invite.value.event.id)
-
 const viewInCalendar = () => {
   const event = invite.value?.event
   if (canViewEvent.value && event) router.push(eventDayRoute(event, account))
@@ -256,6 +275,12 @@ const openEventDetail = (e: MouseEvent) => {
   if (isMobile.value) router.push(eventDayRoute(event, account))
   else if (isOpen.value) selectedEvent.value = null
   else if (e.currentTarget instanceof Element)
-    openEvent(event, { tracked: false, anchor: { element: e.currentTarget, side: 'bottom' } })
+    openEvent(event, {
+      tracked: false,
+      anchor: {
+        element: e.currentTarget,
+        side: 'bottom',
+      },
+    })
 }
 </script>

@@ -22,6 +22,7 @@
   },
   "include": [
     "src/env.d.ts",
+    "src/api/**/*.ts",
     "src/platform/**/*.ts",
     "src/platform/**/*.vue",
     "src/shell/**/*.ts",

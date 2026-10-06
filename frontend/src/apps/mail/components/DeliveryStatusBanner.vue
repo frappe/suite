@@ -27,10 +27,10 @@
 </template>
 
 <script setup lang="ts">
-import { createResource } from 'frappe-ui'
 import { CircleAlert, CircleCheck, Clock } from 'lucide-vue-next'
-import { computed, inject } from 'vue'
+import { computed, inject, watch } from 'vue'
 
+import { api, useQuery } from '@/api'
 import {
   overallDsnAction,
   serverResponse,
@@ -46,13 +46,12 @@ const emit = defineEmits<{ loaded: [rendered: boolean] }>()
 
 const dayjs = inject('$dayjs') as any
 
-const details = createResource({
-  url: 'suite.mail.api.mail.get_delivery_status',
-  params: { account, blob_id: blobId },
-  auto: true,
-  onSuccess: (data: DeliveryStatusReport) => emit('loaded', !!data?.recipients?.length),
-  onError: () => emit('loaded', false),
-})
+const details = useQuery(api.mail.messages.deliveryStatus, () => ({ account, blob_id: blobId }))
+watch(
+  () => [details.data, details.error],
+  () => emit('loaded', !!details.data?.recipients.length),
+  { immediate: true },
+)
 
 const report = computed<DeliveryStatusReport | null>(() =>
   details.data?.recipients?.length ? details.data : null,

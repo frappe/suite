@@ -3,7 +3,7 @@
     <template #default>
       <div class="space-y-4">
         <FormControl
-          v-model="signature.doc.signature_name"
+          v-model="draft.signature_name"
           :label="__('Signature Name')"
           :placeholder="__('Work signature')"
           variant="outline"
@@ -15,8 +15,8 @@
             :extensions="[CustomParagraphExtension]"
             :fixed-menu="buttons"
             :placeholder="__('Write your signature here')"
-            :content="signature.doc.html_body"
-            @change="(val: string) => (signature.doc.html_body = val)"
+            :content="draft.html_body"
+            @change="(val: string) => (draft.html_body = val)"
           />
         </div>
       </div>
@@ -25,15 +25,14 @@
 </template>
 
 <script setup lang="ts">
-import { Dialog, FormControl, useNewDoc } from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { TextEditor } from 'frappe-ui/experimental'
-import { computed, inject, reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
+import { api, useMutation } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
-
-const user = inject('$user')
 
 const show = defineModel<boolean>()
 
@@ -41,41 +40,29 @@ const emit = defineEmits(['reloadSignatures'])
 
 const { buttons } = useTextEditorButtons()
 
-const defaultSignature = reactive({
-  user: user.data.name,
-  signature_name: '',
-  html_body: '',
-})
-
-const signature = useNewDoc(
-  'Mail Signature',
-  { ...defaultSignature },
-  {
-    onSuccess: () => {
-      show.value = false
-      raiseToast(__('Signature created.'))
-      emit('reloadSignatures')
-    },
-    onError: (error) => raiseToast(error.message, 'error'),
-  },
-)
+const defaultSignature = { signature_name: '', html_body: '' }
+const draft = reactive({ ...defaultSignature })
+const createSignature = useMutation(api.mail.signatures.create)
+async function save() {
+  await createSignature.run({ ...draft })
+  show.value = false
+  raiseToast(__('Signature created.'))
+  emit('reloadSignatures')
+}
 
 const addSignatureOptions = computed(() => ({
   title: __('New Signature'),
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
-      disabled: !signature.doc.signature_name || !signature.doc.html_body,
-      onClick: () => {
-        signature.submit()
-        show.value = false
-      },
+      variant: 'solid' as const,
+      disabled: !draft.signature_name || !draft.html_body,
+      onClick: () => save().catch(() => {}),
     },
   ],
 }))
 
 watch(show, (val) => {
-  if (val) Object.assign(signature.doc, defaultSignature)
+  if (val) Object.assign(draft, defaultSignature)
 })
 </script>

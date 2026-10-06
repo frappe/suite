@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !accountIds.length,
-          loading: addMembers.loading,
-          onClick: addMembers.submit,
+          loading: addMembers.isPending,
+          onClick: addMembersSubmit,
         },
       ],
     }"
@@ -36,21 +36,23 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, MultiSelect } from 'frappe-ui'
+import { Dialog, ErrorMessage, MultiSelect } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
 
 const show = defineModel<boolean>()
-const { groupId, currentIds } = defineProps<{ groupId: string; currentIds: string[] }>()
+const { groupId, currentIds } = defineProps<{
+  groupId: string
+  currentIds: string[]
+}>()
 const emit = defineEmits(['reload'])
-
 const accountIds = ref<string[]>([])
 
 // Accounts already in the group are not offered again.
 const picker = useAccountPicker(accountIds, () => currentIds)
-
 watch(show, () => {
   if (show.value) {
     accountIds.value = []
@@ -58,14 +60,15 @@ watch(show, () => {
     addMembers.reset()
   }
 })
-
-const addMembers = createResource({
-  url: 'suite.mail.api.admin.add_group_members',
-  makeParams: () => ({ group_id: groupId, account_ids: accountIds.value }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Members added.'))
-  },
-})
+const addMembers = useMutation(api.mail.admin.groups.addMembers)
+async function addMembersSubmit() {
+  const input: InputOf<typeof api.mail.admin.groups.addMembers> = {
+    group_id: groupId,
+    account_ids: accountIds.value,
+  }
+  await addMembers.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Members added.'))
+}
 </script>

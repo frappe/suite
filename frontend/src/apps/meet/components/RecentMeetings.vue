@@ -1,24 +1,15 @@
 <script setup lang="ts">
 import { useMediaQuery, useNow } from '@vueuse/core'
 import dayjs from 'dayjs'
-import { Button, useCall } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { List, ListCell, ListRow } from 'frappe-ui/list'
-import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useQuery } from '@/api'
 import { driveNodeRoute } from '@/apps/drive'
-import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
-interface RecentMeeting {
-  id: string
-  title: string | null
-  last_joined: string
-  recording?: string | null
-}
-
 const router = useRouter()
-const session = useSession()
 const now = useNow({ interval: 30_000 })
 const isMobile = useMediaQuery('(max-width: 767px)')
 function recentDay(date: string): string {
@@ -41,23 +32,16 @@ function recentDay(date: string): string {
   }
   return __('Last week')
 }
-const meetings = useCall<RecentMeeting[]>({
-  url: '/api/v2/method/suite.meet.api.recents.get_recent_meetings',
-  cacheKey: ['meet-recent-rooms', window.location.origin, session.user.value?.id || 'Guest'],
-  immediate: false,
-})
-onMounted(() => {
-  void meetings.reload().catch(() => {})
-})
+const meetings = useQuery(api.meet.rooms.recent)
 </script>
 
 <template>
   <section
-    v-if="meetings.loading || meetings.error || meetings.data?.length"
+    v-if="meetings.isFetching || meetings.error || meetings.data?.length"
     :aria-label="__('Recent')"
   >
     <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Recent') }}</h2>
-    <p v-if="meetings.loading && !meetings.data" class="text-base text-ink-gray-5" role="status">
+    <p v-if="meetings.isFetching && !meetings.data" class="text-base text-ink-gray-5" role="status">
       {{ __('Loading meetings…') }}
     </p>
     <div
@@ -66,7 +50,7 @@ onMounted(() => {
       role="alert"
     >
       {{ __('Could not load recent meetings.') }}
-      <Button :label="__('Retry')" @click="meetings.reload()" />
+      <Button :label="__('Retry')" @click="meetings.refetch()" />
     </div>
     <List
       v-else

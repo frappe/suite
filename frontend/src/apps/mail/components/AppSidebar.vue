@@ -95,7 +95,7 @@ import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
 import { Button, Dropdown, SidebarItem, SidebarSection } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { computed, h, inject, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
@@ -188,7 +188,7 @@ const onFolderDrop = (e: DragEvent, item: { mailboxId?: string }) => {
   threadDrag.drop(item.mailboxId!)
 }
 
-const user = inject('$user')
+const user = store.userResource
 
 const showFolderModal = ref(false)
 const selectedMailbox = ref()
@@ -199,11 +199,11 @@ const showDeleteMailbox = ref(false)
 const subtitle = computed(() =>
   isUnified.value
     ? __('All accounts')
-    : (user.data.accounts?.find((a) => a.id === store.accountId)?._name ?? ''),
+    : (user.data?.accounts?.find((a) => a.id === store.accountId)?._name ?? ''),
 )
 
 const showWidgets = computed(
-  () => !isMobile.value && user.data.is_jmap_configured && !route.meta.isDashboard,
+  () => !isMobile.value && user.data?.is_jmap_configured && !route.meta.isDashboard,
 )
 
 // Leave the dashboard for the active account's default mailbox (or the address
@@ -226,8 +226,8 @@ const goToMailbox = () => {
 // The account menu: the reader's own account first, the rest as they come, then all of them at
 // once. Empty when there is nothing to pick.
 const accountMenu = computed(() =>
-  user.data.accounts?.length > 1 && !route.meta.isDashboard
-    ? accountSubmenu(user.data.accounts, store.accountId, switchAccount, {
+  (user.data?.accounts?.length ?? 0) > 1 && !route.meta.isDashboard
+    ? accountSubmenu(user.data?.accounts ?? [], store.accountId, switchAccount, {
         label: __('All accounts'),
         active: isUnified.value,
         onSelect: switchToAll,
@@ -300,7 +300,7 @@ const mailboxItems = computed(
           label: getMailboxName(mailbox),
           icon: h(Icon, {
             name: getIcon(mailbox),
-            class: FOLDER_ICON_COLOR_MAP[mailbox.color],
+            class: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
           }),
           to: isScreener
             ? { name: 'mail-screener', params: { accountId: store.accountId } }
@@ -326,7 +326,7 @@ const mailboxItems = computed(
                 },
                 {
                   label: __('Delete'),
-                  theme: 'red',
+                  theme: 'red' as const,
                   icon: Trash2,
                   onClick: () => {
                     selectedMailbox.value = mailbox
@@ -470,9 +470,9 @@ const sidebarItems = computed(() => {
 
   // Admins reach the dashboard from its own row, last in the sidebar.
   if (
-    user.data.is_jmap_configured &&
-    user.data.is_suite_admin &&
-    user.data.is_suite_cloud_configured &&
+    user.data?.is_jmap_configured &&
+    user.data?.is_suite_admin &&
+    user.data?.is_suite_cloud_configured &&
     !isMobile.value
   )
     groups.push({

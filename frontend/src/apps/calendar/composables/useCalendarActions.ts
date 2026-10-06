@@ -1,7 +1,7 @@
-import { createResource } from 'frappe-ui'
 import { Pencil, Pin, Trash2 } from 'lucide-vue-next'
 import { ref } from 'vue'
 
+import { api, client } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
@@ -19,19 +19,18 @@ export const useCalendarActions = () => {
   const showEdit = ref(false)
   const showDelete = ref(false)
 
-  const makeDefault = createResource({
-    url: 'suite.calendar.api.edit_calendar',
-    makeParams: (calendar: CalendarRow) => ({
-      account: calendar.account,
-      id: calendar.id,
-      default: true,
-    }),
-    onSuccess: () => {
+  const makeDefault = async (calendar: CalendarRow) => {
+    try {
+      await client.mutation(api.calendar.calendars.update, {
+        account: calendar.account,
+        id: calendar.id,
+        default: true,
+      })
       raiseToast(__('Default calendar changed.'))
-      store.calendars.reload()
-    },
-    onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
-  })
+    } catch {
+      /* The shared mutation feedback reports the refusal. */
+    }
+  }
 
   // Shown at once and saved behind: a toggle that waited on the server would feel broken,
   // and one that failed puts the calendar back as it was.
@@ -44,15 +43,15 @@ export const useCalendarActions = () => {
         : [...store.hiddenShared, calendar.name]
       return
     }
-    createResource({
-      url: 'suite.calendar.api.edit_calendar',
-      params: { account: calendar.account, id: calendar.id, visible: !!visible },
-      auto: true,
-      onError: (error) => {
+    void client
+      .mutation(api.calendar.calendars.update, {
+        account: calendar.account,
+        id: calendar.id,
+        visible: !!visible,
+      })
+      .catch(() => {
         calendar.visible = visible ? 0 : 1
-        raiseToast(error.messages?.[0] || error.message, 'error')
-      },
-    })
+      })
   }
 
   const create = () => edit(undefined)
@@ -77,7 +76,7 @@ export const useCalendarActions = () => {
       label: __('Set as Default'),
       icon: Pin,
       condition: () => canEdit(calendar) && !calendar.default,
-      onClick: () => makeDefault.submit(calendar),
+      onClick: () => makeDefault(calendar),
     },
     // The default is where new events and invitations land, so it stays until another takes over.
     {

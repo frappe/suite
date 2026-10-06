@@ -1,8 +1,7 @@
 import { computed, readonly, ref, type Ref } from 'vue'
 
+import { api, client, onTouch } from '@/api'
 import { onAccessChange } from '@/apps/drive/client/accessChanges'
-import { api } from '@/apps/drive/client/generated'
-import { driveOperation } from '@/apps/drive/client/operation'
 import {
   canShare,
   documentCredentials,
@@ -10,24 +9,10 @@ import {
   type MediaHandle,
 } from '@/apps/drive/client/session'
 import type { DriveBreadcrumb, DriveNode, DrivePreview } from '@/apps/drive/client/types'
-import { onTouch } from '@/platform/server-state'
-import { transport } from '@/platform/transport'
 
 import { presentShareDialog } from '../share/present'
 
-const nodeGet = driveOperation<{ node: string; expand?: string }, DriveNode>(api.node_get, {
-  entity: true,
-})
-const renameNode = driveOperation<{ node: string; title: string }, DriveNode>(
-  api.node_patch.rename,
-  { entity: true },
-)
-const copyNode = driveOperation<{ node: string; parent_node: string; title?: string }, DriveNode>(
-  api.node_copy,
-  { entity: true },
-)
 const EXPAND = 'access,preview,breadcrumbs'
-
 export interface FilePreviewSession extends DocumentSession {
   readonly mime: string | null
   /** The file's size in bytes. Follows a new version. */
@@ -63,15 +48,19 @@ export async function openFilePreviewSession(
   const controller = new AbortController()
   const initial =
     node ??
-    (await transport.request(
-      nodeGet,
-      { node: nodeId, expand: EXPAND },
-      { signal: controller.signal },
+    (await client.query(
+      api.drive.nodes.get,
+      {
+        node: nodeId,
+        expand: EXPAND,
+      },
+      {
+        signal: controller.signal,
+      },
     ))
   if (initial.kind !== 'file' || initial.content_doctype || initial.content_docname) {
     throw new Error(`Drive node ${nodeId} is not a previewable file`)
   }
-
   const title = ref(initial.title)
   const state = ref<'Active' | 'Trashed' | 'Refused'>(sessionState(initial))
   const access = ref(initial.access ?? {})
@@ -88,16 +77,31 @@ export async function openFilePreviewSession(
   // A file reached through a share link records no visit (spec §10.13): the
   // same rule as the document session and `isLinkOnly`.
   if (!initial.access?.via_link)
-    void request<Record<string, never>>(api.node_visit, { node: nodeId }).catch(() => {})
-
+    void client
+      .mutation(
+        api.drive.nodes.visit,
+        {
+          node: nodeId,
+        },
+        {
+          signal: controller.signal,
+          silent: true,
+        },
+      )
+      .catch(() => {})
   async function refresh() {
     if (disposed) return
     const read = ++reads
     try {
-      const node = await transport.request(
-        nodeGet,
-        { node: nodeId, expand: EXPAND },
-        { signal: controller.signal },
+      const node = await client.query(
+        api.drive.nodes.get,
+        {
+          node: nodeId,
+          expand: EXPAND,
+        },
+        {
+          signal: controller.signal,
+        },
       )
       if (read !== reads) return
       title.value = node.title
@@ -116,15 +120,6 @@ export async function openFilePreviewSession(
       preview.value = null
     }
   }
-
-  function request<Output>(operation: any, input: Record<string, unknown>) {
-    return transport.request(
-      driveOperation<Record<string, unknown>, Output>(operation, { covers: [nodeId] }),
-      input,
-      { signal: controller.signal },
-    )
-  }
-
   const media: MediaHandle = {
     id: nodeId,
     src: readonly(ref(initial.url)),
@@ -139,7 +134,6 @@ export async function openFilePreviewSession(
   const stopAccessChanges = onAccessChange(nodeId, () => void refresh())
   // A move, trash, restore or undo made anywhere names the file in `touches`.
   const stopTouches = onTouch(nodeId, () => void refresh())
-
   return {
     nodeId,
     contentDoctype: 'File',
@@ -157,10 +151,15 @@ export async function openFilePreviewSession(
     access: readonly(access),
     canShare: computed(() => canShare(state.value, access.value)),
     async rename(nextTitle) {
-      const node = await transport.request(
-        renameNode,
-        { node: nodeId, title: nextTitle },
-        { signal: controller.signal },
+      const node = await client.mutation(
+        api.drive.nodes.rename,
+        {
+          node: nodeId,
+          title: nextTitle,
+        },
+        {
+          signal: controller.signal,
+        },
       )
       // A read already on its way may predate the rename, so its answer is dropped.
       reads += 1
@@ -172,29 +171,160 @@ export async function openFilePreviewSession(
       await refresh()
     },
     copy: (parent, nextTitle) =>
-      transport.request(
-        copyNode,
-        { node: nodeId, parent_node: parent, title: nextTitle },
-        { signal: controller.signal },
+      client.mutation(
+        api.drive.nodes.copy,
+        {
+          node: nodeId,
+          parent_node: parent,
+          title: nextTitle,
+        },
+        {
+          signal: controller.signal,
+        },
       ),
     comments: {
-      list: (resolved) => request(api.node_threads, { node: nodeId, resolved }),
+      list: (resolved) =>
+        client.query(
+          api.drive.threads.list,
+          {
+            node: nodeId,
+            resolved,
+          },
+          {
+            signal: controller.signal,
+          },
+        ),
       create: (anchor, text, authorName) =>
-        request(api.node_thread_create, { node: nodeId, anchor, text, author_name: authorName }),
+        client.mutation(
+          api.drive.threads.create,
+          {
+            node: nodeId,
+            anchor,
+            text,
+            author_name: authorName,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
       reply: (thread, text, authorName) =>
-        request(api.thread_comment_create, { thread, text, author_name: authorName }),
-      resolve: (thread, resolved) => request(api.thread_patch, { thread, resolved }),
-      edit: (comment, text) => request(api.comment_patch, { comment, text }),
-      remove: (comment) => request(api.comment_delete, { comment }),
+        client.mutation(
+          api.drive.comments.create,
+          {
+            node: nodeId,
+            thread,
+            text,
+            author_name: authorName,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
+      resolve: (thread, resolved) =>
+        client.mutation(
+          api.drive.threads.resolve,
+          {
+            node: nodeId,
+            thread,
+            resolved,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
+      edit: (comment, text) =>
+        client.mutation(
+          api.drive.comments.update,
+          {
+            node: nodeId,
+            comment,
+            text,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
+      remove: (comment) =>
+        client.mutation(
+          api.drive.comments.delete,
+          {
+            node: nodeId,
+            comment,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
     },
     versions: {
-      list: (cursor) => request(api.node_versions, { node: nodeId, cursor }),
-      create: (kind, label) => request(api.node_version_create, { node: nodeId, kind, label }),
-      update: (seq, changes) => request(api.node_version_patch, { node: nodeId, seq, ...changes }),
-      remove: (seq) => request(api.node_version_delete, { node: nodeId, seq }),
+      list: (cursor) =>
+        client.query(
+          api.drive.versions.list,
+          {
+            node: nodeId,
+            cursor,
+          },
+          {
+            signal: controller.signal,
+          },
+        ),
+      create: (kind, label) =>
+        client.mutation(
+          api.drive.versions.create,
+          {
+            node: nodeId,
+            kind,
+            label,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
+      update: (seq, changes) =>
+        client.mutation(
+          api.drive.versions.update,
+          {
+            node: nodeId,
+            seq,
+            ...changes,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
+      remove: (seq) =>
+        client.mutation(
+          api.drive.versions.delete,
+          {
+            node: nodeId,
+            seq,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
       contentUrl: (seq) =>
         `/api/suite/drive/nodes/${encodeURIComponent(nodeId)}/versions/${encodeURIComponent(seq)}/content`,
-      restore: (seq) => request(api.node_version_restore, { node: nodeId, seq }),
+      restore: (seq) =>
+        client.mutation(
+          api.drive.versions.restore,
+          {
+            node: nodeId,
+            seq,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
     },
     media: () => media,
     credentials: documentCredentials(nodeId),
@@ -227,7 +357,6 @@ function folderOf(node: DriveNode): DriveBreadcrumb | null {
   if (!parent || parent.name !== node.parent_node || !FOLDER_KINDS.has(parent.kind)) return null
   return trail.some((step) => step.kind === 'document') ? null : parent
 }
-
 function sessionState(node: DriveNode): 'Active' | 'Trashed' | 'Refused' {
   if ((node.access?.role ?? 0) < 10) return 'Refused'
   return node.state === 'Trashed' ? 'Trashed' : 'Active'

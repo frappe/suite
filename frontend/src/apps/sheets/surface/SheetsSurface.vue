@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, toast } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from '@/apps/drive'
@@ -25,9 +25,9 @@ interface SheetEditorHandle {
   goToCell(sheet: string, cell: string): boolean
   closeNotes(): void
 }
-
-const props = defineProps<{ session: DocumentSession }>()
-
+const props = defineProps<{
+  session: DocumentSession
+}>()
 const editor = ref<SheetEditorHandle | null>(null)
 const panel = ref<DocumentPanel | null>(null)
 // A restore, or edit access coming back, reloads the server workbook: the
@@ -35,7 +35,6 @@ const panel = ref<DocumentPanel | null>(null)
 const bodyRevision = ref(0)
 const restoring = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
-
 const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
@@ -47,7 +46,10 @@ const access = createSheetAccess(props.session, {
     retainRecovery()
     toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
       duration: Number.POSITIVE_INFINITY,
-      action: { label: 'Download my changes', onClick: downloadChanges },
+      action: {
+        label: 'Download my changes',
+        onClick: downloadChanges,
+      },
     })
   },
   widened() {
@@ -57,7 +59,12 @@ const access = createSheetAccess(props.session, {
 })
 const editorWritable = computed(() => access.writable.value && !restoring.value)
 const cursor = computed<CellAnchor | null>(() =>
-  editor.value ? { sheet: editor.value.currentSheet, cell: editor.value.activeCell } : null,
+  editor.value
+    ? {
+        sheet: editor.value.currentSheet,
+        cell: editor.value.activeCell,
+      }
+    : null,
 )
 
 // A save that lands with edit access makes the recovery copy stale.
@@ -76,7 +83,6 @@ function showPanel(next: DocumentPanel | null) {
   panel.value = next
   if (next) editor.value?.closeNotes()
 }
-
 function selectAnchor(anchor: CellAnchor) {
   if (!editor.value?.goToCell(anchor.sheet, anchor.cell)) {
     toast.info(`${anchor.sheet} · ${anchor.cell} is no longer in this spreadsheet.`)
@@ -92,7 +98,6 @@ async function flushEdits() {
     )
   }
 }
-
 async function restoreVersion(seq: string) {
   await flushEdits()
   restoring.value = true
@@ -103,7 +108,6 @@ async function restoreVersion(seq: string) {
     restoring.value = false
   }
 }
-
 function retainRecovery() {
   const workbook = editor.value?.workbookJson()
   if (!workbook) return
@@ -114,7 +118,6 @@ function retainRecovery() {
     toast.error('Your latest changes could not be kept on this device.')
   }
 }
-
 async function downloadChanges() {
   try {
     const downloaded = await downloadRecovery(props.session.nodeId, props.session.title.value)
@@ -124,7 +127,6 @@ async function downloadChanges() {
     toast.error('Your changes could not be downloaded. They are still kept on this device.')
   }
 }
-
 useDocumentLeaveGuard({
   state: () => editor.value?.saveState ?? 'clean',
   flush: async () => {
@@ -147,13 +149,14 @@ useDocumentLeaveGuard({
     </div>
     <SheetEditor
       v-else
+      :id="session.contentDocname"
       :key="bodyRevision"
       ref="editor"
-      :id="session.contentDocname"
       embedded
       :writable="editorWritable"
       :title="session.title.value"
       :credential-fetch="session.credentials.fetch"
+      :request-context="session.credentials.context"
       @access-refused="access.refuse()"
       @notes-opened="panel = null"
     >

@@ -29,8 +29,8 @@ import {
   INBOX_FOLDER,
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
-import { provideAreaShortcuts } from '@/platform/shortcuts'
 import { mailServerUnavailable } from '@/boot/config'
+import { provideAreaShortcuts } from '@/platform/shortcuts'
 import { useRootStore } from '@/stores/root'
 
 /**

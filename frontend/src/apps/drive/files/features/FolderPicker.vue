@@ -113,10 +113,8 @@
 import { Breadcrumbs, Button, Dialog, ErrorMessage, Skeleton, TabButtons } from 'frappe-ui'
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
-import { children, node } from '@/apps/drive/client/nodes'
-import { roots } from '@/apps/drive/client/roots'
+import { api, useInfiniteQuery, useQuery } from '@/api'
 import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
-import { useQuery } from '@/platform/server-state'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { locationTitle } from '../internal/locations'
@@ -153,7 +151,7 @@ const open = defineModel<boolean>('open', { required: true })
 /** `title` is the folder's name as the picker shows it, for the message after the action. */
 const emit = defineEmits<{ choose: [node: string, title: string] }>()
 const listElement = useTemplateRef<HTMLElement>('listElement')
-const discovered = useQuery(roots())
+const discovered = useQuery(api.drive.roots.list, {})
 const rootKind = ref<'personal' | 'organization'>('personal')
 const trail = ref<Array<{ node: string; title: string; access?: DriveAccess }>>([])
 const rootOptions = computed(() =>
@@ -192,9 +190,9 @@ const root = computed(() => discovered.data?.[rootKind.value] ?? null)
 
 // It opens in the folder the items are in, with the path down to it. A
 // restore picks from the top of its root.
-const start = useQuery(() => {
-  const folder = open.value && !props.root ? startingFolder(props.items, props.folder) : null
-  return folder ? node(folder) : false
+const start = useQuery(api.drive.nodes.get, () => {
+  const folder = open.value && !props.root ? startingFolder(props.items, props.folder) : false
+  return folder ? { node: folder, expand: 'access,breadcrumbs' } : false
 })
 const startTrail = computed(() => {
   const folder = start.data
@@ -234,18 +232,20 @@ const crumbs = computed(() =>
     onClick: () => openCrumb(index),
   })),
 )
-const folders = useQuery(() =>
+const folders = useInfiniteQuery(api.drive.nodes.children, () =>
   current.value
-    ? children({
+    ? {
         node: current.value.node,
-        types: ['folder'],
+        type: 'folder',
         expand: 'access',
         order_by: 'title',
         ascending: true,
-      })
+      }
     : false,
 )
-const currentDetail = useQuery(() => (current.value ? node(current.value.node, 'access') : false))
+const currentDetail = useQuery(api.drive.nodes.get, () =>
+  current.value ? { node: current.value.node, expand: 'access' } : false,
+)
 const target = computed(() =>
   current.value
     ? destination(

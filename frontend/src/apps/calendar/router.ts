@@ -49,7 +49,7 @@ export const calendarGuard = async (to: RouteLocationNormalized) => {
 
   // Wait for user data, then resolve the active account.
   const store = userStore()
-  await store.userResource.promise
+  await store.loadUser()
   const user = store.userResource.data
 
   store.resolveAccount(user?.accounts, to.params.accountId as string | undefined)

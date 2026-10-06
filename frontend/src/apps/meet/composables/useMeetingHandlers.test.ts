@@ -2,17 +2,24 @@ import { toast } from 'frappe-ui'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { api, client } from '@/api'
+
 import { useMeetingHandlers } from './useMeetingHandlers'
+
+vi.mock('@/api', () => ({
+  api: { meet: { rooms: { banGuest: 'banGuest', promote: 'promote' } } },
+  client: { mutation: vi.fn() },
+}))
 
 vi.mock('frappe-ui', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
 const createRemovalHarness = (sendHostControl: ReturnType<typeof vi.fn> | null) => {
-  const banGuest = { error: null, submit: vi.fn().mockResolvedValue({ status: 'banned' }) }
+  const banGuest = vi.mocked(client.mutation).mockResolvedValue({ status: 'banned' })
   const handlers = useMeetingHandlers({
     meetingId: 'room-1',
-    meetingDoc: { banGuest },
+    refreshMeeting: vi.fn(),
     sfuConnection: { sfuManager: ref(sendHostControl ? { sendHostControl } : null) },
   } as never)
   return { banGuest, handlers }
@@ -75,7 +82,11 @@ describe('useMeetingHandlers', () => {
 
     await handlers.handleKickParticipant('guest_1', true)
 
-    expect(banGuest.submit).toHaveBeenCalledWith({ guest_id: 'guest_1' })
+    expect(banGuest).toHaveBeenCalledWith(
+      api.meet.rooms.banGuest,
+      { name: 'room-1', guest_id: 'guest_1' },
+      { silent: true },
+    )
     expect(sendHostControl).toHaveBeenCalledWith('ban_participant', 'guest_1')
   })
 
@@ -84,7 +95,7 @@ describe('useMeetingHandlers', () => {
 
     await handlers.handleKickParticipant('guest_1', true)
 
-    expect(banGuest.submit).not.toHaveBeenCalled()
+    expect(banGuest).not.toHaveBeenCalled()
     expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Reconnect'))
   })
 
@@ -103,7 +114,7 @@ describe('useMeetingHandlers', () => {
 
     await handlers.handleKickParticipant('member@example.com', true)
 
-    expect(banGuest.submit).not.toHaveBeenCalled()
+    expect(banGuest).not.toHaveBeenCalled()
     expect(sendHostControl).toHaveBeenCalledWith('kick_participant', 'member@example.com')
   })
 })

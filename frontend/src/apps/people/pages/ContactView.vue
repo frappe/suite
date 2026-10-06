@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout v-if="contact?.doc" area="people" :breadcrumbs="breadcrumbs">
+  <DashboardLayout v-if="contact.data" area="people" :breadcrumbs="breadcrumbs">
     <template #actions>
       <Dropdown :options="DROPDOWN_OPTIONS">
         <Button icon="lucide-more-horizontal" class="text-ink-gray-5" />
@@ -13,15 +13,15 @@
           class="h-[14.5rem] max-sm:col-span-2"
           @action="showEditGeneral = true"
         >
-          <InformationField :label="__('Name')" :value="contact.doc.full_name" />
-          <InformationField :label="__('Kind')" :value="capitalize(contact.doc.kind)" />
+          <InformationField :label="__('Name')" :value="contact.data.full_name ?? undefined" />
+          <InformationField :label="__('Kind')" :value="capitalize(contact.data.kind ?? '')" />
           <InformationField
             :label="__('Created On')"
-            :value="dayjs(contact.doc.created_at).format('MMM D YYYY, h:mm A')"
+            :value="dayjs(contact.data.created_at).format('MMM D YYYY, h:mm A')"
           />
           <InformationField
             :label="__('Updated On')"
-            :value="dayjs(contact.doc.updated_at).format('MMM D YYYY, h:mm A')"
+            :value="dayjs(contact.data.updated_at).format('MMM D YYYY, h:mm A')"
           />
         </DashboardCard>
 
@@ -33,7 +33,7 @@
           <ListView
             ref="addressBooksList"
             :columns="ADDRESS_BOOK_COLUMNS"
-            :rows="contact.doc.address_books"
+            :rows="contact.data.address_books"
             row-key="address_book_id"
             :options="{
               emptyState: { title: '', description: __('No address books.') },
@@ -41,7 +41,7 @@
             class="flex-1 overflow-auto p-4"
           >
             <ListHeader />
-            <ListRows v-if="contact.doc.address_books.length" />
+            <ListRows v-if="contact.data.address_books.length" />
             <ListEmptyState v-else />
             <ListSelectBanner>
               <template #actions>
@@ -64,13 +64,13 @@
           <ListView
             ref="emailsList"
             :columns="EMAIL_COLUMNS"
-            :rows="contact.doc.emails.map((c) => ({ ...c, type: capitalize(c.type) }))"
+            :rows="contact.data.emails.map((c) => ({ ...c, type: capitalize(c.type ?? '') }))"
             row-key="address"
             :options="{ emptyState: { title: '', description: __('No emails.') } }"
             class="flex-1 overflow-auto p-4"
           >
             <ListHeader />
-            <ListRows v-if="contact.doc.emails.length" />
+            <ListRows v-if="contact.data.emails.length" />
             <ListEmptyState v-else />
             <ListSelectBanner>
               <template #actions>
@@ -93,13 +93,13 @@
           <ListView
             ref="phonesList"
             :columns="PHONE_COLUMNS"
-            :rows="contact.doc.phones.map((p) => ({ ...p, type: capitalize(p.type) }))"
+            :rows="contact.data.phones.map((p) => ({ ...p, type: capitalize(p.type ?? '') }))"
             row-key="number"
             :options="{ emptyState: { title: '', description: __('No phones.') } }"
             class="flex-1 overflow-auto p-4"
           >
             <ListHeader />
-            <ListRows v-if="contact.doc.phones.length" />
+            <ListRows v-if="contact.data.phones.length" />
             <ListEmptyState v-else />
             <ListSelectBanner>
               <template #actions>
@@ -122,13 +122,13 @@
           <ListView
             ref="addressesList"
             :columns="ADDRESS_COLUMNS"
-            :rows="contact.doc.addresses.map((a) => ({ ...a, type: capitalize(a.type) }))"
+            :rows="contact.data.addresses.map((a) => ({ ...a, type: capitalize(a.type ?? '') }))"
             row-key="idx"
             :options="{ emptyState: { title: '', description: __('No addresses.') } }"
             class="flex-1 overflow-auto p-4"
           >
             <ListHeader />
-            <ListRows v-if="contact.doc.addresses.length" />
+            <ListRows v-if="contact.data.addresses.length" />
             <ListEmptyState v-else />
             <ListSelectBanner>
               <template #actions>
@@ -147,58 +147,20 @@
   </DashboardLayout>
 
   <EditContactModal
-    v-if="contact?.originalDoc"
+    v-if="contact.data"
     v-model="showEditGeneral"
-    :full-name="contact.doc.full_name"
-    :kind="contact.doc.kind"
-    @save="
-      (val) => {
-        contact.doc.full_name = val.fullName
-        contact.doc.kind = val.kind
-        contact.save.submit()
-      }
-    "
+    :full-name="contact.data.full_name ?? undefined"
+    :kind="contact.data.kind"
+    :save="saveGeneral"
   />
   <AddContactAddressBookModal
-    v-if="contact?.originalDoc"
+    v-if="contact.data"
     v-model="showAddAddressBook"
-    @add="
-      (val) => {
-        contact.doc.address_books.push(val)
-        contact.save.submit()
-      }
-    "
+    :save="addAddressBook"
   />
-  <AddContactEmailModal
-    v-if="contact?.originalDoc"
-    v-model="showAddEmail"
-    @add="
-      (val) => {
-        contact.doc.emails.push(val)
-        contact.save.submit()
-      }
-    "
-  />
-  <AddContactPhoneModal
-    v-if="contact?.originalDoc"
-    v-model="showAddPhone"
-    @add="
-      (val) => {
-        contact.doc.phones.push(val)
-        contact.save.submit()
-      }
-    "
-  />
-  <AddContactAddressModal
-    v-if="contact?.originalDoc"
-    v-model="showAddAddress"
-    @add="
-      (val) => {
-        contact.doc.addresses.push(val)
-        contact.save.submit()
-      }
-    "
-  />
+  <AddContactEmailModal v-if="contact.data" v-model="showAddEmail" :save="addEmail" />
+  <AddContactPhoneModal v-if="contact.data" v-model="showAddPhone" :save="addPhone" />
+  <AddContactAddressModal v-if="contact.data" v-model="showAddAddress" :save="addAddress" />
   <Dialog v-model:open="showDeleteContact" v-bind="deleteContactOptions" />
   <Dialog v-model:open="showRemoveAddressBooks" v-bind="removeAddressBooksOptions" />
   <Dialog v-model:open="showRemoveEmails" v-bind="removeEmailsOptions" />
@@ -207,14 +169,8 @@
 </template>
 
 <script setup lang="ts">
-import {
-  Button,
-  createDocumentResource,
-  createResource,
-  Dialog,
-  Dropdown,
-  usePageMeta,
-} from 'frappe-ui'
+import dayjs from 'dayjs/esm'
+import { Button, Dialog, Dropdown, usePageMeta } from 'frappe-ui'
 import {
   ListEmptyState,
   ListHeader,
@@ -223,20 +179,19 @@ import {
   ListView,
 } from 'frappe-ui/experimental'
 import { Trash2 } from 'lucide-vue-next'
-import dayjs from 'dayjs/esm'
 import { capitalize, computed, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import InformationField from '@/components/dashboard/InformationField.vue'
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import AddContactAddressBookModal from '@/apps/people/components/Modals/AddContactAddressBookModal.vue'
 import AddContactAddressModal from '@/apps/people/components/Modals/AddContactAddressModal.vue'
 import AddContactEmailModal from '@/apps/people/components/Modals/AddContactEmailModal.vue'
 import AddContactPhoneModal from '@/apps/people/components/Modals/AddContactPhoneModal.vue'
 import EditContactModal from '@/apps/people/components/Modals/EditContactModal.vue'
-import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import InformationField from '@/components/dashboard/InformationField.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
 const { accountId, contactName } = defineProps<{ accountId: string; contactName: string }>()
@@ -254,41 +209,48 @@ const showRemovePhones = ref(false)
 const showRemoveAddresses = ref(false)
 const showDeleteContact = ref(false)
 
-const store = userStore()
+const contact = useQuery(api.mail.contacts.get, () => ({ account: accountId, id: contactName }))
+const updateContact = useMutation(api.mail.contacts.update)
+const removeContact = useMutation(api.mail.contacts.delete)
+type Changes = InputOf<typeof api.mail.contacts.update>['changes']
 
-const contact = createDocumentResource({
-  doctype: 'Contact Card',
-  name: `${store.accountId}|${contactName}`,
-  onError: () => router.replace({ name: 'people-contacts', params: { accountId } }),
-  setValue: {
-    onSuccess: () => raiseToast(__('Contact updated.')),
-    onError: (error) => {
-      contact.reload()
-      raiseToast(error.messages[0], 'error')
-    },
-  },
-})
-
-const deleteContact = createResource({
-  url: 'suite.mail.doctype.contact_card.contact_card.delete_contact_cards',
-  makeParams: () => ({ account: accountId, ids: [contact.doc.id] }),
-  onSuccess: () => {
+async function saveChanges(changes: Changes): Promise<void> {
+  await updateContact.run({ account: accountId, id: contactName, changes })
+  raiseToast(__('Contact updated.'))
+}
+async function saveGeneral(value: { fullName: string; kind: string }) {
+  await saveChanges({ full_name: value.fullName, kind: value.kind })
+}
+async function addAddressBook(id: string) {
+  await addToBook.run({ account: accountId, ids: [contactName], address_book_id: id })
+}
+const addToBook = useMutation(api.mail.contacts.addToBook)
+async function addEmail(value: NonNullable<Changes['emails']>[number]) {
+  await saveChanges({ emails: [...(contact.data?.emails ?? []), value] })
+}
+async function addPhone(value: NonNullable<Changes['phones']>[number]) {
+  await saveChanges({ phones: [...(contact.data?.phones ?? []), value] })
+}
+async function addAddress(value: NonNullable<Changes['addresses']>[number]) {
+  await saveChanges({ addresses: [...(contact.data?.addresses ?? []), value] })
+}
+async function deleteContact() {
+  try {
+    await removeContact.run({ account: accountId, ids: [contactName] })
     showDeleteContact.value = false
     raiseToast(__('Contact deleted.'))
-    router.push({ name: 'people-contacts', params: { accountId } })
-  },
-  onError: (error) => {
-    showDeleteContact.value = false
-    raiseToast(error.messages[0], 'error')
-  },
-})
+    await router.push({ name: 'people-contacts', params: { accountId } })
+  } catch {
+    /* Keep the dialog open after refusal. */
+  }
+}
 
 const deleteContactOptions = computed(() => ({
   title: __('Delete Contact'),
-  message: __('Are you sure you want to delete the contact for {0}?', [contact.doc?.full_name]),
+  message: __('Are you sure you want to delete the contact for {0}?', [contact.data?.full_name]),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
-  actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteContact.submit }],
+  theme: 'amber' as const,
+  actions: [{ label: __('Confirm'), variant: 'solid' as const, onClick: deleteContact }],
 }))
 
 const addressBooksList = useTemplateRef('addressBooksList')
@@ -296,18 +258,23 @@ const removeAddressBooksOptions = computed(() => ({
   title: __('Remove from Address Books'),
   message: __('Are you sure you want to remove this contact from the selected address books?'),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
+  theme: 'amber' as const,
   actions: [
     {
       label: __('Confirm'),
-      variant: 'solid',
-      onClick: () => {
-        contact.doc.address_books = contact.doc.address_books.filter(
-          (ab) => !addressBooksList.value?.selections.has(ab.address_book_id),
-        )
-        contact.save.submit()
-        addressBooksList.value?.toggleAllRows()
-        showRemoveAddressBooks.value = false
+      variant: 'solid' as const,
+      onClick: async () => {
+        try {
+          await saveChanges({
+            address_books: (contact.data?.address_books ?? []).filter(
+              (row) => !addressBooksList.value?.selections.has(row.address_book_id),
+            ),
+          })
+          addressBooksList.value?.toggleAllRows()
+          showRemoveAddressBooks.value = false
+        } catch {
+          /* Keep the dialog open after refusal. */
+        }
       },
     },
   ],
@@ -318,18 +285,23 @@ const removeEmailsOptions = computed(() => ({
   title: __('Remove Emails'),
   message: __('Are you sure you want to remove the selected emails?'),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
+  theme: 'amber' as const,
   actions: [
     {
       label: __('Confirm'),
-      variant: 'solid',
-      onClick: () => {
-        contact.doc.emails = contact.doc.emails.filter(
-          (e) => !emailsList.value?.selections.has(e.address),
-        )
-        contact.save.submit()
-        emailsList.value?.toggleAllRows()
-        showRemoveEmails.value = false
+      variant: 'solid' as const,
+      onClick: async () => {
+        try {
+          await saveChanges({
+            emails: (contact.data?.emails ?? []).filter(
+              (row) => !emailsList.value?.selections.has(row.address),
+            ),
+          })
+          emailsList.value?.toggleAllRows()
+          showRemoveEmails.value = false
+        } catch {
+          /* Keep the dialog open after refusal. */
+        }
       },
     },
   ],
@@ -340,18 +312,23 @@ const removePhonesOptions = computed(() => ({
   title: __('Remove Phones'),
   message: __('Are you sure you want to remove the selected phones?'),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
+  theme: 'amber' as const,
   actions: [
     {
       label: __('Confirm'),
-      variant: 'solid',
-      onClick: () => {
-        contact.doc.phones = contact.doc.phones.filter(
-          (p) => !phonesList.value?.selections.has(p.number),
-        )
-        contact.save.submit()
-        phonesList.value?.toggleAllRows()
-        showRemovePhones.value = false
+      variant: 'solid' as const,
+      onClick: async () => {
+        try {
+          await saveChanges({
+            phones: (contact.data?.phones ?? []).filter(
+              (row) => !phonesList.value?.selections.has(row.number),
+            ),
+          })
+          phonesList.value?.toggleAllRows()
+          showRemovePhones.value = false
+        } catch {
+          /* Keep the dialog open after refusal. */
+        }
       },
     },
   ],
@@ -362,25 +339,30 @@ const removeAddressesOptions = computed(() => ({
   title: __('Remove Addresses'),
   message: __('Are you sure you want to remove the selected addresses?'),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
+  theme: 'amber' as const,
   actions: [
     {
       label: __('Confirm'),
-      variant: 'solid',
-      onClick: () => {
-        contact.doc.addresses = contact.doc.addresses.filter(
-          (address) => !addressesList.value?.selections.has(address.idx),
-        )
-        contact.save.submit()
-        addressesList.value?.toggleAllRows()
-        showRemoveAddresses.value = false
+      variant: 'solid' as const,
+      onClick: async () => {
+        try {
+          await saveChanges({
+            addresses: (contact.data?.addresses ?? []).filter(
+              (row) => !addressesList.value?.selections.has(row.idx),
+            ),
+          })
+          addressesList.value?.toggleAllRows()
+          showRemoveAddresses.value = false
+        } catch {
+          /* Keep the dialog open after refusal. */
+        }
       },
     },
   ],
 }))
 
 const contactDisplay = computed(
-  () => contact.doc?.full_name || contact.doc?.emails[0]?.address || contactName,
+  () => contact.data?.full_name || contact.data?.emails[0]?.address || contactName,
 )
 
 usePageMeta(() => appPageMeta(contactDisplay.value, 'People'))

@@ -42,20 +42,20 @@ import { SidebarItem, SidebarSection } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { node } from '@/apps/drive/client/nodes'
-import { roots } from '@/apps/drive/client/roots'
+import { api, useQuery } from '@/api'
 import StorageMeter from '@/apps/drive/files/features/StorageMeter.vue'
 import { locationOf, type FilesLocation } from '@/apps/drive/files/internal/locations'
 import { AreaSidebarFooter } from '@/platform/area-sidebar'
-import { useQuery } from '@/platform/server-state'
 
 const route = useRoute()
-const discovered = useQuery(roots())
+const discovered = useQuery(api.drive.roots.list, {})
 const folderId = computed(() =>
   route.name === 'files-folder' ? String(route.params.node ?? '') : '',
 )
 // The same read the folder page makes, so it costs no extra request.
-const folder = useQuery(() => (folderId.value ? node(folderId.value, 'access,breadcrumbs') : false))
+const folder = useQuery(api.drive.nodes.get, () =>
+  folderId.value ? { node: folderId.value, expand: 'access,breadcrumbs' } : false,
+)
 
 /** The location whose item stays lit, also inside one of its folders. A trashed folder is reached from Trash. */
 const current = computed<FilesLocation | 'trash' | null>(() => {

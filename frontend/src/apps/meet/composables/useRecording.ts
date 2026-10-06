@@ -1,48 +1,13 @@
-import { toast, useCall } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import { api, client, useMutation } from '@/api'
+
+import type { RecordingPreflightOutput, RecordingStateOutput } from '../client/generated'
 import { useSocket } from '../socket'
-import { submit } from '../utils/request'
 
-type RecordingStatus =
-  | 'Pending'
-  | 'Starting'
-  | 'Recording'
-  | 'Interrupted'
-  | 'Stopping'
-  | 'Processing'
-  | 'Ready'
-  | 'Partial'
-  | 'Failed'
-  | 'Cancelled'
-
-export interface RecordingState {
-  name: string
-  status: RecordingStatus
-  started_at?: string
-  capture_started_at?: string
-  interruption_id?: string
-  interrupted_at?: string
-  interruption_deadline?: string
-  state_revision: number
-}
-
-type RecordingCommandResult = Pick<RecordingState, 'name' | 'status'> & Partial<RecordingState>
-type RecordingStartResult = RecordingCommandResult | { status: 'Rejected' }
-
-export interface RecordingPreflight {
-  eligible: boolean
-  global_enabled: boolean
-  e2ee_conflict: boolean
-  storage_available: boolean
-  recorder_available: boolean
-  estimated_seconds: number
-  estimated_bytes: number
-  free_bytes: number
-  budget_bytes: number
-  budget_seconds: number
-  maximum_seconds: number
-}
+export type RecordingState = NonNullable<RecordingStateOutput>
+export type RecordingPreflight = RecordingPreflightOutput
 
 type RecordingEvent = {
   meeting_id: string
@@ -52,6 +17,7 @@ type RecordingEvent = {
 export function useRecording(meetingId: string) {
   const state = ref<RecordingState | null>(null)
   const globalEnabled = ref(false)
+  const preflightPending = ref(false)
   const requestId = ref<string | null>(null)
   const socket = useSocket()
   let stateVersion = 0
@@ -61,24 +27,8 @@ export function useRecording(meetingId: string) {
     stateVersion += 1
   }
 
-  const stateCall = useCall<RecordingState | null, { meeting_id: string }>({
-    url: '/api/suite/meet/recordings/state',
-    immediate: false,
-  })
-  const preflightCall = useCall<RecordingPreflight, { meeting_id: string }>({
-    url: '/api/suite/meet/recordings/preflight',
-    immediate: false,
-  })
-  const startCall = useCall<RecordingStartResult, { meeting_id: string; request_id: string }>({
-    url: '/api/suite/meet/recordings/starts',
-    method: 'POST',
-    immediate: false,
-  })
-  const stopCall = useCall<RecordingCommandResult | null, { meeting_id: string }>({
-    url: '/api/suite/meet/recordings/stops',
-    method: 'POST',
-    immediate: false,
-  })
+  const startCall = useMutation(api.meet.recordings.start, { silent: true })
+  const stopCall = useMutation(api.meet.recordings.stop, { silent: true })
 
   const isLive = computed(() => ['Recording', 'Interrupted'].includes(state.value?.status || ''))
   const isStarting = computed(() => ['Pending', 'Starting'].includes(state.value?.status || ''))
@@ -88,8 +38,7 @@ export function useRecording(meetingId: string) {
       const version = stateVersion
       const recordingName = state.value?.name
       const revision = state.value?.state_revision
-      const loaded = (await stateCall.submit({ meeting_id: meetingId })) ?? null
-      if (loaded === null && stateCall.error) throw stateCall.error
+      const loaded = await client.query(api.meet.recordings.get, { meeting_id: meetingId })
       if (stateVersion !== version) return
       if (state.value?.state_revision !== revision) return
       if (
@@ -105,12 +54,17 @@ export function useRecording(meetingId: string) {
   }
 
   async function getPreflight() {
-    return submit(preflightCall, { meeting_id: meetingId })
+    preflightPending.value = true
+    try {
+      return await client.query(api.meet.recordings.preflight, { meeting_id: meetingId })
+    } finally {
+      preflightPending.value = false
+    }
   }
 
   async function start() {
     requestId.value ||= crypto.randomUUID()
-    const result = await submit(startCall, {
+    const result = await startCall.run({
       meeting_id: meetingId,
       request_id: requestId.value,
     })
@@ -123,7 +77,7 @@ export function useRecording(meetingId: string) {
     setState({
       ...state.value,
       ...result,
-      state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
+      state_revision: state.value?.state_revision ?? 0,
     })
     if (result.status === 'Recording') await loadState()
     if (!['Pending', 'Starting'].includes(result.status)) requestId.value = null
@@ -134,15 +88,14 @@ export function useRecording(meetingId: string) {
   }
 
   async function stop() {
-    const result = await stopCall.submit({ meeting_id: meetingId })
+    const result = await stopCall.run({ meeting_id: meetingId })
     if (!result) {
-      if (stopCall.error) throw stopCall.error
       return null
     }
     setState({
       ...state.value,
       ...result,
-      state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
+      state_revision: state.value?.state_revision ?? 0,
     })
     await loadState()
     toast.info('Recording is stopping')
@@ -191,9 +144,9 @@ export function useRecording(meetingId: string) {
     globalEnabled,
     isLive,
     isStarting,
-    preflightLoading: computed(() => preflightCall.loading),
-    startLoading: computed(() => startCall.loading),
-    stopLoading: computed(() => stopCall.loading),
+    preflightLoading: computed(() => preflightPending.value),
+    startLoading: computed(() => startCall.isPending),
+    stopLoading: computed(() => stopCall.isPending),
     getPreflight,
     setGlobalEnabled,
     syncState,

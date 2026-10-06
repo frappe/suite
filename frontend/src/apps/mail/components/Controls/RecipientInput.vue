@@ -150,11 +150,12 @@
 </template>
 
 <script setup lang="ts">
-import { onClickOutside, useDebounceFn, useResizeObserver } from '@vueuse/core'
-import { Avatar, Combobox, createResource, Popover } from 'frappe-ui'
+import { onClickOutside, refDebounced, useResizeObserver } from '@vueuse/core'
+import { Avatar, Combobox, Popover } from 'frappe-ui'
 import { X } from 'lucide-vue-next'
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
+import { api, useQuery } from '@/api'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import { userStore } from '@/apps/mail/stores/user'
 import { type DraftRecipient } from '@/apps/mail/types'
@@ -278,16 +279,11 @@ const selectedEmails = computed(() => selectedRecipients.value.map((v) => v.emai
 const searchText = ref('')
 const showSuggestions = ref(false)
 
-const fetchSuggestions = useDebounceFn((text: string) => {
-  if (text) mailContacts.reload(text)
-}, 200)
-
 // The query is bound rather than merely observed, so picking a suggestion from the inline
 // list can clear the typed text — that path never touches the Combobox's own model, which
 // is what normally syncs the input back down after a selection.
 watch(searchText, (text) => {
   if (!text) showSuggestions.value = false
-  fetchSuggestions(text)
 })
 
 // Suggestions only exist for a typed query — with an empty input the popover
@@ -463,7 +459,7 @@ const menuOptions = computed(() => {
     })),
     {
       label: __('Remove'),
-      theme: 'red',
+      theme: 'red' as const,
       onClick: () => removeValue(recipient.email),
     },
   ]
@@ -493,7 +489,7 @@ const addValues = (values: string) => {
 }
 
 const addValue = (value: string) => {
-  const contact = mailContacts.data?.find((c) => c.email === value)
+  const contact = contacts.value.find((c) => c.email === value)
   if (contact) selectedRecipients.value.push(contact)
   else selectedRecipients.value.push({ email: value })
 }
@@ -530,31 +526,30 @@ const handleDrop = (e: DragEvent) => {
   emit('move', recipient, from, field)
 }
 
-const mailContacts = createResource({
-  url: 'suite.mail.api.mail.get_email_suggestions',
-  auto: false,
-  makeParams: (text: string) => ({
-    account: store.accountId,
-    text,
-  }),
-  transform: (data) =>
-    data.map((option) => ({
-      label: option.name || option.email,
-      value: option.email,
-      email: option.email,
-      display_name: option.name,
-      image: option.user_image,
-    })),
-})
+const debouncedSearch = refDebounced(searchText, 200)
+const suggestions = useQuery(api.mail.contacts.suggest, () =>
+  store.accountId && debouncedSearch.value && debouncedSearch.value === searchText.value
+    ? { account: store.accountId, text: debouncedSearch.value }
+    : false,
+)
+const contacts = computed(() =>
+  (suggestions.data ?? []).map((option) => ({
+    label: option.name || option.email,
+    value: option.email,
+    email: option.email,
+    display_name: option.name ?? undefined,
+    image: option.user_image ?? undefined,
+  })),
+)
 
 const options = computed(() => {
   if (!searchText.value) return []
   return [
-    ...(mailContacts.data?.filter((option) => !selectedEmails.value.includes(option.email)) || []),
+    ...(contacts.value.filter((option) => !selectedEmails.value.includes(option.email)) || []),
     {
       type: 'custom',
       slot: 'create',
-      condition: () => !mailContacts?.data?.length,
+      condition: () => !contacts.value.length,
       onClick: ({ query }: { query: string }) => addValues(query),
     },
   ]

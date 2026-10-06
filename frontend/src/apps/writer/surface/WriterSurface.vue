@@ -13,6 +13,7 @@ import {
   watch,
 } from 'vue'
 
+import { api, useMutation } from '@/api'
 import {
   DriveCommentAuthor,
   DriveDocumentHeader,
@@ -108,13 +109,22 @@ const writes = createWriteGate(props.session, () => {
   })
 })
 const writerDocument = createWriterDocument(props.session)
-// Drive owns this document's history, and `new_version` refuses a Drive
-// document. The editor's automatic version is skipped until Writer takes
-// versions through Drive.
-const noAutomaticVersion: DocumentWrite = { loading: false, error: null, submit: async () => null }
+const version = useMutation(api.drive.versions.create, {
+  context: props.session.credentials.context,
+  silent: true,
+})
+const automaticVersion: DocumentWrite = {
+  get isPending() {
+    return version.isPending
+  },
+  get error() {
+    return version.error
+  },
+  run: () => version.run({ node: props.session.nodeId, kind: 'auto' }),
+}
 const documentResource = writes.guard(
-  reactive({ ...toRefs(writerDocument), newVersion: noAutomaticVersion }) as WriterDocumentResource,
-  ['saveDoc', 'saveHtml'],
+  reactive({ ...toRefs(writerDocument), newVersion: automaticVersion }) as WriterDocumentResource,
+  ['saveDoc', 'saveHtml', 'newVersion'],
 )
 
 const readable = computed(() => props.session.state.value !== 'Refused' && writes.role.value >= 10)
@@ -122,7 +132,7 @@ const canComment = computed(
   () => props.session.state.value === 'Active' && writes.role.value >= COMMENT,
 )
 const saving = computed(
-  () => !!documentResource.saveDoc?.loading || !!documentResource.saveHtml?.loading,
+  () => !!documentResource.saveDoc?.isPending || !!documentResource.saveHtml?.isPending,
 )
 const saveFailed = computed(
   () => !!documentResource.saveDoc?.error || !!documentResource.saveHtml?.error,

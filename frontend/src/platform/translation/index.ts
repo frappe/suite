@@ -1,6 +1,7 @@
 import type { App, Plugin } from 'vue'
 
-import { transport, type Operation } from '@/platform/transport'
+import { transport } from '@/platform/transport'
+import { api } from '@/platform/transport/api'
 
 export type Replacement = Array<string | number> | Record<string, string | number>
 export type TranslationCatalog = Record<string, string>
@@ -9,13 +10,6 @@ export type TranslationFunction = (
   replace?: Replacement,
   context?: string | null,
 ) => string
-
-const translationOperation: Operation<Record<string, never>, TranslationCatalog> = {
-  id: 'frappe.translate.get_boot_translations',
-  owner: 'suite',
-  method: 'GET',
-  path: '/api/v2/method/frappe.translate.get_boot_translations',
-}
 
 let catalog: TranslationCatalog =
   typeof window === 'undefined' ? {} : (window.translatedMessages ?? {})
@@ -34,7 +28,7 @@ export function translate(
 export function loadTranslations(): Promise<void> {
   if (loadPromise) return loadPromise
   loadPromise = transport
-    .request(translationOperation, {})
+    .request(api.translations.get, {})
     .then((messages) => {
       catalog = messages ?? {}
       if (typeof window !== 'undefined') window.translatedMessages = catalog

@@ -85,19 +85,17 @@
 import { Progress, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { roots } from '@/apps/drive/client/roots'
-import { rootStorage } from '@/apps/drive/client/settings'
+import { api, useQuery } from '@/api'
 import { formatBytes } from '@/apps/drive/files/internal/format'
-import { useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
 
 import SettingsPage from './SettingsPage.vue'
 import { storageTypeIcon, storageTypeTint } from './storageTypes'
 
-const discovered = useQuery(roots())
-const usage = useQuery(() => {
+const discovered = useQuery(api.drive.roots.list, {})
+const usage = useQuery(api.drive.roots.usage, () => {
   const personal = discovered.data?.personal.node
-  return personal ? rootStorage(personal) : null
+  return personal ? { root: personal, expand: 'breakdown' } : false
 })
 
 const failed = computed(() => discovered.status === 'error' || usage.status === 'error')

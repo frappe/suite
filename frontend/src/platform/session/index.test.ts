@@ -15,7 +15,7 @@ describe('session', () => {
     document.cookie = 'user_id=user%40example.com; path=/'
     document.cookie = 'full_name=Cookie%20Name; path=/'
     const request = vi.fn(async (operation) => {
-      expect(operation.path).toBe(ACCOUNT_REQUEST_PATH)
+      expect(operation.prefix + operation.path).toBe(ACCOUNT_REQUEST_PATH)
       return {
         name: 'user@example.com',
         full_name: 'Server Name',
@@ -101,6 +101,30 @@ describe('session', () => {
 
     await expect(session.logout()).rejects.toThrow('offline')
     expect(cleanup).not.toHaveBeenCalled()
+  })
+
+  it('does not restore an expired identity from an earlier account response', async () => {
+    document.cookie = 'user_id=alice'
+    let resolveAccount!: (value: unknown) => void
+    const request = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveAccount = resolve
+        }),
+    )
+    const session = createSession({ request } as Transport)
+    const loading = session.refresh()
+    session.expire()
+    resolveAccount({
+      name: 'alice',
+      full_name: 'Alice',
+      roles: ['System Manager'],
+      is_jmap_configured: true,
+    })
+    await loading
+    expect(session.user.value).toBeNull()
+    expect(session.status.value).toBe('guest')
+    expect(session.capabilities.value).toEqual({ jmap: false, systemManager: false })
   })
 
   it('keeps guests idle until login supplies an identity', async () => {

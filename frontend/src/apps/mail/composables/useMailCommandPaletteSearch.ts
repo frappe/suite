@@ -1,7 +1,7 @@
-import { useStorage } from '@vueuse/core'
-import { createResource } from 'frappe-ui'
+import { refDebounced, useStorage } from '@vueuse/core'
 import { computed, ref, watch, type Ref } from 'vue'
 
+import { api, useQuery, type InputOf } from '@/api'
 import {
   getMailChoiceOperator,
   getMailContactOperator,
@@ -101,32 +101,6 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
     if (value) removeFilter('inMailbox')
   })
 
-  // The last answer, kept apart from the resource that fetched it: the resource is reset whenever
-  // the query goes empty — which the palette does on its way closed — but the search it answered
-  // is very often the next one asked, when the palette is reopened over the same results.
-  // Keyed on the request as it was submitted, not as it stands when the reply lands: only the
-  // latest submit is ever left to reply, since each keystroke aborts the one before.
-  let inflightKey = ''
-  let lastAnswer: { key: string; data: unknown } | null = null
-
-  const searchResource = createResource({
-    auto: false,
-    method: 'POST',
-    url: 'suite.mail.api.mail.search_mails',
-    debounce: 180,
-    onSuccess: (data: unknown) => {
-      lastAnswer = { key: inflightKey, data }
-      settle()
-    },
-    onError: () => settle(),
-  })
-  const contactResource = createResource({
-    auto: false,
-    method: 'GET',
-    url: 'suite.mail.api.mail.get_email_suggestions',
-    debounce: 180,
-  })
-
   // The filters held as badges, keyed: what the filter panel edits, and what the parsed query
   // line is laid over to make the search. `absorbQueryFilters` moves typed operators across
   // before the panel opens, so it never loses a `from:` half-typed on the line.
@@ -166,7 +140,7 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
     const key = searchKey({ text, filters })
     recentSearches.value = [
       {
-        resultType: 'mail-recent-search',
+        resultType: 'mail-recent-search' as const,
         text,
         filters,
         label,
@@ -213,37 +187,72 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   // The account is part of the question: the same words asked of a different account are a
   // different search, and an answer kept for one must not be handed back for the other.
   const account = ref('')
-  const requestKey = computed(() =>
-    JSON.stringify([account.value, requestFilter.value, searchesAllAccounts.value]),
+  const searchInput = computed<InputOf<typeof api.mail.messages.search> | false>(() =>
+    active.value &&
+    account.value &&
+    !operatorContext.value &&
+    (query.value.trim() || appliedFilters.value.length)
+      ? {
+          account: account.value,
+          filter: requestFilter.value,
+          limit: RESULT_LIMIT,
+          all_accounts: searchesAllAccounts.value,
+        }
+      : false,
   )
-  const answeredKey = ref<string | null>(null)
-  const pending = computed(() => active.value && answeredKey.value !== requestKey.value)
-  const settle = () => (answeredKey.value = requestKey.value)
-  // How many mails matched in all, which `search_mails` returns beside the page it hands back.
-  // What the palette shows is capped at RESULT_LIMIT, so this is how it knows whether there is
-  // anything past the rows on screen.
-  const answer = computed<[Omit<MailSearchResult, 'resultType'>[], number] | null>(() =>
-    active.value && Array.isArray(searchResource.data?.[0]) ? searchResource.data : null,
+  const contactInput = computed<InputOf<typeof api.mail.contacts.suggest> | false>(() =>
+    active.value && account.value && contactOperator.value?.partial
+      ? { account: account.value, text: contactOperator.value.partial, limit: 5 }
+      : false,
   )
-  const total = computed(() => Number(answer.value?.[1] ?? 0))
-  const results = computed<MailSearchResult[]>(() => {
-    if (!answer.value) return []
-    return answer.value[0].map((mail: Omit<MailSearchResult, 'resultType'>) => ({
-      ...mail,
-      resultType: 'mail' as const,
-    }))
-  })
+  const debouncedSearch = refDebounced(searchInput, 180)
+  const debouncedContacts = refDebounced(contactInput, 180)
+  const searchResource = useQuery(api.mail.messages.search, () =>
+    searchInput.value === false ? false : debouncedSearch.value,
+  )
+  const contactResource = useQuery(api.mail.contacts.suggest, () =>
+    contactInput.value === false ? false : debouncedContacts.value,
+  )
+  const pending = computed(
+    () =>
+      searchInput.value !== false &&
+      (JSON.stringify(searchInput.value) !== JSON.stringify(debouncedSearch.value) ||
+        searchResource.isFetching ||
+        searchResource.status === 'pending'),
+  )
+  const total = computed(() =>
+    searchInput.value === false ? 0 : (searchResource.data?.total ?? 0),
+  )
+  const results = computed<MailSearchResult[]>(() =>
+    searchInput.value === false
+      ? []
+      : (searchResource.data?.rows ?? []).map((mail) => ({
+          ...mail,
+          from_name: mail.from_name ?? undefined,
+          attachments: mail.attachments.map((attachment) => ({
+            ...attachment,
+            filename: attachment.filename ?? '',
+            disposition: attachment.disposition ?? '',
+            file_url: attachment.url,
+          })),
+          mailboxes: mail.mailboxes.map((mailbox) => ({
+            ...mailbox,
+            mailbox_name: mailbox.mailbox_name ?? '',
+          })),
+          resultType: 'mail' as const,
+        })),
+  )
   const contactSuggestions = computed<MailContactSuggestion[]>(() => {
     if (!contactOperator.value?.partial || !Array.isArray(contactResource.data)) return []
     const partial = contactOperator.value.partial
-    const contacts = contactResource.data.map(
-      (contact: { email: string; name?: string; user_image?: string }) => ({
-        ...contact,
-        value: contact.email,
-        label: contact.name || contact.email,
-        resultType: 'mail-contact' as const,
-      }),
-    )
+    const contacts: MailContactSuggestion[] = contactResource.data.map((contact) => ({
+      ...contact,
+      name: contact.name ?? undefined,
+      user_image: contact.user_image ?? undefined,
+      value: contact.email,
+      label: contact.name || contact.email,
+      resultType: 'mail-contact' as const,
+    }))
     if (
       !contacts.some(
         (contact: MailContactSuggestion) => contact.email.toLowerCase() === partial.toLowerCase(),
@@ -266,7 +275,11 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
       return (getMailUser().mailboxes.data ?? [])
         .filter((mailbox: { _name: string }) => mailbox._name.toLowerCase().includes(partial))
         .map(
-          (mailbox: { id: string; _name: string; color?: keyof typeof FOLDER_ICON_COLOR_MAP }) => ({
+          (mailbox: {
+            id: string
+            _name: string
+            color?: keyof typeof FOLDER_ICON_COLOR_MAP | null
+          }) => ({
             resultType: 'mail-filter-suggestion' as const,
             value: mailbox.id,
             label: mailbox._name,
@@ -478,58 +491,16 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
 
   function search(value: string, forAccount: string) {
     account.value = forAccount
-    if (consumeFilterToken(value)) return
-    const text = value.trim()
-    if (forAccount && contactOperator.value?.partial) {
-      contactResource.submit({
-        account: forAccount,
-        text: contactOperator.value.partial,
-        limit: 5,
-      })
-    }
-    if (operatorContext.value) {
-      searchResource.reset()
-      settle()
-      return
-    }
-    if (forAccount && (text || appliedFilters.value.length)) {
-      // The same question, already answered: the rows on screen are that answer. Asking again
-      // would blank them for as long as it took the very same rows to come back — which is what
-      // going into the filter panel and straight back out used to do.
-      if (!pending.value && searchResource.data) return
-      // Asked before and answered, since — handed the same answer back, without a request or
-      // the blank that waiting for one would show.
-      if (lastAnswer?.key === requestKey.value) {
-        searchResource.setData(lastAnswer.data)
-        settle()
-        return
-      }
-      inflightKey = requestKey.value
-      searchResource.reset()
-      searchResource.submit({
-        account: forAccount,
-        filter: requestFilter.value,
-        limit: RESULT_LIMIT,
-        all_accounts: searchesAllAccounts.value,
-      })
-    } else {
-      if (!appliedFilters.value.length) reset()
-      settle()
-    }
+    query.value = value
+    consumeFilterToken(value)
   }
-
   function cancel() {
-    for (const resource of [searchResource, contactResource]) {
-      resource.submit.cancel()
-      resource.abort()
-    }
+    searchResource.cancel()
+    contactResource.cancel()
   }
-
   function reset() {
-    settle()
+    account.value = ''
     cancel()
-    searchResource.reset()
-    contactResource.reset()
   }
 
   return {

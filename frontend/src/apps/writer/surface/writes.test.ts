@@ -17,9 +17,9 @@ function fakeSession(role: number, state: SessionState = 'Active') {
 function fakeDocument(answer: () => Promise<unknown> = async () => ({ ok: true })) {
   const sent: object[] = []
   const write = (): DocumentWrite => ({
-    loading: false,
+    isPending: false,
     error: null,
-    submit: async (params) => {
+    run: async (params) => {
       sent.push(params ?? {})
       return answer()
     },
@@ -38,7 +38,7 @@ describe('Writer write gate', () => {
     const { document, sent } = fakeDocument()
     const guarded = gate.guard(document, ['saveDoc', 'newVersion'])
 
-    await expect(guarded.saveDoc.submit({ data: 'body' })).resolves.toEqual({ ok: true })
+    await expect(guarded.saveDoc.run({ data: 'body' })).resolves.toEqual({ ok: true })
     expect(sent).toEqual([{ data: 'body' }])
     expect(guarded.doc.name).toBe('writer-doc')
   })
@@ -53,8 +53,12 @@ describe('Writer write gate', () => {
     session.access.value = { role: 20 }
 
     expect(onClose).toHaveBeenCalledTimes(1)
-    await expect(guarded.saveDoc.submit({ data: 'late autosave' })).resolves.toBeNull()
-    await expect(guarded.newVersion.submit({ data: 'late version' })).resolves.toBeNull()
+    await expect(guarded.saveDoc.run({ data: 'late autosave' })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    await expect(guarded.newVersion.run({ data: 'late version' })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
     expect(sent).toEqual([])
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -68,7 +72,9 @@ describe('Writer write gate', () => {
     session.state.value = 'Trashed'
 
     expect(onClose).toHaveBeenCalledTimes(1)
-    await gate.guard(document, ['saveDoc']).saveDoc.submit({ data: 'x' })
+    await expect(
+      gate.guard(document, ['saveDoc']).saveDoc.run({ data: 'x' }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
     expect(sent).toEqual([])
   })
 
@@ -83,7 +89,7 @@ describe('Writer write gate', () => {
     const { document, sent } = fakeDocument(() => answer())
     const guarded = gate.guard(document, ['saveDoc'])
 
-    await expect(guarded.saveDoc.submit({ data: 'one' })).rejects.toBe(refusal)
+    await expect(guarded.saveDoc.run({ data: 'one' })).rejects.toBe(refusal)
 
     expect(session.refreshAccess).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -93,7 +99,7 @@ describe('Writer write gate', () => {
     // The refresh still reports EDIT. The refusal holds anyway.
     answer = async () => ({ ok: true })
     session.access.value = { role: 40 }
-    await guarded.saveDoc.submit({ data: 'two' })
+    await expect(guarded.saveDoc.run({ data: 'two' })).rejects.toMatchObject({ name: 'AbortError' })
     expect(sent).toEqual([{ data: 'one' }])
   })
 
@@ -105,7 +111,7 @@ describe('Writer write gate', () => {
       throw failure
     })
 
-    await expect(gate.guard(document, ['saveDoc']).saveDoc.submit({})).rejects.toBe(failure)
+    await expect(gate.guard(document, ['saveDoc']).saveDoc.run({})).rejects.toBe(failure)
 
     expect(gate.writable.value).toBe(true)
     expect(session.refreshAccess).not.toHaveBeenCalled()

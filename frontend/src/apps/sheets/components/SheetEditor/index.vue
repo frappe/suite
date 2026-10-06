@@ -82,8 +82,8 @@
               <Button
                 :variant="open ? 'subtle' : 'ghost'"
                 size="sm"
-                iconLeft="lucide-file-text"
-                iconRight="lucide-chevron-down"
+                icon-left="lucide-file-text"
+                icon-right="lucide-chevron-down"
                 label="File"
                 tooltip="Import / export"
               />
@@ -285,7 +285,7 @@
             <Button
               :variant="open ? 'subtle' : 'ghost'"
               size="sm"
-              iconRight="lucide-chevron-down"
+              icon-right="lucide-chevron-down"
               :aria-label="`Number format: ${numberFormatLabel}`"
               tooltip="Number format"
               >{{ numberFormatLabel }}</Button
@@ -350,7 +350,7 @@
             <Button
               :variant="open ? 'subtle' : 'ghost'"
               size="sm"
-              iconRight="lucide-chevron-down"
+              icon-right="lucide-chevron-down"
               :aria-label="`Font: ${activeFontFamilyLabel}`"
               tooltip="Font family"
               >{{ activeFontFamilyLabel }}</Button
@@ -650,12 +650,12 @@
             class="sn-formula-input"
             :value="formulaValue"
             :readonly="readOnly"
-            @input="onFormulaInput"
-            @keydown="onFormulaKey"
-            @blur="closeAc"
             :placeholder="readOnly ? '' : 'Enter value or formula'"
             spellcheck="false"
             autocomplete="off"
+            @input="onFormulaInput"
+            @keydown="onFormulaKey"
+            @blur="closeAc"
           />
           <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
             <div
@@ -737,7 +737,7 @@
             <Button
               size="sm"
               variant="subtle"
-              iconLeft="lucide-plus"
+              icon-left="lucide-plus"
               :label="`Add note to ${activeCell}`"
               @click="addNoteFromPanel"
             />
@@ -869,7 +869,7 @@
             <Button
               class="sn-fp-grow"
               size="sm"
-              iconLeft="lucide-arrow-up"
+              icon-left="lucide-arrow-up"
               label="A → Z"
               tooltip="Sort ascending"
               @click="doSort(filterPanel.col, 'asc')"
@@ -877,7 +877,7 @@
             <Button
               class="sn-fp-grow"
               size="sm"
-              iconLeft="lucide-arrow-down"
+              icon-left="lucide-arrow-down"
               label="Z → A"
               tooltip="Sort descending"
               @click="doSort(filterPanel.col, 'desc')"
@@ -928,9 +928,9 @@
               <span class="sn-fp-count">Displaying {{ filterPanel.valueSet.size }}</span>
             </div>
             <FormControl
+              v-model="filterPanel.valueSearch"
               type="text"
               size="sm"
-              v-model="filterPanel.valueSearch"
               placeholder="Search…"
             >
               <template #prefix>
@@ -945,9 +945,9 @@
                 @click="toggleFilterValue(v)"
               >
                 <Checkbox
-                  :modelValue="filterPanel.valueSet.has(v)"
+                  :model-value="filterPanel.valueSet.has(v)"
                   :aria-label="v === '' ? '(Blanks)' : v"
-                  @update:modelValue="toggleFilterValue(v)"
+                  @update:model-value="toggleFilterValue(v)"
                   @click.stop
                 />
                 <span class="sn-fp-value-text">{{ v === '' ? '(Blanks)' : v }}</span>
@@ -959,17 +959,17 @@
           <!-- Filter by condition -->
           <template v-else>
             <FormControl
+              v-model="filterPanel.operator"
               type="select"
               size="sm"
-              v-model="filterPanel.operator"
               :options="FILTER_OPERATOR_OPTIONS"
               aria-label="Condition"
             />
             <FormControl
               v-if="!['empty', 'notempty'].includes(filterPanel.operator)"
+              v-model="filterPanel.value"
               type="text"
               size="sm"
-              v-model="filterPanel.value"
               placeholder="Value"
               @keydown.enter="applyFilter"
             />
@@ -993,19 +993,19 @@
       <div v-if="showAddRows" class="sn-addrows">
         <span class="sn-addrows-label">Add</span>
         <input
+          v-model.number="addRowsCount"
           name="add-rows-count"
           aria-label="Number of rows to add"
           class="sn-addrows-input"
           type="number"
           min="1"
           max="10000"
-          v-model.number="addRowsCount"
         />
         <span class="sn-addrows-label">more rows at the bottom</span>
         <Button
           variant="subtle"
           size="sm"
-          iconLeft="lucide-plus"
+          icon-left="lucide-plus"
           label="Add"
           @click="doAddMoreRows"
         />
@@ -1055,7 +1055,7 @@
             <Button
               variant="ghost"
               size="sm"
-              :iconLeft="isPivotSheet(name) ? 'lucide-layout' : undefined"
+              :icon-left="isPivotSheet(name) ? 'lucide-layout' : undefined"
               :label="name"
               class="sn-tab-btn"
               @mousedown="onTabMousedown($event, name)"
@@ -1109,28 +1109,28 @@
         <Button
           variant="ghost"
           size="sm"
-          iconLeft="lucide-edit-2"
+          icon-left="lucide-edit-2"
           label="Rename"
           @click="openRenameDialog(tabMenu.name)"
         />
         <Button
           variant="ghost"
           size="sm"
-          iconLeft="lucide-copy"
+          icon-left="lucide-copy"
           label="Duplicate"
           @click="doDuplicateSheet(tabMenu.name)"
         />
         <Button
           variant="ghost"
           size="sm"
-          :iconLeft="tabMenuSheetLocked() ? 'lucide-unlock' : 'lucide-lock'"
+          :icon-left="tabMenuSheetLocked() ? 'lucide-unlock' : 'lucide-lock'"
           :label="tabMenuSheetLocked() ? 'Unprotect sheet' : 'Protect sheet'"
           @click="toggleSheetProtection(tabMenu.name)"
         />
         <Button
           variant="ghost"
           size="sm"
-          iconLeft="lucide-trash-2"
+          icon-left="lucide-trash-2"
           label="Delete"
           :disabled="sheetNames.length <= 1"
           @click="doDeleteSheet(tabMenu.name)"
@@ -1180,28 +1180,28 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-left"
+            icon-left="lucide-arrow-left"
             label="Insert column left"
             @click="doInsertCol(false)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-right"
+            icon-left="lucide-arrow-right"
             label="Insert column right"
             @click="doInsertCol(true)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-plus"
+            icon-left="lucide-plus"
             label="Insert N columns…"
             @click="openInsertMany('col', false)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-trash-2"
+            icon-left="lucide-trash-2"
             label="Delete column"
             @click="doDeleteCol()"
           />
@@ -1210,14 +1210,14 @@
             v-if="contextMenu.targetCol > 0"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-chevron-left"
+            icon-left="lucide-chevron-left"
             label="Move column left"
             @click="doMoveColLeft()"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-chevron-right"
+            icon-left="lucide-chevron-right"
             label="Move column right"
             @click="doMoveColRight()"
           />
@@ -1225,14 +1225,14 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-maximize-2"
+            icon-left="lucide-maximize-2"
             label="Auto-fit width"
             @click="doAutoFitCol()"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-eye-off"
+            icon-left="lucide-eye-off"
             label="Hide column"
             @click="doHideCols()"
           />
@@ -1240,7 +1240,7 @@
             v-if="manualHiddenCols.size > 0"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-eye"
+            icon-left="lucide-eye"
             label="Unhide all columns"
             @click="doUnhideAllCols()"
           />
@@ -1248,7 +1248,7 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-lock"
+            icon-left="lucide-lock"
             label="Freeze up to this column"
             @click="doFreezeCol()"
           />
@@ -1256,7 +1256,7 @@
             v-if="freezeCols > 0"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-unlock"
+            icon-left="lucide-unlock"
             label="Unfreeze columns"
             @click="doUnfreezeCols()"
           />
@@ -1267,28 +1267,28 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-up"
+            icon-left="lucide-arrow-up"
             label="Insert row above"
             @click="doInsertRow(false)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-down"
+            icon-left="lucide-arrow-down"
             label="Insert row below"
             @click="doInsertRow(true)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-plus"
+            icon-left="lucide-plus"
             label="Insert N rows…"
             @click="openInsertMany('row', false)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-trash-2"
+            icon-left="lucide-trash-2"
             label="Delete row"
             @click="doDeleteRow()"
           />
@@ -1296,14 +1296,14 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-maximize-2"
+            icon-left="lucide-maximize-2"
             label="Auto-fit height"
             @click="doAutoFitRow()"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-eye-off"
+            icon-left="lucide-eye-off"
             label="Hide row"
             @click="doHideRows()"
           />
@@ -1311,7 +1311,7 @@
             v-if="manualHiddenRows.size > 0"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-eye"
+            icon-left="lucide-eye"
             label="Unhide all rows"
             @click="doUnhideAllRows()"
           />
@@ -1319,7 +1319,7 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-lock"
+            icon-left="lucide-lock"
             label="Freeze up to this row"
             @click="doFreezeRow()"
           />
@@ -1327,7 +1327,7 @@
             v-if="freezeRows > 0"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-unlock"
+            icon-left="lucide-unlock"
             label="Unfreeze rows"
             @click="doUnfreezeRows()"
           />
@@ -1339,7 +1339,7 @@
             v-if="clipboardHas"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-clipboard"
+            icon-left="lucide-clipboard"
             label="Paste values only"
             @click="doPasteSpecial('values')"
           />
@@ -1347,7 +1347,7 @@
             v-if="clipboardHas"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-clipboard"
+            icon-left="lucide-clipboard"
             label="Paste formats only"
             @click="doPasteSpecial('formats')"
           />
@@ -1355,7 +1355,7 @@
             v-if="clipboardHas"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-clipboard"
+            icon-left="lucide-clipboard"
             label="Paste formulas only"
             @click="doPasteSpecial('formulas')"
           />
@@ -1363,21 +1363,21 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-up"
+            icon-left="lucide-arrow-up"
             label="Insert row above"
             @click="doInsertRow(false)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-down"
+            icon-left="lucide-arrow-down"
             label="Insert row below"
             @click="doInsertRow(true)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-trash-2"
+            icon-left="lucide-trash-2"
             label="Delete row"
             @click="doDeleteRow()"
           />
@@ -1385,21 +1385,21 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-left"
+            icon-left="lucide-arrow-left"
             label="Insert column left"
             @click="doInsertCol(false)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-arrow-right"
+            icon-left="lucide-arrow-right"
             label="Insert column right"
             @click="doInsertCol(true)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-trash-2"
+            icon-left="lucide-trash-2"
             label="Delete column"
             @click="doDeleteCol()"
           />
@@ -1407,7 +1407,7 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-lock"
+            icon-left="lucide-lock"
             label="Freeze rows to here"
             @click="doFreezeRow()"
           />
@@ -1415,14 +1415,14 @@
             v-if="freezeRows > 0"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-unlock"
+            icon-left="lucide-unlock"
             label="Unfreeze rows"
             @click="doUnfreezeRows()"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-lock"
+            icon-left="lucide-lock"
             label="Freeze cols to here"
             @click="doFreezeCol()"
           />
@@ -1430,7 +1430,7 @@
             v-if="freezeCols > 0"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-unlock"
+            icon-left="lucide-unlock"
             label="Unfreeze cols"
             @click="doUnfreezeCols()"
           />
@@ -1438,14 +1438,14 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-square-check"
+            icon-left="lucide-square-check"
             label="Data validation…"
             @click="fromContextMenu(openValidationDialog)"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-blend"
+            icon-left="lucide-blend"
             label="Conditional format…"
             @click="fromContextMenu(() => openCfDialog(null))"
           />
@@ -1453,7 +1453,7 @@
             v-if="!selectionHasProtectedRange()"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-lock"
+            icon-left="lucide-lock"
             label="Protect range"
             @click="protectSelection()"
           />
@@ -1461,7 +1461,7 @@
             v-else
             variant="ghost"
             size="sm"
-            iconLeft="lucide-unlock"
+            icon-left="lucide-unlock"
             label="Remove protection"
             @click="unprotectSelection()"
           />
@@ -1469,7 +1469,7 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-columns"
+            icon-left="lucide-columns"
             label="Split text to columns"
             @click="doSplitTextToColumns()"
           />
@@ -1477,21 +1477,21 @@
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-layout"
+            icon-left="lucide-layout"
             label="Insert pivot table…"
             @click="openPivotDialog()"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-chart-bar"
+            icon-left="lucide-chart-bar"
             label="Insert chart…"
             @click="openChartDialog()"
           />
           <Button
             variant="ghost"
             size="sm"
-            iconLeft="lucide-filter"
+            icon-left="lucide-filter"
             label="Insert slicer"
             @click="insertSlicer()"
           />
@@ -1500,7 +1500,7 @@
             v-if="props.id !== 'new'"
             variant="ghost"
             size="sm"
-            iconLeft="lucide-history"
+            icon-left="lucide-history"
             :label="`Cell history for ${activeCell}`"
             @click="openCellHistory()"
           />
@@ -1594,9 +1594,9 @@
           <div class="sn-form-stack">
             <!-- Type -->
             <FormControl
+              v-model="validationDialog.type"
               type="select"
               label="Type"
-              v-model="validationDialog.type"
               :options="[
                 { label: 'Checkbox', value: 'checkbox' },
                 { label: 'List of items', value: 'list' },
@@ -1607,7 +1607,7 @@
 
             <!-- List — one row per item: a colour swatch, the label, and remove.
                Paste a comma/newline list into any field to split it into rows. -->
-            <div v-if="validationDialog.type === 'list'" class="sn-vd-list" ref="vdListEl">
+            <div v-if="validationDialog.type === 'list'" ref="vdListEl" class="sn-vd-list">
               <label class="sn-vd-list-label">Items</label>
               <div v-for="(item, i) in validationDialog.listItems" :key="i" class="sn-vd-item">
                 <ColorPicker
@@ -1630,8 +1630,8 @@
                   </template>
                 </ColorPicker>
                 <input
-                  class="sn-vd-item-input"
                   v-model="item.label"
+                  class="sn-vd-item-input"
                   placeholder="Item"
                   @keydown.enter.prevent="addListItem(i)"
                   @paste="onListPaste($event, i)"
@@ -1653,9 +1653,9 @@
             <!-- Operator (number / text_length) -->
             <FormControl
               v-if="['number', 'text_length'].includes(validationDialog.type)"
+              v-model="validationDialog.operator"
               type="select"
               label="Condition"
-              v-model="validationDialog.operator"
               :options="[
                 { label: 'Between', value: 'between' },
                 { label: 'Not between', value: 'not_between' },
@@ -1698,9 +1698,9 @@
             <!-- On invalid: block the edit, or allow it with a warning -->
             <FormControl
               v-if="validationDialog.type !== 'checkbox'"
+              v-model="validationDialog.severity"
               type="select"
               label="When the value is invalid"
-              v-model="validationDialog.severity"
               :options="[
                 { label: 'Reject the input', value: 'reject' },
                 { label: 'Allow, but show a warning', value: 'warn' },
@@ -1788,7 +1788,7 @@
               <Button
                 :variant="open ? 'subtle' : 'ghost'"
                 size="sm"
-                iconRight="lucide-chevron-down"
+                icon-right="lucide-chevron-down"
                 :label="sl.label"
                 tooltip="Filter column"
                 @mousedown.stop
@@ -1818,9 +1818,9 @@
             @click="toggleSlicerValue(sl, row.v)"
           >
             <Checkbox
-              :modelValue="row.checked"
+              :model-value="row.checked"
               :aria-label="row.v === '' ? '(Blanks)' : row.v"
-              @update:modelValue="toggleSlicerValue(sl, row.v)"
+              @update:model-value="toggleSlicerValue(sl, row.v)"
               @click.stop
             />
             <span class="sn-fp-value-text">{{ row.v === '' ? '(Blanks)' : row.v }}</span>
@@ -1884,8 +1884,8 @@
         </div>
 
         <textarea
-          class="sn-comment-ta"
           v-model="commentPanel.draft"
+          class="sn-comment-ta"
           rows="2"
           :placeholder="commentPanel.thread.length ? 'Reply…' : 'Add a note…'"
           @keydown.enter.exact.prevent="addCommentReply"
@@ -1972,25 +1972,25 @@
                   size="sm"
                   icon="lucide-x"
                   theme="red"
-                  @click="deleteCfRuleById(r.id)"
                   tooltip="Delete rule"
+                  @click="deleteCfRuleById(r.id)"
                 />
               </div>
             </div>
 
             <FormControl
+              v-model="cfDialog.kind"
               type="select"
               label="Rule type"
-              v-model="cfDialog.kind"
               :options="CF_KIND_OPTIONS"
             />
 
             <!-- Classic single-colour rule (the original feature). -->
             <template v-if="cfDialog.kind === 'classic'">
               <FormControl
+                v-model="cfDialog.condType"
                 type="select"
                 label="Condition"
-                v-model="cfDialog.condType"
                 :options="CF_COND_OPTIONS"
               />
               <FormControl
@@ -2059,9 +2059,9 @@
             <!-- Colour scale: 2- or 3-stop gradient mapped across the range's min/max. -->
             <template v-else-if="cfDialog.kind === 'color-scale'">
               <FormControl
+                v-model="cfDialog.scaleVariant"
                 type="select"
                 label="Variant"
-                v-model="cfDialog.scaleVariant"
                 :options="CF_SCALE_VARIANT_OPTIONS"
               />
               <div class="sn-cf-scale">
@@ -2113,7 +2113,7 @@
                 />
               </div>
               <div class="sn-cf-bar-preview">
-                <div class="sn-cf-bar-row" v-for="t in [0.25, 0.5, 0.85]" :key="t">
+                <div v-for="t in [0.25, 0.5, 0.85]" :key="t" class="sn-cf-bar-row">
                   <div
                     class="sn-cf-bar-fill"
                     :style="{ width: t * 100 + '%', background: cfDialog.barColor }"
@@ -2126,9 +2126,9 @@
             <!-- Icon sets: small icons at the start of each cell based on bucket. -->
             <template v-else-if="cfDialog.kind === 'icon-set'">
               <FormControl
+                v-model="cfDialog.iconSet"
                 type="select"
                 label="Icon set"
-                v-model="cfDialog.iconSet"
                 :options="CF_ICON_SET_OPTIONS"
               />
               <span class="sn-cf-fmt-label">Apply to range: {{ cfRangeLabel }}</span>
@@ -2183,6 +2183,7 @@ import {
 } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 
+import { api, client } from '@/api'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
@@ -2216,7 +2217,6 @@ import { createSortFilter } from '../../engine/sortFilter.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { fetchLinkPreview } from '../../services/linkPreview.js'
 import { cellHistory as fetchCellHistory } from '../../services/versions.js'
-import { call } from '../../utils/api.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
 import { isCanvasClipboardTarget } from '../../utils/clipboard-target.js'
 import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/format-number.js'
@@ -2252,21 +2252,40 @@ import { useSplitText } from './useSplitText.js'
 import { useToolbar } from './useToolbar.js'
 
 const props = defineProps({
-  id: { type: String, default: 'new' },
+  id: {
+    type: String,
+    default: 'new',
+  },
   // Mounted by the /d/ surface. The surface fills the `header` and
   // `side-panel` slots, owns the title, sharing and the leave guard, and its
   // Drive session records the visit. The `header` slot receives `viewOnly`,
   // and the editor's `status` and `actions` as components to place; the save
   // state is on the exposed handle.
-  embedded: { type: Boolean, default: false },
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
   // The surface's access verdict. False freezes the editor and cancels every
   // pending save, retries included.
-  writable: { type: Boolean, default: true },
+  writable: {
+    type: Boolean,
+    default: true,
+  },
   // The Drive title while embedded. Saves carry it, so it must follow a rename.
-  title: { type: String, default: null },
+  title: {
+    type: String,
+    default: null,
+  },
   // The Drive session's fetch while embedded. Load, save and the collaboration
   // relay go through it, so a caller who holds a share link reaches the sheet.
-  credentialFetch: { type: Function, default: undefined },
+  credentialFetch: {
+    type: Function,
+    default: undefined,
+  },
+  requestContext: {
+    type: Object,
+    default: undefined,
+  },
 })
 // `access-refused`: the server refused a save, or the collaboration server
 // refused the connection. `notes-opened`: the notes panel took the right edge.
@@ -2282,11 +2301,17 @@ const isTitleEditing = ref(false)
 const sheetHomeBreadcrumbs = computed(() => [
   // A path, not the route name: in the unified shell the Sheets routes register
   // only once /sheets is first visited, so the name does not resolve yet.
-  { label: 'Sheets', route: '/sheets' },
+  {
+    label: 'Sheets',
+    route: '/sheets',
+  },
 ])
 const sheetBreadcrumbs = computed(() => [
   ...sheetHomeBreadcrumbs.value,
-  { label: currentTitle.value || 'Untitled Sheet', onClick: startTitleEditing },
+  {
+    label: currentTitle.value || 'Untitled Sheet',
+    onClick: startTitleEditing,
+  },
 ])
 const brandMenuOptions = computed(() => [
   {
@@ -2385,7 +2410,9 @@ const charts = createChartEngine()
 // Named ranges: the validator hook prevents users from defining names that
 // collide with the formula engine's built-in functions (SUM, VLOOKUP, etc.).
 const _builtinFns = new Set(getFunctionNames())
-const namedRanges = createNamedRanges({ isBuiltinFunction: (n) => _builtinFns.has(n) })
+const namedRanges = createNamedRanges({
+  isBuiltinFunction: (n) => _builtinFns.has(n),
+})
 
 // Plug the named-range resolver into the sheet engine so `=Revenue` etc.
 // resolve at evaluate-time without crossing engine boundaries via imports.
@@ -2557,7 +2584,9 @@ function _applyCellMap(map, sheetName) {
   const ids = Object.keys(map)
   if (ids.length === 0) return
   if (ids.length > _BATCH_THRESHOLD && sheet.batchSetCells) {
-    sheet.batchSetCells(map, sheetName, { replace: false })
+    sheet.batchSetCells(map, sheetName, {
+      replace: false,
+    })
     return
   }
   for (const id of ids) sheet.setCell(id, map[id] ?? '', sheetName)
@@ -2593,7 +2622,6 @@ function _applyAxisFormatMap(axis, map, sheetName) {
   for (const [k, fmt] of Object.entries(map)) replace(+k, fmt || {}, sn)
   grid?.render?.()
 }
-
 function _applyValidationMap(map, sheetName) {
   if (!map) return
   const sn = sheetName || sheet.getCurrentSheet()
@@ -2646,7 +2674,6 @@ const gridWrapRef = ref(null)
 const formulaInputRef = ref(null)
 const csvInputRef = ref(null)
 const xlsxInputRef = ref(null)
-
 const activeCell = ref('A1')
 const formulaValue = ref('')
 const canUndo = ref(false)
@@ -2670,7 +2697,6 @@ let _typedCell = null
 const activeNumberFormatType = computed(() => parseNumberFmt(activeNumberFormat.value).type)
 const showFindReplace = ref(false)
 const findReplaceRef = ref(null)
-
 function openFindReplace() {
   document.activeElement?.blur?.()
   showFindReplace.value = true
@@ -2679,17 +2705,18 @@ function openFindReplace() {
   setTimeout(triggerFocus, 0)
   setTimeout(triggerFocus, 50)
 }
-
 const showShortcutsHelp = ref(false)
-
 const showInsertManyDialog = ref(false)
-const insertMany = reactive({ kind: 'row', count: 5, below: false })
+const insertMany = reactive({
+  kind: 'row',
+  count: 5,
+  below: false,
+})
 const showHyperlinkDialog = ref(false)
 const hyperlinkText = ref('')
 const hyperlinkUrl = ref('')
 const hasActiveHyperlink = computed(() => !!activeFormat.value?.hyperlink)
 const showFormulas = ref(false)
-
 const selectionStats = ref(null)
 let _dirtyRevision = 0
 const isDirty = customRef((track, trigger) => {
@@ -2723,7 +2750,10 @@ const commentPanel = reactive({
 // Notes side panel — global list of notes across all sheets, click-to-jump.
 // `rev` is bumped whenever a note is saved/deleted so the computed list
 // re-runs (the comments engine is plain state, not reactive).
-const notesPanel = reactive({ open: false, rev: 0 })
+const notesPanel = reactive({
+  open: false,
+  rev: 0,
+})
 
 // ── Dropdown (validation) UI state ────────────────────────────────────────────
 const dropdownPanel = reactive({
@@ -2739,11 +2769,14 @@ const dropdownPanel = reactive({
 const vdListEl = ref(null)
 const validationDialog = reactive({
   open: false,
-  type: 'list', // 'list' | 'number' | 'text_length'
-  operator: 'between', // 'between' | 'not_between' | 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'neq'
+  type: 'list',
+  // 'list' | 'number' | 'text_length'
+  operator: 'between',
+  // 'between' | 'not_between' | 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'neq'
   val1: '',
   val2: '',
-  listItems: [], // [{ label, color }] — color '' means auto (palette by position)
+  listItems: [],
+  // [{ label, color }] — color '' means auto (palette by position)
   message: '',
   severity: 'reject', // 'reject' blocks the edit; 'warn' allows it but flags the cell
 })
@@ -2752,7 +2785,12 @@ const validationDialog = reactive({
 const cfDialog = reactive({
   open: false,
   editId: null,
-  range: { r0: 0, c0: 0, r1: 0, c1: 0 },
+  range: {
+    r0: 0,
+    c0: 0,
+    r1: 0,
+    c1: 0,
+  },
   // 'classic' = one-off condition (the original feature).
   // 'color-scale' / 'data-bar' / 'icon-set' = range-scoped scales.
   kind: 'classic',
@@ -2769,7 +2807,6 @@ const cfDialog = reactive({
   barColor: '#0E7490',
   iconSet: 'arrows3',
 })
-
 const cellHistory = reactive({
   open: false,
   cell: '',
@@ -2777,7 +2814,6 @@ const cellHistory = reactive({
   error: '',
   entries: [],
 })
-
 const borderColor = ref('#000000')
 const borderStyle = ref('thin')
 const freezeRows = ref(0)
@@ -2787,10 +2823,22 @@ const justSaved = ref(false)
 // Short keys keep the select narrow; the full CSS stack lives in FONT_FAMILY_STACK
 // so the persisted format value is still a complete font-family string.
 const FONT_FAMILY_OPTIONS = [
-  { label: 'Inter', value: 'inter' },
-  { label: 'Serif', value: 'serif' },
-  { label: 'Mono', value: 'mono' },
-  { label: 'System', value: 'system' },
+  {
+    label: 'Inter',
+    value: 'inter',
+  },
+  {
+    label: 'Serif',
+    value: 'serif',
+  },
+  {
+    label: 'Mono',
+    value: 'mono',
+  },
+  {
+    label: 'System',
+    value: 'system',
+  },
 ]
 const FONT_FAMILY_STACK = {
   inter: 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif',
@@ -2807,54 +2855,123 @@ const NUMBER_FORMAT_GROUPS = [
   {
     group: 'General',
     options: [
-      { label: 'General', value: '' },
-      { label: 'Plain text', value: 'text' },
+      {
+        label: 'General',
+        value: '',
+      },
+      {
+        label: 'Plain text',
+        value: 'text',
+      },
     ],
   },
   {
     group: 'Number',
     options: [
-      { label: 'Decimal', value: 'number' },
-      { label: 'Decimal — Indian (1,23,456)', value: 'number:in' },
-      { label: 'Percent', value: 'percentage' },
+      {
+        label: 'Decimal',
+        value: 'number',
+      },
+      {
+        label: 'Decimal — Indian (1,23,456)',
+        value: 'number:in',
+      },
+      {
+        label: 'Percent',
+        value: 'percentage',
+      },
     ],
   },
   {
     group: 'Currency',
     options: [
-      { label: 'USD ($)', value: 'currency:USD:2' },
-      { label: 'EUR (€)', value: 'currency:EUR:2' },
-      { label: 'GBP (£)', value: 'currency:GBP:2' },
-      { label: 'INR (₹)', value: 'currency:INR:2' },
-      { label: 'JPY (¥)', value: 'currency:JPY:0' },
+      {
+        label: 'USD ($)',
+        value: 'currency:USD:2',
+      },
+      {
+        label: 'EUR (€)',
+        value: 'currency:EUR:2',
+      },
+      {
+        label: 'GBP (£)',
+        value: 'currency:GBP:2',
+      },
+      {
+        label: 'INR (₹)',
+        value: 'currency:INR:2',
+      },
+      {
+        label: 'JPY (¥)',
+        value: 'currency:JPY:0',
+      },
     ],
   },
   {
     group: 'Date',
     options: [
-      { label: 'Auto (locale)', value: 'date' },
-      { label: 'DD/MM/YYYY', value: 'date:dmy' },
-      { label: 'MM/DD/YYYY', value: 'date:mdy' },
-      { label: 'YYYY-MM-DD', value: 'date:ymd' },
-      { label: '15 Jan 2025', value: 'date:long' },
-      { label: 'Mon, 15 Jan 2025', value: 'date:full' },
+      {
+        label: 'Auto (locale)',
+        value: 'date',
+      },
+      {
+        label: 'DD/MM/YYYY',
+        value: 'date:dmy',
+      },
+      {
+        label: 'MM/DD/YYYY',
+        value: 'date:mdy',
+      },
+      {
+        label: 'YYYY-MM-DD',
+        value: 'date:ymd',
+      },
+      {
+        label: '15 Jan 2025',
+        value: 'date:long',
+      },
+      {
+        label: 'Mon, 15 Jan 2025',
+        value: 'date:full',
+      },
     ],
   },
   {
     group: 'Time',
     options: [
-      { label: '15:30', value: 'time:hm' },
-      { label: '15:30:45', value: 'time:hms' },
-      { label: '3:30 PM', value: 'time:hm12' },
-      { label: '3:30:45 PM', value: 'time:hms12' },
+      {
+        label: '15:30',
+        value: 'time:hm',
+      },
+      {
+        label: '15:30:45',
+        value: 'time:hms',
+      },
+      {
+        label: '3:30 PM',
+        value: 'time:hm12',
+      },
+      {
+        label: '3:30:45 PM',
+        value: 'time:hms12',
+      },
     ],
   },
   {
     group: 'Date + Time',
     options: [
-      { label: '15/01/2025, 3:30 PM', value: 'datetime:dmy_hm12' },
-      { label: '15 Jan 2025, 3:30 PM', value: 'datetime:long_hm12' },
-      { label: '2025-01-15, 15:30:00', value: 'datetime:ymd_hms' },
+      {
+        label: '15/01/2025, 3:30 PM',
+        value: 'datetime:dmy_hm12',
+      },
+      {
+        label: '15 Jan 2025, 3:30 PM',
+        value: 'datetime:long_hm12',
+      },
+      {
+        label: '2025-01-15, 15:30:00',
+        value: 'datetime:ymd_hms',
+      },
     ],
   },
 ]
@@ -2862,19 +2979,32 @@ const NUMBER_FORMAT_GROUPS = [
 // Quick-pick currencies surfaced via the $ button. Click cycles to that
 // currency; clicking the active one toggles currency back off.
 const CURRENCY_QUICK_PICKS = [
-  { label: 'USD ($)', code: 'USD', symbol: '$' },
-  { label: 'EUR (€)', code: 'EUR', symbol: '€' },
-  { label: 'GBP (£)', code: 'GBP', symbol: '£' },
-  { label: 'INR (₹)', code: 'INR', symbol: '₹' },
-  { label: 'JPY (¥)', code: 'JPY', symbol: '¥' },
+  {
+    label: 'USD ($)',
+    code: 'USD',
+    symbol: '$',
+  },
+  {
+    label: 'EUR (€)',
+    code: 'EUR',
+    symbol: '€',
+  },
+  {
+    label: 'GBP (£)',
+    code: 'GBP',
+    symbol: '£',
+  },
+  {
+    label: 'INR (₹)',
+    code: 'INR',
+    symbol: '₹',
+  },
+  {
+    label: 'JPY (¥)',
+    code: 'JPY',
+    symbol: '¥',
+  },
 ]
-
-const BORDER_STYLE_OPTIONS = [
-  { label: 'Thin', value: 'thin' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'Thick', value: 'thick' },
-]
-
 // Custom decimals-with-arrow glyphs for the precision toolbar buttons. Not in
 // lucide, so passed as component props through Button's icon API instead of as
 // "lucide-…" strings. stroke-width 1.5 keeps the small inner shapes legible at
@@ -2900,35 +3030,93 @@ function _decimalsIcon(children) {
   }
 }
 const DecreaseDecimalIcon = _decimalsIcon([
-  h('path', { d: 'm13 21-3-3 3-3' }),
-  h('path', { d: 'M20 18H10' }),
-  h('path', { d: 'M3 11h.01' }),
-  h('rect', { x: 6, y: 3, width: 5, height: 8, rx: 2.5 }),
+  h('path', {
+    d: 'm13 21-3-3 3-3',
+  }),
+  h('path', {
+    d: 'M20 18H10',
+  }),
+  h('path', {
+    d: 'M3 11h.01',
+  }),
+  h('rect', {
+    x: 6,
+    y: 3,
+    width: 5,
+    height: 8,
+    rx: 2.5,
+  }),
 ])
 const IncreaseDecimalIcon = _decimalsIcon([
-  h('path', { d: 'M10 18h10' }),
-  h('path', { d: 'm17 21 3-3-3-3' }),
-  h('path', { d: 'M3 11h.01' }),
-  h('rect', { x: 15, y: 3, width: 5, height: 8, rx: 2.5 }),
-  h('rect', { x: 6, y: 3, width: 5, height: 8, rx: 2.5 }),
+  h('path', {
+    d: 'M10 18h10',
+  }),
+  h('path', {
+    d: 'm17 21 3-3-3-3',
+  }),
+  h('path', {
+    d: 'M3 11h.01',
+  }),
+  h('rect', {
+    x: 15,
+    y: 3,
+    width: 5,
+    height: 8,
+    rx: 2.5,
+  }),
+  h('rect', {
+    x: 6,
+    y: 3,
+    width: 5,
+    height: 8,
+    rx: 2.5,
+  }),
 ])
-
 const FILTER_OPERATOR_OPTIONS = [
-  { label: 'Contains', value: 'contains' },
-  { label: 'Equals', value: 'equals' },
-  { label: 'Greater than', value: 'gt' },
-  { label: 'Less than', value: 'lt' },
-  { label: 'Is empty', value: 'empty' },
-  { label: 'Is not empty', value: 'notempty' },
+  {
+    label: 'Contains',
+    value: 'contains',
+  },
+  {
+    label: 'Equals',
+    value: 'equals',
+  },
+  {
+    label: 'Greater than',
+    value: 'gt',
+  },
+  {
+    label: 'Less than',
+    value: 'lt',
+  },
+  {
+    label: 'Is empty',
+    value: 'empty',
+  },
+  {
+    label: 'Is not empty',
+    value: 'notempty',
+  },
 ]
-
 const fileDropdownOptions = computed(() => [
   {
     group: 'Export',
     options: [
-      { label: 'Export as CSV', icon: 'lucide-download', onClick: () => exportCSV() },
-      { label: 'Export as XLSX', icon: 'lucide-download', onClick: () => exportXLSX() },
-      { label: 'Export as PDF', icon: 'lucide-printer', onClick: () => exportPDF() },
+      {
+        label: 'Export as CSV',
+        icon: 'lucide-download',
+        onClick: () => exportCSV(),
+      },
+      {
+        label: 'Export as XLSX',
+        icon: 'lucide-download',
+        onClick: () => exportXLSX(),
+      },
+      {
+        label: 'Export as PDF',
+        icon: 'lucide-printer',
+        onClick: () => exportPDF(),
+      },
     ],
   },
   // Import writes cells — hide it for viewers (export/read stays available).
@@ -2974,7 +3162,13 @@ const fileDropdownOptions = computed(() => [
 // The narrow top bar's one menu: what the wide bar shows as separate buttons.
 const compactMenuOptions = computed(() => [
   ...(aiEnabled.value && !readOnly.value
-    ? [{ label: 'Ask AI', icon: 'lucide-sparkles', onClick: () => openAskBar() }]
+    ? [
+        {
+          label: 'Ask AI',
+          icon: 'lucide-sparkles',
+          onClick: () => openAskBar(),
+        },
+      ]
     : []),
   ...fileDropdownOptions.value,
   {
@@ -3020,7 +3214,6 @@ function onAiSettingsSaved(s) {
   if (window.frappe?.boot) window.frappe.boot.ai_assist_enabled = on
   aiEnabled.value = on
 }
-
 function openAskBar() {
   askError.value = ''
   askAnswer.value = ''
@@ -3028,7 +3221,6 @@ function openAskBar() {
   askSelectionLabel.value = grid?.getActiveCell?.() || ''
   askOpen.value = true
 }
-
 function closeAskBar() {
   // Closing with a pending change is an implicit Keep — it's already applied
   // and queued.
@@ -3037,14 +3229,18 @@ function closeAskBar() {
   askAnswer.value = ''
   aiPending.value = null
 }
-
 async function onAskSubmit(promptText) {
   askError.value = ''
   askAnswer.value = ''
   aiPending.value = null
   askBusy.value = true
   try {
-    const sel = grid?.getSelection?.() || { r0: 0, c0: 0, r1: 0, c1: 0 }
+    const sel = grid?.getSelection?.() || {
+      r0: 0,
+      c0: 0,
+      r1: 0,
+      c1: 0,
+    }
     const selection = JSON.stringify({
       sheet: sheet.getCurrentSheet(),
       r0: sel.r0,
@@ -3053,7 +3249,7 @@ async function onAskSubmit(promptText) {
       c1: sel.c1,
       active: grid?.getActiveCell?.() || '',
     })
-    const res = await call('suite.sheets.api.ai_assist', {
+    const res = await client.query(api.sheets.assistant.ask, {
       name: props.id,
       prompt: promptText,
       selection,
@@ -3062,7 +3258,10 @@ async function onAskSubmit(promptText) {
     const answers = actions.filter((a) => a.type === 'answer')
     if (answers.length) askAnswer.value = answers.map((a) => a.text).join('\n\n')
     const applied = _applyAiActions(actions)
-    if (applied > 0) aiPending.value = { count: applied }
+    if (applied > 0)
+      aiPending.value = {
+        count: applied,
+      }
     else if (!answers.length) askAnswer.value = 'No changes suggested for that.'
   } catch (e) {
     askError.value = e && e.message ? String(e.message) : 'Something went wrong'
@@ -3081,7 +3280,6 @@ function _applyAiActions(actions) {
   if (allowed.length !== setCells.length) _flashProtected(sn)
   setCells = allowed
   if (!setCells.length) return 0
-
   const before = {}
   const after = {}
   for (const a of setCells) before[a.cell] = sheet.getCell(a.cell, sn) ?? ''
@@ -3092,7 +3290,13 @@ function _applyAiActions(actions) {
   const refs = setCells.map((a) => a.cell)
 
   // Undo (op-based, like fill) + server sync (op-log on next save).
-  history.pushOp({ opType: 'ai_assist', subSheet: sn, cellRefs: refs, before, after })
+  history.pushOp({
+    opType: 'ai_assist',
+    subSheet: sn,
+    cellRefs: refs,
+    before,
+    after,
+  })
   _queueOp({
     opType: 'ai_assist',
     subSheet: sn,
@@ -3101,19 +3305,16 @@ function _applyAiActions(actions) {
     after,
     summary: `AI: ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
   })
-
   grid?.render()
   refreshActiveFormat()
   syncFlags()
   isDirty.value = true
   return refs.length
 }
-
 function onAskKeep() {
   // Already applied + queued; just dismiss and close.
   closeAskBar()
 }
-
 function onAskUndo() {
   // Reverts the whole batch in one step (single op). Drop the still-queued
   // op so a stale ai_assist entry isn't persisted on the next save.
@@ -3132,7 +3333,6 @@ function _popLastOp(opType) {
     }
   }
 }
-
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
   if (activeFormat.value?.align === 'right') return 'lucide-align-right'
@@ -3152,7 +3352,6 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
   'sheets-editor-settings',
   () => {
     if (!window.frappe?.boot?.ai_assist_can_configure) return []
-
     return [
       {
         commands: [
@@ -3202,7 +3401,6 @@ const filterPanel = reactive({
   valueSearch: '',
   allValues: [],
 })
-
 const filteredFilterValues = computed(() => {
   const q = filterPanel.valueSearch.trim().toLowerCase()
   if (!q) return filterPanel.allValues
@@ -3212,18 +3410,15 @@ const filteredFilterValues = computed(() => {
 // True while the value search box narrows the list — Select all / Clear then
 // act on the shown subset, so their labels change to say so.
 const valueSearchActive = computed(() => filterPanel.valueSearch.trim() !== '')
-
 function toggleFilterValue(v) {
   if (filterPanel.valueSet.has(v)) filterPanel.valueSet.delete(v)
   else filterPanel.valueSet.add(v)
 }
-
 function selectAllFilterValues() {
   // Only the values currently visible under the search filter — matches
   // Google Sheets behaviour where "Select all" respects the search box.
   for (const v of filteredFilterValues.value) filterPanel.valueSet.add(v)
 }
-
 function clearAllFilterValues() {
   for (const v of filteredFilterValues.value) filterPanel.valueSet.delete(v)
 }
@@ -3256,15 +3451,12 @@ watch(
     else document.removeEventListener('mousedown', _filterPanelOutsideClick, true)
   },
 )
-
 let grid = null
 let ro = null
-
 function syncFlags() {
   canUndo.value = history.canUndo()
   canRedo.value = history.canRedo()
 }
-
 function selectionIds() {
   if (!grid) return [activeCell.value]
   const { r0, c0, r1, c1 } = grid.getSelection()
@@ -3359,7 +3551,6 @@ async function _computeSelectionStatsAsync(token) {
           avg: numCount > 0 ? sum / numCount : null,
         }
 }
-
 function formatStat(n) {
   return Number.isInteger(n) ? n.toLocaleString() : parseFloat(n.toFixed(4)).toLocaleString()
 }
@@ -3387,7 +3578,13 @@ function adjustDecimals(delta) {
       if (decimals == null) decimals = defaultDec
       decimals = Math.max(0, Math.min(20, decimals + delta))
       const next = buildNumberFmt(type, variant, decimals)
-      formats.applyToRange([id], { numberFormat: next }, sh)
+      formats.applyToRange(
+        [id],
+        {
+          numberFormat: next,
+        },
+        sh,
+      )
       const raw = sheet.getDisplayValue(id)
       grid?.setCell(id, applyNumberFmt(raw, next))
     }
@@ -3439,8 +3636,13 @@ function _selectionScope() {
 function toggleSortFilter() {
   showSortFilter.value = !showSortFilter.value
 }
-const alignDropdownOptions = buildAlignOptions({ setAlign, setValign })
-const borderDropdownOptions = buildBorderOptions({ applyBorder })
+const alignDropdownOptions = buildAlignOptions({
+  setAlign,
+  setValign,
+})
+const borderDropdownOptions = buildBorderOptions({
+  applyBorder,
+})
 
 // Maps the current cell's font-family string back to a short key so the
 // toolbar select shows e.g. "Inter" instead of the full CSS stack.
@@ -3450,11 +3652,9 @@ const activeFontFamilyKey = computed(() => {
   for (const [k, v] of Object.entries(FONT_FAMILY_STACK)) if (v === f) return k
   return 'inter'
 })
-
 const activeFontFamilyLabel = computed(
   () => FONT_FAMILY_OPTIONS.find((o) => o.value === activeFontFamilyKey.value)?.label || 'Inter',
 )
-
 const fontFamilyDropdownOptions = computed(() =>
   FONT_FAMILY_OPTIONS.map((o) => ({
     label: o.label,
@@ -3473,8 +3673,10 @@ const _FORMAT_LABELS = (() => {
 
 // Custom number-format dialog. `pattern` is a raw Excel-style code; it's
 // stored as `custom:<pattern>` so the display path routes it to applyCustomFmt.
-const customFormatDialog = reactive({ open: false, pattern: '' })
-
+const customFormatDialog = reactive({
+  open: false,
+  pattern: '',
+})
 function openCustomFormatDialog() {
   const cur = parseNumberFmt(activeNumberFormat.value)
   customFormatDialog.pattern = cur.type === 'custom' ? cur.pattern : '#,##0.00'
@@ -3492,13 +3694,11 @@ const customFormatPreview = computed(() => {
     return ''
   }
 })
-
 function confirmCustomFormat() {
   const p = customFormatDialog.pattern.trim()
   if (p) onNumberFormatChange('custom:' + p)
   customFormatDialog.open = false
 }
-
 const numberFormatLabel = computed(() => {
   const cur = activeNumberFormat.value
   if (_FORMAT_LABELS.has(cur)) return _FORMAT_LABELS.get(cur)
@@ -3512,7 +3712,6 @@ const numberFormatLabel = computed(() => {
   if (type === 'datetime') return 'Date + Time'
   return type[0].toUpperCase() + type.slice(1)
 })
-
 const numberFormatDropdownOptions = computed(() => [
   ...NUMBER_FORMAT_GROUPS.map((g) => ({
     group: g.group,
@@ -3523,7 +3722,12 @@ const numberFormatDropdownOptions = computed(() => [
   })),
   {
     group: 'Custom',
-    options: [{ label: 'Custom format…', onClick: () => openCustomFormatDialog() }],
+    options: [
+      {
+        label: 'Custom format…',
+        onClick: () => openCustomFormatDialog(),
+      },
+    ],
   },
 ])
 
@@ -3535,7 +3739,6 @@ const activeCurrencySymbol = computed(() => {
   const hit = CURRENCY_QUICK_PICKS.find((c) => c.code === (variant || 'USD'))
   return hit ? hit.symbol : '$'
 })
-
 const currencyDropdownOptions = computed(() =>
   CURRENCY_QUICK_PICKS.map((c) => {
     const fmt = `currency:${c.code}:${c.code === 'JPY' ? 0 : 2}`
@@ -3545,7 +3748,6 @@ const currencyDropdownOptions = computed(() =>
     }
   }),
 )
-
 function repeatLast() {
   const last = getLastAction()
   if (!last) return
@@ -3570,7 +3772,13 @@ function repeatLast() {
 // every row to fit wrapped content when the user opts into wrap mode; the
 // other modes leave row heights alone (user may have grown rows manually).
 function setTextWrap(mode) {
-  formats.applyToRange(selectionIds(), { textWrap: mode }, sheet.getCurrentSheet())
+  formats.applyToRange(
+    selectionIds(),
+    {
+      textWrap: mode,
+    },
+    sheet.getCurrentSheet(),
+  )
   refreshActiveFormat()
   isDirty.value = true
   if (mode === 'wrap' && grid) {
@@ -3585,9 +3793,7 @@ function setTextWrap(mode) {
 function toggleWrap() {
   setTextWrap(activeTextWrap.value === 'wrap' ? 'overflow' : 'wrap')
 }
-
 const activeTextWrap = computed(() => getTextWrap(activeFormat.value))
-
 const TEXT_WRAP_ICON = {
   overflow: 'lucide-corner-down-right',
   clip: 'lucide-minimize',
@@ -3596,11 +3802,22 @@ const TEXT_WRAP_ICON = {
 const textWrapIcon = computed(
   () => TEXT_WRAP_ICON[activeTextWrap.value] || 'lucide-corner-down-left',
 )
-
 const textWrapDropdownOptions = computed(() => [
-  { label: 'Overflow', icon: TEXT_WRAP_ICON.overflow, onClick: () => setTextWrap('overflow') },
-  { label: 'Clip', icon: TEXT_WRAP_ICON.clip, onClick: () => setTextWrap('clip') },
-  { label: 'Wrap', icon: TEXT_WRAP_ICON.wrap, onClick: () => setTextWrap('wrap') },
+  {
+    label: 'Overflow',
+    icon: TEXT_WRAP_ICON.overflow,
+    onClick: () => setTextWrap('overflow'),
+  },
+  {
+    label: 'Clip',
+    icon: TEXT_WRAP_ICON.clip,
+    onClick: () => setTextWrap('clip'),
+  },
+  {
+    label: 'Wrap',
+    icon: TEXT_WRAP_ICON.wrap,
+    onClick: () => setTextWrap('wrap'),
+  },
 ])
 
 // View state is now per-sheet (kept in useSheetTabs._viewBySheet) so freeze /
@@ -3643,7 +3860,7 @@ const {
   isWritable: () => props.writable,
   onRefused: () => emit('access-refused'),
   recordVisits: !props.embedded,
-  credentialFetch: props.credentialFetch,
+  requestContext: props.requestContext,
 })
 
 // View-only mode: the loaded sheet is shared with the current user at read
@@ -3674,17 +3891,17 @@ watch(readOnly, (frozen) => {
   isDirty.value = false
   saveError.value = ''
 })
-
 if (props.embedded) {
   watch(
     () => props.title,
     (title) => {
       if (title != null) currentTitle.value = title
     },
-    { immediate: true },
+    {
+      immediate: true,
+    },
   )
 }
-
 _sheetTabs = useSheetTabs({
   sheet,
   formats,
@@ -3705,7 +3922,6 @@ _sheetTabs = useSheetTabs({
     _syncViewMirrors()
   },
 })
-
 const {
   sheetNames,
   currentSheet,
@@ -3731,7 +3947,9 @@ const {
   tabMenu,
   openCanvasContextMenu: onCanvasContextMenu,
   openTabMenu,
-} = useContextMenu({ getGrid: () => grid })
+} = useContextMenu({
+  getGrid: () => grid,
+})
 
 // The right-click menu is entirely mutation actions (insert/delete/freeze/
 // paste-special/…), so suppress it for viewers — the native browser menu still
@@ -3759,7 +3977,6 @@ const {
   pivotInitialRange,
   pivotEditId,
   pivotEditConfig,
-  pivotVersion,
   pivotBuilding,
   activePivotConfig,
   pivotFabStyle,
@@ -3767,9 +3984,6 @@ const {
   pivotBannerMenuOptions,
   isPivotSheet,
   openPivotDialog,
-  onPivotEdit,
-  onPivotRefresh,
-  onPivotDelete,
   onPivotConfirm,
   recomputePivotsForSheet,
   drillDownAt,
@@ -3801,7 +4015,6 @@ const {
   chartEditConfig,
   charts: chartList,
   selectedChartId,
-  chartVersion,
   chartDataVersion,
   openInsert: openChartDialog,
   openEdit: openChartEdit,
@@ -3825,7 +4038,6 @@ const {
 // Mirrors the `.sn-tool-extra` media query in this file's <style> block: below
 // this width the inline tool groups are hidden and the "…" menu carries them.
 const toolbarCollapsed = useMediaQuery('(max-width: 1280px)')
-
 const moreToolbarOptions = computed(() =>
   buildMoreToolbarOptions({
     toggleFmt,
@@ -3911,7 +4123,11 @@ const showSortFilter = computed({
 // so undo/redo only needs its name: a cheap structural op instead of a snapshot.
 function addSheet() {
   const name = _addSheet()
-  history.pushOp({ opType: 'sheet_add', subSheet: name, name })
+  history.pushOp({
+    opType: 'sheet_add',
+    subSheet: name,
+    name,
+  })
   isDirty.value = true
 }
 
@@ -3928,15 +4144,12 @@ function _isEditingFormulaInBar() {
     formulaValue.value.startsWith('=')
   )
 }
-
 function _isEditingFormulaInCell() {
   return grid?.isEditingFormula?.() ?? false
 }
-
 function _isEditingFormula() {
   return _isEditingFormulaInBar() || _isEditingFormulaInCell()
 }
-
 function onTabMousedown(e, _name) {
   // Default mousedown on the tab button focuses it, which would blur the
   // formula-bar input (or the in-cell overlay) before our click handler can
@@ -3944,14 +4157,15 @@ function onTabMousedown(e, _name) {
   // focused element to keep focus.
   if (_isEditingFormula()) e.preventDefault()
 }
-
 function onTabClick(name) {
   if (_isEditingFormula()) {
     if (!editingHomeSheet.value) {
       editingHomeSheet.value = sheet.getCurrentSheet()
       editingHomeCell.value = activeCell.value
     }
-    switchSheet(name, { preserveEdit: true })
+    switchSheet(name, {
+      preserveEdit: true,
+    })
     // Re-focus whichever input was being edited — some Buttons steal focus
     // on click despite mousedown preventDefault.
     nextTick(() => {
@@ -4018,7 +4232,6 @@ const showAddRows = computed(() => {
   renderVersion.value
   return grid?.isNearBottom?.(10) ?? false
 })
-
 function doAddMoreRows() {
   const n = Math.max(1, Math.min(10000, parseInt(addRowsCount.value, 10) || 1000))
   grid?.expandRows(n)
@@ -4032,7 +4245,6 @@ const filterConfig = computed(() => {
   renderVersion.value // re-eval when canvas re-renders (e.g. filter apply)
   return sortFilter.getFilterConfig(currentSheet.value)
 })
-
 const filterRange = computed(() => {
   renderVersion.value
   return sortFilter.getRange(currentSheet.value)
@@ -4065,11 +4277,17 @@ const visibleFilterCols = computed(() => {
 // of floating over unrelated columns; it reappears when scrolled back into view.
 const filterPanelStyle = computed(() => {
   renderVersion.value
-  if (!filterPanel.open || !grid || !filterRange.value) return { display: 'none' }
+  if (!filterPanel.open || !grid || !filterRange.value)
+    return {
+      display: 'none',
+    }
   const { r0 } = filterRange.value
   const colRect = grid.getColumnHeaderRects().find(({ c }) => c === filterPanel.col)
   const rowRect = grid.getRowRect(r0)
-  if (!colRect || !rowRect) return { display: 'none' }
+  if (!colRect || !rowRect)
+    return {
+      display: 'none',
+    }
   const BTN = 16
   const wrapW = gridWrapRef.value?.getBoundingClientRect().width ?? Infinity
   return {
@@ -4139,7 +4357,12 @@ const visibleRemoteCursors = computed(() => {
       // the top-left cell rect for x/y and the bottom-right cell rect to
       // sum the trailing width/height — handles non-uniform column widths
       // / row heights correctly.
-      const r = cursor.range || { r0: cursor.row, c0: cursor.col, r1: cursor.row, c1: cursor.col }
+      const r = cursor.range || {
+        r0: cursor.row,
+        c0: cursor.col,
+        r1: cursor.row,
+        c1: cursor.col,
+      }
       const tl = grid.getCellRect?.(r.r0, r.c0)
       const br = grid.getCellRect?.(r.r1, r.c1)
       if (!tl || !br) return null
@@ -4257,7 +4480,12 @@ function _runFill(src, total, mode) {
       afterValidation: afterVal,
       // Merge restore rides on the same op shape now — revertOp/applyOp
       // call merge.restore when these are present.
-      ...(mergeChanged ? { beforeMerge: beforeMergeSnap, afterMerge: afterMergeSnap } : {}),
+      ...(mergeChanged
+        ? {
+            beforeMerge: beforeMergeSnap,
+            afterMerge: afterMergeSnap,
+          }
+        : {}),
     })
     syncFlags()
     isDirty.value = true
@@ -4268,7 +4496,6 @@ function _runFill(src, total, mode) {
     markEdited()
   }
 }
-
 function _fillSummary(mode, n) {
   if (mode === 'copy') return `Copied into ${n} cell${n === 1 ? '' : 's'}`
   if (mode === 'format-only') return `Filled formats into ${n} cell${n === 1 ? '' : 's'}`
@@ -4286,7 +4513,6 @@ function _readSrcGrid(src) {
   }
   return data
 }
-
 function _fillValues(src, total, sheetName, valueMode) {
   const goDown = total.r1 > src.r1,
     goUp = total.r0 < src.r0
@@ -4303,12 +4529,13 @@ function _fillValues(src, total, sheetName, valueMode) {
   let workSrc = src
   let srcData = _readSrcGrid(workSrc)
   let srcRows = workSrc.r1 - workSrc.r0 + 1
-  let srcCols = workSrc.c1 - workSrc.c0 + 1
-
+  const srcCols = workSrc.c1 - workSrc.c0 + 1
   if (goDown || goUp) {
     const count = goDown ? total.r1 - workSrc.r1 : workSrc.r0 - total.r0
     const dir = goDown ? 1 : -1
-    const filled = computeFillDown(srcData, count, dir, { mode: valueMode })
+    const filled = computeFillDown(srcData, count, dir, {
+      mode: valueMode,
+    })
     const startR = goDown ? workSrc.r1 + 1 : total.r0
     filled.forEach((row, rOff) =>
       row.forEach((val, cOff) => {
@@ -4331,11 +4558,12 @@ function _fillValues(src, total, sheetName, valueMode) {
     srcData = _readSrcGrid(workSrc)
     srcRows = workSrc.r1 - workSrc.r0 + 1
   }
-
   if (goRight || goLeft) {
     const count = goRight ? total.c1 - workSrc.c1 : workSrc.c0 - total.c0
     const dir = goRight ? 1 : -1
-    const filled = computeFillRight(srcData, count, dir, { mode: valueMode })
+    const filled = computeFillRight(srcData, count, dir, {
+      mode: valueMode,
+    })
     const startC = goRight ? workSrc.c1 + 1 : total.c0
     filled.forEach((row, rOff) =>
       row.forEach((val, cOff) => {
@@ -4372,7 +4600,6 @@ function _fillMerges(src, total, sn) {
     }
   }
   if (!srcMerges.length) return
-
   const srcRows = src.r1 - src.r0 + 1,
     srcCols = src.c1 - src.c0 + 1
   const goDown = total.r1 > src.r1,
@@ -4434,7 +4661,6 @@ function _fillMerges(src, total, sn) {
     }
   }
 }
-
 function _fillFormatsOnly(src, total, sn) {
   const srcRows = src.r1 - src.r0 + 1,
     srcCols = src.c1 - src.c0 + 1
@@ -4449,7 +4675,6 @@ function _fillFormatsOnly(src, total, sn) {
     }
   }
 }
-
 function _clearFormats(src, total, sn) {
   for (let r = total.r0; r <= total.r1; r++) {
     for (let c = total.c0; c <= total.c1; c++) {
@@ -4458,7 +4683,6 @@ function _clearFormats(src, total, sn) {
     }
   }
 }
-
 function _previewSeriesKind(src) {
   const sn = sheet.getCurrentSheet()
   const sel = grid?.getSelection()
@@ -4492,7 +4716,14 @@ function _setupGridInstance() {
         // Send the full selection rect so peers can paint a range outline,
         // not just a single anchor cell.
         const sel = grid?.getSelection?.()
-        const range = sel ? { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 } : null
+        const range = sel
+          ? {
+              r0: sel.r0,
+              c0: sel.c0,
+              r1: sel.r1,
+              c1: sel.c1,
+            }
+          : null
         broadcastCursor(p.row, p.col, sheet.getCurrentSheet(), range)
       }
     },
@@ -4549,11 +4780,12 @@ function _setupGridInstance() {
           }, 3500)
         }
       }
-
       const before = sheet.getCell(id, writeSheet)
       sheet.setCell(id, value, writeSheet)
       if (writeSheet !== sheet.getCurrentSheet()) {
-        switchSheet(writeSheet, { preserveEdit: true })
+        switchSheet(writeSheet, {
+          preserveEdit: true,
+        })
       }
       if (before !== value) {
         // The same op shape feeds both server sync (_queueOp drains on
@@ -4564,8 +4796,12 @@ function _setupGridInstance() {
           opType: 'edit',
           subSheet: writeSheet,
           cellRefs: [id],
-          before: { [id]: before },
-          after: { [id]: value },
+          before: {
+            [id]: before,
+          },
+          after: {
+            [id]: value,
+          },
         }
         // Multi-line value (Cmd+Enter) auto-grows its row like Google Sheets.
         // The height diff rides the history op so undo/redo restores it;
@@ -4576,8 +4812,12 @@ function _setupGridInstance() {
           const p = parseCellId(id)
           const grow = p && grid?.autoGrowRowFor?.(p.row, p.col, value)
           if (grow) {
-            op.beforeRowH = { [p.row]: grow.before }
-            op.afterRowH = { [p.row]: grow.after }
+            op.beforeRowH = {
+              [p.row]: grow.before,
+            }
+            op.afterRowH = {
+              [p.row]: grow.after,
+            }
           }
         }
         _queueOp(op)
@@ -4586,7 +4826,16 @@ function _setupGridInstance() {
       }
       // Outside the changed-guard: re-committing an unchanged URL text (e.g.
       // pre-existing "frappe.io" data) still picks up its link.
-      _maybeAutoLink([{ id, value, before }], writeSheet)
+      _maybeAutoLink(
+        [
+          {
+            id,
+            value,
+            before,
+          },
+        ],
+        writeSheet,
+      )
       editingHomeSheet.value = null
       editingHomeCell.value = null
       _typedCell = null
@@ -4596,7 +4845,10 @@ function _setupGridInstance() {
     },
     onInput(id, value) {
       formulaValue.value = value
-      _typedCell = { sheet: sheet.getCurrentSheet(), cell: id }
+      _typedCell = {
+        sheet: sheet.getCurrentSheet(),
+        cell: id,
+      }
     },
     onCancel(id) {
       const homeSheet = editingHomeSheet.value
@@ -4694,7 +4946,10 @@ function _setupGridInstance() {
         history.pushOp(op)
         broadcastBatchChange(
           sheet.getCurrentSheet(),
-          refs.map((id) => ({ id, value: after[id] })),
+          refs.map((id) => ({
+            id,
+            value: after[id],
+          })),
         )
       }
       _maybeAutoLink(
@@ -4730,14 +4985,12 @@ function _setupGridInstance() {
     renderVersion.value++
   })
 }
-
 function _pinGridWrapScroll() {
   const wrap = gridWrapRef.value
   if (!wrap) return
   if (wrap.scrollTop) wrap.scrollTop = 0
   if (wrap.scrollLeft) wrap.scrollLeft = 0
 }
-
 function _setupEventListeners() {
   canvasRef.value.addEventListener('contextmenu', _onCanvasContextMenu)
   // computeSelectionStats fires from the grid's onSelect callback on every
@@ -4754,7 +5007,9 @@ function _setupEventListeners() {
   // stay 0. An overlay taller/wider than the viewport can still give it
   // scrollable overflow, and a stray focus/scrollIntoView then scrolls it,
   // dragging the canvas off-position. Pin it back the instant that happens.
-  gridWrapRef.value.addEventListener('scroll', _pinGridWrapScroll, { passive: true })
+  gridWrapRef.value.addEventListener('scroll', _pinGridWrapScroll, {
+    passive: true,
+  })
   window.addEventListener('keydown', onGlobalKey)
   document.addEventListener('paste', onDocPaste)
   document.addEventListener('copy', onDocCopy)
@@ -4767,7 +5022,6 @@ function _setupEventListeners() {
   window.addEventListener('focus', _refocusGridIfIdle)
   document.addEventListener('visibilitychange', _refocusGridIfIdle)
 }
-
 async function _loadInitialData() {
   history.init()
   syncFlags()
@@ -4820,7 +5074,6 @@ async function _loadInitialData() {
 // surfaced a load error — flipped in a finally so a thrown exception
 // never strands the editor with a permanent spinner.
 const isInitialLoad = ref(true)
-
 onMounted(async () => {
   _setupGridInstance()
   _setupEventListeners()
@@ -4833,7 +5086,6 @@ onMounted(async () => {
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
   _refocusGridIfIdle()
 })
-
 onBeforeUnmount(() => {
   clearTimeout(_autoSaveTimer)
   // CRITICAL: flush any pending debounced save before the component dies.
@@ -4842,7 +5094,9 @@ onBeforeUnmount(() => {
   // "data is lost when I come back" report. The fetch uses `keepalive: true`
   // so the request survives the unmount.
   if (isDirty.value && !readOnly.value && props.id && props.id !== 'new') {
-    saveExisting(props.id, currentTitle.value, { keepalive: true })
+    void saveExisting(props.id, currentTitle.value, {
+      keepalive: true,
+    }).catch(() => {})
   }
   gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
@@ -4861,11 +5115,9 @@ onBeforeUnmount(() => {
 let _autoSaveTimer = null
 let _savePromise = null
 let _pendingSaveBatch = null
-
 function hasUnsavedChanges() {
   return isDirty.value || isSaving.value
 }
-
 const confirmUnsavedNavigation = () => {
   // Embedded, the surface's leave guard flushes and keeps a recovery copy.
   if (props.embedded) return true
@@ -4892,7 +5144,14 @@ function _queueOp({
   subSheet = '',
 }) {
   if (props.id === 'new') return // pre-save doc has no version yet
-  _opQueue.push({ opType, cellRefs, before, after, summary, subSheet })
+  _opQueue.push({
+    opType,
+    cellRefs,
+    before,
+    after,
+    summary,
+    subSheet,
+  })
 }
 
 // Snapshot {id → value} for a rectangular cell range, used before/after each
@@ -4939,7 +5198,12 @@ function _recordFormatOp(ids, sn, mutate) {
   mutate()
   const afterFormats = {}
   for (const id of ids) afterFormats[id] = formats.getCellFormat(id, sn) || null
-  history.pushOp({ opType: 'format', subSheet: sn, beforeFormats, afterFormats })
+  history.pushOp({
+    opType: 'format',
+    subSheet: sn,
+    beforeFormats,
+    afterFormats,
+  })
 }
 
 // Scope-aware variant for VISUAL formats (font, size, painted format) that the
@@ -4950,8 +5214,15 @@ function _recordFormatOp(ids, sn, mutate) {
 function _recordScopedFormatOp(ops) {
   const sn = sheet.getCurrentSheet()
   const info = _selectionScope()
-  const scope = info ? formatScope(info.rect, info.totalRows, info.totalCols) : { kind: 'cells' }
-  const op = { opType: 'format', subSheet: sn }
+  const scope = info
+    ? formatScope(info.rect, info.totalRows, info.totalCols)
+    : {
+        kind: 'cells',
+      }
+  const op = {
+    opType: 'format',
+    subSheet: sn,
+  }
   if (scope.kind === 'cols') {
     op.beforeCols = _captureAxis('col', scope.cols, sn)
     ops.cols(scope.cols, sn)
@@ -4970,14 +5241,12 @@ function _recordScopedFormatOp(ops) {
   }
   history.pushOp(op)
 }
-
 function _captureAxis(axis, keys, sn) {
   const get = axis === 'col' ? formats.getCol : formats.getRow
   const out = {}
   for (const k of keys) out[k] = get(k, sn) || null
   return out
 }
-
 function _captureValidationRange(rect, sheetName) {
   const out = {}
   if (!rect) return out
@@ -5061,10 +5330,34 @@ function _cellSilentlyProtected(id, sn = sheet.getCurrentSheet()) {
 // guarded). A fill extends in one direction, so at most one strip is non-empty.
 function _fillDestBlocked(src, total, sn = sheet.getCurrentSheet()) {
   const strips = []
-  if (total.r1 > src.r1) strips.push({ r0: src.r1 + 1, r1: total.r1, c0: total.c0, c1: total.c1 })
-  if (total.r0 < src.r0) strips.push({ r0: total.r0, r1: src.r0 - 1, c0: total.c0, c1: total.c1 })
-  if (total.c1 > src.c1) strips.push({ r0: total.r0, r1: total.r1, c0: src.c1 + 1, c1: total.c1 })
-  if (total.c0 < src.c0) strips.push({ r0: total.r0, r1: total.r1, c0: total.c0, c1: src.c0 - 1 })
+  if (total.r1 > src.r1)
+    strips.push({
+      r0: src.r1 + 1,
+      r1: total.r1,
+      c0: total.c0,
+      c1: total.c1,
+    })
+  if (total.r0 < src.r0)
+    strips.push({
+      r0: total.r0,
+      r1: src.r0 - 1,
+      c0: total.c0,
+      c1: total.c1,
+    })
+  if (total.c1 > src.c1)
+    strips.push({
+      r0: total.r0,
+      r1: total.r1,
+      c0: src.c1 + 1,
+      c1: total.c1,
+    })
+  if (total.c0 < src.c0)
+    strips.push({
+      r0: total.r0,
+      r1: total.r1,
+      c0: total.c0,
+      c1: src.c0 - 1,
+    })
   if (!strips.some((s) => protection.isAnyProtected(s, sn))) return false
   _flashProtected(sn)
   return true
@@ -5138,11 +5431,17 @@ const _MAX_OP_PAYLOAD_BYTES = 64 * 1024
 // Snapshot the queue without removing entries. They are removed only after the
 // save succeeds, so a failed save can retry without losing operation history.
 function _opsForSave() {
-  if (!_opQueue.length || props.id === 'new') return { ops: [], count: 0 }
+  if (!_opQueue.length || props.id === 'new')
+    return {
+      ops: [],
+      count: 0,
+    }
   const batch = _opQueue.slice()
-  return { ops: batch.map(_serialiseOp), count: batch.length }
+  return {
+    ops: batch.map(_serialiseOp),
+    count: batch.length,
+  }
 }
-
 function _serialiseOp(op) {
   const cellRefsJson = op.cellRefs ? JSON.stringify(op.cellRefs) : undefined
   const beforeJson = op.before ? JSON.stringify(op.before) : undefined
@@ -5158,20 +5457,17 @@ function _serialiseOp(op) {
     summary: truncated ? _truncatedSummary(op) : op.summary || undefined,
   }
 }
-
 function _truncatedSummary(op) {
   const base = op.summary || op.opType || 'bulk edit'
   const count = Array.isArray(op.cellRefs) ? op.cellRefs.length : 0
   return count ? `${base} (${count} cells, details truncated)` : base
 }
-
 function _triggerAutoSave() {
   clearTimeout(_autoSaveTimer)
   _autoSaveTimer = setTimeout(_doAutoSave, 2000)
 }
-
 async function _doAutoSave() {
-  if (_savePromise) await _savePromise
+  if (_savePromise) await _savePromise.catch(() => {})
   if (!isDirty.value) return
   // Backstop: a viewer should never reach save_sheet (which would throw
   // PermissionError). The input layer already blocks their edits, so isDirty
@@ -5186,13 +5482,25 @@ async function _doAutoSave() {
   const epoch = _accessEpoch
   // Drain queued ops BEFORE the save so the batch lands atomically with the
   // implicit `save` op and keeps the canonical user-action ordering intact.
-  const batch = _pendingSaveBatch || { ..._opsForSave(), revision: _dirtyRevision }
+  const batch = _pendingSaveBatch || {
+    ..._opsForSave(),
+    revision: _dirtyRevision,
+  }
   _pendingSaveBatch = batch
   _savePromise = _pendingSaveBatch.failed
     ? retrySave()
-    : saveExisting(props.id, currentTitle.value, { ops: batch.ops })
-  await _savePromise
-  _savePromise = null
+    : saveExisting(props.id, currentTitle.value, {
+        ops: batch.ops,
+      })
+  try {
+    await _savePromise
+  } catch (error) {
+    batch.failed = true
+    if (epoch === _accessEpoch) isDirty.value = true
+    throw error
+  } finally {
+    _savePromise = null
+  }
   // Access narrowed while this save was out. Its edits left the save path.
   if (epoch !== _accessEpoch) {
     saveError.value = ''
@@ -5211,7 +5519,6 @@ async function _doAutoSave() {
     justSaved.value = false
   }, 2500)
 }
-
 async function flushSave() {
   clearTimeout(_autoSaveTimer)
   do {
@@ -5230,7 +5537,7 @@ async function onRetrySave() {
   if (isDirty.value && props.id && props.id !== 'new') {
     await _doAutoSave()
   } else {
-    await retrySave()
+    await retrySave().catch(() => {})
   }
 }
 
@@ -5244,7 +5551,7 @@ watch(saveError, (msg) => {
   if (!msg) return
   _saveWatchdogTimer = setTimeout(() => {
     if (saveError.value && isDirty.value && !isSaving.value && props.id && props.id !== 'new') {
-      _doAutoSave()
+      void _doAutoSave().catch(() => {})
     }
   }, 30_000)
 })
@@ -5280,19 +5587,20 @@ function cancelTitleEditing() {
   currentTitle.value = _titleAtFocus
   isTitleEditing.value = false
 }
-
 function onSave() {
-  _doAutoSave()
+  void _doAutoSave().catch(() => {})
 }
 
 // ── Formula bar ───────────────────────────────────────────────────────────────
 
 function onFormulaInput(e) {
   formulaValue.value = e.target.value
-  _typedCell = { sheet: sheet.getCurrentSheet(), cell: activeCell.value }
+  _typedCell = {
+    sheet: sheet.getCurrentSheet(),
+    cell: activeCell.value,
+  }
   updateAc(e.target.value, e.target.selectionStart)
 }
-
 function onFormulaKey(e) {
   if (acVisible.value) {
     if (e.key === 'ArrowDown') {
@@ -5352,9 +5660,13 @@ function _commitFormulaBar() {
     formulaValue.value = sheet.getCell(targetId, targetSheet)
     return
   }
-  const before = { [targetId]: sheet.getCell(targetId, targetSheet) }
+  const before = {
+    [targetId]: sheet.getCell(targetId, targetSheet),
+  }
   if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
-    switchSheet(homeSheet, { preserveEdit: true })
+    switchSheet(homeSheet, {
+      preserveEdit: true,
+    })
     sheet.setCell(homeCell, formulaValue.value, homeSheet)
   } else {
     sheet.setCell(activeCell.value, formulaValue.value)
@@ -5364,11 +5676,16 @@ function _commitFormulaBar() {
   _typedCell = null
   _pushEditOp(targetSheet, before, 'Edit cell')
   _maybeAutoLink(
-    [{ id: targetId, value: formulaValue.value, before: before[targetId] }],
+    [
+      {
+        id: targetId,
+        value: formulaValue.value,
+        before: before[targetId],
+      },
+    ],
     targetSheet,
   )
 }
-
 function _cancelFormulaBar() {
   const homeSheet = editingHomeSheet.value
   const homeCell = editingHomeCell.value
@@ -5394,7 +5711,18 @@ function fillDown() {
   const { r0, c0, r1, c1 } = grid.getSelection()
   if (r1 <= r0) return
   const sn = sheet.getCurrentSheet()
-  if (_rectBlocked({ r0: r0 + 1, c0, r1, c1 }, sn)) return
+  if (
+    _rectBlocked(
+      {
+        r0: r0 + 1,
+        c0,
+        r1,
+        c1,
+      },
+      sn,
+    )
+  )
+    return
   const before = {}
   for (let c = c0; c <= c1; c++) {
     for (let r = r0 + 1; r <= r1; r++) {
@@ -5414,13 +5742,23 @@ function fillDown() {
   }
   _pushEditOp(sn, before, 'Fill down')
 }
-
 function fillRight() {
   if (!grid) return
   const { r0, c0, r1, c1 } = grid.getSelection()
   if (c1 <= c0) return
   const sn = sheet.getCurrentSheet()
-  if (_rectBlocked({ r0, c0: c0 + 1, r1, c1 }, sn)) return
+  if (
+    _rectBlocked(
+      {
+        r0,
+        c0: c0 + 1,
+        r1,
+        c1,
+      },
+      sn,
+    )
+  )
+    return
   const before = {}
   for (let r = r0; r <= r1; r++) {
     for (let c = c0 + 1; c <= c1; c++) {
@@ -5475,7 +5813,6 @@ function _deleteRowsColsFromSelection() {
     doDeleteRow()
   }
 }
-
 const { onGlobalKey } = useShortcuts({
   formulaInputEl: () => formulaInputRef.value,
   undo,
@@ -5533,7 +5870,6 @@ function _refocusGridIfIdle() {
   if (ae && ae !== document.body) return
   canvasRef.value?.focus()
 }
-
 function onDocCopy(e) {
   if (!_canvasActive()) return
   e.preventDefault()
@@ -5612,7 +5948,6 @@ async function onDocPaste(e) {
   const beforeFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
   const beforeVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
   const cfBefore = condFormat?.getRules?.(sn)?.length ?? 0
-
   let pasted = false
   if (clipboard.hasData()) {
     // Internal cut/copy — empty historyPush callback so we control the
@@ -5782,7 +6117,6 @@ function _syncViewMirrors() {
   manualHiddenCols.clear()
   for (const c of v.hiddenCols || []) manualHiddenCols.add(c)
 }
-
 function _afterHistoryNavigate() {
   _repopulateGrid()
   _applyHiddenRows() // filter state restored → re-apply to grid
@@ -5800,7 +6134,6 @@ function _afterHistoryNavigate() {
   clipboard.clear()
   clipboardHas.value = false
 }
-
 function undo() {
   if (!history.undo()) return
   _afterHistoryNavigate()
@@ -5816,7 +6149,6 @@ function _syncNumberFormat(id) {
   const fmt = formats.get(id, sheet.getCurrentSheet())
   activeNumberFormat.value = fmt.numberFormat || ''
 }
-
 function toggleNumberFmt(type) {
   onNumberFormatChange(activeNumberFormatType.value === type ? '' : type)
 }
@@ -5824,7 +6156,6 @@ function toggleNumberFmt(type) {
 // ── Format painter ────────────────────────────────────────────────────────────
 
 let _copiedFormat = null
-
 function toggleFormatPainter() {
   if (isPaintingFormat.value) {
     isPaintingFormat.value = false
@@ -5832,10 +6163,11 @@ function toggleFormatPainter() {
     return
   }
   const srcId = activeCell.value
-  _copiedFormat = { ...formats.get(srcId, sheet.getCurrentSheet()) }
+  _copiedFormat = {
+    ...formats.get(srcId, sheet.getCurrentSheet()),
+  }
   isPaintingFormat.value = true
 }
-
 function _applyPaintedFormat() {
   if (!isPaintingFormat.value || !_copiedFormat) return
   _recordScopedFormatOp(_patchFmtOps(_copiedFormat))
@@ -5845,11 +6177,18 @@ function _applyPaintedFormat() {
   _copiedFormat = null
   refreshActiveFormat()
 }
-
 function onNumberFormatChange(value) {
   const sn = sheet.getCurrentSheet()
   const ids = selectionIds()
-  _recordFormatOp(ids, sn, () => formats.applyToRange(ids, { numberFormat: value }, sn))
+  _recordFormatOp(ids, sn, () =>
+    formats.applyToRange(
+      ids,
+      {
+        numberFormat: value,
+      },
+      sn,
+    ),
+  )
   for (const id of ids) {
     const raw = sheet.getDisplayValue(id)
     grid?.setCell(id, value ? applyNumberFmt(raw, value) : raw)
@@ -5882,7 +6221,10 @@ function openCommentPanel() {
     if (x < 4) x = 4
     if (y + PANEL_H > window.innerHeight) y = Math.max(4, window.innerHeight - PANEL_H - 4)
   } else {
-    const rect = cv || { left: 100, top: 100 }
+    const rect = cv || {
+      left: 100,
+      top: 100,
+    }
     x = rect.left + 60
     y = rect.top + 40
   }
@@ -5910,7 +6252,6 @@ function _afterCommentChange() {
   history.push()
   isDirty.value = true
 }
-
 function addCommentReply() {
   const text = commentPanel.draft.trim()
   if (!text) return
@@ -5926,18 +6267,15 @@ function addCommentReply() {
   commentPanel.draft = ''
   _afterCommentChange()
 }
-
 function toggleResolveComment() {
   comments.resolve(commentPanel.id, !commentPanel.resolved, sheet.getCurrentSheet())
   _afterCommentChange()
 }
-
 function deleteCommentReply(i) {
   comments.removeReply(commentPanel.id, i, sheet.getCurrentSheet())
   _afterCommentChange()
   if (!commentPanel.thread.length) commentPanel.open = false
 }
-
 function deleteComment() {
   comments.clear(commentPanel.id, sheet.getCurrentSheet())
   commentPanel.open = false
@@ -5971,7 +6309,10 @@ const allNotes = computed(() => {
   for (const name of sheetNames.value) {
     const map = comments.getAll(name) || {}
     const entries = Object.keys(map)
-      .map((id) => ({ id, p: parseCellId(id) }))
+      .map((id) => ({
+        id,
+        p: parseCellId(id),
+      }))
       .filter((e) => e.p)
       .sort((a, b) => a.p.row - b.p.row || a.p.col - b.p.col)
       .map((e) => ({
@@ -5989,20 +6330,21 @@ const allNotes = computed(() => {
   })
   return list
 })
-
 const notesGrouped = computed(() => {
   const out = []
   let cur = null
   for (const n of allNotes.value) {
     if (!cur || cur.sheet !== n.sheet) {
-      cur = { sheet: n.sheet, items: [] }
+      cur = {
+        sheet: n.sheet,
+        items: [],
+      }
       out.push(cur)
     }
     cur.items.push(n)
   }
   return out
 })
-
 function toggleNotesPanel() {
   if (notesPanel.open) {
     notesPanel.open = false
@@ -6012,7 +6354,6 @@ function toggleNotesPanel() {
   notesPanel.open = true
   emit('notes-opened')
 }
-
 function jumpToNote(n) {
   if (!grid) return
   const p = parseCellId(n.id)
@@ -6044,14 +6385,19 @@ function goToCell(sheetName, id) {
 // its home cell; any other edit to the cell it was typed for.
 function _draftEdit() {
   const target = editingHomeCell.value
-    ? { sheet: editingHomeSheet.value, cell: editingHomeCell.value }
+    ? {
+        sheet: editingHomeSheet.value,
+        cell: editingHomeCell.value,
+      }
     : _typedCell
   if (!target) return null
   const committed = sheet.getCell(target.cell, target.sheet)
   if (String(committed ?? '') === String(formulaValue.value ?? '')) return null
-  return { ...target, value: formulaValue.value }
+  return {
+    ...target,
+    value: formulaValue.value,
+  }
 }
-
 defineExpose({
   activeCell,
   currentSheet,
@@ -6065,7 +6411,6 @@ defineExpose({
     notesPanel.open = false
   },
 })
-
 function addNoteFromPanel() {
   // Convenience: same as topbar note button, but invoked from inside the panel.
   openCommentPanel()
@@ -6088,8 +6433,16 @@ function openValidationDialog() {
   const opts = e?.options || []
   const colors = e?.colors || {}
   validationDialog.listItems = opts.length
-    ? opts.map((o) => ({ label: o, color: colors[o] || '' }))
-    : [{ label: '', color: '' }] // start with one empty row to type into
+    ? opts.map((o) => ({
+        label: o,
+        color: colors[o] || '',
+      }))
+    : [
+        {
+          label: '',
+          color: '',
+        },
+      ] // start with one empty row to type into
   validationDialog.message = e?.message || ''
   validationDialog.severity = e?.severity || 'reject'
   validationDialog.open = true
@@ -6100,17 +6453,22 @@ function openValidationDialog() {
 function autoChipColor(i) {
   return chipPaletteColor(i)
 }
-
 function addListItem(afterIdx) {
-  const row = { label: '', color: '' }
+  const row = {
+    label: '',
+    color: '',
+  }
   if (afterIdx == null) validationDialog.listItems.push(row)
   else validationDialog.listItems.splice(afterIdx + 1, 0, row)
   focusListItem(afterIdx == null ? validationDialog.listItems.length - 1 : afterIdx + 1)
 }
-
 function removeListItem(i) {
   validationDialog.listItems.splice(i, 1)
-  if (!validationDialog.listItems.length) validationDialog.listItems.push({ label: '', color: '' })
+  if (!validationDialog.listItems.length)
+    validationDialog.listItems.push({
+      label: '',
+      color: '',
+    })
 }
 
 // Paste a comma/newline-separated list into a row → split it across rows, so
@@ -6128,15 +6486,16 @@ function onListPaste(ev, i) {
   validationDialog.listItems.splice(
     i + 1,
     0,
-    ...parts.slice(1).map((label) => ({ label, color: '' })),
+    ...parts.slice(1).map((label) => ({
+      label,
+      color: '',
+    })),
   )
 }
-
 async function focusListItem(i) {
   await nextTick()
   vdListEl.value?.querySelectorAll('.sn-vd-item-input')?.[i]?.focus()
 }
-
 function confirmValidation() {
   const ids = selectionIds()
   const sn = sheet.getCurrentSheet()
@@ -6151,7 +6510,10 @@ function confirmValidation() {
         : undefined
   let rule
   if (validationDialog.type === 'checkbox') {
-    rule = { type: 'checkbox', message: msg }
+    rule = {
+      type: 'checkbox',
+      message: msg,
+    }
   } else if (validationDialog.type === 'list') {
     // De-dupe by label (first wins), keeping only rows that have a colour set.
     const options = []
@@ -6162,7 +6524,12 @@ function confirmValidation() {
       options.push(label)
       if (it.color) colors[label] = it.color
     }
-    rule = { type: 'list', options, message: msg, severity }
+    rule = {
+      type: 'list',
+      options,
+      message: msg,
+      severity,
+    }
     if (Object.keys(colors).length) rule.colors = colors
   } else {
     const op = validationDialog.operator
@@ -6170,7 +6537,14 @@ function confirmValidation() {
     const v2 = parseFloat(validationDialog.val2)
     const min = isNaN(v1) ? undefined : v1
     const max = ['between', 'not_between'].includes(op) && !isNaN(v2) ? v2 : undefined
-    rule = { type: validationDialog.type, operator: op, min, max, message: msg, severity }
+    rule = {
+      type: validationDialog.type,
+      operator: op,
+      min,
+      max,
+      message: msg,
+      severity,
+    }
   }
   for (const id of ids) validation.set(id, rule, sn)
 
@@ -6184,7 +6558,10 @@ function confirmValidation() {
       const cur = sheet.getCell(id, sn)
       if (cur == null || String(cur) === '') {
         sheet.setCell(id, 'FALSE', sn)
-        filled.push({ id, value: 'FALSE' })
+        filled.push({
+          id,
+          value: 'FALSE',
+        })
       }
     }
     if (filled.length) {
@@ -6192,13 +6569,11 @@ function confirmValidation() {
       recomputePivotsForSheet(sn)
     }
   }
-
   validationDialog.open = false
   grid?.render()
   history.push() // rule + any FALSE-fill live in the snapshot; record for undo
   isDirty.value = true
 }
-
 function removeValidation() {
   const ids = selectionIds()
   const sn = sheet.getCurrentSheet()
@@ -6208,7 +6583,6 @@ function removeValidation() {
   history.push()
   isDirty.value = true
 }
-
 function openDropdown(id, rule, pos = {}) {
   if (rule?.type !== 'list') return
   dropdownPanel.id = id
@@ -6220,7 +6594,6 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.w = pos.w ?? 120
   dropdownPanel.open = true
 }
-
 function pickDropdownOption(opt) {
   const id = dropdownPanel.id
   const sn = sheet.getCurrentSheet()
@@ -6228,7 +6601,9 @@ function pickDropdownOption(opt) {
     dropdownPanel.open = false
     return
   }
-  const before = { [id]: sheet.getCell(id, sn) }
+  const before = {
+    [id]: sheet.getCell(id, sn),
+  }
   sheet.setCell(id, opt)
   dropdownPanel.open = false
   _pushEditOp(sn, before, 'Edit cell')
@@ -6239,7 +6614,9 @@ function pickDropdownOption(opt) {
 // through the same edit-op path as a dropdown pick so undo + collab match.
 function toggleCheckbox(id) {
   const sn = sheet.getCurrentSheet()
-  const before = { [id]: sheet.getCell(id, sn) }
+  const before = {
+    [id]: sheet.getCell(id, sn),
+  }
   const next = String(before[id]).toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE'
   sheet.setCell(id, next, sn)
   _pushEditOp(sn, before, 'Toggle checkbox')
@@ -6249,37 +6626,93 @@ function toggleCheckbox(id) {
 // ── Conditional formatting ────────────────────────────────────────────────────
 
 const CF_COND_OPTIONS = [
-  { label: 'Greater than', value: 'gt' },
-  { label: 'Less than', value: 'lt' },
-  { label: 'Greater or equal', value: 'gte' },
-  { label: 'Less or equal', value: 'lte' },
-  { label: 'Equal to', value: 'eq' },
-  { label: 'Not equal to', value: 'neq' },
-  { label: 'Between', value: 'between' },
-  { label: 'Contains', value: 'contains' },
-  { label: 'Does not contain', value: 'notcontains' },
-  { label: 'Is empty', value: 'empty' },
-  { label: 'Is not empty', value: 'notempty' },
+  {
+    label: 'Greater than',
+    value: 'gt',
+  },
+  {
+    label: 'Less than',
+    value: 'lt',
+  },
+  {
+    label: 'Greater or equal',
+    value: 'gte',
+  },
+  {
+    label: 'Less or equal',
+    value: 'lte',
+  },
+  {
+    label: 'Equal to',
+    value: 'eq',
+  },
+  {
+    label: 'Not equal to',
+    value: 'neq',
+  },
+  {
+    label: 'Between',
+    value: 'between',
+  },
+  {
+    label: 'Contains',
+    value: 'contains',
+  },
+  {
+    label: 'Does not contain',
+    value: 'notcontains',
+  },
+  {
+    label: 'Is empty',
+    value: 'empty',
+  },
+  {
+    label: 'Is not empty',
+    value: 'notempty',
+  },
 ]
-
 const CF_KIND_OPTIONS = [
-  { label: 'Single colour rule', value: 'classic' },
-  { label: 'Colour scale', value: 'color-scale' },
-  { label: 'Data bars', value: 'data-bar' },
-  { label: 'Icon set', value: 'icon-set' },
+  {
+    label: 'Single colour rule',
+    value: 'classic',
+  },
+  {
+    label: 'Colour scale',
+    value: 'color-scale',
+  },
+  {
+    label: 'Data bars',
+    value: 'data-bar',
+  },
+  {
+    label: 'Icon set',
+    value: 'icon-set',
+  },
 ]
-
 const CF_SCALE_VARIANT_OPTIONS = [
-  { label: '2-colour (low → high)', value: '2color' },
-  { label: '3-colour (low → mid → high)', value: '3color' },
+  {
+    label: '2-colour (low → high)',
+    value: '2color',
+  },
+  {
+    label: '3-colour (low → mid → high)',
+    value: '3color',
+  },
 ]
-
 const CF_ICON_SET_OPTIONS = [
-  { label: 'Arrows (red/grey/green)', value: 'arrows3' },
-  { label: 'Traffic lights', value: 'traffic3' },
-  { label: 'Circles (empty → full)', value: 'circles3' },
+  {
+    label: 'Arrows (red/grey/green)',
+    value: 'arrows3',
+  },
+  {
+    label: 'Traffic lights',
+    value: 'traffic3',
+  },
+  {
+    label: 'Circles (empty → full)',
+    value: 'circles3',
+  },
 ]
-
 const cfRangeLabel = computed(() => {
   const { r0, c0, r1, c1 } = cfDialog.range
   return `${colLabel(c0)}${r0 + 1}:${colLabel(c1)}${r1 + 1}`
@@ -6293,10 +6726,16 @@ function _coerceHex(v) {
   if (typeof v !== 'string') return ''
   return /^#[0-9a-fA-F]{6}$/.test(v) ? v : ''
 }
-
 function openCfDialog(existingId) {
-  const sel = grid?.getSelection() || { r0: 0, c0: 0, r1: 0, c1: 0 }
-  cfDialog.range = { ...sel }
+  const sel = grid?.getSelection() || {
+    r0: 0,
+    c0: 0,
+    r1: 0,
+    c1: 0,
+  }
+  cfDialog.range = {
+    ...sel,
+  }
   cfDialog.editId = existingId
   cfDialog.kind = 'classic'
   cfDialog.condType = 'gt'
@@ -6318,7 +6757,9 @@ function openCfDialog(existingId) {
   if (existingId !== null) {
     const existing = condFormat.getRules(sheet.getCurrentSheet()).find((r) => r.id === existingId)
     if (existing) {
-      cfDialog.range = { ...existing.range }
+      cfDialog.range = {
+        ...existing.range,
+      }
       cfDialog.kind = existing.kind || 'classic'
       if (existing.kind === 'color-scale') {
         cfDialog.scaleVariant = existing.scale?.variant || '2color'
@@ -6340,9 +6781,10 @@ function openCfDialog(existingId) {
   }
   cfDialog.open = true
 }
-
 function _buildCfRule() {
-  const range = { ...cfDialog.range }
+  const range = {
+    ...cfDialog.range,
+  }
   if (cfDialog.kind === 'color-scale') {
     const scale =
       cfDialog.scaleVariant === '3color'
@@ -6353,28 +6795,58 @@ function _buildCfRule() {
             maxColor: cfDialog.scaleMax,
             midPercent: 0.5,
           }
-        : { variant: '2color', minColor: cfDialog.scaleMin, maxColor: cfDialog.scaleMax }
-    return { range, kind: 'color-scale', scale }
+        : {
+            variant: '2color',
+            minColor: cfDialog.scaleMin,
+            maxColor: cfDialog.scaleMax,
+          }
+    return {
+      range,
+      kind: 'color-scale',
+      scale,
+    }
   }
   if (cfDialog.kind === 'data-bar') {
-    return { range, kind: 'data-bar', bar: { color: cfDialog.barColor } }
+    return {
+      range,
+      kind: 'data-bar',
+      bar: {
+        color: cfDialog.barColor,
+      },
+    }
   }
   if (cfDialog.kind === 'icon-set') {
-    return { range, kind: 'icon-set', icons: { set: cfDialog.iconSet, thresholds: [0.33, 0.66] } }
+    return {
+      range,
+      kind: 'icon-set',
+      icons: {
+        set: cfDialog.iconSet,
+        thresholds: [0.33, 0.66],
+      },
+    }
   }
   // Classic single-colour rule.
   return {
     range,
-    condition: { type: cfDialog.condType, value: cfDialog.condValue, value2: cfDialog.condValue2 },
+    condition: {
+      type: cfDialog.condType,
+      value: cfDialog.condValue,
+      value2: cfDialog.condValue2,
+    },
     format: {
-      ...(cfDialog.fmtColor ? { color: cfDialog.fmtColor } : {}),
+      ...(cfDialog.fmtColor
+        ? {
+            color: cfDialog.fmtColor,
+          }
+        : {}),
       ...(cfDialog.fmtBg && cfDialog.fmtBg !== '#ffffff'
-        ? { backgroundColor: cfDialog.fmtBg }
+        ? {
+            backgroundColor: cfDialog.fmtBg,
+          }
         : {}),
     },
   }
 }
-
 function saveCfRule() {
   const sn = sheet.getCurrentSheet()
   const rule = _buildCfRule()
@@ -6387,7 +6859,6 @@ function saveCfRule() {
   grid?.render()
   isDirty.value = true
 }
-
 function deleteCfRule() {
   history.push()
   condFormat.removeRule(cfDialog.editId, sheet.getCurrentSheet())
@@ -6447,7 +6918,7 @@ async function openCellHistory() {
   cellHistory.entries = []
   try {
     cellHistory.entries = await fetchCellHistory(props.id, id, sheet.getCurrentSheet(), {
-      fetch: props.credentialFetch,
+      context: props.requestContext,
     })
   } catch (err) {
     cellHistory.error = err.message || 'Failed to load cell history'
@@ -6462,7 +6933,6 @@ function closeFindReplace() {
   showFindReplace.value = false
   canvasRef.value?.focus?.()
 }
-
 function onNavigateTo(id) {
   if (!grid) return
   const p = parseCellId(id)
@@ -6506,7 +6976,12 @@ function _detectContiguousBlock(r, c) {
   // the detected block, fold it in as the header row/col.
   if (anchorEmpty && r === r0 - 1 && c >= c0 && c <= c1) r0 = r
   if (anchorEmpty && c === c0 - 1 && r >= r0 && r <= r1) c0 = c
-  return { r0, c0, r1, c1 }
+  return {
+    r0,
+    c0,
+    r1,
+    c1,
+  }
 }
 
 // Create a filter on the user's current selection.  A selection that spans no
@@ -6521,8 +6996,18 @@ function _createFilterOnSelection() {
   const sel = grid.getSelection()
   const noDataRows = sel.r0 === sel.r1
   const range = noDataRows
-    ? _detectContiguousBlock(sel.r0, sel.c0) || { r0: sel.r0, c0: sel.c0, r1: sel.r0, c1: sel.c0 }
-    : { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }
+    ? _detectContiguousBlock(sel.r0, sel.c0) || {
+        r0: sel.r0,
+        c0: sel.c0,
+        r1: sel.r0,
+        c1: sel.c0,
+      }
+    : {
+        r0: sel.r0,
+        c0: sel.c0,
+        r1: sel.r1,
+        c1: sel.c1,
+      }
   sortFilter.setRange(range, sheet.getCurrentSheet())
   filterPanel.open = false
   _applyHiddenRows()
@@ -6530,7 +7015,6 @@ function _createFilterOnSelection() {
   history.push()
   isDirty.value = true
 }
-
 function _removeFilter() {
   sortFilter.clearRange(sheet.getCurrentSheet())
   filterPanel.open = false
@@ -6569,7 +7053,10 @@ const activeSlicers = computed(() => {
       y: sl.y,
       label: slicerLabel(sl, sn),
       options,
-      rows: values.map((v) => ({ v, checked: !set || set.has(v) })),
+      rows: values.map((v) => ({
+        v,
+        checked: !set || set.has(v),
+      })),
     }
   })
 })
@@ -6580,7 +7067,10 @@ function _slicerColumnOptions(range, sn) {
   const opts = []
   for (let c = range.c0; c <= range.c1; c++) {
     const header = sheet.getDisplayValue(colLabel(c) + (range.r0 + 1), sn)
-    opts.push({ label: header || colLabel(c), value: c })
+    opts.push({
+      label: header || colLabel(c),
+      value: c,
+    })
   }
   return opts
 }
@@ -6594,7 +7084,6 @@ function slicerColMenu(sl) {
     onClick: () => changeSlicerColumn(sl, o.value),
   }))
 }
-
 function slicerValues(sl) {
   return sortFilter.getColumnValues(sl.col, sheet.getCurrentSheet())
 }
@@ -6628,7 +7117,14 @@ function selectAllSlicer(sl) {
 // pick just the values they want — the Google-Sheets filter idiom.
 function clearSlicerValues(sl) {
   const sn = sheet.getCurrentSheet()
-  sortFilter.setFilter(sl.col, { operator: 'inSet', values: [] }, sn)
+  sortFilter.setFilter(
+    sl.col,
+    {
+      operator: 'inSet',
+      values: [],
+    },
+    sn,
+  )
   _repopulateGrid()
   _applyHiddenRows()
   history.push()
@@ -6655,7 +7151,15 @@ function _applySlicerFilter(sl, set, all) {
   // All-checked is identical to no filter — clear the column instead of storing
   // every value (mirrors applyFilter).
   if (set.size === all.length) sortFilter.clearFilter(sl.col, sn)
-  else sortFilter.setFilter(sl.col, { operator: 'inSet', values: [...set] }, sn)
+  else
+    sortFilter.setFilter(
+      sl.col,
+      {
+        operator: 'inSet',
+        values: [...set],
+      },
+      sn,
+    )
   _repopulateGrid()
   _applyHiddenRows()
   history.push()
@@ -6698,7 +7202,13 @@ function removeSlicer(sl) {
   isDirty.value = true
 }
 function startSlicerDrag(sl, e) {
-  _slicerDrag = { id: sl.id, sx: e.clientX, sy: e.clientY, ox: sl.x, oy: sl.y }
+  _slicerDrag = {
+    id: sl.id,
+    sx: e.clientX,
+    sy: e.clientY,
+    ox: sl.x,
+    oy: sl.y,
+  }
   window.addEventListener('mousemove', _onSlicerDrag)
   window.addEventListener('mouseup', _endSlicerDrag)
 }
@@ -6722,7 +7232,6 @@ function _endSlicerDrag() {
   window.removeEventListener('mousemove', _onSlicerDrag)
   window.removeEventListener('mouseup', _endSlicerDrag)
 }
-
 function openFilterPanel(colIdx) {
   const sn = sheet.getCurrentSheet()
   const cfg = sortFilter.getFilterConfig(sn)
@@ -6788,7 +7297,6 @@ function openQuickFilterForActive() {
     // the column visible here so the panel has a valid anchor on open.
   })
 }
-
 function applyFilter() {
   const sn = sheet.getCurrentSheet()
   if (filterPanel.mode === 'values') {
@@ -6799,14 +7307,20 @@ function applyFilter() {
     } else {
       sortFilter.setFilter(
         filterPanel.col,
-        { operator: 'inSet', values: [...filterPanel.valueSet] },
+        {
+          operator: 'inSet',
+          values: [...filterPanel.valueSet],
+        },
         sn,
       )
     }
   } else {
     sortFilter.setFilter(
       filterPanel.col,
-      { operator: filterPanel.operator, value: filterPanel.value },
+      {
+        operator: filterPanel.operator,
+        value: filterPanel.value,
+      },
       sn,
     )
   }
@@ -6816,7 +7330,6 @@ function applyFilter() {
   history.push()
   isDirty.value = true
 }
-
 function clearFilterCol() {
   sortFilter.clearFilter(filterPanel.col, sheet.getCurrentSheet())
   filterPanel.open = false
@@ -6825,7 +7338,6 @@ function clearFilterCol() {
   history.push()
   isDirty.value = true
 }
-
 function doSort(colIdx, dir) {
   const sn = sheet.getCurrentSheet()
   // Sorting permutes values across the filter range — refuse if it overlaps
@@ -6840,12 +7352,6 @@ function doSort(colIdx, dir) {
   syncFlags()
   isDirty.value = true // sort mutates cell values
 }
-
-function doSortActive(dir) {
-  const p = parseCellId(activeCell.value)
-  doSort(p ? p.col : 0, dir)
-}
-
 // ── Context menu ──────────────────────────────────────────────────────────────
 
 const showRenameDialog = ref(false)
@@ -6853,7 +7359,6 @@ const renameValue = ref('')
 const renameError = ref('')
 const renameInputRef = ref(null)
 let _renameTarget = ''
-
 function openRenameDialog(name) {
   // Reachable via dbl-click on the tab even when the menu is suppressed — gate
   // here so rename is denied for viewers regardless of entry point.
@@ -6878,7 +7383,6 @@ function openRenameDialog(name) {
     }),
   )
 }
-
 function confirmRename() {
   const oldName = _renameTarget
   const newName = renameValue.value
@@ -6894,14 +7398,12 @@ function confirmRename() {
   history.push()
   isDirty.value = true
 }
-
 function doDuplicateSheet(name) {
   tabMenu.open = false
   _duplicateSheet(name)
   history.push()
   isDirty.value = true
 }
-
 function doDeleteSheet(name) {
   tabMenu.open = false
   if (_deleteSheet(name)) {
@@ -6909,7 +7411,6 @@ function doDeleteSheet(name) {
     isDirty.value = true
   }
 }
-
 function _onDocMouseDown(e) {
   // Close context menus only when clicking OUTSIDE them. Never close on
   // mousedown when clicking a button inside — that would remove the element
@@ -6957,7 +7458,6 @@ function _applyRowStructural(mapRow) {
   markEdited()
   recomputePivotsForSheet(sn)
 }
-
 function doInsertRow(below = false, count = 1) {
   contextMenu.open = false
   const atRow = contextMenu.targetRow + (below ? 1 : 0)
@@ -6981,7 +7481,11 @@ function setFontFamily(keyOrStack) {
   // Accept either a short key ('inter', 'mono', …) from the toolbar select or
   // a raw CSS font-family stack (used by F4 replay). Normalize to the stack.
   const stack = FONT_FAMILY_STACK[keyOrStack] || keyOrStack
-  _recordScopedFormatOp(_patchFmtOps({ fontFamily: stack }))
+  _recordScopedFormatOp(
+    _patchFmtOps({
+      fontFamily: stack,
+    }),
+  )
   refreshActiveFormat()
   grid?.render()
   syncFlags()
@@ -6998,16 +7502,16 @@ function _patchFmtOps(patch) {
     cells: (ids, sn) => formats.applyToRange(ids, patch, sn),
   }
 }
-
 const _clampFont = (v) => Math.max(8, Math.min(72, v))
-
 function adjustFontSize(delta) {
   _recordScopedFormatOp({
     cols: (cols, sn) => {
       for (const c of cols)
         formats.setCol(
           c,
-          { fontSize: _clampFont((formats.getCol(c, sn).fontSize || 13) + delta) },
+          {
+            fontSize: _clampFont((formats.getCol(c, sn).fontSize || 13) + delta),
+          },
           sn,
         )
     },
@@ -7015,7 +7519,9 @@ function adjustFontSize(delta) {
       for (const r of rows)
         formats.setRow(
           r,
-          { fontSize: _clampFont((formats.getRow(r, sn).fontSize || 13) + delta) },
+          {
+            fontSize: _clampFont((formats.getRow(r, sn).fontSize || 13) + delta),
+          },
           sn,
         )
     },
@@ -7023,7 +7529,9 @@ function adjustFontSize(delta) {
       for (const id of ids)
         formats.applyToRange(
           [id],
-          { fontSize: _clampFont((formats.get(id, sn).fontSize || 13) + delta) },
+          {
+            fontSize: _clampFont((formats.get(id, sn).fontSize || 13) + delta),
+          },
           sn,
         )
     },
@@ -7040,14 +7548,17 @@ function adjustFontSize(delta) {
 // input on commit (Enter / blur).
 function setFontSize(px) {
   const n = _clampFont(parseInt(px, 10) || 13)
-  _recordScopedFormatOp(_patchFmtOps({ fontSize: n }))
+  _recordScopedFormatOp(
+    _patchFmtOps({
+      fontSize: n,
+    }),
+  )
   refreshActiveFormat()
   grid?.render()
   syncFlags()
   recordAction?.('setFontSize', [n])
   isDirty.value = true
 }
-
 function onFontSizeInput(e) {
   setFontSize(e.target.value)
   // Snap the displayed value back to the clamped result.
@@ -7068,8 +7579,19 @@ function onFontSizeInput(e) {
 function _autoLinkChange(id, value, before, sn) {
   const url = detectHyperlink(String(value ?? ''))
   const prev = formats.getCellFormat(id, sn).hyperlink || null
-  if (url) return prev === url ? null : { id, url }
-  return prev && isAutoLinkText(before, prev) ? { id, url: null } : null
+  if (url)
+    return prev === url
+      ? null
+      : {
+          id,
+          url,
+        }
+  return prev && isAutoLinkText(before, prev)
+    ? {
+        id,
+        url: null,
+      }
+    : null
 }
 
 // cells: [{ id, value, before }] — single-cell commits and Ctrl+Enter batch
@@ -7081,14 +7603,20 @@ function _maybeAutoLink(cells, sn) {
     changes.map((c) => c.id),
     sn,
     () => {
-      for (const { id, url } of changes) formats.applyToRange([id], { hyperlink: url }, sn)
+      for (const { id, url } of changes)
+        formats.applyToRange(
+          [id],
+          {
+            hyperlink: url,
+          },
+          sn,
+        )
     },
   )
   refreshActiveFormat()
   grid?.render()
   syncFlags()
 }
-
 function openHyperlinkDialog() {
   const id = activeCell.value
   const cur = sheet.getCell(id)
@@ -7097,7 +7625,6 @@ function openHyperlinkDialog() {
   hyperlinkUrl.value = fmt.hyperlink || ''
   showHyperlinkDialog.value = true
 }
-
 function confirmHyperlink() {
   const url = (hyperlinkUrl.value || '').trim()
   if (!url) {
@@ -7111,7 +7638,13 @@ function confirmHyperlink() {
     return
   }
   if (hyperlinkText.value !== sheet.getCell(id)) sheet.setCell(id, hyperlinkText.value)
-  formats.applyToRange([id], { hyperlink: url }, sh)
+  formats.applyToRange(
+    [id],
+    {
+      hyperlink: url,
+    },
+    sh,
+  )
   history.push() // post-mutate
   refreshActiveFormat()
   grid?.render()
@@ -7119,11 +7652,16 @@ function confirmHyperlink() {
   isDirty.value = true
   showHyperlinkDialog.value = false
 }
-
 function removeHyperlink() {
   const id = activeCell.value
   const sh = sheet.getCurrentSheet()
-  formats.applyToRange([id], { hyperlink: null }, sh)
+  formats.applyToRange(
+    [id],
+    {
+      hyperlink: null,
+    },
+    sh,
+  )
   history.push() // post-mutate
   refreshActiveFormat()
   grid?.render()
@@ -7143,8 +7681,10 @@ const linkCard = reactive({
   r: 0,
   c: 0,
   url: '',
-  anchor: null, // { x, y } canvas-local px
-  preview: {}, // { loading, error, title, description, favicon, host }
+  anchor: null,
+  // { x, y } canvas-local px
+  preview: {},
+  // { loading, error, title, description, favicon, host }
   offerReplace: false,
 })
 let _linkShowTimer = null
@@ -7164,21 +7704,18 @@ function _onLinkHover(info) {
     _scheduleLinkCardHide()
   }
 }
-
 function _scheduleLinkCardHide() {
   clearTimeout(_linkHideTimer)
   _linkHideTimer = setTimeout(() => {
     linkCard.open = false
   }, 250)
 }
-
 function onLinkCardEnter() {
   clearTimeout(_linkHideTimer)
 }
 function onLinkCardLeave() {
   _scheduleLinkCardHide()
 }
-
 function _openLinkCard(info) {
   const rect = grid?.getCellRect?.(info.r, info.c)
   if (!rect) return
@@ -7196,15 +7733,25 @@ function _openLinkCard(info) {
     r: info.r,
     c: info.c,
     url: info.url,
-    anchor: { x, y },
-    preview: isHttp ? { loading: true } : {},
+    anchor: {
+      x,
+      y,
+    },
+    preview: isHttp
+      ? {
+          loading: true,
+        }
+      : {},
     offerReplace: false,
   })
   if (!isHttp) return
   fetchLinkPreview(info.url).then((res) => {
     // Pointer may have moved on — only fill the card still showing this URL.
     if (!linkCard.open || linkCard.url !== info.url) return
-    linkCard.preview = { ...res, loading: false }
+    linkCard.preview = {
+      ...res,
+      loading: false,
+    }
     linkCard.offerReplace =
       !readOnly.value &&
       !!res.title &&
@@ -7212,41 +7759,46 @@ function _openLinkCard(info) {
       !_cellSilentlyProtected(linkCard.id)
   })
 }
-
 function openLinkCardUrl() {
   window.open(linkCard.url, '_blank', 'noopener,noreferrer')
 }
-
 function editLinkCardCell() {
   linkCard.open = false
   grid?.moveTo?.(linkCard.r, linkCard.c) // onSelect syncs activeCell
   openHyperlinkDialog()
 }
-
 function unlinkLinkCardCell() {
   const sn = sheet.getCurrentSheet()
   const id = linkCard.id
   linkCard.open = false
   if (!id || readOnly.value || _cellBlocked(id, sn)) return
-  _recordFormatOp([id], sn, () => formats.applyToRange([id], { hyperlink: null }, sn))
+  _recordFormatOp([id], sn, () =>
+    formats.applyToRange(
+      [id],
+      {
+        hyperlink: null,
+      },
+      sn,
+    ),
+  )
   refreshActiveFormat()
   grid?.render()
   syncFlags()
   isDirty.value = true
 }
-
 function replaceLinkWithTitle() {
   const sn = sheet.getCurrentSheet()
   const id = linkCard.id
   const title = linkCard.preview?.title
   linkCard.open = false
   if (!id || !title || readOnly.value || _cellBlocked(id, sn)) return
-  const before = { [id]: sheet.getCell(id, sn) }
+  const before = {
+    [id]: sheet.getCell(id, sn),
+  }
   sheet.setCell(id, title, sn)
   _pushEditOp(sn, before, 'Replace URL with title')
   if (activeCell.value === id) formulaValue.value = title
 }
-
 function openInsertMany(kind, below = false) {
   contextMenu.open = false
   insertMany.kind = kind
@@ -7254,14 +7806,12 @@ function openInsertMany(kind, below = false) {
   insertMany.count = 5
   showInsertManyDialog.value = true
 }
-
 function confirmInsertMany() {
   const n = Math.max(1, Math.min(1000, parseInt(insertMany.count, 10) || 1))
   showInsertManyDialog.value = false
   if (insertMany.kind === 'row') doInsertRow(insertMany.below, n)
   else doInsertCol(insertMany.below, n)
 }
-
 function doDeleteRow() {
   contextMenu.open = false
   // Same span logic as doDeleteCol: delete the whole selected row block when
@@ -7301,13 +7851,11 @@ function _applyColStructural(mapCol) {
   markEdited()
   recomputePivotsForSheet(sn)
 }
-
 function doInsertCol(right = false, count = 1) {
   contextMenu.open = false
   const atCol = contextMenu.targetCol + (right ? 1 : 0)
   _applyColStructural(insertMap(atCol, count))
 }
-
 function doDeleteCol() {
   contextMenu.open = false
   // When the right-clicked column is inside a multi-column selection, delete
@@ -7331,7 +7879,13 @@ function doMoveCol(fromCol, toCol, count = 1) {
   // Keep the moved column(s) selected at their new home (Google behaviour), so
   // the header highlight and the status-bar summary track the data that moved.
   const dest = toCol <= fromCol ? toCol : toCol - count
-  grid.setSelection({ r0: 0, c0: dest, r1: 1e7, c1: dest + count - 1, mode: 'col' })
+  grid.setSelection({
+    r0: 0,
+    c0: dest,
+    r1: 1e7,
+    c1: dest + count - 1,
+    mode: 'col',
+  })
 }
 
 // Menu / palette: nudge the targeted column one position. Left drops it before
@@ -7345,14 +7899,12 @@ function doMoveColRight() {
   const c = contextMenu.targetCol
   doMoveCol(c, c + 2, 1)
 }
-
 function doAutoFitCol() {
   contextMenu.open = false
   grid?.autoFitCol(contextMenu.targetCol)
   history.push()
   isDirty.value = true
 }
-
 function doAutoFitRow() {
   contextMenu.open = false
   grid?.autoFitRow(contextMenu.targetRow)
@@ -7366,8 +7918,10 @@ function applyBorder(preset) {
   if (!grid) return
   const { r0, c0, r1, c1 } = grid.getSelection()
   const sheetName = sheet.getCurrentSheet()
-  const b = { style: borderStyle.value, color: borderColor.value }
-
+  const b = {
+    style: borderStyle.value,
+    color: borderColor.value,
+  }
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
       const id = colLabel(c) + (r + 1)
@@ -7377,9 +7931,19 @@ function applyBorder(preset) {
         isRight = c === c1
       let upd = {}
       if (preset === 'none') {
-        upd = { borderTop: null, borderBottom: null, borderLeft: null, borderRight: null }
+        upd = {
+          borderTop: null,
+          borderBottom: null,
+          borderLeft: null,
+          borderRight: null,
+        }
       } else if (preset === 'all') {
-        upd = { borderTop: b, borderBottom: b, borderLeft: b, borderRight: b }
+        upd = {
+          borderTop: b,
+          borderBottom: b,
+          borderLeft: b,
+          borderRight: b,
+        }
       } else if (preset === 'outside') {
         if (isTop) upd.borderTop = b
         if (isBottom) upd.borderBottom = b
@@ -7465,7 +8029,6 @@ function doFreezeRow() {
   history.push()
   isDirty.value = true
 }
-
 function doFreezeCol() {
   contextMenu.open = false
   freezeCols.value = contextMenu.targetCol + 1
@@ -7473,7 +8036,6 @@ function doFreezeCol() {
   history.push()
   isDirty.value = true
 }
-
 function doUnfreezeRows() {
   contextMenu.open = false
   freezeRows.value = 0
@@ -7481,7 +8043,6 @@ function doUnfreezeRows() {
   history.push()
   isDirty.value = true
 }
-
 function doUnfreezeCols() {
   contextMenu.open = false
   freezeCols.value = 0
@@ -7497,7 +8058,6 @@ function doUnfreezeCols() {
 // pushing to the canvas via _applyHiddenRows().
 const manualHiddenRows = reactive(new Set())
 const manualHiddenCols = reactive(new Set())
-
 function _applyHiddenRows() {
   const filterHidden = sortFilter.computeHiddenRows(sheet.getCurrentSheet())
   const union = new Set([...filterHidden, ...manualHiddenRows])
@@ -7509,11 +8069,9 @@ function _applyHiddenRows() {
   // slicer) — refresh any open slicer's checklist so both controls agree.
   slicerVersion.value++
 }
-
 function _applyHiddenCols() {
   grid?.setHiddenCols(new Set(manualHiddenCols))
 }
-
 function doHideRows() {
   contextMenu.open = false
   if (!grid) return
@@ -7523,7 +8081,6 @@ function doHideRows() {
   history.push()
   isDirty.value = true
 }
-
 function doHideCols() {
   contextMenu.open = false
   if (!grid) return
@@ -7533,7 +8090,6 @@ function doHideCols() {
   history.push()
   isDirty.value = true
 }
-
 function doUnhideAllRows() {
   contextMenu.open = false
   manualHiddenRows.clear()
@@ -7541,7 +8097,6 @@ function doUnhideAllRows() {
   history.push()
   isDirty.value = true
 }
-
 function doUnhideAllCols() {
   contextMenu.open = false
   manualHiddenCols.clear()
@@ -7564,7 +8119,11 @@ function diffCells(cells, getCell) {
       after[id] = value
     }
   }
-  return { before, after, refs: Object.keys(after) }
+  return {
+    before,
+    after,
+    refs: Object.keys(after),
+  }
 }
 
 // Snapshot the undo history, sync undo/redo button state, and flag the doc dirty.
@@ -7660,9 +8219,11 @@ function _scanBounds(sheetSn) {
       if (row - 1 > maxRow) maxRow = row - 1
     }
   }
-  return { maxCol, maxRow }
+  return {
+    maxCol,
+    maxRow,
+  }
 }
-
 function _repopulateGrid() {
   if (!grid) return
   const sheetSn = sheet.getCurrentSheet()
@@ -7677,7 +8238,6 @@ function _repopulateGrid() {
     grid.render?.()
     return
   }
-
   grid.clearAll()
   const data = sheet.getRawData()
   const show = showFormulas.value
@@ -7718,7 +8278,6 @@ function _repopulateGrid() {
         if (row - 1 > maxRow) maxRow = row - 1
       }
     }
-
     if (show) {
       grid.setCell(id, String(data[id] ?? ''))
       continue
@@ -7732,7 +8291,6 @@ function _repopulateGrid() {
   }
   _expandGridTo(maxCol, maxRow)
 }
-
 function toggleShowFormulas() {
   showFormulas.value = !showFormulas.value
   _repopulateGrid()

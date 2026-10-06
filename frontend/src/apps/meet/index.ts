@@ -2,7 +2,6 @@ import MeetIcon from '@/apps/meet/AreaIcon.vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
 
-export { createRoom, scheduleMeeting } from '@/apps/meet/client/mutations'
 export type {
   RoomsPostInput as CreateRoomInput,
   RoomsPostOutput as Room,

@@ -11,6 +11,8 @@ import type {
   RtpParameters,
 } from 'mediasoup-client/types'
 
+import { api, client } from '@/api'
+
 import {
   isUnknownRecord,
   normalizeJoinPayload,
@@ -23,7 +25,6 @@ import { getE2EETransformCapability } from './media/e2ee'
 import type { E2eeEpochEnvelope } from './media/E2EEEpochSignaling'
 import { normalizeParticipantData, type ParticipantData } from './media/ParticipantManager'
 import type { SignalChannel } from './media/SignalChannel'
-import { request } from './request'
 import type { ClientTelemetryEvent } from './telemetry/ClientTelemetry'
 
 export interface ConnectionDetails {
@@ -443,7 +444,7 @@ export class SFUClient {
 
       try {
         const response = requireJoinPayload(
-          await request('/api/suite/meet/rooms/guest-tokens', {
+          await client.mutation(api.meet.guests.refreshToken, {
             meeting_id: meetingId,
             guest_id: guestId,
             guest_session_token: guestSessionToken,
@@ -480,7 +481,7 @@ export class SFUClient {
     }
 
     const response = requireJoinPayload(
-      await request('/api/suite/meet/rooms/connections', { meeting_id: meetingId }),
+      await client.mutation(api.meet.rooms.connect, { meeting_id: meetingId }),
       'SFU connection details',
     )
     const authToken = requireString(response.auth_token, 'auth_token', 'SFU connection details')
@@ -633,16 +634,35 @@ export class SFUClient {
             throw new Error('Guest session proof required for token refresh')
           }
           const response = requireJoinPayload(
-            await request(
-              isGuest ? '/api/suite/meet/rooms/guest-tokens' : '/api/suite/meet/rooms/tokens',
-              isGuest
-                ? {
-                    meeting_id: this.connectionDetails.meetingId,
-                    guest_id: this.connectionDetails.userId,
-                    guest_session_token: guestSessionToken,
-                  }
-                : { meeting_id: this.connectionDetails.meetingId },
-            ),
+            await (isGuest
+              ? client.mutation(
+                  api.meet.guests.refreshToken,
+                  {
+                    meeting_id: requireString(
+                      this.connectionDetails.meetingId,
+                      'meeting_id',
+                      'token refresh',
+                    ),
+                    guest_id: requireString(
+                      this.connectionDetails.userId,
+                      'guest_id',
+                      'token refresh',
+                    ),
+                    guest_session_token: guestSessionToken!,
+                  },
+                  { silent: true },
+                )
+              : client.mutation(
+                  api.meet.rooms.refreshToken,
+                  {
+                    meeting_id: requireString(
+                      this.connectionDetails.meetingId,
+                      'meeting_id',
+                      'token refresh',
+                    ),
+                  },
+                  { silent: true },
+                )),
             'SFU token refresh',
           )
           const authToken = requireString(response.auth_token, 'auth_token', 'SFU token refresh')

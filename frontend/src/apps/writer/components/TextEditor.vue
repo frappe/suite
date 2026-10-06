@@ -8,7 +8,7 @@
     :extensions
     @save="
       (manual = false, html, func) => {
-        save(manual, html).then(func)
+        save(manual, html).then(func).catch(reportSaveError)
       }
     "
     @cleanup="cleanup"
@@ -20,6 +20,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { computed, onMounted, provide, ref, watch } from 'vue'
 
+import { reportSaveError } from '@/apps/writer/composables/saveError'
 import { useYjs } from '@/apps/writer/composables/useYjs'
 import { rebuild } from '@/apps/writer/extensions/comments'
 import { getRandomColor } from '@/apps/writer/utils'

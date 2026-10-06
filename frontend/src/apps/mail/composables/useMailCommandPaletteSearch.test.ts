@@ -8,49 +8,52 @@ const accounts = vi.hoisted(() => ({ value: ['work', 'personal'] }))
 // Every payload the search endpoint was submitted with, oldest first.
 const searches = vi.hoisted(() => [] as Record<string, unknown>[])
 
-// Stands in for the real resource in the ways this composable can tell apart: a reply fills `data`
-// and calls back, `reset` empties it, and `abort` leaves it alone — which is how asking again
-// differs from having been answered.
-const answer = vi.hoisted(() => ({
-  value: (_rows?: unknown[], _matched?: number) => {},
+const answer = vi.hoisted(() => ({ value: async (_rows?: unknown[], _matched?: number) => {} }))
+const engines = vi.hoisted(() => ({ current: null as unknown, dispose: () => {} }))
+vi.mock('@vueuse/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@vueuse/core')>()),
+  refDebounced: (value: unknown) => value,
 }))
-
-vi.mock('frappe-ui', async () => {
-  // Reactive like the real one, or a computed over `data` never learns the reply arrived.
-  const { reactive } = await import('vue')
-  const createResource = ({
-    url,
-    onSuccess,
-  }: {
-    url: string
-    onSuccess?: (data: unknown) => void
-  }) => {
-    const resource = reactive({
-      data: null as unknown,
-      submit: Object.assign(
-        (payload: Record<string, unknown>) => {
-          if (!url.endsWith('search_mails')) return
-          searches.push(payload)
-          answer.value = (rows = [], matched = 0) => {
-            resource.data = [rows, matched]
-            onSuccess?.(resource.data)
-          }
+vi.mock('@/api', async () => {
+  const { api: mail } = await import('@/apps/mail/client/generated')
+  const { createApiClient } = await import('@/platform/server-state')
+  const { registration } = await import('@/apps/mail/client/policy')
+  const create = () =>
+    createApiClient(
+      { mail: async () => registration },
+      {
+        persistence: false,
+        transport: {
+          request: async (reference, input) => {
+            if (!reference.path.endsWith('search_mails')) return []
+            searches.push(input)
+            return await new Promise((resolve) => {
+              answer.value = async (rows = [], total = 0) => {
+                resolve({
+                  rows: rows.map((row) => ({ attachments: [], mailboxes: [], ...row })),
+                  total,
+                })
+                await new Promise((done) => setTimeout(done, 0))
+              }
+            })
+          },
         },
-        { cancel: vi.fn() },
-      ),
-      abort: vi.fn(),
-      reset: vi.fn(() => {
-        resource.data = null
-      }),
-      setData: (data: unknown) => {
-        resource.data = data
       },
-    })
-    return resource
+    )
+  let engine: ReturnType<typeof create>
+  engines.dispose = () => {
+    engine?.dispose()
+    engine = create()
   }
-  return { createResource }
+  engines.dispose()
+  return {
+    api: { mail },
+    useQuery: (...args: Parameters<typeof engine.useQuery>) => engine.useQuery(...args),
+  }
 })
-
+async function settle() {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     userResource: { data: { accounts: accounts.value } },
@@ -64,6 +67,7 @@ function openSearch() {
 }
 
 beforeEach(() => {
+  engines.dispose()
   searches.length = 0
   accounts.value = ['work', 'personal']
   localStorage.clear()
@@ -381,23 +385,25 @@ describe('inverting a filter', () => {
 })
 
 describe('whether the results are the answer', () => {
-  it('is pending from the keystroke until the server replies', () => {
+  it('is pending from the keystroke until the server replies', async () => {
     const search = openSearch()
 
     search.query.value = 'invoice'
     search.search('invoice', 'work')
+    await settle()
     expect(search.pending.value).toBe(true)
 
-    answer.value()
+    await answer.value()
 
     expect(search.pending.value).toBe(false)
   })
 
-  it('goes back to pending when the query moves on', () => {
+  it('goes back to pending when the query moves on', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
-    answer.value()
+    await settle()
+    await answer.value()
 
     search.query.value = 'invoices'
 
@@ -406,10 +412,11 @@ describe('whether the results are the answer', () => {
 
   // The previous request is aborted and reset on every keystroke, which stops its loading
   // without answering anything — the flicker that read "No results" mid-word.
-  it('stays pending while a request is replaced rather than answered', () => {
+  it('stays pending while a request is replaced rather than answered', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
+    await settle()
 
     search.cancel()
 
@@ -417,94 +424,107 @@ describe('whether the results are the answer', () => {
   })
 
   // Opening the filter panel and closing it again re-runs the watcher with the search unchanged.
-  it('does not ask the same question twice, so the answer stays on screen', () => {
+  it('does not ask the same question twice, so the answer stays on screen', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
-    answer.value()
+    await settle()
+    await answer.value()
     const asked = searches.length
 
     search.search('invoice', 'work')
+    await settle()
 
     expect(searches.length).toBe(asked)
   })
 
   // The palette clears its query as it closes, which resets the resource; reopened over the
   // same results, it asks the same question — and should get the same answer, not a request.
-  it('hands back the answer it already has when the same search is asked again after a reset', () => {
+  it('hands back the answer it already has when the same search is asked again after a reset', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
-    answer.value([{ thread_id: 't1', account: 'work', from_email: 'a@b.com' }], 3)
+    await settle()
+    await answer.value([{ thread_id: 't1', account: 'work', from_email: 'a@b.com' }], 3)
     const asked = searches.length
 
     search.query.value = ''
     search.search('', 'work')
+    await settle()
     expect(search.results.value).toHaveLength(0)
 
     search.query.value = 'invoice'
     search.search('invoice', 'work')
+    await settle()
 
     expect(searches.length).toBe(asked)
     expect(search.results.value).toHaveLength(1)
     expect(search.pending.value).toBe(false)
   })
 
-  it('asks again once a filter changes the question', () => {
+  it('asks again once a filter changes the question', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
-    answer.value()
+    await settle()
+    await answer.value()
     const asked = searches.length
 
     search.applyFilter('inMailbox', 'mailbox-1')
     search.search('invoice', 'work')
+    await settle()
 
     expect(searches.length).toBe(asked + 1)
   })
 
-  it('asks again when the same words are asked of a different account', () => {
+  it('asks again when the same words are asked of a different account', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
-    answer.value([{ thread_id: 't1', account: 'work', from_email: 'a@b.com' }], 1)
+    await settle()
+    await answer.value([{ thread_id: 't1', account: 'work', from_email: 'a@b.com' }], 1)
     const asked = searches.length
 
     search.search('invoice', 'personal')
+    await settle()
 
     expect(searches.length).toBe(asked + 1)
     expect(searches.at(-1)).toMatchObject({ account: 'personal' })
     expect(search.pending.value).toBe(true)
   })
 
-  it('asks again for a different question once the results have been cleared', () => {
+  it('asks again for a different question once the results have been cleared', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
-    answer.value()
+    await settle()
+    await answer.value()
     const asked = searches.length
 
     search.reset()
     search.query.value = 'receipt'
     search.search('receipt', 'work')
+    await settle()
 
     expect(searches.length).toBe(asked + 1)
   })
 
-  it('is settled when there is nothing to search for', () => {
+  it('is settled when there is nothing to search for', async () => {
     const search = openSearch()
 
     search.query.value = ''
     search.search('', 'work')
+    await settle()
 
     expect(search.pending.value).toBe(false)
   })
 
-  it('is settled while an operator is still being typed', () => {
+  it('is settled while an operator is still being typed', async () => {
     const search = openSearch()
 
     search.query.value = 'from:'
     search.search('from:', 'work')
+    await settle()
 
     expect(search.pending.value).toBe(false)
   })
@@ -513,45 +533,50 @@ describe('whether the results are the answer', () => {
 describe('how many matched', () => {
   const mail = { thread_id: 't1', account: 'work', from_email: 'a@b.com' }
 
-  it('reports the whole count, not the page it was given', () => {
+  it('reports the whole count, not the page it was given', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
+    await settle()
 
-    answer.value([mail], 42)
+    await answer.value([mail], 42)
 
     expect(search.results.value).toHaveLength(1)
     expect(search.total.value).toBe(42)
   })
 
-  it('is nothing before an answer arrives', () => {
+  it('is nothing before an answer arrives', async () => {
     const search = openSearch()
     search.query.value = 'invoice'
     search.search('invoice', 'work')
+    await settle()
 
     expect(search.total.value).toBe(0)
   })
 })
 
 describe('searching every account', () => {
-  it('asks the server for every account only once it is turned on', () => {
+  it('asks the server for every account only once it is turned on', async () => {
     const search = openSearch()
 
     search.search('invoice', 'work')
+    await settle()
     expect(searches.at(-1)).toMatchObject({ all_accounts: false })
 
     search.allAccounts.value = true
     search.search('invoice', 'work')
+    await settle()
 
     expect(searches.at(-1)).toMatchObject({ all_accounts: true })
   })
 
-  it('does not widen a search for someone who only has one account', () => {
+  it('does not widen a search for someone who only has one account', async () => {
     accounts.value = ['work']
     const search = openSearch()
 
     search.allAccounts.value = true
     search.search('invoice', 'work')
+    await settle()
 
     expect(search.searchesAllAccounts.value).toBe(false)
     expect(searches.at(-1)).toMatchObject({ all_accounts: false })

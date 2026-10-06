@@ -4,6 +4,7 @@ import { createSession } from '@/platform/session'
 import { createTransport, TransportError, type Transport } from '@/platform/transport'
 
 import { createLinkStore } from './links'
+import { testClient } from './testClient'
 import { isDriveLocked, unlockNode } from './unlock'
 
 const CODE = 'L000000000000000000001'
@@ -60,8 +61,14 @@ describe('unlocking a password link', () => {
           },
     )
 
-    const wrong = await unlockNode('locked-folder', 'guess', { transport, links })
-    const right = await unlockNode('locked-folder', 'open sesame', { transport, links })
+    const wrong = await unlockNode('locked-folder', 'guess', {
+      client: testClient(transport),
+      links,
+    })
+    const right = await unlockNode('locked-folder', 'open sesame', {
+      client: testClient(transport),
+      links,
+    })
 
     expect([wrong, right]).toEqual([{ status: 'wrong-password' }, { status: 'unlocked' }])
     expect(sent[0]).toEqual({
@@ -79,7 +86,7 @@ describe('unlocking a password link', () => {
     }))
 
     await expect(
-      unlockNode('locked-folder', 'guess', { transport, links: heldLink() }),
+      unlockNode('locked-folder', 'guess', { client: testClient(transport), links: heldLink() }),
     ).resolves.toEqual({
       status: 'locked-out',
       retryAfterMs: 872_000,
@@ -89,7 +96,10 @@ describe('unlocking a password link', () => {
   it('sends nothing when this browser holds no link for the node', async () => {
     const { transport, sent } = unlockServer(() => ({ status: 200, body: { data: {} } }))
 
-    const outcome = await unlockNode('some-other-node', 'guess', { transport, links: heldLink() })
+    const outcome = await unlockNode('some-other-node', 'guess', {
+      client: testClient(transport),
+      links: heldLink(),
+    })
 
     expect(outcome.status).toBe('failed')
     expect(sent).toHaveLength(0)

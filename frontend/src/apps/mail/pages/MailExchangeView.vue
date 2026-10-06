@@ -42,64 +42,44 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Breadcrumbs, createResource, Dropdown } from 'frappe-ui'
+import { Badge, Breadcrumbs, Dropdown } from 'frappe-ui'
 import { Download } from 'lucide-vue-next'
-import { computed, inject } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useQuery } from '@/api'
 import CopyCode from '@/apps/mail/components/CopyCode.vue'
 import { formatBytes, getTheme } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 
 const { id } = defineProps<{ id: string }>()
 
-const user = inject('$user')
-
 const router = useRouter()
 
-const mailExchange = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Mail Exchange',
-    filters: { name: id },
-    fieldname: [
-      'status',
-      'operation',
-      'started_at',
-      'completed_at',
-      'output',
-      'import_format',
-      'export_format',
-    ],
-  }),
-  onSuccess: (data) => {
-    if (!data?.operation) router.replace({ name: 'mail-exchanges' })
+const mailExchange = useQuery(api.mail.exchanges.get, () => ({
+  doctype: 'Mail Exchange',
+  name: id,
+}))
+watch(
+  () => [mailExchange.status, mailExchange.data] as const,
+  ([status, data]) => {
+    if (status === 'error' || (status === 'success' && !data?.operation))
+      router.replace('/mail/mail-exchanges')
   },
-  onError: () => router.replace({ name: 'mail-exchanges' }),
-})
+)
 
 const operationDetails = computed(() => {
   const format =
     mailExchange.data?.operation === 'Import'
       ? mailExchange.data?.import_format
       : mailExchange.data?.export_format
-  return `${format.toUpperCase()} · ${formatSystemDateTime(mailExchange.data?.started_at, 'MMM D, YYYY [at] h:mm A')}`
+  return `${(format ?? '').toUpperCase()} · ${formatSystemDateTime(mailExchange.data?.started_at, 'MMM D, YYYY [at] h:mm A')}`
 })
 
-const attachment = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'File',
-    fieldname: ['file_size', 'file_url', 'file_type', 'file_name'],
-    filters: {
-      attached_to_doctype: 'Mail Exchange',
-      attached_to_name: id,
-      attached_to_field: 'file',
-    },
-  }),
-})
+const attachment = useQuery(api.mail.exchanges.attachment, () => ({
+  doctype: 'Mail Exchange',
+  name: id,
+}))
 
 const dropdownOptions = computed(() => [
   {

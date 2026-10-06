@@ -1,6 +1,6 @@
 <template>
   <DashboardLayout
-area="people"
+    area="people"
     :breadcrumbs="[{ label: __('Contacts') }]"
     :button-label="__('Add Contact')"
     :button-action="() => (showAddContact = true)"
@@ -15,12 +15,12 @@ area="people"
       ref="listView"
       class="flex-1"
       :columns="LIST_COLUMNS"
-      :rows="contacts?.data || []"
+      :rows="rows"
       :options="listOptions"
       row-key="id"
     >
       <ListHeader />
-      <ListRows v-if="contacts?.data?.length" @scroll="loadMoreContacts" />
+      <ListRows v-if="rows.length" @scroll="loadMoreContacts" />
       <ListEmptyState v-else />
       <ListSelectBanner>
         <template #actions>
@@ -40,8 +40,8 @@ area="people"
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn, watchDebounced } from '@vueuse/core'
-import { Button, createResource, Dialog, FormControl, usePageMeta } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Button, Dialog, FormControl, usePageMeta } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListEmptyState,
@@ -50,102 +50,95 @@ import {
   ListSelectBanner,
   ListView,
 } from 'frappe-ui/experimental'
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import { api, useInfiniteQuery, useMutation } from '@/api'
 import AddContactModal from '@/apps/people/components/Modals/AddContactModal.vue'
+import { contactRow } from '@/apps/people/contactRows'
 import { userStore } from '@/apps/people/stores/user'
-import { extractNameFromEmail, raiseToast } from '@/apps/people/utils'
+import { raiseToast } from '@/apps/people/utils'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
-const { accountId } = defineProps<{ accountId: string }>()
-
+const { accountId } = defineProps<{
+  accountId: string
+}>()
 usePageMeta(() => appPageMeta(__('Contacts'), 'People'))
-
-const store = userStore()
-
+userStore()
 const listView = useTemplateRef('listView')
-
 const showAddContact = ref(false)
 const showDeleteContacts = ref(false)
 const search = ref('')
-const limit = ref(50)
-
-const contacts = createResource({
-  url: 'suite.mail.api.contacts.get_contact_cards',
-  auto: true,
-  makeParams: () => ({
-    account: store.accountId,
-    filter: { text: search.value },
-    limit: limit.value,
-  }),
-  transform: (data) =>
-    data.map((c) => {
-      const full_name = c.full_name || extractNameFromEmail(c.emails[0]?.address || '')
-
-      let email = ''
-      if (c.emails.length === 1) email = c.emails[0].address
-      else if (c.emails.length > 1)
-        email = __('{0} + {1} more', [c.emails[0].address, c.emails.length - 1])
-
-      return { ...c, full_name, email }
-    }),
-})
-
-watch(
-  () => store.accountId,
-  () => contacts.reload(),
-)
-
-watchDebounced(() => search.value, contacts.reload, { debounce: 300 })
-
-const loadMoreContacts = useDebounceFn((e) => {
-  const { scrollTop, scrollHeight, clientHeight } = e.target
-  if (scrollTop + clientHeight >= scrollHeight - 10 && contacts.data?.length === limit.value) {
-    limit.value += 50
-    contacts.reload()
-    setTimeout(() => e.target.scrollTo({ top: e.target.scrollHeight, behavior: 'smooth' }), 100)
-  }
-}, 500)
-
-const deleteContacts = createResource({
-  url: 'suite.mail.doctype.contact_card.contact_card.delete_contact_cards',
-  makeParams: () => ({
-    account: store.accountId,
-    ids: Array.from(listView.value?.selections),
-  }),
-  onSuccess: () => {
-    contacts.reload()
+const debouncedSearch = refDebounced(search, 300)
+const contacts = useInfiniteQuery(api.mail.contacts.list, () => ({
+  account: accountId,
+  filter: {
+    text: debouncedSearch.value,
+  },
+  start: 0,
+  limit: 50,
+}))
+const rows = computed(() => contacts.rows.map(contactRow))
+function loadMoreContacts(event: Event) {
+  const target = event.target
+  if (
+    target instanceof HTMLElement &&
+    target.scrollTop + target.clientHeight >= target.scrollHeight - 10
+  )
+    void contacts.fetchNext().catch(() => {})
+}
+const removeContacts = useMutation(api.mail.contacts.delete)
+async function deleteContacts() {
+  try {
+    await removeContacts.run({
+      account: accountId,
+      ids: Array.from(listView.value?.selections ?? [], String),
+    })
     showDeleteContacts.value = false
     raiseToast(__('Contacts deleted.'))
     listView.value?.toggleAllRows()
-  },
-  onError: (error) => {
-    showDeleteContacts.value = false
-    raiseToast(error.messages[0], 'error')
-  },
-})
-
+  } catch {
+    /* Keep selections and the dialog after refusal. */
+  }
+}
 const listOptions = computed(() => ({
   showTooltip: false,
-  emptyState: { description: contacts.loading ? __('Loading...') : __('No contacts found.') },
-  getRowRoute: (row) => ({
+  emptyState: {
+    description: contacts.isFetching ? __('Loading...') : __('No contacts found.'),
+  },
+  getRowRoute: (row: { id: string }) => ({
     name: 'people-contact',
-    params: { accountId, contactName: row.id },
+    params: {
+      accountId,
+      contactName: row.id,
+    },
   }),
 }))
-
 const LIST_COLUMNS = [
-  { label: __('Name'), key: 'full_name' },
-  { label: __('Kind'), key: 'kind' },
-  { label: __('Email'), key: 'email' },
+  {
+    label: __('Name'),
+    key: 'full_name',
+  },
+  {
+    label: __('Kind'),
+    key: 'kind',
+  },
+  {
+    label: __('Email'),
+    key: 'email',
+  },
 ]
-
 const DELETE_CONTACTS_OPTIONS = {
   title: __('Delete Contacts'),
   message: __('Are you sure you want to delete the selected contacts?'),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
-  actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteContacts.submit }],
+  theme: 'amber' as const,
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid' as const,
+      onClick: deleteContacts,
+    },
+  ],
 }
 </script>

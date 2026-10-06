@@ -98,7 +98,7 @@ const options = computed(() => {
       },
       {
         label: __('Block'),
-        variant: 'solid',
+        variant: 'solid' as const,
         autofocus: true,
         disabled: isMultiple.value && count === 0,
         onClick: handleBlock,

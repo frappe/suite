@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from functools import cache, lru_cache
-from typing import Any
+from typing import Any, Literal
 
 import frappe
 
@@ -40,6 +40,12 @@ class Route:
     output: Any = None
     entity: dict[str, str] | None = None
     stream: bool = False
+    response_bytes: bool = False
+    kind: Literal["query", "mutation"] | None = None
+    public_name: str | dict[str, str] | None = None
+    page: dict[str, str] | None = None
+    id: str | None = None
+    envelope: Literal["data", "message"] = "data"
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,8 @@ class HttpOwner:
     routes: tuple[Route, ...]
     unknown: str = "unknown"
     strip_owner: bool = True
+    # Existing Framework endpoints have contracts without new resource aliases.
+    contract_routes: tuple[Route, ...] = ()
 
 
 @dataclass(frozen=True)

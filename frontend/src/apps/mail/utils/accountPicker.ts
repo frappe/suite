@@ -1,6 +1,7 @@
-import { watchDebounced } from '@vueuse/core'
-import { createResource } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
 import { computed, reactive, ref, watch, type Ref } from 'vue'
+
+import { api, useQuery } from '@/api'
 
 export type AccountOption = { id: string; name: string; email: string }
 
@@ -11,16 +12,14 @@ export function useAccountPicker(selected: Ref<string[]>, exclude: () => string[
   const query = ref('')
   const picked = ref<AccountOption[]>([])
 
-  const accounts = createResource({
-    url: 'suite.mail.api.admin.get_accounts',
-    makeParams: () => ({ search: query.value.trim() || undefined }),
-    auto: true,
-  })
-  watchDebounced(query, () => accounts.reload(), { debounce: 300 })
+  const search = refDebounced(query, 300)
+  const accounts = useQuery(api.mail.admin.members.accounts, () => ({
+    search: search.value.trim() || undefined,
+  }))
 
   watch(selected, (ids) => {
     const known = new Map<string, AccountOption>(
-      [...picked.value, ...((accounts.data || []) as AccountOption[])].map((a) => [a.id, a]),
+      [...picked.value, ...(accounts.data ?? [])].map((a) => [a.id, a]),
     )
     picked.value = ids.map((id) => known.get(id)).filter((a): a is AccountOption => !!a)
   })
@@ -28,7 +27,7 @@ export function useAccountPicker(selected: Ref<string[]>, exclude: () => string[
   const options = computed(() => {
     const excluded = new Set(exclude())
     const seen = new Set<string>()
-    return [...picked.value, ...((accounts.data || []) as AccountOption[])]
+    return [...picked.value, ...(accounts.data ?? [])]
       .filter((a) => !excluded.has(a.id) && !seen.has(a.id) && seen.add(a.id))
       .map((a) => ({ label: a.email, value: a.id }))
   })
@@ -36,8 +35,8 @@ export function useAccountPicker(selected: Ref<string[]>, exclude: () => string[
   const reset = () => {
     query.value = ''
     picked.value = []
-    accounts.reload()
+    accounts.refetch().catch(() => {})
   }
 
-  return reactive({ query, options, loading: computed(() => accounts.loading), reset })
+  return reactive({ query, options, loading: computed(() => accounts.isFetching), reset })
 }

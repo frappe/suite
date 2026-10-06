@@ -1,9 +1,9 @@
 <template>
-  <Dialog v-if="signature?.doc" v-model:open="show" v-bind="addSignatureOptions">
+  <Dialog v-if="selected" v-model:open="show" v-bind="addSignatureOptions">
     <template #default>
       <div class="space-y-4">
         <FormControl
-          v-model="signature.doc.signature_name"
+          v-model="draft.signature_name"
           :label="__('Signature Name')"
           :placeholder="__('Work signature')"
           variant="outline"
@@ -15,8 +15,8 @@
             :extensions="[CustomParagraphExtension]"
             :fixed-menu="buttons"
             :placeholder="__('Write your signature here')"
-            :content="signature.doc.html_body"
-            @change="(val: string) => (signature.doc.html_body = val)"
+            :content="draft.html_body"
+            @change="(val: string) => (draft.html_body = val)"
           />
         </div>
       </div>
@@ -25,10 +25,11 @@
 </template>
 
 <script setup lang="ts">
-import { createDocumentResource, Dialog, FormControl } from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { TextEditor } from 'frappe-ui/experimental'
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
+import { api, useMutation, useQuery } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
@@ -41,45 +42,39 @@ const emit = defineEmits(['reloadSignatures'])
 
 const { buttons } = useTextEditorButtons()
 
-const signature = ref()
-
-const getSignature = () =>
-  createDocumentResource({
-    doctype: 'Mail Signature',
-    name: signatureID,
-    setValue: {
-      onSuccess: () => {
-        show.value = false
-        raiseToast(__('Signature updated.'))
-        emit('reloadSignatures')
-      },
-      onError: (error) => {
-        raiseToast(error.messages[0], 'error')
-        signature.value.reload()
-      },
-    },
-  })
+const signatures = useQuery(api.mail.signatures.list, () => (show.value ? {} : false))
+const selected = computed(() =>
+  signatures.data?.find((signature) => signature.name === signatureID),
+)
+const draft = reactive({ signature_name: '', html_body: '' })
+watch(
+  selected,
+  (signature) => {
+    if (signature)
+      Object.assign(draft, {
+        signature_name: signature.signature_name,
+        html_body: signature.html_body ?? '',
+      })
+  },
+  { immediate: true },
+)
+const updateSignature = useMutation(api.mail.signatures.update)
+async function save() {
+  await updateSignature.run({ name: signatureID, ...draft })
+  show.value = false
+  raiseToast(__('Signature updated.'))
+  emit('reloadSignatures')
+}
 
 const addSignatureOptions = computed(() => ({
   title: __('Edit Signature'),
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
-      disabled: !signature.value.doc.signature_name || !signature.value.doc.html_body,
-      onClick: () => {
-        signature.value.save.submit()
-        show.value = false
-      },
+      variant: 'solid' as const,
+      disabled: !draft.signature_name || !draft.html_body,
+      onClick: () => save().catch(() => {}),
     },
   ],
 }))
-
-watch(
-  show,
-  (val) => {
-    if (val) signature.value = getSignature()
-  },
-  { immediate: true },
-)
 </script>

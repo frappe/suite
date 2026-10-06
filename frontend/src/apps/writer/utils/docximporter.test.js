@@ -11,13 +11,17 @@ import { TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
 
 const uploadMock = vi.fn()
 // Every Drive request the importer makes, as `METHOD path`.
-const driveRequests = []
-vi.stubGlobal('fetch', async (url, init) => {
-  driveRequests.push(`${init.method} ${url}`)
-  // A batch answers with the nodes it changed; here every node succeeds.
-  const nodes = init.body ? JSON.parse(init.body).nodes : undefined
-  const data = nodes ? { ok: nodes, failed: [] } : {}
-  return new Response(JSON.stringify({ data }), { headers: { 'Content-Type': 'application/json' } })
+const { driveRequests } = vi.hoisted(() => {
+  const driveRequests = []
+  vi.stubGlobal('fetch', async (url, init) => {
+    driveRequests.push(`${init.method} ${url}`)
+    const nodes = init.body ? JSON.parse(init.body).nodes : undefined
+    const data = nodes ? { ok: nodes, failed: [] } : {}
+    return new Response(JSON.stringify({ data }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
+  return { driveRequests }
 })
 const toastMock = { success: vi.fn(), error: vi.fn() }
 
@@ -335,7 +339,7 @@ describe('importDocx', () => {
     })
 
     expect(toastMock.error).toHaveBeenCalled()
-    expect(driveRequests).toEqual([]) // nothing was uploaded, so nothing to roll back
+    expect(driveRequests.filter((request) => request.includes('/api/suite/drive/'))).toEqual([]) // nothing was uploaded, so nothing to roll back
     expect(tabsIn(editor.state.doc)).toHaveLength(0)
     expect(editor.getText()).toBe('Original text')
   })
@@ -394,7 +398,7 @@ describe('importDocx', () => {
     })
 
     // Drive purges only a trash root, so the image goes to the trash first.
-    expect(driveRequests).toEqual([
+    expect(driveRequests.filter((request) => request.includes('/api/suite/drive/'))).toEqual([
       'POST /api/suite/drive/nodes/batch',
       'POST /api/suite/drive/nodes/batch/purge',
     ])

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { useMediaQuery, useNow } from '@vueuse/core'
-import { Button, useCall } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useQuery } from '@/api'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
-import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 const initializing = ref(true)
@@ -79,10 +79,9 @@ const now = useNow({ interval: 30_000 })
 const isMobile = useMediaQuery('(max-width: 767px)')
 
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
-const session = useSession()
 // The window follows the same clock as the Today/Tomorrow groups below, so a tab
 // left open across midnight asks for the new tomorrow instead of the one it
-// fetched when it mounted. `refetch` sends that request when the window moves.
+// fetched when it mounted. The query follows the window, so moving it refetches.
 const today = computed(() => dayjs(now.value).startOf('day'))
 const fromDate = computed(() => today.value.format('YYYY-MM-DD[T]HH:mm:ss'))
 const toDate = computed(() =>
@@ -90,29 +89,16 @@ const toDate = computed(() =>
 )
 const timeZone = timezone()
 
-const upcomingEvents = useCall({
-  url: '/api/v2/method/suite.calendar.api.get_calendar_events',
-  immediate: false,
-  refetch: true,
-  cacheKey:
-    session.user.value?.id && calendarStore.accountId
-      ? [
-          'meet-calendar-events',
-          window.location.origin,
-          session.user.value.id,
-          calendarStore.accountId,
-          fromDate.value,
-          toDate.value,
-          timeZone,
-        ]
-      : undefined,
-  params: () => ({
-    account: calendarStore.accountId,
-    from_date: fromDate.value,
-    to_date: toDate.value,
-    time_zone: timeZone,
-  }),
-})
+const upcomingEvents = useQuery(api.calendar.events.window, () =>
+  calendarStore.accountId
+    ? {
+        account: calendarStore.accountId,
+        from_date: fromDate.value,
+        to_date: toDate.value,
+        time_zone: timeZone,
+      }
+    : false,
+)
 
 const meetings = computed(() => {
   const currentTime = dayjs(now.value)
@@ -200,10 +186,9 @@ const joinMeeting = (event: CalendarEvent) => {
 const reload = async () => {
   initializing.value = true
   try {
-    if (accountError.value) await calendarStore.userResource.reload()
-    else await calendarStore.userResource.promise
+    await calendarStore.loadUser()
     accountError.value = false
-    if (calendarStore.accountId) await upcomingEvents.reload()
+    if (calendarStore.accountId) await upcomingEvents.refetch()
   } catch (error) {
     accountError.value = true
     console.warn('Could not load upcoming calendar meetings:', error)
@@ -221,7 +206,7 @@ defineExpose({ reload })
   <section :aria-label="__('Scheduled meetings')">
     <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Upcoming') }}</h2>
     <div
-      v-if="(initializing || upcomingEvents.loading) && upcomingEvents.data == null"
+      v-if="(initializing || upcomingEvents.isFetching) && upcomingEvents.data == null"
       class="py-8 text-center text-base text-ink-gray-5"
       role="status"
     >

@@ -1,7 +1,9 @@
 import { toast } from 'frappe-ui'
+import { toValue, type MaybeRefOrGetter } from 'vue'
+
+import { api, client } from '@/api'
 
 import { getErrorMessage } from '../utils/error'
-import { submit, type Call } from '../utils/request'
 import type { LobbyStore } from './useLobbyStore'
 
 interface LobbyAPI {
@@ -10,18 +12,19 @@ interface LobbyAPI {
   rejectUser: (userId: string) => Promise<void>
 }
 
-interface LobbyMeetingDoc {
-  approveJoinRequest: Call<unknown, { user_id: string }>
-  approveAllJoinRequests: Call<unknown>
-  rejectJoinRequest: Call<unknown, { user_id: string }>
-}
-
-export function useLobby(deps: { lobbyStore: LobbyStore; meetingDoc: LobbyMeetingDoc }): LobbyAPI {
-  const { lobbyStore, meetingDoc } = deps
+export function useLobby(deps: {
+  lobbyStore: LobbyStore
+  meetingId: MaybeRefOrGetter<string>
+}): LobbyAPI {
+  const { lobbyStore, meetingId } = deps
 
   const approveUser = async (userId: string) => {
     try {
-      await submit(meetingDoc.approveJoinRequest, { user_id: userId })
+      await client.mutation(
+        api.meet.rooms.approve,
+        { name: toValue(meetingId), user_id: userId },
+        { silent: true },
+      )
 
       lobbyStore.removeLobbyUser(userId)
     } catch (error) {
@@ -32,7 +35,11 @@ export function useLobby(deps: { lobbyStore: LobbyStore; meetingDoc: LobbyMeetin
 
   const approveAllUsers = async () => {
     try {
-      await submit(meetingDoc.approveAllJoinRequests)
+      await client.mutation(
+        api.meet.rooms.approveAll,
+        { name: toValue(meetingId) },
+        { silent: true },
+      )
 
       lobbyStore.setLobbyUsers([])
     } catch (error) {
@@ -43,7 +50,11 @@ export function useLobby(deps: { lobbyStore: LobbyStore; meetingDoc: LobbyMeetin
 
   const rejectUser = async (userId: string) => {
     try {
-      await submit(meetingDoc.rejectJoinRequest, { user_id: userId })
+      await client.mutation(
+        api.meet.rooms.reject,
+        { name: toValue(meetingId), user_id: userId },
+        { silent: true },
+      )
 
       lobbyStore.removeLobbyUser(userId)
     } catch (error) {

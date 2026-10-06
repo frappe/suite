@@ -24,7 +24,7 @@
     "format:check": "prettier --check .",
     "lint": "node scripts/lint.mjs",
     "lint:fix": "node scripts/lint.mjs --fix",
-    "check:contract": "node scripts/generate-contract.mjs && git diff --exit-code --stat -- ':(glob)src/**/generated.ts'",
+    "check:contract": "node scripts/generate-contract.mjs --check",
     "check:untranslated": "node scripts/check-untranslated.mjs",
     "check:import-boundaries": "node scripts/check-import-boundaries.mjs",
     "check:bundle-budget": "node scripts/check-bundle-budget.mjs",

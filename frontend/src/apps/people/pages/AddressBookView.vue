@@ -1,9 +1,9 @@
 <template>
   <DashboardLayout
-v-if="addressBook?.doc"
+    v-if="addressBook.data"
     area="people"
     :breadcrumbs
-    :badge-label="addressBook.doc?.default ? __('Default') : ''"
+    :badge-label="addressBook.data?.default ? __('Default') : ''"
     badge-theme="blue"
   >
     <template #actions>
@@ -17,8 +17,11 @@ v-if="addressBook?.doc"
         :button-label="__('Edit')"
         @action="showEditGeneral = true"
       >
-        <InformationField :label="__('Name')" :value="addressBook.doc._name" />
-        <InformationField :label="__('Description')" :value="addressBook.doc.description" />
+        <InformationField :label="__('Name')" :value="addressBook.data._name" />
+        <InformationField
+          :label="__('Description')"
+          :value="addressBook.data.description ?? undefined"
+        />
         <InformationField
           :label="__('Total Contacts')"
           :value="totalContacts.data?.toString() || '0'"
@@ -34,16 +37,16 @@ v-if="addressBook?.doc"
           </FormControl>
 
           <ListView
-            v-if="contacts?.data"
+            v-if="rows"
             ref="listView"
             :columns="LIST_COLUMNS"
-            :rows="contacts?.data"
+            :rows="rows"
             :options="LIST_OPTIONS"
             row-key="id"
             class="max-h-[73vh] min-h-72 flex-1 overflow-auto"
           >
             <ListHeader />
-            <ListRows v-if="contacts.data.length" @scroll="loadMoreContacts" />
+            <ListRows v-if="rows.length" @scroll="loadMoreContacts" />
             <ListEmptyState v-else />
             <ListSelectBanner>
               <template #actions>
@@ -62,42 +65,27 @@ v-if="addressBook?.doc"
   </DashboardLayout>
 
   <EditAddressBookModal
-    v-if="addressBook?.originalDoc"
+    v-if="addressBook.data"
     v-model="showEditGeneral"
-    :name="addressBook.doc._name"
-    :description="addressBook.doc.description"
-    :is-default="!!addressBook.doc.default"
-    @save="
-      (val) => {
-        addressBook.doc._name = val.name
-        addressBook.doc.description = val.description
-        addressBook.doc.default = Number(val.isDefault)
-        addressBook.save.submit()
-      }
-    "
+    :name="addressBook.data._name"
+    :description="addressBook.data.description ?? undefined"
+    :is-default="!!addressBook.data.default"
+    :save="saveGeneral"
   />
   <Dialog v-model:open="showDeleteAddressBook" v-bind="deleteAddressBookOptions" />
 
   <AddAddressBookContactsModal
-    v-if="addressBook?.originalDoc"
+    v-if="addressBook.data"
     v-model="showAddContacts"
-    :current-contacts="contacts.data?.map((c) => c.id) || []"
-    @add="(selections) => addContacts.submit(selections)"
+    :current-contacts="rows.map((c) => c.id) || []"
+    :save="addContacts"
   />
   <Dialog v-model:open="showRemoveContacts" v-bind="removeContactsOptions" />
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn, watchDebounced } from '@vueuse/core'
-import {
-  Button,
-  createDocumentResource,
-  createResource,
-  Dialog,
-  Dropdown,
-  FormControl,
-  usePageMeta,
-} from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Button, Dialog, Dropdown, FormControl, usePageMeta } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListEmptyState,
@@ -110,169 +98,165 @@ import { Pin, Trash2 } from 'lucide-vue-next'
 import { computed, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
+import AddAddressBookContactsModal from '@/apps/people/components/Modals/AddAddressBookContactsModal.vue'
+import EditAddressBookModal from '@/apps/people/components/Modals/EditAddressBookModal.vue'
+import { contactRow } from '@/apps/people/contactRows'
+import { userStore } from '@/apps/people/stores/user'
+import { raiseToast } from '@/apps/people/utils'
 import DashboardCard from '@/components/dashboard/DashboardCard.vue'
 import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import InformationField from '@/components/dashboard/InformationField.vue'
-import AddAddressBookContactsModal from '@/apps/people/components/Modals/AddAddressBookContactsModal.vue'
-import EditAddressBookModal from '@/apps/people/components/Modals/EditAddressBookModal.vue'
-import { userStore } from '@/apps/people/stores/user'
-import { extractNameFromEmail, raiseToast } from '@/apps/people/utils'
 import { appPageMeta } from '@/utils/documentTitle'
 
 const { accountId, addressBookName } = defineProps<{
   accountId: string
   addressBookName: string
 }>()
-
 const router = useRouter()
-const store = userStore()
-
+userStore()
 const showEditGeneral = ref(false)
 const showDeleteAddressBook = ref(false)
 const showAddContacts = ref(false)
 const showRemoveContacts = ref(false)
-
-const addressBook = createDocumentResource({
-  doctype: 'Address Book',
-  name: `${store.accountId}|${addressBookName}`,
-  onError: () => router.replace({ name: 'people-address-books', params: { accountId } }),
-  setValue: {
-    onSuccess: () => {
-      raiseToast(__('Address book updated.'))
-      store.addressBooks.reload()
+const addressBook = useQuery(api.mail.addressBooks.get, () => ({
+  account: accountId,
+  id: addressBookName,
+}))
+const updateBook = useMutation(api.mail.addressBooks.update)
+async function saveGeneral(value: { name: string; description: string; isDefault: boolean }) {
+  await updateBook.run({
+    account: accountId,
+    id: addressBookName,
+    changes: {
+      _name: value.name,
+      description: value.description,
+      default: value.isDefault,
     },
-    onError: (error) => {
-      raiseToast(error.messages[0], 'error')
-      addressBook.reload()
-    },
-  },
-})
-
+  })
+  raiseToast(__('Address book updated.'))
+}
 const search = ref('')
-const limit = ref(50)
-
-const contacts = createResource({
-  url: 'suite.mail.api.contacts.get_contact_cards',
-  auto: true,
-  makeParams: () => ({
-    account: store.accountId,
-    filter: { inAddressBook: addressBookName, text: search.value },
-    limit: limit.value,
-  }),
-  transform: (data) =>
-    data.map((c) => {
-      const full_name = c.full_name || extractNameFromEmail(c.emails[0]?.address || '')
-
-      let email = ''
-      if (c.emails.length === 1) email = c.emails[0].address
-      else if (c.emails.length > 1)
-        email = __('{0} + {1} more', [c.emails[0].address, c.emails.length - 1])
-
-      return { ...c, full_name, email }
-    }),
-  cache: ['addressBookContacts', addressBookName, search.value, limit.value],
-})
-
-const totalContacts = createResource({
-  url: 'suite.mail.api.contacts.get_address_book_contact_count',
-  auto: true,
-  makeParams: () => ({ account: store.accountId, address_book: addressBookName }),
-  cache: ['addressBookContactCount', addressBookName],
-})
-
-watchDebounced(() => search.value, contacts.reload, { debounce: 300 })
-
-const loadMoreContacts = useDebounceFn((e) => {
-  const { scrollTop, scrollHeight, clientHeight } = e.target
-  if (scrollTop + clientHeight >= scrollHeight - 10 && contacts.data?.length === limit.value) {
-    limit.value += 50
-    contacts.reload()
-    setTimeout(() => e.target.scrollTo({ top: e.target.scrollHeight, behavior: 'smooth' }), 100)
-  }
-}, 500)
-
-const addressBookDisplay = computed(() => addressBook.doc?._name || addressBookName)
-
+const debouncedSearch = refDebounced(search, 300)
+const contacts = useInfiniteQuery(api.mail.contacts.list, () => ({
+  account: accountId,
+  filter: {
+    inAddressBook: addressBookName,
+    text: debouncedSearch.value,
+  },
+  start: 0,
+  limit: 50,
+}))
+const rows = computed(() => contacts.rows.map(contactRow))
+const totalContacts = useQuery(api.mail.addressBooks.contactCount, () => ({
+  account: accountId,
+  address_book: addressBookName,
+}))
+function loadMoreContacts(event: Event) {
+  const target = event.target
+  if (
+    target instanceof HTMLElement &&
+    target.scrollTop + target.clientHeight >= target.scrollHeight - 10
+  )
+    void contacts.fetchNext().catch(() => {})
+}
+const addressBookDisplay = computed(() => addressBook.data?._name || addressBookName)
 usePageMeta(() => appPageMeta(addressBookDisplay.value, 'People'))
-
 const breadcrumbs = computed(() => [
-  { label: __('Address Books'), route: '/mail/address-books' },
-  { label: addressBookDisplay.value },
+  {
+    label: __('Address Books'),
+    route: '/mail/address-books',
+  },
+  {
+    label: addressBookDisplay.value,
+  },
 ])
-
-const deleteAddressBook = createResource({
-  url: 'suite.mail.doctype.address_book.address_book.delete_address_books',
-  makeParams: () => ({ account: store.accountId, ids: [addressBookName] }),
-  onSuccess: () => {
+const deleteBook = useMutation(api.mail.addressBooks.delete)
+async function deleteAddressBook() {
+  try {
+    await deleteBook.run({
+      account: accountId,
+      ids: [addressBookName],
+    })
     showDeleteAddressBook.value = false
     raiseToast(__('Address book deleted.'))
-    store.addressBooks.reload()
-    router.push({ name: 'people-address-books', params: { accountId } })
-  },
-  onError: (error) => {
-    showDeleteAddressBook.value = false
-    raiseToast(error.messages[0], 'error')
-  },
-})
-
+    await router.push({
+      name: 'people-address-books',
+      params: {
+        accountId,
+      },
+    })
+  } catch {
+    /* Keep the dialog open after refusal. */
+  }
+}
 const listView = useTemplateRef('listView')
-
-const addContacts = createResource({
-  url: 'suite.mail.doctype.contact_card.contact_card.contact_card_add_to_address_book',
-  makeParams: (ids) => ({ account: store.accountId, ids, address_book_id: addressBookName }),
-  onSuccess: () => {
-    raiseToast(__('Contacts added.'))
-    contacts.reload()
-    totalContacts.reload()
-  },
-  onError: (error) => raiseToast(error.messages[0], 'error'),
-})
-
-const removeContacts = createResource({
-  url: 'suite.mail.doctype.contact_card.contact_card.contact_card_remove_from_address_book',
-  makeParams: () => ({
-    account: store.accountId,
-    ids: Array.from(listView.value?.selections),
+const addToBook = useMutation(api.mail.contacts.addToBook)
+const removeFromBook = useMutation(api.mail.contacts.removeFromBook)
+async function addContacts(ids: string[]) {
+  await addToBook.run({
+    account: accountId,
+    ids,
     address_book_id: addressBookName,
-  }),
-  onSuccess: () => {
-    contacts.reload()
-    totalContacts.reload()
+  })
+  raiseToast(__('Contacts added.'))
+}
+async function removeContacts() {
+  try {
+    await removeFromBook.run({
+      account: accountId,
+      ids: Array.from(listView.value?.selections ?? [], String),
+      address_book_id: addressBookName,
+    })
     showRemoveContacts.value = false
-    raiseToast(__('Contacts removed.'))
     listView.value?.toggleAllRows()
-  },
-  onError: (error) => {
-    showRemoveContacts.value = false
-    raiseToast(error.messages[0], 'error')
-  },
-})
-
+    raiseToast(__('Contacts removed.'))
+  } catch {
+    /* Keep selections after refusal. */
+  }
+}
 const deleteAddressBookOptions = computed(() => ({
   title: __('Delete Address Book'),
-  message: __('Are you sure you want to delete {0}?', [addressBook.doc?._name]),
+  message: __('Are you sure you want to delete {0}?', [addressBook.data?._name]),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
-  actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteAddressBook.submit }],
+  theme: 'amber' as const,
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid' as const,
+      onClick: deleteAddressBook,
+    },
+  ],
 }))
-
 const removeContactsOptions = computed(() => ({
   title: __('Remove Contacts'),
   message: __('Are you sure you want to remove the selected contacts?'),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
-  actions: [{ label: __('Confirm'), variant: 'solid', onClick: removeContacts.submit }],
+  theme: 'amber' as const,
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid' as const,
+      onClick: removeContacts,
+    },
+  ],
 }))
-
 const dropdownOptions = computed(() => [
   {
     label: __('Set as Default'),
     icon: Pin,
     onClick: () => {
-      addressBook.doc.default = 1
-      addressBook.save.submit()
+      void updateBook
+        .run({
+          account: accountId,
+          id: addressBookName,
+          changes: {
+            default: true,
+          },
+        })
+        .catch(() => {})
     },
-    condition: () => !addressBook.doc?.default,
+    condition: () => !addressBook.data?.default,
   },
   {
     label: __('Delete'),
@@ -280,16 +264,31 @@ const dropdownOptions = computed(() => [
     onClick: () => (showDeleteAddressBook.value = true),
   },
 ])
-
 const LIST_COLUMNS = [
-  { label: __('Name'), key: 'full_name' },
-  { label: __('Kind'), key: 'kind' },
-  { label: __('Email'), key: 'email' },
+  {
+    label: __('Name'),
+    key: 'full_name',
+  },
+  {
+    label: __('Kind'),
+    key: 'kind',
+  },
+  {
+    label: __('Email'),
+    key: 'email',
+  },
 ]
-
 const LIST_OPTIONS = {
   showTooltip: false,
-  emptyState: { description: __('No contacts found.') },
-  getRowRoute: (row) => ({ name: 'people-contact', params: { accountId, contactName: row.id } }),
+  emptyState: {
+    description: __('No contacts found.'),
+  },
+  getRowRoute: (row: { id: string }) => ({
+    name: 'people-contact',
+    params: {
+      accountId,
+      contactName: row.id,
+    },
+  }),
 }
 </script>

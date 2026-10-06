@@ -1,21 +1,21 @@
 <template>
   <AppSettingsHeader :title="__('Credentials')">
-    <template v-if="userSettings.doc" #actions>
+    <template v-if="userSettings.data" #actions>
       <Button
         :label="__('Save')"
         variant="solid"
-        :loading="saveSettings.loading"
+        :loading="saveSettings.isPending"
         :disabled="isNotDirty"
-        @click="() => saveSettings.submit()"
+        @click="() => save()"
       />
     </template>
   </AppSettingsHeader>
   <AppSettingsBody>
-    <template v-if="userSettings.doc">
+    <template v-if="userSettings.data">
       <div class="flex flex-col gap-5">
         <h2 class="text-base-semibold text-ink-gray-8">{{ __('Connection') }}</h2>
         <FormControl
-          :model-value="userSettings.doc.server_url"
+          :model-value="userSettings.data.server_url"
           :label="__('Server URL')"
           variant="outline"
           disabled
@@ -45,36 +45,22 @@
           :description="__(`We'll contact you here if there's an issue with your main account.`)"
         />
 
-        <ErrorMessage :message="saveSettings.error as Error | undefined" />
+        <ErrorMessage :message="saveSettings.error?.message" />
       </div>
     </template>
   </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import {
-  Button,
-  createDocumentResource,
-  createResource,
-  ErrorMessage,
-  FormControl,
-} from 'frappe-ui'
-import { computed, inject, ref, watch } from 'vue'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
-import type { UserResource } from '@/apps/mail/types'
+import { api, useMutation, useQuery } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const user = inject('$user') as UserResource
-
-// get_user_info always ensures a User Settings doc exists and returns its name, so this is set.
-const userSettingsName = user.data.user_settings as string
-
-const userSettings = createDocumentResource({
-  doctype: 'User Settings',
-  name: userSettingsName,
-})
+const userSettings = useQuery(api.mail.settings.credentials)
 
 const username = ref('')
 // Password fields come back masked from the API, so we never prefill this. It stays blank and is
@@ -85,12 +71,12 @@ const hasPassword = ref(false)
 
 // Sync the local inputs from the doc once it loads (and after a reload).
 watch(
-  () => userSettings.doc,
+  () => userSettings.data,
   (doc) => {
     if (!doc) return
     username.value = doc.username ?? ''
     backupEmail.value = doc.backup_email ?? ''
-    hasPassword.value = !!doc.app_password
+    hasPassword.value = doc.has_password
     appPassword.value = ''
   },
   { immediate: true },
@@ -98,34 +84,20 @@ watch(
 
 const isNotDirty = computed(
   () =>
-    username.value === (userSettings.doc?.username ?? '') &&
-    backupEmail.value === (userSettings.doc?.backup_email ?? '') &&
+    username.value === (userSettings.data?.username ?? '') &&
+    backupEmail.value === (userSettings.data?.backup_email ?? '') &&
     appPassword.value === '',
 )
 
-const saveSettings = createResource({
-  url: 'frappe.client.set_value',
-  makeParams: () => {
-    const fieldname: Record<string, string | null> = {
-      username: username.value || null,
-      backup_email: backupEmail.value || null,
-    }
-    // Only overwrite the stored password when the user entered a new one.
-    if (appPassword.value) fieldname.app_password = appPassword.value
-
-    return {
-      doctype: 'User Settings',
-      name: userSettingsName,
-      fieldname,
-    }
-  },
-  onSuccess: () => {
-    raiseToast(__('Credentials updated.'))
-    appPassword.value = ''
-    userSettings.reload()
-    // Refresh shared user data so is_jmap_configured / username reflect the change app-wide.
-    user.reload()
-  },
-  onError: () => raiseToast(__('Unable to save credentials.'), 'error'),
-})
+const saveSettings = useMutation(api.mail.settings.updateCredentials, { silent: true })
+async function save() {
+  await saveSettings.run({
+    username: username.value || null,
+    backup_email: backupEmail.value || null,
+    ...(appPassword.value ? { app_password: appPassword.value } : {}),
+  })
+  appPassword.value = ''
+  raiseToast(__('Credentials updated.'))
+  await userSettings.refetch()
+}
 </script>

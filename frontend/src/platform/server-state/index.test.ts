@@ -1,1063 +1,560 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref, watch } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { effectScope, nextTick, ref } from 'vue'
 
-import type { Realtime, Room, SocketLike } from '@/platform/realtime'
-import { TransportError, type Operation, type Transport } from '@/platform/transport'
+import { api } from '@/api'
+import { driveLinks } from '@/apps/drive/client/links'
+import { createTransport, TransportError } from '@/platform/transport'
 
-import { createServerState, infinite, mutation, query, upload } from './index'
+import { createApiClient } from './index'
 
-type Node = { name: string; title: string; parent: string | null; modified: string; state?: string }
-type Page = { rows: Node[]; next_cursor: string | null }
-
-const entity = { tag: 'Drive Node', id: 'name', version: 'modified' }
-const detailOperation: Operation<{ node: string }, Node> = {
-  id: 'node_get',
-  owner: 'drive',
-  method: 'GET',
-  path: 'nodes/{node}',
-  pathParams: ['node'],
-  nodeParams: ['node'],
-  entity,
-}
-const childrenOperation: Operation<{ node: string; cursor?: string | null }, Page> = {
-  id: 'node_children',
-  owner: 'drive',
-  method: 'GET',
-  path: 'nodes/{node}/children',
-  pathParams: ['node'],
-  nodeParams: ['node'],
-  entity,
-}
-const renameOperation: Operation<{ node: string; title: string }, Node> = {
-  id: 'node_patch.rename',
-  owner: 'drive',
-  method: 'PATCH',
-  path: 'nodes/{node}',
-  pathParams: ['node'],
-  nodeParams: ['node'],
-  entity,
-}
-const batchOperation: Operation<{ nodes: string[] }, { accepted: boolean }> = {
-  id: 'node_batch',
-  owner: 'drive',
-  method: 'POST',
-  path: 'nodes/batch',
-  entity,
-}
-
-const node = (title = 'Budget', modified = '2026-09-15 01:00:00'): Node => ({
-  name: 'n1',
-  title,
-  parent: 'root',
-  modified,
-  state: 'Active',
-})
-
-class FakeRealtime implements Realtime {
-  handlers = new Map<string, Set<(payload: any) => void>>()
-  reconnect = new Set<() => void>()
-  subscribe<T>(event: string, handler: (payload: T) => void) {
-    const handlers = this.handlers.get(event) ?? new Set()
-    handlers.add(handler)
-    this.handlers.set(event, handlers)
-    return () => handlers.delete(handler)
-  }
-  onReconnect(handler: () => void) {
-    this.reconnect.add(handler)
-    return () => this.reconnect.delete(handler)
-  }
-  join(_room: Room) {
-    return () => {}
-  }
-  joinDoc(_doctype: string, _name: string) {
-    return () => {}
-  }
-  joinDoctype(_doctype: string) {
-    return () => {}
-  }
-  socket(): SocketLike {
-    throw new Error('unused')
-  }
-  close() {}
-  emit(event: string, payload: unknown) {
-    for (const handler of this.handlers.get(event) ?? []) handler(payload)
+function node(title = 'Budget', name = 'budget') {
+  return {
+    name,
+    title,
+    kind: 'file',
+    parent_node: 'root',
+    root: 'root',
+    state: 'Active',
+    trash_root: null,
+    size: 3,
+    mime: 'text/plain',
+    url: null,
+    content_doctype: null,
+    content_docname: null,
+    is_template: 0,
+    owner: { id: 'alice', full_name: 'Alice', user_image: null },
+    creation: null,
+    modified: null,
+    content_modified: null,
   }
 }
-
-function mockTransport(
-  handler: (operation: Operation<any, any>, input: any, signal?: AbortSignal) => any,
-) {
-  const request = vi.fn(
-    async (operation: Operation<any, any>, input: any, options?: { signal?: AbortSignal }) =>
-      handler(operation, input, options?.signal),
+function answer(data: unknown, status = 200) {
+  return new Response(JSON.stringify(status < 400 ? { data } : { errors: [data] }), { status })
+}
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+const fetcher = vi.fn<typeof fetch>()
+const feedback = vi.fn()
+let engine: ReturnType<typeof createApiClient>
+const scopes: ReturnType<typeof effectScope>[] = []
+beforeEach(() => {
+  fetcher.mockReset()
+  feedback.mockReset()
+  driveLinks.clear()
+  engine = createApiClient(
+    {
+      suite: () => import('@/platform/transport/policy').then((module) => module.registration),
+      drive: () => import('@/apps/drive/client/policy').then((module) => module.registration),
+      mail: () => import('@/apps/mail/client/policy').then((module) => module.registration),
+    },
+    {
+      transport: createTransport({ fetch: fetcher, retryBaseMs: 0 }),
+      persistence: false,
+      feedback,
+    },
   )
-  return { transport: { request } as Transport, request }
+})
+afterEach(() => {
+  for (const scope of scopes.splice(0)) scope.stop()
+  engine.dispose()
+})
+function observe<T>(create: () => T): T {
+  const scope = effectScope()
+  scopes.push(scope)
+  const result = scope.run(create)
+  if (!result) throw new Error('Observer did not initialize')
+  return result
+}
+async function flush() {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await nextTick()
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-afterEach(() => vi.useRealTimers())
-
-describe('server state queries', () => {
-  it('serves cached reads and deduplicates an in-flight request', async () => {
-    let release!: (value: Node) => void
-    const deferred = new Promise<Node>((resolve) => (release = resolve))
-    const mock = mockTransport(() => deferred)
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const descriptor = query(detailOperation, { node: 'n1' })
-    const first = state.useQuery(descriptor)
-    const second = state.useQuery(descriptor)
-    const one = first.settled()
-    const two = second.settled()
-    expect(mock.request).toHaveBeenCalledOnce()
-    release(node())
-    await Promise.all([one, two])
-    expect(first.data?.title).toBe('Budget')
-
-    await state.useQuery(descriptor).settled()
-    expect(mock.request).toHaveBeenCalledOnce()
-    state.dispose()
-  })
-
-  it('keeps fields a listing read when a detail read of the same version omits them', async () => {
-    type Previewed = Node & { preview?: { url: string } }
-    const listOperation: Operation<{ node: string }, { rows: Previewed[]; next_cursor: null }> = {
-      ...childrenOperation,
-      id: 'node_children.preview',
-    } as Operation<{ node: string }, { rows: Previewed[]; next_cursor: null }>
-    const mock = mockTransport((operation) =>
-      operation.id === 'node_get'
-        ? node()
-        : { rows: [{ ...node(), preview: { url: '/thumb.webp' } }], next_cursor: null },
-    )
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const listing = state.useQuery(query(listOperation, { node: 'root' }))
-    await listing.settled()
-    await state.useQuery(query(detailOperation, { node: 'n1' })).settled()
-    expect(listing.data?.rows[0]?.preview?.url).toBe('/thumb.webp')
-    state.dispose()
-  })
-
-  it('replaces fields when a newer version arrives', async () => {
-    const mock = mockTransport((operation) =>
-      operation.id === 'node_get'
-        ? { ...node('Renamed', '2026-09-15 02:00:00') }
-        : { rows: [{ ...node(), preview: { url: '/old.webp' } }], next_cursor: null },
-    )
-    const listOperation = { ...childrenOperation, id: 'node_children.preview' } as Operation<
-      { node: string },
-      { rows: Array<Node & { preview?: { url: string } }>; next_cursor: null }
-    >
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const listing = state.useQuery(query(listOperation, { node: 'root' }))
-    await listing.settled()
-    await state.useQuery(query(detailOperation, { node: 'n1' })).settled()
-    expect(listing.data?.rows[0]?.title).toBe('Renamed')
-    expect(listing.data?.rows[0]?.preview).toBeUndefined()
-    state.dispose()
-  })
-
-  it('keeps stale data while revalidating and refetches on focus', async () => {
-    let title = 'First'
-    let version = 1
-    const mock = mockTransport(() => node(title, `2026-09-15 0${version++}:00:00`))
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const descriptor = query(detailOperation, { node: 'n1' }, { staleTime: 0 })
-    const result = state.useQuery(descriptor)
-    await result.settled()
-    title = 'Second'
-    const cached = state.useQuery(descriptor)
-    expect(cached.data?.title).toBe('First')
-    expect(cached.isFetching).toBe(false)
-    await tick()
-    expect(cached.data?.title).toBe('Second')
-
-    title = 'Focused'
-    window.dispatchEvent(new Event('focus'))
-    await tick()
-    expect(cached.data?.title).toBe('Focused')
-    state.dispose()
-  })
-
-  it('cancels requests with AbortSignal without storing an error', async () => {
-    let aborted = false
-    const mock = mockTransport(
-      (_operation, _input, signal) =>
-        new Promise((_resolve, reject) => {
-          signal?.addEventListener('abort', () => {
-            aborted = true
-            reject(new DOMException('Aborted', 'AbortError'))
-          })
-        }),
-    )
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const result = state.useQuery(query(detailOperation, { node: 'n1' }))
-    const settled = result.settled()
-    result.cancel()
-    await settled
-    expect(aborted).toBe(true)
-    expect(result.error).toBeNull()
-    state.dispose()
-  })
-
-  it('keeps one in-flight fetch when a function source re-emits an equal descriptor', async () => {
-    let release!: (value: Page) => void
-    let aborted = false
-    const mock = mockTransport(
-      (_operation, _input, signal) =>
-        new Promise<Page>((resolve, reject) => {
-          signal?.addEventListener('abort', () => {
-            aborted = true
-            reject(new DOMException('Aborted', 'AbortError'))
-          })
-          release = resolve
-        }),
-    )
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const version = ref(0)
-    const result = state.useQuery(() => {
-      void version.value
-      return infinite(childrenOperation, { node: 'root' }, { cursorParam: 'cursor' })
-    })
-    await tick()
-    expect(mock.request).toHaveBeenCalledOnce()
-    version.value += 1
-    await nextTick()
-    await tick()
-    expect(aborted).toBe(false)
-    release({ rows: [node()], next_cursor: null })
-    await tick()
-    expect(result.status).toBe('success')
-    expect(result.rows).toHaveLength(1)
-    expect(mock.request).toHaveBeenCalledOnce()
-    state.dispose()
-  })
-
-  it('pages by cursor through empty windows until next_cursor is null', async () => {
-    const mock = mockTransport((_operation, input) =>
-      input.cursor === 'empty'
-        ? { rows: [], next_cursor: 'last' }
-        : input.cursor === 'last'
-          ? { rows: [node()], next_cursor: null }
-          : { rows: [], next_cursor: 'empty' },
-    )
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const result = state.useQuery(infinite(childrenOperation, { node: 'root' }))
-    await result.settled()
-    expect(result.rows).toEqual([])
-    expect(result.hasNext).toBe(true)
-    await result.fetchNext()
-    expect(result.rows).toEqual([])
-    expect(result.hasNext).toBe(true)
-    await result.fetchNext()
-    expect(result.rows.map((row) => row.name)).toEqual(['n1'])
-    expect(result.hasNext).toBe(false)
-    state.dispose()
-  })
-
-  it('pages by offset and keeps one cache entry for the whole list', async () => {
-    const second = { ...node('Forecast'), name: 'n2' }
-    const third = { ...node('Archive'), name: 'n3' }
-    const mock = mockTransport((_operation, input) =>
-      input.offset === 2
-        ? { rows: [third], next_cursor: null, has_next: false }
-        : { rows: [node(), second], next_cursor: null, has_next: true },
-    )
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const result = state.useQuery(
-      infinite(
-        childrenOperation as Operation<any, any>,
-        { node: 'root', offset: 0, limit: 2 },
-        { paging: 'offset' },
-      ),
-    )
-    await result.settled()
-    expect(result.hasNext).toBe(true)
-    await result.fetchNext()
-    expect(mock.request.mock.calls.map(([, input]) => input.offset)).toEqual([0, 2])
-    expect(result.rows.map((row) => (row as Node).name)).toEqual(['n1', 'n2', 'n3'])
-    expect(result.hasNext).toBe(false)
-    state.dispose()
-  })
-
-  it('keys window lists by range and does not expose sequential paging', async () => {
-    const mock = mockTransport((_operation, input) => ({
-      rows: [{ ...node(input.from), name: input.from }],
-      next_cursor: null,
-    }))
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const september = state.useQuery(
-      infinite(
-        childrenOperation as Operation<any, any>,
-        { node: 'calendar', from: '2026-09-01', to: '2026-09-30' },
-        { paging: 'window' },
-      ),
-    )
-    const october = state.useQuery(
-      infinite(
-        childrenOperation as Operation<any, any>,
-        { node: 'calendar', from: '2026-10-01', to: '2026-10-31' },
-        { paging: 'window' },
-      ),
-    )
-    await Promise.all([september.settled(), october.settled()])
-    expect((september.rows[0] as Node | undefined)?.title).toBe('2026-09-01')
-    expect((october.rows[0] as Node | undefined)?.title).toBe('2026-10-01')
-    expect(september.hasNext).toBe(false)
-    await september.fetchNext()
-    expect(mock.request).toHaveBeenCalledTimes(2)
-    state.dispose()
-  })
-
-  it('returns query failures as values and lets a later refetch recover', async () => {
-    let fails = true
-    const mock = mockTransport(() => {
-      if (fails)
-        throw new TransportError({ type: 'DriveForbidden', message: 'No access', status: 403 })
-      return node()
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const result = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await expect(result.settled()).resolves.toBe(result)
-    expect(result).toMatchObject({ status: 'error', error: { type: 'DriveForbidden' } })
-    fails = false
-    await result.refetch()
-    expect(result).toMatchObject({ status: 'success', error: null })
-    state.dispose()
-  })
-})
-
-describe('server state fresh reads', () => {
-  /**
-   * Each list read takes the server's rows when it is sent, then waits until
-   * the test releases it. Writes answer at once.
-   */
-  function heldReads(
-    answer: () => Page,
-    write: (input: any) => Node = (input) => node(input.title),
-  ) {
-    const held: Array<() => void> = []
-    const mock = mockTransport((operation, input) => {
-      if (operation.id !== 'node_children') return write(input)
-      const page = answer()
-      return new Promise<Page>((resolve) => held.push(() => resolve(page)))
-    })
-    const release = async () => {
-      held.shift()?.()
-      await tick()
-    }
-    const reads = () =>
-      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children').length
-    return { transport: mock.transport, release, reads }
-  }
-  const titled = (...titles: string[]): Page => ({
-    rows: titles.map((title) => node(title)),
-    next_cursor: null,
-  })
-
-  it('answers a refetch during an in-flight read with one more read after it', async () => {
-    let titles = ['Old']
-    const server = heldReads(() => titled(...titles))
-    const state = createServerState({
-      transport: server.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const list = state.useQuery(infinite(childrenOperation, { node: 'root' }))
-    await tick()
-
-    let answered: string[] | null = null
-    const refetched = list
-      .refetch()
-      .then((result) => (answered = result.rows.map((row) => row.title)))
-    titles = ['New']
-    await tick()
-    expect(server.reads()).toBe(1)
-    await server.release()
-    expect(answered).toBeNull()
-    expect(server.reads()).toBe(2)
-    await server.release()
-    await refetched
-    expect(answered).toEqual(['New'])
-    expect(server.reads()).toBe(2)
-    state.dispose()
-  })
-
-  it('shares one follow-up read between fresh requests, while a plain read joins the in-flight one', async () => {
-    let titles = ['Old']
-    const server = heldReads(() => titled(...titles))
-    const state = createServerState({
-      transport: server.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const list = state.useQuery(infinite(childrenOperation, { node: 'root' }))
-    await tick()
-
-    const joined = list.settled().then((result) => result.rows.map((row) => row.title))
-    const fresh = [list.refetch(), list.refetch()]
-    state.invalidateAll()
-    titles = ['New']
-    await server.release()
-    await expect(joined).resolves.toEqual(['Old'])
-    await server.release()
-    await Promise.all(fresh)
-    expect(list.rows.map((row) => row.title)).toEqual(['New'])
-    expect(server.reads()).toBe(2)
-    state.dispose()
-  })
-
-  it('moves a renamed row to its sorted place when the list read started before the write', async () => {
-    // The server sorts children by title.
-    const titles = new Map([
-      ['b', 'b'],
-      ['c', 'c'],
-      ['d', 'd'],
-    ])
-    const row = (name: string, modified = '2026-09-15 01:00:00'): Node => ({
+describe('Suite API references and shared client', () => {
+  it('pages offset readers through exhaustion and discards pages from an old filter', async () => {
+    const delayed = deferred<Response>()
+    const members = ['alice', 'bob', 'cara'].map((name) => ({
       name,
-      title: titles.get(name)!,
-      parent: 'root',
-      modified,
-      state: 'Active',
-    })
-    const server = heldReads(
-      () => ({
-        rows: [...titles.keys()]
-          .map((name) => row(name))
-          .sort((left, right) => left.title.localeCompare(right.title)),
-        next_cursor: null,
-      }),
-      (input) => {
-        titles.set(input.node, input.title)
-        return row(input.node, '2026-09-15 02:00:00')
-      },
-    )
-    const state = createServerState({
-      transport: server.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const list = state.useQuery(
-      infinite(
-        childrenOperation,
-        { node: 'root' },
-        {
-          member: (row) => row.parent === 'root' && row.state === 'Active',
-        },
-      ),
-    )
-    await tick()
-    await server.release()
-    expect(list.rows.map((row) => row.title)).toEqual(['b', 'c', 'd'])
-
-    const rename = state.useMutation(
-      mutation(renameOperation, {
-        optimistic: ({ title }) => ({ title }),
-        invalidates: ['node_children'],
-      }),
-    )
-    // The optimistic title starts a list read before the write is sent.
-    await rename.run({ node: 'd', title: 'a' })
-    expect(server.reads()).toBe(2)
-    await server.release()
-    expect(server.reads()).toBe(3)
-    await server.release()
-    expect(list.rows.map((row) => row.title)).toEqual(['a', 'b', 'c'])
-    state.dispose()
-  })
-})
-
-describe('server state uploads', () => {
-  const create: Operation<{ name: string }, { id: string }> = {
-    id: 'upload_create',
-    owner: 'drive',
-    method: 'POST',
-    path: 'uploads',
-  }
-  const chunk: Operation<any, { received: number }> = {
-    id: 'upload_chunk',
-    owner: 'drive',
-    method: 'PUT',
-    path: 'uploads/{id}/chunk',
-    pathParams: ['id'],
-    body: 'chunk',
-  }
-  const finish: Operation<any, { done: boolean }> = {
-    id: 'upload_finish',
-    owner: 'drive',
-    method: 'POST',
-    path: 'uploads/{id}/finish',
-    pathParams: ['id'],
-  }
-  const descriptor = upload(create, chunk, finish, {
-    chunkSize: 4,
-    chunkInput: (session, offset) => ({ id: session.id, offset }),
-    finishInput: (input, session) => ({ id: session.id, title: input.name }),
-  })
-
-  it('continues from a start offset without a new session, and reports progress from what the server holds', async () => {
-    const sent: Array<[string, unknown]> = []
-    const mock = mockTransport((operation, input) => {
-      sent.push([
-        operation.id,
-        operation.id === 'upload_chunk' ? { ...input, chunk: input.chunk.size } : input,
-      ])
-      if (operation.id === 'upload_chunk') return { received: input.offset + input.chunk.size }
-      return operation.id === 'upload_finish' ? { done: true } : { id: 'fresh' }
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const transfer = state.useMutation(descriptor)
-
-    const result = await transfer.run({
-      name: 'a.bin',
-      file: new Blob([new Uint8Array(10)]),
-      start: { session: { id: 'held' }, offset: 4 },
-    })
-
-    expect(result).toEqual({ done: true })
-    expect(transfer.progress).toBe(1)
-    expect(sent).toEqual([
-      ['upload_chunk', { id: 'held', offset: 4, chunk: 4 }],
-      ['upload_chunk', { id: 'held', offset: 8, chunk: 2 }],
-      ['upload_finish', { id: 'held', title: 'a.bin' }],
-    ])
-    state.dispose()
-  })
-
-  it('does not wait behind other writes', async () => {
-    let releaseRename!: () => void
-    const mock = mockTransport((operation, input) => {
-      if (operation.id === 'node_patch.rename')
-        return new Promise((resolve) => (releaseRename = () => resolve(node())))
-      if (operation.id === 'upload_chunk') return { received: input.offset + input.chunk.size }
-      return operation.id === 'upload_finish' ? { done: true } : { id: 'fresh' }
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const rename = state.useMutation(mutation(renameOperation))
-    const renaming = rename.run({ node: 'n1', title: 'Slow' })
-    await tick()
-
-    await expect(
-      state.useMutation(descriptor).run({ name: 'b.bin', file: new Blob([new Uint8Array(3)]) }),
-    ).resolves.toEqual({ done: true })
-    releaseRename()
-    await renaming
-    state.dispose()
-  })
-})
-
-describe('server state mutations and realtime', () => {
-  it('invalidates reads after mutations', async () => {
-    let current = node()
-    const mock = mockTransport((operation, input) => {
-      if (operation.id === 'node_patch.rename') {
-        current = node(input.title, '2026-09-15 02:00:00')
-        return current
+      full_name: name,
+      user_image: '',
+      last_active: null,
+      enabled: true,
+      account: name,
+      is_admin: false,
+      quota_gb: null,
+      used_bytes: null,
+    }))
+    fetcher.mockImplementation(async (_url, options) => {
+      const input = JSON.parse(String(options?.body)) as {
+        search?: string
+        start: number
+        page_length: number
       }
-      return current
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    const rename = state.useMutation(mutation(renameOperation, { invalidates: ['node_get'] }))
-    await rename.run({ node: 'n1', title: 'Forecast' })
-    await tick()
-    expect(detail.data?.title).toBe('Forecast')
-    expect(
-      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get'),
-    ).toHaveLength(2)
-    state.dispose()
-  })
-
-  it('applies optimistic patches and rolls them back on failure', async () => {
-    let rejectRename!: (error: unknown) => void
-    const renameRequest = new Promise((_resolve, reject) => (rejectRename = reject))
-    const mock = mockTransport((operation) =>
-      operation.id === 'node_get' ? node() : renameRequest,
-    )
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-      onMutationError: () => {},
-    })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    const rename = state.useMutation(
-      mutation(renameOperation, {
-        optimistic: (input, current) => ({ ...current, title: input.title }),
-      }),
-    )
-    const pending = rename.run({ node: 'n1', title: 'Optimistic' })
-    await tick()
-    expect(detail.data?.title).toBe('Optimistic')
-    rejectRename(new TransportError({ type: 'DriveConflict', message: 'Changed', status: 417 }))
-    await pending
-    expect(detail.data?.title).toBe('Budget')
-    expect(rename.error?.type).toBe('DriveConflict')
-    state.dispose()
-  })
-
-  it('writes mutation entities through every query without refetching details', async () => {
-    const mock = mockTransport((operation, input) =>
-      operation.id === 'node_patch.rename' ? node(input.title, '2026-09-15 02:00:00') : node(),
-    )
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    const rename = state.useMutation(mutation(renameOperation))
-    await expect(rename.run({ node: 'n1', title: 'Forecast' })).resolves.toMatchObject({
-      title: 'Forecast',
-    })
-    expect(detail.data?.title).toBe('Forecast')
-    expect(
-      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get'),
-    ).toHaveLength(1)
-    state.dispose()
-  })
-
-  it('reconciles list membership after a write and revalidates list order', async () => {
-    let current = node()
-    const mock = mockTransport((operation) => {
-      if (operation.id === 'node_patch.rename') {
-        current = { ...node('Archived', '2026-09-15 02:00:00'), state: 'Trashed' }
-        return current
-      }
-      return { rows: current.state === 'Active' ? [current] : [], next_cursor: null }
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const children = state.useQuery(
-      infinite(
-        childrenOperation,
-        { node: 'root' },
-        {
-          member: (candidate) => candidate.parent === 'root' && candidate.state === 'Active',
-        },
-      ),
-    )
-    await children.settled()
-    await state.useMutation(mutation(renameOperation)).run({ node: 'n1', title: 'Archived' })
-    expect(children.rows).toEqual([])
-    await tick()
-    expect(
-      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_children'),
-    ).toHaveLength(2)
-    state.dispose()
-  })
-
-  it('shows a new row only where the server orders it, never at the end first', async () => {
-    const createOperation: Operation<{ parent: string; title: string }, Node> = {
-      id: 'node_create',
-      owner: 'drive',
-      method: 'POST',
-      path: 'nodes',
-      entity,
-    }
-    // The server sorts children by title.
-    const rows: Node[] = [
-      { ...node('Budget'), name: 'b' },
-      { ...node('Notes'), name: 'n' },
-    ]
-    const mock = mockTransport((operation, input) => {
-      if (operation.id !== 'node_create')
-        return { rows: [...rows].sort((a, b) => a.title.localeCompare(b.title)), next_cursor: null }
-      const created = { ...node(input.title), name: 'c' }
-      rows.push(created)
-      return created
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const children = state.useQuery(
-      infinite(
-        childrenOperation,
-        { node: 'root' },
-        {
-          member: (candidate) => candidate.parent === 'root' && candidate.state === 'Active',
-        },
-      ),
-    )
-    await children.settled()
-
-    // Each order the list shows on the way.
-    const seen = [children.rows.map((row) => row.title).join(', ')]
-    const stop = watch(
-      () => children.rows.map((row) => row.title).join(', '),
-      (titles) => {
-        if (titles !== seen.at(-1)) seen.push(titles)
-      },
-      { flush: 'sync' },
-    )
-    await state
-      .useMutation(mutation(createOperation, { invalidates: ['node_children'] }))
-      .run({ parent: 'root', title: 'Forecast' })
-    await vi.waitFor(() =>
-      expect(children.rows.map((row) => row.title)).toEqual(['Budget', 'Forecast', 'Notes']),
-    )
-    expect(seen).toEqual(['Budget, Notes', 'Budget, Forecast, Notes'])
-    stop()
-    state.dispose()
-  })
-
-  it('marks touched entities stale and refetches their observed queries', async () => {
-    let current = node()
-    const mock = mockTransport((operation) => {
-      if (operation.id === 'node_batch') {
-        current = node('Touched', '2026-09-15 02:00:00')
-        return { accepted: true }
-      }
-      return current
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    await state
-      .useMutation(mutation(batchOperation, { touches: (input) => input.nodes }))
-      .run({ nodes: ['n1'] })
-    await tick()
-    expect(detail.data?.title).toBe('Touched')
-    expect(
-      mock.request.mock.calls.filter(([operation]) => operation.id === 'node_get'),
-    ).toHaveLength(2)
-    state.dispose()
-  })
-
-  it('tells touch listeners after a mutation succeeds, and not after it fails', async () => {
-    let fail = false
-    const mock = mockTransport(() => {
-      if (fail) throw new TransportError({ status: 409, type: 'DriveConflict', message: 'No' })
-      return { accepted: true }
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const heard: string[] = []
-    const stop = state.onTouch('n1', () => heard.push('n1'))
-    state.onTouch('n2', () => heard.push('n2'))
-    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), {
-      silent: true,
-    })
-    await batch.run({ nodes: ['n1'] })
-    fail = true
-    await batch.run({ nodes: ['n1', 'n2'] }).catch(() => {})
-    fail = false
-    stop()
-    await batch.run({ nodes: ['n1', 'n2'] })
-    expect(heard).toEqual(['n1', 'n2'])
-    state.dispose()
-  })
-
-  it('keeps telling touch listeners when one throws or a stop runs twice', async () => {
-    const mock = mockTransport(() => ({ accepted: true }))
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const heard: string[] = []
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    state.onTouch('n1', () => {
-      throw new Error('listener failed')
-    })
-    const stop = state.onTouch('n1', () => heard.push('first'))
-    stop()
-    state.onTouch('n1', () => heard.push('second'))
-    stop()
-    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), {
-      silent: true,
-    })
-    await expect(batch.run({ nodes: ['n1'] })).resolves.toEqual({ accepted: true })
-    expect(heard).toEqual(['second'])
-    expect(error).toHaveBeenCalledOnce()
-    error.mockRestore()
-    state.dispose()
-  })
-
-  it('stops telling touch listeners once disposed', async () => {
-    const mock = mockTransport(() => ({ accepted: true }))
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const heard: string[] = []
-    state.onTouch('n1', () => heard.push('n1'))
-    const batch = state.useMutation(mutation(batchOperation, { touches: (input) => input.nodes }), {
-      silent: true,
-    })
-    state.dispose()
-    await batch.run({ nodes: ['n1'] }).catch(() => {})
-    expect(heard).toEqual([])
-  })
-
-  it('computes invalidation targets from mutation input', async () => {
-    let current = node()
-    const mock = mockTransport((operation) => {
-      if (operation.id === 'node_batch') {
-        current = node('Invalidated', '2026-09-15 02:00:00')
-        return { accepted: true }
-      }
-      return current
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    await state
-      .useMutation(
-        mutation(batchOperation, {
-          invalidates: (input) => (input.nodes.includes('n1') ? ['node_get'] : []),
+      if (input.search === 'slow') return delayed.promise
+      const items = input.search === 'bob' ? members.slice(1, 2) : members
+      return new Response(
+        JSON.stringify({
+          message: {
+            items: items.slice(input.start, input.start + input.page_length),
+            total: items.length,
+          },
         }),
       )
-      .run({ nodes: ['n1'] })
-    await tick()
-    expect(detail.data?.title).toBe('Invalidated')
-    state.dispose()
+    })
+    const search = ref('')
+    const page = observe(() =>
+      engine.useInfiniteQuery(api.mail.admin.members.list, () => ({
+        search: search.value,
+        start: 0,
+        page_length: 2,
+      })),
+    )
+    await vi.waitFor(() => expect(page.rows.map((row) => row.name)).toEqual(['alice', 'bob']))
+    expect(page.total).toBe(3)
+    expect(page.hasNext).toBe(true)
+    await page.fetchNext()
+    expect(page.rows.map((row) => row.name)).toEqual(['alice', 'bob', 'cara'])
+    expect(page.hasNext).toBe(false)
+    const count = fetcher.mock.calls.length
+    await page.fetchNext()
+    expect(fetcher).toHaveBeenCalledTimes(count)
+    search.value = 'slow'
+    await flush()
+    search.value = 'bob'
+    await vi.waitFor(() => expect(page.rows.map((row) => row.name)).toEqual(['bob']))
+    delayed.resolve(new Response(JSON.stringify({ message: { items: members, total: 3 } })))
+    await flush()
+    expect(page.rows.map((row) => row.name)).toEqual(['bob'])
+    expect(page.hasNext).toBe(false)
   })
 
-  it('honors silent error classes while preserving mutation errors as values', async () => {
-    const report = vi.fn()
-    const mock = mockTransport(() => {
-      throw new TransportError({ type: 'DriveConflict', message: 'Changed', status: 417 })
-    })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-      onMutationError: report,
-    })
-    const rename = state.useMutation(mutation(renameOperation), { silent: ['DriveConflict'] })
-    await expect(rename.run({ node: 'n1', title: 'Forecast' })).resolves.toBeUndefined()
-    expect(rename.error?.type).toBe('DriveConflict')
-    expect(report).not.toHaveBeenCalled()
-    state.dispose()
+  it('shares sender-blocking optimism, rolls back a refusal, and keeps other accounts separate', async () => {
+    const write = deferred<Response>()
+    fetcher.mockImplementation(async (url) =>
+      String(url).endsWith('screen_email_addresses')
+        ? write.promise
+        : new Response(
+            JSON.stringify({
+              message: [{ email: '@example.com', action: 'Spam', creation: '', modified: '' }],
+            }),
+          ),
+    )
+    const first = observe(() => engine.useQuery(api.mail.screening.list, { account: 'alice' }))
+    const second = observe(() => engine.useQuery(api.mail.screening.list, { account: 'bob' }))
+    await vi.waitFor(() => expect(first.data).toHaveLength(1))
+    await vi.waitFor(() => expect(second.data).toHaveLength(1))
+    const pending = engine.client
+      .mutation(api.mail.screening.set, {
+        account: 'alice',
+        emails: ['sender@example.com'],
+        action: 'Reject',
+      })
+      .catch((cause) => cause)
+    await vi.waitFor(() =>
+      expect(first.data?.map((row) => row.email)).toEqual(['@example.com', 'sender@example.com']),
+    )
+    expect(second.data?.map((row) => row.email)).toEqual(['@example.com'])
+    write.resolve(
+      new Response(JSON.stringify({ exc_type: 'PermissionError', exception: 'Denied' }), {
+        status: 403,
+      }),
+    )
+    expect(await pending).toBeInstanceOf(TransportError)
+    expect(first.data?.map((row) => row.email)).toEqual(['@example.com'])
+    expect(feedback).toHaveBeenCalledTimes(1)
   })
 
-  it('lets a registered challenge resolve the error and retry the mutation', async () => {
-    let locked = true
-    const mock = mockTransport((_operation, input) => {
-      if (locked)
-        throw new TransportError({ type: 'DriveLocked', message: 'Password required', status: 403 })
-      return node(input.title, '2026-09-15 02:00:00')
+  it('reads three owners and disables reactive selection without publishing an old reply', async () => {
+    const old = deferred<Response>()
+    fetcher.mockImplementation(async (url) => {
+      const path = String(url)
+      if (path.endsWith('/account')) return answer(null)
+      if (path.includes('inbox-summary')) return answer({ unread: 7 })
+      if (path.includes('nodes/old')) return old.promise
+      return answer(node('Forecast', 'new'))
     })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
+    expect(await engine.client.query(api.suite.account.get)).toBeNull()
+    expect(await engine.client.query(api.mail.inbox.summary)).toEqual({ unread: 7 })
+    const selection = ref('old')
+    const detail = observe(() =>
+      engine.useQuery(api.drive.nodes.get, () =>
+        selection.value ? { node: selection.value } : false,
+      ),
+    )
+    await flush()
+    selection.value = 'new'
+    await vi.waitFor(() => expect(detail.data?.name).toBe('new'))
+    old.resolve(answer(node('Old', 'old')))
+    await flush()
+    expect(detail.data?.title).toBe('Forecast')
+    selection.value = ''
+    expect(detail.data).toBeUndefined()
+    expect(detail.isFetching).toBe(false)
+    const before = fetcher.mock.calls.length
+    expect(await detail.refetch()).toBeUndefined()
+    expect(fetcher).toHaveBeenCalledTimes(before)
+  })
+
+  it('shares reads, cancels only one wait, fetches imperative reads by default, and opts into cache reuse', async () => {
+    const response = deferred<Response>()
+    fetcher.mockImplementation(() => response.promise)
+    const canceled = new AbortController()
+    const first = engine.client
+      .query(api.drive.nodes.get, { node: 'budget' }, { signal: canceled.signal })
+      .catch((cause) => cause)
+    const second = engine.client.query(api.drive.nodes.get, { node: 'budget' })
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+    canceled.abort()
+    expect((await first).name).toBe('AbortError')
+    expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(false)
+    response.resolve(answer(node()))
+    expect((await second).title).toBe('Budget')
+    fetcher.mockResolvedValue(answer(node('Fresh')))
+    expect(
+      (await engine.client.query(api.drive.nodes.get, { node: 'budget' }, { cache: 'prefer' }))
+        .title,
+    ).toBe('Budget')
+    expect((await engine.client.query(api.drive.nodes.get, { node: 'budget' })).title).toBe('Fresh')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('detaches an observer without canceling another observer or an imperative reader', async () => {
+    const response = deferred<Response>()
+    fetcher.mockImplementation(() => response.promise)
+    const first = observe(() => engine.useQuery(api.drive.nodes.get, { node: 'budget' }))
+    const second = observe(() => engine.useQuery(api.drive.nodes.get, { node: 'budget' }))
+    const outside = engine.client.query(api.drive.nodes.get, { node: 'budget' })
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+    first.cancel()
+    response.resolve(answer(node()))
+    expect((await outside).title).toBe('Budget')
+    await vi.waitFor(() => expect(second.data?.title).toBe('Budget'))
+    expect(first.data).toBeUndefined()
+    fetcher.mockResolvedValue(answer(node('Again')))
+    expect((await first.refetch())?.title).toBe('Again')
+  })
+
+  it('reconciles detail and loaded lists, rejects refusals, and reports each failed write once', async () => {
+    let title = 'Budget'
+    fetcher.mockImplementation(async (url, init) => {
+      if (init?.method === 'PATCH') {
+        const input = JSON.parse(String(init.body)) as { title: string }
+        if (input.title === 'Forbidden')
+          return answer({ type: 'DriveForbidden', message: 'Read only' }, 403)
+        title = input.title
+        return answer(node(title))
+      }
+      return String(url).includes('/children')
+        ? answer({ rows: [node(title)], next_cursor: null })
+        : answer(node(title))
     })
-    const challenge = vi.fn(async (_error, retry) => {
-      locked = false
+    const detail = observe(() => engine.useQuery(api.drive.nodes.get, { node: 'budget' }))
+    const list = observe(() => engine.useInfiniteQuery(api.drive.nodes.children, { node: 'root' }))
+    await vi.waitFor(() => expect(list.rows).toHaveLength(1))
+    await engine.client.mutation(api.drive.nodes.rename, { node: 'budget', title: 'Forecast' })
+    expect(detail.data?.title).toBe('Forecast')
+    expect(list.rows[0]?.title).toBe('Forecast')
+    const rename = observe(() => engine.useMutation(api.drive.nodes.rename))
+    await expect(rename.run({ node: 'budget', title: 'Forbidden' })).rejects.toMatchObject({
+      type: 'DriveForbidden',
+      status: 403,
+    })
+    expect(rename.error).toBeInstanceOf(TransportError)
+    expect(rename.isPending).toBe(false)
+    expect(detail.data?.title).toBe('Forecast')
+    expect(feedback).toHaveBeenCalledTimes(1)
+    await expect(
+      engine.client.mutation(
+        api.drive.nodes.rename,
+        { node: 'budget', title: 'Forbidden' },
+        { silent: true },
+      ),
+    ).rejects.toBeInstanceOf(TransportError)
+    expect(feedback).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps ordinary writes in call order and rolls back canceled optimism without a refusal', async () => {
+    const sent: string[] = []
+    const pending = deferred<Response>()
+    let savedTitle = 'Budget'
+    fetcher.mockImplementation(async (_url, init) => {
+      if (init?.method !== 'PATCH') return answer(node(savedTitle))
+      const { title } = JSON.parse(String(init.body)) as { title: string }
+      sent.push(title)
+      if (title === 'First') return pending.promise
+      savedTitle = title
+      return answer(node(title))
+    })
+    const detail = observe(() => engine.useQuery(api.drive.nodes.get, { node: 'budget' }))
+    await vi.waitFor(() => expect(detail.data?.title).toBe('Budget'))
+    const first = observe(() => engine.useMutation(api.drive.nodes.rename))
+    const canceled = first.run({ node: 'budget', title: 'First' }).catch((cause) => cause)
+    const second = engine.client.mutation(api.drive.nodes.rename, {
+      node: 'budget',
+      title: 'Second',
+    })
+    await vi.waitFor(() => expect(detail.data?.title).toBe('First'))
+    expect(sent).toEqual(['First'])
+    first.cancel()
+    expect((await canceled).name).toBe('AbortError')
+    expect(first.error).toBeNull()
+    await second
+    pending.resolve(answer(node('First')))
+    await flush()
+    expect(detail.data?.title).toBe('Second')
+    expect(feedback).not.toHaveBeenCalled()
+  })
+
+  it('isolates identity and Drive links and scopes named and covered-node calls', async () => {
+    const pending = deferred<Response>()
+    const code = 'L000000000000000000001'
+    fetcher.mockImplementation(async (_url, init) => {
+      if (init?.method === 'PATCH')
+        return answer({
+          name: 'g',
+          node: 'budget',
+          principal: '$LINK:x',
+          role: 10,
+          expires_on: null,
+          has_password: false,
+          sent_to: null,
+        })
+      return pending.promise
+    })
+    driveLinks.seed(code, 'budget')
+    const old = engine.client.query(api.drive.nodes.get, { node: 'budget' }).catch((cause) => cause)
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('X-Drive-Links')).toBe(code)
+    engine.resetIdentity()
+    pending.resolve(answer(node('Previous identity')))
+    expect((await old).name).toBe('AbortError')
+    fetcher.mockResolvedValue(answer(node('New identity')))
+    expect(
+      (await engine.client.query(api.drive.nodes.get, { node: 'budget' }, { cache: 'prefer' }))
+        .title,
+    ).toBe('New identity')
+    fetcher.mockResolvedValue(
+      answer({
+        name: 'g',
+        node: 'budget',
+        principal: '$LINK:x',
+        role: 10,
+        expires_on: null,
+        has_password: false,
+        sent_to: null,
+      }),
+    )
+    const written = await engine.client.mutation(api.drive.grants.update, {
+      node: 'budget',
+      grant: 'g',
+      role: 10,
+    })
+    expect(written.role).toBe(10)
+    const sent = fetcher.mock.calls.at(-1)?.[1]
+    expect(new Headers(sent?.headers).get('X-Drive-Links')).toBe(code)
+    expect(JSON.parse(String(sent?.body))).not.toHaveProperty('node')
+  })
+
+  it('pages to exhaustion and resets when domain arguments change', async () => {
+    fetcher.mockImplementation(async (url) => {
+      const input = new URL(String(url), 'http://suite.test').searchParams
+      const q = input.get('q') ?? 'a'
+      return answer({
+        rows: [{ kind: 'group', name: q + (input.has('cursor') ? '-2' : '-1'), member_count: 3 }],
+        next_cursor: input.has('cursor') ? null : 'next',
+      })
+    })
+    const term = ref('a')
+    const people = observe(() =>
+      engine.useInfiniteQuery(api.suite.people.list, () => ({ q: term.value })),
+    )
+    await vi.waitFor(() => expect(people.rows).toHaveLength(1))
+    await people.fetchNext()
+    expect(people.rows.map((row) => row.name)).toEqual(['a-1', 'a-2'])
+    expect(people.hasNext).toBe(false)
+    const count = fetcher.mock.calls.length
+    await people.fetchNext()
+    expect(fetcher).toHaveBeenCalledTimes(count)
+    term.value = 'b'
+    await vi.waitFor(() => expect(people.rows.map((row) => row.name)).toEqual(['b-1']))
+  })
+
+  it('retries safe reads, never retries writes, and preserves a declined challenge refusal', async () => {
+    fetcher
+      .mockResolvedValueOnce(answer({ type: 'TemporaryError', message: 'Retry' }, 503))
+      .mockResolvedValueOnce(answer(node()))
+    expect((await engine.client.query(api.drive.nodes.get, { node: 'budget' })).title).toBe(
+      'Budget',
+    )
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    engine.onChallenge('DriveForbidden', async () => undefined)
+    fetcher.mockResolvedValue(answer({ type: 'DriveForbidden', message: 'Read only' }, 403))
+    await expect(
+      engine.client.mutation(api.drive.nodes.rename, { node: 'budget', title: 'No' }),
+    ).rejects.toMatchObject({ type: 'DriveForbidden' })
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+  it('unlocks through a queued mutation and explicitly retries the challenged write', async () => {
+    let unlocked = false
+    const sent: string[] = []
+    fetcher.mockImplementation(async (url, init) => {
+      sent.push(String(url))
+      if (String(url).includes('/unlock')) {
+        unlocked = true
+        return answer({ ticket: 'ticket', expires: 1234567890 })
+      }
+      if (init?.method === 'PATCH' && !unlocked)
+        return answer({ type: 'DriveLocked', message: 'Password required' }, 401)
+      return answer(node('Unlocked'))
+    })
+    engine.onChallenge('DriveLocked', async (_error, retry) => {
+      await engine.client.mutation(api.drive.links.unlock, { token: 'link', password: 'secret' })
       return retry()
     })
-    const remove = state.onChallenge('DriveLocked', challenge)
-    const rename = state.useMutation(mutation(renameOperation))
-    await expect(rename.run({ node: 'n1', title: 'Unlocked' })).resolves.toMatchObject({
-      title: 'Unlocked',
+    await expect(
+      engine.client.mutation(api.drive.nodes.rename, { node: 'budget', title: 'Unlocked' }),
+    ).resolves.toMatchObject({ title: 'Unlocked' })
+    expect(sent).toHaveLength(3)
+    expect(feedback).not.toHaveBeenCalled()
+  })
+
+  it('runs and resumes a typed byte transfer through the same client and cancels without a refusal', async () => {
+    const methods: string[] = []
+    fetcher.mockImplementation(async (url, init) => {
+      methods.push(init?.method ?? 'GET')
+      if (String(url).endsWith('/finish')) return answer(node('Uploaded', 'uploaded'))
+      if (init?.method === 'PUT') return answer({ upload_id: 'upload-1', received: 12 })
+      return answer({ upload_id: 'upload-1', mode: 'chunked' })
     })
-    expect(rename.error).toBeNull()
-    expect(challenge).toHaveBeenCalledOnce()
-    expect(mock.request).toHaveBeenCalledTimes(2)
-    remove()
-    state.dispose()
-  })
-
-  it('ignores equal realtime versions and refetches newer ones', async () => {
-    const realtime = new FakeRealtime()
-    let current = node()
-    const mock = mockTransport(() => current)
-    const state = createServerState({ transport: mock.transport, realtime, persistence: false })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    realtime.emit('doc_update', { doctype: 'Drive Node', name: 'n1', modified: current.modified })
-    await tick()
-    expect(mock.request).toHaveBeenCalledOnce()
-
-    current = node('Realtime', '2026-09-15 03:00:00')
-    realtime.emit('doc_update', { doctype: 'Drive Node', name: 'n1', modified: current.modified })
-    await tick()
-    expect(mock.request).toHaveBeenCalledTimes(2)
-    expect(detail.data?.title).toBe('Realtime')
-    state.dispose()
-  })
-
-  it('ignores older realtime versions', async () => {
-    const realtime = new FakeRealtime()
-    const mock = mockTransport(() => node('Current', '2026-09-15 03:00:00'))
-    const state = createServerState({ transport: mock.transport, realtime, persistence: false })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    realtime.emit('doc_update', {
-      doctype: 'Drive Node',
-      name: 'n1',
-      modified: '2026-09-15 02:00:00',
+    const transfer = observe(() => engine.useUpload(api.drive.uploads.transfer))
+    const file = new Blob(['hello world!'])
+    const uploaded = await transfer.run({ parent_node: 'root', file, filename: 'Greeting.txt' })
+    expect(uploaded.name).toBe('uploaded')
+    expect(methods).toEqual(['POST', 'PUT', 'POST'])
+    expect(transfer.progress).toBe(100)
+    expect(transfer.isPending).toBe(false)
+    methods.length = 0
+    await transfer.run({
+      parent_node: 'root',
+      file,
+      start: { session: { upload_id: 'upload-1', mode: 'chunked' }, offset: 5 },
     })
-    await tick()
-    expect(mock.request).toHaveBeenCalledOnce()
-    state.dispose()
+    expect(methods).toEqual(['PUT', 'POST'])
+    const canceled = transfer.run({ parent_node: 'root', file }).catch((cause) => cause)
+    transfer.cancel()
+    expect((await canceled).name).toBe('AbortError')
+    expect(transfer.error).toBeNull()
+    expect(transfer.isPending).toBe(false)
+    expect(feedback).not.toHaveBeenCalled()
   })
 
-  it('coalesces list events and invalidates permission changes', async () => {
-    const realtime = new FakeRealtime()
-    const mock = mockTransport(() => ({ rows: [node()], next_cursor: null }))
-    const state = createServerState({ transport: mock.transport, realtime, persistence: false })
-    const children = state.useQuery(infinite(childrenOperation, { node: 'root' }))
-    await children.settled()
-    // The first event starts a read. The later ones may postdate it, so they
-    // share one follow-up read.
-    realtime.emit('list_update', { doctype: 'Drive Node', name: 'n2' })
-    realtime.emit('list_update', { doctype: 'Drive Node', name: 'n3' })
-    realtime.emit('list_update', { doctype: 'Drive Node', name: 'n4' })
-    await tick()
-    expect(mock.request).toHaveBeenCalledTimes(3)
-    realtime.emit('update_user_permissions', {})
-    await tick()
-    expect(mock.request).toHaveBeenCalledTimes(4)
-    state.dispose()
-  })
-
-  it('rekeys cached entities after a realtime rename', async () => {
-    const realtime = new FakeRealtime()
-    const mock = mockTransport(() => ({ rows: [node()], next_cursor: null }))
-    const state = createServerState({ transport: mock.transport, realtime, persistence: false })
-    const children = state.useQuery(infinite(childrenOperation, { node: 'root' }))
-    await children.settled()
-    realtime.emit('doc_rename', { doctype: 'Drive Node', old_name: 'n1', new_name: 'n9' })
-    expect(children.rows[0]).toMatchObject({ name: 'n9', title: 'Budget' })
-    state.dispose()
-  })
-
-  it('pauses queries on SessionExpired and refetches stale observations after resume', async () => {
-    let response: Node | Error = node()
-    const mock = mockTransport(() => {
-      if (response instanceof Error) throw response
-      return response
+  it('refreshes Recent after a visit and settings readers after settings writes', async () => {
+    let visited = false
+    let webdav = false
+    fetcher.mockImplementation(async (url, init) => {
+      const path = String(url)
+      if (path.includes('/visit')) {
+        visited = true
+        return answer({ count: 1 })
+      }
+      if (init?.method === 'PATCH') {
+        webdav = true
+        return answer({ webdav_enabled: true, writer_settings: {} })
+      }
+      if (path.includes('/views/recents'))
+        return answer({ rows: visited ? [node()] : [], next_cursor: null })
+      return answer({ webdav_enabled: webdav, writer_settings: {} })
     })
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: false,
-    })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await detail.settled()
-    response = new TransportError({ type: 'SessionExpired', message: 'Sign in', status: 401 })
-    await detail.refetch()
-    expect(detail.error?.type).toBe('SessionExpired')
+    const recent = observe(() => engine.useQuery(api.drive.views.list, { view: 'recents' }))
+    const settings = observe(() => engine.useQuery(api.drive.settings.get))
+    await vi.waitFor(() => expect(settings.data?.webdav_enabled).toBe(false))
+    await engine.client.mutation(api.drive.nodes.visit, { node: 'budget' })
+    await vi.waitFor(() => expect(recent.data?.rows).toHaveLength(1))
+    await engine.client.mutation(api.drive.settings.update, { webdav_enabled: true })
+    await vi.waitFor(() => expect(settings.data?.webdav_enabled).toBe(true))
+  })
+})
 
-    response = node('After login', '2026-09-15 02:00:00')
-    window.dispatchEvent(new Event('focus'))
-    await tick()
-    expect(mock.request).toHaveBeenCalledTimes(2)
-    state.resume()
-    await tick()
-    expect(detail.data?.title).toBe('After login')
-    expect(mock.request).toHaveBeenCalledTimes(3)
-    state.dispose()
+describe('Mail settings through the shared client', () => {
+  it('refreshes the changed account, preserves the other account, and rejects a refused save', async () => {
+    const settings = new Map(
+      ['alice', 'bob'].map((account) => [
+        account,
+        {
+          create_contacts_after_email_submit: 0,
+          destroy_email_after_submit: 0,
+          destroy_newsletter_after_submit: 0,
+          keep_forwarded_email_in_thread: 0,
+          enable_screening: 0,
+          block_remote_images: 0,
+          default_outgoing_email: null,
+          on_mark_as_junk: 'Ask to Block Sender',
+        },
+      ]),
+    )
+    const reads: string[] = []
+    let refuse = false
+    fetcher.mockImplementation(async (url, options) => {
+      const address = new URL(String(url), 'http://suite.test')
+      if (options?.method === 'GET') {
+        const account = address.searchParams.get('account') ?? ''
+        reads.push(account)
+        return answer(settings.get(account))
+      }
+      if (refuse) return answer({ type: 'PermissionError', message: 'Account is read only' }, 403)
+      const input = JSON.parse(String(options?.body)) as {
+        account: string
+        changes: { enable_screening: 0 | 1 }
+      }
+      Object.assign(settings.get(input.account)!, input.changes)
+      return answer(null)
+    })
+    const alice = observe(() => engine.useQuery(api.mail.settings.account, { account: 'alice' }))
+    const bob = observe(() => engine.useQuery(api.mail.settings.account, { account: 'bob' }))
+    await flush()
+    await engine.client.mutation(api.mail.settings.updateAccount, {
+      account: 'alice',
+      changes: { enable_screening: 1 },
+    })
+    await flush()
+    expect(alice.data?.enable_screening).toBe(1)
+    expect(bob.data?.enable_screening).toBe(0)
+    expect(reads.filter((account) => account === 'alice')).toHaveLength(2)
+    expect(reads.filter((account) => account === 'bob')).toHaveLength(1)
+
+    refuse = true
+    const save = observe(() => engine.useMutation(api.mail.settings.updateAccount))
+    await expect(
+      save.run({ account: 'bob', changes: { enable_screening: 1 } }),
+    ).rejects.toMatchObject({ type: 'PermissionError' })
+    expect(save.isPending).toBe(false)
+    expect(save.error?.message).toBe('Account is read only')
+    expect(bob.data?.enable_screening).toBe(0)
+    expect(reads.filter((account) => account === 'bob')).toHaveLength(1)
+    expect(feedback).toHaveBeenCalledTimes(1)
   })
 
-  it('hydrates persisted entities as stale data and writes fresh entities back', async () => {
-    let release!: (value: Node) => void
-    const fresh = new Promise<Node>((resolve) => (release = resolve))
-    const mock = mockTransport(() => fresh)
-    const save = vi.fn(async () => {})
-    const state = createServerState({
-      transport: mock.transport,
-      realtime: false,
-      persistence: {
-        load: async () => [
-          {
-            key: 'drivenode:n1',
-            tag: 'Drive Node',
-            id: 'n1',
-            version: '2026-09-14 01:00:00',
-            data: node('Persisted', '2026-09-14 01:00:00'),
-            fetchedAt: 1,
-          },
-        ],
-        save,
-      },
+  it('retries a declared POST query and returns POST attachment bytes without JSON decoding', async () => {
+    fetcher
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: [] })))
+    await expect(
+      engine.client.query(api.mail.screening.list, { account: 'alice' }),
+    ).resolves.toEqual([])
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    fetcher.mockResolvedValueOnce(
+      new Response('mail attachment', { headers: { 'Content-Type': 'application/octet-stream' } }),
+    )
+    const bytes = await engine.client.query(api.mail.attachments.download, {
+      account: 'alice',
+      blob_id: 'blob',
     })
-    const detail = state.useQuery(query(detailOperation, { node: 'n1' }))
-    await tick()
-    expect(detail.data?.title).toBe('Persisted')
-    expect(detail.isStale).toBe(true)
-    expect(detail.isFetching).toBe(true)
-    release(node('Fresh', '2026-09-15 02:00:00'))
-    await detail.settled()
-    await Promise.resolve()
-    expect(detail.data?.title).toBe('Fresh')
-    expect(save).toHaveBeenCalled()
-    state.dispose()
+    expect(bytes).toBeInstanceOf(Blob)
+    expect(await bytes.text()).toBe('mail attachment')
   })
 })

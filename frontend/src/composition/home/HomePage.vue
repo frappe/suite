@@ -263,17 +263,16 @@ import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 import { computed, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
-import { upcomingEvents as upcomingEventsDescriptor, type CalendarEvent } from '@/apps/calendar'
+import { api, useMutation, useQuery } from '@/api'
+import { type CalendarEvent } from '@/apps/calendar'
 import {
   DriveFileCard,
   driveNodeRoute,
-  driveRecents,
   formatDriveListingDate,
   useDriveDocumentCreation,
   useDrivePreviewRefresh,
   type DriveNodeSummary,
 } from '@/apps/drive'
-import { createRoom, scheduleMeeting } from '@/apps/meet'
 import { documentTypes } from '@/composition/documentRegistry'
 import {
   formatEventTime,
@@ -282,7 +281,6 @@ import {
   toLocalDateTimeInput,
 } from '@/composition/home/homeTime'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
-import { useMutation, useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
 import { isMobile } from '@/shell/useIsMobile'
 
@@ -294,22 +292,24 @@ const eventWindow = homeEventWindow(homeNow)
 // Recent shows documents and files, not folders. Recents has no kind filter,
 // so ask for more than the grid holds and keep the first non-folders.
 const RECENT_CARDS = 12
-const recentQuery = useQuery(driveRecents(RECENT_CARDS * 4))
+const recentQuery = useQuery(api.drive.views.list, {
+  view: 'recents',
+  limit: RECENT_CARDS * 4,
+  expand: 'preview',
+})
 // Thumbnail URLs are signed and expire, so Recent refetches them as Drive's grid does.
 useDrivePreviewRefresh(() => recentQuery.refetch())
-const upcomingQuery = useQuery(upcomingEventsDescriptor(eventWindow))
+const upcomingQuery = useQuery(api.calendar.events.list, eventWindow)
 const createDocumentMutation = useDriveDocumentCreation()
-const createRoomMutation = useMutation(createRoom)
-const scheduleMeetingMutation = useMutation(scheduleMeeting)
-
+const createRoomMutation = useMutation(api.meet.rooms.create)
+const scheduleMeetingMutation = useMutation(api.meet.meetings.schedule)
 const recentRows = computed(() =>
-  (recentQuery.rows as DriveNodeSummary[])
+  ((recentQuery.data?.rows ?? []) as DriveNodeSummary[])
     .filter((node) => node.kind !== 'folder')
     .slice(0, RECENT_CARDS),
 )
 const upcomingEvents = computed(() => (upcomingQuery.data ?? []) as CalendarEvent[])
 const eventGroups = computed(() => groupHomeEvents(upcomingEvents.value, homeNow))
-
 const joinDialogOpen = ref(false)
 const meetingCode = ref('')
 const meetingCodeError = ref('')
@@ -320,13 +320,11 @@ const meetingTitle = ref('')
 const meetingStart = ref(toLocalDateTimeInput(nextHour))
 const meetingEnd = ref(toLocalDateTimeInput(new Date(nextHour.getTime() + 60 * 60_000)))
 const scheduleError = ref('')
-
 const newMenuItems = documentTypes.map((definition) => ({
   label: definition.newLabel(),
   icon: definition.icon,
   onClick: () => createDocument(definition.contentDoctype),
 }))
-
 const meetMenuItems = [
   {
     label: __('Start instant meeting'),
@@ -347,7 +345,6 @@ const meetMenuItems = [
     },
   },
 ]
-
 const scheduleMenuItems = [
   {
     label: __('Event'),
@@ -363,19 +360,26 @@ const scheduleMenuItems = [
     },
   },
 ]
-
 async function createDocument(contentDoctype: string) {
-  const node = await createDocumentMutation.run({
-    content_doctype: contentDoctype,
-  })
-  if (node) await router.push(driveNodeRoute(node))
+  try {
+    const node = await createDocumentMutation.run({
+      content_doctype: contentDoctype,
+    })
+    if (node) await router.push(driveNodeRoute(node))
+  } catch {
+    return
+  }
 }
-
 async function startMeeting(type: 'open' | 'restricted') {
-  const room = await createRoomMutation.run({ type })
-  if (room) await router.push(meetRoute(room.code))
+  try {
+    const room = await createRoomMutation.run({
+      type,
+    })
+    if (room) await router.push(meetRoute(room.code))
+  } catch {
+    return
+  }
 }
-
 function joinWithCode() {
   const code = meetingCode.value.trim()
   meetingCodeError.value = ''
@@ -386,32 +390,32 @@ function joinWithCode() {
   joinDialogOpen.value = false
   void router.push(meetRoute(code))
 }
-
 async function submitScheduledMeeting() {
-  scheduleError.value = ''
-  const start = new Date(meetingStart.value)
-  const end = new Date(meetingEnd.value)
-  if (!meetingTitle.value.trim() || Number.isNaN(start.getTime()) || end <= start) {
-    scheduleError.value = __('Enter a title and an end time after the start time.')
+  try {
+    scheduleError.value = ''
+    const start = new Date(meetingStart.value)
+    const end = new Date(meetingEnd.value)
+    if (!meetingTitle.value.trim() || Number.isNaN(start.getTime()) || end <= start) {
+      scheduleError.value = __('Enter a title and an end time after the start time.')
+      return
+    }
+    await scheduleMeetingMutation.run({
+      title: meetingTitle.value.trim(),
+      start: start.toISOString(),
+      end: end.toISOString(),
+      attendees: [],
+    })
+    scheduleDialogOpen.value = false
+    meetingTitle.value = ''
+    toast.success(__('Meeting scheduled.'))
+    await upcomingQuery.refetch()
+  } catch {
     return
   }
-  const result = await scheduleMeetingMutation.run({
-    title: meetingTitle.value.trim(),
-    start: start.toISOString(),
-    end: end.toISOString(),
-    attendees: [],
-  })
-  if (!result) return
-  scheduleDialogOpen.value = false
-  meetingTitle.value = ''
-  toast.success(__('Meeting scheduled.'))
-  await upcomingQuery.refetch()
 }
-
 function meetRoute(code: string): string {
   return `/meet/${encodeURIComponent(code)}`
 }
-
 function eventKey(event: CalendarEvent): string {
   return String(event.id ?? event.name ?? event.uid ?? `${event.start}-${event.title}`)
 }

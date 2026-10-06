@@ -1,4 +1,3 @@
-import { frappeRequest } from 'frappe-ui'
 import { ref } from 'vue'
 
 import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
@@ -135,7 +134,12 @@ const warmShellAndApi = async (id, loadOptions, signal) => {
     () => {},
   )
   for (const { url, params } of presentationLoadRequests(id, loadOptions)) {
-    await frappeRequest({ url, method: 'GET', params }).catch(() => {})
+    await fetch(`/api/method/${url}?${new URLSearchParams(params)}`, {
+      credentials: 'same-origin',
+      signal,
+    })
+      .then((response) => response.body?.cancel())
+      .catch(() => {})
   }
 }
 

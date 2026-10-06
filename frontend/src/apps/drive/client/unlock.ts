@@ -1,13 +1,8 @@
-import {
-  transport as defaultTransport,
-  TransportError,
-  type PlatformError,
-  type Transport,
-} from '@/platform/transport'
+import { api, client } from '@/api'
+import type { ImperativeClient } from '@/platform/server-state/types'
+import { TransportError, type PlatformError } from '@/platform/transport'
 
-import { api } from './generated'
 import { driveLinks, type LinkStore } from './links'
-import { driveOperation } from './operation'
 
 /**
  * Opens a password link for one node (spec §10.2, Drive §6.3).
@@ -19,23 +14,25 @@ import { driveOperation } from './operation'
 
 /** Drive §6.3 locks a link out for fifteen minutes. Used when a 429 names no wait. */
 export const LOCKOUT_MS = 15 * 60_000
-
 export type UnlockOutcome =
-  | { status: 'unlocked' }
-  | { status: 'wrong-password' }
-  | { status: 'locked-out'; retryAfterMs: number }
-  | { status: 'failed'; message: string }
-
+  | {
+      status: 'unlocked'
+    }
+  | {
+      status: 'wrong-password'
+    }
+  | {
+      status: 'locked-out'
+      retryAfterMs: number
+    }
+  | {
+      status: 'failed'
+      message: string
+    }
 interface UnlockDependencies {
-  transport?: Transport
+  client?: ImperativeClient
   links?: Pick<LinkStore, 'codeFor' | 'unlock'>
 }
-
-type UnlockInput = { token: string; password: string }
-type UnlockOutput = { ticket: string; expires: number }
-
-const unlockOperation = driveOperation<UnlockInput, UnlockOutput>(api.link_unlock)
-
 export async function unlockNode(
   node: string,
   password: string,
@@ -44,36 +41,54 @@ export async function unlockNode(
   const links = dependencies.links ?? driveLinks
   const token = links.codeFor(node)
   // Only a link this browser holds can lock a node, so a missing code means it was forgotten.
-  if (!token) return { status: 'failed', message: 'Open the share link again.' }
+  if (!token)
+    return {
+      status: 'failed',
+      message: 'Open the share link again.',
+    }
   try {
-    const { ticket } = await (dependencies.transport ?? defaultTransport).request(unlockOperation, {
-      token,
-      password,
-    })
+    const { ticket } = await (dependencies.client ?? client).mutation(
+      api.drive.links.unlock,
+      {
+        token,
+        password,
+      },
+      {
+        silent: true,
+      },
+    )
     links.unlock(token, ticket)
-    return { status: 'unlocked' }
+    return {
+      status: 'unlocked',
+    }
   } catch (error) {
     if (!(error instanceof TransportError)) throw error
-    if (error.status === 401 && error.type === 'DriveLocked') return { status: 'wrong-password' }
+    if (error.status === 401 && error.type === 'DriveLocked')
+      return {
+        status: 'wrong-password',
+      }
     if (error.status === 429)
-      return { status: 'locked-out', retryAfterMs: error.retryAfterMs ?? LOCKOUT_MS }
-    return { status: 'failed', message: error.message }
+      return {
+        status: 'locked-out',
+        retryAfterMs: error.retryAfterMs ?? LOCKOUT_MS,
+      }
+    return {
+      status: 'failed',
+      message: error.message,
+    }
   }
 }
-
-const nodeGet = driveOperation<{ node: string }, unknown>(api.node_get, { entity: true })
 
 /**
  * Asks the server once whether this node is refused for a link password, as
  * when an unlock ticket expires while someone browses. Any other answer,
  * success included, is `false`.
  */
-export async function isDriveNodeLocked(
-  node: string,
-  transport: Transport = defaultTransport,
-): Promise<boolean> {
+export async function isDriveNodeLocked(node: string): Promise<boolean> {
   try {
-    await transport.request(nodeGet, { node })
+    await client.query(api.drive.nodes.get, {
+      node,
+    })
     return false
   } catch (error) {
     return isDriveLocked(error)

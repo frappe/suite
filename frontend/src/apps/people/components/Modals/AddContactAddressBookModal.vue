@@ -6,7 +6,7 @@
           v-model="addressBook"
           type="combobox"
           :label="__('Address Book')"
-          :options="addressBooks.data.map((ab) => ({ label: ab._name, value: ab.name }))"
+          :options="(addressBooks.data ?? []).map((ab) => ({ label: ab._name, value: ab.name }))"
           :open-on-click="true"
         />
       </div>
@@ -21,7 +21,7 @@ import { userStore } from '@/apps/people/stores/user'
 
 const show = defineModel<boolean>()
 
-const emit = defineEmits(['add'])
+const { save } = defineProps<{ save: (value: string) => Promise<void> }>()
 
 const { addressBooks } = userStore()
 
@@ -32,15 +32,15 @@ const options = computed(() => ({
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled: !addressBook.value,
-      onClick: () => {
-        emit('add', {
-          address_book: addressBook.value,
-          address_book_name:
-            addressBooks.data.find((ab) => ab.name === addressBook.value)?._name || '',
-        })
-        show.value = false
+      onClick: async () => {
+        try {
+          await save(addressBook.value.split('|').at(-1) ?? addressBook.value)
+          show.value = false
+        } catch {
+          /* The command reports the refusal. Keep the draft open. */
+        }
       },
     },
   ],

@@ -7,6 +7,7 @@
             v-for="preset in presets"
             :key="preset.label"
             class="hover:bg-surface-gray-2 flex items-center justify-between rounded-4 px-2.5 py-2 text-left"
+            :disabled="saving"
             @click="confirm(preset.value)"
           >
             <span class="text-ink-gray-7 text-base">{{ preset.label }}</span>
@@ -34,14 +35,15 @@ import dayjs from '@/apps/mail/utils/dayjs'
 
 const show = defineModel<boolean>()
 
-const { title, initialValue } = defineProps<{
+const { title, initialValue, save } = defineProps<{
   // Dialog title; defaults to "Schedule send" (the reschedule flow overrides it).
+  save: (sendAt: string) => Promise<unknown>
   title?: string
   // UTC `...Z` timestamp that seeds the custom input (the current send_at when rescheduling).
   initialValue?: string
 }>()
 
-const emit = defineEmits<{ confirm: [sendAt: string] }>()
+const saving = ref(false)
 
 // Mirrors the server-side FUTURERELEASE fallback window; the server revalidates
 // against the account's real maxDelayedSend either way.
@@ -81,7 +83,8 @@ const presets = computed(() => {
   })
 })
 
-const confirm = (sendAt: string) => {
+const confirm = async (sendAt: string) => {
+  if (saving.value) return
   error.value = ''
 
   if (dayjs.utc(sendAt).isBefore(dayjs.utc()))
@@ -91,8 +94,15 @@ const confirm = (sendAt: string) => {
       MAX_DELAY_DAYS,
     ]))
 
-  show.value = false
-  emit('confirm', sendAt)
+  saving.value = true
+  try {
+    await save(sendAt)
+    show.value = false
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : __('Could not schedule delivery.')
+  } finally {
+    saving.value = false
+  }
 }
 
 const confirmCustom = () => {
@@ -105,8 +115,9 @@ const dialogOptions = computed(() => ({
   actions: [
     {
       label: __('Schedule'),
-      variant: 'solid',
+      variant: 'solid' as const,
       onClick: confirmCustom,
+      loading: saving.value,
     },
   ],
 }))

@@ -1,5 +1,5 @@
 <template>
-  <form class="flex flex-col space-y-4" @submit.prevent="submit">
+  <form class="flex flex-col space-y-4" @submit.prevent="submit().catch(() => {})">
     <FormControl
       v-model="email"
       :label="__('Email')"
@@ -46,7 +46,7 @@
     <ErrorMessage :message="errorMessage" />
     <Button
       variant="solid"
-      :loading="createAccount.loading"
+      :loading="createAccount.isPending || session.isLoggingIn"
       :label="__('Create Account')"
       type="submit"
     />
@@ -58,16 +58,18 @@
   </div>
 </template>
 <script setup lang="ts">
-import { Button, Combobox, createResource, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation, useQuery } from '@/api'
 import { sessionStore } from '@/apps/mail/stores/session'
 
 const { requestKey } = defineProps<{ requestKey: string }>()
 
 const router = useRouter()
-const { login } = sessionStore()
+const session = sessionStore()
+const { login } = session
 
 type Option = { value: string; label: string }
 
@@ -77,59 +79,63 @@ const lastName = ref('')
 const password = ref('')
 const locale = ref('')
 const timeZone = ref('')
-const errorMessage = ref('')
-
-const getAccountRequest = createResource({
-  url: 'suite.mail.api.account.get_account_request',
-  makeParams: () => ({ request_key: requestKey }),
-  onSuccess: (data) => {
-    if ((data?.backup_email || data?.account) && !data?.is_verified && !data?.is_expired) {
-      email.value = data.account || data.backup_email
-      accountOptions.submit()
-    } else router.replace({ name: 'mail-signup' })
-  },
+const completingSetup = ref(false)
+const getAccountRequest = useQuery(api.mail.public.accountRequest, () =>
+  requestKey.length === 32 ? { request_key: requestKey } : false,
+)
+const pendingRequest = computed(() => {
+  const data = getAccountRequest.data
+  return data && (data.backup_email || data.account) && !data.is_verified && !data.is_expired
+    ? data
+    : undefined
 })
-
-// Fetched only once the request is known to be pending, since the endpoint is gated on that too.
-const accountOptions = createResource({
-  url: 'suite.mail.api.account.get_account_setup_options',
-  makeParams: () => ({ request_key: requestKey }),
-})
-
-const localeOptions = computed<Option[]>(() => accountOptions.data?.locales || [])
-// The time zone is optional, so it needs a blank choice to leave it unset.
-const timeZoneOptions = computed<Option[]>(() => [
-  { value: '', label: __('Not set') },
-  ...(accountOptions.data?.time_zones || []),
-])
-
-const createAccount = createResource({
-  url: 'suite.mail.api.account.create_account',
-  makeParams: () => ({
-    request_key: requestKey,
-    first_name: firstName.value,
-    last_name: lastName.value,
-    password: password.value,
-    // Blank means "server default" for both, which the API spells as null.
-    locale: locale.value || null,
-    time_zone: timeZone.value || null,
-  }),
-  onSuccess: () => {
-    errorMessage.value = ''
-    login.submit({ usr: email.value, pwd: password.value })
-  },
-  onError: (error) => (errorMessage.value = error.messages[0]),
-})
-
 watch(
   () => requestKey,
-  (val) => {
-    if (!val) return
-    if (val.length === 32) getAccountRequest.submit()
-    else router.replace({ name: 'mail-signup' })
+  (key) => {
+    if (key && key.length !== 32) router.replace({ name: 'mail-signup' })
   },
   { immediate: true },
 )
-
-const submit = () => createAccount.submit()
+watch(
+  () => getAccountRequest.status,
+  (status) => {
+    if (status === 'success' && !pendingRequest.value && !completingSetup.value)
+      router.replace({ name: 'mail-signup' })
+  },
+)
+watch(pendingRequest, (data) => {
+  if (data) email.value = data.account || data.backup_email || ''
+})
+const accountOptions = useQuery(api.mail.public.accountOptions, () =>
+  pendingRequest.value ? { request_key: requestKey } : false,
+)
+const localeOptions = computed<Option[]>(() => accountOptions.data?.locales ?? [])
+const timeZoneOptions = computed<Option[]>(() => [
+  { value: '', label: __('Not set') },
+  ...(accountOptions.data?.time_zones ?? []),
+])
+const createAccount = useMutation(api.mail.public.createAccount, { silent: true })
+const errorMessage = computed(
+  () =>
+    createAccount.error?.message ||
+    getAccountRequest.error?.message ||
+    accountOptions.error?.message ||
+    session.loginError?.message,
+)
+async function submit() {
+  completingSetup.value = true
+  try {
+    await createAccount.run({
+      request_key: requestKey,
+      first_name: firstName.value,
+      last_name: lastName.value,
+      password: password.value,
+      locale: locale.value || null,
+      time_zone: timeZone.value || null,
+    })
+    await login(email.value, password.value)
+  } finally {
+    completingSetup.value = false
+  }
+}
 </script>

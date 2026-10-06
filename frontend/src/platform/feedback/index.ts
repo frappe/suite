@@ -108,6 +108,11 @@ export function hostChallenge(
   })
 }
 
-export function reportMutationError(error: PlatformError): void {
+const reportedErrors = new WeakSet<Error | PlatformError>()
+
+/** A workflow can handle the same refusal as the engine without reporting it twice. */
+export function reportMutationError(error: Error | PlatformError): void {
+  if (('name' in error && error.name === 'AbortError') || reportedErrors.has(error)) return
+  reportedErrors.add(error)
   frappeToast.error(error.message)
 }

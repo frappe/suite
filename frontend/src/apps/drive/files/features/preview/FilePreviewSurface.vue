@@ -4,11 +4,10 @@ import { Button, Dropdown, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
-import { children, nodeContentUrl, starNode, unstarNode } from '@/apps/drive/client/nodes'
-import { roots } from '@/apps/drive/client/roots'
+import { nodeContentUrl } from '@/apps/drive/client/nodes'
 import type { DocumentSession } from '@/apps/drive/client/session'
-import { useMutation, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 
 import { trashLocation, useLocationTitle } from '../../internal/locations'
@@ -66,9 +65,9 @@ const inTrashedFolder = computed(
   () => trashed.value && file.value.trashRoot.value !== props.session.nodeId,
 )
 const trash = useTrashActions(() => (trashed.value ? file.value.root : null))
-const discovered = useQuery(() => (signedIn.value ? roots() : false))
-const starMutation = useMutation(starNode())
-const unstarMutation = useMutation(unstarNode())
+const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
+const starMutation = useMutation(api.drive.nodes.star)
+const unstarMutation = useMutation(api.drive.nodes.unstar)
 
 const header = ref<{ focusTitle(): void } | null>(null)
 const upload = ref<{ pick(): void } | null>(null)
@@ -90,15 +89,15 @@ const location = computed(() => {
 // by default: the saved sort, folders left out. The server applies the type
 // filter as it does for the listing, so the same files come in the same order.
 const order = resolvePresentation({}, readPresentationPreference())
-const siblings = useQuery(() =>
+const siblings = useInfiniteQuery(api.drive.nodes.children, () =>
   folder.value
-    ? children({
+    ? {
         node: folder.value.name,
         order_by: order.sort,
         ascending: order.dir === 'asc',
-        types: types.value.map((option) => option.value),
+        type: types.value.length ? types.value.map((option) => option.value).join(',') : undefined,
         limit: 200,
-      })
+      }
     : false,
 )
 const files = computed(() =>
@@ -188,9 +187,12 @@ async function deleteForever() {
 async function toggleStar() {
   const favourite = file.value.favourite
   const starred = !favourite.value
-  favourite.value = starred
-  const result = await (starred ? starMutation : unstarMutation).run({ node: props.session.nodeId })
-  if (!result) favourite.value = !starred
+  try {
+    favourite.value = starred
+    await (starred ? starMutation : unstarMutation).run({ node: props.session.nodeId })
+  } catch {
+    favourite.value = !starred
+  }
 }
 
 async function move() {

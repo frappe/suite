@@ -1,19 +1,17 @@
 import { computed, reactive, shallowReactive, watch } from 'vue'
 
-import { createNode, findChild } from '@/apps/drive/client/nodes'
+import { api, client, useUpload } from '@/api'
+import { findChild } from '@/apps/drive/client/nodes'
 import { readRootUsage } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, hasRole, type DriveNode } from '@/apps/drive/client/types'
 import {
-  finishUpload,
   isSessionGone,
   openUpload,
   probeUpload,
   sendDirect,
-  uploadTransfer,
   type UploadSession,
 } from '@/apps/drive/client/uploads'
 import { readMaxFileSize } from '@/platform/boot'
-import { serverState } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError, type PlatformError } from '@/platform/transport'
@@ -355,18 +353,15 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     parent: string,
     title: string,
   ): Promise<DriveNode | { error: PlatformError }> {
-    const mutation = serverState.useMutation(createNode(), { silent: true })
-    const created = (await mutation.run({ parent_node: parent, title, kind: 'folder' })) as
-      DriveNode | undefined
-    return (
-      created ?? {
-        error: mutation.error ?? {
-          type: 'RequestError',
-          message: 'The folder could not be created.',
-          status: 0,
-        },
-      }
-    )
+    try {
+      return await client.mutation(
+        api.drive.nodes.createFolder,
+        { parent_node: parent, title, kind: 'folder' },
+        { silent: true },
+      )
+    } catch (cause) {
+      return { error: platformError(cause) }
+    }
   }
 
   /** A browser replace keeps no old version (spec §6.8). */
@@ -512,33 +507,30 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     entry.state = 'uploading'
     entry.error = null
     while (true) {
-      const mutation = serverState.useMutation(uploadTransfer(entry.parent), { silent: true })
+      const upload = useUpload(api.drive.uploads.transfer, { silent: true })
       const stop = watch(
-        () => mutation.progress,
+        () => upload.progress,
         (progress) => {
-          if (progress == null) return
-          entry.sent = Math.round(progress * entry.size)
+          if (progress === null) return
+          entry.sent = Math.round((progress / 100) * entry.size)
           void persist(job)
         },
       )
-      const node = await mutation.run({
-        parent_node: entry.parent,
-        filename: entry.title,
-        size: entry.size,
-        ...(entry.replaces ? { replaces: entry.replaces } : {}),
-        ...(checksum ? { checksum } : {}),
-        file: job.file,
-        start: { session: job.session, offset: entry.sent },
-      })
-      stop()
-      if (node) return complete(job, node)
-      const error = mutation.error ?? {
-        type: 'RequestError',
-        message: 'The upload failed.',
-        status: 0,
+      try {
+        const node = await upload.run({
+          parent_node: entry.parent,
+          filename: entry.title,
+          ...(entry.replaces ? { replaces: entry.replaces } : {}),
+          ...(checksum ? { checksum } : {}),
+          file: job.file,
+          start: { session: job.session, offset: entry.sent },
+        })
+        return complete(job, node)
+      } catch (cause) {
+        if (!(await settleRefusal(job, platformError(cause)))) return
+      } finally {
+        stop()
       }
-      // The title was taken while the bytes travelled. The session stays; finish again.
-      if (!(await settleRefusal(job, error))) return
       entry.state = 'uploading'
     }
   }
@@ -565,20 +557,22 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       await persist(job)
     }
     while (true) {
-      const mutation = serverState.useMutation(finishUpload(entry.parent), { silent: true })
-      const node = await mutation.run({
-        upload_id: session.upload_id,
-        ...(entry.replaces
-          ? { replaces: entry.replaces }
-          : { parent_node: entry.parent, title: entry.title }),
-      })
-      if (node) return complete(job, node)
-      const error = mutation.error ?? {
-        type: 'RequestError',
-        message: 'The upload failed.',
-        status: 0,
+      try {
+        const node = await client.mutation(
+          api.drive.uploads.finish,
+          {
+            upload_id: session.upload_id,
+            node: entry.parent,
+            ...(entry.replaces
+              ? { replaces: entry.replaces }
+              : { parent_node: entry.parent, title: entry.title }),
+          },
+          { silent: true },
+        )
+        return complete(job, node)
+      } catch (cause) {
+        if (!(await settleRefusal(job, platformError(cause)))) return
       }
-      if (!(await settleRefusal(job, error))) return
       entry.state = 'uploading'
     }
   }

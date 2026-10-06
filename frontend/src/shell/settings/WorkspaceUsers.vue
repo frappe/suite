@@ -69,40 +69,14 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Badge, Button, createResource, Dialog, TextInput, toast } from 'frappe-ui'
+import { Avatar, Badge, Button, Dialog, TextInput, toast } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
+import { api, useQuery } from '@/api'
 import InviteStep from '@/shell/InviteStep.vue'
 
-/** A row from `suite.api.account.get_users`. */
-interface WorkspaceUser {
-  name: string
-  email: string
-  full_name: string | null
-  user_image: string | null
-  is_admin: boolean
-}
-
-/** A row from `suite.api.account.get_pending_invites`. */
-interface PendingInvite {
-  name: string
-  email: string
-  creation: string
-  invited_by: string
-  invited_by_name: string | null
-}
-
-const users = createResource<WorkspaceUser[]>({
-  url: 'suite.api.account.get_users',
-  auto: true,
-  initialData: [],
-})
-
-const pendingInvites = createResource<PendingInvite[]>({
-  url: 'suite.api.account.get_pending_invites',
-  auto: true,
-  initialData: [],
-})
+const users = useQuery(api.suite.users.list)
+const pendingInvites = useQuery(api.suite.invitations.list)
 
 const search = ref('')
 
@@ -134,6 +108,6 @@ const inviteActions = computed(() => [
 function onInvitesSent(summary: string) {
   showInviteDialog.value = false
   toast.success(summary)
-  pendingInvites.reload()
+  void pendingInvites.refetch().catch(() => {})
 }
 </script>

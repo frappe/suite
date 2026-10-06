@@ -9,6 +9,15 @@ from suite.api.account import get_onboarding_state, get_workspace
 no_cache = 1
 
 
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def get_boot_data() -> dict:
+    """Return the page's boot context for Vite, which does not render Jinja."""
+    context = frappe._dict()
+    get_context(context)
+    frappe.local.response_headers["Cache-Control"] = "no-store"
+    return context.boot
+
+
 def get_context(context):
     """Boot context for the unified Suite SPA.
 

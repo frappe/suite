@@ -1,7 +1,7 @@
 <template>
   <!-- todo: mobile responsive -->
   <DashboardLayout
-area="people"
+    area="people"
     :breadcrumbs="[{ label: __('Address Books') }]"
     :button-label="__('Add Address Book')"
     :button-action="() => (showAddAddressBook = true)"
@@ -57,9 +57,9 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import AddAddressBookModal from '@/apps/people/components/Modals/AddAddressBookModal.vue'
 import { userStore } from '@/apps/people/stores/user'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
 usePageMeta(() => appPageMeta(__('Address Books'), 'People'))

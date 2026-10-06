@@ -12,6 +12,7 @@ from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.utils import add_to_date, cint, now, random_string
 from jmap import MethodError
+from werkzeug.wrappers import Response
 
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
@@ -254,7 +255,7 @@ def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool =
 
 
 @frappe.whitelist()
-def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_by: str | None = None) -> list:
+def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_by: str | None = None) -> dict:
     """Returns a page of threads from the selected mailbox for the account."""
 
     if mailbox == "starred":
@@ -323,7 +324,7 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
     add_user_images_to_emails(account, threads, is_thread=False)
     add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
 
-    return threads, mailbox
+    return {"rows": threads, "mailbox": mailbox, "has_more": len(threads) == limit}
 
 
 def visible_in_mailbox(messages: list[dict], mailbox: str, trash: str | None, junk: str | None) -> list[dict]:
@@ -471,7 +472,7 @@ def is_listed_mailbox(mailbox: dict) -> bool:
 
 
 @frappe.whitelist()
-def get_unified_threads(folder: str, limit: int, start: int = 0, filter_by: str | None = None) -> list:
+def get_unified_threads(folder: str, limit: int, start: int = 0, filter_by: str | None = None) -> dict:
     """Returns a merged, newest-first page of a folder's threads across all of the user's accounts.
 
     `folder` is a slug (see mailbox_slug) or "starred". Each account contributes the threads of every
@@ -485,14 +486,16 @@ def get_unified_threads(folder: str, limit: int, start: int = 0, filter_by: str 
 
     accounts = get_user_jmap_accounts()
     if not accounts or not folder:
-        return []
+        return {"rows": [], "has_more": False}
 
     # Clamp user input before it fans out across accounts: limit to a sane page size, and start so the
     # per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH — bounding both the JMAP
     # fetch per account and the in-memory merge, regardless of what the client sends.
     limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
-    start = min(max(cint(start), 0), ALL_INBOX_MAX_FETCH - limit)
-    per_account_limit = start + limit
+    start = max(cint(start), 0)
+    if start >= ALL_INBOX_MAX_FETCH:
+        return {"rows": [], "has_more": False}
+    per_account_limit = min(start + limit, ALL_INBOX_MAX_FETCH)
 
     merged: list[dict] = []
     for account in accounts:
@@ -510,7 +513,7 @@ def get_unified_threads(folder: str, limit: int, start: int = 0, filter_by: str 
         # in both — it is listed once, from the first.
         seen: set[str] = set()
         for view_mailbox in view_mailboxes:
-            threads, _mailbox = get_threads(account_id, view_mailbox, per_account_limit, 0, filter_by)
+            threads = get_threads(account_id, view_mailbox, per_account_limit, 0, filter_by)["rows"]
             for thread in threads:
                 if thread["thread_id"] in seen:
                     continue
@@ -523,7 +526,8 @@ def get_unified_threads(folder: str, limit: int, start: int = 0, filter_by: str 
                 merged.append(thread)
 
     merged.sort(key=lambda thread: thread["received_at"], reverse=True)
-    return merged[start : start + limit]
+    rows = merged[start : start + limit]
+    return {"rows": rows, "has_more": len(rows) == limit and start + limit < ALL_INBOX_MAX_FETCH}
 
 
 @frappe.whitelist()
@@ -783,14 +787,14 @@ def get_delivery_status(account: str, blob_id: str) -> dict:
 
 
 @frappe.whitelist()
-def fetch_attachment(account: str, blob_id: str) -> bytes:
+def fetch_attachment(account: str, blob_id: str) -> Response:
     """Returns the content of an attachment."""
 
-    return fetch_blob(account, blob_id)
+    return Response(fetch_blob(account, blob_id), mimetype="application/octet-stream")
 
 
 @frappe.whitelist()
-def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> bytes:
+def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> Response:
     """Returns the provided attachments bundled into a ZIP archive."""
 
     attachments = [a for a in attachments if a.get("blob_id")]
@@ -811,7 +815,7 @@ def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> bytes
             filename = _get_unique_filename(attachment.get("filename") or "attachment", used_names)
             zf.writestr(filename, content)
 
-    return buffer.getvalue()
+    return Response(buffer.getvalue(), mimetype="application/zip")
 
 
 def _get_unique_filename(filename: str, used_names: dict[str, int]) -> str:
@@ -827,7 +831,7 @@ def _get_unique_filename(filename: str, used_names: dict[str, int]) -> str:
 
 
 @frappe.whitelist()
-def fetch_mail_as_eml(name: str) -> bytes:
+def fetch_mail_as_eml(name: str) -> Response:
     """Returns the MIME message content of the mail as bytes for EML download."""
 
     doc = frappe.get_doc("Mail Message", name)
@@ -835,8 +839,8 @@ def fetch_mail_as_eml(name: str) -> bytes:
 
     content = doc.message or doc.get_mime_message()
     if isinstance(content, str):
-        return content.encode("utf-8")
-    return content
+        content = content.encode("utf-8")
+    return Response(content, mimetype="message/rfc822")
 
 
 @frappe.whitelist()
@@ -1157,7 +1161,7 @@ def search_mails(
     limit: int = 5,
     start: int = 0,
     all_accounts: bool = False,
-) -> tuple[list[dict], int]:
+) -> dict:
     """Returns search results for the given query.
 
     By default the search is scoped to `account`. When `all_accounts` is truthy the query fans out
@@ -1168,7 +1172,7 @@ def search_mails(
     """
 
     if not filter:
-        return ([], 0)
+        return {"rows": [], "total": 0}
 
     # `filter` may arrive carrying the search-page query blob (see MailboxView), which includes the
     # out-of-band `all_accounts` flag — drop it so it never becomes a bogus JMAP search condition.
@@ -1177,14 +1181,15 @@ def search_mails(
     # The flag crosses the wire as a bool, an int, or a "true"/"1" string depending on the caller, so
     # normalize all truthy forms (cint("true") would be 0).
     if str(all_accounts).lower() in ("1", "true"):
-        return _search_all_accounts(filter, limit=limit, start=start)
+        rows, total = _search_all_accounts(filter, limit=limit, start=start)
+        return {"rows": rows, "total": total}
 
     normalized_filter = normalize_filter(filter)
     mails, total = search_messages(account, normalized_filter, position=start, limit=limit)
     add_user_images_to_emails(account, mails)
     _tag_search_results(account, mails)
 
-    return mails, total
+    return {"rows": mails, "total": total}
 
 
 def _search_all_accounts(filter: dict, limit: int, start: int) -> tuple[list[dict], int]:
@@ -1203,8 +1208,10 @@ def _search_all_accounts(filter: dict, limit: int, start: int) -> tuple[list[dic
     # Clamp user input before it fans out across accounts (see the All Inboxes bounds): limit to a sane
     # page size, and start so the per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH.
     limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
-    start = min(max(cint(start), 0), ALL_INBOX_MAX_FETCH - limit)
-    per_account_limit = start + limit
+    start = max(cint(start), 0)
+    if start >= ALL_INBOX_MAX_FETCH:
+        return [], 0
+    per_account_limit = min(start + limit, ALL_INBOX_MAX_FETCH)
 
     # Mailbox ids are account-specific, so a "Look In" folder filter can't carry across accounts.
     filter = {k: v for k, v in filter.items() if k != "inMailbox"}
@@ -1444,6 +1451,7 @@ def create_mailbox(
         )
 
     build_automation_sieve(account, activate=True)
+    return mailbox_id
 
 
 @frappe.whitelist()

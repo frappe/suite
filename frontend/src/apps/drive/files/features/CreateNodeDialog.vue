@@ -22,13 +22,7 @@
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
-        <Button
-          type="submit"
-          variant="solid"
-          theme="gray"
-          label="Create"
-          :loading="mutation.isPending"
-        />
+        <Button type="submit" variant="solid" theme="gray" label="Create" :loading="creating" />
       </div>
     </form>
   </Dialog>
@@ -40,7 +34,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { createNode, type CreateNodeInput } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
-import { useMutation } from '@/platform/server-state'
 
 export interface CreateRequest {
   parent: string
@@ -61,7 +54,7 @@ const url = ref('')
 const titleError = ref<string>()
 const urlError = ref<string>()
 const error = ref<string>()
-const mutation = useMutation(createNode(), { silent: ['DriveConflict'] })
+const creating = ref(false)
 
 const noun = computed(() => {
   const request = props.request
@@ -87,25 +80,30 @@ watch(
 )
 
 async function submit() {
-  const request = props.request
-  if (!request || mutation.isPending) return
-  error.value = undefined
-  titleError.value = title.value.trim() ? undefined : 'Enter a name.'
-  urlError.value =
-    request.kind !== 'link' || validUrl(url.value)
-      ? undefined
-      : 'Enter a full URL, starting with https://.'
-  if (titleError.value || urlError.value) {
-    await focusField(titleError.value ? 0 : 1)
+  try {
+    const request = props.request
+    if (!request || creating.value) return
+    error.value = undefined
+    titleError.value = title.value.trim() ? undefined : 'Enter a name.'
+    urlError.value =
+      request.kind !== 'link' || validUrl(url.value)
+        ? undefined
+        : 'Enter a full URL, starting with https://.'
+    if (titleError.value || urlError.value) {
+      await focusField(titleError.value ? 0 : 1)
+      return
+    }
+    creating.value = true
+    const created = await createNode(createInput(request, title.value.trim(), url.value.trim()))
+
+    open.value = false
+    emit('created', created, request)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : `Could not create this ${noun.value}.`
     return
+  } finally {
+    creating.value = false
   }
-  const created = await mutation.run(createInput(request, title.value.trim(), url.value.trim()))
-  if (!created) {
-    error.value = mutation.error?.message ?? `Could not create this ${noun.value}.`
-    return
-  }
-  open.value = false
-  emit('created', created, request)
 }
 
 function createInput(request: CreateRequest, title: string, url: string): CreateNodeInput {

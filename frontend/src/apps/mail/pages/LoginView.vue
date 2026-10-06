@@ -1,5 +1,5 @@
 <template>
-  <form class="flex flex-col space-y-4" @submit.prevent="login.submit({ usr, pwd })">
+  <form class="flex flex-col space-y-4" @submit.prevent="login(usr, pwd).catch(() => {})">
     <FormControl
       v-model="usr"
       :label="__('Email')"
@@ -21,8 +21,8 @@
         {{ __('Forgot password?') }}
       </router-link>
     </div>
-    <ErrorMessage :message="login.error" />
-    <Button variant="solid" :loading="login.loading" :label="__('Log In')" type="submit" />
+    <ErrorMessage :message="loginError?.message" />
+    <Button variant="solid" :loading="isLoggingIn" :label="__('Log In')" type="submit" />
   </form>
   <div v-if="Number(signupSettings.data?.allow_signup)" class="mt-6 text-center">
     <router-link class="text-center text-base-medium hover:underline" :to="{ name: 'mail-signup' }">
@@ -31,15 +31,19 @@
   </div>
 </template>
 <script setup lang="ts">
-import { Button, createResource, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { storeToRefs } from 'pinia'
 import { ref } from 'vue'
 
+import { api, useQuery } from '@/api'
 import { sessionStore } from '@/apps/mail/stores/session'
 
-const { login } = sessionStore()
+const session = sessionStore()
+const { login } = session
+const { isLoggingIn, loginError } = storeToRefs(session)
 
 const usr = ref('')
 const pwd = ref('')
 
-const signupSettings = createResource({ url: 'suite.mail.api.get_signup_settings', auto: true })
+const signupSettings = useQuery(api.mail.public.signupSettings)
 </script>

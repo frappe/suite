@@ -39,6 +39,14 @@ describe('feedback', () => {
     expect(mocks.error).toHaveBeenCalledWith('Locked')
   })
 
+  it('reports an engine refusal once when its workflow also handles it, and ignores cancellation', () => {
+    const refusal = new Error('Permission denied')
+    reportMutationError(refusal)
+    reportMutationError(refusal)
+    reportMutationError(new DOMException('Canceled', 'AbortError'))
+    expect(mocks.error.mock.calls).toEqual([['Permission denied']])
+  })
+
   it('hosts a challenge, resolves its prompt, and retries the failed action', async () => {
     mocks.prompt.mockImplementationOnce((options) =>
       options.onConfirm({ values: { password: 'open' } }),

@@ -21,7 +21,9 @@ import { computed, reactive, watch } from 'vue'
 
 const show = defineModel<boolean>()
 
-const emit = defineEmits(['add'])
+const { save } = defineProps<{
+  save: (value: { address: string; type: string; label: string }) => Promise<void>
+}>()
 
 const DEFAULT_EMAIL = { address: '', type: 'Personal', label: '' }
 
@@ -32,11 +34,15 @@ const options = computed(() => ({
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled: !(email.address && email.type),
-      onClick: () => {
-        emit('add', email)
-        show.value = false
+      onClick: async () => {
+        try {
+          await save({ ...email })
+          show.value = false
+        } catch {
+          /* The command reports the refusal. Keep the draft open. */
+        }
       },
     },
   ],

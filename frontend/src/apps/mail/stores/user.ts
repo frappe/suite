@@ -1,10 +1,11 @@
-import { createResource } from 'frappe-ui'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
+import { api, useQuery } from '@/api'
 import { SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import router from '@/apps/mail/router'
-import type { UserAccount, UserResource } from '@/apps/mail/types'
+import type { UserAccount } from '@/apps/mail/types'
+import { useSession } from '@/platform/session'
 
 export type MailboxRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important'
 
@@ -20,7 +21,7 @@ export const SECONDARY_MAILBOX_ROLES: readonly string[] = [
 /** Role → mailbox id map for a mailbox list (plus the named Screener). Shared with
  * utils/accountScope, which derives the same map for a non-active account's list. */
 export const deriveMailboxIds = (
-  mailboxes?: { role?: MailboxRole; _name?: string; id: string }[],
+  mailboxes?: { role?: MailboxRole | null; _name?: string; id: string }[],
 ): Record<MailboxRole | 'screener', string> => {
   const ids: Record<MailboxRole | 'screener', string> = {
     inbox: '',
@@ -44,7 +45,7 @@ const ACCOUNT_STORAGE_KEY = 'mail-account-id'
 export const userStore = defineStore('mail-user', () => {
   const accountId = ref('')
 
-  const resolveAccount = (accounts?: UserAccount[], routeAccountId?: string) => {
+  const resolveAccount = (accounts?: readonly UserAccount[], routeAccountId?: string) => {
     if (!accounts?.length) return
 
     // 1. Route param
@@ -69,56 +70,64 @@ export const userStore = defineStore('mail-user', () => {
   const setAccount = (id: string) => {
     accountId.value = id
     localStorage.setItem(ACCOUNT_STORAGE_KEY, id)
-    mailboxes.fetch()
-    addressBooks.fetch()
-    identities.fetch()
-    screenedAddresses.fetch()
-    globalScreenedAddresses.fetch()
-    sieveScripts.fetch()
   }
 
-  const userResource: UserResource = createResource({
-    url: 'suite.mail.api.account.get_user_info',
-    // Only the accounts with mail for the user: one that shares a calendar and nothing else
-    // is among their accounts, and has no inbox to show. In place, so onSuccess — which is
-    // handed the response rather than this — reads the same list.
-    transform: (data) => {
-      if (data?.accounts) data.accounts = data.accounts.filter((account) => account.in_mail)
-      return data
+  const account = () => (accountId.value ? { account: accountId.value } : false)
+  const userQuery = useQuery(api.mail.account.get, () => (useSession().user.value ? {} : false))
+  const userResource = reactive({
+    get status() {
+      return userQuery.status
     },
-    onSuccess: (data) => {
-      // The unified folders only apply when there's more than one account to merge.
-      if ((data?.accounts?.length ?? 0) > 1) unifiedFolders.fetch()
-      resolveAccount(data?.accounts)
+    get isFetching() {
+      return userQuery.isFetching
     },
-    onError: (error) => {
-      if (error && error.exc_type === 'AuthenticationError') router.push({ name: 'mail-login' })
+    get error() {
+      return userQuery.error
     },
-    auto: true,
+    refetch: userQuery.refetch,
+    cancel: userQuery.cancel,
+    get data() {
+      const data = userQuery.data
+      return data ? { ...data, accounts: data.accounts.filter((account) => account.in_mail) } : data
+    },
   })
+  const loadUser = () => userQuery.refetch()
+  watch(
+    () => userResource.data?.accounts,
+    (accounts) => resolveAccount(accounts),
+    { flush: 'sync' },
+  )
+  watch(
+    () => userQuery.error,
+    (error) => {
+      if (error && 'type' in error && error.type === 'AuthenticationError')
+        void router.push({ name: 'mail-login' })
+    },
+  )
 
   // Every account's folders merged by slug, with their unread counts summed — the folder list of the
-  // "All accounts" view. Not scoped to the active account, so (unlike the per-account resources) it
-  // isn't re-fetched in setAccount().
-  const unifiedFolders = createResource({
-    url: 'suite.mail.api.mail.get_unified_folders',
-    initialData: [],
-  })
-
+  // "All accounts" view. Only fetched when there's more than one account to merge, and not scoped to
+  // the active account.
+  const unifiedFolders = useQuery(api.mail.unified.folders, () =>
+    (userResource.data?.accounts.length ?? 0) > 1 ? {} : false,
+  )
+  const mailboxes = useQuery(api.mail.mailboxes.list, account)
+  const addressBooks = useQuery(api.mail.addressBooks.list, account)
+  const identities = useQuery(api.mail.identities.list, account)
+  const screenedAddresses = useQuery(api.mail.screening.list, account)
+  const globalScreenedAddresses = useQuery(api.mail.screening.global, () =>
+    useSession().user.value ? {} : false,
+  )
+  const sieveScripts = useQuery(api.mail.sieve.list, account)
   // Keep the unified counts in step with the per-account mailbox counts: refresh them whenever the
-  // active account's mailboxes reload — i.e. after any thread action (read, move, archive, trash, …)
-  // and on the periodic poll, since every one of those calls mailboxes.reload(). Only relevant with
-  // >1 account.
-  const reloadUnifiedFolders = () => {
-    if ((userResource.data?.accounts?.length ?? 0) > 1) unifiedFolders.reload()
-  }
-
-  const mailboxes = createResource({
-    url: 'suite.mail.api.mail.get_mailboxes',
-    makeParams: () => ({ account: accountId.value }),
-    cache: ['mailboxes', accountId.value],
-    onSuccess: reloadUnifiedFolders,
-  })
+  // active account's mailboxes reload — after any thread action and on the periodic poll.
+  watch(
+    () => mailboxes.data,
+    () => {
+      if ((userResource.data?.accounts.length ?? 0) > 1)
+        void unifiedFolders.refetch().catch(() => {})
+    },
+  )
 
   const mailboxIds = computed(() => deriveMailboxIds(mailboxes.data))
 
@@ -145,59 +154,15 @@ export const userStore = defineStore('mail-user', () => {
     )
   })
 
-  const addressBooks = createResource({
-    url: 'suite.mail.api.contacts.get_address_books',
-    makeParams: () => ({ account: accountId.value }),
-    cache: ['addressBooks', accountId.value],
-  })
-
-  const identities = createResource({
-    url: 'suite.mail.api.account.get_identities',
-    makeParams: () => ({ account: accountId.value }),
-    cache: ['identities', accountId.value],
-  })
-
-  // Screened senders for the account: each is `{ email, action }` where action is 'Reject'
-  // (discard incoming mail) or 'Spam' (file it into the Spam folder).
-  const screenedAddresses = createResource({
-    url: 'suite.mail.api.mail.get_screened_addresses',
-    makeParams: () => ({ account: accountId.value }),
-    cache: ['screenedAddresses', accountId.value],
-  })
-
-  // Global screened senders (admin-managed, no account) — overlaid under the account's own rules
-  // when deciding whether a sender is trusted for remote images. Not shown in the settings UI.
-  const globalScreenedAddresses = createResource({
-    url: 'suite.mail.api.mail.get_global_screened_addresses',
-    cache: 'globalScreenedAddresses',
-  })
-
-  const sieveScripts = createResource({
-    url: 'suite.mail.api.sieve.get_sieve_scripts',
-    makeParams: () => ({ account: accountId.value }),
-    cache: ['sieveScripts', accountId.value],
-  })
-
-  // Clear all user/account state so the next sign-in starts from a clean slate. Without
-  // resetting accountId, resolveAccount() would see the resolved account as unchanged and skip
-  // setAccount(), so the per-account resources (mailboxes, etc.) would never re-fetch until a
-  // full page reload.
   const reset = () => {
     accountId.value = ''
-    userResource.reset()
-    mailboxes.reset()
-    addressBooks.reset()
-    identities.reset()
-    screenedAddresses.reset()
-    globalScreenedAddresses.reset()
-    sieveScripts.reset()
-    unifiedFolders.reset()
   }
 
   return {
     accountId,
     resolveAccount,
     userResource,
+    loadUser,
     mailboxes,
     mailboxIds,
     accountShortNames,

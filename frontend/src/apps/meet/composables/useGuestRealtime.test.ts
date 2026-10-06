@@ -1,10 +1,14 @@
 import type { Socket } from 'socket.io-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { request } from '../utils/request'
+import { api, client } from '@/api'
+
 import { createGuestRealtimeLifecycle, getApprovedGuestConnectionDetails } from './useGuestRealtime'
 
-vi.mock('../utils/request', () => ({ request: vi.fn() }))
+vi.mock('@/api', async (original) => ({
+  ...(await original<typeof import('@/api')>()),
+  client: { mutation: vi.fn() },
+}))
 
 const session = {
   guestId: 'guest_private',
@@ -54,7 +58,7 @@ describe('guest realtime lifecycle', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('fetches admitted credentials through the POST-only proof-bound endpoint', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(client.mutation).mockResolvedValue({
       status: 'joined',
       guest_id: 'guest_private',
       auth_token: 'guest-jwt',
@@ -62,7 +66,7 @@ describe('guest realtime lifecycle', () => {
 
     await getApprovedGuestConnectionDetails(session)
 
-    expect(request).toHaveBeenCalledWith('/api/suite/meet/rooms/guest-connections', {
+    expect(client.mutation).toHaveBeenCalledWith(api.meet.guests.connect, {
       meeting_id: 'room-1',
       guest_id: 'guest_private',
       guest_session_token: 'private-proof',
@@ -169,7 +173,7 @@ describe('guest realtime lifecycle', () => {
 
       await vi.advanceTimersByTimeAsync(60_000)
 
-      expect(request).not.toHaveBeenCalled()
+      expect(client.mutation).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }

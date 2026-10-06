@@ -6,22 +6,44 @@ import { createWriterDocument, isLocked } from './writerDocument'
 
 type Sent = { url: string; method: string; headers: Headers; body: unknown }
 
-/** A session whose fetch adds the document's link code, as Drive's does. */
+const server = vi.hoisted(() => ({ fetch: vi.fn() }))
+vi.mock('@/api', async () => {
+  const { createApiClient } = await import('@/platform/server-state')
+  const { createTransport } = await import('@/platform/transport')
+  const { api: writer } = await import('../client/api')
+  const { registration } = await import('../client/policy')
+  const engine = createApiClient(
+    { writer: async () => registration },
+    { transport: createTransport({ fetch: server.fetch }), persistence: false },
+  )
+  return { api: { writer }, ...engine }
+})
+
 function fakeSession(answer: (request: Sent) => Response) {
   const sent: Sent[] = []
-  const fetch = vi.fn(async (url: string, init: RequestInit = {}) => {
-    const headers = new Headers(init.headers)
-    headers.set('X-Drive-Links', 'link-code')
+  server.fetch.mockImplementation(async (url: string, init: RequestInit = {}) => {
     const request = {
       url,
-      method: init.method ?? 'GET',
-      headers,
+      method: init.method || 'GET',
+      headers: new Headers(init.headers),
       body: init.body ? JSON.parse(String(init.body)) : undefined,
     }
     sent.push(request)
     return answer(request)
   })
-  const credentials: CredentialGrouper = { fetch, fetchHeld: fetch, group: () => [] }
+  const context = {
+    partition: () => crypto.randomUUID(),
+    scope: () => ({ headers: { 'X-Drive-Links': 'link-code' } }),
+  }
+  const partition = crypto.randomUUID()
+  context.partition = () => partition
+  const credentials: CredentialGrouper = {
+    context,
+    heldContext: context,
+    fetch: server.fetch,
+    fetchHeld: server.fetch,
+    group: () => [],
+  }
   return { session: { contentDocname: 'wd-1', credentials }, sent }
 }
 
@@ -44,14 +66,14 @@ describe('Writer document client', () => {
       settings: { fullWidth: true },
     })
 
-    await document.saveDoc.submit({ data: 'update', html: '<p>Hi</p>' })
-    await document.saveHtml.submit({ html: '<p>Hi</p>' })
-    await document.saveComments.submit({ doc: 'wd-1', data: 'comments' })
+    await document.saveDoc.run({ data: 'update', html: '<p>Hi</p>' })
+    await document.saveHtml.run({ html: '<p>Hi</p>' })
+    await document.saveComments.run({ doc: 'wd-1', data: 'comments' })
 
     expect(sent.map(({ method, url }) => `${method} ${url}`)).toEqual([
-      'GET /api/v2/document/Writer%20Document/wd-1',
-      'POST /api/v2/document/Writer%20Document/wd-1/method/save_doc',
-      'POST /api/v2/document/Writer%20Document/wd-1/method/save_html',
+      'GET /api/v2/document/Writer Document/wd-1',
+      'POST /api/v2/document/Writer Document/wd-1/method/save_doc',
+      'POST /api/v2/document/Writer Document/wd-1/method/save_html',
       'POST /api/v2/method/suite.writer.api.docs.save_comments',
     ])
     expect(sent.every(({ headers }) => headers.get('X-Drive-Links') === 'link-code')).toBe(true)
@@ -72,7 +94,7 @@ describe('Writer document client', () => {
     )
     const document = createWriterDocument(session)
 
-    const refused = document.saveHtml.submit({ html: '<p>Hi</p>' })
+    const refused = document.saveHtml.run({ html: '<p>Hi</p>' })
 
     await expect(refused).rejects.toMatchObject({
       type: 'DriveForbidden',
@@ -80,7 +102,7 @@ describe('Writer document client', () => {
       message: 'You cannot edit this document.',
     })
     expect(document.saveHtml.error).toMatchObject({ type: 'DriveForbidden' })
-    expect(document.saveHtml.loading).toBe(false)
+    expect(document.saveHtml.isPending).toBe(false)
   })
 })
 

@@ -63,7 +63,8 @@ const inScope = []
 const outside = new Map()
 for (const error of errors) {
   const file = fileOf(error)
-  if (!file || scope.some((pattern) => pattern.test(file))) {
+  // Syntax errors stop semantic checking for the entire program. Never baseline them.
+  if (!file || /: error TS1\d{3}:/.test(error[0]) || scope.some((pattern) => pattern.test(file))) {
     inScope.push(error)
     continue
   }

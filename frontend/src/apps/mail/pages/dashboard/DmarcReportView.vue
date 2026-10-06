@@ -1,108 +1,110 @@
 <template>
   <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!report.data">
     <template #default>
-      <DashboardDetailHeader
-        :title="report.data.domain"
-        :badge-label="__('{0} passed', [formatRate(report.data.pass_rate)])"
-        :badge-theme="rateTheme(report.data.pass_rate)"
-        :meta="metaItems"
-      >
-        <template #icon><ShieldCheck class="h-5 w-5" /></template>
-      </DashboardDetailHeader>
+      <template v-if="report.data">
+        <DashboardDetailHeader
+          :title="report.data.domain ?? '—'"
+          :badge-label="__('{0} passed', [formatRate(report.data.pass_rate)])"
+          :badge-theme="rateTheme(report.data.pass_rate)"
+          :meta="metaItems"
+        >
+          <template #icon><ShieldCheck class="h-5 w-5" /></template>
+        </DashboardDetailHeader>
 
-      <DmarcStatTiles :totals="report.data" />
+        <DmarcStatTiles :totals="report.data" />
 
-      <!-- The reporter's own remarks come first: they explain a report that looks wrong. -->
-      <div
-        v-if="report.data.errors"
-        class="bg-surface-amber-1 flex items-start gap-3 rounded-4 border p-4"
-      >
-        <Info class="text-ink-amber-6 mt-0.5 h-4 w-4 shrink-0" />
-        <div class="space-y-1">
-          <h3 class="text-base font-medium">{{ __('Reporter remarks') }}</h3>
-          <p class="text-ink-gray-5 whitespace-pre-line text-sm">{{ report.data.errors }}</p>
+        <!-- The reporter's own remarks come first: they explain a report that looks wrong. -->
+        <div
+          v-if="report.data.errors"
+          class="bg-surface-amber-1 flex items-start gap-3 rounded-4 border p-4"
+        >
+          <Info class="text-ink-amber-6 mt-0.5 h-4 w-4 shrink-0" />
+          <div class="space-y-1">
+            <h3 class="text-base font-medium">{{ __('Reporter remarks') }}</h3>
+            <p class="text-ink-gray-5 whitespace-pre-line text-sm">{{ report.data.errors }}</p>
+          </div>
         </div>
-      </div>
 
-      <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <DashboardCard :title="__('Sources')" class="lg:col-span-2">
-          <div v-if="report.data.records.length" class="flex flex-col">
-            <div
-              v-for="(record, index) in report.data.records"
-              :key="index"
-              class="flex flex-col gap-2 border-b px-5 py-3 text-sm last:border-b-0"
-            >
-              <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span class="min-w-0 flex-1 truncate font-medium">{{ record.source_ip }}</span>
-                <span class="text-ink-gray-5 tabular-nums">{{
-                  __('{0} msgs', [record.count.toLocaleString()])
-                }}</span>
-                <Badge
-                  :label="__('DKIM: {0}', [resultBadge(record.dkim).label])"
-                  :theme="resultBadge(record.dkim).theme"
-                />
-                <Badge
-                  :label="__('SPF: {0}', [resultBadge(record.spf).label])"
-                  :theme="resultBadge(record.spf).theme"
-                />
-                <Badge v-bind="dispositionBadge(record.disposition)" />
-              </div>
-              <div class="text-ink-gray-5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                <span v-if="record.header_from">{{ __('From: {0}', [record.header_from]) }}</span>
-                <span v-if="record.envelope_from">{{
-                  __('Envelope from: {0}', [record.envelope_from])
-                }}</span>
-                <span v-for="(result, i) in record.dkim_results" :key="`dkim-${i}`">
-                  {{
-                    __('DKIM {0} ({1}): {2}', [
-                      result.domain || '—',
-                      result.selector || '—',
-                      result.result || '—',
-                    ])
-                  }}
-                </span>
-                <span v-for="(result, i) in record.spf_results" :key="`spf-${i}`">
-                  {{ __('SPF {0}: {1}', [result.domain || '—', result.result || '—']) }}
-                </span>
-                <span v-if="record.override_reasons" class="whitespace-pre-line">
-                  {{ __('Override: {0}', [record.override_reasons]) }}
-                </span>
+        <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <DashboardCard :title="__('Sources')" class="lg:col-span-2">
+            <div v-if="report.data.records.length" class="flex flex-col">
+              <div
+                v-for="(record, index) in report.data.records"
+                :key="index"
+                class="flex flex-col gap-2 border-b px-5 py-3 text-sm last:border-b-0"
+              >
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span class="min-w-0 flex-1 truncate font-medium">{{ record.source_ip }}</span>
+                  <span class="text-ink-gray-5 tabular-nums">{{
+                    __('{0} msgs', [record.count.toLocaleString()])
+                  }}</span>
+                  <Badge
+                    :label="__('DKIM: {0}', [resultBadge(record.dkim).label])"
+                    :theme="resultBadge(record.dkim).theme"
+                  />
+                  <Badge
+                    :label="__('SPF: {0}', [resultBadge(record.spf).label])"
+                    :theme="resultBadge(record.spf).theme"
+                  />
+                  <Badge v-bind="dispositionBadge(record.disposition)" />
+                </div>
+                <div class="text-ink-gray-5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                  <span v-if="record.header_from">{{ __('From: {0}', [record.header_from]) }}</span>
+                  <span v-if="record.envelope_from">{{
+                    __('Envelope from: {0}', [record.envelope_from])
+                  }}</span>
+                  <span v-for="(result, i) in record.dkim_results" :key="`dkim-${i}`">
+                    {{
+                      __('DKIM {0} ({1}): {2}', [
+                        result.domain || '—',
+                        result.selector || '—',
+                        result.result || '—',
+                      ])
+                    }}
+                  </span>
+                  <span v-for="(result, i) in record.spf_results" :key="`spf-${i}`">
+                    {{ __('SPF {0}: {1}', [result.domain || '—', result.result || '—']) }}
+                  </span>
+                  <span v-if="record.override_reasons" class="whitespace-pre-line">
+                    {{ __('Override: {0}', [record.override_reasons]) }}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-          <div v-else class="text-ink-gray-5 px-5 py-4 text-sm">
-            {{ __('The reporter listed no sources.') }}
-          </div>
-        </DashboardCard>
-
-        <div class="flex flex-col gap-5">
-          <!-- The DMARC record as the reporter read it, so a stale policy is visible here. -->
-          <DashboardCard :title="__('Policy Applied')">
-            <div class="flex flex-col">
-              <div
-                v-for="row in policyRows"
-                :key="row.label"
-                class="flex h-12 items-center gap-3 border-b px-5 text-sm last:border-b-0"
-              >
-                <span class="text-ink-gray-5 w-32 shrink-0">{{ row.label }}</span>
-                <span class="truncate font-medium">{{ row.value || '—' }}</span>
-              </div>
+            <div v-else class="text-ink-gray-5 px-5 py-4 text-sm">
+              {{ __('The reporter listed no sources.') }}
             </div>
           </DashboardCard>
-          <DashboardCard :title="__('Report')">
-            <div class="flex flex-col">
-              <div
-                v-for="row in reportRows"
-                :key="row.label"
-                class="flex min-h-12 items-center gap-3 border-b px-5 py-2 text-sm last:border-b-0"
-              >
-                <span class="text-ink-gray-5 w-32 shrink-0">{{ row.label }}</span>
-                <span class="min-w-0 break-all font-medium">{{ row.value || '—' }}</span>
+
+          <div class="flex flex-col gap-5">
+            <!-- The DMARC record as the reporter read it, so a stale policy is visible here. -->
+            <DashboardCard :title="__('Policy Applied')">
+              <div class="flex flex-col">
+                <div
+                  v-for="row in policyRows"
+                  :key="row.label"
+                  class="flex h-12 items-center gap-3 border-b px-5 text-sm last:border-b-0"
+                >
+                  <span class="text-ink-gray-5 w-32 shrink-0">{{ row.label }}</span>
+                  <span class="truncate font-medium">{{ row.value || '—' }}</span>
+                </div>
               </div>
-            </div>
-          </DashboardCard>
+            </DashboardCard>
+            <DashboardCard :title="__('Report')">
+              <div class="flex flex-col">
+                <div
+                  v-for="row in reportRows"
+                  :key="row.label"
+                  class="flex min-h-12 items-center gap-3 border-b px-5 py-2 text-sm last:border-b-0"
+                >
+                  <span class="text-ink-gray-5 w-32 shrink-0">{{ row.label }}</span>
+                  <span class="min-w-0 break-all font-medium">{{ row.value || '—' }}</span>
+                </div>
+              </div>
+            </DashboardCard>
+          </div>
         </div>
-      </div>
+      </template>
     </template>
   </DashboardLayout>
 </template>
@@ -110,15 +112,14 @@
 <script setup lang="ts">
 import Info from '~icons/lucide/info'
 import ShieldCheck from '~icons/lucide/shield-check'
-import { Badge, createResource, usePageMeta } from 'frappe-ui'
-import { computed } from 'vue'
+import { Badge, usePageMeta } from 'frappe-ui'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import { api, useQuery } from '@/api'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import DmarcStatTiles from '@/apps/mail/components/DmarcStatTiles.vue'
-import { raiseToast } from '@/apps/mail/utils'
+import { raiseError } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import {
   dispositionBadge,
@@ -127,6 +128,8 @@ import {
   type DmarcReportRow,
 } from '@/apps/mail/utils/dmarc'
 import { formatRate, rateTheme } from '@/apps/mail/utils/reports'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
 type ReportData = DmarcReportRow & { records: DmarcRecord[] }
@@ -135,21 +138,22 @@ const { reportId } = defineProps<{ reportId: string }>()
 
 const router = useRouter()
 
-const report = createResource({
-  url: 'suite.mail.api.admin.get_dmarc_report',
-  auto: true,
-  makeParams: () => ({ report_id: reportId }),
-  onError: (error: { messages?: string[] }) => {
-    raiseToast(error.messages?.[0] || __('Report not found.'), 'error')
-    router.replace({ name: 'mail-dmarc-reports' })
+const report = useQuery(api.mail.admin.dmarc.get, () => ({ report_id: reportId }))
+watch(
+  () => report.error,
+  (error) => {
+    if (error) {
+      raiseError(error)
+      router.replace({ name: 'mail-dmarc-reports' })
+    }
   },
-})
+)
 
 const data = computed(() => report.data as ReportData | undefined)
 
 usePageMeta(() =>
   appPageMeta(
-    data.value ? __('DMARC report for {0}', [data.value.domain]) : __('DMARC Report'),
+    data.value ? __('DMARC report for {0}', [data.value.domain ?? '—']) : __('DMARC Report'),
     'Mail',
   ),
 )
@@ -167,7 +171,7 @@ const period = computed(() => {
 })
 
 const metaItems = computed(() => [
-  data.value ? __('Reported by {0}', [data.value.reporter]) : '',
+  data.value ? __('Reported by {0}', [data.value.reporter ?? '—']) : '',
   period.value,
   data.value?.received_at ? __('Received {0}', [formatDateTime(data.value.received_at)]) : '',
 ])

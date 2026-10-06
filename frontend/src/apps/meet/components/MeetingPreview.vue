@@ -11,26 +11,26 @@
           <ParticipantTile
             class="h-full w-full"
             :participant="previewParticipant"
-            :isLocal="true"
-            :isVideoEnabled="isCameraOn"
-            :isAudioEnabled="isMicOn"
-            :audioStream="mediaStream"
-            :videoRef="previewVideoRef"
-            :showPinButton="false"
-            :showReaction="false"
-            :showRaisedHand="false"
-            :showAudioState="isMicOn"
-            :showNetworkState="false"
-            :tileBackgroundClass="'bg-black'"
-            :avatarBackgroundClass="'bg-surface-gray-3'"
+            :is-local="true"
+            :is-video-enabled="isCameraOn"
+            :is-audio-enabled="isMicOn"
+            :audio-stream="mediaStream"
+            :video-ref="previewVideoRef"
+            :show-pin-button="false"
+            :show-reaction="false"
+            :show-raised-hand="false"
+            :show-audio-state="isMicOn"
+            :show-network-state="false"
+            :tile-background-class="'bg-black'"
+            :avatar-background-class="'bg-surface-gray-3'"
           />
 
           <PreviewToolbar
-            :meetingId="meetingId"
-            :isMicOn="isMicOn"
-            :isCameraOn="isCameraOn"
-            :cameraPermissionGranted="cameraPermissionGranted"
-            :microphonePermissionGranted="microphonePermissionGranted"
+            :meeting-id="meetingId"
+            :is-mic-on="isMicOn"
+            :is-camera-on="isCameraOn"
+            :camera-permission-granted="cameraPermissionGranted"
+            :microphone-permission-granted="microphonePermissionGranted"
             @toggle-microphone="$emit('toggle-microphone')"
             @toggle-camera="$emit('toggle-camera')"
             @device-changed="$emit('device-changed', $event)"
@@ -52,8 +52,8 @@
             :participants="[...participants]"
             :error="presenceError"
             :loading="!hasFetchedParticipants"
-            :maxDisplayed="2"
-            :showText="true"
+            :max-displayed="2"
+            :show-text="true"
             alignment="left"
           />
 
@@ -81,7 +81,7 @@
               type="submit"
               variant="solid"
               size="lg"
-              :loading="isConnecting || joinGuestAPI.loading"
+              :loading="isConnecting || joinGuestAPI.isPending"
               :disabled="isGuest && !guestName.trim()"
               class="w-full"
             >
@@ -98,9 +98,10 @@
 </template>
 
 <script setup lang="ts">
-import { Button, FormControl, toast, useCall } from 'frappe-ui'
+import { Button, FormControl, toast } from 'frappe-ui'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
+import { api, useMutation } from '@/api'
 import { session } from '@/boot/session'
 
 import AvatarGroup from '../components/AvatarGroup.vue'
@@ -113,10 +114,9 @@ import {
   type StoredGuestSession,
 } from '../composables/useConnectionState'
 import { useMeetingPreviewPresence } from '../composables/useMeetingPreviewPresence'
-import type { JoinPayload } from '../types'
+import { normalizeJoinPayload, type JoinPayload } from '../types'
 import { getErrorMessage } from '../utils/error'
 import type { Participant } from '../utils/media/ParticipantManager'
-import { submit } from '../utils/request'
 import { getInitials } from '../utils/text'
 
 interface VideoElement {
@@ -165,22 +165,7 @@ onMounted(() => {
 })
 const guestNameInputRef = ref<VideoElement | null>(null)
 
-const joinGuestAPI = useCall({
-  url: '/api/suite/meet/rooms/guest-joins',
-  method: 'POST',
-  immediate: false,
-  params: () => {
-    const guestSession = readActiveGuestSession(props.meetingId)
-    return {
-      meeting_id: props.meetingId,
-      guest_name: guestName.value.trim(),
-      ...(guestSession && {
-        guest_id: guestSession.guestId,
-        guest_session_token: guestSession.guestSessionToken,
-      }),
-    }
-  },
-})
+const joinGuestAPI = useMutation(api.meet.guests.join, { silent: true })
 
 const isGuest = computed(() => !session.isLoggedIn)
 
@@ -225,7 +210,7 @@ const handleJoin = async () => {
     return
   }
 
-  if (joinGuestAPI.loading || props.isConnecting) {
+  if (joinGuestAPI.isPending || props.isConnecting) {
     return
   }
 
@@ -243,11 +228,20 @@ const handleJoin = async () => {
     }
 
     try {
-      const result = await submit<JoinPayload>(joinGuestAPI)
+      const result = await joinGuestAPI.run({
+        meeting_id: props.meetingId,
+        guest_name: guestName.value.trim(),
+        ...(readActiveGuestSession(props.meetingId) && {
+          guest_id: readActiveGuestSession(props.meetingId)!.guestId,
+          guest_session_token: readActiveGuestSession(props.meetingId)!.guestSessionToken,
+        }),
+      })
 
+      const joined = normalizeJoinPayload(result)
+      if (!joined) throw new TypeError('Invalid guest join response')
       emit('guest-join-complete', {
         guestName: guestName.value.trim(),
-        joinResult: result,
+        joinResult: joined,
       })
     } catch (error) {
       console.error('Failed to join as guest:', error)

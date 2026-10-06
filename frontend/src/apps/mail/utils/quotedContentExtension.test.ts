@@ -12,7 +12,7 @@ import { CustomParagraphExtension } from './text-editor'
 vi.mock('frappe-ui/experimental', () => ({
   ImageExtension: { extend: () => ({ configure: () => ({}) }) },
 }))
-vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}) }))
+vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}), toast: { error: vi.fn() } }))
 
 const roundTrip = (html: string) => {
   const editor = new Editor({

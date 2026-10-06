@@ -36,9 +36,9 @@
         class="min-h-7"
         :label="__('Create Import')"
         variant="solid"
-        :loading="ongoingImport.data?.name"
-        :disabled="ongoingImport.loading || ongoingImport.error || !calendarImport.file"
-        @click="createCalendarImport.submit()"
+        :loading="Boolean(ongoingImport.data?.name) || createCalendarImport.isPending"
+        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !calendarImport.file"
+        @click="createCalendarImport.run(makeInput()).catch(() => {})"
       />
       <div class="!mt-3 space-x-1 text-base">
         <span class="text-ink-gray-5">{{ importSubtitle }}</span>
@@ -48,7 +48,7 @@
       </div>
       <ErrorMessage
         v-if="createCalendarImport.error"
-        :message="createCalendarImport.error"
+        :message="createCalendarImport.error?.message"
         class="mb-2.5"
       />
     </div>
@@ -56,9 +56,10 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, ErrorMessage, FormControl } from 'frappe-ui'
-import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
@@ -69,19 +70,15 @@ import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
 const store = userStore()
 const { accountId } = store
-
-const user = inject('$user')
+const user = store.userResource
 const socket = useCalendarSocket()
-
-const calendarImport = reactive({
+const calendarImport = reactive<Omit<InputOf<typeof api.mail.calendar.import>, 'account'>>({
   format: 'ics',
   file: '',
   calendar: '',
 })
-
 const fileInput = ref<HTMLInputElement | null>(null)
 const { uploading, progress, upload } = useChunkedUpload()
-
 const acceptTypes = computed(() => (calendarImport.format === 'ics' ? '.ics' : '.zip,.tgz,.tar.gz'))
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
@@ -90,9 +87,10 @@ const onFileSelected = async (event: Event) => {
   const file = input.files?.[0]
   input.value = '' // let the same file be re-selected after an error
   if (!file) return
-
   try {
-    const uploaded = await upload(file, { private: true })
+    const uploaded = await upload(file, {
+      private: true,
+    })
     calendarImport.file = uploaded.file_url
   } catch (error) {
     raiseToast((error as Error).message, 'error')
@@ -110,56 +108,50 @@ watch(
     if (!options.some((option) => option.value === calendarImport.calendar))
       calendarImport.calendar = options[0]?.value ?? ''
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
-
 const fileUploadSubtitle = computed(() => {
   if (calendarImport.file) return __('File uploaded: {0}', [calendarImport.file])
   if (calendarImport.format === 'ics') return __('Supported file format: .ics')
   return __('Supported file formats: .zip, .tar, .tgz')
 })
-
-const createCalendarImport = createResource({
-  url: 'suite.mail.api.account.create_calendar_import',
-  makeParams: () => ({ account: accountId, ...calendarImport }),
-  onSuccess: () => ongoingImport.reload(),
+const createCalendarImport = useMutation(api.mail.calendar.import)
+const makeInput = () => ({
+  account: store.accountId,
+  ...calendarImport,
 })
-
-const ongoingImport = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Calendar Exchange',
-    fieldname: 'name',
-    filters: {
-      user: user.data.name,
-      account: accountId,
-      operation: 'Import',
-      status: ['in', ['Queued', 'In Progress']],
-    },
-  }),
-})
-
+const ongoingImport = useQuery(api.mail.calendar.ongoingExchange, () =>
+  user.data && store.accountId
+    ? {
+        doctype: 'Calendar Exchange',
+        fieldname: 'name',
+        filters: {
+          user: user.data.name,
+          account: store.accountId,
+          operation: 'Import',
+          status: ['in', ['Queued', 'In Progress']],
+        },
+      }
+    : false,
+)
 const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
-  if (payload.action === 'Import') ongoingImport.reload()
+  if (payload.action === 'Import') ongoingImport.refetch().catch(() => {})
 }
 socket.on('calendar_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
-
 const importSubtitle = computed(() => {
   if (ongoingImport.data?.name) return __("Import in progress. We'll email you when it's ready.")
   return __('No imports in progress.')
 })
-
 const importHref = computed(() => {
   if (ongoingImport.data?.name) return `/mail/calendar-exchanges/${ongoingImport.data.name}`
   return '/mail/calendar-exchanges?operation=Import'
 })
-
 const importLinkText = computed(() => {
   if (ongoingImport.data?.name) return __('Track status')
   return __('View history')
 })
-
 const FORMAT_OPTIONS = ['ics', 'jmap']
 </script>

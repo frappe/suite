@@ -29,8 +29,9 @@ const resolveShortcut = (
 
 export const peopleGuard = async (to: RouteLocationNormalized) => {
   const store = userStore()
-  await store.userResource.promise
+  await store.loadUser()
   store.resolveAccount(store.userResource.data?.accounts, to.params.accountId as string | undefined)
 
-  if (to.meta.shortcut) return { ...resolveShortcut(to.name, to.params, store.accountId), query: to.query }
+  if (to.meta.shortcut)
+    return { ...resolveShortcut(to.name, to.params, store.accountId), query: to.query }
 }

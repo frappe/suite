@@ -68,11 +68,10 @@ import { useMediaQuery } from '@vueuse/core'
 import { BottomSheet, Button, Dialog } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
+import { api, useQuery } from '@/api'
 import { confirm } from '@/platform/feedback'
-import { query, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { api as suiteApi } from '@/platform/transport/generated'
 
 import { nodeIcon, nodeIconTint } from '../../internal/icons'
 import { useLocationTitle } from '../../internal/locations'
@@ -90,8 +89,8 @@ const isPhone = useMediaQuery('(max-width: 767px)')
 const picking = ref(false)
 const session = useSession()
 // The server page boots the workspace name. The Vite dev page does not, so the dialog asks the site.
-const site = useQuery(() =>
-  window.suite_workspace_name === undefined ? query(suiteApi.site_get, {}) : false,
+const site = useQuery(api.suite.site.get, () =>
+  window.suite_workspace_name === undefined ? {} : false,
 )
 const state = useShare(props.node, {
   me: session.user.value?.id,

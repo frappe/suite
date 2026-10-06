@@ -1,63 +1,13 @@
+import type { api, OutputOf } from '@/api'
 // What the DMARC pages share: the shapes Suite's admin API answers and how a result reads.
 
 import type { BadgeTheme } from '@/apps/mail/utils/reports'
 
-export type DmarcTotals = {
-  reports: number
-  messages: number
-  passed: number
-  failed: number
-  dkim_passed: number
-  spf_passed: number
-  pass_rate: number | null
-}
-
-export type DmarcPolicy = {
-  p?: string | null
-  sp?: string | null
-  testing_mode?: boolean
-  adkim?: string | null
-  aspf?: string | null
-}
-
-export type DmarcReportRow = DmarcTotals & {
-  id: string
-  domain: string
-  reporter: string
-  reporter_email?: string | null
-  report_id?: string | null
-  version?: number | null
-  subject?: string | null
-  to?: string[]
-  date_range_begin?: string | null
-  date_range_end?: string | null
-  received_at?: string | null
-  policy: DmarcPolicy
-  errors?: string | null
-}
-
-export type DmarcRecord = {
-  source_ip: string
-  count: number
-  disposition?: string | null
-  dkim?: string | null
-  spf?: string | null
-  header_from?: string | null
-  envelope_from?: string | null
-  envelope_to?: string | null
-  override_reasons?: string | null
-  dkim_results: { domain?: string; selector?: string; result?: string }[]
-  spf_results: { domain?: string; scope?: string; result?: string }[]
-}
-
-export type DmarcSummary = {
-  since: string
-  until: string
-  totals: DmarcTotals
-  domains: (DmarcTotals & { domain: string })[]
-  sources: (DmarcTotals & { source_ip: string })[]
-  reporters: (DmarcTotals & { reporter: string })[]
-}
+export type DmarcTotals = OutputOf<typeof api.mail.admin.dmarc.summary>['totals']
+export type DmarcReportRow = OutputOf<typeof api.mail.admin.dmarc.list>['items'][number]
+export type DmarcSummary = OutputOf<typeof api.mail.admin.dmarc.summary>
+export type DmarcPolicy = OutputOf<typeof api.mail.admin.dmarc.get>['policy']
+export type DmarcRecord = OutputOf<typeof api.mail.admin.dmarc.get>['records'][number]
 
 // An aligned DKIM or SPF check as the reporter evaluated it.
 export const resultBadge = (result?: string | null): { label: string; theme: BadgeTheme } => {

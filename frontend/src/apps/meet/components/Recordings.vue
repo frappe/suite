@@ -1,39 +1,22 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
-import { Button, useCall } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { List, ListCell, ListRow } from 'frappe-ui/list'
-import { onMounted } from 'vue'
 
+import { api, useQuery } from '@/api'
 import { driveNodeRoute } from '@/apps/drive'
-import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
-interface Recording {
-  name: string
-  meet_room: string
-  room_title: string | null
-  started_at: string
-  artifact: string
-  status: 'Ready' | 'Partial'
-}
 dayjs.extend(utc)
-const session = useSession()
-const recordings = useCall<Recording[]>({
-  url: '/api/v2/method/suite.meet.api.recordings.get_recordings',
-  cacheKey: ['meet-recordings', window.location.origin, session.user.value?.id || 'Guest'],
-  immediate: false,
-})
-onMounted(() => {
-  void recordings.reload().catch(() => {})
-})
+const recordings = useQuery(api.meet.recordings.list)
 </script>
 
 <template>
   <section :aria-label="__('Recordings')">
     <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Recordings') }}</h2>
     <p
-      v-if="recordings.loading && !recordings.data"
+      v-if="recordings.isFetching && !recordings.data"
       role="status"
       class="text-base text-ink-gray-5"
     >
@@ -41,7 +24,7 @@ onMounted(() => {
     </p>
     <div v-else-if="recordings.error" role="alert" class="text-base text-ink-gray-5">
       {{ __('Could not load recordings.') }}
-      <Button :label="__('Retry')" @click="recordings.reload()" />
+      <Button :label="__('Retry')" @click="recordings.refetch()" />
     </div>
     <List
       v-else-if="recordings.data?.length"

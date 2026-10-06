@@ -126,6 +126,7 @@ def get_submissions(
     after: str | None = None,
     page: int = 1,
     page_length: int = 50,
+    start: int | None = None,
 ) -> dict:
     """Browses one page of the account's EmailSubmission objects, newest sendAt first —
     returned as {"rows", "total"} so the listing can paginate past the server's single-query
@@ -154,7 +155,7 @@ def get_submissions(
     ids, total = _query_submissions(
         client,
         filter or None,
-        position=(page - 1) * page_length,
+        position=max(cint(start), 0) if start is not None else (page - 1) * page_length,
         limit=page_length,
         sort=[{"property": "sentAt", "isAscending": False}],
     )

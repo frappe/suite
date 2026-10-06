@@ -21,9 +21,9 @@
           <div class="flex flex-col grow min-w-0">
             <FTextEditor
               ref="textEditor"
+              v-model="localContent"
               :upload-function="uploadFunction"
               :autofocus="true"
-              v-model="localContent"
               placeholder="Start thinking…"
               :extensions="editorExtensions"
               :editable
@@ -102,6 +102,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { computed, inject, onBeforeUnmount, provide, ref, watch } from 'vue'
 
 import { hasDefaultDocumentTitle } from '@/apps/drive'
+import { reportSaveError } from '@/apps/writer/composables/saveError'
 import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
 import emitter from '@/apps/writer/emitter'
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
@@ -350,13 +351,11 @@ const autoversion = async () => {
   if (!edited.value) return
   const html = editor.value.getHTML()?.trim()
   if (!html || html === '<p></p>') return
-  await props.document.newVersion.submit({ data: html })
-  const err = props.document.newVersion.error
-  if (err && err !== 'Client is offline') {
-    toast.error('Something has gone wrong - please contact support.')
-  }
+  await props.document.newVersion.run({ data: html })
 }
-const autoversionInterval = setInterval(autoversion, AUTOVERSION_INTERVAL_MS)
+const autoversionInterval = setInterval(() => {
+  void autoversion().catch(reportSaveError)
+}, AUTOVERSION_INTERVAL_MS)
 
 const autorename = () => {
   const { $anchor } = editor.value.view.state.selection

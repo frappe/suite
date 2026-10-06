@@ -32,7 +32,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 
-import { PAGE_LENGTHS, type PageLength } from '@/apps/mail/utils/pagedList'
+import { PAGE_LENGTHS, type PageLength } from '@/apps/mail/utils/paging'
 
 const { flush = true } = defineProps<{
   count: number

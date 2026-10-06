@@ -105,7 +105,7 @@ watch(allAccounts, (value) => {
 
 const mailboxOptions = computed(() =>
   [{ label: __('All folders'), value: '' }].concat(
-    mailboxes.data.map((mailbox: { id: string; _name: string }) => ({
+    (mailboxes.data ?? []).map((mailbox: { id: string; _name: string }) => ({
       label: mailbox._name,
       value: mailbox.id,
     })),

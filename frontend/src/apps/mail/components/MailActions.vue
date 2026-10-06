@@ -26,7 +26,7 @@
 </template>
 
 <script lang="ts" setup>
-import { Button, createResource } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import {
   Ban,
   CircleAlert,
@@ -49,14 +49,10 @@ import {
 import { h, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, client, useMutation, type InputOf } from '@/api'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
-import {
-  downloadUrlAsFile,
-  matchesScreenedValue,
-  raiseOptimisticToast,
-  raiseToast,
-} from '@/apps/mail/utils'
+import { downloadUrlAsFile, raiseError, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
@@ -73,7 +69,6 @@ const {
   reply,
   replyAll,
   forward,
-  reloadMails,
   thread,
 } = defineProps<{
   mailbox: string
@@ -88,9 +83,7 @@ const {
   reloadMails: (isUndo?: boolean) => void
   thread: Mail[]
 }>()
-
 const emit = defineEmits(['setFlagged', 'syncUnseen', 'moveMail', 'markMailSpam', 'deleteMail'])
-
 const { isMobile } = useScreenSize()
 const route = useRoute()
 const router = useRouter()
@@ -113,12 +106,14 @@ const isSenderBlocked = (email: string) =>
   screenedAddresses.value.data?.some(
     (a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
   )
-
 const primaryActions = (mail: Mail): MailAction[] => [
   {
     label: __('Unstar'),
     onClick: () => emit('setFlagged', mailCopyIds(mail), false),
-    icon: () => h(Star, { style: FLAGGED_STAR_STYLE }),
+    icon: () =>
+      h(Star, {
+        style: FLAGGED_STAR_STYLE,
+      }),
     condition: !!mail.flagged && mailbox !== mailboxIds.value.trash && !isMobile.value,
   },
   {
@@ -141,20 +136,17 @@ const primaryActions = (mail: Mail): MailAction[] => [
     condition: !mail.draft && !isMobile.value,
   },
 ]
-
 interface MailAction {
   label: string
   onClick: () => void
   icon: typeof SquarePen
   condition?: boolean | (() => boolean)
 }
-
 interface GroupedAction {
   group: string
   // `options`, not `items`: a menu group keyed on `items` renders nothing.
   options: MailAction[]
 }
-
 const moreActions = (mail: Mail): GroupedAction[] => [
   {
     group: '',
@@ -185,7 +177,10 @@ const moreActions = (mail: Mail): GroupedAction[] => [
       {
         label: __('Unstar'),
         onClick: () => emit('setFlagged', mailCopyIds(mail), false),
-        icon: () => h(Star, { style: FLAGGED_STAR_STYLE }),
+        icon: () =>
+          h(Star, {
+            style: FLAGGED_STAR_STYLE,
+          }),
         condition: () => !!mail.flagged && mailbox !== mailboxIds.value.trash,
       },
       {
@@ -236,7 +231,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
         icon: Ban,
         condition: () =>
           mailbox !== mailboxIds.value.screener &&
-          !identities.value.data.some((i: Identity) => i.email === mail.from_email) &&
+          !(identities.value.data ?? []).some((i: Identity) => i.email === mail.from_email) &&
           !isSenderBlocked(mail.from_email),
       },
       {
@@ -247,7 +242,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
       },
       {
         label: __('Mark Domain as Trusted'),
-        onClick: () => trustDomain.submit(),
+        onClick: () => trustDomain().catch(() => {}),
         icon: ShieldCheck,
         condition: () =>
           mailbox !== mailboxIds.value.screener &&
@@ -262,7 +257,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
     options: [
       {
         label: __('Download Email'),
-        onClick: () => downloadEmail.submit(),
+        onClick: () => downloadEmail(),
         icon: Download,
         condition: () => !mail.draft,
       },
@@ -281,50 +276,45 @@ const moreActions = (mail: Mail): GroupedAction[] => [
     ],
   },
 ]
-
-const downloadEmail = createResource({
-  url: 'suite.mail.api.mail.fetch_mail_as_eml',
-  makeParams: () => ({ name: mail.name }),
-  onSuccess: (content: string) => {
-    const byteArray = new Uint8Array(content)
-    const blob = new Blob([byteArray], { type: 'message/rfc822' })
+async function downloadEmail() {
+  try {
+    const blob = await client.query(api.mail.messages.download, {
+      name: mail.name,
+    })
     const url = URL.createObjectURL(blob)
     downloadUrlAsFile(url, `${mail.subject || mail.name}.eml`)
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
-
-const moveMail = createResource({
-  url: 'suite.mail.api.mail.move_mails',
-  makeParams: (mailbox: string) => ({
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    raiseError(error)
+  }
+}
+const setMailsSeen = useMutation(api.mail.messages.seen)
+async function setMailsSeenSubmit({ ids: requestedIds }: { ids: string[] }) {
+  const input: InputOf<typeof api.mail.messages.seen> = {
     account: scopeAccountId.value,
-    ids: [mail.id],
-    mailbox,
-    clear_junk: mail.junk === 1 && mailbox !== mailboxIds.value.junk,
-  }),
-})
-
-const setMailsSeen = createResource({
-  url: 'suite.mail.api.mail.set_mails_seen',
-  makeParams: ({ ids }: { ids: string[] }) => ({ account: scopeAccountId.value, ids, seen: false }),
-  onSuccess: (ids: string[]) => {
-    raiseToast(__('{0} marked as unread.', [ids.length === 1 ? __('Mail') : __('Mails')]))
-    // Leaving the thread is the point — staying would mark it read again. Return to whichever
-    // list we came from: hardcoding the mailbox route threw the unified folder out of the merged view
-    // and into the owning account's mailbox, which read as the page reloading.
-    router.push(
-      route.name === UNIFIED_THREAD_ROUTE
-        ? { name: UNIFIED_ROUTE, params: { folder: route.params.folder }, query: route.query }
-        : {
-            name: 'mail-mailbox',
-            params: { accountId: route.params.accountId, mailbox },
-            query: route.query,
+    ids: requestedIds,
+    seen: false,
+  }
+  const result = await setMailsSeen.run(input)
+  const ids = result
+  raiseToast(__('{0} marked as unread.', [ids.length === 1 ? __('Mail') : __('Mails')]))
+  // Leaving the thread is the point — staying would mark it read again. Return to whichever
+  // list we came from: hardcoding the mailbox route threw the unified folder out of the merged view
+  // and into the owning account's mailbox, which read as the page reloading.
+  router.push(
+    route.name === UNIFIED_THREAD_ROUTE
+      ? { name: UNIFIED_ROUTE, params: { folder: route.params.folder }, query: route.query }
+      : {
+          name: 'mail-mailbox',
+          params: {
+            accountId: route.params.accountId,
+            mailbox,
           },
-    )
-    emit('syncUnseen', ids)
-  },
-})
-
+          query: route.query,
+        },
+  )
+  emit('syncUnseen', ids)
+}
 const handleMarkUnreadFromHere = () => {
   const idx = thread.indexOf(mail)
   if (idx === -1) return
@@ -332,7 +322,10 @@ const handleMarkUnreadFromHere = () => {
     .slice(idx)
     .filter((m: Mail) => !m.draft)
     .flatMap(mailCopyIds)
-  if (ids.length) setMailsSeen.submit({ ids })
+  if (ids.length)
+    setMailsSeenSubmit({
+      ids,
+    })
 }
 
 // The sender's domain as a screened value ('@example.com'). "Trusted" = an
@@ -343,66 +336,35 @@ const isDomainTrusted = (email: string) =>
     (a: ScreenedAddress) =>
       a.action === 'Accepted' && a.email.trim().toLowerCase() === senderDomain(email),
   )
-
-const trustDomain = createResource({
-  url: 'suite.mail.api.mail.screen_email_addresses',
-  makeParams: () => ({
+const trustDomain = async () => {
+  await client.mutation(api.mail.screening.set, {
     account: scopeAccountId.value,
     emails: [senderDomain(mail.from_email)],
     action: 'Accepted',
-  }),
-  onSuccess: () => {
-    raiseToast(__('Domain marked as trusted.'))
-    screenedAddresses.value.reload()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
-
-const blockEmailAddress = createResource({
-  url: 'suite.mail.api.mail.screen_email_address',
-  makeParams: () => ({ account: scopeAccountId.value, email: mail.from_email, action: 'Reject' }),
-})
-
-const unblockEmailAddress = createResource({
-  url: 'suite.mail.api.mail.unscreen_email_addresses',
-  makeParams: () => ({ account: scopeAccountId.value, emails: [mail.from_email] }),
-})
-
-// Optimistically reflect the sender's blocked state so the immediate toast isn't lying, mirroring the
-// backend exactly: blocking adds an exact-address 'Reject' entry (overriding any existing rule for the
-// sender); unblocking removes the exact-address entry — a '@domain' rule that also covers the sender is
-// left in place, just as the unscreen API leaves it. Returns a revert to restore the list on failure.
-const applyScreenOptimistic = (block: boolean) => {
-  const prev = screenedAddresses.value.data
-  if (!prev) return () => {}
-  const isExact = (a: ScreenedAddress) =>
-    !a.email.startsWith('@') && matchesScreenedValue(mail.from_email, a.email)
-  const kept = prev.filter((a: ScreenedAddress) => !isExact(a))
-  const blocked: ScreenedAddress = {
-    email: mail.from_email,
-    action: 'Reject',
-    creation: '',
-    modified: '',
-  }
-  screenedAddresses.value.data = block ? [...kept, blocked] : kept
-  return () => (screenedAddresses.value.data = prev)
+  })
+  raiseToast(__('Domain marked as trusted.'))
 }
-
 const handleBlockAddress = (block: boolean, isUndo = false) => {
-  const revert = applyScreenOptimistic(block) // optimistic: the menu item flips before the request
-  const forward = (async () => {
-    try {
-      await (block ? blockEmailAddress : unblockEmailAddress).submit()
-    } catch (error) {
-      revert()
-      throw error
-    }
-    screenedAddresses.value.reload()
-  })()
+  const input = {
+    account: scopeAccountId.value,
+    emails: [mail.from_email],
+  }
+  const forward = block
+    ? client.mutation(
+        api.mail.screening.set,
+        {
+          ...input,
+          action: 'Reject',
+        },
+        {
+          silent: true,
+        },
+      )
+    : client.mutation(api.mail.screening.remove, input, {
+        silent: true,
+      })
   const successMessage = block ? __('Sender blocked.') : __('Sender unblocked.')
-
   if (isUndo) return raiseOptimisticToast(forward, successMessage)
-
   setUndoAction(() => handleBlockAddress(!block, true))
   raiseOptimisticToast(forward, successMessage, undo)
 }

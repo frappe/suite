@@ -44,10 +44,10 @@ import {
   SettingsNavItem,
   SettingsPanel,
   SettingsSidebar,
-  useDoc,
 } from 'frappe-ui'
 import { computed, defineAsyncComponent, defineComponent, h, ref, type Component } from 'vue'
 
+import { api, useQuery } from '@/api'
 import { meetSettings } from '@/apps/meet/settings'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -77,21 +77,16 @@ const activeTab = ref<string>('meet.devices')
 
 const session = useSession()
 
-const meetingDoc = useDoc<{
-  name: string
-  owner?: string
-  co_hosts?: { user: string }[]
-}>({
-  doctype: 'Meet Room',
-  name: () => props.meetingId || '',
-})
+const meetingDoc = useQuery(api.meet.rooms.get, () =>
+  props.meetingId && session.user.value ? { name: props.meetingId } : false,
+)
 
 const canManageMeeting = computed(() => {
   const user = session.user.value?.id
   if (props.isPreview || !user) return false
   return (
-    meetingDoc.doc?.owner === user ||
-    Boolean(meetingDoc.doc?.co_hosts?.some((row) => row.user === user))
+    meetingDoc.data?.owner === user ||
+    Boolean(meetingDoc.data?.co_hosts?.some((row) => row.user === user))
   )
 })
 

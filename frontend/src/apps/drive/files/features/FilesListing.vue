@@ -335,11 +335,11 @@ import {
 } from 'frappe-ui/list'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import type { InfiniteQueryState } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
 import { nodeIcon, nodeIconTint, nodeTypeLabel } from '@/apps/drive/files/internal/icons'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
-import type { QueryResult } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 
 import FileCard from './FileCard.vue'
@@ -349,7 +349,7 @@ import type { DropHandlers } from './uploads/drop'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
 
 const props = defineProps<{
-  query: QueryResult<{ rows: DriveNode[] }>
+  query: InfiniteQueryState<DriveNode>
   presentation: PresentationState
   selection: string[]
   selectionMode: boolean

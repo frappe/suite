@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSession } from '@/platform/session'
-import { transport, type Transport } from '@/platform/transport'
+import { transport, type Operation, type Transport } from '@/platform/transport'
 
+import { api } from './api'
 import { createLinkStore, driveLinks, LINK_CAP } from './links'
-import { batchNodes, children, moveNode, node } from './nodes'
+import { registration } from './policy'
+
+function scoped<I, O>(reference: Operation<I, O>, input: I) {
+  return registration.policy(reference).operation?.(reference, input) ?? reference
+}
 
 // The Drive server double. Installed before any import, so the platform
 // transport, and the link checks the store sends through it, use it too.
@@ -67,7 +72,7 @@ function server(
 }
 
 const read = (client: Transport, id: string) =>
-  client.request(node(id).operation, { node: id }).catch(() => null)
+  client.request(scoped(api.nodes.get, { node: id }), { node: id }).catch(() => null)
 /** Lets the link checks a failed request started finish. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 const lastLinks = (sent: Array<{ links: string | null }>) => sent.at(-1)?.links ?? null
@@ -84,7 +89,7 @@ describe('Drive link codes on requests', () => {
     )
     driveLinks.seed(code(1), 'shared-folder')
 
-    await transport.request(children({ node: 'shared-folder' }).operation, {
+    await transport.request(scoped(api.nodes.children, { node: 'shared-folder' }), {
       node: 'shared-folder',
     })
     await read(transport, 'child-b')
@@ -99,13 +104,16 @@ describe('Drive link codes on requests', () => {
     nodes.forEach((id, index) => driveLinks.seed(code(index), id))
 
     await expect(
-      transport.request(batchNodes().operation, { nodes, patch: { state: 'Trashed' } }),
+      transport.request(scoped(api.nodes.batch, { nodes, patch: { state: 'Trashed' } }), {
+        nodes,
+        patch: { state: 'Trashed' },
+      }),
     ).rejects.toMatchObject({
       message: 'These items come from more than 20 share links. Select fewer and try again.',
     })
     expect(sent).toHaveLength(0)
 
-    await transport.request(batchNodes().operation, {
+    await transport.request(scoped(api.nodes.batch, { nodes, patch: { state: 'Trashed' } }), {
       nodes: nodes.slice(1),
       patch: { state: 'Trashed' },
     })
@@ -117,7 +125,10 @@ describe('Drive link codes on requests', () => {
     driveLinks.seed(code(1), 'item')
     driveLinks.seed(code(2), 'destination')
 
-    await transport.request(moveNode().operation, { node: 'item', parent_node: 'destination' })
+    await transport.request(scoped(api.nodes.move, { node: 'shared', parent_node: 'missing' }), {
+      node: 'item',
+      parent_node: 'destination',
+    })
 
     expect(lastLinks(sent)?.split(',').sort()).toEqual([code(1), code(2)])
   })
@@ -191,14 +202,14 @@ describe('forgetting Drive link codes', () => {
     )
     driveLinks.seed(code(1), 'gone')
     driveLinks.seed(code(2), 'expired')
-    await transport.request(children({ node: 'expired' }).operation, { node: 'expired' })
+    await transport.request(scoped(api.nodes.children, { node: 'expired' }), { node: 'expired' })
 
     await read(transport, 'gone')
     await read(transport, 'gone')
 
     target = refused(410, 'DriveLinkExpired')
     await transport
-      .request(children({ node: 'expired' }).operation, { node: 'expired' })
+      .request(scoped(api.nodes.children, { node: 'expired' }), { node: 'expired' })
       .catch(() => null)
     await read(transport, 'inside')
 
@@ -212,10 +223,13 @@ describe('forgetting Drive link codes', () => {
     driveLinks.seed(code(1), 'shared')
 
     await transport
-      .request(moveNode().operation, { node: 'shared', parent_node: 'missing' })
+      .request(scoped(api.nodes.move, { node: 'shared', parent_node: 'missing' }), {
+        node: 'shared',
+        parent_node: 'missing',
+      })
       .catch(() => null)
     await transport
-      .request(children({ node: 'shared' }).operation, { node: 'shared' })
+      .request(scoped(api.nodes.children, { node: 'shared' }), { node: 'shared' })
       .catch(() => null)
     await read(transport, 'shared')
 
@@ -232,7 +246,10 @@ describe('forgetting Drive link codes', () => {
 
     const nodes = ['expired-item', 'live-item']
     await transport
-      .request(batchNodes().operation, { nodes, patch: { state: 'Trashed' } })
+      .request(scoped(api.nodes.batch, { nodes, patch: { state: 'Trashed' } }), {
+        nodes,
+        patch: { state: 'Trashed' },
+      })
       .catch(() => null)
     await settle()
     const checks = sent.slice(1).map((request) => [request.path.split('/').at(-1), request.links])
@@ -255,7 +272,7 @@ describe('forgetting Drive link codes', () => {
           : ok(row(nodeIn(path))),
     )
     driveLinks.seed(code(1), 'folder')
-    await transport.request(children({ node: 'folder' }).operation, { node: 'folder' })
+    await transport.request(scoped(api.nodes.children, { node: 'folder' }), { node: 'folder' })
 
     await read(transport, 'deleted-child')
     await read(transport, 'folder')
@@ -304,7 +321,7 @@ describe('forgetting Drive link codes', () => {
 
     await read(transport, 'target0')
     await read(transport, 'target1')
-    await transport.request(children({ node: 'target0' }).operation, { node: 'target0' })
+    await transport.request(scoped(api.nodes.children, { node: 'target0' }), { node: 'target0' })
     await read(transport, 'row0')
     await read(transport, 'row1000')
 

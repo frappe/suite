@@ -1,6 +1,5 @@
-import { roots } from '@/apps/drive/client/roots'
+import { api, useQuery } from '@/api'
 import type { DriveBreadcrumb, DriveNode, DriveRoots } from '@/apps/drive/client/types'
-import { useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 
 /** The sidebar place a folder belongs to. */
@@ -60,6 +59,8 @@ export function trashLocation(
 export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title'>) => string {
   const session = useSession()
   // A guest has no roots to discover (spec §10.13).
-  const discovered = useQuery(() => (session.status.value === 'authenticated' ? roots() : false))
+  const discovered = useQuery(api.drive.roots.list, () =>
+    session.status.value === 'authenticated' ? {} : false,
+  )
   return (node) => locationTitle(node, discovered.data)
 }

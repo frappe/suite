@@ -42,9 +42,11 @@
   <Button
     class="min-h-7"
     :label="__('Create Export')"
-    :loading="ongoingExport.data?.name"
-    :disabled="ongoingExport.loading || ongoingExport.error || createContactsExport.loading"
-    @click="createContactsExport.submit()"
+    :loading="Boolean(ongoingExport.data?.name) || createContactsExport.isPending"
+    :disabled="
+      ongoingExport.isFetching || Boolean(ongoingExport.error) || createContactsExport.isPending
+    "
+    @click="createContactsExportSubmit()"
   />
   <div class="!mt-3 space-x-1 text-base">
     <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
@@ -54,104 +56,101 @@
   </div>
   <ErrorMessage
     v-if="createContactsExport.error"
-    :message="createContactsExport.error"
+    :message="createContactsExport.error?.message"
     class="mb-2.5"
   />
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
-import { computed, inject, onMounted, reactive, ref } from 'vue'
+import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { computed, onScopeDispose, reactive, ref } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
+import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 
-const { accountId } = userStore()
-
-const user = inject('$user')
-const socket = inject('$socket')
-
-const contactsExport = reactive({
-  format: 'jmap',
-  archive_type: '.zip',
-  limit: undefined,
-})
-
+const store = userStore()
+const user = store.userResource
+const socket = useMailSocket()
+const contactsExport = reactive<Omit<InputOf<typeof api.mail.exchanges.exportContacts>, 'account'>>(
+  {
+    format: 'jmap',
+    archive_type: '.zip',
+    limit: undefined,
+  },
+)
 const customSelection = ref(false)
-
 const filter = reactive({
   inAddressBook: '',
   name: '',
   email: '',
 })
-
-const addressBooks = createResource({
-  url: 'suite.mail.doctype.address_book.address_book.fetch_address_books',
-  auto: true,
-  makeParams: () => ({ account: accountId, limit: 100 }),
-})
-
+const addressBooks = useQuery(api.mail.addressBooks.list, () =>
+  store.accountId
+    ? {
+        account: store.accountId,
+      }
+    : false,
+)
 const addressBookOptions = computed(() =>
-  [{ label: __(''), value: ' ' }].concat(
+  [
+    {
+      label: __(''),
+      value: ' ',
+    },
+  ].concat(
     (addressBooks.data || []).map((b: { id: string; _name: string }) => ({
       label: b._name,
       value: b.id,
     })),
   ),
 )
-
-const createContactsExport = createResource({
-  url: 'suite.mail.api.account.create_contacts_export',
-  makeParams: () => {
-    const cleanedFilter = Object.fromEntries(
-      Object.entries(filter)
-        .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
-        .filter(([, v]) => Boolean(v)),
-    )
-    return {
-      account: accountId,
-      ...contactsExport,
-      limit: contactsExport.limit || undefined,
-      filter: cleanedFilter,
-    }
-  },
-  onSuccess: () => ongoingExport.reload(),
-})
-
-const ongoingExport = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Contacts Exchange',
-    fieldname: 'name',
-    filters: {
-      user: user.data.name,
-      operation: 'Export',
-      status: ['in', ['Queued', 'In Progress']],
-    },
-  }),
-})
-
-onMounted(() =>
-  socket.on('contacts_exchange_completed', (payload: { action: 'Import' | 'Export' }) => {
-    if (payload.action === 'Export') ongoingExport.reload()
-  }),
+const createContactsExport = useMutation(api.mail.exchanges.exportContacts)
+async function createContactsExportSubmit() {
+  const cleanedFilter = Object.fromEntries(
+    Object.entries(filter)
+      .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
+      .filter(([, v]) => Boolean(v)),
+  )
+  const input: InputOf<typeof api.mail.exchanges.exportContacts> = {
+    account: store.accountId,
+    ...contactsExport,
+    limit: contactsExport.limit || undefined,
+    filter: cleanedFilter,
+  }
+  await createContactsExport.run(input)
+  await ongoingExport.refetch().catch(() => {})
+}
+const ongoingExport = useQuery(api.mail.exchanges.ongoing, () =>
+  user.data && store.accountId
+    ? {
+        doctype: 'Contacts Exchange',
+        fieldname: 'name',
+        filters: {
+          user: user.data!.name,
+          operation: 'Export',
+          status: ['in', ['Queued', 'In Progress']],
+        },
+      }
+    : false,
 )
-
+const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
+  if (payload.action === 'Export') ongoingExport.refetch().catch(() => {})
+}
+socket.on('contacts_exchange_completed', onExchangeCompleted)
+onScopeDispose(() => socket.off('contacts_exchange_completed', onExchangeCompleted))
 const exportSubtitle = computed(() => {
   if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")
   return __('No exports in progress.')
 })
-
 const exportHref = computed(() => {
   if (ongoingExport.data?.name) return `/mail/contacts-exchanges/${ongoingExport.data.name}`
   return '/mail/contacts-exchanges?operation=Export'
 })
-
 const exportLinkText = computed(() => {
   if (ongoingExport.data?.name) return __('Track status')
   return __('View history')
 })
-
 const FORMAT_OPTIONS = ['jmap', 'vcf']
 const ARCHIVE_TYPE_OPTIONS = ['.zip', '.tgz', '.tar.gz']
 </script>

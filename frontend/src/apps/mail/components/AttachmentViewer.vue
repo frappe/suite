@@ -28,14 +28,14 @@
           </div>
           <div class="shrink-0 space-x-2 sm:space-x-4">
             <button
-              v-if="previewUrl && !fetchAttachment.loading && canPrint"
+              v-if="previewUrl && !isLoading && canPrint"
               class="rounded-4 p-1.5 hover:bg-white/20"
               @click="printAttachment"
             >
               <Printer class="h-4 w-4" />
             </button>
             <button
-              v-if="previewUrl && !fetchAttachment.loading"
+              v-if="previewUrl && !isLoading"
               :disabled="isDownloading"
               class="rounded-4 p-1.5 hover:bg-white/20 disabled:opacity-50"
               @click="downloadAttachment"
@@ -50,7 +50,7 @@
 
         <!-- Content area -->
         <div class="flex h-full w-full items-center justify-center" @click.self="closeViewer">
-          <LoaderCircle v-if="fetchAttachment.loading" class="h-8 w-8 animate-spin" />
+          <LoaderCircle v-if="isLoading" class="h-8 w-8 animate-spin" />
           <div
             v-else-if="previewUrl"
             class="flex h-full w-full items-center justify-center"
@@ -174,7 +174,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 
-import { fetchAttachment, getAttachmentUrl } from '@/apps/mail/resources'
+import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { Attachment } from '@/apps/mail/types'
 import { getFileIcon, revokeObjectUrlAfterDownload } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -249,22 +249,28 @@ const nextAttachment = () => {
   if (attachments && currentIndex.value < attachments.length - 1) currentIndex.value++
 }
 
+const isLoading = ref(false)
+let previewRequest: AbortController | undefined
 const loadAttachment = async () => {
-  if (!currentAttachment.value?.blob_id) return
-
+  previewRequest?.abort()
+  previewRequest = undefined
+  isLoading.value = false
   releasePreview()
+  const attachment = currentAttachment.value
+  if (!attachment?.blob_id) return
+  const request = new AbortController()
+  previewRequest = request
+  isLoading.value = true
   pdfLoaded.value = false
   pdfFailed.value = false
-
   try {
-    previewUrl.value = await getAttachmentUrl(
-      currentAttachment.value.blob_id,
-      currentAttachment.value.type,
-      account,
-    )
+    const url = await getAttachmentUrl(attachment.blob_id, attachment.type, account, request.signal)
+    if (previewRequest !== request || !show.value) URL.revokeObjectURL(url)
+    else previewUrl.value = url
   } catch {
-    // the resource's onError already raised a toast; the viewer falls back to
-    // its "Failed to load attachment" state
+    // The download workflow reports refusals; an empty preview shows the failure state.
+  } finally {
+    if (previewRequest === request) isLoading.value = false
   }
 }
 
@@ -333,7 +339,12 @@ const printAttachment = () => {
 }
 
 watch(show, (val) => {
-  if (!val) return
+  if (!val) {
+    previewRequest?.abort()
+    isLoading.value = false
+    releasePreview()
+    return
+  }
 
   if (currentIndex.value === initialIndex) loadAttachment()
   else currentIndex.value = initialIndex || 0
@@ -353,6 +364,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
 
 onMounted(() => window.addEventListener('keydown', handleKeyDown))
 onUnmounted(() => {
+  previewRequest?.abort()
   window.removeEventListener('keydown', handleKeyDown)
   releasePreview()
 })

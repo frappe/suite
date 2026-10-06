@@ -6,9 +6,9 @@
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !addressBook.name,
-          onClick: createAddressBook.submit,
+          onClick: createAddressBookSubmit,
         },
       ],
     }"
@@ -33,10 +33,11 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, FormControl } from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation } from '@/api'
 import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
 
@@ -46,7 +47,6 @@ const store = userStore()
 const router = useRouter()
 
 const defaultAddressBook = {
-  account: store.accountId,
   name: '',
   description: '',
   default: false,
@@ -54,17 +54,21 @@ const defaultAddressBook = {
 
 const addressBook = reactive({ ...defaultAddressBook })
 
-const createAddressBook = createResource({
-  url: 'suite.mail.doctype.address_book.address_book.add_address_book',
-  makeParams: () => addressBook,
-  onSuccess: (data: string) => {
-    raiseToast(__('Address book created.'))
+const createAddressBook = useMutation(api.mail.addressBooks.create)
+async function createAddressBookSubmit() {
+  const account = store.accountId
+  try {
+    const id = await createAddressBook.run({ ...addressBook, account })
     show.value = false
-    store.addressBooks.reload()
-    router.push({ name: 'people-address-book', params: { addressBookName: data } })
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
+    raiseToast(__('Address book created.'))
+    await router.push({
+      name: 'people-address-book',
+      params: { accountId: account, addressBookName: id },
+    })
+  } catch {
+    /* Keep the draft open after refusal. */
+  }
+}
 
 watch(show, (val) => {
   if (val) Object.assign(addressBook, defaultAddressBook)

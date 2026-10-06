@@ -24,7 +24,7 @@ await Promise.all([
   initSentry(app, router),
   translationsReady,
   initializeTheme(),
-  import('@/boot/config').then(({ configureFrappeUI }) => configureFrappeUI()),
+  import('@/boot/config'),
 ])
 
 app.use(createPinia())

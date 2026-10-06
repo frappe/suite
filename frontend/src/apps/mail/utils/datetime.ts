@@ -18,7 +18,7 @@ const UTC_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
  */
 export const userTimeZone = (): string => {
   const { userResource } = userStore()
-  return dayjs.tz.guess() || userResource.data?.time_zone
+  return dayjs.tz.guess() || userResource.data?.time_zone || 'UTC'
 }
 
 /** Reads a UTC timestamp from an API into the user's zone. */

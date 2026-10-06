@@ -113,7 +113,7 @@ export const useMailRemoval = ({
       try {
         await req()
         forwardOk = true
-        mailboxes.reload()
+        mailboxes.refetch().catch(() => {})
         afterForward?.()
         opts.afterSuccess?.()
       } catch (error) {
@@ -134,7 +134,7 @@ export const useMailRemoval = ({
           setUndoAction(undefined)
           raiseOptimisticToast(
             opts.undoReq!()
-              .then(() => mailboxes.reload())
+              .then(() => mailboxes.refetch().catch(() => {}))
               .catch((error) => {
                 // The undo didn't land server-side — re-remove so the UI matches the server
                 // instead of showing the mail (and its row) as restored. The pane stays where

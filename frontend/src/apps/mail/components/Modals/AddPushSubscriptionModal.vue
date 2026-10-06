@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Create'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !canCreate,
-          loading: addPushSubscription.loading,
-          onClick: addPushSubscription.submit,
+          loading: addPushSubscription.isPending,
+          onClick: addPushSubscriptionSubmit,
         },
       ],
     }"
@@ -54,17 +54,17 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, FormControl } from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-
-const emit = defineEmits<{ created: [] }>()
-
+const emit = defineEmits<{
+  created: []
+}>()
 const user = inject('$user')
-
 const url = ref('')
 const deviceClientId = ref('')
 const types = ref('')
@@ -80,22 +80,19 @@ const chosenTypes = computed(() =>
 // A URL is optional (blank falls back to the app default), but if given it must be an https URL to
 // match the backend's validation.
 const canCreate = computed(() => !url.value.trim() || url.value.trim().startsWith('https://'))
-
-const addPushSubscription = createResource({
-  url: 'suite.mail.doctype.push_subscription.push_subscription.add_push_subscription',
-  makeParams: () => ({
+const addPushSubscription = useMutation(api.mail.push.create)
+async function addPushSubscriptionSubmit() {
+  const input: InputOf<typeof api.mail.push.create> = {
     user: user.data.name,
     url: url.value.trim() || undefined,
     device_client_id: deviceClientId.value.trim() || undefined,
     types: chosenTypes.value.length ? chosenTypes.value : undefined,
-  }),
-  onSuccess: () => {
-    raiseToast(__('Push subscription created.'))
-    show.value = false
-    emit('created')
-  },
-  onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
-})
+  }
+  await addPushSubscription.run(input)
+  raiseToast(__('Push subscription created.'))
+  show.value = false
+  emit('created')
+}
 
 // Reset the form each time the dialog opens.
 watch(show, (open) => {

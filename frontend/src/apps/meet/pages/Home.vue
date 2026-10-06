@@ -122,7 +122,7 @@
         <div class="flex justify-end">
           <Button
             variant="solid"
-            :loading="scheduleMeeting.loading"
+            :loading="scheduleMeeting.isPending"
             :disabled="!isScheduleTimeValid"
             @click="submitScheduledMeeting"
             >{{ __('Schedule') }}</Button
@@ -134,10 +134,11 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl, PageHeader, TextInput, toast, useCall } from 'frappe-ui'
+import { Button, Dialog, FormControl, PageHeader, TextInput, toast } from 'frappe-ui'
 import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, useMutation, useQuery } from '@/api'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
@@ -153,7 +154,6 @@ import Recordings from '../components/Recordings.vue'
 import UpcomingMeetings from '../components/UpcomingMeetings.vue'
 import { useStartMeeting } from '../composables/useStartMeeting'
 import { meetingCodeFrom } from '../utils/meetingCode'
-import { submit } from '../utils/request'
 
 interface CalendarParticipant {
   email: string
@@ -172,11 +172,11 @@ const view = computed(() => (route.name === 'meet-recordings' ? 'recordings' : '
 const viewLabel = computed(() => (view.value === 'upcoming' ? __('Meet') : __('Recordings')))
 const openNavigation = () => openAreaSidebar('meet')
 const calendarStore = useCalendarUserStore()
-// useCall's cache key is fixed at creation; resolve the account before mounting the list.
+// Resolve the account before mounting the list, so it shows the account's meetings from the start.
 const calendarReady = ref(false)
 onMounted(async () => {
   try {
-    await calendarStore.userResource.promise
+    await calendarStore.loadUser()
   } catch {
     // The list owns the account error and retry UI.
   } finally {
@@ -201,9 +201,7 @@ watch(scheduleEndTime, (endTime) => {
   scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime)
 })
 
-const userResource = useCall<{ name?: string; full_name?: string; user_image?: string }>({
-  url: '/api/v2/method/suite.api.account.get_logged_in_user',
-})
+const userResource = useQuery(api.suite.account.get)
 const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`))
 const scheduleEnd = computed(() => dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`))
 const isScheduleTimeValid = computed(
@@ -229,7 +227,7 @@ const scheduledParticipants = computed(() => {
         {
           email: currentUserEmail.value,
           _name: calendarStore.userResource.data?.full_name || userResource.data?.full_name,
-          user_image: calendarStore.userResource.data?.user_image || userResource.data?.user_image,
+          user_image: calendarStore.userResource.data?.avatar || userResource.data?.avatar,
           participation_status: 'ACCEPTED',
         },
       ]
@@ -237,31 +235,12 @@ const scheduledParticipants = computed(() => {
   participants.push(...scheduleParticipants.value)
   return participants
 })
-const scheduleMeeting = useCall({
-  url: '/api/suite/meet/calendar-meetings',
-  method: 'POST',
-  params: () => ({
-    account: calendarStore.accountId,
-    title: scheduleTitle.value,
-    start: scheduleStart.value.format('YYYY-MM-DD[T]HH:mm:ss'),
-    duration: scheduledDuration.value,
-    time_zone: dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone,
-    participants: scheduledParticipants.value,
-    send_scheduling_messages: scheduledParticipants.value.length > 1,
-  }),
-  immediate: false,
-  onSuccess: () => {
-    showScheduleDialog.value = false
-    toast.success(__('Meeting scheduled.'))
-    upcomingMeetingsRef.value?.reload()
-  },
-  onError: (error: unknown) => console.error('Error scheduling meeting:', error),
-})
+const scheduleMeeting = useMutation(api.meet.meetings.createCalendar, { silent: true })
 const startInstantMeeting = () => startMeeting('open')
 const startRestrictedMeeting = () => startMeeting('restricted')
 const openScheduleDialog = async () => {
   try {
-    await calendarStore.userResource.promise
+    await calendarStore.loadUser()
     if (!calendarStore.accountId) {
       toast.error(__('Set up Calendar before scheduling a Meet.'))
       return
@@ -281,10 +260,27 @@ const submitScheduledMeeting = () => {
     toast.error(__('Enter a valid date and an end time after the start time.'))
     return
   }
-  toast.promise(submit(scheduleMeeting), {
-    loading: __('Scheduling meeting...'),
-    error: __('Failed to schedule meeting. Please try again.'),
-  })
+  toast.promise(
+    scheduleMeeting
+      .run({
+        account: calendarStore.accountId,
+        title: scheduleTitle.value,
+        start: scheduleStart.value.format('YYYY-MM-DD[T]HH:mm:ss'),
+        duration: scheduledDuration.value,
+        time_zone: dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone,
+        participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
+        send_scheduling_messages: scheduledParticipants.value.length > 1,
+      })
+      .then(() => {
+        showScheduleDialog.value = false
+        toast.success(__('Meeting scheduled.'))
+        upcomingMeetingsRef.value?.reload()
+      }),
+    {
+      loading: __('Scheduling meeting...'),
+      error: __('Failed to schedule meeting. Please try again.'),
+    },
+  )
 }
 const joinWithCode = () => {
   meetingCodeError.value = ''

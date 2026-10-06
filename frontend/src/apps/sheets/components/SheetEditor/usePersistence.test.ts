@@ -4,24 +4,26 @@ import { ref } from 'vue'
 import { usePersistence } from './usePersistence.js'
 
 const server = vi.hoisted(() => ({
-  calls: [] as Array<{ method: string; args: Record<string, unknown>; fetch?: unknown }>,
+  calls: [] as Array<{ method: string; args: Record<string, unknown>; context?: unknown }>,
   answer: (_method: string): unknown => ({}),
   visits: [] as string[],
 }))
 
-vi.mock('../../utils/api.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../utils/api.js')>()),
-  call: async (
-    method: string,
+vi.mock('@/api', async () => {
+  const { api: sheetsAPI } = await import('@/apps/sheets/client/generated')
+  const send = async (
+    reference: { path: string },
     args: Record<string, unknown>,
-    options: { fetch?: unknown } = {},
+    options: { context?: unknown } = {},
   ) => {
-    server.calls.push({ method, args, fetch: options.fetch })
+    const method = reference.path.replace('/api/method/', '')
+    server.calls.push({ method, args, context: options.context })
     const answer = server.answer(method)
     if (answer instanceof Error) throw answer
     return answer
-  },
-}))
+  }
+  return { api: { sheets: sheetsAPI }, client: { query: send, mutation: send } }
+})
 vi.mock('./driveVisit', () => ({
   recordVisit: async (node: string) => {
     server.visits.push(node)
@@ -34,7 +36,7 @@ vi.mock('../../utils/compress.js', () => ({
 }))
 
 function refusal(): Error {
-  return Object.assign(new Error('Not permitted'), { excType: 'PermissionError', status: 403 })
+  return Object.assign(new Error('Not permitted'), { type: 'PermissionError', status: 403 })
 }
 
 let live: Record<string, Record<string, string>> = { Sheet1: {} }
@@ -83,7 +85,9 @@ describe('Sheets persistence', () => {
 
   it('sends nothing while the editor may not write, and says the change is not saved', async () => {
     const saved = persistence({ isWritable: () => false })
-    await expect(saved.saveExisting('sheet-1', 'Budget')).resolves.toBeNull()
+    await expect(saved.saveExisting('sheet-1', 'Budget')).rejects.toMatchObject({
+      name: 'AbortError',
+    })
 
     expect(saves()).toEqual([])
     expect(saved.saveError.value).toMatch(/not saved/i)
@@ -94,7 +98,7 @@ describe('Sheets persistence', () => {
     const onRefused = vi.fn()
     const saved = persistence({ onRefused })
 
-    await expect(saved.saveExisting('sheet-1', 'Budget')).resolves.toBeNull()
+    await expect(saved.saveExisting('sheet-1', 'Budget')).rejects.toBeInstanceOf(Error)
 
     expect(onRefused).toHaveBeenCalledTimes(1)
     expect(saves()).toHaveLength(1)
@@ -108,22 +112,24 @@ describe('Sheets persistence', () => {
   })
 
   it("loads and saves through the caller's fetch, so link credentials ride along", async () => {
-    const credentialFetch = vi.fn()
-    const saved = persistence({ credentialFetch })
+    const requestContext = vi.fn()
+    const saved = persistence({ requestContext })
     await saved.loadSheet('sheet-1')
     await saved.saveExisting('sheet-1', 'Budget')
 
-    expect(server.calls.map((call) => [call.method, call.fetch])).toEqual([
-      ['suite.sheets.api.get_sheet', credentialFetch],
-      ['suite.sheets.api.save_sheet', credentialFetch],
+    expect(server.calls.map((call) => [call.method, call.context])).toEqual([
+      ['suite.sheets.api.get_sheet', requestContext],
+      ['suite.sheets.api.save_sheet', requestContext],
     ])
   })
 
   it('treats Drive hiding the sheet as a refusal, not a network blip', async () => {
     server.answer = () =>
-      Object.assign(new Error('Not found'), { excType: 'DriveNotFound', status: 404 })
+      Object.assign(new Error('Not found'), { type: 'DriveNotFound', status: 404 })
     const onRefused = vi.fn()
-    await persistence({ onRefused }).saveExisting('sheet-1', 'Budget')
+    await expect(
+      persistence({ onRefused }).saveExisting('sheet-1', 'Budget'),
+    ).rejects.toMatchObject({ type: 'DriveNotFound' })
 
     expect(onRefused).toHaveBeenCalledTimes(1)
     expect(saves()).toHaveLength(1)

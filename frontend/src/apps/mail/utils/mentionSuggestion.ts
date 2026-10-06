@@ -1,7 +1,8 @@
 import { PluginKey } from '@tiptap/pm/state'
-import { call, type BaseSuggestionItem } from 'frappe-ui'
+import { type BaseSuggestionItem } from 'frappe-ui'
 import { createSuggestionExtension } from 'frappe-ui/experimental'
 
+import { api, client, type OutputOf } from '@/api'
 import MentionList from '@/apps/mail/components/Controls/MentionList.vue'
 
 // Same shape as a draft recipient, so a picked mention can be added to To as-is.
@@ -11,7 +12,7 @@ export interface MentionCandidate extends BaseSuggestionItem {
   image?: string
 }
 
-type EmailSuggestion = { email: string; name?: string | null; user_image?: string }
+type EmailSuggestion = OutputOf<typeof api.mail.contacts.suggest>[number]
 
 const SEARCH_DEBOUNCE = 200
 
@@ -34,7 +35,7 @@ const createContactSearch = (account: () => string) => {
       pending = setTimeout(async () => {
         let suggestions: EmailSuggestion[] = []
         try {
-          suggestions = await call('suite.mail.api.mail.get_email_suggestions', {
+          suggestions = await client.query(api.mail.contacts.suggest, {
             account: account(),
             text,
           })
@@ -47,7 +48,7 @@ const createContactSearch = (account: () => string) => {
           suggestions.map((suggestion) => ({
             email: suggestion.email,
             display_name: suggestion.name || undefined,
-            image: suggestion.user_image,
+            image: suggestion.user_image ?? undefined,
           })),
         )
       }, SEARCH_DEBOUNCE)

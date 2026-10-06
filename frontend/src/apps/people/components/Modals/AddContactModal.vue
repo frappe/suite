@@ -6,9 +6,9 @@
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !(contact.full_name && contact.kind && contact.address_book_ids.length),
-          onClick: createContact.submit,
+          onClick: createContactSubmit,
         },
       ],
     }"
@@ -31,7 +31,7 @@
           <MultiSelect
             v-model="contact.address_book_ids"
             :options="
-              store.addressBooks.data.map((ab) => ({
+              (store.addressBooks.data ?? []).map((ab) => ({
                 label: ab._name,
                 value: ab.id,
               }))
@@ -44,10 +44,11 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, FormControl, MultiSelect } from 'frappe-ui'
+import { Dialog, FormControl, MultiSelect } from 'frappe-ui'
 import { reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation } from '@/api'
 import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
 
@@ -56,30 +57,32 @@ const show = defineModel<boolean>()
 const store = userStore()
 const router = useRouter()
 
-const defaultAddressBook = store.addressBooks.data.find((ab) => ab.default)?.id
-
 const defaultContact = {
-  account: store.accountId,
-  address_book_ids: defaultAddressBook ? [defaultAddressBook] : [],
+  address_book_ids: [] as string[],
   full_name: '',
   kind: 'Individual',
 }
 
 const contact = reactive({ ...defaultContact })
 
-const createContact = createResource({
-  url: 'suite.mail.doctype.contact_card.contact_card.add_contact_card',
-  makeParams: () => contact,
-  onSuccess: (data: string) => {
-    raiseToast(__('Contact created.'))
+const createContact = useMutation(api.mail.contacts.create)
+async function createContactSubmit() {
+  const account = store.accountId
+  try {
+    const id = await createContact.run({ ...contact, account })
     show.value = false
-    router.push({ name: 'people-contact', params: { contactName: data } })
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
+    raiseToast(__('Contact created.'))
+    await router.push({ name: 'people-contact', params: { accountId: account, contactName: id } })
+  } catch {
+    /* Keep the draft open after refusal. */
+  }
+}
 
 watch(show, (val) => {
-  if (val) Object.assign(contact, defaultContact)
+  if (val) {
+    const book = (store.addressBooks.data ?? []).find((ab) => ab.default)?.id
+    Object.assign(contact, { ...defaultContact, address_book_ids: book ? [book] : [] })
+  }
 })
 
 const KIND_OPTIONS = [

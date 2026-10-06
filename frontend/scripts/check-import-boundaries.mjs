@@ -4,6 +4,8 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
+import { checkApiClient } from './check-api-client.mjs'
+
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = path.join(frontendRoot, 'src')
 const deskScriptRoot = path.join(frontendRoot, '..', 'suite', 'public', 'js')
@@ -60,7 +62,6 @@ const moduleGraphDebtGroups = [
       'calendar/components/CommandPalette/CalendarSearchResult.vue|@/components/HighlightedText.vue',
       'calendar/components/EventAlertList.vue|@/utils/calendarAlert',
       'calendar/components/EventDetail.vue|@/components/LinkifiedText.vue',
-      'calendar/components/Modals/EventModal.vue|@/apps/meet/utils/request',
       'calendar/components/Modals/EventModal.vue|@/composables/useScreenSize',
       'calendar/components/Modals/EventRepeatSettingsModal.vue|@/composables/useScreenSize',
       'calendar/components/Settings/AdvancedSettings.vue|@/components/CopyControl.vue',
@@ -479,7 +480,8 @@ const displayPath = (relative) =>
 
 function layerFor(relative) {
   const segments = relative.split('/')
-  if (['composition', 'shell', 'platform'].includes(segments[0])) return { kind: segments[0] }
+  if (['api', 'composition', 'shell', 'platform'].includes(segments[0]))
+    return { kind: segments[0] }
   if (segments[0] === 'apps' && products.has(segments[1]))
     return { kind: 'product', product: segments[1] }
   return { kind: 'legacy' }
@@ -516,6 +518,19 @@ function graphViolation(source, target, specifier) {
   const from = layerFor(source)
   const to = target.layer
   if (from.kind === 'legacy') return null
+  if (specifier === '@/api' && from.kind !== 'platform') return null
+  if (
+    /\.(test|spec)\.[cm]?[jt]sx?$/.test(source) &&
+    (specifier === '@/api' || /^@\/apps\/[^/]+\/client\/(api|policy|links)$/.test(specifier))
+  )
+    return null
+  if (from.kind === 'api' && (to.kind === 'platform' || to.kind === 'api')) return null
+  if (from.kind === 'api')
+    return specifier === '@/composition/api'
+      ? null
+      : 'the API entry may import only its composition registration and platform types'
+  if (source === 'composition/api.ts' && /^@\/apps\/[^/]+\/client\/(api|policy)$/.test(specifier))
+    return null
 
   if (from.kind === 'composition') {
     if (['composition', 'shell', 'platform'].includes(to.kind)) return null
@@ -711,6 +726,7 @@ function compare(label, actual, baseline) {
 }
 
 selfTest()
+checkApiClient(sourceRoot)
 const scanned = scan()
 const actualBoundary = keyed(scanned.boundary)
 const actualFrappeUI = keyed(scanned.frappeUI)

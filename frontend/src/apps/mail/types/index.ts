@@ -1,14 +1,14 @@
-import type { UserAccount } from './doctypes'
+import type { GetUserInfoOutput } from '../client/generated'
 
 export * from './doctypes'
+export type Identity = import('../client/generated').GetIdentitiesOutput[number]
+export type SieveScript = import('../client/generated').GetSieveScriptsOutput[number]
 
 // What happens to a sender when one of their messages is marked as Junk (JMAP Account).
-type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
 
 // A screened sender: how their future mail is handled. 'Reject' discards it silently; 'Spam' files
 // it into the Spam (Junk) folder; 'Accepted' lets it reach the inbox. (Doctype: Screened Email Address.)
 export type ScreeningAction = 'Reject' | 'Spam' | 'Accepted'
-
 export interface ScreenedAddress {
   email: string
   action: ScreeningAction
@@ -41,56 +41,12 @@ export interface ScreeningSender {
   count: number
   unread: number
 }
-
-export interface User {
-  name: string
-  email: string
-  full_name: string
-  user_type: string
-
-  username: string | null
-  user_image: string | null
-  api_key: string | null
-  // The zone every timestamp is shown in and typed in; see utils/datetime.ts.
-  time_zone: string
-  // The site's zone — what plain DB datetime fields are stored in; see formatSystemDateTime.
-  system_time_zone: string
-  user_settings?: string
-  group_messages_by?: 'None' | 'Day' | 'Month'
-  show_reading_pane?: 0 | 1
-  // Seconds a plain Send is held so it can be undone; see utils/undoSend.ts.
-  undo_send_period?: '5' | '10' | '20' | '30'
-
-  enabled: boolean
-  is_suite_admin: boolean
-  is_system_manager: boolean
-  is_jmap_configured: boolean
-  // Bytes; the largest file compose may attach. `upload_file` refuses a larger one.
-  max_attachment_size: number
-  // Admins only: whether the site is connected to a Suite Cloud, which the Admin Dashboard needs.
-  is_suite_cloud_configured: boolean
-
-  mailboxes: { id: string; name: string; role: string }[]
-  // `get_user_info` enriches each account with its per-account outgoing default and
-  // JMAP Account doc name (the fields moved off User Settings).
-  accounts: (UserAccount & {
-    default_outgoing_email?: string
-    jmap_account?: string
-    on_mark_as_junk?: OnMarkAsJunk
-    enable_screening?: boolean
-    block_remote_images?: boolean
-    /** Whether the account has anything for the user in mail, and in calendar. */
-    in_mail?: boolean
-    in_calendar?: boolean
-  })[]
-}
-
+export type User = NonNullable<import('../client/generated').GetUserInfoOutput>
+export type UserAccount = User['accounts'][number]
 export interface UserResource {
   data: User
-  promise: Promise<User>
-  reload: () => void
+  refetch(): Promise<GetUserInfoOutput | undefined>
 }
-
 export interface Recipient {
   type: 'To' | 'Cc' | 'Bcc'
   email: string
@@ -104,7 +60,6 @@ export interface ThreadParticipant {
   email: string
   is_self: boolean
 }
-
 export interface Mailbox {
   mailbox: string
   mailbox_id: string
@@ -114,12 +69,11 @@ export interface Attachment {
   filename: string
   blob_id: string
   type: string
-  size: string
+  size: number | string
   file_url: string | null
   disposition: string
   cid?: string
 }
-
 export interface Mail {
   name: string
   message_id: string
@@ -138,12 +92,15 @@ export interface Mail {
   junk: 0 | 1
   mailboxes: Mailbox[]
   recipients: Recipient[]
-  groupedRecipients: {
+  groupedRecipients?: {
     to: Recipient[]
     cc: Recipient[]
     bcc: Recipient[]
   }
-  reply_to: { display_name: string; email: string }[]
+  reply_to: {
+    display_name: string
+    email: string
+  }[]
   attachments: Attachment[]
   // Blob id of a bounce message's message/delivery-status part (see DeliveryStatusBanner).
   dsn_blob_id?: string | null
@@ -151,6 +108,7 @@ export interface Mail {
   duplicates?: MailCopy[]
   user_image?: string
   collapsed?: boolean
+  show?: boolean
 }
 
 /**
@@ -175,13 +133,11 @@ export type MailCopy = Pick<
   | 'flagged'
   | 'draft'
 >
-
 export interface DraftRecipient {
   email: string
   display_name?: string
   image?: string
 }
-
 export interface ComposeMailData {
   name?: string
   id?: string
@@ -198,7 +154,6 @@ export interface ComposeMailData {
   forwarded_from_id?: string
   type?: 'reply' | 'replyAll' | 'forward'
 }
-
 export interface Thread {
   name: string
   account: string
@@ -217,7 +172,6 @@ export interface Thread {
   from_email: string
   subject: string | null
   preview: string | null
-  has_attachment: 0 | 1
   received_at: string
   mailboxes: Mailbox[]
   recipients: Recipient[]
@@ -225,13 +179,10 @@ export interface Thread {
   draft: 0 | 1
   junk: 0 | 1
   flagged: 0 | 1
-  answered: 0 | 1
-  forwarded: 0 | 1
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]
 }
-
 export interface MailboxData {
   name: string
   id: string
@@ -243,8 +194,8 @@ export interface MailboxData {
   // What the folder is called in the unified views (see UnifiedFolder); null for the Screener.
   slug: string | null
   subscribed: 0 | 1
-  icon?: string
-  color?: 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple'
+  icon?: string | null
+  color?: 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple' | null
   disable_push_notification?: 0 | 1
   automation_rules?: AutomationRules | null
 }
@@ -268,7 +219,6 @@ interface AutomationRules {
   mark_as_read: boolean
   add_star: boolean
 }
-
 export interface QuotaUsage {
   total: number
   used: number

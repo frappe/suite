@@ -4,6 +4,10 @@
   "operations": [
     {
       "id": "events_get",
+      "kind": "query",
+      "publicName": "events.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "events",
       "pathParams": [],
@@ -22,10 +26,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "from",
-          "to"
-        ],
+        "required": ["from", "to"],
         "title": "EventsQuery",
         "type": "object"
       },
@@ -75,6 +76,7 @@
                 "type": "string"
               },
               "show_without_time": {
+                "enum": [0, 1],
                 "title": "Show Without Time",
                 "type": "integer"
               },
@@ -92,6 +94,9 @@
               "recurrence_rule": {
                 "anyOf": [
                   {
+                    "type": "string"
+                  },
+                  {
                     "additionalProperties": true,
                     "type": "object"
                   },
@@ -100,6 +105,105 @@
                   }
                 ],
                 "title": "Recurrence Rule"
+              },
+              "organizer": {
+                "title": "Organizer",
+                "type": "string"
+              },
+              "calendars": {
+                "items": {
+                  "$ref": "#/$defs/EventCalendar"
+                },
+                "title": "Calendars",
+                "type": "array"
+              },
+              "created": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Created"
+              },
+              "draft": {
+                "enum": [0, 1],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "recurrence_id_time_zone": {
+                "title": "Recurrence Id Time Zone",
+                "type": "string"
+              },
+              "privacy": {
+                "title": "Privacy",
+                "type": "string"
+              },
+              "free_busy_status": {
+                "title": "Free Busy Status",
+                "type": "string"
+              },
+              "locations": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Locations",
+                "type": "array"
+              },
+              "alerts": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Alerts",
+                "type": "array"
+              },
+              "use_default_alerts": {
+                "enum": [0, 1],
+                "title": "Use Default Alerts",
+                "type": "integer"
+              },
+              "created_utc": {
+                "title": "Created Utc",
+                "type": "string"
+              },
+              "updated_utc": {
+                "title": "Updated Utc",
+                "type": "string"
+              },
+              "origin": {
+                "title": "Origin",
+                "type": "boolean"
+              },
+              "may_invite_self": {
+                "enum": [0, 1],
+                "title": "May Invite Self",
+                "type": "integer"
+              },
+              "may_invite_others": {
+                "enum": [0, 1],
+                "title": "May Invite Others",
+                "type": "integer"
+              },
+              "hide_attendees": {
+                "enum": [0, 1],
+                "title": "Hide Attendees",
+                "type": "integer"
+              },
+              "creation": {
+                "title": "Creation",
+                "type": "string"
+              },
+              "modified": {
+                "title": "Modified",
+                "type": "string"
+              },
+              "sequence": {
+                "title": "Sequence",
+                "type": "integer"
               },
               "master_id": {
                 "title": "Master Id",
@@ -122,8 +226,7 @@
               },
               "participants": {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/$defs/Participant"
                 },
                 "title": "Participants",
                 "type": "array"
@@ -139,6 +242,42 @@
                 ]
               }
             },
+            "required": [
+              "name",
+              "account",
+              "id",
+              "uid",
+              "title",
+              "start",
+              "duration",
+              "time_zone",
+              "status",
+              "description",
+              "show_without_time",
+              "recurrence_id",
+              "recurrence_rule",
+              "organizer",
+              "calendars",
+              "created",
+              "draft",
+              "recurrence_id_time_zone",
+              "privacy",
+              "free_busy_status",
+              "locations",
+              "alerts",
+              "use_default_alerts",
+              "created_utc",
+              "updated_utc",
+              "origin",
+              "may_invite_self",
+              "may_invite_others",
+              "hide_attendees",
+              "creation",
+              "modified",
+              "sequence",
+              "links",
+              "participants"
+            ],
             "title": "CalendarEvent",
             "type": "object"
           },
@@ -153,11 +292,45 @@
                 "type": "string"
               }
             },
-            "required": [
-              "meeting_id",
-              "url"
-            ],
+            "required": ["meeting_id", "url"],
             "title": "Conferencing",
+            "type": "object"
+          },
+          "EventCalendar": {
+            "properties": {
+              "calendar": {
+                "title": "Calendar",
+                "type": "string"
+              },
+              "calendar_id": {
+                "title": "Calendar Id",
+                "type": "string"
+              },
+              "calendar_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Calendar Name"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              }
+            },
+            "required": ["calendar", "calendar_id", "calendar_name", "color"],
+            "title": "EventCalendar",
             "type": "object"
           },
           "EventLink": {
@@ -189,12 +362,109 @@
                 "title": "Content Type"
               }
             },
+            "required": ["uid", "href", "content_type"],
+            "title": "EventLink",
+            "type": "object"
+          },
+          "Participant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "roles": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Roles",
+                "type": "object"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Name"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "schedule_id": {
+                "title": "Schedule Id",
+                "type": "string"
+              },
+              "send_to": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Send To",
+                "type": "object"
+              },
+              "participation_status": {
+                "title": "Participation Status",
+                "type": "string"
+              },
+              "expect_reply": {
+                "enum": [0, 1],
+                "title": "Expect Reply",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "comment": {
+                "title": "Comment",
+                "type": "string"
+              },
+              "schedule_agent": {
+                "title": "Schedule Agent",
+                "type": "string"
+              },
+              "member_of": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Member Of",
+                "type": "object"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
             "required": [
               "uid",
-              "href",
-              "content_type"
+              "roles",
+              "kind",
+              "_name",
+              "email",
+              "schedule_id",
+              "send_to",
+              "participation_status",
+              "expect_reply",
+              "description",
+              "comment",
+              "schedule_agent",
+              "member_of"
             ],
-            "title": "EventLink",
+            "title": "Participant",
             "type": "object"
           }
         },
@@ -203,13 +473,4272 @@
         },
         "type": "array"
       },
-      "errors": [
-        "BadRequest",
-        "PermissionError"
-      ],
+      "errors": ["BadRequest", "PermissionError"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "calendar.get_calendar_events",
+      "kind": "query",
+      "publicName": "events.window",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.get_calendar_events",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "from_date": {
+            "title": "From Date",
+            "type": "string"
+          },
+          "to_date": {
+            "title": "To Date",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": ["account", "from_date", "to_date", "time_zone"],
+        "title": "CalendarWindow",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "CalendarEvent": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "start": {
+                "title": "Start",
+                "type": "string"
+              },
+              "duration": {
+                "title": "Duration",
+                "type": "string"
+              },
+              "time_zone": {
+                "title": "Time Zone",
+                "type": "string"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "show_without_time": {
+                "enum": [0, 1],
+                "title": "Show Without Time",
+                "type": "integer"
+              },
+              "recurrence_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Id"
+              },
+              "recurrence_rule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Rule"
+              },
+              "organizer": {
+                "title": "Organizer",
+                "type": "string"
+              },
+              "calendars": {
+                "items": {
+                  "$ref": "#/$defs/EventCalendar"
+                },
+                "title": "Calendars",
+                "type": "array"
+              },
+              "created": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Created"
+              },
+              "draft": {
+                "enum": [0, 1],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "recurrence_id_time_zone": {
+                "title": "Recurrence Id Time Zone",
+                "type": "string"
+              },
+              "privacy": {
+                "title": "Privacy",
+                "type": "string"
+              },
+              "free_busy_status": {
+                "title": "Free Busy Status",
+                "type": "string"
+              },
+              "locations": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Locations",
+                "type": "array"
+              },
+              "alerts": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Alerts",
+                "type": "array"
+              },
+              "use_default_alerts": {
+                "enum": [0, 1],
+                "title": "Use Default Alerts",
+                "type": "integer"
+              },
+              "created_utc": {
+                "title": "Created Utc",
+                "type": "string"
+              },
+              "updated_utc": {
+                "title": "Updated Utc",
+                "type": "string"
+              },
+              "origin": {
+                "title": "Origin",
+                "type": "boolean"
+              },
+              "may_invite_self": {
+                "enum": [0, 1],
+                "title": "May Invite Self",
+                "type": "integer"
+              },
+              "may_invite_others": {
+                "enum": [0, 1],
+                "title": "May Invite Others",
+                "type": "integer"
+              },
+              "hide_attendees": {
+                "enum": [0, 1],
+                "title": "Hide Attendees",
+                "type": "integer"
+              },
+              "creation": {
+                "title": "Creation",
+                "type": "string"
+              },
+              "modified": {
+                "title": "Modified",
+                "type": "string"
+              },
+              "sequence": {
+                "title": "Sequence",
+                "type": "integer"
+              },
+              "master_id": {
+                "title": "Master Id",
+                "type": "string"
+              },
+              "master_start": {
+                "title": "Master Start",
+                "type": "string"
+              },
+              "master_duration": {
+                "title": "Master Duration",
+                "type": "string"
+              },
+              "links": {
+                "items": {
+                  "$ref": "#/$defs/EventLink"
+                },
+                "title": "Links",
+                "type": "array"
+              },
+              "participants": {
+                "items": {
+                  "$ref": "#/$defs/Participant"
+                },
+                "title": "Participants",
+                "type": "array"
+              },
+              "conferencing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Conferencing"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "account",
+              "id",
+              "uid",
+              "title",
+              "start",
+              "duration",
+              "time_zone",
+              "status",
+              "description",
+              "show_without_time",
+              "recurrence_id",
+              "recurrence_rule",
+              "organizer",
+              "calendars",
+              "created",
+              "draft",
+              "recurrence_id_time_zone",
+              "privacy",
+              "free_busy_status",
+              "locations",
+              "alerts",
+              "use_default_alerts",
+              "created_utc",
+              "updated_utc",
+              "origin",
+              "may_invite_self",
+              "may_invite_others",
+              "hide_attendees",
+              "creation",
+              "modified",
+              "sequence",
+              "links",
+              "participants"
+            ],
+            "title": "CalendarEvent",
+            "type": "object"
+          },
+          "Conferencing": {
+            "properties": {
+              "meeting_id": {
+                "title": "Meeting Id",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": ["meeting_id", "url"],
+            "title": "Conferencing",
+            "type": "object"
+          },
+          "EventCalendar": {
+            "properties": {
+              "calendar": {
+                "title": "Calendar",
+                "type": "string"
+              },
+              "calendar_id": {
+                "title": "Calendar Id",
+                "type": "string"
+              },
+              "calendar_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Calendar Name"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              }
+            },
+            "required": ["calendar", "calendar_id", "calendar_name", "color"],
+            "title": "EventCalendar",
+            "type": "object"
+          },
+          "EventLink": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "href": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Href"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Type"
+              }
+            },
+            "required": ["uid", "href", "content_type"],
+            "title": "EventLink",
+            "type": "object"
+          },
+          "Participant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "roles": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Roles",
+                "type": "object"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Name"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "schedule_id": {
+                "title": "Schedule Id",
+                "type": "string"
+              },
+              "send_to": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Send To",
+                "type": "object"
+              },
+              "participation_status": {
+                "title": "Participation Status",
+                "type": "string"
+              },
+              "expect_reply": {
+                "enum": [0, 1],
+                "title": "Expect Reply",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "comment": {
+                "title": "Comment",
+                "type": "string"
+              },
+              "schedule_agent": {
+                "title": "Schedule Agent",
+                "type": "string"
+              },
+              "member_of": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Member Of",
+                "type": "object"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "uid",
+              "roles",
+              "kind",
+              "_name",
+              "email",
+              "schedule_id",
+              "send_to",
+              "participation_status",
+              "expect_reply",
+              "description",
+              "comment",
+              "schedule_agent",
+              "member_of"
+            ],
+            "title": "Participant",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/CalendarEvent"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_calendars_with_shared",
+      "kind": "query",
+      "publicName": "calendars.list",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.get_calendars_with_shared",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          }
+        },
+        "required": ["account"],
+        "title": "AccountInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "CalendarRow": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "_name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              },
+              "default": {
+                "enum": [0, 1],
+                "type": "integer",
+                "title": "Default"
+              },
+              "visible": {
+                "enum": [0, 1],
+                "title": "Visible",
+                "type": "integer"
+              },
+              "may_write_all": {
+                "enum": [0, 1],
+                "title": "May Write All",
+                "type": "integer"
+              },
+              "may_delete": {
+                "enum": [0, 1],
+                "title": "May Delete",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "account",
+              "id",
+              "_name",
+              "color",
+              "default",
+              "visible",
+              "may_write_all",
+              "may_delete"
+            ],
+            "title": "CalendarRow",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/CalendarRow"
+        },
+        "type": "array"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_calendar_events_with_shared",
+      "kind": "query",
+      "publicName": "events.sharedWindow",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.get_calendar_events_with_shared",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "from_date": {
+            "title": "From Date",
+            "type": "string"
+          },
+          "to_date": {
+            "title": "To Date",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": ["account", "from_date", "to_date", "time_zone"],
+        "title": "CalendarWindow",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "CalendarEvent": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "start": {
+                "title": "Start",
+                "type": "string"
+              },
+              "duration": {
+                "title": "Duration",
+                "type": "string"
+              },
+              "time_zone": {
+                "title": "Time Zone",
+                "type": "string"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "show_without_time": {
+                "enum": [0, 1],
+                "title": "Show Without Time",
+                "type": "integer"
+              },
+              "recurrence_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Id"
+              },
+              "recurrence_rule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Rule"
+              },
+              "organizer": {
+                "title": "Organizer",
+                "type": "string"
+              },
+              "calendars": {
+                "items": {
+                  "$ref": "#/$defs/EventCalendar"
+                },
+                "title": "Calendars",
+                "type": "array"
+              },
+              "created": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Created"
+              },
+              "draft": {
+                "enum": [0, 1],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "recurrence_id_time_zone": {
+                "title": "Recurrence Id Time Zone",
+                "type": "string"
+              },
+              "privacy": {
+                "title": "Privacy",
+                "type": "string"
+              },
+              "free_busy_status": {
+                "title": "Free Busy Status",
+                "type": "string"
+              },
+              "locations": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Locations",
+                "type": "array"
+              },
+              "alerts": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Alerts",
+                "type": "array"
+              },
+              "use_default_alerts": {
+                "enum": [0, 1],
+                "title": "Use Default Alerts",
+                "type": "integer"
+              },
+              "created_utc": {
+                "title": "Created Utc",
+                "type": "string"
+              },
+              "updated_utc": {
+                "title": "Updated Utc",
+                "type": "string"
+              },
+              "origin": {
+                "title": "Origin",
+                "type": "boolean"
+              },
+              "may_invite_self": {
+                "enum": [0, 1],
+                "title": "May Invite Self",
+                "type": "integer"
+              },
+              "may_invite_others": {
+                "enum": [0, 1],
+                "title": "May Invite Others",
+                "type": "integer"
+              },
+              "hide_attendees": {
+                "enum": [0, 1],
+                "title": "Hide Attendees",
+                "type": "integer"
+              },
+              "creation": {
+                "title": "Creation",
+                "type": "string"
+              },
+              "modified": {
+                "title": "Modified",
+                "type": "string"
+              },
+              "sequence": {
+                "title": "Sequence",
+                "type": "integer"
+              },
+              "master_id": {
+                "title": "Master Id",
+                "type": "string"
+              },
+              "master_start": {
+                "title": "Master Start",
+                "type": "string"
+              },
+              "master_duration": {
+                "title": "Master Duration",
+                "type": "string"
+              },
+              "links": {
+                "items": {
+                  "$ref": "#/$defs/EventLink"
+                },
+                "title": "Links",
+                "type": "array"
+              },
+              "participants": {
+                "items": {
+                  "$ref": "#/$defs/Participant"
+                },
+                "title": "Participants",
+                "type": "array"
+              },
+              "conferencing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Conferencing"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "account",
+              "id",
+              "uid",
+              "title",
+              "start",
+              "duration",
+              "time_zone",
+              "status",
+              "description",
+              "show_without_time",
+              "recurrence_id",
+              "recurrence_rule",
+              "organizer",
+              "calendars",
+              "created",
+              "draft",
+              "recurrence_id_time_zone",
+              "privacy",
+              "free_busy_status",
+              "locations",
+              "alerts",
+              "use_default_alerts",
+              "created_utc",
+              "updated_utc",
+              "origin",
+              "may_invite_self",
+              "may_invite_others",
+              "hide_attendees",
+              "creation",
+              "modified",
+              "sequence",
+              "links",
+              "participants"
+            ],
+            "title": "CalendarEvent",
+            "type": "object"
+          },
+          "Conferencing": {
+            "properties": {
+              "meeting_id": {
+                "title": "Meeting Id",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": ["meeting_id", "url"],
+            "title": "Conferencing",
+            "type": "object"
+          },
+          "EventCalendar": {
+            "properties": {
+              "calendar": {
+                "title": "Calendar",
+                "type": "string"
+              },
+              "calendar_id": {
+                "title": "Calendar Id",
+                "type": "string"
+              },
+              "calendar_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Calendar Name"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              }
+            },
+            "required": ["calendar", "calendar_id", "calendar_name", "color"],
+            "title": "EventCalendar",
+            "type": "object"
+          },
+          "EventLink": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "href": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Href"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Type"
+              }
+            },
+            "required": ["uid", "href", "content_type"],
+            "title": "EventLink",
+            "type": "object"
+          },
+          "Participant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "roles": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Roles",
+                "type": "object"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Name"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "schedule_id": {
+                "title": "Schedule Id",
+                "type": "string"
+              },
+              "send_to": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Send To",
+                "type": "object"
+              },
+              "participation_status": {
+                "title": "Participation Status",
+                "type": "string"
+              },
+              "expect_reply": {
+                "enum": [0, 1],
+                "title": "Expect Reply",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "comment": {
+                "title": "Comment",
+                "type": "string"
+              },
+              "schedule_agent": {
+                "title": "Schedule Agent",
+                "type": "string"
+              },
+              "member_of": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Member Of",
+                "type": "object"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "uid",
+              "roles",
+              "kind",
+              "_name",
+              "email",
+              "schedule_id",
+              "send_to",
+              "participation_status",
+              "expect_reply",
+              "description",
+              "comment",
+              "schedule_agent",
+              "member_of"
+            ],
+            "title": "Participant",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/CalendarEvent"
+        },
+        "type": "array"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_calendar_event_density_with_shared",
+      "kind": "query",
+      "publicName": "events.density",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.get_calendar_event_density_with_shared",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "from_date": {
+            "title": "From Date",
+            "type": "string"
+          },
+          "to_date": {
+            "title": "To Date",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": ["account", "from_date", "to_date", "time_zone"],
+        "title": "CalendarWindow",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "DensityRow": {
+            "properties": {
+              "start": {
+                "title": "Start",
+                "type": "string"
+              },
+              "duration": {
+                "title": "Duration",
+                "type": "string"
+              },
+              "time_zone": {
+                "title": "Time Zone",
+                "type": "string"
+              },
+              "show_without_time": {
+                "enum": [0, 1],
+                "title": "Show Without Time",
+                "type": "integer"
+              },
+              "calendars": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Calendars",
+                "type": "array"
+              },
+              "is_declined": {
+                "title": "Is Declined",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "start",
+              "duration",
+              "time_zone",
+              "show_without_time",
+              "calendars",
+              "is_declined"
+            ],
+            "title": "DensityRow",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/DensityRow"
+        },
+        "type": "array"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "search_calendar_events_with_shared",
+      "kind": "query",
+      "publicName": "events.search",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.search_calendar_events_with_shared",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          },
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Zone"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filters"
+          }
+        },
+        "required": ["account"],
+        "title": "EventSearch",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "CalendarEvent": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "start": {
+                "title": "Start",
+                "type": "string"
+              },
+              "duration": {
+                "title": "Duration",
+                "type": "string"
+              },
+              "time_zone": {
+                "title": "Time Zone",
+                "type": "string"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "show_without_time": {
+                "enum": [0, 1],
+                "title": "Show Without Time",
+                "type": "integer"
+              },
+              "recurrence_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Id"
+              },
+              "recurrence_rule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Rule"
+              },
+              "organizer": {
+                "title": "Organizer",
+                "type": "string"
+              },
+              "calendars": {
+                "items": {
+                  "$ref": "#/$defs/EventCalendar"
+                },
+                "title": "Calendars",
+                "type": "array"
+              },
+              "created": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Created"
+              },
+              "draft": {
+                "enum": [0, 1],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "recurrence_id_time_zone": {
+                "title": "Recurrence Id Time Zone",
+                "type": "string"
+              },
+              "privacy": {
+                "title": "Privacy",
+                "type": "string"
+              },
+              "free_busy_status": {
+                "title": "Free Busy Status",
+                "type": "string"
+              },
+              "locations": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Locations",
+                "type": "array"
+              },
+              "alerts": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Alerts",
+                "type": "array"
+              },
+              "use_default_alerts": {
+                "enum": [0, 1],
+                "title": "Use Default Alerts",
+                "type": "integer"
+              },
+              "created_utc": {
+                "title": "Created Utc",
+                "type": "string"
+              },
+              "updated_utc": {
+                "title": "Updated Utc",
+                "type": "string"
+              },
+              "origin": {
+                "title": "Origin",
+                "type": "boolean"
+              },
+              "may_invite_self": {
+                "enum": [0, 1],
+                "title": "May Invite Self",
+                "type": "integer"
+              },
+              "may_invite_others": {
+                "enum": [0, 1],
+                "title": "May Invite Others",
+                "type": "integer"
+              },
+              "hide_attendees": {
+                "enum": [0, 1],
+                "title": "Hide Attendees",
+                "type": "integer"
+              },
+              "creation": {
+                "title": "Creation",
+                "type": "string"
+              },
+              "modified": {
+                "title": "Modified",
+                "type": "string"
+              },
+              "sequence": {
+                "title": "Sequence",
+                "type": "integer"
+              },
+              "master_id": {
+                "title": "Master Id",
+                "type": "string"
+              },
+              "master_start": {
+                "title": "Master Start",
+                "type": "string"
+              },
+              "master_duration": {
+                "title": "Master Duration",
+                "type": "string"
+              },
+              "links": {
+                "items": {
+                  "$ref": "#/$defs/EventLink"
+                },
+                "title": "Links",
+                "type": "array"
+              },
+              "participants": {
+                "items": {
+                  "$ref": "#/$defs/Participant"
+                },
+                "title": "Participants",
+                "type": "array"
+              },
+              "conferencing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Conferencing"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "account",
+              "id",
+              "uid",
+              "title",
+              "start",
+              "duration",
+              "time_zone",
+              "status",
+              "description",
+              "show_without_time",
+              "recurrence_id",
+              "recurrence_rule",
+              "organizer",
+              "calendars",
+              "created",
+              "draft",
+              "recurrence_id_time_zone",
+              "privacy",
+              "free_busy_status",
+              "locations",
+              "alerts",
+              "use_default_alerts",
+              "created_utc",
+              "updated_utc",
+              "origin",
+              "may_invite_self",
+              "may_invite_others",
+              "hide_attendees",
+              "creation",
+              "modified",
+              "sequence",
+              "links",
+              "participants"
+            ],
+            "title": "CalendarEvent",
+            "type": "object"
+          },
+          "Conferencing": {
+            "properties": {
+              "meeting_id": {
+                "title": "Meeting Id",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": ["meeting_id", "url"],
+            "title": "Conferencing",
+            "type": "object"
+          },
+          "EventCalendar": {
+            "properties": {
+              "calendar": {
+                "title": "Calendar",
+                "type": "string"
+              },
+              "calendar_id": {
+                "title": "Calendar Id",
+                "type": "string"
+              },
+              "calendar_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Calendar Name"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              }
+            },
+            "required": ["calendar", "calendar_id", "calendar_name", "color"],
+            "title": "EventCalendar",
+            "type": "object"
+          },
+          "EventLink": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "href": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Href"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Type"
+              }
+            },
+            "required": ["uid", "href", "content_type"],
+            "title": "EventLink",
+            "type": "object"
+          },
+          "Participant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "roles": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Roles",
+                "type": "object"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Name"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "schedule_id": {
+                "title": "Schedule Id",
+                "type": "string"
+              },
+              "send_to": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Send To",
+                "type": "object"
+              },
+              "participation_status": {
+                "title": "Participation Status",
+                "type": "string"
+              },
+              "expect_reply": {
+                "enum": [0, 1],
+                "title": "Expect Reply",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "comment": {
+                "title": "Comment",
+                "type": "string"
+              },
+              "schedule_agent": {
+                "title": "Schedule Agent",
+                "type": "string"
+              },
+              "member_of": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Member Of",
+                "type": "object"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "uid",
+              "roles",
+              "kind",
+              "_name",
+              "email",
+              "schedule_id",
+              "send_to",
+              "participation_status",
+              "expect_reply",
+              "description",
+              "comment",
+              "schedule_agent",
+              "member_of"
+            ],
+            "title": "Participant",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/CalendarEvent"
+        },
+        "type": "array"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "create_calendar",
+      "kind": "mutation",
+      "publicName": "calendars.create",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.create_calendar",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          }
+        },
+        "required": ["account", "name"],
+        "title": "CalendarCreate",
+        "type": "object"
+      },
+      "output": {
+        "type": "string"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "edit_calendar",
+      "kind": "mutation",
+      "publicName": "calendars.update",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.edit_calendar",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          },
+          "default": {
+            "type": "boolean",
+            "default": false,
+            "title": "Default"
+          },
+          "visible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visible"
+          }
+        },
+        "required": ["account", "id"],
+        "title": "CalendarUpdate",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "delete_calendar",
+      "kind": "mutation",
+      "publicName": "calendars.delete",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.delete_calendar",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": ["account", "id"],
+        "title": "CalendarDelete",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "add_calendar_event",
+      "kind": "mutation",
+      "publicName": "events.create",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.doctype.calendar_event.calendar_event.add_calendar_event",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "organizer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Organizer"
+          },
+          "calendar_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Calendar Ids"
+          },
+          "status": {
+            "default": "Confirmed",
+            "title": "Status",
+            "type": "string"
+          },
+          "draft": {
+            "default": false,
+            "title": "Draft",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Zone"
+          },
+          "recurrence_rule": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recurrence Rule"
+          },
+          "show_without_time": {
+            "default": false,
+            "title": "Show Without Time",
+            "type": "boolean"
+          },
+          "privacy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Privacy"
+          },
+          "free_busy_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Free Busy Status"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locations"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Links"
+          },
+          "participants": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Participants"
+          },
+          "alerts": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alerts"
+          },
+          "use_default_alerts": {
+            "default": false,
+            "title": "Use Default Alerts",
+            "type": "boolean"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "send_scheduling_messages": {
+            "default": false,
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          }
+        },
+        "required": ["account"],
+        "title": "EventCreate",
+        "type": "object"
+      },
+      "output": {
+        "type": "string"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_calendar_event",
+      "kind": "mutation",
+      "publicName": "events.update",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "organizer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Organizer"
+          },
+          "calendar_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Calendar Ids"
+          },
+          "status": {
+            "default": "Confirmed",
+            "title": "Status",
+            "type": "string"
+          },
+          "draft": {
+            "default": false,
+            "title": "Draft",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Zone"
+          },
+          "recurrence_rule": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recurrence Rule"
+          },
+          "show_without_time": {
+            "default": false,
+            "title": "Show Without Time",
+            "type": "boolean"
+          },
+          "privacy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Privacy"
+          },
+          "free_busy_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Free Busy Status"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locations"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Links"
+          },
+          "participants": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Participants"
+          },
+          "alerts": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alerts"
+          },
+          "use_default_alerts": {
+            "default": false,
+            "title": "Use Default Alerts",
+            "type": "boolean"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "send_scheduling_messages": {
+            "default": false,
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Uid"
+          }
+        },
+        "required": ["account", "id"],
+        "title": "EventUpdate",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_calendar_event_instance",
+      "kind": "mutation",
+      "publicName": "events.updateInstance",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "master_id": {
+            "title": "Master Id",
+            "type": "string"
+          },
+          "recurrence_id": {
+            "title": "Recurrence Id",
+            "type": "string"
+          },
+          "patch": {
+            "additionalProperties": true,
+            "title": "Patch",
+            "type": "object"
+          },
+          "send_scheduling_messages": {
+            "default": false,
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          }
+        },
+        "required": ["account", "master_id", "recurrence_id", "patch"],
+        "title": "InstanceUpdate",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "delete_calendar_events",
+      "kind": "mutation",
+      "publicName": "events.delete",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "send_scheduling_messages": {
+            "default": false,
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          }
+        },
+        "required": ["account", "ids"],
+        "title": "EventsDelete",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "delete_calendar_event_instance",
+      "kind": "mutation",
+      "publicName": "events.deleteInstance",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "master_id": {
+            "title": "Master Id",
+            "type": "string"
+          },
+          "recurrence_id": {
+            "title": "Recurrence Id",
+            "type": "string"
+          },
+          "send_scheduling_messages": {
+            "default": false,
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          }
+        },
+        "required": ["account", "master_id", "recurrence_id"],
+        "title": "InstanceDelete",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "split_calendar_event_series",
+      "kind": "mutation",
+      "publicName": "events.splitSeries",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.split_calendar_event_series",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "organizer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Organizer"
+          },
+          "calendar_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Calendar Ids"
+          },
+          "status": {
+            "default": "Confirmed",
+            "title": "Status",
+            "type": "string"
+          },
+          "draft": {
+            "default": false,
+            "title": "Draft",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Zone"
+          },
+          "recurrence_rule": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recurrence Rule"
+          },
+          "show_without_time": {
+            "default": false,
+            "title": "Show Without Time",
+            "type": "boolean"
+          },
+          "privacy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Privacy"
+          },
+          "free_busy_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Free Busy Status"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "locations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locations"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Links"
+          },
+          "participants": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Participants"
+          },
+          "alerts": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alerts"
+          },
+          "use_default_alerts": {
+            "default": false,
+            "title": "Use Default Alerts",
+            "type": "boolean"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "send_scheduling_messages": {
+            "default": false,
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          },
+          "master_id": {
+            "title": "Master Id",
+            "type": "string"
+          },
+          "recurrence_id": {
+            "title": "Recurrence Id",
+            "type": "string"
+          }
+        },
+        "required": ["account", "master_id", "recurrence_id"],
+        "title": "SeriesSplit",
+        "type": "object"
+      },
+      "output": {
+        "type": "string"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "delete_calendar_event_series_from",
+      "kind": "mutation",
+      "publicName": "events.deleteFollowing",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.delete_calendar_event_series_from",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "master_id": {
+            "title": "Master Id",
+            "type": "string"
+          },
+          "recurrence_id": {
+            "title": "Recurrence Id",
+            "type": "string"
+          },
+          "send_scheduling_messages": {
+            "default": false,
+            "title": "Send Scheduling Messages",
+            "type": "boolean"
+          }
+        },
+        "required": ["account", "master_id", "recurrence_id"],
+        "title": "InstanceDelete",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "rsvp_calendar_event",
+      "kind": "mutation",
+      "publicName": "events.respond",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.rsvp_calendar_event",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "response": {
+            "title": "Response",
+            "type": "string"
+          },
+          "recurrence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Id"
+          }
+        },
+        "required": ["account", "id", "response"],
+        "title": "RsvpInput",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": ["PermissionError", "ValidationError"],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_invite_details",
+      "kind": "query",
+      "publicName": "invites.get",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.invites.get_invite_details",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "blob_id": {
+            "title": "Blob Id",
+            "type": "string"
+          }
+        },
+        "required": ["account", "blob_id"],
+        "title": "InviteInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "CalendarEvent": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "start": {
+                "title": "Start",
+                "type": "string"
+              },
+              "duration": {
+                "title": "Duration",
+                "type": "string"
+              },
+              "time_zone": {
+                "title": "Time Zone",
+                "type": "string"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "show_without_time": {
+                "enum": [0, 1],
+                "title": "Show Without Time",
+                "type": "integer"
+              },
+              "recurrence_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Id"
+              },
+              "recurrence_rule": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recurrence Rule"
+              },
+              "organizer": {
+                "title": "Organizer",
+                "type": "string"
+              },
+              "calendars": {
+                "items": {
+                  "$ref": "#/$defs/EventCalendar"
+                },
+                "title": "Calendars",
+                "type": "array"
+              },
+              "created": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Created"
+              },
+              "draft": {
+                "enum": [0, 1],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "recurrence_id_time_zone": {
+                "title": "Recurrence Id Time Zone",
+                "type": "string"
+              },
+              "privacy": {
+                "title": "Privacy",
+                "type": "string"
+              },
+              "free_busy_status": {
+                "title": "Free Busy Status",
+                "type": "string"
+              },
+              "locations": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Locations",
+                "type": "array"
+              },
+              "alerts": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Alerts",
+                "type": "array"
+              },
+              "use_default_alerts": {
+                "enum": [0, 1],
+                "title": "Use Default Alerts",
+                "type": "integer"
+              },
+              "created_utc": {
+                "title": "Created Utc",
+                "type": "string"
+              },
+              "updated_utc": {
+                "title": "Updated Utc",
+                "type": "string"
+              },
+              "origin": {
+                "title": "Origin",
+                "type": "boolean"
+              },
+              "may_invite_self": {
+                "enum": [0, 1],
+                "title": "May Invite Self",
+                "type": "integer"
+              },
+              "may_invite_others": {
+                "enum": [0, 1],
+                "title": "May Invite Others",
+                "type": "integer"
+              },
+              "hide_attendees": {
+                "enum": [0, 1],
+                "title": "Hide Attendees",
+                "type": "integer"
+              },
+              "creation": {
+                "title": "Creation",
+                "type": "string"
+              },
+              "modified": {
+                "title": "Modified",
+                "type": "string"
+              },
+              "sequence": {
+                "title": "Sequence",
+                "type": "integer"
+              },
+              "master_id": {
+                "title": "Master Id",
+                "type": "string"
+              },
+              "master_start": {
+                "title": "Master Start",
+                "type": "string"
+              },
+              "master_duration": {
+                "title": "Master Duration",
+                "type": "string"
+              },
+              "links": {
+                "items": {
+                  "$ref": "#/$defs/EventLink"
+                },
+                "title": "Links",
+                "type": "array"
+              },
+              "participants": {
+                "items": {
+                  "$ref": "#/$defs/Participant"
+                },
+                "title": "Participants",
+                "type": "array"
+              },
+              "conferencing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Conferencing"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "account",
+              "id",
+              "uid",
+              "title",
+              "start",
+              "duration",
+              "time_zone",
+              "status",
+              "description",
+              "show_without_time",
+              "recurrence_id",
+              "recurrence_rule",
+              "organizer",
+              "calendars",
+              "created",
+              "draft",
+              "recurrence_id_time_zone",
+              "privacy",
+              "free_busy_status",
+              "locations",
+              "alerts",
+              "use_default_alerts",
+              "created_utc",
+              "updated_utc",
+              "origin",
+              "may_invite_self",
+              "may_invite_others",
+              "hide_attendees",
+              "creation",
+              "modified",
+              "sequence",
+              "links",
+              "participants"
+            ],
+            "title": "CalendarEvent",
+            "type": "object"
+          },
+          "Conferencing": {
+            "properties": {
+              "meeting_id": {
+                "title": "Meeting Id",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": ["meeting_id", "url"],
+            "title": "Conferencing",
+            "type": "object"
+          },
+          "EventCalendar": {
+            "properties": {
+              "calendar": {
+                "title": "Calendar",
+                "type": "string"
+              },
+              "calendar_id": {
+                "title": "Calendar Id",
+                "type": "string"
+              },
+              "calendar_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Calendar Name"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              }
+            },
+            "required": ["calendar", "calendar_id", "calendar_name", "color"],
+            "title": "EventCalendar",
+            "type": "object"
+          },
+          "EventLink": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "href": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Href"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Type"
+              }
+            },
+            "required": ["uid", "href", "content_type"],
+            "title": "EventLink",
+            "type": "object"
+          },
+          "InviteDetails": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "method": {
+                "title": "Method",
+                "type": "string"
+              },
+              "exists": {
+                "title": "Exists",
+                "type": "boolean"
+              },
+              "event": {
+                "$ref": "#/$defs/CalendarEvent"
+              },
+              "participant": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ViewerParticipant"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["uid", "method", "exists", "event", "participant"],
+            "title": "InviteDetails",
+            "type": "object"
+          },
+          "Participant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "roles": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Roles",
+                "type": "object"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Name"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "schedule_id": {
+                "title": "Schedule Id",
+                "type": "string"
+              },
+              "send_to": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Send To",
+                "type": "object"
+              },
+              "participation_status": {
+                "title": "Participation Status",
+                "type": "string"
+              },
+              "expect_reply": {
+                "enum": [0, 1],
+                "title": "Expect Reply",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "comment": {
+                "title": "Comment",
+                "type": "string"
+              },
+              "schedule_agent": {
+                "title": "Schedule Agent",
+                "type": "string"
+              },
+              "member_of": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Member Of",
+                "type": "object"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "uid",
+              "roles",
+              "kind",
+              "_name",
+              "email",
+              "schedule_id",
+              "send_to",
+              "participation_status",
+              "expect_reply",
+              "description",
+              "comment",
+              "schedule_agent",
+              "member_of"
+            ],
+            "title": "Participant",
+            "type": "object"
+          },
+          "ViewerParticipant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": ["uid", "email", "status"],
+            "title": "ViewerParticipant",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/InviteDetails"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "add_invite_to_calendar",
+      "kind": "mutation",
+      "publicName": "invites.add",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.invites.add_invite_to_calendar",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "blob_id": {
+            "title": "Blob Id",
+            "type": "string"
+          }
+        },
+        "required": ["account", "blob_id"],
+        "title": "InviteInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "Conferencing": {
+            "properties": {
+              "meeting_id": {
+                "title": "Meeting Id",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": ["meeting_id", "url"],
+            "title": "Conferencing",
+            "type": "object"
+          },
+          "EventCalendar": {
+            "properties": {
+              "calendar": {
+                "title": "Calendar",
+                "type": "string"
+              },
+              "calendar_id": {
+                "title": "Calendar Id",
+                "type": "string"
+              },
+              "calendar_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Calendar Name"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              }
+            },
+            "required": ["calendar", "calendar_id", "calendar_name", "color"],
+            "title": "EventCalendar",
+            "type": "object"
+          },
+          "EventLink": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "href": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Href"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Type"
+              }
+            },
+            "required": ["uid", "href", "content_type"],
+            "title": "EventLink",
+            "type": "object"
+          },
+          "Participant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "roles": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Roles",
+                "type": "object"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Name"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "schedule_id": {
+                "title": "Schedule Id",
+                "type": "string"
+              },
+              "send_to": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Send To",
+                "type": "object"
+              },
+              "participation_status": {
+                "title": "Participation Status",
+                "type": "string"
+              },
+              "expect_reply": {
+                "enum": [0, 1],
+                "title": "Expect Reply",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "comment": {
+                "title": "Comment",
+                "type": "string"
+              },
+              "schedule_agent": {
+                "title": "Schedule Agent",
+                "type": "string"
+              },
+              "member_of": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Member Of",
+                "type": "object"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "uid",
+              "roles",
+              "kind",
+              "_name",
+              "email",
+              "schedule_id",
+              "send_to",
+              "participation_status",
+              "expect_reply",
+              "description",
+              "comment",
+              "schedule_agent",
+              "member_of"
+            ],
+            "title": "Participant",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "uid": {
+            "title": "Uid",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "show_without_time": {
+            "enum": [0, 1],
+            "title": "Show Without Time",
+            "type": "integer"
+          },
+          "recurrence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Id"
+          },
+          "recurrence_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Rule"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          },
+          "calendars": {
+            "items": {
+              "$ref": "#/$defs/EventCalendar"
+            },
+            "title": "Calendars",
+            "type": "array"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created"
+          },
+          "draft": {
+            "enum": [0, 1],
+            "title": "Draft",
+            "type": "integer"
+          },
+          "recurrence_id_time_zone": {
+            "title": "Recurrence Id Time Zone",
+            "type": "string"
+          },
+          "privacy": {
+            "title": "Privacy",
+            "type": "string"
+          },
+          "free_busy_status": {
+            "title": "Free Busy Status",
+            "type": "string"
+          },
+          "locations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "alerts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "use_default_alerts": {
+            "enum": [0, 1],
+            "title": "Use Default Alerts",
+            "type": "integer"
+          },
+          "created_utc": {
+            "title": "Created Utc",
+            "type": "string"
+          },
+          "updated_utc": {
+            "title": "Updated Utc",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "boolean"
+          },
+          "may_invite_self": {
+            "enum": [0, 1],
+            "title": "May Invite Self",
+            "type": "integer"
+          },
+          "may_invite_others": {
+            "enum": [0, 1],
+            "title": "May Invite Others",
+            "type": "integer"
+          },
+          "hide_attendees": {
+            "enum": [0, 1],
+            "title": "Hide Attendees",
+            "type": "integer"
+          },
+          "creation": {
+            "title": "Creation",
+            "type": "string"
+          },
+          "modified": {
+            "title": "Modified",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "master_id": {
+            "title": "Master Id",
+            "type": "string"
+          },
+          "master_start": {
+            "title": "Master Start",
+            "type": "string"
+          },
+          "master_duration": {
+            "title": "Master Duration",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/$defs/EventLink"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/$defs/Participant"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "conferencing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Conferencing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "account",
+          "id",
+          "uid",
+          "title",
+          "start",
+          "duration",
+          "time_zone",
+          "status",
+          "description",
+          "show_without_time",
+          "recurrence_id",
+          "recurrence_rule",
+          "organizer",
+          "calendars",
+          "created",
+          "draft",
+          "recurrence_id_time_zone",
+          "privacy",
+          "free_busy_status",
+          "locations",
+          "alerts",
+          "use_default_alerts",
+          "created_utc",
+          "updated_utc",
+          "origin",
+          "may_invite_self",
+          "may_invite_others",
+          "hide_attendees",
+          "creation",
+          "modified",
+          "sequence",
+          "links",
+          "participants"
+        ],
+        "title": "CalendarEvent",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "rsvp_to_invite",
+      "kind": "mutation",
+      "publicName": "invites.respond",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.calendar.api.invites.rsvp_to_invite",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "blob_id": {
+            "title": "Blob Id",
+            "type": "string"
+          },
+          "response": {
+            "enum": ["accepted", "tentative", "declined"],
+            "title": "Response",
+            "type": "string"
+          }
+        },
+        "required": ["account", "blob_id", "response"],
+        "title": "InviteResponse",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "Conferencing": {
+            "properties": {
+              "meeting_id": {
+                "title": "Meeting Id",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": ["meeting_id", "url"],
+            "title": "Conferencing",
+            "type": "object"
+          },
+          "EventCalendar": {
+            "properties": {
+              "calendar": {
+                "title": "Calendar",
+                "type": "string"
+              },
+              "calendar_id": {
+                "title": "Calendar Id",
+                "type": "string"
+              },
+              "calendar_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Calendar Name"
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Color"
+              }
+            },
+            "required": ["calendar", "calendar_id", "calendar_name", "color"],
+            "title": "EventCalendar",
+            "type": "object"
+          },
+          "EventLink": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "href": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Href"
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Content Type"
+              }
+            },
+            "required": ["uid", "href", "content_type"],
+            "title": "EventLink",
+            "type": "object"
+          },
+          "Participant": {
+            "properties": {
+              "uid": {
+                "title": "Uid",
+                "type": "string"
+              },
+              "roles": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Roles",
+                "type": "object"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Name"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "schedule_id": {
+                "title": "Schedule Id",
+                "type": "string"
+              },
+              "send_to": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Send To",
+                "type": "object"
+              },
+              "participation_status": {
+                "title": "Participation Status",
+                "type": "string"
+              },
+              "expect_reply": {
+                "enum": [0, 1],
+                "title": "Expect Reply",
+                "type": "integer"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "comment": {
+                "title": "Comment",
+                "type": "string"
+              },
+              "schedule_agent": {
+                "title": "Schedule Agent",
+                "type": "string"
+              },
+              "member_of": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Member Of",
+                "type": "object"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "uid",
+              "roles",
+              "kind",
+              "_name",
+              "email",
+              "schedule_id",
+              "send_to",
+              "participation_status",
+              "expect_reply",
+              "description",
+              "comment",
+              "schedule_agent",
+              "member_of"
+            ],
+            "title": "Participant",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "uid": {
+            "title": "Uid",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "show_without_time": {
+            "enum": [0, 1],
+            "title": "Show Without Time",
+            "type": "integer"
+          },
+          "recurrence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Id"
+          },
+          "recurrence_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Rule"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          },
+          "calendars": {
+            "items": {
+              "$ref": "#/$defs/EventCalendar"
+            },
+            "title": "Calendars",
+            "type": "array"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created"
+          },
+          "draft": {
+            "enum": [0, 1],
+            "title": "Draft",
+            "type": "integer"
+          },
+          "recurrence_id_time_zone": {
+            "title": "Recurrence Id Time Zone",
+            "type": "string"
+          },
+          "privacy": {
+            "title": "Privacy",
+            "type": "string"
+          },
+          "free_busy_status": {
+            "title": "Free Busy Status",
+            "type": "string"
+          },
+          "locations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "alerts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "use_default_alerts": {
+            "enum": [0, 1],
+            "title": "Use Default Alerts",
+            "type": "integer"
+          },
+          "created_utc": {
+            "title": "Created Utc",
+            "type": "string"
+          },
+          "updated_utc": {
+            "title": "Updated Utc",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "boolean"
+          },
+          "may_invite_self": {
+            "enum": [0, 1],
+            "title": "May Invite Self",
+            "type": "integer"
+          },
+          "may_invite_others": {
+            "enum": [0, 1],
+            "title": "May Invite Others",
+            "type": "integer"
+          },
+          "hide_attendees": {
+            "enum": [0, 1],
+            "title": "Hide Attendees",
+            "type": "integer"
+          },
+          "creation": {
+            "title": "Creation",
+            "type": "string"
+          },
+          "modified": {
+            "title": "Modified",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "master_id": {
+            "title": "Master Id",
+            "type": "string"
+          },
+          "master_start": {
+            "title": "Master Start",
+            "type": "string"
+          },
+          "master_duration": {
+            "title": "Master Duration",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/$defs/EventLink"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/$defs/Participant"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "conferencing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Conferencing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "account",
+          "id",
+          "uid",
+          "title",
+          "start",
+          "duration",
+          "time_zone",
+          "status",
+          "description",
+          "show_without_time",
+          "recurrence_id",
+          "recurrence_rule",
+          "organizer",
+          "calendars",
+          "created",
+          "draft",
+          "recurrence_id_time_zone",
+          "privacy",
+          "free_busy_status",
+          "locations",
+          "alerts",
+          "use_default_alerts",
+          "created_utc",
+          "updated_utc",
+          "origin",
+          "may_invite_self",
+          "may_invite_others",
+          "hide_attendees",
+          "creation",
+          "modified",
+          "sequence",
+          "links",
+          "participants"
+        ],
+        "title": "CalendarEvent",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
     }
   ]
 }

@@ -32,7 +32,7 @@
           :calendar-event="selectedEvent"
           @close="selectedEvent = null"
           @edit="openEventInCalendar"
-          @reload-events="events.reload()"
+          @reload-events="events.refetch().catch(() => {})"
           @email-participants="emailParticipants"
         />
       </EventPopover>
@@ -42,8 +42,8 @@
 			     navigates to instead. -->
       <SendMail
         v-if="!isMobile"
-        v-model="showCompose"
         :key="composeKey"
+        v-model="showCompose"
         :mail-details="composeDetails"
         @reload-mails="requestListReload()"
       />

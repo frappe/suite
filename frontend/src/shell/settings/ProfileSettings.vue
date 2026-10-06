@@ -1,7 +1,7 @@
 <template>
   <SettingsTabHeader :title="__('Profile')" />
   <SettingsTabContent>
-    <div v-if="user?.doc" class="flex flex-col gap-6">
+    <div v-if="user.data" class="flex flex-col gap-6">
       <FileUploader
         file-types="image/png,image/jpeg,image/jpg"
         :private="false"
@@ -12,7 +12,7 @@
           <div class="flex items-center gap-4">
             <div>
               <Dropdown
-                v-if="user.doc.user_image"
+                v-if="user.data.user_image"
                 :options="avatarMenuOptions(openFileSelector)"
                 align="end"
               >
@@ -20,10 +20,10 @@
                   type="button"
                   class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
                   :aria-label="__('Profile picture options')"
-                  :disabled="uploading || user.setValue.loading"
+                  :disabled="uploading || updateUser.isPending"
                 >
                   <Avatar
-                    :image="user.doc.user_image"
+                    :image="user.data.user_image || undefined"
                     :label="displayName"
                     size="3xl"
                     class="!h-16 !w-16"
@@ -35,11 +35,11 @@
                 type="button"
                 class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
                 :aria-label="__('Upload profile picture')"
-                :disabled="uploading || user.setValue.loading"
+                :disabled="uploading || updateUser.isPending"
                 @click="openFileSelector"
               >
                 <Avatar
-                  :image="user.doc.user_image"
+                  :image="user.data.user_image || undefined"
                   :label="displayName"
                   size="3xl"
                   class="!h-16 !w-16"
@@ -51,7 +51,7 @@
                 {{ displayName }}
               </div>
               <p class="text-base text-ink-gray-6 truncate">
-                {{ uploading ? __('Uploading…') : user.doc.email || userId }}
+                {{ uploading ? __('Uploading…') : user.data.email || userId }}
               </p>
               <ErrorMessage v-if="error" :message="error" />
             </div>
@@ -61,19 +61,19 @@
 
       <div class="grid gap-6 sm:grid-cols-2">
         <FormControl
-          v-model="user.doc.first_name"
+          v-model="nameDraft.first_name"
           :label="__('First name')"
           class="w-full"
           autocomplete="given-name"
-          :disabled="user.setValue.loading"
+          :disabled="updateUser.isPending"
           @blur="saveName"
         />
         <FormControl
-          v-model="user.doc.last_name"
+          v-model="nameDraft.last_name"
           :label="__('Last name')"
           class="w-full"
           autocomplete="family-name"
-          :disabled="user.setValue.loading"
+          :disabled="updateUser.isPending"
           @blur="saveName"
         />
       </div>
@@ -132,8 +132,6 @@
 import {
   Avatar,
   Button,
-  createDocumentResource,
-  createResource,
   Dialog,
   Dropdown,
   ErrorMessage,
@@ -142,8 +140,9 @@ import {
   SettingsRow,
   toast,
 } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
@@ -154,18 +153,17 @@ const AUTOSAVE_TOAST_ID = 'suite-profile-autosave'
 const session = useSession()
 const userId = session.user.value?.id ?? ''
 
-// Gameplan-style: edit the User document resource and persist via setValue
-const user = createDocumentResource({
-  doctype: 'User',
-  name: userId,
-  auto: true,
-  setValue: {
-    // The avatar menu and the rail read the session, so refresh it.
-    onSuccess: () => {
-      void session.refresh()
-    },
+const user = useQuery(api.suite.preferences.get)
+const updateUser = useMutation(api.suite.preferences.update, { silent: true })
+const nameDraft = reactive({ first_name: '', last_name: '' })
+watch(
+  () => user.data,
+  (doc) => {
+    if (doc)
+      Object.assign(nameDraft, { first_name: doc.first_name || '', last_name: doc.last_name || '' })
   },
-})
+  { immediate: true },
+)
 
 const showPasswordDialog = ref(false)
 const currentPassword = ref('')
@@ -173,7 +171,7 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 
 const displayName = computed(() => {
-  const doc = user?.doc
+  const doc = user.data
   if (!doc) return userId
   const name = [doc.first_name, doc.last_name].filter(Boolean).join(' ')
   return name || doc.email || userId
@@ -202,25 +200,26 @@ function validateAvatarFile(file: File) {
 }
 
 async function saveName() {
-  if (!user?.doc || user.setValue.loading) return
+  if (!user.data || updateUser.isPending) return
 
-  const nextFirst = (user.doc.first_name || '').trim()
-  const nextLast = (user.doc.last_name || '').trim()
+  const nextFirst = nameDraft.first_name.trim()
+  const nextLast = nameDraft.last_name.trim()
   if (!nextFirst) {
     toast.error(__('First name is required'))
-    user.doc.first_name = user.originalDoc?.first_name || ''
+    nameDraft.first_name = user.data?.first_name || ''
     return
   }
 
-  const prevFirst = user.originalDoc?.first_name || ''
-  const prevLast = user.originalDoc?.last_name || ''
+  const prevFirst = user.data?.first_name || ''
+  const prevLast = user.data?.last_name || ''
   if (nextFirst === prevFirst && nextLast === prevLast) return
 
   try {
-    await user.setValue.submit({
+    await updateUser.run({
       first_name: nextFirst,
       last_name: nextLast,
     })
+    await session.refresh()
     toast.success(__('Name saved'), { id: AUTOSAVE_TOAST_ID })
   } catch {
     toast.error(__('Could not save name'))
@@ -228,9 +227,10 @@ async function saveName() {
 }
 
 async function onAvatarUploaded(file: { file_url: string }) {
-  if (!user?.doc) return
+  if (!user.data) return
   try {
-    await user.setValue.submit({ user_image: file.file_url })
+    await updateUser.run({ user_image: file.file_url })
+    await session.refresh()
     toast.success(__('Profile picture updated'), { id: AUTOSAVE_TOAST_ID })
   } catch {
     toast.error(__('Could not update profile picture'))
@@ -238,9 +238,10 @@ async function onAvatarUploaded(file: { file_url: string }) {
 }
 
 async function removeAvatar() {
-  if (!user?.doc?.user_image || user.setValue.loading) return
+  if (!user.data?.user_image || updateUser.isPending) return
   try {
-    await user.setValue.submit({ user_image: null })
+    await updateUser.run({ user_image: null })
+    await session.refresh()
     toast.success(__('Profile picture removed'), { id: AUTOSAVE_TOAST_ID })
   } catch {
     toast.error(__('Could not remove profile picture'))
@@ -260,26 +261,28 @@ const passwordDialogOptions = computed(() => ({
     {
       label: __('Confirm'),
       variant: 'solid' as const,
-      onClick: () => updatePassword.submit(),
+      onClick: () => changePassword(),
       disabled:
         !(currentPassword.value.length && newPassword.value.length) ||
         confirmPassword.value !== newPassword.value,
-      loading: updatePassword.loading,
+      loading: updatePassword.isPending,
     },
   ],
 }))
 
-const updatePassword = createResource({
-  url: 'frappe.core.doctype.user.user.update_password',
-  makeParams: () => ({
-    old_password: currentPassword.value,
-    new_password: newPassword.value,
-  }),
-  onSuccess: () => {
+const updatePassword = useMutation(api.suite.account.changePassword)
+async function changePassword() {
+  try {
+    await updatePassword.run({
+      old_password: currentPassword.value,
+      new_password: newPassword.value,
+    })
     showPasswordDialog.value = false
     toast.success(__('Password updated.'))
-  },
-})
+  } catch {
+    /* The mutation keeps its error and reports the refusal. */
+  }
+}
 
 watch(showPasswordDialog, (open) => {
   if (!open) {

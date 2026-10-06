@@ -16,30 +16,40 @@
 
 <script setup lang="ts">
 import { Dialog, FormControl } from 'frappe-ui'
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 const show = defineModel<boolean>()
 
-const { fullName, kind } = defineProps<{ fullName?: string; kind: string }>()
+const { fullName, kind, save } = defineProps<{
+  fullName?: string | null
+  kind?: string | null
+  save: (value: { fullName: string; kind: string }) => Promise<void>
+}>()
 
-const emit = defineEmits(['save'])
-
-const contact = reactive({ fullName, kind })
+const contact = reactive({ fullName: fullName ?? '', kind: kind ?? 'Individual' })
 
 const options = computed(() => ({
   title: __('Edit General Information'),
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled: contact.fullName === fullName && contact.kind === kind,
-      onClick: () => {
-        emit('save', contact)
-        show.value = false
+      onClick: async () => {
+        try {
+          await save({ ...contact })
+          show.value = false
+        } catch {
+          /* The command reports the refusal. Keep the draft open. */
+        }
       },
     },
   ],
 }))
+
+watch(show, (open) => {
+  if (open) Object.assign(contact, { fullName: fullName ?? '', kind: kind ?? 'Individual' })
+})
 
 const KIND_OPTIONS = [
   { label: __('Individual'), value: 'Individual' },

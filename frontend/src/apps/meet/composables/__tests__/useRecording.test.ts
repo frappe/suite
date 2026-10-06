@@ -16,12 +16,16 @@ const mocks = vi.hoisted(() => ({
   stopped: false,
 }))
 
-vi.mock('frappe-ui', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() },
-  useCall: (options: { url: string }) => ({
-    loading: false,
-    submit: vi.fn(async (params: { meeting_id: string; request_id?: string }) => {
-      if (options.url.endsWith('/recordings/starts')) {
+vi.mock('frappe-ui', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }))
+vi.mock('@/api', async (original) => {
+  const actual = await original<typeof import('@/api')>()
+  const run = async (
+    reference: { prefix?: string; path: string },
+    params: { meeting_id: string; request_id?: string },
+  ) => {
+    const url = (reference.prefix ?? '') + reference.path
+    return (async (params: { meeting_id: string; request_id?: string }) => {
+      if (url.endsWith('/recordings/starts')) {
         mocks.startParams.push(params as { meeting_id: string; request_id: string })
         mocks.startCount += 1
         if (mocks.startResults.length) return mocks.startResults.shift()
@@ -31,12 +35,12 @@ vi.mock('frappe-ui', () => ({
           state_revision: mocks.startCount,
         }
       }
-      if (options.url.endsWith('/recordings/stops')) {
+      if (url.endsWith('/recordings/stops')) {
         mocks.stopped = true
         return { name: 'recording', status: 'Stopping', state_revision: 3 }
       }
-      if (options.url.endsWith('/recordings/preflight')) return { eligible: true }
-      if (options.url.endsWith('/recordings/state')) {
+      if (url.endsWith('/recordings/preflight')) return { eligible: true }
+      if (url.endsWith('/recordings/state')) {
         mocks.getStateCount += 1
         if (mocks.getStateResults.length) {
           const result = await mocks.getStateResults.shift()
@@ -51,9 +55,17 @@ vi.mock('frappe-ui', () => ({
           }
       }
       return null
+    })(params)
+  }
+  return {
+    ...actual,
+    client: { query: run },
+    useMutation: (reference: { prefix?: string; path: string }) => ({
+      isPending: false,
+      run: (params: { meeting_id: string; request_id?: string }) => run(reference, params),
     }),
-  }),
-}))
+  }
+})
 
 vi.mock('../../socket', () => ({
   useSocket: () => ({

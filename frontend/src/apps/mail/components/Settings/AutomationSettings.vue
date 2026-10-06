@@ -4,9 +4,9 @@
       <Button
         icon-left="lucide-refresh-cw"
         :label="__('Rebuild Automation')"
-        :loading="rebuildAutomation.loading"
+        :loading="rebuildAutomation.isPending"
         :tooltip="__('Regenerate the folder automation script from your saved mailbox rules.')"
-        @click="rebuildAutomation.submit()"
+        @click="rebuildAutomationSubmit()"
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
     </template>
@@ -24,7 +24,7 @@
           <Badge v-if="script.active" :label="__('Active')" theme="blue" size="sm" />
         </div>
         <Dropdown :options="scriptOptions(script)">
-          <Button variant="" @click.stop>
+          <Button variant="ghost" @click.stop>
             <template #icon>
               <Ellipsis class="text-ink-gray-5 h-4 w-4" />
             </template>
@@ -64,10 +64,11 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, createResource, Dropdown } from 'frappe-ui'
+import { Badge, Button, Dropdown } from 'frappe-ui'
 import { Ellipsis } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import DeleteSieveScriptModal from '@/apps/mail/components/Modals/DeleteSieveScriptModal.vue'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
 import SieveScriptModal from '@/apps/mail/components/Modals/SieveScriptModal.vue'
@@ -79,37 +80,30 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 const store = userStore()
 const { sieveScripts } = store
-
-const rebuildAutomation = createResource({
-  url: 'suite.mail.api.sieve.rebuild_automation_script_for_account',
-  makeParams: () => ({ account: store.accountId }),
-  onSuccess: () => {
-    raiseToast(__('Folder automation rebuilt from your saved rules.'))
-    sieveScripts.reload()
-  },
-  onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
-})
-
+const rebuildAutomation = useMutation(api.mail.sieve.rebuildAutomation)
+async function rebuildAutomationSubmit() {
+  const input: InputOf<typeof api.mail.sieve.rebuildAutomation> = {
+    account: store.accountId,
+  }
+  await rebuildAutomation.run(input)
+  raiseToast(__('Folder automation rebuilt from your saved rules.'))
+}
 const showSieveScript = ref(false)
 const selectedScript = ref<SieveScript>()
 const showSetScriptAsActive = ref(false)
 const showDeleteScript = ref(false)
-
 const filteredScripts = computed(
   () =>
     sieveScripts.data?.filter((s) => !s.read_only && s._name !== 'frappe_mail_automation') || [],
 )
-
 const addScript = () => {
   selectedScript.value = undefined
   showSieveScript.value = true
 }
-
 const editScript = (script: SieveScript) => {
   selectedScript.value = script
   showSieveScript.value = true
 }
-
 const scriptOptions = (script: SieveScript) => [
   {
     label: script.active ? __('Deactivate') : __('Activate'),
@@ -127,7 +121,7 @@ const scriptOptions = (script: SieveScript) => [
   {
     label: __('Delete'),
     icon: 'lucide-trash-2',
-    theme: 'red',
+    theme: 'red' as const,
     onClick: () => {
       selectedScript.value = script
       showDeleteScript.value = true

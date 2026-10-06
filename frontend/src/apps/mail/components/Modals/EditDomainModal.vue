@@ -6,9 +6,9 @@
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
-          loading: updateDomain.loading,
-          onClick: updateDomain.submit,
+          variant: 'solid' as const,
+          loading: updateDomain.isPending,
+          onClick: updateDomainSubmit,
         },
       ],
     }"
@@ -60,9 +60,10 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
 type DomainData = {
@@ -73,16 +74,15 @@ type DomainData = {
   sub_addressing?: boolean
   allow_relaying?: boolean
 }
-
 const show = defineModel<boolean>()
-const { domain } = defineProps<{ domain: DomainData }>()
+const { domain } = defineProps<{
+  domain: DomainData
+}>()
 const emit = defineEmits(['reload'])
-
 const description = ref('')
 const catchAllAddress = ref('')
 const subAddressing = ref(true)
 const allowRelaying = ref(false)
-
 watch(show, () => {
   if (show.value && domain) {
     description.value = domain.description || ''
@@ -92,20 +92,18 @@ watch(show, () => {
     updateDomain.reset()
   }
 })
-
-const updateDomain = createResource({
-  url: 'suite.mail.api.admin.update_domain',
-  makeParams: () => ({
+const updateDomain = useMutation(api.mail.admin.domains.update)
+async function updateDomainSubmit() {
+  const input: InputOf<typeof api.mail.admin.domains.update> = {
     domain_id: domain.id,
     description: description.value.trim(),
     catch_all_address: catchAllAddress.value.trim(),
     sub_addressing: subAddressing.value,
     allow_relaying: allowRelaying.value,
-  }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Domain updated.'))
-  },
-})
+  }
+  await updateDomain.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Domain updated.'))
+}
 </script>

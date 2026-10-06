@@ -1,104 +1,107 @@
-import { mutation, upload, type UploadDescriptor } from '@/platform/server-state'
-import { transport, TransportError } from '@/platform/transport'
+/** Drive's transfer protocol: session, resume, bytes, finish, and progress stay together. */
+import { api, client } from '@/api'
+import type { TransferContext } from '@/platform/server-state'
+import { transport, TransportError, type Transport } from '@/platform/transport'
 
-import { api } from './generated'
-import { driveOperation } from './operation'
+import type { TransferInput } from './api'
+import { driveLinks } from './links'
 import type { DriveNode } from './types'
 
-/** The largest chunk the server takes (`MAX_CHUNK_BYTES`, Drive §8.4). */
 export const MAX_CHUNK_BYTES = 16 * 1024 * 1024
-
-/**
- * One open upload session. A `chunked` session takes chunks through Drive. A
- * `direct` session names a storage target, today an S3 presigned POST: the
- * browser posts `fields` and then the file to `url` in one form request.
- */
 export type UploadSession =
   | { upload_id: string; mode: 'chunked' }
   | { upload_id: string; mode: 'direct'; url: string; fields: Record<string, string> }
-
 export interface OpenUploadInput {
   parent_node: string
   filename: string
   size: number
   mime?: string
-  /** A replace session: the Active file below `parent_node` that the bytes replace. */
   replaces?: string
 }
 
-/** What finish needs besides the session: a resumed upload adds its sha256. */
-export interface UploadFinishExtra {
-  checksum?: string
-}
-
-export type UploadStartInput = OpenUploadInput & UploadFinishExtra
-
-const openOperation = driveOperation<OpenUploadInput, UploadSession>(api.upload_create)
-/**
- * The same create call, typed for a transfer's input. A resumed transfer
- * carries a `checksum` for finish; it always has a start, so create is skipped.
- */
-const startOperation = driveOperation<UploadStartInput, UploadSession>(api.upload_create)
-
-/**
- * Opens one session. A taken `filename` refuses with `DriveConflict` and its
- * `free_title`; a file above the site's limit with `DriveFileTooLarge` (422);
- * no room with `DriveOverQuota` (413).
- */
 export function openUpload(input: OpenUploadInput, signal?: AbortSignal): Promise<UploadSession> {
-  return transport.request(openOperation, input, { signal })
+  return client.mutation(api.drive.uploads.create, input, { signal, silent: true })
 }
 
-/**
- * The transfer for one file below `parent`: chunks one after another from the
- * start offset, then finish. It carries the link codes for `parent`, because
- * a chunk or finish names no node itself.
- */
-export function uploadTransfer(
-  parent: string,
-): UploadDescriptor<UploadStartInput, DriveNode, UploadSession> {
-  const chunk = driveOperation<
-    { upload_id: string; offset: number; chunk: Blob },
-    { received: number }
-  >(api.upload_chunk, { covers: [parent] })
-  const finish = driveOperation<Record<string, unknown>, DriveNode>(api.upload_finish, {
-    entity: true,
-    covers: [parent],
-  })
-  return upload(startOperation, chunk, finish, {
-    chunkSize: MAX_CHUNK_BYTES,
-    chunkInput: (session, offset) => ({ upload_id: session.upload_id, offset }),
-    finishInput: (input, session) => ({
-      upload_id: session.upload_id,
-      ...(input.replaces
-        ? { replaces: input.replaces }
-        : { parent_node: input.parent_node, title: input.filename }),
-      ...(input.checksum ? { checksum: input.checksum } : {}),
-    }),
-    invalidates: ['node_children', 'view_list', 'root_usage'],
-  })
-}
-
-/**
- * How many bytes the server holds for a chunked session. It sends an empty
- * chunk at offset 0, which the server accepts, writes nothing for, and
- * answers with `received`. A session that is gone refuses it.
- */
 export async function probeUpload(
   uploadId: string,
   parent: string,
   signal?: AbortSignal,
 ): Promise<number> {
-  const probe = driveOperation<
-    { upload_id: string; offset: number; chunk: Blob },
-    { received: number }
-  >(api.upload_chunk, { covers: [parent] })
-  const reply = await transport.request(
-    probe,
-    { upload_id: uploadId, offset: 0, chunk: new Blob([]) },
-    { signal },
+  const result = await chunk(uploadId, parent, 0, new Blob([]), signal)
+  return result.received
+}
+
+export async function transfer(
+  input: TransferInput,
+  { signal, progress, client: requester, transport: wire }: TransferContext,
+): Promise<DriveNode> {
+  if (!(input.file instanceof Blob)) throw new TypeError('A transfer file must be a Blob')
+  const filename =
+    input.filename ?? (input.file instanceof File ? input.file.name : 'Untitled file')
+  const session =
+    input.start?.session ??
+    (await requester.mutation(
+      api.drive.uploads.create,
+      {
+        parent_node: input.parent_node,
+        filename,
+        size: input.file.size,
+        mime: input.mime ?? input.file.type,
+        replaces: input.replaces,
+      },
+      { signal, silent: true },
+    ))
+  signal.throwIfAborted()
+  let offset = input.start?.offset ?? 0
+  if (!Number.isInteger(offset) || offset < 0 || offset > input.file.size)
+    throw new TypeError('Invalid resume offset')
+  progress(input.file.size ? (offset / input.file.size) * 100 : 0)
+  if (session.mode === 'direct') {
+    await sendDirect(
+      session,
+      input.file,
+      (sent) => progress(input.file.size ? (sent / input.file.size) * 100 : 100),
+      signal,
+    )
+  } else {
+    while (offset < input.file.size) {
+      const bytes = input.file.slice(offset, offset + MAX_CHUNK_BYTES)
+      const reply = await chunk(session.upload_id, input.parent_node, offset, bytes, signal, wire)
+      signal.throwIfAborted()
+      if (reply.received <= offset || reply.received > input.file.size)
+        throw new TypeError('Invalid transfer progress')
+      offset = reply.received
+      progress((offset / input.file.size) * 100)
+    }
+  }
+  const node = await requester.mutation(
+    api.drive.uploads.finish,
+    {
+      upload_id: session.upload_id,
+      node: input.parent_node,
+      ...(input.replaces
+        ? { replaces: input.replaces }
+        : { parent_node: input.parent_node, title: filename }),
+      ...(input.checksum ? { checksum: input.checksum } : {}),
+    },
+    { signal, silent: true },
   )
-  return reply.received
+  progress(100)
+  return node
+}
+
+// Raw chunk traffic is a byte protocol, so it does not join the ordinary write queue.
+function chunk(
+  upload_id: string,
+  parent: string,
+  offset: number,
+  chunk: Blob,
+  signal?: AbortSignal,
+  wire: Transport = transport,
+) {
+  const operation = { ...api.drive.uploads.chunk, scope: () => driveLinks.scope([parent]) }
+  return wire.request(operation, { upload_id, offset, chunk }, { signal })
 }
 
 /** True when the server no longer knows the session: expired, finished or swept. */
@@ -144,7 +147,13 @@ export function sendDirect(
         }),
       )
     request.onabort = () => reject(new DOMException('The upload was stopped', 'AbortError'))
-    signal?.addEventListener('abort', () => request.abort(), { once: true })
+    const abort = () => request.abort()
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    request.onloadend = () => signal?.removeEventListener('abort', abort)
     request.send(form)
   })
 }
@@ -153,23 +162,4 @@ export function sendDirect(
 function storageMessage(body: string): string {
   const message = /<Message>([^<]*)<\/Message>/.exec(body)?.[1]
   return message ? `Storage refused the file: ${message}` : 'Storage refused the file.'
-}
-
-export interface FinishUploadInput {
-  upload_id: string
-  parent_node?: string
-  title?: string
-  replaces?: string
-  checksum?: string
-}
-
-/** Finishes a session whose bytes are already stored, as a direct upload's are. */
-export function finishUpload(parent: string) {
-  return mutation(
-    driveOperation<FinishUploadInput, DriveNode>(api.upload_finish, {
-      entity: true,
-      covers: [parent],
-    }),
-    { invalidates: ['node_children', 'view_list', 'root_usage'] },
-  )
 }

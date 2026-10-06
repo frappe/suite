@@ -20,9 +20,8 @@
 import { Button, Dialog, FormControl } from 'frappe-ui'
 import { nextTick, ref, useTemplateRef, watch } from 'vue'
 
-import { renameNode } from '@/apps/drive/client/nodes'
+import { api, useMutation } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
-import { useMutation } from '@/platform/server-state'
 
 import { selectStem } from '../internal/filename'
 
@@ -33,7 +32,7 @@ const title = ref('')
 const error = ref<string>()
 const form = useTemplateRef('form')
 // Every refusal shows under the field, so none needs a toast.
-const mutation = useMutation(renameNode(), { silent: true })
+const mutation = useMutation(api.drive.nodes.rename, { silent: true })
 
 watch(
   () => props.node,
@@ -78,14 +77,16 @@ watch(
 )
 
 async function submit() {
-  if (!props.node || !title.value.trim()) return
-  error.value = undefined
-  const renamed = await mutation.run({ node: props.node.name, title: title.value.trim() })
-  if (!renamed) {
+  try {
+    if (!props.node || !title.value.trim()) return
+    error.value = undefined
+    const renamed = await mutation.run({ node: props.node.name, title: title.value.trim() })
+
+    emit('renamed', renamed)
+    open.value = false
+  } catch {
     error.value = mutation.error?.message ?? 'Could not rename this item.'
     return
   }
-  emit('renamed', renamed)
-  open.value = false
 }
 </script>

@@ -67,7 +67,7 @@
             <Combobox
               v-model="mail.from_email"
               :options="
-                identities.data.map((i: Identity) => ({
+                (identities.data ?? []).map((i: Identity) => ({
                   label: `${i._name} <${i.email}>`,
                   value: i.email,
                 })) || []
@@ -260,7 +260,7 @@
     v-model="showContactsModal"
     @insert="(selections) => mail[insertContactsInto].push(...selections)"
   />
-  <ScheduleSendModal v-model="showScheduleModal" @confirm="scheduleSend" />
+  <ScheduleSendModal v-model="showScheduleModal" :save="scheduleSend" />
 </template>
 
 <script setup lang="ts">
@@ -309,7 +309,6 @@ import ContactsModal from './Modals/ContactsModal.vue'
 import ScheduleSendModal from './Modals/ScheduleSendModal.vue'
 
 const show = defineModel<boolean>()
-
 const {
   reloadMails,
   mailDetails,
@@ -326,7 +325,6 @@ const {
   // a draft that is the whole thread, given the reading pane to itself.
   fillsHost?: boolean
 }>()
-
 const emit = defineEmits([
   'discardMail',
   'discardStarted',
@@ -335,20 +333,16 @@ const emit = defineEmits([
   'forward',
   'popOut',
 ])
-
 const { isMobile } = useScreenSize()
-
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
-
 const fileUploads = ref<ReturnType<typeof useFileUpload>[]>([])
 const pendingInlineUploads = ref(0)
 const isUploading = computed(
   () => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
 )
-
 const user = inject('$user') as UserResource
 
 // The server refuses a file over the Mail attachment limit (`upload_file`); saying so here
@@ -372,7 +366,6 @@ const uploadFailure = (file: File, reason: unknown) =>
   reason instanceof UploadError && reason.messages.length
     ? reason.messages.join('\n')
     : __('Failed to upload {0}', [file.name])
-
 const uploadInlineImage = async (file: File) => {
   if (refuseOversized(file)) throw new Error(__('{0} is too large to attach.', [file.name]))
   pendingInlineUploads.value++
@@ -382,7 +375,9 @@ const uploadInlineImage = async (file: File) => {
     pendingInlineUploads.value--
   }
 }
-const imageExtension = CustomImageExtension.configure({ uploadFunction: uploadInlineImage })
+const imageExtension = CustomImageExtension.configure({
+  uploadFunction: uploadInlineImage,
+})
 
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
@@ -391,7 +386,6 @@ const {
   mail,
   identities,
   isLoading,
-  isDraftUpdated,
   isRecipientsEmpty,
   moveRecipient,
   updateOriginalMail,
@@ -428,15 +422,12 @@ const {
 
 // The composer stays mounted when it closes, so the in-flight flags have to be cleared on the way out.
 watch(show, (open) => !open && onClosed())
-
 const showContactsModal = ref(false)
 const insertContactsInto = ref('')
-
 const insertContacts = (insertInto: string) => {
   insertContactsInto.value = insertInto
   showContactsModal.value = true
 }
-
 const showCcBcc = ref(!!mailDetails?.cc?.length || !!mailDetails?.bcc?.length)
 const toggleCcBcc = () => {
   showCcBcc.value = !showCcBcc.value
@@ -490,7 +481,12 @@ onUnmounted(async () => {
 
 // `mail` is exposed so the window around this one can read the draft — the minimised bar names
 // itself after the subject, which only exists in here.
-defineExpose({ mail, sendMail, discardMail, openScheduleModal })
+defineExpose({
+  mail,
+  sendMail,
+  discardMail,
+  openScheduleModal,
+})
 
 // Local draft actions
 
@@ -498,9 +494,21 @@ const localDraftActions = computed(() => [
   {
     group: '',
     options: [
-      { label: __('Reply'), icon: Reply, onClick: () => emit('reply') },
-      { label: __('Reply All'), icon: ReplyAll, onClick: () => emit('replyAll') },
-      { label: __('Forward'), icon: Forward, onClick: () => emit('forward') },
+      {
+        label: __('Reply'),
+        icon: Reply,
+        onClick: () => emit('reply'),
+      },
+      {
+        label: __('Reply All'),
+        icon: ReplyAll,
+        onClick: () => emit('replyAll'),
+      },
+      {
+        label: __('Forward'),
+        icon: Forward,
+        onClick: () => emit('forward'),
+      },
     ],
   },
   {
@@ -515,7 +523,6 @@ const localDraftActions = computed(() => [
     ],
   },
 ])
-
 const TYPE_ICON_MAP = {
   reply: 'lucide-reply',
   replyAll: 'lucide-reply-all',
@@ -533,11 +540,9 @@ const ownsEvent = (e: KeyboardEvent) => {
   const target = e.target as Node | null
   return !!root && !!target && root.contains(target)
 }
-
 const handleKeydown = (e: KeyboardEvent) => {
   if (!show.value || (isInThread && isOverlayPresent())) return
   if (!ownsEvent(e)) return
-
   handleSendShortcut(e)
   handleDiscardShortcut(e)
 }
@@ -549,14 +554,12 @@ const handleSendShortcut = (e: KeyboardEvent) => {
   if (e.shiftKey) openScheduleModal()
   else sendMail()
 }
-
 const handleDiscardShortcut = (e: KeyboardEvent) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
     e.preventDefault()
     discardMail()
   }
 }
-
 onMounted(() => window.addEventListener('keydown', handleKeydown, true))
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown, true))
 
@@ -564,56 +567,49 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown, true))
 
 const isDragging = ref(false)
 let dragCounter = 0
-
 const handleDragEnter = (e: DragEvent) => {
   e.preventDefault()
   dragCounter++
   if (e.dataTransfer?.types.includes('Files')) isDragging.value = true
 }
-
 const handleDragOver = (e: DragEvent) => {
   e.preventDefault()
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
 }
-
 const handleDragLeave = (e: DragEvent) => {
   e.preventDefault()
   dragCounter--
   if (dragCounter === 0) isDragging.value = false
 }
-
 const handleDrop = (e: DragEvent) => {
   e.preventDefault()
   isDragging.value = false
   dragCounter = 0
-
   const files = Array.from(e.dataTransfer?.files ?? [])
   uploadFiles(files)
 }
-
 const uploadFiles = async (files: File[]) => {
   const accepted = files.filter((file) => !refuseOversized(file))
   if (!accepted.length) return
-
   const results = await Promise.allSettled(accepted.map(uploadFile))
   results.forEach((res, i) => {
     if (res.status === 'rejected') raiseToast(uploadFailure(accepted[i], res.reason), 'error')
   })
 }
-
 const uploadFile = async (file: File) => {
   const fileUpload = useFileUpload()
-  fileUploads.value.push({ name: file.name, size: file.size, ...fileUpload })
-
+  fileUploads.value.push({
+    name: file.name,
+    size: file.size,
+    ...fileUpload,
+  })
   const doc = (await fileUpload.upload(file, {
     private: true,
     folder: 'Home/Frappe Mail',
     upload_endpoint: '/api/method/suite.mail.api.mail.upload_file',
   })) as FileDoc
-
   attachDoc(doc)
 }
-
 const attachDoc = (doc: FileDoc) =>
   mail.attachments.push({
     file_name: doc.file_name,

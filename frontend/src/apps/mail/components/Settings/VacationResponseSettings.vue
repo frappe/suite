@@ -5,11 +5,8 @@
         :label="__('Save')"
         variant="solid"
         :size="isMobile ? 'md' : 'sm'"
-        :disabled="
-          vacationResponse.loading ||
-          JSON.stringify(vacationResponse.data) === JSON.stringify(original)
-        "
-        :loading="updateVacationResponse.loading"
+        :disabled="vacationResponse.isFetching || JSON.stringify(draft) === original"
+        :loading="updateVacationResponse.isPending"
         @click="handleSave"
       />
     </template>
@@ -21,22 +18,22 @@
         :title="__('Enabled')"
         :description="__('Auto-reply to incoming mails while you’re away.')"
       >
-        <Switch v-model="vacationResponse.data.enabled" />
+        <Switch v-model="draft.enabled" />
       </SettingsRow>
       <FormControl
-        v-model="vacationResponse.data.from_date"
+        v-model="draft.from_date"
         type="datetime-local"
         :label="__('From Date')"
         variant="outline"
       />
       <FormControl
-        v-model="vacationResponse.data.to_date"
+        v-model="draft.to_date"
         type="datetime-local"
         :label="__('To Date')"
         variant="outline"
       />
       <FormControl
-        v-model="vacationResponse.data.subject"
+        v-model="draft.subject"
         :label="__('Subject')"
         placeholder="Out of Office"
         variant="outline"
@@ -47,27 +44,27 @@
           editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
           :placeholder="__('Type something...')"
           :fixed-menu="buttons"
-          :content="vacationResponse.data.html_body"
-          @change="(val: string) => (vacationResponse.data.html_body = val)"
+          :content="draft.html_body"
+          @change="(val: string) => (draft.html_body = val)"
         />
       </div>
       <SetSieveScriptStateModal
         v-model="showConfirmDialog"
         :script="{ _name: 'vacation', active: 0 }"
-        :action="updateVacationResponse.submit"
+        :action="updateVacationResponseSubmit"
       />
     </div>
   </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, FormControl, SettingsRow, Switch } from 'frappe-ui'
 import { TextEditor } from 'frappe-ui/experimental'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
 import { userStore } from '@/apps/mail/stores/user'
-import type { VacationResponse } from '@/apps/mail/types/doctypes'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
@@ -75,55 +72,61 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 const store = userStore()
-
 const { buttons } = useTextEditorButtons()
 const { isMobile } = useScreenSize()
-
 const showConfirmDialog = ref(false)
-
 const activeSieveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
 )
-
 const handleSave = () => {
-  if (activeSieveScript.value && vacationResponse.data.enabled) showConfirmDialog.value = true
-  else updateVacationResponse.submit()
+  if (activeSieveScript.value && draft.enabled) showConfirmDialog.value = true
+  else updateVacationResponseSubmit()
 }
-
-const original = reactive({})
-
-const vacationResponse = createResource({
-  url: 'suite.mail.doctype.vacation_response.vacation_response.get_vacation_response',
-  makeParams: () => ({ account: store.accountId }),
-  auto: true,
-  transform: (doc: VacationResponse) => {
-    doc['enabled'] = !!doc['enabled']
-    doc['from_date'] = toLocalInput(doc['from_date'])
-    doc['to_date'] = toLocalInput(doc['to_date'])
-    Object.assign(original, doc)
-    return doc
-  },
+const draft = reactive({
+  enabled: false,
+  from_date: '',
+  to_date: '',
+  subject: '',
+  html_body: '',
 })
-
-const updateVacationResponse = createResource({
-  url: 'suite.mail.doctype.vacation_response.vacation_response.update_vacation_response',
-  makeParams: () => ({
+const original = ref('')
+const vacationResponse = useQuery(api.mail.vacation.get, () =>
+  store.accountId
+    ? {
+        account: store.accountId,
+      }
+    : false,
+)
+watch(
+  () => vacationResponse.data,
+  (data) => {
+    if (!data) return
+    Object.assign(draft, {
+      enabled: Boolean(data.enabled),
+      from_date: toLocalInput(data.from_date),
+      to_date: toLocalInput(data.to_date),
+      subject: data.subject ?? '',
+      html_body: data.html_body ?? '',
+    })
+    original.value = JSON.stringify(draft)
+  },
+  {
+    immediate: true,
+  },
+)
+const updateVacationResponse = useMutation(api.mail.vacation.update)
+async function updateVacationResponseSubmit() {
+  const input: InputOf<typeof api.mail.vacation.update> = {
     account: store.accountId,
-    enabled: vacationResponse.data.enabled,
-    from_date: fromLocalInput(vacationResponse.data.from_date),
-    to_date: fromLocalInput(vacationResponse.data.to_date),
-    subject: vacationResponse.data.subject,
-    html_body: vacationResponse.data.html_body,
-  }),
-  onSuccess: () => {
-    vacationResponse.reload()
-    store.sieveScripts.reload()
-    raiseToast(__('Vacation response updated.'))
-    showConfirmDialog.value = false
-  },
-  onError: (error) => {
-    raiseToast(error.messages[0], 'error')
-    showConfirmDialog.value = false
-  },
-})
+    enabled: draft.enabled,
+    from_date: fromLocalInput(draft.from_date),
+    to_date: fromLocalInput(draft.to_date),
+    subject: draft.subject,
+    html_body: draft.html_body,
+  }
+  await updateVacationResponse.run(input)
+  await vacationResponse.refetch()
+  raiseToast(__('Vacation response updated.'))
+  showConfirmDialog.value = false
+}
 </script>

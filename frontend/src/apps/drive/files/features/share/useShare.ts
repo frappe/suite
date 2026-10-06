@@ -1,7 +1,6 @@
 import { computed, reactive, readonly, ref, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 
-import { announceAccessChange } from '@/apps/drive/client/accessChanges'
-import { api } from '@/apps/drive/client/generated'
+import { api, client } from '@/api'
 import {
   endOfDayStamp,
   isExpired,
@@ -13,9 +12,8 @@ import {
   type GrantPatch,
   type GrantWrite,
 } from '@/apps/drive/client/grants'
-import { driveOperation } from '@/apps/drive/client/operation'
 import { DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
-import { transport as defaultTransport, type Transport } from '@/platform/transport'
+import type { ImperativeClient } from '@/platform/server-state/types'
 
 import {
   organizationLabel,
@@ -27,17 +25,13 @@ import {
   type LocalRow,
 } from './shareModel'
 
-const nodeGet = driveOperation<{ node: string; expand: string }, DriveNode>(api.node_get, {
-  entity: true,
-})
-
 /** A row key: the principal, or a section key for the picker and link creation. */
 export type RowKey = string
 export const PICKER: RowKey = 'picker'
 export const NEW_LINK_ROW: RowKey = 'new-link'
 
 export interface ShareOptions {
-  transport?: Transport
+  client?: ImperativeClient
   /** The caller's user id: writes that would lower their own access ask first. */
   me?: string
   /** Asks the caller to confirm losing their own access. Resolves true to go on. */
@@ -56,9 +50,9 @@ export interface ShareOptions {
  * lands.
  */
 export function useShare(nodeId: string, options: ShareOptions = {}) {
-  const transport = options.transport ?? defaultTransport
   const placeTitle = options.placeTitle ?? ((node: { title: string }) => node.title)
-  const grants = nodeGrants(nodeId, transport)
+  const requester = options.client ?? client
+  const grants = nodeGrants(nodeId, requester)
   const node = shallowRef<DriveNode | null>(null)
   const list = shallowRef<GrantList | null>(null)
   const loadError = ref('')
@@ -96,7 +90,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   async function load() {
     const read = ++reads
     try {
-      const fresh = await transport.request(nodeGet, { node: nodeId, expand: 'access' })
+      const fresh = await requester.query(api.drive.nodes.get, { node: nodeId, expand: 'access' })
       // Reading grants needs MANAGE (spec §7.2). A caller who gave it away sees why.
       const freshList = managesNode(fresh) ? await grants.list() : null
       if (read !== reads) return
@@ -133,7 +127,6 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       return undefined
     } finally {
       await load()
-      announceAccessChange(nodeId)
       pending.delete(key)
     }
   }

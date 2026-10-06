@@ -319,7 +319,11 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 3. Cross-product frontend use MUST go through a declared lightweight interface such as `@/apps/drive`, exported by `apps/drive/index.ts`.
 4. The Suite shell and composition modules MAY depend on product route declarations; product routes MUST NOT depend on the shell implementation.
 5. Code enters `platform` only when it is product-neutral and has multiple consumers.
-6. The Drive UI MUST create Writer/Sheets/Slides documents through the generic Drive document workflow, not product-specific endpoints.
+6. `frontend/src/api` exposes ordinary requests. Composition assembles lightweight generated references and lazy owner registrations.
+7. `platform/server-state` owns one product-neutral engine. Product policies own request scope and cache effects.
+8. Products MUST NOT create ordinary transport operations, descriptor factories, or separate response caches.
+9. Editors MAY pass a reusable Drive credential context through the client. Drive selects credentials and computes its opaque partition.
+10. The Drive UI MUST create Writer/Sheets/Slides documents through the generic Drive document workflow, not product-specific endpoints.
 
 ### 9. Ownership and review
 

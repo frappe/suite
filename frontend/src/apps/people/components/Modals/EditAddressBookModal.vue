@@ -30,35 +30,38 @@ import { computed, reactive, watch } from 'vue'
 
 const show = defineModel<boolean>()
 
-const { name, description, isDefault } = defineProps<{
+const { name, description, isDefault, save } = defineProps<{
   name: string
-  description?: string
+  description?: string | null
   isDefault: boolean
+  save: (value: { name: string; description: string; isDefault: boolean }) => Promise<void>
 }>()
 
-const emit = defineEmits(['save'])
-
-const addressBook = reactive({ name, description, isDefault })
+const addressBook = reactive({ name, description: description ?? '', isDefault })
 
 const options = computed(() => ({
   title: __('Edit General Information'),
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled:
         addressBook.name === name &&
         addressBook.description === description &&
         addressBook.isDefault === isDefault,
-      onClick: () => {
-        emit('save', addressBook)
-        show.value = false
+      onClick: async () => {
+        try {
+          await save({ ...addressBook })
+          show.value = false
+        } catch {
+          /* The command reports the refusal. Keep the draft open. */
+        }
       },
     },
   ],
 }))
 
 watch(show, (val) => {
-  if (val) Object.assign(addressBook, { name, description, isDefault })
+  if (val) Object.assign(addressBook, { name, description: description ?? '', isDefault })
 })
 </script>

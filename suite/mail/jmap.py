@@ -628,6 +628,11 @@ def get_jmap_client(
 
     client.user = user
     client.peers = [client]
+    # Request-cache eviction does not close sockets. Account views share this
+    # pool, so its lifetime ends with the request/job, not with an individual view.
+    if not hasattr(frappe.local, "mail_http_clients"):
+        frappe.local.mail_http_clients = []
+    frappe.local.mail_http_clients.append(http)
     return client
 
 

@@ -1,6 +1,8 @@
-# Server-state client: guideline
+# Server-state client: superseded guideline
 
-Status: guideline, not a spec. Decided in conversation on 2026-09-12 and
+Status: superseded by the [Suite API client specification](../../suite-api-client/suite-api-client-spec.md). Keep this document as historical context.
+
+Original status: guideline, not a spec. Decided in conversation on 2026-09-12 and
 2026-09-13. Start Drive on it. Tighten rules as real pages land. Codex agents
 inventoried Frappe, the Drive REST layer and the six app frontends; the facts
 below cite that work.

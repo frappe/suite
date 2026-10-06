@@ -6,7 +6,7 @@ import { groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
 describe('Home upcoming dates', () => {
   it('groups Today and Tomorrow around midnight', () => {
     const now = new Date(2026, 8, 15, 23, 59, 30)
-    const events: CalendarEvent[] = [
+    const events: Pick<CalendarEvent, 'id' | 'title' | 'start'>[] = [
       {
         id: 'later',
         title: 'Tomorrow later',

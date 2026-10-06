@@ -38,7 +38,7 @@
 
     <div class="flex min-h-0 flex-1 flex-col">
       <ListView
-        v-if="list.loaded"
+        v-if="list.status === 'success'"
         class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
         :columns="LIST_COLUMNS"
         :rows="list.rows"
@@ -90,22 +90,22 @@
       </ListView>
       <DashboardListSkeleton v-else />
       <DashboardPager
-        v-if="list.loaded && list.total"
+        v-if="list.status === 'success' && list.total"
         :count="list.rows.length"
-        :total="list.total"
-        :page-length="list.pageLength"
-        :has-more="list.hasMore"
-        :loading="list.loading"
-        @update:page-length="list.setPageLength"
-        @load-more="list.loadMore"
+        :total="list.total ?? 0"
+        :page-length="pageLength"
+        :has-more="list.hasNext"
+        :loading="list.isFetching"
+        @update:page-length="(value) => (pageLength = value)"
+        @load-more="list.fetchNext().catch(() => {})"
       />
     </div>
   </DashboardLayout>
 </template>
 
 <script setup lang="ts">
-import { watchDebounced } from '@vueuse/core'
-import { Badge, createResource, FormControl, usePageMeta } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Badge, FormControl, usePageMeta } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListEmptyState,
@@ -114,77 +114,97 @@ import {
   ListRows,
   ListView,
 } from 'frappe-ui/experimental'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
+import { api, useInfiniteQuery, useQuery } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import BreakdownRows from '@/apps/mail/components/DmarcBreakdownRows.vue'
 import DmarcStatTiles from '@/apps/mail/components/DmarcStatTiles.vue'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import type { DmarcReportRow } from '@/apps/mail/utils/dmarc'
-import { usePagedList } from '@/apps/mail/utils/pagedList'
+import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
 import { DEFAULT_PERIOD, formatRate, PERIOD_OPTIONS, rateTheme } from '@/apps/mail/utils/reports'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
 usePageMeta(() => appPageMeta(__('DMARC Reports'), 'Mail'))
-
 const search = ref('')
 const domain = ref('')
 const period = ref(DEFAULT_PERIOD)
 
 // Every domain the site holds, live or not: a domain taken offline still has a history.
-const domains = createResource({
-  url: 'suite.mail.api.admin.get_domains',
-  params: { page_length: 500 },
-  auto: true,
-  initialData: { items: [] },
-})
+const domains = useQuery(api.mail.admin.domains.list, () => ({
+  page_length: 500,
+}))
 const domainOptions = computed(() => [
-  { label: __('All domains'), value: '' },
-  ...(domains.data?.items || []).map((d: { name: string }) => ({ label: d.name, value: d.name })),
+  {
+    label: __('All domains'),
+    value: '',
+  },
+  ...(domains.data?.items || []).map((d: { name: string }) => ({
+    label: d.name,
+    value: d.name,
+  })),
 ])
-
-const summary = createResource({
-  url: 'suite.mail.api.admin.get_dmarc_summary',
-  auto: true,
-  makeParams: () => ({ domain_id: domain.value || undefined, days: Number(period.value) }),
-})
-
-// The list and the summary take the same domain and period, so the page never shows a
-// period's totals beside reports from outside it.
-const list = usePagedList<DmarcReportRow>('suite.mail.api.admin.get_dmarc_reports', () => ({
-  txt: search.value,
+const summary = useQuery(api.mail.admin.dmarc.summary, () => ({
   domain_id: domain.value || undefined,
   days: Number(period.value),
 }))
 
-watchDebounced(() => search.value, list.reload, { debounce: 300 })
-watch([() => domain.value, () => period.value], () => {
-  list.reload()
-  summary.reload()
-})
-
+// The list and the summary take the same domain and period, so the page never shows a
+// period's totals beside reports from outside it.
+const debouncedSearch = refDebounced(search, 300)
+const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
+const list = useInfiniteQuery(api.mail.admin.dmarc.list, () => ({
+  txt: debouncedSearch.value,
+  domain_id: domain.value || undefined,
+  days: Number(period.value),
+  start: 0,
+  page_length: pageLength.value,
+}))
 const LIST_COLUMNS = [
-  { label: __('Domain'), key: 'domain' },
-  { label: __('Reporter'), key: 'reporter' },
-  { label: __('Period'), key: 'date_range_end' },
-  { label: __('Messages'), key: 'messages' },
-  { label: __('Failed'), key: 'failed' },
-  { label: __('Pass Rate'), key: 'pass_rate' },
-  { label: __('Received'), key: 'received_at' },
+  {
+    label: __('Domain'),
+    key: 'domain',
+  },
+  {
+    label: __('Reporter'),
+    key: 'reporter',
+  },
+  {
+    label: __('Period'),
+    key: 'date_range_end',
+  },
+  {
+    label: __('Messages'),
+    key: 'messages',
+  },
+  {
+    label: __('Failed'),
+    key: 'failed',
+  },
+  {
+    label: __('Pass Rate'),
+    key: 'pass_rate',
+  },
+  {
+    label: __('Received'),
+    key: 'received_at',
+  },
 ]
-
 const hasActiveFilters = computed(
   () => !!search.value || !!domain.value || period.value !== DEFAULT_PERIOD,
 )
-
 const listOptions = computed(() => ({
   selectable: false,
   showTooltip: false,
   emptyState: hasActiveFilters.value
-    ? { title: __('No matching reports'), description: __('Try another search, domain or period.') }
+    ? {
+        title: __('No matching reports'),
+        description: __('Try another search, domain or period.'),
+      }
     : {
         title: __('No DMARC reports yet'),
         description: __(
@@ -193,10 +213,11 @@ const listOptions = computed(() => ({
       },
   getRowRoute: (row: DmarcReportRow) => ({
     name: 'mail-dmarc-report',
-    params: { reportId: row.id },
+    params: {
+      reportId: row.id,
+    },
   }),
 }))
-
 const formatPeriod = (row: DmarcReportRow) => {
   const begin = formatDateTime(row.date_range_begin, 'MMM D')
   const end = formatDateTime(row.date_range_end, 'MMM D, YYYY')

@@ -567,7 +567,8 @@ class TestDriveViews(IntegrationTestCase):
         self._grant(folder.name, "$GROUP:viewers", EDIT)
         self._grant(descendant.name, VIEWER, READ)
 
-        rows = views(self.principals, "shared")["rows"]
+        identity = Principals(self.principals.user, (VIEWER, "$GROUP:viewers"), ())
+        rows = views(identity, "shared")["rows"]
 
         self.assertEqual([row.name for row in rows], [folder.name])
 

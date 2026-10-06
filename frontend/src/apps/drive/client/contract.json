@@ -4,6 +4,10 @@
   "operations": [
     {
       "id": "node_create.create_folder",
+      "kind": "mutation",
+      "publicName": "nodes.createFolder",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -24,11 +28,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "kind",
-          "parent_node",
-          "title"
-        ],
+        "required": ["kind", "parent_node", "title"],
         "title": "CreateFolder",
         "type": "object"
       },
@@ -92,11 +92,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -122,11 +118,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -141,10 +133,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -338,17 +327,22 @@
         "title": "NodeShape",
         "type": "object"
       },
-      "errors": [
-        "DriveForbidden",
-        "DriveConflict",
-        "DriveOverQuota"
-      ],
-      "entity": null,
+      "errors": ["DriveForbidden", "DriveConflict", "DriveOverQuota"],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_create.create_file",
+      "kind": "mutation",
+      "publicName": "nodes.createFile",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -386,14 +380,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "kind",
-          "parent_node",
-          "title",
-          "blob",
-          "size",
-          "mime"
-        ],
+        "required": ["kind", "parent_node", "title", "blob", "size", "mime"],
         "title": "CreateFile",
         "type": "object"
       },
@@ -457,11 +444,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -487,11 +470,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -506,10 +485,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -703,17 +679,22 @@
         "title": "NodeShape",
         "type": "object"
       },
-      "errors": [
-        "DriveForbidden",
-        "DriveConflict",
-        "DriveOverQuota"
-      ],
-      "entity": null,
+      "errors": ["DriveForbidden", "DriveConflict", "DriveOverQuota"],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_create.create_link",
+      "kind": "mutation",
+      "publicName": "nodes.createLink",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -738,12 +719,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "kind",
-          "parent_node",
-          "title",
-          "url"
-        ],
+        "required": ["kind", "parent_node", "title", "url"],
         "title": "CreateLink",
         "type": "object"
       },
@@ -807,11 +783,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -837,11 +809,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -856,10 +824,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -1053,17 +1018,22 @@
         "title": "NodeShape",
         "type": "object"
       },
-      "errors": [
-        "DriveForbidden",
-        "DriveConflict",
-        "DriveOverQuota"
-      ],
-      "entity": null,
+      "errors": ["DriveForbidden", "DriveConflict", "DriveOverQuota"],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_create.create_document",
+      "kind": "mutation",
+      "publicName": "nodes.createDocument",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -1097,12 +1067,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "kind",
-          "parent_node",
-          "title",
-          "content_doctype"
-        ],
+        "required": ["kind", "parent_node", "title", "content_doctype"],
         "title": "CreateDocument",
         "type": "object"
       },
@@ -1166,11 +1131,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -1196,11 +1157,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -1215,10 +1172,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -1412,17 +1366,22 @@
         "title": "NodeShape",
         "type": "object"
       },
-      "errors": [
-        "DriveForbidden",
-        "DriveConflict",
-        "DriveOverQuota"
-      ],
-      "entity": null,
+      "errors": ["DriveForbidden", "DriveConflict", "DriveOverQuota"],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_batch",
+      "kind": "mutation",
+      "publicName": "nodes.batch",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/batch",
       "pathParams": [],
@@ -1444,10 +1403,7 @@
                 "type": "string"
               },
               "state": {
-                "enum": [
-                  "Active",
-                  "Trashed"
-                ],
+                "enum": ["Active", "Trashed"],
                 "title": "State",
                 "type": "string"
               },
@@ -1472,10 +1428,7 @@
             "$ref": "#/$defs/BatchPatch"
           }
         },
-        "required": [
-          "nodes",
-          "patch"
-        ],
+        "required": ["nodes", "patch"],
         "title": "BatchNodes",
         "type": "object"
       },
@@ -1496,11 +1449,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "node",
-              "type",
-              "message"
-            ],
+            "required": ["node", "type", "message"],
             "title": "BatchFailure",
             "type": "object"
           }
@@ -1521,20 +1470,22 @@
             "type": "array"
           }
         },
-        "required": [
-          "ok",
-          "failed"
-        ],
+        "required": ["ok", "failed"],
         "title": "BatchResult",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_batch_purge",
+      "kind": "mutation",
+      "publicName": "nodes.purgeBatch",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/batch/purge",
       "pathParams": [],
@@ -1549,9 +1500,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "nodes"
-        ],
+        "required": ["nodes"],
         "title": "BatchPurge",
         "type": "object"
       },
@@ -1572,11 +1521,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "node",
-              "type",
-              "message"
-            ],
+            "required": ["node", "type", "message"],
             "title": "BatchFailure",
             "type": "object"
           }
@@ -1597,25 +1542,25 @@
             "type": "array"
           }
         },
-        "required": [
-          "ok",
-          "failed"
-        ],
+        "required": ["ok", "failed"],
         "title": "BatchResult",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_get",
+      "kind": "query",
+      "publicName": "nodes.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": {
         "properties": {
           "expand": {
@@ -1687,11 +1632,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -1717,11 +1658,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -1736,10 +1673,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -1933,28 +1867,25 @@
         "title": "NodeShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired"],
       "entity": {
         "tag": "DriveNode",
         "id": "name",
         "version": "modified"
       },
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.rename",
+      "kind": "mutation",
+      "publicName": "nodes.rename",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "properties": {
@@ -1963,9 +1894,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "title"
-        ],
+        "required": ["title"],
         "title": "Rename",
         "type": "object"
       },
@@ -2029,11 +1958,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -2059,11 +1984,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -2078,10 +1999,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -2290,18 +2208,19 @@
         "id": "name",
         "version": "modified"
       },
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.move",
+      "kind": "mutation",
+      "publicName": "nodes.move",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "properties": {
@@ -2314,9 +2233,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "parent_node"
-        ],
+        "required": ["parent_node"],
         "title": "Move",
         "type": "object"
       },
@@ -2380,11 +2297,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -2410,11 +2323,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -2429,10 +2338,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -2641,18 +2547,19 @@
         "id": "name",
         "version": "modified"
       },
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.trash",
+      "kind": "mutation",
+      "publicName": "nodes.trash",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "properties": {
@@ -2662,9 +2569,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "state"
-        ],
+        "required": ["state"],
         "title": "Trash",
         "type": "object"
       },
@@ -2728,11 +2633,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -2758,11 +2659,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -2777,10 +2674,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -2989,18 +2883,19 @@
         "id": "name",
         "version": "modified"
       },
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.restore",
+      "kind": "mutation",
+      "publicName": "nodes.restore",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "properties": {
@@ -3014,9 +2909,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "state"
-        ],
+        "required": ["state"],
         "title": "Restore",
         "type": "object"
       },
@@ -3080,11 +2973,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -3110,11 +2999,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -3129,10 +3014,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -3341,18 +3223,19 @@
         "id": "name",
         "version": "modified"
       },
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.stamp",
+      "kind": "mutation",
+      "publicName": "nodes.stamp",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "properties": {
@@ -3361,9 +3244,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "content_modified"
-        ],
+        "required": ["content_modified"],
         "title": "Stamp",
         "type": "object"
       },
@@ -3427,11 +3308,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -3457,11 +3334,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -3476,10 +3349,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -3688,18 +3558,19 @@
         "id": "name",
         "version": "modified"
       },
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_purge",
+      "kind": "mutation",
+      "publicName": "nodes.purge",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": null,
       "output": {
@@ -3710,9 +3581,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
@@ -3724,18 +3593,23 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_children",
+      "kind": "query",
+      "publicName": "nodes.children",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/children",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": {
         "properties": {
           "limit": {
@@ -3827,11 +3701,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -4047,11 +3917,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -4066,10 +3932,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -4094,32 +3957,29 @@
             "title": "Next Cursor"
           }
         },
-        "required": [
-          "rows",
-          "next_cursor"
-        ],
+        "required": ["rows", "next_cursor"],
         "title": "Page",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_copy",
+      "kind": "mutation",
+      "publicName": "nodes.copy",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/copy",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "properties": {
@@ -4132,9 +3992,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "parent_node"
-        ],
+        "required": ["parent_node"],
         "title": "CopyNode",
         "type": "object"
       },
@@ -4198,11 +4056,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -4228,11 +4082,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -4247,10 +4097,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -4452,19 +4299,24 @@
         "DriveConflict",
         "DriveOverQuota"
       ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_archive_start",
+      "kind": "mutation",
+      "publicName": "archives.start",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/archive",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "additionalProperties": false,
@@ -4476,11 +4328,7 @@
       "output": {
         "properties": {
           "status": {
-            "enum": [
-              "building",
-              "ready",
-              "failed"
-            ],
+            "enum": ["building", "ready", "failed"],
             "title": "Status",
             "type": "string"
           },
@@ -4518,44 +4366,31 @@
             "title": "Error"
           }
         },
-        "required": [
-          "status",
-          "file_name",
-          "size",
-          "error"
-        ],
+        "required": ["status", "file_name", "size", "error"],
         "title": "ArchiveStatus",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_archive_status",
+      "kind": "query",
+      "publicName": "archives.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/archive",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": null,
       "output": {
         "properties": {
           "status": {
-            "enum": [
-              "building",
-              "ready",
-              "failed"
-            ],
+            "enum": ["building", "ready", "failed"],
             "title": "Status",
             "type": "string"
           },
@@ -4593,56 +4428,43 @@
             "title": "Error"
           }
         },
-        "required": [
-          "status",
-          "file_name",
-          "size",
-          "error"
-        ],
+        "required": ["status", "file_name", "size", "error"],
         "title": "ArchiveStatus",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_archive_download",
+      "kind": "query",
+      "publicName": "archives.download",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/archive/download",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": null,
       "output": null,
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": true
+      "nodeParams": ["node"],
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "node_put_content",
+      "kind": "mutation",
+      "publicName": "nodes.replaceContent",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "nodes/{node}/content",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "description": "`PUT /nodes/<id>/content`: a new head from the caller's finished session.",
@@ -4660,9 +4482,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "upload_id"
-        ],
+        "required": ["upload_id"],
         "title": "ReplaceContent",
         "type": "object"
       },
@@ -4726,11 +4546,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -4756,11 +4572,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -4775,10 +4587,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -4981,19 +4790,24 @@
         "DriveOverQuota",
         "DriveFileTooLarge"
       ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_get_content",
+      "kind": "query",
+      "publicName": "nodes.download",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/content",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": {
         "properties": {
           "format": {
@@ -5018,18 +4832,19 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": true
+      "nodeParams": ["node"],
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "node_media",
+      "kind": "query",
+      "publicName": "nodes.media",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/media",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": null,
       "output": {
@@ -5068,14 +4883,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "node",
-              "title",
-              "mime",
-              "size",
-              "url",
-              "expires"
-            ],
+            "required": ["node", "title", "mime", "size", "url", "expires"],
             "title": "MediaItem",
             "type": "object"
           }
@@ -5089,31 +4897,25 @@
             "type": "array"
           }
         },
-        "required": [
-          "media"
-        ],
+        "required": ["media"],
         "title": "MediaList",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_preview",
+      "kind": "mutation",
+      "publicName": "nodes.setPreview",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/preview",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "description": "`POST /nodes/<id>/preview`: the rendered image, base64, and its MIME type.",
@@ -5127,10 +4929,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "image",
-          "mime"
-        ],
+        "required": ["image", "mime"],
         "title": "PreviewPush",
         "type": "object"
       },
@@ -5147,10 +4946,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -5167,26 +4963,22 @@
             ]
           }
         },
-        "required": [
-          "preview"
-        ],
+        "required": ["preview"],
         "title": "PreviewAnswer",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveForbidden"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "upload_create",
+      "kind": "mutation",
+      "publicName": "uploads.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "uploads",
       "pathParams": [],
@@ -5214,11 +5006,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "parent_node",
-          "filename",
-          "size"
-        ],
+        "required": ["parent_node", "filename", "size"],
         "title": "OpenUpload",
         "type": "object"
       },
@@ -5237,10 +5025,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "upload_id",
-              "mode"
-            ],
+            "required": ["upload_id", "mode"],
             "title": "ChunkedUpload",
             "type": "object"
           },
@@ -5268,12 +5053,7 @@
                 "type": "object"
               }
             },
-            "required": [
-              "upload_id",
-              "mode",
-              "url",
-              "fields"
-            ],
+            "required": ["upload_id", "mode", "url", "fields"],
             "title": "DirectUpload",
             "type": "object"
           }
@@ -5296,15 +5076,18 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "upload_chunk",
+      "kind": "mutation",
+      "publicName": "uploads.chunk",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "uploads/{upload_id}/chunk",
-      "pathParams": [
-        "upload_id"
-      ],
+      "pathParams": ["upload_id"],
       "query": {
         "properties": {
           "offset": {
@@ -5312,9 +5095,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "offset"
-        ],
+        "required": ["offset"],
         "title": "ChunkQuery",
         "type": "object"
       },
@@ -5330,30 +5111,25 @@
             "type": "integer"
           }
         },
-        "required": [
-          "upload_id",
-          "received"
-        ],
+        "required": ["upload_id", "received"],
         "title": "UploadProgress",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict",
-        "DriveFileTooLarge"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict", "DriveFileTooLarge"],
       "entity": null,
       "nodeParams": [],
-      "stream": true
+      "stream": true,
+      "bytes": false
     },
     {
       "id": "upload_finish",
+      "kind": "mutation",
+      "publicName": "uploads.finish",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "uploads/{upload_id}/finish",
-      "pathParams": [
-        "upload_id"
-      ],
+      "pathParams": ["upload_id"],
       "query": null,
       "body": {
         "description": "`POST /uploads/<id>/finish`: `parent_node` and `title` for a new file, or\n`replaces` for a new head; the session binds which.",
@@ -5442,11 +5218,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -5472,11 +5244,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -5491,10 +5259,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -5695,17 +5460,28 @@
         "DriveOverQuota",
         "DriveFileTooLarge"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_activity",
+      "kind": "query",
+      "publicName": "nodes.activity",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/activity",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": {
         "properties": {
           "limit": {
@@ -5780,16 +5556,7 @@
                 "type": "object"
               }
             },
-            "required": [
-              "name",
-              "node",
-              "action",
-              "actor",
-              "at",
-              "via_link",
-              "client",
-              "detail"
-            ],
+            "required": ["name", "node", "action", "actor", "at", "via_link", "client", "detail"],
             "title": "ActivityShape",
             "type": "object"
           }
@@ -5814,10 +5581,7 @@
             "title": "Next Cursor"
           }
         },
-        "required": [
-          "rows",
-          "next_cursor"
-        ],
+        "required": ["rows", "next_cursor"],
         "title": "Page",
         "type": "object"
       },
@@ -5829,18 +5593,19 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_visit",
+      "kind": "mutation",
+      "publicName": "nodes.visit",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/visit",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "additionalProperties": false,
@@ -5857,31 +5622,25 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_put_favourite",
+      "kind": "mutation",
+      "publicName": "nodes.star",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "nodes/{node}/favourite",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "additionalProperties": false,
@@ -5898,31 +5657,25 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveForbidden"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_delete_favourite",
+      "kind": "mutation",
+      "publicName": "nodes.unstar",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}/favourite",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": null,
       "output": {
@@ -5933,30 +5686,25 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_grants",
+      "kind": "query",
+      "publicName": "grants.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/grants",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": {
         "properties": {
           "inherited": {
@@ -6047,11 +5795,7 @@
                 "type": "array"
               }
             },
-            "required": [
-              "role",
-              "source",
-              "rows"
-            ],
+            "required": ["role", "source", "rows"],
             "title": "ExplainShape",
             "type": "object"
           },
@@ -6145,12 +5889,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "grant",
-              "redacted",
-              "source_node",
-              "source_title"
-            ],
+            "required": ["grant", "redacted", "source_node", "source_title"],
             "title": "InheritedGrantShape",
             "type": "object"
           },
@@ -6176,11 +5915,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -6216,13 +5951,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "node",
-              "principal",
-              "role",
-              "expires_on",
-              "has_password"
-            ],
+            "required": ["node", "principal", "role", "expires_on", "has_password"],
             "title": "RedactedGrantShape",
             "type": "object"
           }
@@ -6257,33 +5986,25 @@
             "$ref": "#/$defs/ExplainShape"
           }
         },
-        "required": [
-          "grants",
-          "owner"
-        ],
+        "required": ["grants", "owner"],
         "title": "GrantsShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveForbidden"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_put_grant",
+      "kind": "mutation",
+      "publicName": "grants.put",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "nodes/{node}/grants/{principal:path}",
-      "pathParams": [
-        "node",
-        "principal"
-      ],
+      "pathParams": ["node", "principal"],
       "query": null,
       "body": {
         "description": "`PUT /nodes/<id>/grants/<principal>`: `role` and `expires_on` replace; `password` patches.",
@@ -6323,9 +6044,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "role"
-        ],
+        "required": ["role"],
         "title": "GrantWrite",
         "type": "object"
       },
@@ -6353,11 +6072,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           }
@@ -6413,38 +6128,25 @@
             "type": "string"
           }
         },
-        "required": [
-          "name",
-          "node",
-          "principal",
-          "role",
-          "expires_on",
-          "has_password",
-          "sent_to"
-        ],
+        "required": ["name", "node", "principal", "role", "expires_on", "has_password", "sent_to"],
         "title": "GrantShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveForbidden"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_delete_grant",
+      "kind": "mutation",
+      "publicName": "grants.remove",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}/grants/{principal:path}",
-      "pathParams": [
-        "node",
-        "principal"
-      ],
+      "pathParams": ["node", "principal"],
       "query": {
         "properties": {
           "below": {
@@ -6464,31 +6166,25 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveForbidden"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "grant_patch",
+      "kind": "mutation",
+      "publicName": "grants.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "grants/{grant}",
-      "pathParams": [
-        "grant"
-      ],
+      "pathParams": ["grant"],
       "query": null,
       "body": {
         "description": "`PATCH /grants/<id>`: the same write on a row named by its id.",
@@ -6520,9 +6216,7 @@
             "title": "Password"
           }
         },
-        "required": [
-          "role"
-        ],
+        "required": ["role"],
         "title": "GrantPatch",
         "type": "object"
       },
@@ -6550,11 +6244,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           }
@@ -6610,33 +6300,25 @@
             "type": "string"
           }
         },
-        "required": [
-          "name",
-          "node",
-          "principal",
-          "role",
-          "expires_on",
-          "has_password",
-          "sent_to"
-        ],
+        "required": ["name", "node", "principal", "role", "expires_on", "has_password", "sent_to"],
         "title": "GrantShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "grant_delete",
+      "kind": "mutation",
+      "publicName": "grants.delete",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "grants/{grant}",
-      "pathParams": [
-        "grant"
-      ],
+      "pathParams": ["grant"],
       "query": null,
       "body": null,
       "output": {
@@ -6647,27 +6329,25 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "grant_rotate",
+      "kind": "mutation",
+      "publicName": "grants.rotate",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "grants/{grant}/rotate",
-      "pathParams": [
-        "grant"
-      ],
+      "pathParams": ["grant"],
       "query": null,
       "body": {
         "additionalProperties": false,
@@ -6700,11 +6380,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           }
@@ -6760,28 +6436,22 @@
             "type": "string"
           }
         },
-        "required": [
-          "name",
-          "node",
-          "principal",
-          "role",
-          "expires_on",
-          "has_password",
-          "sent_to"
-        ],
+        "required": ["name", "node", "principal", "role", "expires_on", "has_password", "sent_to"],
         "title": "GrantShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "link_unlock",
+      "kind": "mutation",
+      "publicName": "links.unlock",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "links/unlock",
       "pathParams": [],
@@ -6797,10 +6467,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "token",
-          "password"
-        ],
+        "required": ["token", "password"],
         "title": "Unlock",
         "type": "object"
       },
@@ -6815,10 +6482,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "ticket",
-          "expires"
-        ],
+        "required": ["ticket", "expires"],
         "title": "UnlockTicket",
         "type": "object"
       },
@@ -6831,10 +6495,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "view_clear_recents",
+      "kind": "mutation",
+      "publicName": "views.clearRecent",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "views/recents",
       "pathParams": [],
@@ -6860,24 +6529,29 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "view_list",
+      "kind": "query",
+      "publicName": "views.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "views/{view}",
-      "pathParams": [
-        "view"
-      ],
+      "pathParams": ["view"],
       "query": {
         "properties": {
           "limit": {
@@ -6984,12 +6658,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "root",
-              "user",
-              "used_bytes",
-              "quota_bytes"
-            ],
+            "required": ["root", "user", "used_bytes", "quota_bytes"],
             "title": "ArchivedRootShape",
             "type": "object"
           },
@@ -7008,11 +6677,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "title",
-              "kind"
-            ],
+            "required": ["name", "title", "kind"],
             "title": "BreadcrumbShape",
             "type": "object"
           },
@@ -7228,11 +6893,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -7247,10 +6908,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "url",
-              "expires"
-            ],
+            "required": ["url", "expires"],
             "title": "PreviewShape",
             "type": "object"
           }
@@ -7282,28 +6940,33 @@
             "title": "Next Cursor"
           }
         },
-        "required": [
-          "rows",
-          "next_cursor"
-        ],
+        "required": ["rows", "next_cursor"],
         "title": "Page",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden"
-      ],
-      "entity": null,
+      "errors": ["DriveNotFound", "DriveForbidden"],
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_versions",
+      "kind": "query",
+      "publicName": "versions.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/versions",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": {
         "properties": {
           "limit": {
@@ -7409,41 +7072,30 @@
             "title": "Next Cursor"
           }
         },
-        "required": [
-          "rows",
-          "next_cursor"
-        ],
+        "required": ["rows", "next_cursor"],
         "title": "Page",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_create",
+      "kind": "mutation",
+      "publicName": "versions.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/versions",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "properties": {
           "kind": {
-            "enum": [
-              "auto",
-              "named",
-              "milestone"
-            ],
+            "enum": ["auto", "named", "milestone"],
             "title": "Kind",
             "type": "string"
           },
@@ -7508,17 +7160,7 @@
             "title": "Creation"
           }
         },
-        "required": [
-          "name",
-          "node",
-          "seq",
-          "kind",
-          "label",
-          "pinned",
-          "actor",
-          "size",
-          "creation"
-        ],
+        "required": ["name", "node", "seq", "kind", "label", "pinned", "actor", "size", "creation"],
         "title": "VersionShape",
         "type": "object"
       },
@@ -7530,19 +7172,19 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_patch",
+      "kind": "mutation",
+      "publicName": "versions.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}/versions/{seq}",
-      "pathParams": [
-        "node",
-        "seq"
-      ],
+      "pathParams": ["node", "seq"],
       "query": null,
       "body": {
         "description": "Either field; an empty `label` clears it (\u00a79.1).",
@@ -7612,17 +7254,7 @@
             "title": "Creation"
           }
         },
-        "required": [
-          "name",
-          "node",
-          "seq",
-          "kind",
-          "label",
-          "pinned",
-          "actor",
-          "size",
-          "creation"
-        ],
+        "required": ["name", "node", "seq", "kind", "label", "pinned", "actor", "size", "creation"],
         "title": "VersionShape",
         "type": "object"
       },
@@ -7634,19 +7266,19 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_delete",
+      "kind": "mutation",
+      "publicName": "versions.delete",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}/versions/{seq}",
-      "pathParams": [
-        "node",
-        "seq"
-      ],
+      "pathParams": ["node", "seq"],
       "query": null,
       "body": null,
       "output": {
@@ -7657,9 +7289,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
@@ -7671,42 +7301,37 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_content",
+      "kind": "query",
+      "publicName": "versions.download",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/versions/{seq}/content",
-      "pathParams": [
-        "node",
-        "seq"
-      ],
+      "pathParams": ["node", "seq"],
       "query": null,
       "body": null,
       "output": null,
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": true
+      "nodeParams": ["node"],
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "node_version_restore",
+      "kind": "mutation",
+      "publicName": "versions.restore",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/versions/{seq}/restore",
-      "pathParams": [
-        "node",
-        "seq"
-      ],
+      "pathParams": ["node", "seq"],
       "query": null,
       "body": {
         "additionalProperties": false,
@@ -7802,18 +7427,19 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_threads",
+      "kind": "query",
+      "publicName": "threads.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/threads",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": {
         "properties": {
           "resolved": {
@@ -7929,11 +7555,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           },
@@ -8019,31 +7641,25 @@
             "type": "array"
           }
         },
-        "required": [
-          "threads"
-        ],
+        "required": ["threads"],
         "title": "ThreadList",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveLocked", "DriveLinkExpired", "DriveConflict"],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_thread_create",
+      "kind": "mutation",
+      "publicName": "threads.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/threads",
-      "pathParams": [
-        "node"
-      ],
+      "pathParams": ["node"],
       "query": null,
       "body": {
         "description": "`POST /nodes/<id>/threads`: the anchor is the content app's to resolve.",
@@ -8061,10 +7677,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "anchor",
-          "text"
-        ],
+        "required": ["anchor", "text"],
         "title": "ThreadOpen",
         "type": "object"
       },
@@ -8172,11 +7785,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           }
@@ -8260,18 +7869,19 @@
         "DriveConflict"
       ],
       "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false
+      "nodeParams": ["node"],
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "thread_patch",
+      "kind": "mutation",
+      "publicName": "threads.resolve",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "threads/{thread}",
-      "pathParams": [
-        "thread"
-      ],
+      "pathParams": ["thread"],
       "query": null,
       "body": {
         "properties": {
@@ -8280,9 +7890,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "resolved"
-        ],
+        "required": ["resolved"],
         "title": "ThreadResolve",
         "type": "object"
       },
@@ -8390,11 +7998,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           }
@@ -8470,22 +8074,21 @@
         "title": "ThreadShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "thread_comment_create",
+      "kind": "mutation",
+      "publicName": "comments.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "threads/{thread}/comments",
-      "pathParams": [
-        "thread"
-      ],
+      "pathParams": ["thread"],
       "query": null,
       "body": {
         "properties": {
@@ -8498,9 +8101,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "CommentWrite",
         "type": "object"
       },
@@ -8528,11 +8129,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           }
@@ -8616,22 +8213,21 @@
         "title": "CommentShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "comment_patch",
+      "kind": "mutation",
+      "publicName": "comments.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "comments/{comment}",
-      "pathParams": [
-        "comment"
-      ],
+      "pathParams": ["comment"],
       "query": null,
       "body": {
         "properties": {
@@ -8640,9 +8236,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "CommentEdit",
         "type": "object"
       },
@@ -8670,11 +8264,7 @@
                 "title": "User Image"
               }
             },
-            "required": [
-              "id",
-              "full_name",
-              "user_image"
-            ],
+            "required": ["id", "full_name", "user_image"],
             "title": "Person",
             "type": "object"
           }
@@ -8758,22 +8348,21 @@
         "title": "CommentShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "comment_delete",
+      "kind": "mutation",
+      "publicName": "comments.delete",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "comments/{comment}",
-      "pathParams": [
-        "comment"
-      ],
+      "pathParams": ["comment"],
       "query": null,
       "body": null,
       "output": {
@@ -8784,23 +8373,26 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_list",
+      "kind": "query",
+      "publicName": "notifications.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "notifications",
       "pathParams": [],
@@ -8882,16 +8474,7 @@
                 "type": "object"
               }
             },
-            "required": [
-              "name",
-              "node",
-              "action",
-              "actor",
-              "at",
-              "via_link",
-              "client",
-              "detail"
-            ],
+            "required": ["name", "node", "action", "actor", "at", "via_link", "client", "detail"],
             "title": "ActivityShape",
             "type": "object"
           },
@@ -8920,12 +8503,7 @@
                 "$ref": "#/$defs/ActivityShape"
               }
             },
-            "required": [
-              "name",
-              "read",
-              "creation",
-              "activity"
-            ],
+            "required": ["name", "read", "creation", "activity"],
             "title": "NotificationShape",
             "type": "object"
           }
@@ -8950,20 +8528,22 @@
             "title": "Next Cursor"
           }
         },
-        "required": [
-          "rows",
-          "next_cursor"
-        ],
+        "required": ["rows", "next_cursor"],
         "title": "Page",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_unread_count",
+      "kind": "query",
+      "publicName": "notifications.unreadCount",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "notifications/unread-count",
       "pathParams": [],
@@ -8976,19 +8556,22 @@
             "type": "integer"
           }
         },
-        "required": [
-          "unread"
-        ],
+        "required": ["unread"],
         "title": "UnreadCount",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_read.notification_names",
+      "kind": "mutation",
+      "publicName": "notifications.markRead",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "notifications/read",
       "pathParams": [],
@@ -9003,9 +8586,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "notifications"
-        ],
+        "required": ["notifications"],
         "title": "NotificationNames",
         "type": "object"
       },
@@ -9017,19 +8598,22 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_read.all_notifications",
+      "kind": "mutation",
+      "publicName": "notifications.markAllRead",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "notifications/read",
       "pathParams": [],
@@ -9042,9 +8626,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "all"
-        ],
+        "required": ["all"],
         "title": "AllNotifications",
         "type": "object"
       },
@@ -9056,19 +8638,22 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "roots_discover",
+      "kind": "query",
+      "publicName": "roots.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "roots",
       "pathParams": [],
@@ -9087,10 +8672,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "node",
-              "title"
-            ],
+            "required": ["node", "title"],
             "title": "RootLocation",
             "type": "object"
           }
@@ -9110,25 +8692,25 @@
             ]
           }
         },
-        "required": [
-          "personal",
-          "organization"
-        ],
+        "required": ["personal", "organization"],
         "title": "RootLocations",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_usage",
+      "kind": "query",
+      "publicName": "roots.usage",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "roots/{root}/usage",
-      "pathParams": [
-        "root"
-      ],
+      "pathParams": ["root"],
       "query": {
         "properties": {
           "expand": {
@@ -9169,10 +8751,7 @@
                 "title": "Mime"
               },
               "kind": {
-                "enum": [
-                  "file",
-                  "document"
-                ],
+                "enum": ["file", "document"],
                 "title": "Kind",
                 "type": "string"
               },
@@ -9181,14 +8760,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "node",
-              "title",
-              "size",
-              "mime",
-              "kind",
-              "type"
-            ],
+            "required": ["node", "title", "size", "mime", "kind", "type"],
             "title": "LargestNode",
             "type": "object"
           },
@@ -9203,10 +8775,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "type",
-              "bytes"
-            ],
+            "required": ["type", "bytes"],
             "title": "TypeBytes",
             "type": "object"
           }
@@ -9250,30 +8819,25 @@
             "type": "array"
           }
         },
-        "required": [
-          "used_bytes",
-          "reserved_bytes",
-          "quota_bytes",
-          "effective_quota"
-        ],
+        "required": ["used_bytes", "reserved_bytes", "quota_bytes", "effective_quota"],
         "title": "RootUsage",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_patch.root_quota",
+      "kind": "mutation",
+      "publicName": "roots.setQuota",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "roots/{root}",
-      "pathParams": [
-        "root"
-      ],
+      "pathParams": ["root"],
       "query": null,
       "body": {
         "properties": {
@@ -9282,9 +8846,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "quota_bytes"
-        ],
+        "required": ["quota_bytes"],
         "title": "RootQuota",
         "type": "object"
       },
@@ -9331,35 +8893,25 @@
             "type": "string"
           }
         },
-        "required": [
-          "name",
-          "node",
-          "kind",
-          "user",
-          "state",
-          "quota_bytes",
-          "used_bytes",
-          "title"
-        ],
+        "required": ["name", "node", "kind", "user", "state", "quota_bytes", "used_bytes", "title"],
         "title": "RootShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_patch.root_archive",
+      "kind": "mutation",
+      "publicName": "roots.archive",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "roots/{root}",
-      "pathParams": [
-        "root"
-      ],
+      "pathParams": ["root"],
       "query": null,
       "body": {
         "properties": {
@@ -9369,9 +8921,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "state"
-        ],
+        "required": ["state"],
         "title": "RootArchive",
         "type": "object"
       },
@@ -9418,35 +8968,25 @@
             "type": "string"
           }
         },
-        "required": [
-          "name",
-          "node",
-          "kind",
-          "user",
-          "state",
-          "quota_bytes",
-          "used_bytes",
-          "title"
-        ],
+        "required": ["name", "node", "kind", "user", "state", "quota_bytes", "used_bytes", "title"],
         "title": "RootShape",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_purge",
+      "kind": "mutation",
+      "publicName": "roots.purge",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "roots/{root}",
-      "pathParams": [
-        "root"
-      ],
+      "pathParams": ["root"],
       "query": null,
       "body": null,
       "output": {
@@ -9457,28 +8997,25 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_empty_trash",
+      "kind": "mutation",
+      "publicName": "roots.emptyTrash",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "roots/{root}/trash/empty",
-      "pathParams": [
-        "root"
-      ],
+      "pathParams": ["root"],
       "query": null,
       "body": {
         "additionalProperties": false,
@@ -9495,23 +9032,22 @@
             "type": "integer"
           }
         },
-        "required": [
-          "count"
-        ],
+        "required": ["count"],
         "title": "Count",
         "type": "object"
       },
-      "errors": [
-        "DriveNotFound",
-        "DriveForbidden",
-        "DriveConflict"
-      ],
+      "errors": ["DriveNotFound", "DriveForbidden", "DriveConflict"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "settings_get",
+      "kind": "query",
+      "publicName": "settings.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "settings",
       "pathParams": [],
@@ -9530,20 +9066,22 @@
             "type": "object"
           }
         },
-        "required": [
-          "webdav_enabled",
-          "writer_settings"
-        ],
+        "required": ["webdav_enabled", "writer_settings"],
         "title": "UserSettings",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "settings_patch",
+      "kind": "mutation",
+      "publicName": "settings.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "settings",
       "pathParams": [],
@@ -9556,9 +9094,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "webdav_enabled"
-        ],
+        "required": ["webdav_enabled"],
         "title": "WebdavSwitch",
         "type": "object"
       },
@@ -9575,20 +9111,22 @@
             "type": "object"
           }
         },
-        "required": [
-          "webdav_enabled",
-          "writer_settings"
-        ],
+        "required": ["webdav_enabled", "writer_settings"],
         "title": "UserSettings",
         "type": "object"
       },
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "site_settings_get",
+      "kind": "query",
+      "publicName": "siteSettings.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "site-settings",
       "pathParams": [],
@@ -9647,10 +9185,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "is_admin",
-              "preview_size"
-            ],
+            "required": ["is_admin", "preview_size"],
             "title": "SiteSettings",
             "type": "object"
           }
@@ -9667,10 +9202,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "site_settings_patch",
+      "kind": "mutation",
+      "publicName": "siteSettings.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "site-settings",
       "pathParams": [],
@@ -9683,9 +9223,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "webdav_enabled"
-        ],
+        "required": ["webdav_enabled"],
         "title": "WebdavSwitch",
         "type": "object"
       },
@@ -9728,15 +9266,18 @@
         "title": "AdminSiteSettings",
         "type": "object"
       },
-      "errors": [
-        "DriveForbidden"
-      ],
+      "errors": ["DriveForbidden"],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "webdav_get",
+      "kind": "query",
+      "publicName": "webdav.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "webdav",
       "pathParams": [],
@@ -9816,10 +9357,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "globally_enabled",
-              "is_admin"
-            ],
+            "required": ["globally_enabled", "is_admin"],
             "title": "WebdavOff",
             "type": "object"
           }
@@ -9839,7 +9377,8 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     }
   ]
 }

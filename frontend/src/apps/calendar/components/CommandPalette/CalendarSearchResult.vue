@@ -81,7 +81,7 @@ const subtitle = computed(() => [when.value, props.result.organizer].filter(Bool
 const chipColor = computed(() => {
   const calendar = props.result.calendars?.[0]
   const listed = props.calendarOptions?.find((option) => option.value === calendar?.calendar)
-  return eventColor(listed?.color || calendar?.color)
+  return eventColor(listed?.color || calendar?.color || undefined)
 })
 
 // Sentence case, since it stands alone at the end of a row rather than inside a sentence.

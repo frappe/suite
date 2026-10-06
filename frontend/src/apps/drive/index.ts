@@ -1,25 +1,20 @@
 import { defineAsyncComponent, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { RouteLocationPathRaw } from 'vue-router'
 
+import { api, client, useQuery } from '@/api'
 import FilesIcon from '@/apps/drive/AreaIcon.vue'
-import { api } from '@/apps/drive/client/generated'
 import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
-import { driveOperation } from '@/apps/drive/client/operation'
-import { roots } from '@/apps/drive/client/roots'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
-import { recents } from '@/apps/drive/client/views'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
 import { openingTitleState } from '@/platform/page-meta'
-import { useMutation, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { transport } from '@/platform/transport'
 
 export type {
   CredentialGroup,
@@ -77,20 +72,11 @@ export { formatModified as formatDriveListingDate } from '@/apps/drive/files/int
 /** A server stamp (RFC 3339 in UTC, Drive spec §11.3) as a full date and time in the viewer's zone. */
 export { formatDate as formatDriveDateTime } from '@/apps/drive/files/internal/format'
 
-/** The caller's Drive notifications: the feed, the unread count, and the two read receipts (spec §9.5). */
-export {
-  markAllNotificationsRead as markAllDriveNotificationsRead,
-  markNotificationsRead as markDriveNotificationsRead,
-  notifications as driveNotifications,
-  unreadCount as driveUnreadNotificationCount,
-  type DriveNotification,
-} from '@/apps/drive/client/notifications'
+export type { DriveNotification } from '@/apps/drive/client/notifications'
 
-const summaryRead = driveOperation<{ node: string }, DriveNode>(api.node_get)
-
-/** One readable node's summary, outside the cache: for a route a notification opens. */
+/** One readable node's summary, for a route a notification opens. */
 export function loadDriveNodeSummary(node: string): Promise<DriveNodeSummary> {
-  return transport.request(summaryRead, { node })
+  return client.query(api.drive.nodes.get, { node })
 }
 
 export type DriveNodeSummary = Pick<
@@ -122,31 +108,26 @@ export const loadDriveSettings = () =>
     module.driveSettings(),
   )
 
-/** The caller's recently opened nodes, newest first, with thumbnails for `DriveFileCard`. */
-export function driveRecents(limit = 12) {
-  return recents({ limit, expand: 'preview' })
-}
-
 export interface DriveDocumentCreation {
   readonly isPending: boolean
-  /** Creates a document of this content doctype in My files. `undefined` when it failed. */
-  run(input: { content_doctype: string }): Promise<DriveNodeSummary | undefined>
+  /** Creates a document of this content doctype in My files. Refusals reject. */
+  run(input: { content_doctype: string }): Promise<DriveNodeSummary>
 }
 
 /** Generic document creation into the caller's Personal Root. Call it in a component's setup. */
 export function useDriveDocumentCreation(): DriveDocumentCreation {
-  const discovered = useQuery(roots())
-  const create = useMutation(createDocument())
+  const discovered = useQuery(api.drive.roots.list, {})
+  const creating = ref(false)
   const resolving = ref(false)
   return {
     get isPending() {
-      return resolving.value || create.isPending
+      return resolving.value || creating.value
     },
     async run({ content_doctype }) {
       resolving.value = true
       let parent: string | undefined
       try {
-        parent = (discovered.data ?? (await discovered.settled()).data)?.personal.node
+        parent = (discovered.data ?? (await discovered.refetch()))?.personal.node
       } finally {
         resolving.value = false
       }
@@ -154,9 +135,14 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
         const message = discovered.error?.message ?? __('My files is unavailable.')
         // Loaded on demand: `@/platform/feedback` pulls frappe-ui into the initial graph.
         void import('@/platform/feedback').then(({ toast }) => toast.error(message))
-        return undefined
+        throw new Error(message)
       }
-      return create.run({ parent_node: parent, content_doctype })
+      creating.value = true
+      try {
+        return await createDocument({ parent_node: parent, content_doctype })
+      } finally {
+        creating.value = false
+      }
     },
   }
 }
@@ -184,16 +170,12 @@ export function driveNodeRoute(
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */
 const OPENING_EXPAND = 'access,preview,breadcrumbs'
-const openingRead = driveOperation<{ node: string; expand: string }, DriveNode>(api.node_get, {
-  entity: true,
-})
-
 export async function openDocumentSession(nodeId: string) {
   // `session.share()` opens its dialog in the app that opened the session.
   rememberDialogContext(getCurrentInstance()?.appContext)
   // Every surface shows the document header: fetch it while the session opens.
   void loadDocumentHeader()
-  const node = await transport.request(openingRead, { node: nodeId, expand: OPENING_EXPAND })
+  const node = await client.query(api.drive.nodes.get, { node: nodeId, expand: OPENING_EXPAND })
   if (node.content_doctype && node.content_docname)
     return openDriveDocumentSession(nodeId, { node })
   const { openFilePreviewSession } = await import('@/apps/drive/files/features/preview/session')

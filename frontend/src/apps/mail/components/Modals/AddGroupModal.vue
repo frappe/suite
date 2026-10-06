@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add Group'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !(name && domain),
-          loading: addGroup.loading,
-          onClick: addGroup.submit,
+          loading: addGroup.isPending,
+          onClick: addGroupSubmit,
         },
       ],
     }"
@@ -60,10 +60,11 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, FormControl, MultiSelect } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl, MultiSelect } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
@@ -97,21 +98,23 @@ watch(show, () => {
   }
 })
 
-const addGroup = createResource({
-  url: 'suite.mail.api.admin.add_group',
-  makeParams: () => ({
+const addGroup = useMutation(api.mail.admin.groups.create)
+async function addGroupSubmit() {
+  const input: InputOf<typeof api.mail.admin.groups.create> = {
     name: name.value,
     domain: domain.value,
     description: description.value?.trim() || undefined,
     members: memberIds.value,
     quota_gb: quotaGb.value === '' ? null : Number(quotaGb.value),
-  }),
-  onSuccess: (data: string) => {
-    if (!data) return
-    show.value = false
-    emit('reload')
-    raiseToast(__('Group added.'))
-    router.push({ name: 'mail-group', params: { groupId: data } })
-  },
-})
+  }
+
+  const result = await addGroup.run(input)
+  const data = result
+
+  if (!data) return
+  show.value = false
+  emit('reload')
+  raiseToast(__('Group added.'))
+  router.push({ name: 'mail-group', params: { groupId: data } })
+}
 </script>

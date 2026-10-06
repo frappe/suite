@@ -1,6 +1,6 @@
 <template>
   <DashboardLayout
-area="mail"
+    area="mail"
     :breadcrumbs="[{ label: __('Accounts') }]"
     :button-label="__('Add Account')"
     :button-action="() => (showAddMember = true)"
@@ -33,11 +33,11 @@ import { Mails, Users } from 'lucide-vue-next'
 import { computed, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
 import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
 import UsersView from '@/apps/mail/pages/dashboard/UsersView.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
 usePageMeta(() => appPageMeta(__('Accounts'), 'Mail'))

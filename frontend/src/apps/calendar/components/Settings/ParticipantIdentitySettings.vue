@@ -2,15 +2,12 @@
   <AppSettingsHeader :title="__('Participant Identity')">
     <template #actions>
       <Button
-        v-if="identity?.doc && !identity.loading"
+        v-if="form"
         :label="__('Save')"
         variant="solid"
-        :disabled="
-          identity.get.loading ||
-          JSON.stringify(identity.doc) === JSON.stringify(identity.originalDoc)
-        "
-        :loading="identity.save.loading"
-        @click="save"
+        :disabled="!changed"
+        :loading="updateIdentity.isPending"
+        @click="save().catch(() => {})"
       />
       <Button icon-left="lucide-plus" :label="__('New')" variant="outline" @click="showAddDialog" />
     </template>
@@ -25,7 +22,7 @@
             :label="__('Identity')"
             variant="outline"
             :options="
-              participantIdentities.data.map((identity: ParticipantIdentity) => ({
+              participantIdentities.data.map((identity) => ({
                 label: `${identity.email} (${identity.id})`,
                 value: identity.name,
               }))
@@ -33,22 +30,18 @@
             :open-on-click="true"
           />
 
-          <template v-if="identity?.doc && !identity.loading">
-            <FormControl
-              v-model="identity.doc._name"
-              :label="__('Display Name')"
-              variant="outline"
-            />
+          <template v-if="form">
+            <FormControl v-model="form.name" :label="__('Display Name')" variant="outline" />
 
             <FormControl
-              v-model="identity.doc.email"
+              v-model="form.email"
               :label="__('Email Address')"
               type="email"
               variant="outline"
             />
 
             <FormControl
-              v-model="identity.doc.default"
+              v-model="form.default"
               type="checkbox"
               :label="__('Set as default Participant Identity')"
             />
@@ -65,7 +58,7 @@
       </div>
     </template>
     <div
-      v-else-if="!participantIdentities.loading"
+      v-else-if="!participantIdentities.isFetching"
       class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
     >
       <p class="text-base font-medium">{{ __('No participant identities.') }}</p>
@@ -87,8 +80,8 @@
             label: __('Save'),
             variant: 'solid',
             disabled: !newEmail,
-            loading: addIdentity.loading,
-            onClick: () => addIdentity.submit(),
+            loading: addIdentity.isPending,
+            onClick: () => createIdentity().catch(() => {}),
           },
         ],
       }"
@@ -126,8 +119,8 @@
             label: __('Confirm'),
             variant: 'solid',
             theme: 'red',
-            loading: deleteIdentity.loading,
-            onClick: () => deleteIdentity.submit(),
+            loading: deleteIdentity.isPending,
+            onClick: () => removeIdentity().catch(() => {}),
           },
         ],
       }"
@@ -136,95 +129,92 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createDocumentResource, createResource, Dialog, FormControl } from 'frappe-ui'
-import { ref, watch } from 'vue'
+import { Button, Dialog, FormControl } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
-import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import { raiseToast } from '@/apps/calendar/utils'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const { accountId, participantIdentities } = userStore()
-
-const identityName = ref(participantIdentities.data?.[0]?.name || '')
-
-const getIdentity = () =>
-  createDocumentResource({
-    doctype: 'Participant Identity',
-    name: identityName.value,
-    setValue: {
-      onSuccess: () => {
-        raiseToast(__('Participant Identity updated.'))
-        participantIdentities.reload()
-      },
-      onError: (error) => raiseToast(error.messages[0], 'error'),
-    },
-  })
-
-const save = () => identity.value.save.submit()
-
-const identity = ref(identityName.value ? getIdentity() : null)
-
+const store = userStore()
+const { participantIdentities } = store
+const identityName = ref('')
+const selectedIdentity = computed(() =>
+  participantIdentities.data?.find((row) => row.name === identityName.value),
+)
+const form = ref<InputOf<typeof api.mail.participantIdentities.update>>()
+watch(
+  selectedIdentity,
+  (identity) => {
+    form.value = identity
+      ? {
+          account: identity.account,
+          id: identity.id,
+          name: identity._name,
+          email: identity.email,
+          default: Boolean(identity.default),
+        }
+      : undefined
+  },
+  { immediate: true },
+)
+const changed = computed(() => {
+  const original = selectedIdentity.value
+  const draft = form.value
+  return Boolean(
+    original &&
+    draft &&
+    (original._name !== draft.name ||
+      original.email !== draft.email ||
+      Boolean(original.default) !== draft.default),
+  )
+})
+const updateIdentity = useMutation(api.mail.participantIdentities.update)
+async function save() {
+  if (!form.value) return
+  await updateIdentity.run({ ...form.value })
+  raiseToast(__('Participant Identity updated.'))
+}
+const addIdentity = useMutation(api.mail.participantIdentities.create)
+const deleteIdentity = useMutation(api.mail.participantIdentities.delete)
 const showAddDialogState = ref(false)
 const showDeleteDialog = ref(false)
 const newName = ref('')
 const newEmail = ref('')
 const newDefault = ref(false)
-
-const showAddDialog = () => {
+function showAddDialog() {
   newName.value = ''
   newEmail.value = ''
   newDefault.value = false
   showAddDialogState.value = true
 }
-
-const addIdentity = createResource({
-  url: 'suite.mail.doctype.participant_identity.participant_identity.add_participant_identity',
-  makeParams: () => ({
-    account: accountId,
+async function createIdentity() {
+  const account = store.accountId
+  const id = await addIdentity.run({
+    account,
     name: newName.value,
     email: newEmail.value,
     default: newDefault.value,
-  }),
-  onSuccess: (id: string) => {
-    raiseToast(__('Participant Identity created.'))
-    showAddDialogState.value = false
-    identityName.value = `${accountId}|${id}`
-    participantIdentities.reload()
-  },
-  onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
-})
-
-const deleteIdentity = createResource({
-  url: 'suite.mail.doctype.participant_identity.participant_identity.bulk_delete',
-  makeParams: () => ({ names: [identityName.value] }),
-  onSuccess: () => {
-    raiseToast(__('Participant Identity deleted.'))
-    showDeleteDialog.value = false
-    identityName.value = ''
-    participantIdentities.reload()
-  },
-  onError: (error) => {
-    showDeleteDialog.value = false
-    raiseToast(error.messages?.[0] || error.message, 'error')
-  },
-})
-
-watch(identityName, (val) => {
-  identity.value = val ? getIdentity() : null
-})
-
-// Keep the selection valid as the list loads or changes (e.g. after create/delete
-// or an account switch): fall back to the first identity when the current one is gone.
+  })
+  raiseToast(__('Participant Identity created.'))
+  showAddDialogState.value = false
+  identityName.value = `${account}|${id}`
+}
+async function removeIdentity() {
+  if (!identityName.value) return
+  await deleteIdentity.run({ names: [identityName.value] })
+  raiseToast(__('Participant Identity deleted.'))
+  showDeleteDialog.value = false
+  identityName.value = ''
+}
 watch(
   () => participantIdentities.data,
   (data) => {
-    if (!data?.length) {
-      identityName.value = ''
-    } else if (!data.some((i: ParticipantIdentity) => i.name === identityName.value)) {
-      identityName.value = data[0].name
-    }
+    if (!data?.length) identityName.value = ''
+    else if (!data.some((row) => row.name === identityName.value)) identityName.value = data[0].name
   },
+  { immediate: true },
 )
 </script>

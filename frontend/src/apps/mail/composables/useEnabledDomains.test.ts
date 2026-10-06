@@ -1,53 +1,46 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, reactive, ref } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { effectScope, ref } from 'vue'
 
-import { useEnabledDomains } from './useEnabledDomains'
-
-const resource = reactive({ data: null as string[] | null, error: null as unknown, fetch: vi.fn() })
-const createResource = vi.fn(() => resource)
-vi.mock('frappe-ui', () => ({ createResource: (options: unknown) => createResource(options) }))
-vi.stubGlobal('__', (text: string) => text)
-
+const boundary = vi.hoisted(() => ({ fetch: vi.fn() }))
+vi.mock('@/api', async () => {
+  const { api: mail } = await import('@/apps/mail/client/generated')
+  const { createApiClient } = await import('@/platform/server-state')
+  const engine = createApiClient(
+    { mail: async () => ({ policy: () => ({ staleTime: 0 }) }) },
+    { persistence: false, transport: { request: boundary.fetch } },
+  )
+  return { api: { mail }, useQuery: engine.useQuery }
+})
+const { useEnabledDomains } = await import('./useEnabledDomains')
+const scopes: ReturnType<typeof effectScope>[] = []
+afterEach(() => {
+  scopes.splice(0).forEach((scope) => scope.stop())
+  boundary.fetch.mockReset()
+})
+function picker(show = ref(false)) {
+  const scope = effectScope()
+  scopes.push(scope)
+  return { show, ...scope.run(() => useEnabledDomains(show))! }
+}
 describe('the domains offered by an add dialog', () => {
-  beforeEach(() => {
-    resource.data = null
-    resource.error = null
-    resource.fetch.mockClear()
-  })
-
-  it('are read when the dialog opens, and again the next time', async () => {
-    const show = ref(false)
-    useEnabledDomains(show)
-    expect(resource.fetch).not.toHaveBeenCalled()
-
+  it('loads only while open and refreshes on reopening', async () => {
+    boundary.fetch.mockResolvedValue(['example.com'])
+    const { show, domains } = picker()
+    expect(boundary.fetch).not.toHaveBeenCalled()
     show.value = true
-    await nextTick()
+    await vi.waitFor(() => expect(domains.data).toEqual(['example.com']))
     show.value = false
-    await nextTick()
     show.value = true
-    await nextTick()
-    expect(resource.fetch).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(boundary.fetch).toHaveBeenCalledTimes(2))
   })
-
-  it('are read at once by a dialog that mounts already open', () => {
-    useEnabledDomains(ref(true))
-    expect(resource.fetch).toHaveBeenCalledTimes(1)
-  })
-
-  // A Combobox given `null` options fails to render, and the dialog's domain field with it.
-  it('are an empty list, not null, until the read answers', () => {
-    useEnabledDomains(ref(true))
-    expect(createResource).toHaveBeenCalledWith(expect.objectContaining({ initialData: [] }))
-  })
-
-  it('say why they are missing when Suite Cloud cannot be reached', () => {
-    const { domainsError } = useEnabledDomains(ref(true))
+  it('reports a failed read and can recover when reopened', async () => {
+    boundary.fetch.mockRejectedValue(new Error('Suite Cloud is unreachable'))
+    const { show, domains, domainsError } = picker(ref(true))
+    await vi.waitFor(() => expect(domainsError.value).toBe('Suite Cloud is unreachable'))
+    show.value = false
+    boundary.fetch.mockResolvedValue([])
+    show.value = true
+    await vi.waitFor(() => expect(domains.data).toEqual([]))
     expect(domainsError.value).toBe('')
-
-    resource.error = { messages: ['Suite Cloud is unreachable; try again shortly.'] }
-    expect(domainsError.value).toBe('Suite Cloud is unreachable; try again shortly.')
-
-    resource.error = {}
-    expect(domainsError.value).toBe('Could not load the domains.')
   })
 })

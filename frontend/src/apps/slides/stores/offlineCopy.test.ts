@@ -12,11 +12,6 @@ vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({
   getAttachmentUrl: (src: string) => `/private${src}?slides_media=1`,
 }))
-vi.mock('frappe-ui', () => ({
-  frappeRequest: async ({ url }: { url: string }) => {
-    apiCalls.push(url)
-  },
-}))
 let slideshowChunkLoads = 0
 vi.mock('@/apps/slides/pages/Slideshow.vue', () => {
   slideshowChunkLoads += 1
@@ -85,6 +80,10 @@ beforeEach(() => {
   presentationId.value = 'p1'
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     if ((init?.headers as any)?.['x-slides-pin'] === 'shell') return new Response('<html>')
+    if (url.startsWith('/api/method/')) {
+      apiCalls.push(url.split('?')[0].replace('/api/method/', ''))
+      return new Response(JSON.stringify({ message: {} }))
+    }
     fetched.push(url)
     const make = responses[url]
     if (!make) return new Response('', { status: 404 })

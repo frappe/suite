@@ -47,7 +47,7 @@ import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 
 const { mailboxes } = userStore()
 
-const mailboxName = (role: MailboxRole) => mailboxes.data?.find((m) => m.role === role)?._name
+const mailboxName = (role: MailboxRole) => mailboxes.data?.find((m) => m.role === role)?._name ?? ''
 
 const open = defineModel<boolean>('open', { default: false })
 const modifier = 'Mod'

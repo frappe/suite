@@ -1,14 +1,6 @@
 <script setup lang="ts">
 import { useNow } from '@vueuse/core'
-import {
-  Button,
-  createResource,
-  Dialog,
-  TabButtons,
-  toast,
-  useKeyboardShortcut,
-  usePageMeta,
-} from 'frappe-ui'
+import { Button, Dialog, TabButtons, toast, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
 import { Calendar, CalendarActiveEvent, calendarDaySpan } from 'frappe-ui/experimental'
 import {
   computed,
@@ -23,6 +15,8 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, useMutation, useQuery } from '@/api'
+import type { SearchCalendarEventsWithSharedInput } from '@/apps/calendar/client/generated'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetail from '@/apps/calendar/components/EventDetail.vue'
 import EventPopover from '@/apps/calendar/components/EventPopover.vue'
@@ -32,7 +26,6 @@ import MobileSearch from '@/apps/calendar/components/mobile/MobileSearch.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
-import { invalidateEventDensity } from '@/apps/calendar/composables/useEventDensity'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { canEditEvent, calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
@@ -126,7 +119,7 @@ watch([mobileDate, mobileView], ([date, view], [previousDate]) => {
     router.replace({ name, params, query: route.query })
 
   // A new month is outside the window that was fetched for the old one.
-  if (previousDate && !day.isSame(dayjs(previousDate), 'month')) events.reload()
+  if (previousDate && !day.isSame(dayjs(previousDate), 'month')) events.refetch().catch(() => {})
 })
 
 // Back/Forward and the account switch write the route; the phone follows it,
@@ -237,7 +230,7 @@ onMounted(() => {
   applyRoute()
   // The desktop's first fetch is a side effect of the fui Calendar mounting and
   // announcing its month; the phone has no such component, so it asks itself.
-  if (isMobile.value) events.fetch()
+  if (isMobile.value) events.refetch().catch(() => {})
   openNewEventFromRoute(route.query.new)
 })
 
@@ -375,58 +368,44 @@ const windowFor = (anchor: dayjs.Dayjs) => {
   }
 }
 
-const events = createResource({
-  url: 'suite.calendar.api.get_calendar_events_with_shared',
-  makeParams: () => {
-    const { from, to } = windowFor(anchorMonth.value)
-    fetchedRange = { from: from.format('YYYY-MM-DD'), to: to.format('YYYY-MM-DD') }
-    return {
-      account: store.accountId,
-      from_date: from.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-      to_date: to.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-      time_zone: dayjs.tz.guess(),
-    }
-  },
-  transform: (data) => data.map(transformEvent),
-  onError: (error) => raiseToast(error.message, 'error'),
+const events = useQuery(api.calendar.events.sharedWindow, () => {
+  if (!store.accountId) return false
+  const { from, to } = windowFor(anchorMonth.value)
+  fetchedRange = { from: from.format('YYYY-MM-DD'), to: to.format('YYYY-MM-DD') }
+  return {
+    account: store.accountId,
+    from_date: from.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+    to_date: to.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+    time_zone: dayjs.tz.guess(),
+  }
 })
-
-// Today's events, for the sidebar's upcoming list. Its own fetch rather than a
-// filter over the grid's: the grid's window follows the month in view, and paged
-// a couple of months from today it no longer holds today, so a list drawn from it
-// went blank. Today is today whatever month is on screen. Asked for at once —
-// the sidebar is on screen from the start, and the same shape as the grid's rows
-// so the list and the card it opens read it the same way.
-const todayEvents = createResource({
-  url: 'suite.calendar.api.get_calendar_events_with_shared',
-  makeParams: () => {
-    const start = dayjs().startOf('day')
-    return {
-      account: store.accountId,
-      from_date: start.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-      to_date: start.endOf('day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-      time_zone: dayjs.tz.guess(),
-    }
-  },
-  auto: true,
-  transform: (data) => data.map(transformEvent),
-  onError: (error) => raiseToast(error.message, 'error'),
+const eventRows = computed(() => events.data?.map(transformEvent))
+const todayEvents = useQuery(api.calendar.events.sharedWindow, () => {
+  if (!store.accountId) return false
+  const start = dayjs(now.value).startOf('day')
+  return {
+    account: store.accountId,
+    from_date: start.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+    to_date: start.endOf('day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+    time_zone: dayjs.tz.guess(),
+  }
 })
+const todayRows = computed(() => todayEvents.data?.map(transformEvent))
+watch(
+  () => events.error ?? todayEvents.error,
+  (error) => {
+    if (error) raiseToast(error.message, 'error')
+  },
+)
 
 // Asked again as the date turns: a list of today's events fetched yesterday is
 // yesterday's, and the clock the list already runs on says when.
-watch(
-  () => dayjs(now.value).format('YYYY-MM-DD'),
-  () => todayEvents.reload(),
-)
-
 // The events themselves changed, as opposed to the window over them moving. The
 // sidebar's mini month draws from its own density call, so it has no way to hear
 // about a save or a delete unless it is told to forget what it has.
 const reloadEvents = () => {
-  events.reload()
-  todayEvents.reload()
-  invalidateEventDensity()
+  events.refetch().catch(() => {})
+  todayEvents.refetch().catch(() => {})
 }
 
 // The palette colour an event is drawn in, put on the event itself. Every
@@ -448,7 +427,7 @@ const withCalendarColor = (event) => ({
  * same not-knowing, so it counts too. An error does not: the toast has said what
  * happened, and a list waiting forever says nothing.
  */
-const eventsPending = computed(() => events.loading || (!events.data && !events.error))
+const eventsPending = computed(() => events.isFetching || (!eventRows.value && !events.error))
 
 const onVisibleCalendar = (event) =>
   event.calendars.some((c) => visibleCalendars.value.has(c.calendar))
@@ -471,17 +450,16 @@ const searchFilters = useCalendarSearchFilters()
 // keystroke — bounded, and the server's own cap stands above it at two hundred.
 const SEARCH_RESULT_LIMIT = 50
 
-const eventSearch = createResource({
-  url: 'suite.calendar.api.search_calendar_events_with_shared',
-  debounce: 180,
-  // The same transform the grid's rows go through, so a result resolves on the same fields.
-  transform: (data) => (Array.isArray(data) ? data.map(transformEvent) : []),
-  onSuccess: () => (searchSettled.value = true),
-  onError: (error) => {
-    searchSettled.value = true
-    raiseToast(error.message, 'error')
+const searchInput = ref<SearchCalendarEventsWithSharedInput | false>(false)
+const eventSearch = useQuery(api.calendar.events.search, searchInput)
+const searchEventRows = computed(() => eventSearch.data?.map(transformEvent))
+watch(
+  () => eventSearch.status,
+  (status) => {
+    if (status !== 'pending') searchSettled.value = true
+    if (eventSearch.error) raiseToast(eventSearch.error.message, 'error')
   },
-})
+)
 
 // The words as the search reads them; the field keeps them as typed, trailing space and all —
 // a space written to the URL trimmed came straight back into the field without it.
@@ -501,28 +479,30 @@ watch(
       searchFilters.params.value,
       store.accountId,
     ]),
-  () => {
+  (_value, _previous, onCleanup) => {
+    searchInput.value = false
     if (!isSearchRoute.value) return
-    eventSearch.submit.cancel?.()
     if (!searchAsked.value) {
-      eventSearch.reset()
       searchSettled.value = true
       return
     }
     searchSettled.value = false
-    eventSearch.submit({
-      account: store.accountId,
-      text: searchWords.value,
-      limit: SEARCH_RESULT_LIMIT,
-      time_zone: dayjs.tz.guess(),
-      filters: searchFilters.params.value,
-    })
+    const timer = setTimeout(() => {
+      searchInput.value = {
+        account: store.accountId,
+        text: searchWords.value,
+        limit: SEARCH_RESULT_LIMIT,
+        time_zone: dayjs.tz.guess(),
+        filters: searchFilters.params.value,
+      }
+    }, 180)
+    onCleanup(() => clearTimeout(timer))
   },
   { immediate: true },
 )
 
 const searchRows = computed(() =>
-  isSearchRoute.value && Array.isArray(eventSearch.data) ? eventSearch.data : [],
+  isSearchRoute.value && Array.isArray(searchEventRows.value) ? searchEventRows.value : [],
 )
 
 const setSearchText = (q: string) =>
@@ -532,11 +512,11 @@ const searchCalendarLabel = (value: string) =>
   store.calendarOptions.find((option) => option.value === value)?.label || value
 
 const visibleEvents = computed(
-  () => events.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+  () => eventRows.value?.filter(onVisibleCalendar).map(withCalendarColor) || [],
 )
 
 const visibleTodayEvents = computed(
-  () => todayEvents.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+  () => todayRows.value?.filter(onVisibleCalendar).map(withCalendarColor) || [],
 )
 
 const showEditEvent = ref(false)
@@ -590,7 +570,7 @@ const selectedCalendarEvent = ref(null)
 // The open event lives in the URL (?event=<id>, plus &recurrence=<id> for a
 // recurring instance): clicking a pill writes it, closing clears it, and the
 // selection is DERIVED from it below — so event links are shareable, survive
-// reload, and back/forward toggles the card. Deriving from events.data also
+// reload, and back/forward toggles the card. Deriving from eventRows.value also
 // keeps the sidebar in sync after edits/RSVPs (fresh copy swapped in, closed
 // while the event is deleted or outside the fetched range).
 const handleEventClick = ({ calendarEvent }) =>
@@ -623,7 +603,7 @@ const railOpen = ref<{ id: string; recurrence?: string; account: string } | null
 const railEvent = computed(() => {
   if (!railOpen.value) return null
   const { id, recurrence, account } = railOpen.value
-  const linked = findLinkedEvent([todayEvents.data, events.data], id, recurrence, account)
+  const linked = findLinkedEvent([todayRows.value, eventRows.value], id, recurrence, account)
   return linked && withCalendarColor(linked)
 })
 
@@ -676,7 +656,7 @@ watch(visibleRange, (range) => {
     const to = wanted.to.format('YYYY-MM-DD')
     if (fetchedRange && fetchedRange.from === from && fetchedRange.to === to) return
 
-    events.reload()
+    events.refetch().catch(() => {})
   })
 })
 
@@ -824,7 +804,7 @@ const settledPill = async () => {
     // Past the ordinary budget the wait goes on only while the window the grid draws
     // from is still arriving: there is no pill to find for events not yet fetched, and
     // nothing else worth waiting on once they are.
-    if (frame >= ANCHOR_FRAMES && !events.loading) break
+    if (frame >= ANCHOR_FRAMES && !events.isFetching) break
     await new Promise(requestAnimationFrame)
     if (!openEvent.value) return null
   }
@@ -967,8 +947,8 @@ const matchLinkedEvent = (data, id, recurrence) => {
 
 watch(
   [
-    () => events.data,
-    () => todayEvents.data,
+    () => eventRows.value,
+    () => todayRows.value,
     () => searchRows.value,
     () => route.query.event,
     () => route.query.recurrence,
@@ -1005,7 +985,7 @@ watch(
 // modal (events reloading in the background must not stomp form state), and
 // never close a NEW-event draft (those carry no calendarEvent and own no query).
 watch(
-  [() => events.data, () => route.query.edit, () => route.query.editRecurrence],
+  [() => eventRows.value, () => route.query.edit, () => route.query.editRecurrence],
   ([data, id, recurrence]) => {
     if (!id) {
       if (showEditEvent.value && event.calendarEvent) showEditEvent.value = false
@@ -1096,7 +1076,7 @@ const submitEvent = (sendEmail: boolean) => {
   // recurrence id — the start it was expanded at, which the drag leaves alone. The id the
   // grid holds is no use for that: the server derives it from the occurrence's position in
   // the expansion, and a later override renumbers it onto a different date.
-  if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+  if (updateScope.value === 'instance') return editEventInstanceSubmit({ sendEmail })
 
   // Saving the whole series from one of its occurrences. The grid is showing one occurrence,
   // so its start is that occurrence's — sending it as the master's drags the anchor onto this
@@ -1144,9 +1124,9 @@ const submitEvent = (sendEmail: boolean) => {
   // This occurrence and the ones after it: the series is cut here and the move starts its
   // second half, since a rule has no way to change partway through. The new half is a new
   // event, so unlike an override it carries the zone the drag was made in.
-  if (updateScope.value === 'following') return splitSeries.submit({ sendEmail })
+  if (updateScope.value === 'following') return splitSeriesSubmit({ sendEmail })
 
-  editEvent.submit({ sendEmail })
+  return editEventSubmit({ sendEmail })
 }
 
 // The clock the grid was showing for a start it holds. An all-day event is drawn on its stored
@@ -1179,45 +1159,66 @@ const onEventSaved = {
   },
 }
 
-const editEventInstance = createResource({
-  url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
-  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-    account: eventToBeUpdated.account,
-    master_id: eventToBeUpdated.master_id,
-    recurrence_id: eventToBeUpdated.recurrence_id,
-    // Only what a drag can change, and never the zone: an occurrence is keyed by the start
-    // it was expanded at, and a zone here makes the server re-key it into that zone while
-    // the override stays under the old key — the two stop matching and the occurrence
-    // keeps nothing the series says. The dragged wall clock is converted instead.
-    patch: {
-      start: instanceStart(),
-      duration: eventToBeUpdated.duration,
-    },
-    send_scheduling_messages: sendEmail,
-  }),
-  ...onEventSaved,
+const editEventInstance = useMutation(api.calendar.events.updateInstance, { silent: true })
+const editEventInstanceInput = ({ sendEmail }: { sendEmail: boolean }) => ({
+  account: eventToBeUpdated.account,
+  master_id: eventToBeUpdated.master_id,
+  recurrence_id: eventToBeUpdated.recurrence_id,
+  // Only what a drag can change, and never the zone: an occurrence is keyed by the start
+  // it was expanded at, and a zone here makes the server re-key it into that zone while
+  // the override stays under the old key — the two stop matching and the occurrence
+  // keeps nothing the series says. The dragged wall clock is converted instead.
+  patch: {
+    start: instanceStart(),
+    duration: eventToBeUpdated.duration,
+  },
+  send_scheduling_messages: sendEmail,
 })
+async function editEventInstanceSubmit(input: { sendEmail: boolean }) {
+  try {
+    const result = await editEventInstance.run(editEventInstanceInput(input))
+    onEventSaved.onSuccess()
+    return result
+  } catch (error) {
+    onEventSaved.onError(error instanceof Error ? error : new Error(String(error)))
+    throw error
+  }
+}
 
-const splitSeries = createResource({
-  url: 'suite.calendar.api.split_calendar_event_series',
-  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-    ...eventToBeUpdated,
-    master_id: eventToBeUpdated.master_id,
-    recurrence_id: eventToBeUpdated.recurrence_id,
-    send_scheduling_messages: sendEmail,
-  }),
-  ...onEventSaved,
+const splitSeries = useMutation(api.calendar.events.splitSeries, { silent: true })
+const splitSeriesInput = ({ sendEmail }: { sendEmail: boolean }) => ({
+  ...eventToBeUpdated,
+  master_id: eventToBeUpdated.master_id,
+  recurrence_id: eventToBeUpdated.recurrence_id,
+  send_scheduling_messages: sendEmail,
 })
+async function splitSeriesSubmit(input: { sendEmail: boolean }) {
+  try {
+    const result = await splitSeries.run(splitSeriesInput(input))
+    onEventSaved.onSuccess()
+    return result
+  } catch (error) {
+    onEventSaved.onError(error instanceof Error ? error : new Error(String(error)))
+    throw error
+  }
+}
 
-const editEvent = createResource({
-  url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
-  makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-    ...eventToBeUpdated,
-    id: serverEventId(eventToBeUpdated),
-    send_scheduling_messages: sendEmail,
-  }),
-  ...onEventSaved,
+const editEvent = useMutation(api.calendar.events.update, { silent: true })
+const editEventInput = ({ sendEmail }: { sendEmail: boolean }) => ({
+  ...eventToBeUpdated,
+  id: serverEventId(eventToBeUpdated),
+  send_scheduling_messages: sendEmail,
 })
+async function editEventSubmit(input: { sendEmail: boolean }) {
+  try {
+    const result = await editEvent.run(editEventInput(input))
+    onEventSaved.onSuccess()
+    return result
+  } catch (error) {
+    onEventSaved.onError(error instanceof Error ? error : new Error(String(error)))
+    throw error
+  }
+}
 
 const recurringScopeModalProps = computed(() => ({
   title: __('Update repeating event'),
@@ -1225,7 +1226,7 @@ const recurringScopeModalProps = computed(() => ({
   // there is the wider one.
   options: scopeOptions({ isFirst: isFirstOccurrence(eventToBeUpdated) }),
   confirmLabel: __('Update'),
-  loading: editEvent.loading || editEventInstance.loading || splitSeries.loading,
+  loading: editEvent.isPending || editEventInstance.isPending || splitSeries.isPending,
 }))
 
 const NOTIFY_MODAL_OPTIONS = {

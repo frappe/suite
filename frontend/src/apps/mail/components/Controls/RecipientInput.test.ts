@@ -37,13 +37,18 @@ vi.mock('frappe-ui', async () => {
         return () => (attrs.open ? h('div', { 'data-menu': '' }, slots.default?.()) : null)
       },
     }),
-    createResource: () => ({ data: [], reload: vi.fn() }),
+    toast: { error: vi.fn() },
   }
 })
-vi.mock('@vueuse/core', () => ({
+vi.mock('@vueuse/core', async (original) => ({
+  ...(await original<typeof import('@vueuse/core')>()),
   onClickOutside: () => {},
   useResizeObserver: () => {},
   useDebounceFn: (fn: unknown) => fn,
+}))
+vi.mock('@/api', async (original) => ({
+  ...(await original<typeof import('@/api')>()),
+  useQuery: () => ({ data: undefined, isFetching: false, error: null }),
 }))
 vi.mock('@/apps/mail/utils/composables', async () => {
   const { computed } = await import('vue')

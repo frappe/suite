@@ -1,6 +1,6 @@
 import { computed, shallowRef, watch } from 'vue'
 
-import type { QueryResult } from '@/platform/server-state'
+import type { InfiniteQueryState } from '@/api'
 
 /**
  * Keeps a listing's last rows on screen while the same place is read again in
@@ -12,11 +12,11 @@ import type { QueryResult } from '@/platform/server-state'
  * Only `rows` changes, and only until the new read brings its first rows or
  * settles empty.
  */
-export function heldWhileRearranging<Page extends { rows: unknown[] }>(
-  source: QueryResult<Page>,
+export function heldWhileRearranging<Row>(
+  source: InfiniteQueryState<Row>,
   place: () => string,
-): QueryResult<Page> {
-  const held = shallowRef<{ place: string; rows: Page['rows'] } | null>(null)
+): InfiniteQueryState<Row> {
+  const held = shallowRef<{ place: string; rows: readonly Row[] } | null>(null)
   watch(
     () => [source.status, source.rows] as const,
     ([status, rows]) => {

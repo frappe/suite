@@ -1,6 +1,7 @@
 import { computed, readonly, ref, type Ref } from 'vue'
 
-import { transport as defaultTransport, type Operation, type Transport } from '@/platform/transport'
+import { transport as defaultTransport, type Transport } from '@/platform/transport'
+import { api } from '@/platform/transport/api'
 
 export type SessionStatus = 'loading' | 'guest' | 'authenticated'
 
@@ -27,6 +28,8 @@ export interface Session {
   /** Ends the server session, then runs every logout cleanup before it resolves. */
   logout(): Promise<void>
   refresh(): Promise<void>
+  /** Clears an expired local identity before another account can reuse cached state. */
+  expire(): void
   /**
    * Runs `cleanup` on every later logout, after the server ends the session.
    * Use it for data a browser keeps per user, so the next user never sees it.
@@ -51,29 +54,11 @@ type AccountResponse = Record<string, unknown> & {
   capabilities?: Partial<SessionCapabilities>
 }
 
-// W1-backend-composition owns this route. Until it lands, a failed request keeps
-// the synchronous cookie identity and adds no guessed profile data.
 export const ACCOUNT_REQUEST_PATH = '/api/suite/account'
-
-const accountOperation: Operation<Record<string, never>, AccountResponse> = {
-  id: 'suite.account',
-  owner: 'suite',
-  method: 'GET',
-  path: ACCOUNT_REQUEST_PATH,
-}
-
-const loginOperation: Operation<{ usr: string; pwd: string }, unknown> = {
-  id: 'frappe.login',
-  owner: 'suite',
-  method: 'POST',
-  path: '/api/v2/method/login',
-}
-
-const logoutOperation: Operation<Record<string, never>, unknown> = {
-  id: 'frappe.logout',
-  owner: 'suite',
-  method: 'POST',
-  path: '/api/v2/method/logout',
+// Composition installs the shared account reader after the identity bootstrap.
+let accountReader: (() => Promise<AccountResponse | null>) | undefined
+export function registerAccountReader(reader: () => Promise<AccountResponse | null>): void {
+  accountReader = reader
 }
 
 export function createSession(client: Transport = defaultTransport): Session {
@@ -85,6 +70,7 @@ export function createSession(client: Transport = defaultTransport): Session {
   // `system_user` cookie marks nearly every invited user, so boot grants none.
   const capabilities = ref<SessionCapabilities>({ jmap: false, systemManager: false })
   let refreshPromise: Promise<void> | null = null
+  let generation = 0
   const logoutCleanups = new Set<() => Promise<void> | void>()
   const signedInLogoutCleanups = new Set<() => Promise<void> | void>()
 
@@ -95,9 +81,20 @@ export function createSession(client: Transport = defaultTransport): Session {
       return
     }
     status.value = 'loading'
-    refreshPromise = client
-      .request(accountOperation, {})
+    const refreshGeneration = generation
+    const read: Promise<AccountResponse | null> =
+      client === defaultTransport && accountReader
+        ? accountReader()
+        : client.request(api.account.get, {})
+    refreshPromise = read
       .then((account) => {
+        if (refreshGeneration !== generation) return
+        if (!account) {
+          user.value = null
+          capabilities.value = { jmap: false, systemManager: false }
+          status.value = 'guest'
+          return
+        }
         const id =
           string(account.id) ?? string(account.name) ?? string(account.email) ?? user.value?.id
         if (!id || id === 'Guest') {
@@ -126,16 +123,26 @@ export function createSession(client: Transport = defaultTransport): Session {
         status.value = 'authenticated'
       })
       .catch(() => {
+        if (refreshGeneration !== generation) return
         status.value = user.value ? 'authenticated' : 'guest'
       })
       .finally(() => {
-        refreshPromise = null
+        if (refreshGeneration === generation) refreshPromise = null
       })
     return refreshPromise
   }
 
+  function expire(): void {
+    generation += 1
+    refreshPromise = null
+    user.value = null
+    capabilities.value = { jmap: false, systemManager: false }
+    status.value = 'guest'
+  }
+
   async function login(email: string, password: string): Promise<void> {
-    await client.request(loginOperation, { usr: email, pwd: password })
+    expire()
+    await client.request(api.auth.login, { usr: email, pwd: password })
     const cookiesAfterLogin = readCookies()
     const id = sessionIdFromCookies(cookiesAfterLogin) ?? email
     user.value = cookieUser(id, cookiesAfterLogin)
@@ -145,11 +152,9 @@ export function createSession(client: Transport = defaultTransport): Session {
 
   async function logout(): Promise<void> {
     await Promise.allSettled([...signedInLogoutCleanups].map(async (cleanup) => cleanup()))
-    await client.request(logoutOperation, {})
+    await client.request(api.auth.logout, {})
     await Promise.allSettled([...logoutCleanups].map(async (cleanup) => cleanup()))
-    user.value = null
-    capabilities.value = { jmap: false, systemManager: false }
-    status.value = 'guest'
+    expire()
   }
 
   function onLogout(
@@ -172,6 +177,7 @@ export function createSession(client: Transport = defaultTransport): Session {
     login,
     logout,
     refresh,
+    expire,
     onLogout,
   }
 }

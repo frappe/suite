@@ -57,8 +57,7 @@ vi.mock('@/platform/transport', async (actual) => ({
 }))
 
 const { openFilePreviewSession } = await import('./session')
-const { batchNodes } = await import('@/apps/drive/client/nodes')
-const { useMutation } = await import('@/platform/server-state')
+const { api, useMutation } = await import('@/api')
 
 describe('file preview session', () => {
   it("records a visit for the caller's own access, and none when a share link decides it", async () => {
@@ -117,7 +116,7 @@ describe('file preview session', () => {
     const session = await openFilePreviewSession('binned')
     expect([session.state.value, session.trashRoot.value]).toEqual(['Trashed', 'binned'])
 
-    const batch = useMutation(batchNodes())
+    const batch = useMutation(api.drive.nodes.batch)
     await batch.run({ nodes: ['binned'], patch: { state: 'Active' } })
     await vi.waitFor(() =>
       expect([session.state.value, session.trashRoot.value]).toEqual(['Active', null]),

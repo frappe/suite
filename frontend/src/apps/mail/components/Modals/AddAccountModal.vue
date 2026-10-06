@@ -3,16 +3,16 @@
 	     early close would leave a half-created account behind. -->
   <Dialog
     v-model:open="show"
-    :dismissible="!addMember.loading"
-    :show-close-button="!addMember.loading"
+    :dismissible="!addMember.isPending"
+    :show-close-button="!addMember.isPending"
     v-bind="{
       title: __('Add Account'),
       actions: [
         {
           label: __(accountRequest.send_invite ? 'Send Invite' : 'Add Account'),
-          variant: 'solid',
-          loading: addMember.loading,
-          onClick: addMember.submit,
+          variant: 'solid' as const,
+          loading: addMember.isPending,
+          onClick: addMemberSubmit,
         },
       ],
     }"
@@ -20,15 +20,15 @@
     <template #default>
       <div class="relative">
         <div
-          v-if="addMember.loading"
+          v-if="addMember.isPending"
           class="bg-surface-white/60 absolute inset-0 z-10 flex items-center justify-center rounded-4"
         >
           <LoadingIndicator class="text-ink-gray-6 h-6 w-6" />
         </div>
         <div
           class="space-y-4"
-          :class="{ 'pointer-events-none select-none': addMember.loading }"
-          :aria-busy="addMember.loading"
+          :class="{ 'pointer-events-none select-none': addMember.isPending }"
+          :aria-busy="addMember.isPending"
         >
           <div class="space-y-3">
             <div v-for="(email, index) in emails" :key="index" class="space-y-1.5">
@@ -167,7 +167,6 @@
 import {
   Button,
   Combobox,
-  createResource,
   Dialog,
   ErrorMessage,
   FormControl,
@@ -178,20 +177,24 @@ import {
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, reactive, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromLocalInput, toLocalInput, utcFromNow } from '@/apps/mail/utils/datetime'
 
 const show = defineModel<boolean>()
-
 const { domains, domainsError } = useEnabledDomains(show)
-
 const ROLE_OPTIONS = [
-  { label: __('User'), value: 'user' },
-  { label: __('Admin'), value: 'admin' },
+  {
+    label: __('User'),
+    value: 'user',
+  },
+  {
+    label: __('Admin'),
+    value: 'admin',
+  },
 ]
-
 const defaultAccountRequest = {
   role: 'user',
   send_invite: true,
@@ -205,35 +208,54 @@ const defaultAccountRequest = {
   locale: '',
   time_zone: '',
 }
-
-const accountRequest = reactive({ ...defaultAccountRequest })
-const emails = ref<{ username: string; domain: string }[]>([{ username: '', domain: '' }])
+const accountRequest = reactive({
+  ...defaultAccountRequest,
+})
+const emails = ref<
+  {
+    username: string
+    domain: string
+  }[]
+>([
+  {
+    username: '',
+    domain: '',
+  },
+])
 const groupIds = ref<string[]>([])
 const mailingListIds = ref<string[]>([])
-
 const emit = defineEmits(['reload'])
-
-type Directory = { id: string; name: string; email?: string }
+type Directory = {
+  id: string
+  name: string
+  email?: string
+}
 
 // The account joins these once it exists: immediately when the invite is skipped, otherwise when the
 // invited user verifies and their account is created. Both are read live from Stalwart, so they are
 // fetched when the dialog opens rather than on every visit to the accounts list.
-const groups = createResource({
-  url: 'suite.mail.api.admin.get_groups',
-  params: { page_length: 500 },
-})
-const mailingLists = createResource({
-  url: 'suite.mail.api.admin.get_mailing_lists',
-  params: { page_length: 500 },
-})
-
+const groups = useQuery(api.mail.admin.groups.list, () =>
+  show.value
+    ? {
+        page_length: 500,
+      }
+    : false,
+)
+const mailingLists = useQuery(api.mail.admin.mailingLists.list, () =>
+  show.value
+    ? {
+        page_length: 500,
+      }
+    : false,
+)
 const toOptions = (rows: Directory[]) =>
-  rows.map((r) => ({ label: r.email || r.name, value: r.id }))
+  rows.map((r) => ({
+    label: r.email || r.name,
+    value: r.id,
+  }))
 const groupOptions = computed(() => toOptions(groups.data?.items || []))
 const mailingListOptions = computed(() => toOptions(mailingLists.data?.items || []))
-
 const { localeOptions, timeZoneOptions } = useAccountOptions()
-
 watch(
   () => accountRequest.send_invite,
   () => addMember.reset(),
@@ -245,42 +267,40 @@ watch(show, () => {
     Object.assign(accountRequest, defaultAccountRequest, {
       expires_at: toLocalInput(utcFromNow(1, 'day')),
     })
-    emails.value = [{ username: '', domain: '' }]
+    emails.value = [
+      {
+        username: '',
+        domain: '',
+      },
+    ]
     groupIds.value = []
     mailingListIds.value = []
-    groups.fetch()
-    mailingLists.fetch()
+    groups.refetch().catch(() => {})
+    mailingLists.refetch().catch(() => {})
     addMember.reset()
   }
 })
-
-const addMember = createResource({
-  url: 'suite.mail.api.admin.add_member',
-  makeParams: () => {
-    const [primary, ...rest] = emails.value
-    const aliases = rest
-      .filter((e) => e.username && e.domain)
-      .map((e) => `${e.username}@${e.domain}`)
-
-    return {
-      ...accountRequest,
-      username: primary?.username || '',
-      domain: primary?.domain || '',
-      aliases,
-      groups: groupIds.value,
-      mailing_lists: mailingListIds.value,
-      expires_at: fromLocalInput(accountRequest.expires_at),
-      quota_gb: accountRequest.quota_gb === '' ? null : Number(accountRequest.quota_gb),
-      // Blank means "server default" for both, which the API spells as null.
-      locale: accountRequest.locale || null,
-      time_zone: accountRequest.time_zone || null,
-      is_admin: accountRequest.role === 'admin',
-    }
-  },
-  onSuccess: () => {
-    raiseToast(accountRequest.send_invite ? __('Invitation sent.') : __('Account added.'))
-    emit('reload')
-    show.value = false
-  },
-})
+const addMember = useMutation(api.mail.admin.members.create)
+async function addMemberSubmit() {
+  const [primary, ...rest] = emails.value
+  const aliases = rest.filter((e) => e.username && e.domain).map((e) => `${e.username}@${e.domain}`)
+  const input: InputOf<typeof api.mail.admin.members.create> = {
+    ...accountRequest,
+    username: primary?.username || '',
+    domain: primary?.domain || '',
+    aliases,
+    groups: groupIds.value,
+    mailing_lists: mailingListIds.value,
+    expires_at: fromLocalInput(accountRequest.expires_at),
+    quota_gb: accountRequest.quota_gb === '' ? null : Number(accountRequest.quota_gb),
+    // Blank means "server default" for both, which the API spells as null.
+    locale: accountRequest.locale || null,
+    time_zone: accountRequest.time_zone || null,
+    is_admin: accountRequest.role === 'admin',
+  }
+  await addMember.run(input)
+  raiseToast(accountRequest.send_invite ? __('Invitation sent.') : __('Account added.'))
+  emit('reload')
+  show.value = false
+}
 </script>

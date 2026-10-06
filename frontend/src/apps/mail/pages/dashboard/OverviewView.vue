@@ -177,16 +177,17 @@ import UserPlus from '~icons/lucide/user-plus'
 import UserX from '~icons/lucide/user-x'
 import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
-import { Avatar, Badge, createResource, usePageMeta } from 'frappe-ui'
+import { Avatar, Badge, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
+import { api, useQuery } from '@/api'
 import { formatGb } from '@/apps/mail/utils'
 import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
+import DashboardCard from '@/components/dashboard/DashboardCard.vue'
+import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
 import { appPageMeta } from '@/utils/documentTitle'
 
 type CountWithDisabled = { total: number; disabled: number }
@@ -241,10 +242,7 @@ usePageMeta(() => appPageMeta(__('Overview'), 'Mail'))
 
 const router = useRouter()
 
-const overview = createResource({
-  url: 'suite.mail.api.admin.get_overview',
-  auto: true,
-})
+const overview = useQuery(api.mail.admin.overview.get, () => ({}))
 
 const data = computed(() => overview.data as OverviewData | undefined)
 const site = computed(() => data.value?.site || undefined)

@@ -1,12 +1,13 @@
 import { watchDebounced } from '@vueuse/core'
-import { createResource, toast } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
 import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, useMutation, type InputOf, type OutputOf } from '@/api'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
-import { processInlineImages, raiseToast } from '@/apps/mail/utils'
+import { processInlineImages, raiseError, raiseToast } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useUndo } from '@/apps/mail/utils/composables'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
@@ -20,11 +21,17 @@ import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 interface EditorHost {
   $el?: HTMLElement
   editor?: {
-    commands: { insertContent: (content: string) => void; focus: () => void }
-    state: { doc: { descendants: (fn: (node: any) => void) => void } }
+    commands: {
+      insertContent: (content: string) => void
+      focus: () => void
+    }
+    state: {
+      doc: {
+        descendants: (fn: (node: any) => void) => void
+      }
+    }
   }
 }
-
 interface ComposeMailOptions {
   /** A draft being resumed, or the reply/forward this composition starts from. */
   mailDetails?: ComposeMailData
@@ -82,7 +89,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // when it is needed most, and everything typed since the last tick would go with the component.
   let disposed = false
   onScopeDispose(() => (disposed = true))
-
   const router = useRouter()
   const route = useRoute()
 
@@ -92,23 +98,23 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const user = inject('$user') as UserResource
   const scope = injectAccountScope()
   const { accountId: scopeAccountId, identities, mailboxIds } = scope
-
   const getIdentity = (email: string) =>
     identities.value.data?.find((identity: Identity) => identity.email === email)
-
   const viewSentMessage = (threadID: string) =>
     router.push({
       name: 'mail-mail',
-      params: { accountId: scopeAccountId.value, mailbox: mailboxIds.value.sent, threadID },
+      params: {
+        accountId: scopeAccountId.value,
+        mailbox: mailboxIds.value.sent,
+        threadID,
+      },
     })
-
   const getDefaultFromEmail = () => {
     const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
     const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
     // Matched case-insensitively; the identity's own spelling is what goes out.
-    const identityMatching = (email?: string) =>
+    const identityMatching = (email?: string | null) =>
       identityEmails.find((e) => e.toLowerCase() === email?.toLowerCase())
-
     return (
       identityMatching(mailDetails?.from_email) ??
       identityMatching(defaultOutgoingEmail) ??
@@ -117,8 +123,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       user.data.name
     )
   }
-
-  const mail = reactive<ComposeMailData>({
+  const mail = reactive({
     name: mailDetails?.name || '',
     id: mailDetails?.id || '',
     from_email: getDefaultFromEmail(),
@@ -133,7 +138,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     in_reply_to_id: mailDetails?.in_reply_to_id || '',
     forwarded_from_id: mailDetails?.forwarded_from_id || '',
   })
-
   const originalMail = ref<ComposeMailData>()
   const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
   const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
@@ -149,16 +153,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
    */
   const moveRecipient = (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
     moveRecipientBetweenFields(mail, recipient.email, from, to)
-
   const isBodyEmpty = computed(() => {
     if (!mail.html_body) return true
-
     const element = document.createElement('div')
     element.innerHTML = mail.html_body
-
     return !element.textContent?.trim() && element.querySelector('img, video, svg') === null
   })
-
   const isMailEmpty = computed(
     () =>
       !mail.subject &&
@@ -167,7 +167,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       isRecipientsEmpty.value &&
       isBodyEmpty.value,
   )
-
   const openQuotedContent = () => {
     mail.html_body += `<br>${mail.quoted_content}`
     mail.quoted_content = ''
@@ -186,7 +185,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           '</div>'
       : ''
   }
-
   const bodyText = (html: string) => {
     const element = document.createElement('div')
     element.innerHTML = html || ''
@@ -220,7 +218,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       )
         mail.html_body = buildSignature(val) + prefilledBody
     },
-    { immediate: true },
+    {
+      immediate: true,
+    },
   )
 
   // ── Sending, saving, discarding ─────────────────────────────────────────────────────────────
@@ -250,23 +250,37 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     listOwesReload = false
     reloadMails()
   }
-
+  let pendingSave: Promise<void> | undefined
   const saveDraft = async () => {
     if (discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value) return
-
     isSavingDraft.value = true
-    if (mail.id) await updateDraft.submit({ submit: false })
-    else if (!isMailEmpty.value) await createMail.submit({ save_as_draft: true })
-    isSavingDraft.value = false
+    pendingSave = mail.id
+      ? updateDraftSubmit({
+          submit: false,
+        })
+      : !isMailEmpty.value
+        ? createMailSubmit({
+            save_as_draft: true,
+          })
+        : Promise.resolve()
+    try {
+      await pendingSave
+    } catch {
+      /* Keep the draft and its dirty state after refusal. */
+    } finally {
+      isSavingDraft.value = false
+      pendingSave = undefined
+    }
   }
-
   watchDebounced(
     mail,
     () => {
       if (disposed) return
       saveDraft()
     },
-    { debounce: 2000 },
+    {
+      debounce: 2000,
+    },
   )
 
   // The Undo toast lives for the period the server actually held delivery for (it echoes it back
@@ -284,41 +298,55 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // rather than whichever the scope has moved on to.
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
-
   const sendMail = async (sendAt?: string) => {
-    if (deleteMail.loading) return
-
-    if (options.isUploading?.())
-      return raiseToast(__('Please wait for attachments to finish uploading.'), 'error')
-
-    if (isRecipientsEmpty.value)
-      return raiseToast(__('Please add at least one recipient.'), 'error')
-
+    if (deleteMail.isPending) return
+    if (options.isUploading?.()) {
+      const message = __('Please wait for attachments to finish uploading.')
+      if (sendAt) throw new Error(message)
+      return raiseToast(message, 'error')
+    }
+    if (isRecipientsEmpty.value) {
+      const message = __('Please add at least one recipient.')
+      if (sendAt) throw new Error(message)
+      return raiseToast(message, 'error')
+    }
     sendMode.value = sendAt ? 'scheduled' : 'undo'
     isSavingDraft.value = false
-    close()
-    if (createMail.loading) await createMail.promise
-    if (updateDraft.loading) await updateDraft.promise
-
-    sentAs = scopeAccountId.value
-    if (mail.id) updateDraft.submit({ submit: true, send_at: sendAt, undo_send: !sendAt })
-    else createMail.submit({ save_as_draft: false, send_at: sendAt, undo_send: !sendAt })
+    try {
+      await pendingSave
+      sentAs = scopeAccountId.value
+      if (mail.id)
+        await updateDraftSubmit({
+          submit: true,
+          send_at: sendAt,
+          undo_send: !sendAt,
+        })
+      else
+        await createMailSubmit({
+          save_as_draft: false,
+          send_at: sendAt,
+          undo_send: !sendAt,
+        })
+      close()
+    } catch (error) {
+      if (sendAt) throw error /* Keep the composer open after refusal. */
+    }
   }
-
   const discardMail = async () => {
-    if (deleteMail.loading) return
-
-    discarded = true
+    if (deleteMail.isPending) return
     isDiscarding.value = true
-    // Before close(), and synchronously: the host has to learn the draft is going while it is
-    // still on screen. Told afterwards, it sees the composer close first and puts the draft
-    // back for as long as the delete takes.
-    options.onDiscardStarted?.()
-    close()
-    if (createMail.loading) await createMail.promise
-    if (updateDraft.loading) await updateDraft.promise
-    if (mail.id) deleteMail.submit()
-    else options.onDiscardUnsaved?.()
+    try {
+      await pendingSave
+      if (mail.id) await deleteMailSubmit()
+      else options.onDiscardUnsaved?.()
+      discarded = true
+      options.onDiscardStarted?.()
+      close()
+    } catch {
+      /* Keep the draft open after refusal. */
+    } finally {
+      isDiscarding.value = false
+    }
   }
 
   /** Reset the in-flight flags once the composer is off screen. */
@@ -330,28 +358,25 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // Schedule send (FUTURERELEASE)
 
   const showScheduleModal = ref(false)
-
   const openScheduleModal = () => {
     if (isRecipientsEmpty.value)
       return raiseToast(__('Please add at least one recipient.'), 'error')
-
     showScheduleModal.value = true
   }
-
   const scheduleSend = (sendAt: string) => sendMail(sendAt)
 
   // Undo send: Send actually scheduled delivery a few seconds out (a server-side hold), so undoing
   // is just cancelling that submission — the message lands back in Drafts.
-  const undoSend = createResource({
-    url: 'suite.mail.api.scheduled.cancel_scheduled_mail',
-    makeParams: ({ account, id }: { account: string; id: string }) => ({ account, id }),
-    onSuccess: () => {
-      reloadMails()
-      raiseToast(__('Sending undone. The message is back in your drafts.'))
-    },
-    onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-  })
-
+  const undoSend = useMutation(api.mail.scheduled.cancel)
+  async function undoSendSubmit({ account, id }: { account: string; id: string }) {
+    const input: InputOf<typeof api.mail.scheduled.cancel> = {
+      account,
+      id,
+    }
+    await undoSend.run(input)
+    reloadMails()
+    raiseToast(__('Sending undone. The message is back in your drafts.'))
+  }
   const { setUndoAction, retireUndoAction } = useUndo()
 
   // The sent toast, with Undo on it for as long as the server holds delivery. The same undo goes in
@@ -372,9 +397,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     const undoSendNow = () => {
       toast.dismiss(sentToast)
       retireUndoAction(undoSendNow)
-      undoSend.submit({ account, id: submissionId })
+      void undoSendSubmit({
+        account,
+        id: submissionId,
+      }).catch(() => {})
     }
-    setUndoAction(undoSendNow, { outlivesView: true })
+    setUndoAction(undoSendNow, {
+      outlivesView: true,
+    })
     setTimeout(() => retireUndoAction(undoSendNow), windowMs)
 
     // Two buttons, and they are not equals: Undo expires with the toast, so it takes the urgent
@@ -383,14 +413,19 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     const sentToast = raiseToast(
       __('Message sent.'),
       'success',
-      { label: __('Undo'), onClick: undoSendNow },
+      {
+        label: __('Undo'),
+        onClick: undoSendNow,
+      },
       windowMs,
       threadId && route.params.threadID !== threadId
-        ? { label: __('View'), onClick: () => viewSentMessage(threadId) }
+        ? {
+            label: __('View'),
+            onClick: () => viewSentMessage(threadId),
+          }
         : undefined,
     )
   }
-
   const onMailUpdateSuccess = ({
     id,
     status,
@@ -399,24 +434,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     submission_id,
     send_at,
     undo_send_period,
-  }: {
-    name: string
-    id: string
-    status: string
-    error: string
-    thread_id?: string
-    /** The held delivery's EmailSubmission id — what Undo cancels. */
-    submission_id?: string
-    /** Set when the server is holding delivery (undo window or scheduled send). */
-    send_at?: string
-    /** Seconds the server held an undo-send for, before its grace; null for a scheduled send. */
-    undo_send_period?: number | null
-  }) => {
+  }: OutputOf<typeof api.mail.messages.create>) => {
     if (id) mail.id = id
     updateOriginalMail()
-    if (error) return raiseToast(error, 'error')
+    if (error) {
+      const failure = new Error(error)
+      raiseError(failure)
+      throw failure
+    }
     if (isDiscarding.value) return
-
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
     // list is holding, not from a fetch of its own. So a draft saved in here goes to the server
@@ -427,19 +453,24 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // rebuilds the thread around the reader every couple of seconds, mid-sentence. It is settled
     // when the editor goes — see `payListDebt`.
     else if (status === 'Drafted') listOwesReload = true
-
-    if (isOpen()) return
-
+    if (isOpen() && status !== 'Submitted') return
     if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
     else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
-      offerUndoSend(sentAs, submission_id, undoSendWindowMs(undo_send_period), thread_id)
+      offerUndoSend(
+        sentAs,
+        submission_id,
+        undoSendWindowMs(undo_send_period),
+        thread_id ?? undefined,
+      )
     else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
       raiseToast(__('Send scheduled.'), 'success', {
         label: __('View'),
         onClick: () =>
           router.push({
             name: 'mail-outbox',
-            params: { accountId: scopeAccountId.value },
+            params: {
+              accountId: scopeAccountId.value,
+            },
           }),
       })
     else if (status === 'Submitted')
@@ -448,70 +479,89 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         'success',
         // No View action when the sent mail's thread is already open in front of the user.
         thread_id && route.params.threadID !== thread_id
-          ? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
+          ? {
+              label: __('View'),
+              onClick: () => viewSentMessage(thread_id),
+            }
           : undefined,
       )
   }
 
   // ── Resources ───────────────────────────────────────────────────────────────────────────────
 
-  const createMail = createResource({
-    url: 'suite.mail.api.mail.create_mail',
-    makeParams: ({
+  const createMail = useMutation(api.mail.messages.create)
+  async function createMailSubmit({
+    save_as_draft,
+    send_at,
+    undo_send,
+  }: {
+    save_as_draft: boolean
+    send_at?: string
+    undo_send?: boolean
+  }) {
+    const input: InputOf<typeof api.mail.messages.create> = {
+      account: scopeAccountId.value,
+      from_email: mail.from_email,
+      to: mail.to,
+      cc: mail.cc,
+      bcc: mail.bcc,
+      subject: mail.subject,
+      in_reply_to: mail.in_reply_to,
+      in_reply_to_id: mail.in_reply_to_id,
+      forwarded_from_id: mail.forwarded_from_id,
+      ...processInlineImages(mail, {
+        sending: !save_as_draft,
+      }),
+      from_name: getIdentity(mail.from_email)?._name ?? '',
       save_as_draft,
       send_at,
       undo_send,
-    }: {
-      save_as_draft: boolean
-      send_at?: string
-      undo_send?: boolean
-    }) => ({
+    }
+    const result = await createMail.run(input)
+    await onMailUpdateSuccess(result)
+  }
+  const updateDraft = useMutation(api.mail.messages.updateDraft)
+  async function updateDraftSubmit({
+    submit,
+    send_at,
+    undo_send,
+  }: {
+    submit: boolean
+    send_at?: string
+    undo_send?: boolean
+  }) {
+    const input: InputOf<typeof api.mail.messages.updateDraft> = {
       account: scopeAccountId.value,
-      ...mail,
-      ...processInlineImages(mail, { sending: !save_as_draft }),
-      from_name: getIdentity(mail.from_email!)._name,
-      save_as_draft,
-      send_at,
-      undo_send,
-    }),
-    onSuccess: onMailUpdateSuccess,
-    onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-  })
-
-  const updateDraft = createResource({
-    url: 'suite.mail.api.mail.update_draft_mail',
-    makeParams: ({
+      id: mail.id,
+      from_email: mail.from_email,
+      to: mail.to,
+      cc: mail.cc,
+      bcc: mail.bcc,
+      subject: mail.subject,
+      ...processInlineImages(mail, {
+        sending: submit,
+      }),
+      from_name: getIdentity(mail.from_email)?._name ?? '',
       submit,
       send_at,
       undo_send,
-    }: {
-      submit: boolean
-      send_at?: string
-      undo_send?: boolean
-    }) => ({
+    }
+    const result = await updateDraft.run(input)
+    await onMailUpdateSuccess(result)
+  }
+  const deleteMail = useMutation(api.mail.messages.deleteDraft)
+  async function deleteMailSubmit() {
+    const input: InputOf<typeof api.mail.messages.deleteDraft> = {
       account: scopeAccountId.value,
-      ...mail,
-      ...processInlineImages(mail, { sending: submit }),
-      from_name: getIdentity(mail.from_email!)._name,
-      submit,
-      send_at,
-      undo_send,
-    }),
-    onSuccess: onMailUpdateSuccess,
-    onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-  })
-
-  const deleteMail = createResource({
-    url: 'suite.mail.api.mail.delete_mail',
-    makeParams: () => ({ account: scopeAccountId.value, id: mail.id }),
-    onSuccess: () => {
-      reloadMails()
-      raiseToast(__('Draft discarded.'))
-    },
-    onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-  })
-
-  const isLoading = computed(() => createMail.loading || updateDraft.loading || deleteMail.loading)
+      id: mail.id,
+    }
+    await deleteMail.run(input)
+    reloadMails()
+    raiseToast(__('Draft discarded.'))
+  }
+  const isLoading = computed(
+    () => createMail.isPending || updateDraft.isPending || deleteMail.isPending,
+  )
 
   // ── Attachments ─────────────────────────────────────────────────────────────────────────────
 
@@ -524,7 +574,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // hit the same block, so just say so.
     const tab = window.open('', '_blank')
     if (!tab) return raiseToast(__('Allow popups to open attachments.'), 'error')
-
     try {
       tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
     } catch {
@@ -542,33 +591,30 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // out again, while someone typed into To by hand and then mentioned stays put — the mention
   // didn't put them there and doesn't get to remove them.
   const mentionedRecipients = new Set<string>()
-
   const addMentionedRecipient = ({ email, display_name, image }: MentionCandidate) => {
     if ([...mail.to, ...mail.cc, ...mail.bcc].some((r) => r.email === email)) return
-
-    mail.to.push({ email, display_name, image })
+    mail.to.push({
+      email,
+      display_name,
+      image,
+    })
     mentionedRecipients.add(email)
   }
-
   const dropUnmentionedRecipients = () => {
     const editor = host()?.editor
     if (!editor || !mentionedRecipients.size) return
-
     const mentioned = new Set<string>()
     editor.state.doc.descendants((node) => {
       if (node.type.name === 'mention' && node.attrs.id) mentioned.add(node.attrs.id)
     })
-
     for (const email of mentionedRecipients) {
       // Still named somewhere in the body — mentioning someone twice and deleting one of the
       // two keeps them addressed.
       if (mentioned.has(email)) continue
-
       mail.to = mail.to.filter((recipient) => recipient.email !== email)
       mentionedRecipients.delete(email)
     }
   }
-
   const mentionExtensions = [
     // The inline node. Its own `@` suggester stays inert with no item source of its own — the
     // search below is the one wired up.
@@ -579,7 +625,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       container: () => options.mentionContainer?.() ?? null,
     }),
   ]
-
   const appendEmoji = (emoji: string) => {
     const editor = host()?.editor
     editor?.commands.insertContent(emoji)
@@ -592,7 +637,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     mail.html_body = value.replaceAll('<div></div>', '<div><br></div>')
     dropUnmentionedRecipients()
   }
-
   return {
     mail,
     scope,

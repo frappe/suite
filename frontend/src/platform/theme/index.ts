@@ -1,7 +1,6 @@
 import { computed, readonly, ref, type Ref } from 'vue'
 
 import { useSession, type Session } from '@/platform/session'
-import { transport, type Operation, type Transport } from '@/platform/transport'
 
 export type ThemeMode = 'light' | 'dark' | 'automatic'
 export type ResolvedTheme = 'light' | 'dark'
@@ -15,30 +14,20 @@ export interface Theme {
   withOverride(mode: ResolvedTheme): () => void
 }
 
+export interface ThemePreferences {
+  read(): Promise<{ desk_theme?: string | null }>
+  save(theme: 'Light' | 'Dark' | 'Automatic'): Promise<unknown>
+}
 export interface CreateThemeOptions {
-  transport?: Transport
+  preferences?: ThemePreferences
   session?: Session
 }
-
-const getThemeOperation: Operation<
-  { doctype: 'User'; fieldname: 'desk_theme'; filters: string },
-  { desk_theme?: string }
-> = {
-  id: 'frappe.user.get_theme',
-  owner: 'suite',
-  method: 'POST',
-  path: '/api/v2/method/frappe.client.get_value',
-}
-
-const setThemeOperation: Operation<{ theme: string }, unknown> = {
-  id: 'frappe.user.switch_theme',
-  owner: 'suite',
-  method: 'POST',
-  path: '/api/v2/method/frappe.core.doctype.user.user.switch_theme',
+let preferences: ThemePreferences | undefined
+export function registerThemePreferences(client: ThemePreferences): void {
+  preferences = client
 }
 
 export function createTheme(options: CreateThemeOptions = {}): Theme {
-  const client = options.transport ?? transport
   const session = options.session ?? useSession()
   const media =
     typeof window === 'undefined' || typeof window.matchMedia !== 'function'
@@ -65,11 +54,7 @@ export function createTheme(options: CreateThemeOptions = {}): Theme {
     initialized = (async () => {
       if (session.user.value) {
         try {
-          const response = await client.request(getThemeOperation, {
-            doctype: 'User',
-            fieldname: 'desk_theme',
-            filters: session.user.value.id,
-          })
+          const response = await (options.preferences ?? preferences)?.read()
           savedMode.value = normalizeTheme(response?.desk_theme)
         } catch {
           // Keep the server-rendered mode when the preference endpoint is unavailable.
@@ -89,7 +74,9 @@ export function createTheme(options: CreateThemeOptions = {}): Theme {
 
     saveQueue = saveQueue.then(async () => {
       try {
-        await client.request(setThemeOperation, { theme: capitalize(next) })
+        const client = options.preferences ?? preferences
+        if (!client) throw new Error('Theme preferences are not registered')
+        await client.save(next === 'dark' ? 'Dark' : next === 'automatic' ? 'Automatic' : 'Light')
         return true
       } catch {
         if (savedMode.value === next) {
@@ -196,8 +183,4 @@ function applyDocumentTheme(saved: ThemeMode, resolved: ResolvedTheme): void {
   root.setAttribute('data-theme-mode', saved)
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
   if (themeColor) themeColor.content = resolved === 'dark' ? '#171717' : '#ffffff'
-}
-
-function capitalize(value: string): string {
-  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`
 }

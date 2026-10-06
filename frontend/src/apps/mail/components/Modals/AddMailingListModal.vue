@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add Mailing List'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !(name && domain),
-          loading: addList.loading,
-          onClick: addList.submit,
+          loading: addList.isPending,
+          onClick: addListSubmit,
         },
       ],
     }"
@@ -49,10 +49,11 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 
@@ -86,20 +87,22 @@ watch(show, () => {
   }
 })
 
-const addList = createResource({
-  url: 'suite.mail.api.admin.add_mailing_list',
-  makeParams: () => ({
+const addList = useMutation(api.mail.admin.mailingLists.create)
+async function addListSubmit() {
+  const input: InputOf<typeof api.mail.admin.mailingLists.create> = {
     name: name.value,
     domain: domain.value,
     description: description.value?.trim() || undefined,
     recipients: toLines(recipients.value),
-  }),
-  onSuccess: (data: string) => {
-    if (!data) return
-    show.value = false
-    emit('reload')
-    raiseToast(__('Mailing list added.'))
-    router.push({ name: 'mail-mailing-list', params: { listId: data } })
-  },
-})
+  }
+
+  const result = await addList.run(input)
+  const data = result
+
+  if (!data) return
+  show.value = false
+  emit('reload')
+  raiseToast(__('Mailing list added.'))
+  router.push({ name: 'mail-mailing-list', params: { listId: data } })
+}
 </script>

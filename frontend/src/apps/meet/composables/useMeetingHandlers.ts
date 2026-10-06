@@ -2,8 +2,9 @@ import { toast } from 'frappe-ui'
 import type { Ref } from 'vue'
 import type { Router } from 'vue-router'
 
+import { api, client } from '@/api'
+
 import { isUnknownRecord, normalizeJoinPayload, type JoinPayload } from '../types'
-import { submit, type Call } from '../utils/request'
 import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
 import type { ChatStore } from './useChatStore'
 import {
@@ -32,12 +33,6 @@ interface MediaControlsActions {
   switchInputDevice: (type: 'camera' | 'microphone' | 'speaker', deviceId: string) => Promise<void>
 }
 
-interface MeetingDocLike {
-  banGuest: Call<unknown, { guest_id: string }>
-  promoteToCohost: Call<unknown, { user_id: string }>
-  reload: () => Promise<unknown>
-}
-
 interface SFUConnectionActions {
   sfuManager: Ref<SFUMeetingManager | null>
   joinMeetingRoom: (options?: { switchHere?: boolean }) => Promise<void>
@@ -58,7 +53,7 @@ interface MeetingHandlersDeps {
   sfuConnection: SFUConnectionActions
   mediaControls: MediaControlsActions
   lobby: LobbyActions
-  meetingDoc: MeetingDocLike
+  refreshMeeting: () => Promise<unknown>
   meetingId: string
   isCurrentUserHost: Ref<boolean>
   isPeopleOpen: Ref<boolean>
@@ -171,7 +166,11 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
         return
       }
       if (shouldBan) {
-        await submit(deps.meetingDoc.banGuest, { guest_id: participantId })
+        await client.mutation(
+          api.meet.rooms.banGuest,
+          { name: deps.meetingId, guest_id: participantId },
+          { silent: true },
+        )
         backendBanRecorded = true
       }
 
@@ -199,13 +198,15 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 
   const handlePromoteToCohost = async (participantId: string) => {
     try {
-      const response = await submit(deps.meetingDoc.promoteToCohost, {
-        user_id: participantId,
-      })
+      const response = await client.mutation(
+        api.meet.rooms.promote,
+        { name: deps.meetingId, user_id: participantId },
+        { silent: true },
+      )
 
-      if (isUnknownRecord(response) && typeof response.meeting_id === 'string') {
+      if (response.meeting_id) {
         toast.success('User promoted to co-host')
-        await deps.meetingDoc.reload()
+        await deps.refreshMeeting()
       }
     } catch (error) {
       console.error('Failed to promote participant:', error)

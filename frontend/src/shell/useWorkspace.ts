@@ -1,5 +1,6 @@
-import { createResource } from 'frappe-ui'
 import { ref } from 'vue'
+
+import { api, client } from '@/api'
 
 interface WorkspaceInfo {
   workspace_name: string
@@ -23,7 +24,12 @@ function ensureWorkspaceLoaded() {
   // Prod seeds the refs from boot globals; only dev fetches.
   if (hasServerBoot || devFetchStarted) return
   devFetchStarted = true
-  createResource({ url: 'suite.api.account.get_workspace', auto: true, onSuccess: setWorkspace })
+  void client
+    .query(api.suite.site.get)
+    .then(setWorkspace)
+    .catch(() => {
+      devFetchStarted = false
+    })
 }
 
 export function useWorkspace() {

@@ -1,15 +1,16 @@
-import { createResource } from 'frappe-ui'
 import { effectScope, ref, watch } from 'vue'
 
+import { api, useQuery, type OutputOf } from '@/api'
 import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { userStore } from '@/apps/mail/stores/user'
+import type { QueryState } from '@/platform/server-state'
 
 // Module singletons: the sidebar widget renders the list while DefaultLayout
 // hosts the detail card, so both need the same resource and selection.
 const selectedEvent = ref<any>(null)
-let events: any = null
+let events: QueryState<OutputOf<typeof api.calendar.events.window>> | undefined
 
 /**
  * What the card hangs on, and which side of it: the row in the sidebar's
@@ -51,25 +52,22 @@ export function useUpcomingEvents() {
     effectScope(true).run(() => {
       const store = userStore()
 
-      events = createResource({
-        url: 'suite.calendar.api.get_calendar_events',
-        makeParams: () => ({
-          account: store.accountId,
-          from_date: dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-          to_date: dayjs().endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-          time_zone: timezone(),
-        }),
-      })
-
-      // The layout's setup can run before the user resource has resolved an
-      // account, so fetch on accountId becoming available, not on creation.
+      const query = useQuery(api.calendar.events.window, () =>
+        store.accountId
+          ? {
+              account: store.accountId,
+              from_date: dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
+              to_date: dayjs().endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
+              time_zone: timezone(),
+            }
+          : false,
+      )
+      events = query
       watch(
         () => store.accountId,
-        (id) => {
+        () => {
           selectedEvent.value = null
-          if (id) events.reload()
         },
-        { immediate: true },
       )
 
       // The detail card reads RSVP identity from the calendar app's user
@@ -82,11 +80,11 @@ export function useUpcomingEvents() {
       // CalendarView): swap in the fresh copy of the selected event, or close
       // it if the event no longer exists.
       watch(
-        () => events.data,
+        () => query.data,
         (data) => {
           if (!selectedEvent.value?._tracked || !data) return
           const fresh = data.find(
-            (e: any) =>
+            (e) =>
               e.id === selectedEvent.value.id &&
               e.recurrence_id === selectedEvent.value.recurrence_id,
           )
@@ -96,6 +94,7 @@ export function useUpcomingEvents() {
     })
   }
 
+  if (!events) throw new Error('Upcoming events query did not initialize')
   return { events, selectedEvent, openEvent, cardAnchor }
 }
 

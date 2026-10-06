@@ -25,22 +25,17 @@
             />
           </div>
           <ListView
-            v-if="calendarExchanges.data"
+            v-if="rows"
             :columns="listColumns"
-            :rows="calendarExchanges.data"
+            :rows="rows"
             :options="LIST_OPTIONS"
             row-key="name"
             class="flex-1"
           >
             <ListHeader />
             <ListRows>
-              <template v-if="calendarExchanges.data.length">
-                <ListRow
-                  v-for="row in calendarExchanges.data"
-                  :key="row.name"
-                  v-slot="{ item, column }"
-                  :row="row"
-                >
+              <template v-if="rows.length">
+                <ListRow v-for="row in rows" :key="row.name" v-slot="{ item, column }" :row="row">
                   <ListRowItem :item="item">
                     <Badge v-if="column.key == 'status'" :theme="getTheme(item)" :label="item" />
                   </ListRowItem>
@@ -49,7 +44,10 @@
               <ListEmptyState v-else />
             </ListRows>
           </ListView>
-          <ErrorMessage v-if="calendarExchanges.error" :message="calendarExchanges.error" />
+          <ErrorMessage
+            v-if="calendarExchanges.error"
+            :message="calendarExchanges.error?.message"
+          />
         </div>
       </template>
     </Tabs>
@@ -57,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Breadcrumbs, ErrorMessage, FormControl, Tabs, useList } from 'frappe-ui'
+import { Badge, Breadcrumbs, ErrorMessage, FormControl, Tabs } from 'frappe-ui'
 import {
   ListEmptyState,
   ListHeader,
@@ -67,17 +65,17 @@ import {
   ListView,
 } from 'frappe-ui/experimental'
 import { CalendarPlus, CalendarRange } from 'lucide-vue-next'
-import { computed, inject, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import { api, useInfiniteQuery } from '@/api'
 import { getTheme } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 
-const user = inject('$user')
 const route = useRoute()
 
 // The tab value is the operation itself, so it doubles as the query param.
-const operation = ref(route.query.operation === 'Export' ? 'Export' : 'Import')
+const operation = ref<'Import' | 'Export'>(route.query.operation === 'Export' ? 'Export' : 'Import')
 const isExport = computed(() => operation.value === 'Export')
 const status = ref(' ')
 
@@ -91,24 +89,19 @@ const STATUS_OPTIONS = [
   { label: __('Cancelled'), value: 'Cancelled' },
 ]
 
-const calendarExchanges = useList({
+const calendarExchanges = useInfiniteQuery(api.mail.exchanges.list, () => ({
   doctype: 'Calendar Exchange',
-  fields: ['name', 'status', 'import_format', 'export_format', 'export_archive_type', 'started_at'],
-  filters: () => {
-    const filters: Record<string, string> = {
-      user: user.data.name,
-      operation: operation.value,
-    }
-    if (status.value !== ' ') filters.status = status.value
-    return filters
-  },
-  orderBy: 'creation desc',
-  transform: (data) =>
-    data.map((row) => ({
-      ...row,
-      started_at: row.started_at ? formatSystemDateTime(row.started_at, 'MMM D, YYYY h:mm A') : '-',
-    })),
-})
+  operation: operation.value,
+  status: status.value === ' ' ? undefined : status.value,
+  start: 0,
+  page_length: 100,
+}))
+const rows = computed(() =>
+  calendarExchanges.rows.map((row) => ({
+    ...row,
+    started_at: row.started_at ? formatSystemDateTime(row.started_at, 'MMM D, YYYY h:mm A') : '-',
+  })),
+)
 
 const listColumns = computed(() => {
   const columns = [
