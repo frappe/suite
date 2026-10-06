@@ -96,9 +96,6 @@ const threads = ref<CommentThread[]>([])
 const versions = ref<VersionRow[]>([])
 const previewing = ref<VersionRow | null>(null)
 const sidePanel = computed(() => showComments.value || showVersions.value)
-const editorFrame = ref<HTMLElement | null>(null)
-/** Width of the live editor's table of contents when the preview opened. */
-const rail = ref(0)
 const versionsCursor = ref<string | null>(null)
 const loadingMoreVersions = ref(false)
 const panelLoading = ref(false)
@@ -187,6 +184,18 @@ const fakeFileResource = computed(() => ({
   },
 }))
 const peers = computed(() => editorSurface.value?.peers ?? [])
+/** The editor that shows this document, with the props only it takes. */
+const editorView = computed(() => {
+  if (collabLive.value && room.value)
+    return { is: CollabTextEditor, props: { room: room.value, file: fakeFileResource.value } }
+  const dirtyModel = {
+    dirty: dirty.value,
+    'onUpdate:dirty': (value: boolean) => (dirty.value = value),
+  }
+  if (documentResource.doc?.collab === 0)
+    return { is: NonCollabEditor, props: { ...dirtyModel, file: fakeFileResource.value.doc } }
+  return { is: TextEditor, props: { ...dirtyModel, file: fakeFileResource.value } }
+})
 
 provide('file', fakeFileResource)
 provide(
@@ -235,14 +244,6 @@ async function loadPanel(kind: DocumentPanel) {
 
 function versionLabel(version: VersionRow) {
   return version.label || `Version ${version.seq}`
-}
-
-function openPreview(version: VersionRow) {
-  const scroll = editorFrame.value?.querySelector('#editor-scroll-container')
-  if (!previewing.value && scroll)
-    rail.value =
-      scroll.getBoundingClientRect().left - editorFrame.value!.getBoundingClientRect().left
-  previewing.value = version
 }
 
 async function closePreview() {
@@ -419,43 +420,30 @@ onBeforeUnmount(() => {
         />
       </div>
       <template v-else>
-        <VersionPreview
-          v-if="previewing"
-          :session="session"
-          :seq="previewing.seq"
-          :label="versionLabel(previewing)"
-          :settings="settings"
-          :rail="rail"
-          @close="closePreview"
-        />
-        <div v-show="!previewing" ref="editorFrame" class="flex min-h-0 flex-1 overflow-hidden">
-          <CollabTextEditor
-            v-if="collabLive && room"
+        <div class="flex min-h-0 flex-1 overflow-hidden">
+          <component
+            :is="editorView.is"
             ref="editorSurface"
-            :room="room"
-            :file="fakeFileResource"
+            v-bind="editorView.props"
             :document="documentResource"
             :settings="settings"
             :editable="editable"
-          />
-          <NonCollabEditor
-            v-else-if="documentResource.doc.collab === 0"
-            ref="editorSurface"
-            v-model:dirty="dirty"
-            :file="fakeFileResource.doc"
-            :document="documentResource"
-            :settings="settings"
-            :editable="editable"
-          />
-          <TextEditor
-            v-else
-            ref="editorSurface"
-            v-model:dirty="dirty"
-            :file="fakeFileResource"
-            :document="documentResource"
-            :settings="settings"
-            :editable="editable"
-          />
+          >
+            <template v-if="previewing" #toolbar>
+              <div
+                class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-gray-1 px-5 py-1.5"
+                role="status"
+              >
+                <p class="truncate text-sm text-ink-gray-7">
+                  Viewing {{ versionLabel(previewing) }}
+                </p>
+                <Button size="sm" variant="outline" label="Back to current" @click="closePreview" />
+              </div>
+            </template>
+            <template v-if="previewing" #cover>
+              <VersionPreview :session="session" :seq="previewing.seq" :settings="settings" />
+            </template>
+          </component>
         </div>
       </template>
 
@@ -541,7 +529,7 @@ onBeforeUnmount(() => {
                   : 'bg-surface-gray-1 hover:bg-surface-gray-2'
               "
               :aria-pressed="previewing?.seq === version.seq"
-              @click="openPreview(version)"
+              @click="previewing = version"
             >
               <p class="text-sm-medium text-ink-gray-8">{{ versionLabel(version) }}</p>
               <p class="text-p-xs text-ink-gray-5">

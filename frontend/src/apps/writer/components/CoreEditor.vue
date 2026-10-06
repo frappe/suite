@@ -1,14 +1,17 @@
 <template>
   <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
-    <TextEditorFixedMenu
-      v-if="editable"
-      class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
-      :editor="editor"
-      :items="menuButtons"
-    />
+    <slot name="toolbar">
+      <TextEditorFixedMenu
+        v-if="editable"
+        class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
+        :editor="editor"
+        :items="menuButtons"
+      />
+    </slot>
     <div class="relative flex flex-1 overflow-hidden">
-      <ToC v-if="editor" :editor :anchors />
+      <ToC v-if="editor" :editor :anchors :class="$slots.cover && 'invisible'" />
       <div
+        v-show="!$slots.cover"
         id="editor-scroll-container"
         class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
       >
@@ -60,9 +63,10 @@
           </div>
         </div>
       </div>
+      <slot name="cover" />
       <div v-if="sidePanel" class="hidden md:block w-80 shrink-0" />
       <div
-        v-if="commentsPainted && comments._map.size"
+        v-if="commentsPainted && comments._map.size && !$slots.cover"
         class="hidden md:block absolute top-4"
         :class="sidePanel ? 'right-[21rem]' : 'right-4'"
       >
@@ -76,7 +80,7 @@
         </Dropdown>
       </div>
     </div>
-    <ToCMobile v-if="editor" :editor />
+    <ToCMobile v-if="editor && !$slots.cover" :editor />
   </div>
 </template>
 

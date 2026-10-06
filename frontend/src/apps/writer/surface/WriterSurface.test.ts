@@ -68,7 +68,17 @@ vi.mock('@/apps/writer/components/NonCollabEditor.vue', async () => {
   return {
     default: define({
       props: { editable: Boolean },
-      setup: (props) => () => render('div', { 'data-editor': '', 'data-editable': props.editable }),
+      setup:
+        (props, { slots }) =>
+        () => [
+          slots.toolbar?.(),
+          render('div', {
+            'data-editor': '',
+            'data-editable': props.editable,
+            style: slots.cover && { display: 'none' },
+          }),
+          slots.cover?.(),
+        ],
     }),
   }
 })
@@ -98,7 +108,7 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async () => {
   return {
     default: define({
       props: { room: Object },
-      setup(props, { expose }) {
+      setup(props, { expose, slots }) {
         const editor = shallowRef(
           new Editor({
             extensions: [
@@ -111,8 +121,13 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async () => {
         )
         expose({ editor })
         onBeforeUnmount(() => editor.value.destroy())
-        return () =>
-          render('div', { 'data-editor': '' }, [render(EditorContent, { editor: editor.value })])
+        return () => [
+          slots.toolbar?.(),
+          render('div', { 'data-editor': '', style: slots.cover && { display: 'none' } }, [
+            render(EditorContent, { editor: editor.value }),
+          ]),
+          slots.cover?.(),
+        ]
       },
     }),
   }
@@ -124,16 +139,8 @@ vi.mock('./VersionPreview.vue', async () => {
   const { defineComponent: define, h: render } = await import('vue')
   return {
     default: define({
-      props: { seq: Number, label: String },
-      emits: ['close'],
-      setup:
-        (props, { emit }) =>
-        () =>
-          render(
-            'button',
-            { 'data-preview': props.seq, onClick: () => emit('close') },
-            props.label,
-          ),
+      props: { seq: Number },
+      setup: (props) => () => render('div', { 'data-preview': props.seq }),
     }),
   }
 })
@@ -217,7 +224,7 @@ async function previewAndReturn(root: Element, during: () => void | Promise<void
   await nextTick()
   expect(root.querySelector('[data-preview]')).not.toBeNull()
   await during()
-  root.querySelector<HTMLElement>('[data-preview]')!.click()
+  buttonLabelled(root, 'Back to current')!.click()
   await nextTick()
 }
 
@@ -268,7 +275,7 @@ describe('Writer surface', () => {
     }))
     const root = await openedSurface({ list } as unknown as DocumentSession['versions'])
     const editorShown = () =>
-      (root.querySelector('[data-editor]')!.parentElement as HTMLElement).style.display !== 'none'
+      root.querySelector<HTMLElement>('[data-editor]')!.style.display !== 'none'
 
     root.querySelector<HTMLElement>('[data-open-versions]')!.click()
     await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
@@ -281,7 +288,7 @@ describe('Writer surface', () => {
     expect(preview.getAttribute('data-preview')).toBe('3')
     expect(editorShown()).toBe(false)
 
-    preview.click()
+    buttonLabelled(root, 'Back to current')!.click()
     await nextTick()
     expect(root.querySelector('[data-preview]')).toBeNull()
     expect(editorShown()).toBe(true)
