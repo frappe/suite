@@ -448,6 +448,34 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual(frappe.db.count("Error Log", {"method": logged}), 1)
         self.assertIsNotNone(self.doc_row(other).start_clocks)
 
+    def test_a_log_purged_while_its_unreadable_row_is_quarantined_is_skipped_and_the_rest_are_read(self):
+        purged, other = self.new_document(), self.new_document()
+        a = Tab(self, purged)
+        a.typed(0, "alpha")
+        self.store_raw(purged, a, b"\x01\x01garbage")
+        Tab(self, other).typed(0, "beta")
+        ids = (self.doc_row(purged).id, self.doc_row(other).id)
+        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
+        frappe.db.commit()
+        self.addCleanup(writer_collab.delete_purged, ids[0])
+        real = quarantine.quarantine
+
+        def purged_after(adapter, doc_id, *args):
+            moved = real(adapter, doc_id, *args)
+            frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+            return moved
+
+        with patch.object(quarantine, "quarantine", purged_after):
+            routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
+
+        clocks = dict(
+            frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_collab_doc` WHERE `id` IN %s", (ids,))
+        )
+        self.assertEqual((clocks[ids[0]], clocks[ids[1]] is not None), (None, True))
+        self.assertEqual(
+            frappe.db.count("Error Log", {"method": f"Collab clocks not read for writer log {ids[0]}"}), 0
+        )
+
     def test_a_log_purged_before_its_clocks_are_read_is_skipped_and_the_rest_are_read(self):
         purged, other = self.new_document(), self.new_document()
         Tab(self, purged).typed(0, "alpha")
