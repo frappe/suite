@@ -900,18 +900,22 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
     get_user_for_jmap_account(account, allow_system_manager=False, raise_exception=True)
 
     cached_messages = _get_cached_messages(account, ids)
+    classify = classification.is_enabled()
 
     messages = {}
     ids_to_fetch = []
     for id in ids:
-        if cached_message := cached_messages.get(id):
+        cached_message = cached_messages.get(id)
+        # A copy cached while classification was off - or before there was any - has never been
+        # through it, and would stay without a category for as long as it stayed cached. It is
+        # fetched again as if it were not held, the once: the copy that replaces it is marked.
+        if cached_message and (cached_message.get("classified") or not classify):
             messages[id] = cached_message
         else:
             ids_to_fetch.append(id)
 
     if ids_to_fetch:
         client = get_account_client(account)
-        classify = classification.is_enabled()
         properties = EMAIL_PROPERTIES + classification.EMAIL_PROPERTIES if classify else EMAIL_PROPERTIES
         emails = [
             e.to_wire()
@@ -923,8 +927,8 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
         ]
         mailboxes = get_cached_mailboxes(account)
 
-        # A message from the server is one the cache does not hold: new mail, or old mail seen
-        # here for the first time. Either may still be without a category.
+        # A message from the server is one the cache does not hold, or holds unclassified: new
+        # mail, or old mail seen here for the first time. Either may still be without a category.
         if classify:
             classification.classify_emails(client, account, emails, mailboxes)
 
@@ -933,6 +937,10 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
         messages_to_cache = {}
         for email in emails:
             message = format_message(account, mailbox_map, email)
+            if classify:
+                # Been through classification, whatever came of it: mail the user wrote gets no
+                # category and a write can be refused, and neither is a reason to fetch it again.
+                message["classified"] = 1
             messages_to_cache[message["id"]] = message
             messages[message["id"]] = message
 

@@ -392,6 +392,56 @@ class ClassifyOnFetch(unittest.TestCase):
         self.assertEqual(mail.server.requests, [])
         self.assertEqual(_keywords(message), {"category_promotions": True})
 
+    def test_mail_cached_while_the_setting_was_off_is_classified_once_it_is_on(self):
+        # Every site this ships to: its cache was filled before there was any classification.
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER), enabled=False)
+        mail.fetch()
+        mail.enabled = True
+
+        [message] = mail.fetch()
+
+        self.assertEqual(
+            [call["update"] for call in mail.calls("Email/set")],
+            [{"e1": {"keywords/category_promotions": True}}],
+        )
+        self.assertEqual(_keywords(message), {"category_promotions": True})
+        self.assertEqual(_keywords(mail.cache["e1"]), {"category_promotions": True})
+
+    def test_mail_cached_while_the_setting_was_off_is_fetched_again_only_once(self):
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER), enabled=False)
+        mail.fetch()
+        mail.enabled = True
+        mail.fetch()
+        mail.server.requests.clear()
+
+        mail.fetch()
+
+        self.assertEqual(mail.server.requests, [])
+
+    def test_cached_mail_that_gets_no_category_is_not_fetched_again_for_one(self):
+        # Mail the user wrote, and mail the server would not mark: fetching either again would
+        # change nothing, every time it was shown.
+        mail = _Mail(
+            _email("e1", sender="hello@shop.example", headers=NEWSLETTER, mailbox="sent"),
+            _email("e2", sender="hello@shop.example", headers=NEWSLETTER),
+        )
+        mail.refused = {"e2"}
+        mail.fetch()
+        mail.server.requests.clear()
+
+        mail.fetch()
+
+        self.assertEqual(mail.server.requests, [])
+
+    def test_cached_mail_is_served_from_the_cache_when_the_setting_is_off(self):
+        mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER), enabled=False)
+        mail.fetch()
+        mail.server.requests.clear()
+
+        mail.fetch()
+
+        self.assertEqual(mail.server.requests, [])
+
     def test_nothing_is_classified_when_the_setting_is_off(self):
         mail = _Mail(_email("e1", sender="hello@shop.example", headers=NEWSLETTER), enabled=False)
 
