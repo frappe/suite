@@ -1,10 +1,11 @@
 """Contracts for account settings and their named workflows."""
 
+from collections.abc import Callable
 from typing import Literal, NotRequired, TypedDict
 
 import frappe
 
-from suite.composition.http import Route
+from suite.composition.http import Route, RouteKind
 from suite.mail.api import account, mail, sieve
 from suite.mail.doctype.vacation_response import vacation_response
 from suite.mail.http.shapes import AccountInput, Flag
@@ -100,6 +101,37 @@ class UpdateVacation(AccountInput):
     html_body: NotRequired[str | None]
 
 
+_OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object], ...] = (
+    (account.get_mail_client_config, "query", "settings.clientConfig", None, list[MailClientConfig]),
+    (account.get_quota, "query", "settings.quota", AccountInput, Quota),
+    (account.set_signature, "mutation", "identities.setSignature", Signature, type(None)),
+    (mail.create_mailbox, "mutation", "mailboxes.create", CreateMailbox, str),
+    (mail.update_mailbox, "mutation", "mailboxes.update", UpdateMailbox, type(None)),
+    (mail.delete_mailbox, "mutation", "mailboxes.delete", DeleteMailbox, type(None)),
+    (mail.screen_email_address, "mutation", "screening.setAddress", ScreenAddress, type(None)),
+    (mail.move_screening_mails_to_inbox, "mutation", "screening.moveToInbox", AccountInput, type(None)),
+    (sieve.create_sieve_script, "mutation", "sieve.create", CreateScript, type(None)),
+    (sieve.update_sieve_script, "mutation", "sieve.update", UpdateScript, type(None)),
+    (sieve.delete_sieve_script, "mutation", "sieve.delete", DeleteScript, type(None)),
+    (sieve.create_automation_script, "mutation", "sieve.createAutomation", CreateAutomation, type(None)),
+    (
+        sieve.rebuild_automation_script_for_account,
+        "mutation",
+        "sieve.rebuildAutomation",
+        AccountInput,
+        type(None),
+    ),
+    (vacation_response.get_vacation_response, "query", "vacation.get", AccountInput, Vacation),
+    (
+        vacation_response.update_vacation_response,
+        "mutation",
+        "vacation.update",
+        UpdateVacation,
+        type(None),
+    ),
+)
+
+
 CONTRACT_ROUTES = tuple(
     Route(
         "POST",
@@ -113,33 +145,5 @@ CONTRACT_ROUTES = tuple(
         envelope="message",
         errors=(frappe.PermissionError, frappe.ValidationError),
     )
-    for handler, kind, public_name, body, output in (
-        (account.get_mail_client_config, "query", "settings.clientConfig", None, list[MailClientConfig]),
-        (account.get_quota, "query", "settings.quota", AccountInput, Quota),
-        (account.set_signature, "mutation", "identities.setSignature", Signature, type(None)),
-        (mail.create_mailbox, "mutation", "mailboxes.create", CreateMailbox, str),
-        (mail.update_mailbox, "mutation", "mailboxes.update", UpdateMailbox, type(None)),
-        (mail.delete_mailbox, "mutation", "mailboxes.delete", DeleteMailbox, type(None)),
-        (mail.screen_email_address, "mutation", "screening.setAddress", ScreenAddress, type(None)),
-        (mail.move_screening_mails_to_inbox, "mutation", "screening.moveToInbox", AccountInput, type(None)),
-        (sieve.create_sieve_script, "mutation", "sieve.create", CreateScript, type(None)),
-        (sieve.update_sieve_script, "mutation", "sieve.update", UpdateScript, type(None)),
-        (sieve.delete_sieve_script, "mutation", "sieve.delete", DeleteScript, type(None)),
-        (sieve.create_automation_script, "mutation", "sieve.createAutomation", CreateAutomation, type(None)),
-        (
-            sieve.rebuild_automation_script_for_account,
-            "mutation",
-            "sieve.rebuildAutomation",
-            AccountInput,
-            type(None),
-        ),
-        (vacation_response.get_vacation_response, "query", "vacation.get", AccountInput, Vacation),
-        (
-            vacation_response.update_vacation_response,
-            "mutation",
-            "vacation.update",
-            UpdateVacation,
-            type(None),
-        ),
-    )
+    for handler, kind, public_name, body, output in _OPERATIONS
 )

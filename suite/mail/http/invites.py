@@ -1,6 +1,6 @@
 """Editing and sending an existing invitation."""
 
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import frappe
 
@@ -37,10 +37,13 @@ class UpdateInvite(InviteName):
 def invite(name: str) -> Invite:
     doc = frappe.get_doc("Mail Account Request", name)
     doc.check_permission("read")
-    return {
-        **{field: doc.get(field) for field in Invite.__annotations__},
-        "expires_at": to_utc_z(doc.expires_at),
-    }
+    return cast(
+        Invite,
+        {
+            **{field: doc.get(field) for field in Invite.__annotations__},
+            "expires_at": to_utc_z(doc.expires_at),
+        },
+    )
 
 
 @frappe.whitelist(methods=["PATCH"])

@@ -1,10 +1,11 @@
 """Named contact and address book reads and edits."""
 
-from typing import NotRequired, TypedDict
+from collections.abc import Callable
+from typing import NotRequired, TypedDict, cast
 
 import frappe
 
-from suite.composition.http import Route
+from suite.composition.http import Route, RouteKind
 from suite.mail.api import contacts
 from suite.mail.doctype.address_book import address_book
 from suite.mail.doctype.contact_card import contact_card
@@ -90,7 +91,7 @@ class UpdateBook(CardInput):
 def contact(account: str, id: str) -> Contact:
     doc = frappe.get_doc("Contact Card", f"{account}|{id}")
     doc.check_permission("read")
-    return {field: doc.as_dict().get(field) for field in Contact.__annotations__}
+    return cast(Contact, {field: doc.as_dict().get(field) for field in Contact.__annotations__})
 
 
 @frappe.whitelist(methods=["PATCH"])
@@ -107,7 +108,7 @@ def update_contact(account: str, id: str, changes: CardChanges) -> None:
 def book(account: str, id: str) -> AddressBook:
     doc = frappe.get_doc("Address Book", f"{account}|{id}")
     doc.check_permission("read")
-    return {field: doc.get(field) for field in AddressBook.__annotations__}
+    return cast(AddressBook, {field: doc.get(field) for field in AddressBook.__annotations__})
 
 
 @frappe.whitelist(methods=["PATCH"])
@@ -158,6 +159,49 @@ ROUTES = (
         output=type(None),
     ),
 )
+_OPERATIONS: tuple[
+    tuple[Callable[..., object], RouteKind, str, object, object, dict[str, str] | None], ...
+] = (
+    (
+        contacts.get_contact_cards,
+        "query",
+        "contacts.list",
+        ContactPageInput,
+        ContactPage,
+        {"offset": "start", "rows": "rows", "total": "total"},
+    ),
+    (contacts.get_contacts, "query", "contacts.emails", ContactPageInput, list[RecipientContact], None),
+    (
+        contacts.get_address_book_contact_count,
+        "query",
+        "addressBooks.contactCount",
+        CountInput,
+        int,
+        None,
+    ),
+    (contact_card.add_contact_card, "mutation", "contacts.create", CreateCard, str, None),
+    (contact_card.delete_contact_cards, "mutation", "contacts.delete", CardIds, type(None), None),
+    (
+        contact_card.contact_card_add_to_address_book,
+        "mutation",
+        "contacts.addToBook",
+        Membership,
+        type(None),
+        None,
+    ),
+    (
+        contact_card.contact_card_remove_from_address_book,
+        "mutation",
+        "contacts.removeFromBook",
+        Membership,
+        type(None),
+        None,
+    ),
+    (address_book.add_address_book, "mutation", "addressBooks.create", CreateBook, str, None),
+    (address_book.delete_address_books, "mutation", "addressBooks.delete", CardIds, type(None), None),
+)
+
+
 CONTRACT_ROUTES = tuple(
     Route(
         "POST",
@@ -171,43 +215,5 @@ CONTRACT_ROUTES = tuple(
         page=page,
         errors=(frappe.PermissionError, frappe.ValidationError),
     )
-    for handler, kind, public_name, body, output, page in (
-        (
-            contacts.get_contact_cards,
-            "query",
-            "contacts.list",
-            ContactPageInput,
-            ContactPage,
-            {"offset": "start", "rows": "rows", "total": "total"},
-        ),
-        (contacts.get_contacts, "query", "contacts.emails", ContactPageInput, list[RecipientContact], None),
-        (
-            contacts.get_address_book_contact_count,
-            "query",
-            "addressBooks.contactCount",
-            CountInput,
-            int,
-            None,
-        ),
-        (contact_card.add_contact_card, "mutation", "contacts.create", CreateCard, str, None),
-        (contact_card.delete_contact_cards, "mutation", "contacts.delete", CardIds, type(None), None),
-        (
-            contact_card.contact_card_add_to_address_book,
-            "mutation",
-            "contacts.addToBook",
-            Membership,
-            type(None),
-            None,
-        ),
-        (
-            contact_card.contact_card_remove_from_address_book,
-            "mutation",
-            "contacts.removeFromBook",
-            Membership,
-            type(None),
-            None,
-        ),
-        (address_book.add_address_book, "mutation", "addressBooks.create", CreateBook, str, None),
-        (address_book.delete_address_books, "mutation", "addressBooks.delete", CardIds, type(None), None),
-    )
+    for handler, kind, public_name, body, output, page in _OPERATIONS
 )

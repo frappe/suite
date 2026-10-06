@@ -109,7 +109,7 @@ class RoomLinkResult(TypedDict):
     meeting_url: str
 
 
-ROUTES = (
+ROUTES: tuple[Route, ...] = (
     Route(
         "POST",
         "rooms",

@@ -168,11 +168,12 @@ class CalendarDelete(TypedDict):
 
 
 class EventCreate(EventFields):
-    # The existing method accepts case-insensitive wire values before parsing.
-    status: str = "Confirmed"
-    privacy: str | None = None
-    free_busy_status: str | None = None
-    alerts: list[dict] | None = None
+    # The existing method accepts case-insensitive wire values before parsing,
+    # so the contract widens these fields on purpose.
+    status: str = "Confirmed"  # type: ignore[assignment]
+    privacy: str | None = None  # type: ignore[assignment]
+    free_busy_status: str | None = None  # type: ignore[assignment]
+    alerts: list[dict] | None = None  # type: ignore[assignment]
     account: str
     send_scheduling_messages: bool = False
 
@@ -225,7 +226,7 @@ class DensityRow(TypedDict):
     is_declined: bool
 
 
-CONTRACT_ROUTES = (
+CONTRACT_ROUTES: tuple[Route, ...] = (
     Route(
         "POST",
         "/api/method/suite.calendar.api.get_calendar_events",

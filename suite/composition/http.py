@@ -16,6 +16,9 @@ ORIGINAL_PATH = "suite.original_path"
 _FIELD = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::(path))?\}")
 
 
+RouteKind = Literal["query", "mutation"]
+
+
 class BadRequest(frappe.ValidationError):
     http_status_code = 400
 
@@ -41,7 +44,7 @@ class Route:
     entity: dict[str, str] | None = None
     stream: bool = False
     response_bytes: bool = False
-    kind: Literal["query", "mutation"] | None = None
+    kind: RouteKind | None = None
     public_name: str | dict[str, str] | None = None
     page: dict[str, str] | None = None
     id: str | None = None

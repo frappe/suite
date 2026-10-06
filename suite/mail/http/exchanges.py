@@ -1,6 +1,6 @@
 """Named reads for the user's import and export jobs."""
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
 import frappe
 from frappe.client import get_value
@@ -105,7 +105,7 @@ FIELDS = tuple(Job.__annotations__)
 def exchange(doctype: ExchangeType, name: str) -> Job:
     doc = frappe.get_doc(doctype, name)
     doc.check_permission("read")
-    return {field: doc.get(field) for field in FIELDS}
+    return cast(Job, {field: doc.get(field) for field in FIELDS})
 
 
 @frappe.whitelist(methods=["GET"])

@@ -1,6 +1,6 @@
 """Self-service User preferences with normal document validation."""
 
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast
 
 import frappe
 from frappe import _
@@ -38,7 +38,7 @@ class Language(TypedDict):
 def get_preferences() -> Preferences:
     doc = frappe.get_doc("User", frappe.session.user)
     doc.check_permission("read")
-    return {field: doc.get(field) for field in Preferences.__annotations__}
+    return cast(Preferences, {field: doc.get(field) for field in Preferences.__annotations__})
 
 
 @frappe.whitelist(methods=["PATCH"])

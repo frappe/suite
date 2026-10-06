@@ -4,7 +4,7 @@ from typing import NotRequired, TypedDict
 
 import frappe
 
-from suite.composition.http import Route
+from suite.composition.http import Route, RouteKind
 from suite.mail.doctype.push_subscription.push_subscription import (
     add_push_subscription,
     fetch_push_subscriptions,
@@ -49,6 +49,42 @@ class Subscription(TypedDict):
     modified: str
 
 
+_OPERATIONS: tuple[tuple[str, str, RouteKind, str, object, object], ...] = (
+    (
+        "/api/method/suite.mail.doctype.push_subscription.push_subscription.fetch_push_subscriptions",
+        "fetch_push_subscriptions",
+        "query",
+        "push.list",
+        ListInput,
+        list[Subscription],
+    ),
+    (
+        "/api/method/suite.mail.doctype.push_subscription.push_subscription.add_push_subscription",
+        "add_push_subscription",
+        "mutation",
+        "push.create",
+        CreateInput,
+        str,
+    ),
+    (
+        "/api/method/suite.mail.doctype.push_subscription.push_subscription.renew_push_subscription",
+        "renew_push_subscription",
+        "mutation",
+        "push.renew",
+        RenewInput,
+        type(None),
+    ),
+    (
+        "/api/method/suite.mail.doctype.push_subscription.push_subscription.bulk_delete",
+        "delete_push_subscriptions",
+        "mutation",
+        "push.delete",
+        DeleteInput,
+        type(None),
+    ),
+)
+
+
 CONTRACT_ROUTES = tuple(
     Route(
         "POST",
@@ -61,38 +97,5 @@ CONTRACT_ROUTES = tuple(
         envelope="message",
         errors=(frappe.PermissionError, frappe.ValidationError),
     )
-    for path, handler, kind, public_name, body, output in (
-        (
-            "/api/method/suite.mail.doctype.push_subscription.push_subscription.fetch_push_subscriptions",
-            "fetch_push_subscriptions",
-            "query",
-            "push.list",
-            ListInput,
-            list[Subscription],
-        ),
-        (
-            "/api/method/suite.mail.doctype.push_subscription.push_subscription.add_push_subscription",
-            "add_push_subscription",
-            "mutation",
-            "push.create",
-            CreateInput,
-            str,
-        ),
-        (
-            "/api/method/suite.mail.doctype.push_subscription.push_subscription.renew_push_subscription",
-            "renew_push_subscription",
-            "mutation",
-            "push.renew",
-            RenewInput,
-            type(None),
-        ),
-        (
-            "/api/method/suite.mail.doctype.push_subscription.push_subscription.bulk_delete",
-            "delete_push_subscriptions",
-            "mutation",
-            "push.delete",
-            DeleteInput,
-            type(None),
-        ),
-    )
+    for path, handler, kind, public_name, body, output in _OPERATIONS
 )

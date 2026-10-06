@@ -1,6 +1,6 @@
 """Account preferences and credentials, with normal document validation."""
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
 import frappe
 
@@ -120,7 +120,7 @@ def _account(account: str):
 def account_preferences(account: str) -> AccountPreferences:
     doc = _account(account)
     doc.check_permission("read")
-    return {field: doc.get(field) for field in AccountPreferences.__annotations__}
+    return cast(AccountPreferences, {field: doc.get(field) for field in AccountPreferences.__annotations__})
 
 
 @frappe.whitelist(methods=["PATCH"])

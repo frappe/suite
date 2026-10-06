@@ -244,7 +244,7 @@ class InboxSummary(TypedDict):
     unread: int
 
 
-ROUTES = (
+ROUTES: tuple[Route, ...] = (
     Route(
         "GET",
         "inbox-summary",
@@ -266,7 +266,7 @@ def unknown() -> None:
     raise frappe.DoesNotExistError(_("That Mail address does not exist"))
 
 
-CONTRACT_ROUTES = (
+CONTRACT_ROUTES: tuple[Route, ...] = (
     Route(
         "POST",
         "/api/method/suite.mail.api.account.get_user_info",
