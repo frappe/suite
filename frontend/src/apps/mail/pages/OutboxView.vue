@@ -141,8 +141,8 @@ import {
   type SubmissionFilters,
 } from '@/apps/mail/utils/submission'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardListSkeleton } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Outbox'), 'Mail'))
 const store = userStore()

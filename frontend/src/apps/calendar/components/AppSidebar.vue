@@ -24,8 +24,7 @@ import {
   viewLabel,
   type MobileView,
 } from '@/apps/calendar/utils/mobileView'
-import { accountSubmenu } from '@/composables/accountSubmenu'
-import { AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
+import { accountSubmenu, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
 import { Dropdown } from '@/platform/feedback'
 
 const { events, selectedEvent, isMobile } = defineProps<{

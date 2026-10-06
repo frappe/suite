@@ -78,8 +78,8 @@ import EditDomainModal from '@/apps/mail/components/Modals/EditDomainModal.vue'
 import { downloadUrlAsFile, raiseError, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import { domainStatusBadge, type DomainStatus } from '@/apps/mail/utils/domainStatus'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 type DNSRecord = Record<string, string | number | boolean | null | undefined>
 type RecordGroup = {

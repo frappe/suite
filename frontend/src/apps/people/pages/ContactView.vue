@@ -189,10 +189,8 @@ import AddContactEmailModal from '@/apps/people/components/Modals/AddContactEmai
 import AddContactPhoneModal from '@/apps/people/components/Modals/AddContactPhoneModal.vue'
 import EditContactModal from '@/apps/people/components/Modals/EditContactModal.vue'
 import { raiseToast } from '@/apps/people/utils'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import InformationField from '@/components/dashboard/InformationField.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout, InformationField } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 const { accountId, contactName } = defineProps<{ accountId: string; contactName: string }>()
 

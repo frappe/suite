@@ -57,8 +57,8 @@ import AddContactModal from '@/apps/people/components/Modals/AddContactModal.vue
 import { contactRow } from '@/apps/people/contactRows'
 import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 const { accountId } = defineProps<{
   accountId: string

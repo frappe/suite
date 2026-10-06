@@ -144,10 +144,8 @@ import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
 import { DEFAULT_PERIOD, formatRate, PERIOD_OPTIONS, rateTheme } from '@/apps/mail/utils/reports'
 import { resultTypeLabel, type TlsFailureType, type TlsReportRow } from '@/apps/mail/utils/tls'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('TLS Reports'), 'Mail'))
 const search = ref('')

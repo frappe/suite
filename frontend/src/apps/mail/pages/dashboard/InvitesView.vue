@@ -105,7 +105,7 @@ import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import EditInviteModal from '@/apps/mail/components/Modals/EditInviteModal.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
+import { DashboardListSkeleton } from '@/platform/dashboard'
 
 type InviteStatus = 'All' | 'Pending' | 'Accepted' | 'Expired'
 type InviteStatusLabel = Exclude<InviteStatus, 'All'>

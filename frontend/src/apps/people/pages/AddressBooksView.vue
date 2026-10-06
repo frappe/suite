@@ -59,8 +59,8 @@ import { computed, ref } from 'vue'
 
 import AddAddressBookModal from '@/apps/people/components/Modals/AddAddressBookModal.vue'
 import { userStore } from '@/apps/people/stores/user'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Address Books'), 'People'))
 

@@ -96,9 +96,8 @@ import {
   type DomainStatus,
 } from '@/apps/mail/utils/domainStatus'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Domains'), 'Mail'))
 const showAddDomain = ref(false)

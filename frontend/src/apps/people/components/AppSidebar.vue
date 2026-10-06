@@ -37,8 +37,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { userStore } from '@/apps/people/stores/user'
-import { accountSubmenu } from '@/composables/accountSubmenu'
-import { AreaSidebar } from '@/platform/area-sidebar'
+import { accountSubmenu, AreaSidebar } from '@/platform/area-sidebar'
 
 const route = useRoute()
 const router = useRouter()

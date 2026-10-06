@@ -96,8 +96,7 @@ import {
   showSlideshowEndScreen,
 } from '@/apps/slides/stores/slideshow'
 import { getTransitionKey } from '@/apps/slides/stores/transition'
-import { usePageTitle } from '@/platform/page-meta'
-import { appPageMeta } from '@/utils/documentTitle'
+import { appPageMeta, usePageTitle } from '@/platform/page-meta'
 
 const props = defineProps({
   presentationId: {

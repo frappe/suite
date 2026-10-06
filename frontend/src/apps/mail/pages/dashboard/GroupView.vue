@@ -176,10 +176,8 @@ import QuotaDonut from '@/apps/mail/components/QuotaDonut.vue'
 import type { QuotaUsage } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import InformationField from '@/components/dashboard/InformationField.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout, InformationField } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 type GroupData = {
   id: string

@@ -513,8 +513,8 @@ import { threadRow } from '@/apps/mail/utils/threadRows'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import { appPageMeta } from '@/platform/page-meta'
 import { stripShortcutHint } from '@/utils/actionLabel'
-import { appPageMeta } from '@/utils/documentTitle'
 
 const {
   accountId,

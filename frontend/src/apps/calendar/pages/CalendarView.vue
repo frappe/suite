@@ -51,8 +51,8 @@ import {
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
 import { useScreenSize } from '@/composables/useScreenSize'
+import { appPageMeta } from '@/platform/page-meta'
 import { useRootStore } from '@/stores/root'
-import { appPageMeta } from '@/utils/documentTitle'
 
 const dayjs = inject('$dayjs')
 

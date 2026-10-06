@@ -13,7 +13,6 @@ vi.mock('@/api', async (original) => ({
   ...(await original<typeof import('@/api')>()),
   useMutation: mocks.useMutation,
 }))
-vi.mock('frappe-ui/experimental', () => ({ Icon: {} }))
 vi.mock('@/apps/mail/composables/useComposeWindow', () => ({ closeComposeWindowFor: vi.fn() }))
 vi.mock('@/apps/mail/utils', () => ({
   getIcon: vi.fn(),

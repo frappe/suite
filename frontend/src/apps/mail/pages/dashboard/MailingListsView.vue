@@ -69,9 +69,8 @@ import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddMailingListModal from '@/apps/mail/components/Modals/AddMailingListModal.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Mailing Lists'), 'Mail'))
 const showAdd = ref(false)

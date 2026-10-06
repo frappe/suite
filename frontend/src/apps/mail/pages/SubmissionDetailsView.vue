@@ -176,7 +176,7 @@ import {
   type SubmissionDetails,
 } from '@/apps/mail/utils/submission'
 import { activityEntries, statusSummary, themeInkClass } from '@/apps/mail/utils/submissionActivity'
-import { appPageMeta } from '@/utils/documentTitle'
+import { appPageMeta } from '@/platform/page-meta'
 
 const { accountId, submissionId } = defineProps<{
   accountId: string

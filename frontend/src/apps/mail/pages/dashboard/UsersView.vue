@@ -129,7 +129,7 @@ import StorageBar from '@/apps/mail/components/StorageBar.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
+import { DashboardListSkeleton } from '@/platform/dashboard'
 
 type MemberRow = {
   name: string

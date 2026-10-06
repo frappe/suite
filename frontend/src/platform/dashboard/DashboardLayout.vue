@@ -34,9 +34,10 @@
 <script setup lang="ts">
 import { Badge, Breadcrumbs, Button } from 'frappe-ui'
 
-import DashboardListSkeleton from '@/components/dashboard/DashboardListSkeleton.vue'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { openAreaSidebar } from '@/platform/area-sidebar'
+
+import DashboardListSkeleton from './DashboardListSkeleton.vue'
 
 const { removeSpacing = false, loading = false } = defineProps<{
   /** The area whose sidebar the phone's menu button opens. */

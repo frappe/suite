@@ -186,9 +186,8 @@ import { api, useQuery } from '@/api'
 import { formatGb } from '@/apps/mail/utils'
 import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 type CountWithDisabled = { total: number; disabled: number }
 type Limits = {

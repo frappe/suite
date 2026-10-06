@@ -155,9 +155,8 @@ import AddMailingListRecipientsModal from '@/apps/mail/components/Modals/AddMail
 import EditMailingListModal from '@/apps/mail/components/Modals/EditMailingListModal.vue'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 type ListData = {
   id: string

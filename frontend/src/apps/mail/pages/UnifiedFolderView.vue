@@ -221,7 +221,7 @@ import {
   unifiedFolderLabel,
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
-import { appPageMeta } from '@/utils/documentTitle'
+import { appPageMeta } from '@/platform/page-meta'
 
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()

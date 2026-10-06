@@ -301,9 +301,9 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 
 import { api, client, useQuery } from '@/api'
 import { session, userResource } from '@/boot/session'
+import { appPageMeta } from '@/platform/page-meta'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
-import { appPageMeta } from '@/utils/documentTitle'
 
 import CaptionOverlay from '../components/CaptionOverlay.vue'
 import ChatPanel from '../components/ChatPanel.vue'

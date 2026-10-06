@@ -128,9 +128,8 @@ import {
   type DmarcReportRow,
 } from '@/apps/mail/utils/dmarc'
 import { formatRate, rateTheme } from '@/apps/mail/utils/reports'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 type ReportData = DmarcReportRow & { records: DmarcRecord[] }
 

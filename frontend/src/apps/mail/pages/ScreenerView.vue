@@ -467,7 +467,7 @@ import {
 } from '@/apps/mail/utils/listNavigation'
 import { mailRow } from '@/apps/mail/utils/threadRows'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { appPageMeta } from '@/platform/page-meta'
 
 const store = userStore()
 const { senderEmail } = defineProps<{

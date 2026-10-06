@@ -144,9 +144,8 @@ import {
   type TlsPolicy,
   type TlsReportRow,
 } from '@/apps/mail/utils/tls'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 type ReportData = TlsReportRow & { policies: TlsPolicy[]; failures: TlsFailure[] }
 

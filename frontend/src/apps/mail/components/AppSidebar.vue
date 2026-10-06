@@ -118,8 +118,7 @@ import {
   unifiedFolderIcon,
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
-import { accountSubmenu } from '@/composables/accountSubmenu'
-import { AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
+import { accountSubmenu, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
 
 const route = useRoute()
 const router = useRouter()

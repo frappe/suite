@@ -7,7 +7,7 @@ import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { getSessionUser } from '@/boot/session'
-import { appDocumentTitle } from '@/utils/documentTitle'
+import { appDocumentTitle } from '@/platform/page-meta'
 
 import { recordVisit } from './driveVisit'
 import { lockedElsewhere } from './editLock'

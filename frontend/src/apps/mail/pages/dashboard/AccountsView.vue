@@ -37,8 +37,8 @@ import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
 import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
 import UsersView from '@/apps/mail/pages/dashboard/UsersView.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Accounts'), 'Mail'))
 

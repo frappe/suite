@@ -104,11 +104,9 @@ import EditAddressBookModal from '@/apps/people/components/Modals/EditAddressBoo
 import { contactRow } from '@/apps/people/contactRows'
 import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
-import DashboardCard from '@/components/dashboard/DashboardCard.vue'
-import DashboardLayout from '@/components/dashboard/DashboardLayout.vue'
-import InformationField from '@/components/dashboard/InformationField.vue'
+import { DashboardCard, DashboardLayout, InformationField } from '@/platform/dashboard'
 import { Dropdown } from '@/platform/feedback'
-import { appPageMeta } from '@/utils/documentTitle'
+import { appPageMeta } from '@/platform/page-meta'
 
 const { accountId, addressBookName } = defineProps<{
   accountId: string
