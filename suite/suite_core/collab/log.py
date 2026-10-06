@@ -64,8 +64,8 @@ def chain_next(previous: bytes, rev: int, payload_sha: bytes) -> bytes:
 def find(adapter: str, node: str) -> dict | None:
     """`node`'s log, or None when it has none or its log is purged."""
     rows = frappe.db.sql(
-        f"""SELECT `id`, `lineage`, `head_rev`, `head_chain`, `q_epoch` FROM `{table(adapter, "doc")}`
-        WHERE `node` = %s AND `mode` != 'purged'""",
+        f"""SELECT `id`, `lineage`, `head_rev`, `head_chain`, `q_epoch`, `verdict`, `judged`
+        FROM `{table(adapter, "doc")}` WHERE `node` = %s AND `mode` != 'purged'""",
         node,
         as_dict=True,
     )

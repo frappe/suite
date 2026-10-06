@@ -53,6 +53,11 @@ def ensure_tables(adapter: str) -> None:
         "`suspect` varchar(40) NULL",
         # Why judging could not settle it; pushes are refused until an admin reviews it
         "`suspect_held` varchar(40) NULL",
+        # The last verdict on a suspect document and how many there have been, which a tab that reported one reads on its pull
+        "`verdict` varchar(20) NULL",
+        "`judged` int unsigned NOT NULL DEFAULT 0",
+        # When a tab last reported a row it couldn't apply; one report a minute is heard
+        "`suspect_reported_at` datetime(6) NULL",
     ):
         frappe.db.sql_ddl(f"ALTER TABLE `{table(adapter, 'doc')}` ADD COLUMN IF NOT EXISTS {column}")
     frappe.db.sql_ddl(

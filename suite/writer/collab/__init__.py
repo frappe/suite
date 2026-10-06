@@ -151,6 +151,10 @@ def judge(doc_id: str) -> None:
         consider_compaction(doc_id)
 
 
+def report_suspect(doc_id: str, rev: int) -> tuple[int, dict]:
+    return suspect.report(ADAPTER, doc_id, rev, "suite.writer.collab.judge")
+
+
 def consider_compaction(doc_id: str, *, final_from: str | None = None) -> None:
     scheduling.consider(ADAPTER, doc_id, "suite.writer.collab.compact", final_from=final_from)
 

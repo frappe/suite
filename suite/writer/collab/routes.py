@@ -16,7 +16,7 @@ from werkzeug.wrappers import Response
 from suite import drive
 from suite.composition.http import HttpOwner, Route
 from suite.suite_core import collab
-from suite.writer.collab import ADAPTER, SCHEMA, consider_compaction
+from suite.writer.collab import ADAPTER, SCHEMA, consider_compaction, report_suspect
 
 # Every row reads or writes its own bytes, so each is a stream; a POST answers JSON
 ROUTES = (
@@ -49,6 +49,15 @@ ROUTES = (
         "POST",
         "documents/{node}/collab/sessions",
         "collab_sessions_post",
+        allow_guest=True,
+        errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
+        output=dict[str, int | str],
+        stream=True,
+    ),
+    Route(
+        "POST",
+        "documents/{node}/collab/suspect",
+        "collab_suspect_post",
         allow_guest=True,
         errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         output=dict[str, int | str],
@@ -94,6 +103,11 @@ def collab_sessions_post(node: str):
     return _answer(lambda: _session(node))
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def collab_suspect_post(node: str):
+    return _answer(lambda: _suspect(node))
+
+
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
 def unknown() -> None:
     raise frappe.DoesNotExistError(_("That Writer address does not exist"))
@@ -136,7 +150,8 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
         return _frame({"state": "rebuild", "proto": collab.PROTO, "q_epoch": epoch})
     rows = collab.rows_after(ADAPTER, doc.id, max(after, 0))
     consider_compaction(doc.id)
-    return _frame({"state": "live", "proto": collab.PROTO, "q_epoch": epoch}, rows)
+    header = {"state": "live", "proto": collab.PROTO, "q_epoch": epoch, "judged": int(doc.judged)}
+    return _frame({**header, "verdict": doc.verdict} if doc.verdict else header, rows)
 
 
 def _push(node: str) -> Response:
@@ -147,6 +162,20 @@ def _push(node: str) -> Response:
     answer = collab.push(ADAPTER, doc.id, header, payload, frappe.session.user, SCHEMA)
     consider_compaction(doc.id, final_from=header["sid"] if header.get("final") is True else None)
     return _json(200, answer)
+
+
+def _suspect(node: str) -> Response:
+    """A tab's row threw when it applied it; anyone who can read the document may say so."""
+    collab.require_enabled()
+    _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
+    doc = _doc(node)
+    try:
+        rev = json.loads(frappe.request.get_data() or b"{}").get("rev")
+    except (ValueError, AttributeError):
+        rev = None
+    if type(rev) is not int:
+        raise collab.Refusal(400, "malformed")
+    return _json(*report_suspect(doc.id, rev))
 
 
 def _session(node: str) -> Response:

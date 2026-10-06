@@ -231,7 +231,12 @@ class TestWriterCollab(IntegrationTestCase):
 
         header, rows = self.open(node)
         self.assertEqual((header["state"], rows), ("disabled", []))
-        for handler in (routes.collab_sessions_post, routes.collab_updates_post, routes.collab_updates_get):
+        for handler in (
+            routes.collab_sessions_post,
+            routes.collab_updates_post,
+            routes.collab_updates_get,
+            routes.collab_suspect_post,
+        ):
             response = call(handler, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
             self.assertEqual((response.status_code, answer(response)), (409, {"collab": "disabled"}))
         self.assertEqual({kind: self.count(kind) for kind in before}, before)
@@ -754,6 +759,7 @@ class TestWriterCollab(IntegrationTestCase):
             (routes.collab_updates_get, b""),
             (routes.collab_sessions_post, session_body),
             (routes.collab_updates_post, body),
+            (routes.collab_suspect_post, b'{"rev": 1}'),
         )
 
         for user, expected in (("Guest", (401, "signed_out")), (OUTSIDER, (409, "principal_changed"))):

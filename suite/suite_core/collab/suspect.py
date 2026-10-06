@@ -14,12 +14,13 @@ from pathlib import Path
 import frappe
 
 from suite.suite_core.collab import compaction, kernel, quarantine
-from suite.suite_core.collab.log import read
+from suite.suite_core.collab.log import SUSPECT_RETRY_MS, Refusal, read
 from suite.suite_core.collab.scheduling import enqueue
 from suite.suite_core.collab.tables import table
 
 # The compaction failures that come from the CRDT library itself, not from the rows' shape or the host
 REASONS = frozenset({"unreadable", "content_mismatch", "reencode_mismatch", "not_contained", "fallback"})
+REPORT_EVERY_S = 60
 
 
 def mark(adapter: str, doc_id: str, reason: str, method: str) -> None:
@@ -34,6 +35,37 @@ def mark(adapter: str, doc_id: str, reason: str, method: str) -> None:
             adapter, doc_id, f"suspect: {reason}", "The compaction could not take the rows; a job judges them"
         )
         request(adapter, doc_id, method)
+
+
+def report(adapter: str, doc_id: str, rev: int, method: str) -> tuple[int, dict]:
+    """A tab's report that row `rev` threw when it applied it; answers the status and body to send.
+
+    Rows up to the checkpoint already passed the compaction's checks, so the throw was the tab's own
+    and the answer is `clean` at once. Otherwise the document is marked suspect and a job judges it;
+    the tab reads the verdict on a pull once `judged` passes the number in the answer.
+    """
+    doc = frappe.db.sql(
+        f"SELECT `head_rev`, `checkpoint_rev`, `suspect_held`, `judged` FROM `{table(adapter, 'doc')}` WHERE `id` = %s",
+        doc_id,
+        as_dict=True,
+    )[0]
+    if not 0 < rev <= int(doc.head_rev):
+        raise Refusal(400, "malformed")
+    if rev <= int(doc.checkpoint_rev):
+        return 200, {"verdict": "clean", "judged": int(doc.judged)}
+    if doc.suspect_held:
+        raise Refusal(423, "paused", reason="suspect", retry_ms=SUSPECT_RETRY_MS)
+    frappe.db.sql(
+        f"""UPDATE `{table(adapter, "doc")}` SET `suspect_reported_at` = NOW(6) WHERE `id` = %s
+        AND (`suspect_reported_at` IS NULL OR `suspect_reported_at` <= NOW(6) - INTERVAL %s SECOND)""",
+        (doc_id, REPORT_EVERY_S),
+    )
+    heard = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    if not heard:
+        raise Refusal(423, "busy", retry_ms=REPORT_EVERY_S * 1000)
+    mark(adapter, doc_id, "client", method)
+    return 202, {"collab": "judging", "judged": int(doc.judged)}
 
 
 def request(adapter: str, doc_id: str, method: str) -> None:
@@ -70,8 +102,9 @@ def judge(adapter: str, doc_id: str, roots: dict[str, type], bundle: Path) -> st
             return hold(
                 adapter, doc_id, "still_refused", f"rev {revs[index]} quarantined, pycrdt still refuses"
             )
-    clear(adapter, doc_id)
-    return "clean" if index is None else "quarantined"
+    verdict = "clean" if index is None else "quarantined"
+    clear(adapter, doc_id, verdict)
+    return verdict
 
 
 def first_refused(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type]) -> int | None:
@@ -108,7 +141,8 @@ def suspect_of(adapter: str, doc_id: str) -> str | None:
 
 def hold(adapter: str, doc_id: str, why: str, detail: str) -> str:
     frappe.db.sql(
-        f"UPDATE `{table(adapter, 'doc')}` SET `suspect_held` = %s WHERE `id` = %s AND `suspect` IS NOT NULL",
+        f"""UPDATE `{table(adapter, "doc")}` SET `suspect_held` = %s, `verdict` = 'held', `judged` = `judged` + 1
+        WHERE `id` = %s AND `suspect` IS NOT NULL""",
         (why, doc_id),
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
@@ -116,10 +150,11 @@ def hold(adapter: str, doc_id: str, why: str, detail: str) -> str:
     return "held"
 
 
-def clear(adapter: str, doc_id: str) -> None:
+def clear(adapter: str, doc_id: str, verdict: str) -> None:
     frappe.db.sql(
-        f"UPDATE `{table(adapter, 'doc')}` SET `suspect` = NULL, `suspect_held` = NULL WHERE `id` = %s",
-        doc_id,
+        f"""UPDATE `{table(adapter, "doc")}` SET `suspect` = NULL, `suspect_held` = NULL, `verdict` = %s,
+        `judged` = `judged` + 1 WHERE `id` = %s""",
+        (verdict, doc_id),
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 

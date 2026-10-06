@@ -1,14 +1,21 @@
+import json
+from datetime import timedelta
 from unittest.mock import patch
 
 import frappe
 import pycrdt
+from frappe.utils import now_datetime
 
+from suite import drive
+from suite.drive._core.access import grant
+from suite.drive._core.principals import Principals
 from suite.suite_core.collab import compaction, kernel, quarantine, suspect
+from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
 from suite.writer.collab.tests import test_quarantine
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
-from suite.writer.collab.tests.test_collab import answer
+from suite.writer.collab.tests.test_collab import OUTSIDER, READER, answer, call, read_frame
 from suite.writer.collab.tests.test_kernel import BUNDLE, paragraph
 
 JUDGE = "suite.writer.collab.judge"
@@ -170,3 +177,76 @@ class TestSuspect(CheckpointCase):
 
         self.assertEqual((len(quarantined), self.doc_row(node).suspect_held), (1, "still_refused"))
         self.assertEqual(self.requested, [])
+
+    def report(self, node: str, rev) -> tuple[int, dict]:
+        response = call(routes.collab_suspect_post, node, body=json.dumps({"rev": rev}).encode())
+        return response.status_code, answer(response)
+
+    def pulled(self, node: str) -> dict:
+        return read_frame(call(routes.collab_updates_get, node).get_data())[0]
+
+    def test_a_tab_that_cannot_apply_a_row_reads_the_verdict_on_its_pull(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        a.adds(paragraph("abc"))
+        bad = a.adds(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
+        doc_id = self.doc_row(node).id
+        self.assertNotIn("verdict", self.pulled(node))
+
+        self.assertEqual(self.report(node, bad), (202, {"collab": "judging", "judged": 0}))
+        self.assertEqual((self.doc_row(node).suspect, self.requested), ("client", [(JUDGE, doc_id)]))
+        writer_collab.judge(doc_id)
+
+        pulled = self.pulled(node)
+        self.assertEqual((pulled["judged"], pulled["verdict"], pulled["q_epoch"]), (1, "quarantined", 1))
+        self.assertEqual(self.states(node), ["ok", "quarantined"])
+
+        fine = Pen(self, node).adds(paragraph("def"))
+        self.set_doc(node, suspect_reported_at=now_datetime() - timedelta(seconds=61))
+        self.assertEqual(self.report(node, fine), (202, {"collab": "judging", "judged": 1}))
+        writer_collab.judge(doc_id)
+        self.assertEqual(
+            {key: self.pulled(node)[key] for key in ("judged", "verdict")}, {"judged": 2, "verdict": "clean"}
+        )
+
+    def test_a_report_is_heard_once_a_minute_and_a_row_in_the_checkpoint_is_clean_at_once(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        checked = a.adds(paragraph("alpha"))
+        self.job(self.doc_row(node).id).run()
+        later = a.adds(paragraph("beta"))
+
+        self.assertEqual(self.report(node, checked), (200, {"verdict": "clean", "judged": 0}))
+        self.assertEqual((self.doc_row(node).suspect, self.requested), (None, []))
+
+        self.assertEqual(self.report(node, later)[0], 202)
+        self.assertEqual(self.report(node, later), (423, {"collab": "busy", "retry_ms": 60_000}))
+        self.assertEqual(len(self.requested), 1)
+        self.set_doc(node, suspect_reported_at=now_datetime() - timedelta(seconds=61))
+        self.assertEqual(self.report(node, later)[0], 202)
+
+    def test_a_report_must_name_a_row_of_the_document_and_a_held_one_stays_paused(self):
+        node = self.new_document()
+        rev = Pen(self, node).adds(paragraph("alpha"))
+
+        for rev_sent in (0, rev + 1, str(rev), None, True):
+            with self.subTest(rev=rev_sent):
+                self.assertEqual(self.report(node, rev_sent), (400, {"collab": "malformed"}))
+        self.set_doc(node, suspect="client", suspect_held="no_node")
+        status, body = self.report(node, rev)
+        self.assertEqual((status, body["collab"], body["reason"]), (423, "paused", "suspect"))
+        self.assertEqual(self.requested, [])
+
+    def test_anyone_who_can_read_the_document_may_report_and_no_one_else(self):
+        ensure_user(READER)
+        ensure_user(OUTSIDER)
+        node = self.new_document()
+        rev = Pen(self, node).adds(paragraph("alpha"))
+        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        frappe.db.commit()
+
+        frappe.set_user(OUTSIDER)
+        self.assertIn(self.report(node, rev)[0], (403, 404))
+        self.assertIsNone(self.doc_row(node).suspect)
+        frappe.set_user(READER)
+        self.assertEqual(self.report(node, rev)[0], 202)
