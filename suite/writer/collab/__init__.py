@@ -45,7 +45,7 @@ def start_log(node: str) -> None:
         collab.create(ADAPTER, node)
 
 
-def log_of(node: str) -> dict | None:
+def log_of(node: str) -> frappe._dict | None:
     """`node`'s log while collaboration is on: then its body lives there, not in the document row."""
     return collab.find(ADAPTER, node) if collab.enabled() else None
 

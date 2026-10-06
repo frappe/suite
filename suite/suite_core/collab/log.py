@@ -62,7 +62,7 @@ def chain_next(previous: bytes, rev: int, payload_sha: bytes) -> bytes:
     return hashlib.sha256(previous + struct.pack(">Q", rev) + payload_sha).digest()
 
 
-def find(adapter: str, node: str) -> dict | None:
+def find(adapter: str, node: str) -> frappe._dict | None:
     """`node`'s log, or None when it has none or its log is purged."""
     rows = frappe.db.sql(
         f"""SELECT `id`, `lineage`, `head_rev`, `head_chain`, `q_epoch`, `verdict`, `judged`
@@ -416,7 +416,7 @@ def push(
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
 
 
-def start_clocks(doc: dict) -> dict[int, int]:
+def start_clocks(doc: frappe._dict) -> dict[int, int]:
     return {int(client): clock for client, clock in json.loads(doc.start_clocks or "{}").items()}
 
 

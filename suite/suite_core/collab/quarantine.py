@@ -171,7 +171,7 @@ def readable(payload: bytes) -> updates.Update | None:
         return None
 
 
-def floor(adapter: str, doc_id: str, doc: dict) -> dict[int, int]:
+def floor(adapter: str, doc_id: str, doc: frappe._dict) -> dict[int, int]:
     """Each writer's next clock in the checkpoint and the start, which no quarantine can take back."""
     clocks = start_clocks(doc)
     if int(doc.checkpoint_rev):
