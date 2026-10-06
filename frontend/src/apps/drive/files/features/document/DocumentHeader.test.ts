@@ -97,7 +97,7 @@ function mount(
 describe('DocumentHeader', () => {
   it('shows the spreadsheet icon, the title and the save status', () => {
     const { root, title } = mount(session(40), { saveState: 'clean' })
-    expect(root.querySelector('.lucide-table.text-ink-green-6')).not.toBeNull()
+    expect(root.querySelector('.file-icon-sheet.text-ink-green-6')).not.toBeNull()
     expect(title.value).toBe('Budget')
     expect(root.textContent).toContain('Saved')
   })

@@ -172,9 +172,11 @@ describe('FilesListing type column', () => {
       'Image',
       'Writer Document',
     ])
-    expect(icon('md')).toContain('lucide-file-text')
-    expect(icon('json')).toContain('lucide-file-code')
-    expect(icon('bin')).toContain('lucide-file ')
+    expect(icon('md')).toContain('file-icon-text')
+    expect(icon('json')).toContain('file-icon-code')
+    expect(icon('csv')).toContain('file-icon-csv')
+    expect(icon('bin')).toContain('file-icon-file')
+    expect(icon('zip')).toContain('file-icon-archive')
   })
 })
 

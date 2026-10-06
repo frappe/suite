@@ -1,0 +1,78 @@
+/*
+  Drive's file-type icons as `file-icon-<type>` classes, used like a
+  `lucide-*` class: the caller sets the size with `size-*` and the colour with
+  `text-*`. Each SVG in `file-icons/` is drawn in the duotone frame's rules
+  (see `platform/duotone-icon`) with its tones baked in as opacities, so the
+  mask carries the 10% tint and the 50% accent in the one colour.
+
+  `:where()` keeps these rules at zero specificity, so a utility on the same
+  element, such as `size-4.5` or `hidden`, always wins.
+*/
+:where(
+  .file-icon-folder,
+  .file-icon-doc,
+  .file-icon-sheet,
+  .file-icon-slides,
+  .file-icon-pdf,
+  .file-icon-image,
+  .file-icon-video,
+  .file-icon-audio,
+  .file-icon-text,
+  .file-icon-csv,
+  .file-icon-code,
+  .file-icon-archive,
+  .file-icon-file,
+  .file-icon-link
+) {
+  display: block;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  background-color: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}
+
+:where(.file-icon-folder) {
+  mask-image: url('./file-icons/folder.svg');
+}
+:where(.file-icon-doc) {
+  mask-image: url('./file-icons/doc.svg');
+}
+:where(.file-icon-sheet) {
+  mask-image: url('./file-icons/sheet.svg');
+}
+:where(.file-icon-slides) {
+  mask-image: url('./file-icons/slides.svg');
+}
+:where(.file-icon-pdf) {
+  mask-image: url('./file-icons/pdf.svg');
+}
+:where(.file-icon-image) {
+  mask-image: url('./file-icons/image.svg');
+}
+:where(.file-icon-video) {
+  mask-image: url('./file-icons/video.svg');
+}
+:where(.file-icon-audio) {
+  mask-image: url('./file-icons/audio.svg');
+}
+:where(.file-icon-text) {
+  mask-image: url('./file-icons/text.svg');
+}
+:where(.file-icon-csv) {
+  mask-image: url('./file-icons/csv.svg');
+}
+:where(.file-icon-code) {
+  mask-image: url('./file-icons/code.svg');
+}
+:where(.file-icon-archive) {
+  mask-image: url('./file-icons/archive.svg');
+}
+:where(.file-icon-file) {
+  mask-image: url('./file-icons/file.svg');
+}
+:where(.file-icon-link) {
+  mask-image: url('./file-icons/link.svg');
+}
