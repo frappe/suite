@@ -14,8 +14,7 @@ from frappe.utils import now_datetime
 
 from suite import drive
 from suite.drive._core import content
-from suite.drive._core.errors import DriveConflict
-from suite.drive._core.nodes import _trash, create_file, purge
+from suite.drive._core.nodes import _trash, purge
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import restore_version
 from suite.suite_core import collab
@@ -112,11 +111,10 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.assertEqual(frappe.db.get_value("Drive Node", unnamed, "state"), "Trashed")
 
     def old_media(self, document: str, title: str) -> str:
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
         blob = put_blob(io.BytesIO(title.encode()), is_private=True, filename=title)
-        with patch("suite.drive._core.previews.enqueue_render"):
-            media = create_file(
-                admin, document, title, blob=blob.name, size=blob.file_size, mime=blob.mime_type
+        with patch.object(frappe, "enqueue"):
+            media = drive.create_file(
+                document, title, blob=blob.name, size=blob.file_size, mime=blob.mime_type
             )
         aged = now_datetime() - timedelta(days=content.UNUSED_MEDIA_GRACE_DAYS + 1)
         frappe.db.set_value("Drive Node", media, "creation", aged, update_modified=False)
@@ -198,7 +196,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         )
         frappe.db.commit()
 
-        with self.assertRaises(DriveConflict):
+        with self.assertRaises(drive.DriveConflict):
             version_of(self.docname(node))
 
     def test_a_version_or_copy_larger_than_a_compaction_job_takes_is_refused(self):
@@ -210,9 +208,11 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         for limits in ({"STATE_MAX": size - 1}, {"TAIL_ROWS": 1}):
             with self.subTest(limits=limits), patch.multiple(scheduling, **limits):
-                with self.assertRaisesRegex(DriveConflict, "is not available for this document right now"):
+                with self.assertRaisesRegex(
+                    drive.DriveConflict, "is not available for this document right now"
+                ):
                     version_of(self.docname(node))
-                with self.assertRaisesRegex(DriveConflict, "cannot be copied right now"):
+                with self.assertRaisesRegex(drive.DriveConflict, "cannot be copied right now"):
                     drive.copy(node, parent)
                 frappe.db.rollback()
 
@@ -230,7 +230,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         head = self.doc_row(node).head_rev
 
         writer = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
-        with self.assertRaisesRegex(DriveConflict, "Open the document to restore this version"):
+        with self.assertRaisesRegex(drive.DriveConflict, "Open the document to restore this version"):
             restore_version(writer, node, seq)
 
         frappe.db.rollback()
@@ -248,7 +248,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         writer = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
         with self.assertRaisesRegex(
-            DriveConflict, "This version can be restored only while collaboration is on"
+            drive.DriveConflict, "This version can be restored only while collaboration is on"
         ):
             restore_version(writer, node, seq)
 
@@ -376,7 +376,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         parent = frappe.db.get_value("Drive Node", node, "parent_node")
         before = frappe.db.count("Drive Node", {"parent_node": parent})
 
-        with self.assertRaisesRegex(DriveConflict, "cannot be copied"):
+        with self.assertRaisesRegex(drive.DriveConflict, "cannot be copied"):
             drive.copy(node, parent)
 
         frappe.db.rollback()
@@ -509,5 +509,5 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
 
-        with self.assertRaisesRegex(DriveConflict, "Open the document to download it"):
+        with self.assertRaisesRegex(drive.DriveConflict, "Open the document to download it"):
             writer_drive.export(self.docname(node), "html")
