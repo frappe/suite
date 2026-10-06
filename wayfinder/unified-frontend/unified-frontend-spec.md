@@ -1905,13 +1905,13 @@ There is one Settings group per product, named after the product. Order
 | Drive | Statistics; External access | `suite_flip_files` on; External access when WebDAV is on or the caller is a Drive admin (`GET /api/suite/drive/webdav`) |
 | Mail | Mail's tabs | mail users only |
 | Calendar | Calendar's tabs | mail users only |
-| Meet | Devices, Audio, Video, Notifications, Layout | none |
 | Workspace | General, Users | system managers |
 
 - Today's product sub-headings ("Mail Setup", "Data", "Developer") are
   removed [T016].
-- Meet's Controls tab needs a live meeting. It stays in the in-call dialog
-  only [T016].
+- Meet contributes no group. Devices, Audio, Video, Notifications and Layout
+  only mean something inside a call, so they stay in the in-call and preview
+  dialog with Controls [T016].
 - Theme lives in Preferences [T016].
 - Profile editing stays in Settings [T016].
 - The legacy Storage tab does not ship. Every control on it dies with Drive

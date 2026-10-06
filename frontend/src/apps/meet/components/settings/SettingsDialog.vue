@@ -1,6 +1,7 @@
 <!--
-  The in-call and preview Settings dialog: Controls for a host, then the Meet
-  settings tabs the Suite Settings dialog also shows.
+  The in-call and preview Settings dialog: Controls for a host, then Meet's
+  settings tabs. Meet has no group in the Suite Settings dialog, so this is
+  the only place these tabs live.
 -->
 <template>
   <SettingsDialog v-model:open="open" v-model:tab="activeTab" size="5xl" :keyboard-shortcut="false">

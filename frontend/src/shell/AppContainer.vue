@@ -14,14 +14,10 @@ import { useRootStore } from '@/stores/root'
 
 const route = useRoute()
 const session = useSessionStore()
-// Calendar and Meet register the Settings command here. Mail and Drive
-// register their own.
-const showCommonSettings = computed(
-  () =>
-    session.isLoggedIn &&
-    (route.meta.area === 'calendar' ||
-      (route.meta.area === 'meet' && route.name !== 'meet-meeting')),
-)
+// Calendar registers the Settings command here. Mail and Drive register their
+// own. Meet contributes no group to the Suite Settings dialog, so it falls
+// back to the shell's command.
+const showCommonSettings = computed(() => session.isLoggedIn && route.meta.area === 'calendar')
 // Calendar opens Settings on its own first tab.
 const settingsTab = computed<SettingsTabId | undefined>(() =>
   route.meta.area === 'calendar' ? 'calendar.calendars' : undefined,
