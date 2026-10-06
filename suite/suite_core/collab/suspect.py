@@ -17,7 +17,7 @@ from pathlib import Path
 
 import frappe
 
-from suite.suite_core.collab import compaction, kernel, quarantine
+from suite.suite_core.collab import admission, compaction, kernel, quarantine
 from suite.suite_core.collab.log import SUSPECT_RETRY_MS, Refusal, read
 from suite.suite_core.collab.scheduling import enqueue
 from suite.suite_core.collab.tables import table
@@ -79,10 +79,16 @@ def request(adapter: str, doc_id: str, method: str) -> None:
 def judge(
     adapter: str, doc_id: str, roots: dict[str, type], bundle: Path, owner_of: Callable[[str], str | None]
 ) -> str | None:
-    """Judge a suspect document; answers `quarantined`, `clean`, `held` or `unjudged`, or None when it isn't suspect."""
+    """Judge a suspect document; answers `quarantined`, `clean`, `held` or `unjudged`, or None when it isn't suspect.
+
+    A judge takes one of the bench's compaction places; with none free it answers `busy` and the sweep asks again.
+    """
     marked = suspect_of(adapter, doc_id)
     if not marked:
         return None
+    held = admission.take_place(adapter, doc_id)
+    if held is None:
+        return "busy"
     try:
         return settle(adapter, doc_id, marked, roots, bundle, owner_of)
     except BaseException as error:  # pycrdt panics derive from BaseException
@@ -90,6 +96,8 @@ def judge(
             raise
         frappe.db.rollback()
         return unsettled(adapter, doc_id, marked, "judge_failed", type(error).__name__)
+    finally:
+        admission.free_place(held)
 
 
 def settle(

@@ -5,6 +5,7 @@ from unittest.mock import patch
 import frappe
 import pycrdt
 from frappe.utils import now_datetime
+from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
 from suite.drive._core.access import grant
@@ -13,7 +14,7 @@ from suite.suite_core.collab import admission, compaction, kernel, quarantine, s
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
-from suite.writer.collab.tests import test_quarantine
+from suite.writer.collab.tests import test_checkpoints, test_quarantine
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.collab.tests.test_collab import OUTSIDER, READER, answer, call, read_frame
 from suite.writer.collab.tests.test_kernel import BUNDLE, paragraph
@@ -40,6 +41,7 @@ class Pen(test_quarantine.Tab):
 class TestSuspect(CheckpointCase):
     recovered = test_quarantine.TestQuarantine.recovered
     states = test_quarantine.TestQuarantine.states
+    release_places = test_checkpoints.TestWriterCheckpoints.release_places
 
     @classmethod
     def setUpClass(cls):
@@ -553,3 +555,26 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.recovered(node), [(1, WRITER, "pycrdt_refused", a.sent[0])])
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "quarantined"))
+
+    def test_with_every_place_taken_a_judge_waits_for_the_sweep_and_frees_its_place(self):
+        node = self.new_document()
+        Pen(self, node).adds(paragraph("alpha"))
+        doc_id = self.doc_row(node).id
+        self.set_doc(node, suspect="unreadable")
+        redis = get_redis_conn()
+        for index in range(admission.PLACES):
+            redis.set(f"suite:collab:compaction:{index}", "elsewhere", ex=60)
+        self.addCleanup(self.release_places)
+
+        self.assertEqual(self.judge(node), "busy")
+
+        doc = self.doc_row(node)
+        self.assertEqual(
+            (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), ("unreadable", None, None, 0)
+        )
+        writer_collab.sweep()
+        self.assertIn((JUDGE, doc_id), self.requested)
+
+        self.release_places()
+        self.assertEqual(self.judge(node), "clean")
+        self.assertFalse(redis.exists(f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}"))
