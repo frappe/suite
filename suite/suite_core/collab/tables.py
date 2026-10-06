@@ -45,6 +45,8 @@ def ensure_tables(adapter: str) -> None:
         "`mode` varchar(20) NOT NULL DEFAULT 'active'",
         # Each writer's next clock in the start a copy began with; its writers have no session
         "`start_clocks` json NULL",
+        # (first rev, new highest) for each rise in the highest schema a row was stamped with
+        "`schema_steps` json NOT NULL DEFAULT '[[0, 1]]'",
     ):
         frappe.db.sql_ddl(f"ALTER TABLE `{table(adapter, 'doc')}` ADD COLUMN IF NOT EXISTS {column}")
     frappe.db.sql_ddl(

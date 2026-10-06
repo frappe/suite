@@ -292,8 +292,10 @@ def insert_checkpoint(
         raise compaction.CompactionFailed("too_large")
 
 
-def replace_start(adapter: str, doc_id: str, state: bytes) -> None:
+def replace_start(adapter: str, doc_id: str, state: bytes, schema: int) -> None:
     """Make `state` the integrated checkpoint a fresh log starts from, at rev 1, in the caller's transaction.
+
+    `schema` is the highest stamp of the rows `state` was built from.
 
     The caller has checked `state`. Once a tab has a session or a row exists, a tab may
     hold the old start, so the start can no longer change.
@@ -315,12 +317,14 @@ def replace_start(adapter: str, doc_id: str, state: bytes) -> None:
     frappe.db.sql(
         f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = 1, `head_chain` = UNHEX(%(chain)s),
         `checkpoint_rev` = 1, `checkpoint_chain` = UNHEX(%(chain)s), `integrated_rev` = 1,
-        `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s, `start_clocks` = %(clocks)s WHERE `id` = %(doc)s""",
+        `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s, `start_clocks` = %(clocks)s,
+        `schema_steps` = %(steps)s WHERE `id` = %(doc)s""",
         {
             "chain": chain.hex(),
             "kernel": compaction.KERNEL,
             "size": len(state),
             "clocks": json.dumps(ingest.next_clocks([state])),
+            "steps": json.dumps([[1, schema]]),
             "doc": doc_id,
         },
     )

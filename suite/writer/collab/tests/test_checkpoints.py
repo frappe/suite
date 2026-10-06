@@ -290,7 +290,7 @@ class TestWriterCheckpoints(CheckpointCase):
         start["blob"] = pycrdt.Map({"bytes": os.urandom(packet // 2 + 2**20)})
         state = start.get_update()
 
-        checkpoints.replace_start("writer", self.doc_row(node).id, state)
+        checkpoints.replace_start("writer", self.doc_row(node).id, state, 1)
 
         self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
 

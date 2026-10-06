@@ -88,7 +88,7 @@ def copy_log(source_node: str, node: str) -> bool:
     live = live_checkpoint(source_node)
     if live is None:
         return False
-    collab.replace_start(ADAPTER, collab.create(ADAPTER, node), live[1])
+    collab.replace_start(ADAPTER, collab.create(ADAPTER, node), live[1], live[0]["schema"])
     return True
 
 
@@ -111,7 +111,7 @@ def remap_log(node: str, rewrite) -> None:
         or updates.rewrite_values(remapped, rewrite) != remapped
     ):
         raise compaction.CompactionFailed("remap_mismatch")
-    collab.replace_start(ADAPTER, doc.id, remapped)
+    collab.replace_start(ADAPTER, doc.id, remapped, read["schema"])
 
 
 def purge_log(node: str) -> None:

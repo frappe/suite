@@ -324,7 +324,7 @@ def push(
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
-        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
+        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
         doc_id,
         as_dict=True,
     )
@@ -353,6 +353,9 @@ def push(
             raise Refusal(409, unclosed.reason, **unclosed.extra) from None
 
         rev = head + 1
+        steps = json.loads(doc.schema_steps)
+        if header["schema"] > steps[-1][1]:
+            steps.append([rev, header["schema"]])
         payload_sha = hashlib.sha256(payload).digest()
         chain = chain_next(bytes(doc.head_chain), rev, payload_sha)
         now = now_datetime()
@@ -377,9 +380,9 @@ def push(
         )
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = %s, `head_chain` = UNHEX(%s),
-            `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s
+            `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s, `schema_steps` = %s
             WHERE `id` = %s""",
-            (rev, chain.hex(), len(payload), doc_id),
+            (rev, chain.hex(), len(payload), json.dumps(steps), doc_id),
         )
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "session")}` SET `acked_seq` = %s, `next_clock` = %s, `last_push_at` = %s
@@ -414,7 +417,7 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
     for _try in range(2):
         with repeatable_read() if own_snapshot else contextlib.nullcontext():
             doc = frappe.db.sql(
-                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `integrated_rev`
+                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `integrated_rev`, `schema_steps`
                 FROM `{table(adapter, "doc")}` WHERE `id` = %s AND `mode` != 'purged'""",
                 doc_id,
                 as_dict=True,
@@ -440,6 +443,7 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
                 "lineage": doc.lineage,
                 "head_rev": int(doc.head_rev),
                 "head_chain": chain,
+                "schema": json.loads(doc.schema_steps)[-1][1],
                 "base": base,
                 "checkpoint": checkpoint,
                 "rows": rows,

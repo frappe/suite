@@ -380,6 +380,40 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual((other.status_code, stamped.status_code), (200, 200))
         self.assertEqual(len(self.open(node)[1]), 2)
 
+    def test_the_highest_schema_steps_up_only_when_a_stored_row_raises_it(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+        (sid, cid), (newer_sid, newer), (later_sid, later) = (self.session(node) for _tab in range(3))
+        stepped = replace(routes.SCHEMA, version=2, features={**routes.SCHEMA.features, "marquee": 2})
+
+        def steps():
+            [(value,)] = frappe.db.sql(
+                "SELECT `schema_steps` FROM `__writer_collab_doc` WHERE `node` = %s", node
+            )
+            return json.loads(value)
+
+        def stamped(tab_sid, tab_cid, seq, payload, schema):
+            body = push_body(lineage, tab_sid, tab_cid, seq, 0, payload, schema=schema)
+            return call(routes.collab_updates_post, node, body=body).status_code
+
+        self.assertEqual(steps(), [[0, 1]])
+        with patch.object(routes, "SCHEMA", stepped):
+            refused = [
+                stamped(newer_sid, newer, 2, element(newer, "marquee"), 2),
+                stamped(newer_sid, newer, 1, b"\x00", 2),
+                stamped(newer_sid, newer, 1, element(newer, "blink"), 2),
+                stamped(newer_sid, newer, 1, element(newer, "marquee"), 3),
+            ]
+            self.assertEqual(refused, [409, 400, 409, 423])
+            self.assertEqual(stamped(sid, cid, 1, typed(cid, ["a"])[0], 1), 200)
+            self.assertEqual(steps(), [[0, 1]])
+            self.assertEqual(stamped(newer_sid, newer, 1, element(newer, "marquee"), 2), 200)
+            self.assertEqual(stamped(later_sid, later, 1, element(later, "marquee"), 2), 200)
+            self.assertEqual(stamped(sid, cid, 2, typed(cid, ["a", "b"])[1], 1), 200)
+
+        self.assertEqual(steps(), [[0, 1], [2, 2]])
+
     def test_a_push_that_does_not_continue_its_writers_clocks_is_refused_and_stores_nothing(self):
         self.set_mode("on")
         node = self.new_document()
@@ -484,7 +518,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         original, later = typed(7, ["start", "!"])
-        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, original)
+        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, original, 1)
         frappe.db.commit()
         (sid, cid), (ahead_sid, ahead) = self.session(node), self.session(node)
 
@@ -509,7 +543,7 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         start, after_start = typed(7, ["start", "!"])
         doc_id = routes.collab.find(routes.ADAPTER, node).id
-        routes.collab.replace_start(routes.ADAPTER, doc_id, start)
+        routes.collab.replace_start(routes.ADAPTER, doc_id, start, 1)
         frappe.db.commit()
         sid, cid = self.session(node)
         a, b, c = typed(cid, ["a", "b", "c"])
@@ -714,7 +748,7 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         issued, claimed = 7, 2**30 + 7
         start = pycrdt.merge_updates(typed(issued, ["start"])[0], typed(claimed, ["start"])[0])
-        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, start)
+        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, start, 1)
         frappe.db.commit()
         lineage = self.open(node)[0]["lineage"]
 

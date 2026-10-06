@@ -44,8 +44,8 @@ def embed(media: str) -> str:
 
 
 class TestWriterDriveCallbacks(CheckpointCase):
-    def edit(self, node: str, change) -> None:
-        """A tab opened on the document makes `change` to its fragment and pushes it as one row."""
+    def edit(self, node: str, change, schema: int = 1) -> None:
+        """A tab opened on the document makes `change` to its fragment and pushes it as one row stamped `schema`."""
         sid = uuid.uuid4().hex
         cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
             "client_id"
@@ -57,7 +57,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 doc.apply_update(payload)
         seen = doc.get_state()
         change(doc.get("default", type=pycrdt.XmlFragment))
-        body = push_body(header["lineage"], sid, cid, 1, 0, doc.get_update(seen))
+        body = push_body(header["lineage"], sid, cid, 1, 0, doc.get_update(seen), schema=schema)
         self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
 
     def docname(self, node: str) -> str:
@@ -301,6 +301,22 @@ class TestWriterDriveCallbacks(CheckpointCase):
         source_image = self.opened(node).get("default", type=pycrdt.XmlFragment).children[0]
         self.assertEqual(dict(source_image.attributes), {"src": embed(picture)})
 
+    def test_a_copy_starts_at_the_highest_schema_its_source_holds(self):
+        node = self.new_document()
+        picture = self.old_media(node, "picture.png")
+        self.type_into(node, ["one"])
+        with patch.object(routes, "SCHEMA", replace(routes.SCHEMA, version=2)):
+            self.edit(
+                node,
+                lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)})),
+                schema=2,
+            )
+
+        copied = self.copy_of(node)
+
+        self.assertEqual(json.loads(self.doc_row(node).schema_steps), [[0, 1], [2, 2]])
+        self.assertEqual(json.loads(self.doc_row(copied).schema_steps), [[1, 2]])
+
     def test_a_copy_renames_pictures_in_a_list_and_keeps_text(self):
         node = self.new_document()
         picture = self.old_media(node, "picture.png")
@@ -344,7 +360,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         call(routes.collab_sessions_post, copied, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
 
         with self.assertRaises(ValueError):
-            collab.replace_start("writer", self.doc_row(copied).id, pycrdt.Doc().get_update())
+            collab.replace_start("writer", self.doc_row(copied).id, pycrdt.Doc().get_update(), 1)
 
     def test_a_source_whose_log_cannot_be_read_is_not_copied(self):
         node = self.new_document()
