@@ -291,7 +291,12 @@ class TestWriterCollab(IntegrationTestCase):
         lineage = self.open(node)[0]["lineage"]
         [own] = typed(cid, ["a"])
 
-        for case, payload in (("not an update", b"\x00\x01"), ("another writer's", typed(cid + 1, ["a"])[0])):
+        cases = (
+            ("not an update", b"\x00\x01"),
+            ("empty", b"\x00\x00"),
+            ("another writer's", typed(cid + 1, ["a"])[0]),
+        )
+        for case, payload in cases:
             with self.subTest(case):
                 response = call(
                     routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, payload)

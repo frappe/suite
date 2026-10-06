@@ -32,11 +32,13 @@ class Row:
 
 
 def check(payload: bytes, cid: int) -> Row:
-    """The row `cid` pushed, or `ValueError` when it is malformed: too large, unreadable, written by
-    another client, holding a gap, or holding content no collab adapter writes."""
+    """The row `cid` pushed, or `ValueError` when it is malformed: too large, unreadable, empty, written
+    by another client, holding a gap, or holding content no collab adapter writes."""
     if len(payload) > MAX_BYTES:
         raise ValueError("update too large")
     update = updates.parse(payload)
+    if not update.structs and not any(update.deletes.values()):
+        raise ValueError("an empty row")
     for struct in update.structs:
         if struct.client != cid:
             raise ValueError("written by another client")

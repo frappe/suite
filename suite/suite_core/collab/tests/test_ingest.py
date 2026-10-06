@@ -61,6 +61,8 @@ class TestIngest(UnitTestCase):
             "two writers": pycrdt.merge_updates(first, typed(6, ["a"])[0]),
             "a gap in the clocks": pycrdt.merge_updates(first, third),
             "unreadable": first[:-1],
+            "empty": pycrdt.Doc().get_update(),
+            "a delete set that deletes nothing": bytes([0, 1]) + encoded_uint(5) + bytes([0]),
             "JSON content": one_struct(2, encoded_uint(1) + encoded_string('"x"')),
             "binary content": one_struct(3, encoded_uint(1) + b"\x00"),
             "a subdocument": one_struct(9, encoded_string("guid") + bytes([118, 0])),
