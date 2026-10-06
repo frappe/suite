@@ -69,8 +69,8 @@ describe('app registry', () => {
       'files',
       'mail',
       'calendar',
-      'people',
       'meet',
+      'people',
     ])
   })
 
@@ -84,8 +84,8 @@ describe('app registry', () => {
       'files',
       'mail',
       'calendar',
-      'people',
       'meet',
+      'people',
     ])
   })
 

@@ -22,8 +22,8 @@ export const areaDefinitions: readonly AreaDefinition[] = [
   filesArea,
   mailArea,
   calendarArea,
-  peopleArea,
   meetArea,
+  peopleArea,
 ]
 
 export function findArea(id: string): AreaDefinition | undefined {
