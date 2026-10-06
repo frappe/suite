@@ -66,7 +66,6 @@ caller's savepoint. Nothing here commits either way.
 
 import base64
 import binascii
-import gzip
 import io
 import json
 import re
@@ -82,6 +81,7 @@ from suite.suite_core.collab import compaction
 from suite.writer.collab import (
     ADAPTER,
     copy_log,
+    live_checkpoint,
     live_state,
     purge_log,
     remap_log,
@@ -203,13 +203,14 @@ def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
     try:
-        payload = version_payload(row.node)
+        live = live_checkpoint(row.node)
     except (collab.ChainBroken, compaction.CompactionFailed) as unready:
         raise drive.DriveConflict(
             _("Version history is not available for this document right now")
         ) from unready
-    if payload is not None:
-        state = gzip.decompress(base64.b64decode(payload["state"]))
+    if live is not None:
+        read, state = live
+        payload = version_payload(read, state)
         with _readable_body():
             payload["media"] = sorted(
                 _fragment_ids(compaction.load([state]).get(BODY_FRAGMENT, type=pycrdt.XmlFragment))

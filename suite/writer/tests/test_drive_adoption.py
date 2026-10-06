@@ -263,7 +263,7 @@ class TestWriterDeclaration(UnitTestCase):
         row = frappe._dict(node="node-1", content="body", html="<p>x</p>", collab=0)
         with (
             patch.object(writer.frappe.db, "get_value", return_value=row),
-            patch.object(writer, "version_payload", return_value=None),
+            patch.object(writer, "live_checkpoint", return_value=None),
         ):
             stream, mime = writer.version_bytes("WR-1")
         self.assertEqual(mime, writer.VERSION_MIME)

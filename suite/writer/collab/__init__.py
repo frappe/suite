@@ -33,12 +33,11 @@ def live_state(node: str) -> pycrdt.Doc | None:
     return compaction.load(parts)
 
 
-def version_payload(node: str) -> dict | None:
-    """The document now as a `writer-document/2` version, or None while its body is not in a log.
+def live_checkpoint(node: str) -> tuple[dict, bytes] | None:
+    """The document's read and its state now, or None while its body is not in a log.
 
     The state is compacted with pycrdt in the request from the newest integrated
     checkpoint, never a fallback one, and only an integrated result is answered.
-    The readable copy is not built yet, so `html` is null.
     """
     if not collab.enabled():
         return None
@@ -47,13 +46,16 @@ def version_payload(node: str) -> dict | None:
         return None
     read = collab.read(ADAPTER, doc.id, integrated=True, own_snapshot=False)
     rows = [payload for _rev, payload in read["rows"]]
-    if rows:
-        result = compaction.compact(read["checkpoint"], rows, ROOTS)
-        if not result.integrated:
-            raise compaction.CompactionFailed("fallback")
-        state = result.state
-    else:
-        state = read["checkpoint"] or pycrdt.Doc().get_update()
+    if not rows:
+        return read, read["checkpoint"] or pycrdt.Doc().get_update()
+    result = compaction.compact(read["checkpoint"], rows, ROOTS)
+    if not result.integrated:
+        raise compaction.CompactionFailed("fallback")
+    return read, result.state
+
+
+def version_payload(read: dict, state: bytes) -> dict:
+    """`state` as a `writer-document/2` version. The readable copy is not built yet, so `html` is null."""
     return {
         "schema": "writer-document/2",
         "codec": "yjs1",
@@ -67,10 +69,10 @@ def version_payload(node: str) -> dict | None:
 
 def copy_log(source_node: str, node: str) -> bool:
     """Start `node`'s log from `source_node`'s state now, under a new lineage; False while the source is not in a log."""
-    payload = version_payload(source_node)
-    if payload is None:
+    live = live_checkpoint(source_node)
+    if live is None:
         return False
-    collab.create(ADAPTER, node, state=gzip.decompress(base64.b64decode(payload["state"])))
+    collab.create(ADAPTER, node, state=live[1])
     return True
 
 
