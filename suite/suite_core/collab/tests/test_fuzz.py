@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -56,10 +57,16 @@ class TestGateAgainstYjs(UnitTestCase):
     def setUp(self):
         node = shutil.which("node")
         if not node:
-            self.skipTest("node is not installed, so Yjs can't judge the gate")
+            self.missing("node is not installed, so Yjs can't judge the gate")
         if not YJS.is_dir():
-            self.skipTest(f"Yjs is not installed at {YJS}; run yarn at the repo root")
+            self.missing(f"Yjs is not installed at {YJS}; run yarn at the repo root")
         self.node = node
+
+    def missing(self, reason: str):
+        # A skip in CI would leave the job green with the gate unchecked
+        if os.environ.get("CI"):
+            self.fail(reason)
+        self.skipTest(reason)
 
     def test_the_gate_takes_only_rows_yjs_reads_the_same_way(self):
         lines = subprocess.run(
