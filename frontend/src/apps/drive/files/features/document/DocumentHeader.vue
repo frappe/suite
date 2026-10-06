@@ -20,7 +20,7 @@
         </RouterLink>
         <span class="text-base text-ink-gray-4 max-md:hidden" aria-hidden="true">/</span>
       </template>
-      <span class="size-4 shrink-0" :class="typeIcon" aria-hidden="true" />
+      <span class="size-4.5 shrink-0" :class="typeIcon" aria-hidden="true" />
       <!-- The hidden copy of the title gives the field its width, so the field
         fits its text and a refusal sits right after it. -->
       <div class="document-title relative min-w-0 max-w-md">
