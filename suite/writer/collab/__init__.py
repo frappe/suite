@@ -38,6 +38,7 @@ def live_checkpoint(node: str) -> tuple[dict, bytes] | None:
 
     The state is compacted with pycrdt in the request from the newest integrated
     checkpoint, never a fallback one, and only an integrated result is answered.
+    A state or tail larger than a compaction job would take is refused.
     """
     if not collab.enabled():
         return None
@@ -48,6 +49,10 @@ def live_checkpoint(node: str) -> tuple[dict, bytes] | None:
     rows = [payload for _rev, payload in read["rows"]]
     if not rows:
         return read, read["checkpoint"] or pycrdt.Doc().get_update()
+    # pycrdt cannot be interrupted, so a web worker only takes on what a compaction job would
+    size = len(read["checkpoint"] or b"") + sum(len(row) for row in rows)
+    if size > scheduling.STATE_MAX or len(rows) > scheduling.TAIL_ROWS:
+        raise compaction.CompactionFailed("too_large")
     result = compaction.compact(read["checkpoint"], rows, ROOTS)
     if not result.integrated:
         raise compaction.CompactionFailed("fallback")

@@ -189,6 +189,27 @@ class TestWriterDriveCallbacks(CheckpointCase):
         with self.assertRaises(DriveConflict):
             version_of(self.docname(node))
 
+    def test_a_version_or_copy_larger_than_a_compaction_job_takes_is_refused(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two"])
+        read = collab.read("writer", self.doc_row(node).id)
+        size = len(read["checkpoint"] or b"") + sum(len(payload) for _rev, payload in read["rows"])
+        parent = frappe.db.get_value("Drive Node", node, "parent_node")
+
+        for limits in ({"STATE_MAX": size - 1}, {"TAIL_ROWS": 1}):
+            with self.subTest(limits=limits), patch.multiple(scheduling, **limits):
+                with self.assertRaisesRegex(DriveConflict, "is not available for this document right now"):
+                    version_of(self.docname(node))
+                with self.assertRaisesRegex(DriveConflict, "cannot be copied right now"):
+                    drive.copy(node, parent)
+                frappe.db.rollback()
+
+        with patch.multiple(scheduling, STATE_MAX=size, TAIL_ROWS=2):
+            state = gzip.decompress(base64.b64decode(version_of(self.docname(node))["state"]))
+            self.assertEqual(self.text_of(state), "one two")
+            copied = self.copy_of(node)
+        self.assertEqual(self.text_of(self.opened(copied).get_update()), "one two")
+
     def test_drive_refuses_to_restore_a_collab_version_and_the_log_is_untouched(self):
         node = self.new_document()
         self.type_into(node, ["one"])
