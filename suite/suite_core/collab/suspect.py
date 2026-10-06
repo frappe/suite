@@ -7,6 +7,8 @@ probed the same way. That row and its dependents are quarantined, each with a re
 and the document is cleared only if pycrdt then takes what is left. Without a verdict (no Node,
 a bad checkpoint, a kernel that fails) or when pycrdt still refuses, the document is held:
 its rows stay, pushes are refused and an admin reviews it.
+A document only a tab's report marked is held only on what its rows show: without a verdict it
+is cleared as unjudged, so a report alone never pauses saving.
 """
 
 from pathlib import Path
@@ -73,8 +75,9 @@ def request(adapter: str, doc_id: str, method: str) -> None:
 
 
 def judge(adapter: str, doc_id: str, roots: dict[str, type], bundle: Path) -> str | None:
-    """Judge a suspect document; answers `quarantined`, `clean` or `held`, or None when it isn't suspect."""
-    if not suspect_of(adapter, doc_id):
+    """Judge a suspect document; answers `quarantined`, `clean`, `held` or `unjudged`, or None when it isn't suspect."""
+    marked = suspect_of(adapter, doc_id)
+    if not marked:
         return None
     snapshot = read(adapter, doc_id)
     if snapshot is None:
@@ -84,9 +87,11 @@ def judge(adapter: str, doc_id: str, roots: dict[str, type], bundle: Path) -> st
     try:
         verdict = kernel.judge(bundle, checkpoint, rows)
     except kernel.KernelFailed as error:
-        return hold(adapter, doc_id, "kernel_failed", repr(error))
+        return unsettled(adapter, doc_id, marked, "kernel_failed", repr(error))
     if verdict is None:
-        return hold(adapter, doc_id, "no_node", "Node 24 or the product's kernel is missing on this host")
+        return unsettled(
+            adapter, doc_id, marked, "no_node", "Node 24 or the product's kernel is missing on this host"
+        )
     index, reason = verdict.index, "editor_schema" if verdict.reason.startswith("schema") else "yjs_refused"
     if index is None:
         index, reason = first_refused(checkpoint, rows, roots), "pycrdt_refused"
@@ -148,6 +153,20 @@ def hold(adapter: str, doc_id: str, why: str, detail: str) -> str:
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     alert(adapter, doc_id, f"suspect held: {why}", f"Saving is paused until an admin reviews it. {detail}")
     return "held"
+
+
+def unsettled(adapter: str, doc_id: str, marked: str, why: str, detail: str) -> str:
+    """A judge that can't settle a document holds it only when a compaction marked it; a tab's report alone never pauses saving."""
+    if marked != "client":
+        return hold(adapter, doc_id, why, detail)
+    clear(adapter, doc_id, "unjudged")
+    alert(
+        adapter,
+        doc_id,
+        f"suspect unjudged: {why}",
+        f"A tab's report was not judged and saving goes on. {detail}",
+    )
+    return "unjudged"
 
 
 def clear(adapter: str, doc_id: str, verdict: str) -> None:

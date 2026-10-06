@@ -250,3 +250,27 @@ class TestSuspect(CheckpointCase):
         self.assertIsNone(self.doc_row(node).suspect)
         frappe.set_user(READER)
         self.assertEqual(self.report(node, rev)[0], 202)
+
+    def test_a_report_the_judge_cannot_settle_clears_and_saving_goes_on(self):
+        def fails(*args):
+            raise kernel.KernelFailed("killed")
+
+        for why, stub in (
+            ("no_node", lambda: patch.object(kernel, "usable_node", lambda: None)),
+            ("kernel_failed", lambda: patch.object(kernel, "judge", fails)),
+        ):
+            with self.subTest(why=why):
+                node = self.new_document()
+                a = Pen(self, node)
+                rev = a.adds(paragraph("alpha"))
+                before = self.alerts(f"suspect unjudged: {why}")
+
+                self.assertEqual(self.report(node, rev)[0], 202)
+                with stub():
+                    writer_collab.judge(self.doc_row(node).id)
+
+                doc = self.doc_row(node)
+                self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "unjudged"))
+                self.assertEqual(self.alerts(f"suspect unjudged: {why}"), before + 1)
+                a.adds(paragraph("beta"))
+                self.assertEqual(self.states(node), ["ok", "ok"])
