@@ -2,7 +2,6 @@
 
 import base64
 import gzip
-import json
 
 import pycrdt
 
@@ -88,54 +87,13 @@ def remap_log(node: str, rewrite) -> None:
     if remapped == state:
         return
     before, after = compaction.load([state]), compaction.load([remapped])
-    expected = rewritten_view(compaction.content(before, ROOTS), rewrite)
     if (
         compaction.snapshot(after) != compaction.snapshot(before)
-        or compaction.content(after, ROOTS) != expected
+        or compaction.content(after, ROOTS) != compaction.content(before, ROOTS, rewrite)
         or updates.rewrite_values(remapped, rewrite) != remapped
     ):
         raise compaction.CompactionFailed("remap_mismatch")
     collab.replace_start(ADAPTER, doc.id, remapped)
-
-
-def rewritten_view(content: str, rewrite) -> str:
-    """`compaction.content` of a document with `rewrite` applied to its values, never its text, tags or keys."""
-
-    def value(item):
-        if isinstance(item, str):
-            return rewrite(item)
-        if isinstance(item, list):
-            return [value(entry) for entry in item]
-        if isinstance(item, dict):
-            return {key: value(entry) for key, entry in item.items()}
-        return item
-
-    def node(item):
-        if isinstance(item, dict) and "text" in item:
-            return {
-                **item,
-                **({"attrs": value(item["attrs"])} if "attrs" in item else {}),
-                "text": [
-                    {
-                        "insert": op["insert"] if isinstance(op["insert"], str) else value(op["insert"]),
-                        **({"attributes": value(op["attributes"])} if "attributes" in op else {}),
-                    }
-                    for op in item["text"]
-                ],
-            }
-        if isinstance(item, dict) and "el" in item:
-            return {
-                "el": item["el"],
-                "attrs": value(item["attrs"]),
-                "kids": [node(kid) for kid in item["kids"]],
-            }
-        if isinstance(item, dict) and "frag" in item:
-            return {"frag": [node(kid) for kid in item["frag"]]}
-        if isinstance(item, dict) and "map" in item:
-            return {"map": {key: node(entry) for key, entry in item["map"].items()}}
-        return value(item)
-
-    return json.dumps({name: node(root) for name, root in json.loads(content).items()}, ensure_ascii=False)
 
 
 def purge_log(node: str) -> None:

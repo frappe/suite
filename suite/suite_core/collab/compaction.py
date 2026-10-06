@@ -114,12 +114,13 @@ def fingerprint(doc: pycrdt.Doc, roots: dict[str, type]) -> tuple[str, dict, dic
     return (content(doc, roots), *snapshot(doc))
 
 
-def content(doc: pycrdt.Doc, roots: dict[str, type]) -> str:
+def content(doc: pycrdt.Doc, roots: dict[str, type], rewrite=None) -> str:
+    """The document as JSON; `rewrite` is applied to its values, never its text, tags or keys."""
     unknown = set(doc.keys()) - set(roots)
     if unknown:
         raise CompactionFailed("unknown_root")
     return json.dumps(
-        {name: serialize(doc.get(name, type=kind)) for name, kind in sorted(roots.items())},
+        {name: serialize(doc.get(name, type=kind), rewrite) for name, kind in sorted(roots.items())},
         ensure_ascii=False,
     )
 
@@ -154,34 +155,34 @@ def clocks(reader: Reader) -> dict:
     return found
 
 
-def serialize(value):
+def serialize(value, rewrite=None):
     if isinstance(value, pycrdt.XmlText):
-        out = {"text": delta(value.diff())}
+        out = {"text": delta(value.diff(), rewrite)}
         if attributes := dict(value.attributes):
-            out["attrs"] = plain(attributes)
+            out["attrs"] = plain(attributes, rewrite)
         return out
     if isinstance(value, pycrdt.XmlElement):
         return {
             "el": value.tag,
-            "attrs": plain(dict(value.attributes)),
-            "kids": [serialize(c) for c in value.children],
+            "attrs": plain(dict(value.attributes), rewrite),
+            "kids": [serialize(c, rewrite) for c in value.children],
         }
     if isinstance(value, pycrdt.XmlFragment):
-        return {"frag": [serialize(child) for child in value.children]}
+        return {"frag": [serialize(child, rewrite) for child in value.children]}
     if isinstance(value, pycrdt.Text):
-        return {"ytext": delta(value.diff())}
+        return {"ytext": delta(value.diff(), rewrite)}
     if isinstance(value, pycrdt.Map):
-        return {"map": {key: serialize(value[key]) for key in sorted(value.keys())}}
+        return {"map": {key: serialize(value[key], rewrite) for key in sorted(value.keys())}}
     if isinstance(value, pycrdt.Array):
-        return {"arr": [serialize(item) for item in value]}
-    return plain(value)
+        return {"arr": [serialize(item, rewrite) for item in value]}
+    return plain(value, rewrite)
 
 
-def delta(diff) -> list:
+def delta(diff, rewrite=None) -> list:
     out = []
     for insert, attributes in diff:
-        item = insert if isinstance(insert, str) else plain(insert)
-        attributes = plain(dict(attributes)) if attributes else None
+        item = insert if isinstance(insert, str) else plain(insert, rewrite)
+        attributes = plain(dict(attributes), rewrite) if attributes else None
         if (
             isinstance(item, str)
             and out
@@ -194,18 +195,20 @@ def delta(diff) -> list:
     return out
 
 
-def plain(value):
+def plain(value, rewrite=None):
     if isinstance(
         value,
         pycrdt.Map | pycrdt.Array | pycrdt.Text | pycrdt.XmlFragment | pycrdt.XmlElement | pycrdt.XmlText,
     ):
-        return serialize(value)
+        return serialize(value, rewrite)
+    if isinstance(value, str) and rewrite:
+        return rewrite(value)
     if isinstance(value, list | tuple):
-        return [plain(item) for item in value]
+        return [plain(item, rewrite) for item in value]
     if isinstance(value, bytes | bytearray):
         return {"$bin": bytes(value).hex()}
     if isinstance(value, dict):
-        return {key: plain(value[key]) for key in sorted(value)}
+        return {key: plain(value[key], rewrite) for key in sorted(value)}
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return value

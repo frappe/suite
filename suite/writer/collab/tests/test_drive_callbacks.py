@@ -253,6 +253,25 @@ class TestWriterDriveCallbacks(CheckpointCase):
         source_image = self.opened(node).get("default", type=pycrdt.XmlFragment).children[0]
         self.assertEqual(dict(source_image.attributes), {"src": embed(picture)})
 
+    def test_a_copy_renames_pictures_in_a_list_and_keeps_text(self):
+        node = self.new_document()
+        picture = self.old_media(node, "picture.png")
+
+        def change(body):
+            body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)}))
+            meta = body.doc.get("meta", type=pycrdt.Map)
+            meta["pictures"] = pycrdt.Array([embed(picture), [picture]])
+            meta["note"] = pycrdt.Text(embed(picture))
+
+        self.edit(node, change)
+
+        copied = self.copy_of(node)
+
+        [copied_picture] = frappe.get_all("Drive Node", {"parent_node": copied, "kind": "file"}, pluck="name")
+        meta = self.opened(copied).get("meta", type=pycrdt.Map)
+        self.assertEqual(meta["pictures"].to_py(), [embed(copied_picture), [copied_picture]])
+        self.assertEqual(str(meta["note"]), embed(picture))
+
     def test_a_copys_start_cannot_change_once_a_tab_has_a_session(self):
         node = self.new_document()
         self.type_into(node, ["one"])
