@@ -300,6 +300,131 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(self.open(node)[1], [])
         self.assertEqual(self.push(node, sid, cid, 1, own)[0], 200)
 
+    def test_a_push_that_does_not_continue_its_writers_clocks_is_refused_and_stores_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        a, b, c = typed(cid, ["a", "b", "c"])
+
+        # The text node takes clock 0, so "a" is clock 1 and "b" starts at 2
+        self.assertEqual(self.push(node, sid, cid, 1, b), (409, {"collab": "clock_gap", "clock": 0}))
+        self.assertEqual(self.push(node, sid, cid, 1, a)[0], 200)
+        self.assertEqual(self.push(node, sid, cid, 2, c), (409, {"collab": "clock_gap", "clock": 2}))
+        self.assertEqual(self.push(node, sid, cid, 2, a), (409, {"collab": "clock_gap", "clock": 2}))
+
+        self.assertEqual(self.open(node)[1], [(1, a)])
+        self.assertEqual(
+            [self.push(node, sid, cid, seq, each)[0] for seq, each in ((2, b), (3, c))], [200, 200]
+        )
+
+    def test_a_push_that_needs_another_writers_unsent_typing_waits_for_it(self):
+        self.set_mode("on")
+        node = self.new_document()
+        (first_sid, first), (second_sid, second) = self.session(node), self.session(node)
+        [abc] = typed(first, ["abc"])
+        tab = pycrdt.Doc(client_id=second)
+        tab.apply_update(abc)
+        before = tab.get_state()
+        text = tab.get("default", type=pycrdt.XmlFragment).children[0]
+        text.insert(3, "x")
+        after_c = tab.get_update(before)
+
+        # "x" sits after "c", the first writer's clock 3
+        self.assertEqual(
+            self.push(node, second_sid, second, 1, after_c),
+            (409, {"collab": "missing_dep", "client": first, "clock": 3}),
+        )
+        self.assertEqual(self.open(node)[1], [])
+        self.assertEqual(self.push(node, first_sid, first, 1, abc)[0], 200)
+        self.assertEqual(self.push(node, second_sid, second, 1, after_c)[0], 200)
+        self.assertEqual(self.open(node)[1], [(1, abc), (2, after_c)])
+
+    def test_a_delete_may_reach_the_last_committed_clock_and_no_further(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sessions = [self.session(node) for _ in range(3)]
+        (first_sid, first), (seen_sid, seen), (ahead_sid, ahead) = sessions
+        abc, d = typed(first, ["abc", "d"])
+        self.assertEqual(self.push(node, first_sid, first, 1, abc)[0], 200)
+
+        def deleting(cid, rows, start, end):
+            tab = pycrdt.Doc(client_id=cid)
+            for row in rows:
+                tab.apply_update(row)
+            before = tab.get_state()
+            del tab.get("default", type=pycrdt.XmlFragment).children[0][start:end]
+            return tab.get_update(before)
+
+        # Committed clocks end at 3 ("c"); "d" is clock 4
+        last = deleting(seen, [abc], 2, 3)
+        past = deleting(ahead, [abc, d], 3, 4)
+
+        self.assertEqual(self.push(node, seen_sid, seen, 1, last)[0], 200)
+        self.assertEqual(
+            self.push(node, ahead_sid, ahead, 1, past),
+            (409, {"collab": "missing_dep", "client": first, "clock": 4}),
+        )
+        self.assertEqual(self.push(node, first_sid, first, 2, d)[0], 200)
+        self.assertEqual(self.push(node, ahead_sid, ahead, 1, past)[0], 200)
+
+    def test_a_copy_is_edited_where_its_start_was_written_and_nowhere_past_it(self):
+        self.set_mode("on")
+        node = self.new_document()
+        original, later = typed(7, ["start", "!"])
+        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, original)
+        frappe.db.commit()
+        (sid, cid), (ahead_sid, ahead) = self.session(node), self.session(node)
+
+        def appending(tab_cid, rows):
+            tab = pycrdt.Doc(client_id=tab_cid)
+            for row in rows:
+                tab.apply_update(row)
+            before = tab.get_state()
+            text = tab.get("default", type=pycrdt.XmlFragment).children[0]
+            text.insert(len(str(text)), "?")
+            return tab.get_update(before)
+
+        # "start" is clocks 1 to 5 of the writer the copy began from; "!" is clock 6
+        self.assertEqual(self.push(node, sid, cid, 1, appending(cid, [original]))[0], 200)
+        self.assertEqual(
+            self.push(node, ahead_sid, ahead, 1, appending(ahead, [original, later])),
+            (409, {"collab": "missing_dep", "client": 7, "clock": 6}),
+        )
+
+    def test_logs_made_before_clocks_were_kept_read_them_from_their_rows(self):
+        self.set_mode("on")
+        node = self.new_document()
+        start, after_start = typed(7, ["start", "!"])
+        doc_id = routes.collab.find(routes.ADAPTER, node).id
+        routes.collab.replace_start(routes.ADAPTER, doc_id, start)
+        frappe.db.commit()
+        sid, cid = self.session(node)
+        a, b, c = typed(cid, ["a", "b", "c"])
+        self.assertEqual(
+            [self.push(node, sid, cid, seq, each)[0] for seq, each in ((1, a), (2, b))], [200, 200]
+        )
+        frappe.db.sql("UPDATE `__writer_collab_session` SET `next_clock` = NULL WHERE `doc_id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
+        frappe.db.commit()
+
+        routes.collab.backfill_clocks(routes.ADAPTER)
+
+        self.assertEqual(self.push(node, sid, cid, 3, a), (409, {"collab": "clock_gap", "clock": 3}))
+        self.assertEqual(self.push(node, sid, cid, 3, c)[0], 200)
+        other_sid, other = self.session(node)
+        tab = pycrdt.Doc(client_id=other)
+        tab.apply_update(start)
+        before = tab.get_state()
+        del tab.get("default", type=pycrdt.XmlFragment).children[0][4:5]
+        self.assertEqual(self.push(node, other_sid, other, 1, tab.get_update(before))[0], 200)
+        tab.apply_update(after_start)
+        before = tab.get_state()
+        del tab.get("default", type=pycrdt.XmlFragment).children[0][4:5]
+        self.assertEqual(
+            self.push(node, other_sid, other, 2, tab.get_update(before)),
+            (409, {"collab": "missing_dep", "client": 7, "clock": 6}),
+        )
+
     def test_a_push_that_fails_midway_leaves_no_trace(self):
         self.set_mode("on")
         node = self.new_document()

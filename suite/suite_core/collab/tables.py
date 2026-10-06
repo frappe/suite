@@ -43,6 +43,8 @@ def ensure_tables(adapter: str) -> None:
         "`last_compaction_ms` int unsigned NULL",
         "`last_compaction_error` varchar(140) NULL",
         "`mode` varchar(20) NOT NULL DEFAULT 'active'",
+        # Each writer's next clock in the start a copy began with; its writers have no session
+        "`start_clocks` json NULL",
     ):
         frappe.db.sql_ddl(f"ALTER TABLE `{table(adapter, 'doc')}` ADD COLUMN IF NOT EXISTS {column}")
     frappe.db.sql_ddl(
@@ -81,6 +83,10 @@ def ensure_tables(adapter: str) -> None:
             PRIMARY KEY (`doc_id`, `sid`),
             UNIQUE KEY `client` (`doc_id`, `client_id`)
         ) {options}"""
+    )
+    # NULL until `backfill_clocks` reads it from sessions made before it was kept
+    frappe.db.sql_ddl(
+        f"ALTER TABLE `{table(adapter, 'session')}` ADD COLUMN IF NOT EXISTS `next_clock` bigint unsigned NULL AFTER `acked_seq`"
     )
     frappe.db.sql_ddl(
         f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "checkpoint")}` (

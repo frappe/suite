@@ -15,6 +15,7 @@ ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 
 def ensure_tables() -> None:
     collab.ensure_tables(ADAPTER)
+    collab.backfill_clocks(ADAPTER)
 
 
 def start_log(node: str) -> None:

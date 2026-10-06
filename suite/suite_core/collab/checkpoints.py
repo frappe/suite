@@ -18,7 +18,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import admission, compaction
+from suite.suite_core.collab import admission, compaction, ingest
 from suite.suite_core.collab.log import ChainBroken, chain_next, chain_seed, read, rows_after
 from suite.suite_core.collab.tables import table
 
@@ -315,8 +315,14 @@ def replace_start(adapter: str, doc_id: str, state: bytes) -> None:
     frappe.db.sql(
         f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = 1, `head_chain` = UNHEX(%(chain)s),
         `checkpoint_rev` = 1, `checkpoint_chain` = UNHEX(%(chain)s), `integrated_rev` = 1,
-        `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s WHERE `id` = %(doc)s""",
-        {"chain": chain.hex(), "kernel": compaction.KERNEL, "size": len(state), "doc": doc_id},
+        `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s, `start_clocks` = %(clocks)s WHERE `id` = %(doc)s""",
+        {
+            "chain": chain.hex(),
+            "kernel": compaction.KERNEL,
+            "size": len(state),
+            "clocks": json.dumps(ingest.next_clocks([state])),
+            "doc": doc_id,
+        },
     )
 
 

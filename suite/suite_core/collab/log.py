@@ -74,8 +74,8 @@ def create(adapter: str, node: str) -> str:
     doc_id = frappe.generate_hash(length=20)
     lineage = secrets.token_hex(16)
     frappe.db.sql(
-        f"""INSERT INTO `{table(adapter, "doc")}` (`id`, `node`, `lineage`, `head_rev`, `head_chain`, `created`)
-        VALUES (%s, %s, %s, 0, UNHEX(%s), %s)""",
+        f"""INSERT INTO `{table(adapter, "doc")}` (`id`, `node`, `lineage`, `head_rev`, `head_chain`, `start_clocks`, `created`)
+        VALUES (%s, %s, %s, 0, UNHEX(%s), '{{}}', %s)""",
         (doc_id, node, lineage, chain_seed(lineage).hex(), now_datetime()),
     )
     return doc_id
@@ -149,7 +149,7 @@ def open_header(doc: dict, *, can_write: bool) -> dict:
 def load_session(adapter: str, doc_id: str, sid: str, principal: str):
     """The session row for `sid`, or None. Refused if it belongs to another principal."""
     rows = frappe.db.sql(
-        f"SELECT `client_id`, `principal`, `acked_seq` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s AND `sid` = %s",
+        f"SELECT `client_id`, `principal`, `acked_seq`, `next_clock` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s AND `sid` = %s",
         (doc_id, sid),
         as_dict=True,
     )
@@ -162,8 +162,8 @@ def insert_session(adapter: str, doc_id: str, sid: str, client_id: int, principa
     """Commit a new session row. False if the sid or the clientID is already taken."""
     try:
         frappe.db.sql(
-            f"""INSERT INTO `{table(adapter, "session")}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `created`)
-            VALUES (%s, %s, %s, %s, 0, %s)""",
+            f"""INSERT INTO `{table(adapter, "session")}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `next_clock`, `created`)
+            VALUES (%s, %s, %s, %s, 0, 0, %s)""",
             (doc_id, sid, client_id, principal, now_datetime()),
         )
     except Exception as error:
@@ -293,13 +293,13 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
     if answer:
         return answer
     try:
-        ingest.check(payload, header["cid"])
+        row = ingest.check(payload, header["cid"])
     except ValueError:
         raise Refusal(400, "malformed") from None
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
-        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
+        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
         doc_id,
         as_dict=True,
     )
@@ -322,6 +322,10 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
             raise Refusal(409, "seq", acked=acked)
         if header["seen_rev"] > head:
             raise Refusal(409, "diverged")
+        try:
+            ingest.close(adapter, doc_id, row, header["cid"], start_clocks(doc))
+        except ingest.Unclosed as unclosed:
+            raise Refusal(409, unclosed.reason, **unclosed.extra) from None
 
         rev = head + 1
         payload_sha = hashlib.sha256(payload).digest()
@@ -352,14 +356,59 @@ def push(adapter: str, doc_id: str, header: dict, payload: bytes, principal: str
             (rev, chain.hex(), len(payload), doc_id),
         )
         frappe.db.sql(
-            f"UPDATE `{table(adapter, 'session')}` SET `acked_seq` = %s, `last_push_at` = %s WHERE `doc_id` = %s AND `sid` = %s",
-            (header["to"], now, doc_id, header["sid"]),
+            f"""UPDATE `{table(adapter, "session")}` SET `acked_seq` = %s, `next_clock` = %s, `last_push_at` = %s
+            WHERE `doc_id` = %s AND `sid` = %s""",
+            (
+                header["to"],
+                row.clock_to if row.update.structs else session.next_clock,
+                now,
+                doc_id,
+                header["sid"],
+            ),
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
     except BaseException:
         frappe.db.rollback()
         raise
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
+
+
+def start_clocks(doc: dict) -> dict[int, int]:
+    return {int(client): clock for client, clock in json.loads(doc.start_clocks or "{}").items()}
+
+
+def backfill_clocks(adapter: str) -> None:
+    """Read each writer's next clock from the log for logs made before clocks were kept. Safe to run again."""
+    for (doc_id,) in frappe.db.sql(
+        f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `start_clocks` IS NULL AND `mode` != 'purged'"
+    ):
+        try:
+            log = read(adapter, doc_id)
+            clocks = ingest.next_clocks(
+                ([log["checkpoint"]] if log["checkpoint"] else [])
+                + [payload for _rev, payload in log["rows"]]
+            )
+        except (ChainBroken, ValueError):
+            frappe.log_error(f"Collab clocks not read for {adapter} log {doc_id}")
+            continue
+        sessions = {
+            int(client)
+            for (client,) in frappe.db.sql(
+                f"SELECT `client_id` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s", doc_id
+            )
+        }
+        for client in sessions:
+            frappe.db.sql(
+                f"""UPDATE `{table(adapter, "session")}` SET `next_clock` = %s
+                WHERE `doc_id` = %s AND `client_id` = %s AND `next_clock` IS NULL""",
+                (clocks.get(client, 0), doc_id, client),
+            )
+        start = {client: clock for client, clock in clocks.items() if client not in sessions}
+        frappe.db.sql(
+            f"UPDATE `{table(adapter, 'doc')}` SET `start_clocks` = %s WHERE `id` = %s",
+            (json.dumps(start), doc_id),
+        )
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: bool = True) -> dict | None:

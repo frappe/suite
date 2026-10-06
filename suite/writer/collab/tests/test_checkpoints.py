@@ -286,7 +286,9 @@ class TestWriterCheckpoints(CheckpointCase):
     def test_a_start_state_larger_than_half_the_packet_limit_is_stored(self):
         node = self.new_document()
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
-        state = os.urandom(packet // 2 + 2**20)
+        start = pycrdt.Doc()
+        start["blob"] = pycrdt.Map({"bytes": os.urandom(packet // 2 + 2**20)})
+        state = start.get_update()
 
         checkpoints.replace_start("writer", self.doc_row(node).id, state)
 
