@@ -93,7 +93,7 @@ class WriterVersionPayloads(unittest.TestCase):
         row = frappe._dict(content="body", html="<p>x</p>", collab=0)
         with mock.patch.object(writer.frappe.db, "get_value", return_value=row) as read:
             stream, mime = writer.version_bytes("WR-1")
-        self.assertEqual(read.call_args.args, (writer.DOCTYPE, "WR-1", ("content", "html", "collab")))
+        self.assertEqual(read.call_args.args, (writer.DOCTYPE, "WR-1", ("node", "content", "html", "collab")))
         self.assertEqual(mime, writer.VERSION_MIME)
         self.assertEqual(json.loads(stream.read())["collab"], 0)
 
