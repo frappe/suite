@@ -267,3 +267,27 @@ class TestQuarantine(CheckpointCase):
         typed = a.write(lambda text: text.insert(0, "zero "))
         self.assertEqual((typed.status_code, answer(typed)["collab"]), (409, "client_closed"))
         self.assertEqual(b.typed(0, "beta "), 3)
+
+    def test_a_row_whose_writer_is_unknown_is_not_quarantined(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        frappe.db.commit()
+
+        with self.assertRaises(RuntimeError):
+            self.quarantine(node, {1})
+
+        doc = self.doc_row(node)
+        self.assertEqual((doc.q_epoch, self.recovered(node), self.stored_text(node)), (0, [], "alpha"))
+
+    def test_the_same_bytes_twice_from_one_writer_keep_one_recovery_copy(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        self.store_raw(node, a, b"\x01\x01garbage")
+        self.store_raw(node, a, b"\x01\x01garbage")
+
+        self.assertEqual(self.quarantine(node, {2}, "malformed_row"), [2, 3])
+
+        self.assertEqual(self.recovered(node), [(2, WRITER, "malformed_row", b"\x01\x01garbage")])

@@ -65,25 +65,32 @@ def quarantine(adapter: str, doc_id: str, revs: set[int], reason: str) -> list[i
         for row in rows:
             if int(row.rev) not in picked:
                 continue
+            if not row.principal:
+                raise RuntimeError(f"rev {row.rev} has no session, so its recovery copy would have no owner")
             payload = bytes(row.payload)
-            frappe.db.sql(
-                f"""INSERT IGNORE INTO `{table(adapter, "recovery")}`
-                (`id`, `doc_id`, `node`, `owner`, `reason`, `lineage`, `sha256`, `nbytes`, `payload`, `context_rev`, `created`)
-                VALUES (%s, %s, %s, %s, %s, %s, UNHEX(%s), %s, UNHEX(%s), %s, %s)""",
-                (
-                    frappe.generate_hash(length=20),
-                    doc_id,
-                    doc.node,
-                    row.principal or "",
-                    reason,
-                    doc.lineage,
-                    hashlib.sha256(payload).hexdigest(),
-                    len(payload),
-                    payload.hex(),
-                    int(row.rev),
-                    now,
-                ),
-            )
+            try:
+                frappe.db.sql(
+                    f"""INSERT INTO `{table(adapter, "recovery")}`
+                    (`id`, `doc_id`, `node`, `owner`, `reason`, `lineage`, `sha256`, `nbytes`, `payload`, `context_rev`, `created`)
+                    VALUES (%s, %s, %s, %s, %s, %s, UNHEX(%s), %s, UNHEX(%s), %s, %s)""",
+                    (
+                        frappe.generate_hash(length=20),
+                        doc_id,
+                        doc.node,
+                        row.principal,
+                        reason,
+                        doc.lineage,
+                        hashlib.sha256(payload).hexdigest(),
+                        len(payload),
+                        payload.hex(),
+                        int(row.rev),
+                        now,
+                    ),
+                )
+            except Exception as error:
+                # The owner already has a copy of these exact bytes
+                if not frappe.db.is_duplicate_entry(error):
+                    raise
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "update")}` SET `state` = 'quarantined', `payload` = ''
             WHERE `doc_id` = %s AND `rev` IN %s""",
