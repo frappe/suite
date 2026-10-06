@@ -44,7 +44,7 @@ class CheckpointCase(IntegrationTestCase):
         self.addCleanup(frappe.set_user, "Administrator")
 
     def job(self, doc_id: str) -> checkpoints.Compaction:
-        return checkpoints.Compaction("writer", doc_id, writer_collab.ROOTS)
+        return checkpoints.Compaction("writer", doc_id, writer_collab.ROOTS, "suite.writer.collab.judge")
 
     def restore_mode(self):
         frappe.db.set_single_value("Suite Collab Settings", "mode", self.mode or "off")

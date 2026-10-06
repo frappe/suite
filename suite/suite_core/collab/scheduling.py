@@ -28,7 +28,7 @@ def consider(adapter: str, doc_id: str, method: str, *, final_from: str | None =
     """Request a compaction if the document is due. `final_from` names a tab's session that is hiding or closing."""
     doc = frappe.db.sql(
         f"""SELECT `d`.`head_rev`, `d`.`checkpoint_rev`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`,
-        `d`.`next_compaction_at`, `u`.`created` AS `oldest`
+        `d`.`next_compaction_at`, `d`.`suspect`, `u`.`created` AS `oldest`
         FROM `{table(adapter, "doc")}` `d` LEFT JOIN `{table(adapter, "update")}` `u`
         ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
         WHERE `d`.`id` = %s""",
@@ -55,7 +55,7 @@ def due(doc, now, *, closing: bool = False) -> bool:
     under the cap, whichever is less. The room term is hysteresis: a document
     near the cap waits for a real tail instead of compacting after every push.
     """
-    if int(doc.head_rev) == int(doc.checkpoint_rev):
+    if int(doc.head_rev) == int(doc.checkpoint_rev) or doc.get("suspect"):
         return False
     if doc.next_compaction_at and doc.next_compaction_at > now:
         return False
@@ -68,19 +68,34 @@ def due(doc, now, *, closing: bool = False) -> bool:
     )
 
 
-def sweep(adapter: str, method: str, limit: int = 100, *, purge_method: str | None = None) -> None:
+def sweep(
+    adapter: str,
+    method: str,
+    limit: int = 100,
+    *,
+    purge_method: str | None = None,
+    judge_method: str | None = None,
+) -> None:
     """Request compactions for documents whose tail has waited too long, whatever their traffic,
-    and the deletion of purged logs a job has not finished."""
+    the deletion of purged logs and the judging of suspect documents a job has not finished."""
     if purge_method:
         for (doc_id,) in frappe.db.sql(
             f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `mode` = 'purged' LIMIT %s", limit
         ):
             enqueue(purge_method, f"suite-collab-purge-{adapter}-{doc_id}", doc_id=doc_id)
+    if judge_method:
+        for (doc_id,) in frappe.db.sql(
+            f"""SELECT `id` FROM `{table(adapter, "doc")}` WHERE `suspect` IS NOT NULL AND `suspect_held` IS NULL
+            AND `mode` != 'purged' LIMIT %s""",
+            limit,
+        ):
+            enqueue(judge_method, f"suite-collab-judge-{adapter}-{doc_id}", doc_id=doc_id)
     now = now_datetime()
     for (doc_id,) in frappe.db.sql(
         f"""SELECT `d`.`id` FROM `{table(adapter, "doc")}` `d` JOIN `{table(adapter, "update")}` `u`
         ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
-        WHERE `d`.`head_rev` > `d`.`checkpoint_rev` AND `d`.`mode` != 'purged' AND `u`.`created` <= %s
+        WHERE `d`.`head_rev` > `d`.`checkpoint_rev` AND `d`.`mode` != 'purged' AND `d`.`suspect` IS NULL
+        AND `u`.`created` <= %s
         AND (`d`.`next_compaction_at` IS NULL OR `d`.`next_compaction_at` <= %s)
         ORDER BY `u`.`created` LIMIT %s""",
         (now - SWEEP_AGE, now, limit),

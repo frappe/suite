@@ -18,7 +18,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import admission, compaction, ingest, quarantine
+from suite.suite_core.collab import admission, compaction, ingest, quarantine, suspect
 from suite.suite_core.collab.log import ChainBroken, chain_next, chain_seed, read, rows_after
 from suite.suite_core.collab.tables import table
 
@@ -26,22 +26,26 @@ PACED_FROM = 512 * 2**10
 ALERT_AT = 3
 
 
-def run(adapter: str, doc_id: str, roots: dict[str, type]) -> None:
-    Compaction(adapter, doc_id, roots).run()
+def run(adapter: str, doc_id: str, roots: dict[str, type], judge_method: str) -> None:
+    Compaction(adapter, doc_id, roots, judge_method).run()
 
 
 @dataclass
 class Compaction:
-    """One document's compaction. `roots` names every root type its product writes."""
+    """One document's compaction. `roots` names every root type its product writes; `judge_method` judges
+    the document when the compaction can't take its rows."""
 
     adapter: str
     doc_id: str
     roots: dict[str, type]
+    judge_method: str
 
     def table(self, kind: str) -> str:
         return table(self.adapter, kind)
 
     def run(self) -> None:
+        if suspect.suspect_of(self.adapter, self.doc_id):
+            return
         held = admission.take_place(self.adapter, self.doc_id)
         if held is None:
             self.defer(admission.LEASE)
@@ -77,6 +81,8 @@ class Compaction:
                 else type(error).__name__
             )
             self.failed(snapshot and snapshot["head_rev"], reason, error)
+            if reason in suspect.REASONS:
+                suspect.mark(self.adapter, self.doc_id, reason, self.judge_method)
 
     def fit_snapshot(self) -> dict | None:
         """A snapshot after quarantining, one at a time, each row a compaction must not take."""
@@ -157,6 +163,7 @@ class Compaction:
                     raise
         if installed and not result.integrated:
             self.alert("fallback", "The compaction kept the merged rows as an open base only")
+            suspect.mark(self.adapter, self.doc_id, "fallback", self.judge_method)
 
     def point_at(self, snapshot: dict, sha: bytes, result: compaction.Compacted) -> bool:
         doc, through = self.doc_id, snapshot["head_rev"]

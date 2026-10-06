@@ -8,11 +8,13 @@ from pathlib import Path
 import pycrdt
 
 from suite.suite_core import collab
-from suite.suite_core.collab import checkpoints, compaction, scheduling, updates
+from suite.suite_core.collab import checkpoints, compaction, scheduling, suspect, updates
 
 ADAPTER = "writer"
 # The editor's fragment, and tab labels
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
+# The Node kernel `bench build` makes, which judges suspect documents with the browsers' Yjs and this schema
+KERNEL = Path(__file__).with_name("dist") / "kernel.cjs"
 DECLARED = json.loads(Path(__file__).with_name("features.json").read_text())
 # y-prosemirror writes only GC, deleted, string, format, type and any content, and only XmlElement and
 # XmlText shared types. `meta` holds only plain values; if it ever nests a Map, Array or Text,
@@ -141,7 +143,12 @@ def delete_purged(doc_id: str) -> None:
 
 
 def compact(doc_id: str) -> None:
-    checkpoints.run(ADAPTER, doc_id, ROOTS)
+    checkpoints.run(ADAPTER, doc_id, ROOTS, "suite.writer.collab.judge")
+
+
+def judge(doc_id: str) -> None:
+    if suspect.judge(ADAPTER, doc_id, ROOTS, KERNEL) in ("clean", "quarantined"):
+        consider_compaction(doc_id)
 
 
 def consider_compaction(doc_id: str, *, final_from: str | None = None) -> None:
@@ -149,4 +156,9 @@ def consider_compaction(doc_id: str, *, final_from: str | None = None) -> None:
 
 
 def sweep() -> None:
-    scheduling.sweep(ADAPTER, "suite.writer.collab.compact", purge_method="suite.writer.collab.delete_purged")
+    scheduling.sweep(
+        ADAPTER,
+        "suite.writer.collab.compact",
+        purge_method="suite.writer.collab.delete_purged",
+        judge_method="suite.writer.collab.judge",
+    )

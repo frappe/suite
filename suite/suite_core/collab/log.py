@@ -28,15 +28,16 @@ CLIENT_ID_MAX = 2**30
 PURGE_BATCH = 500
 # A push stamped by a newer build than this server waits out the deploy
 UPGRADING_RETRY_MS = 30_000
+SUSPECT_RETRY_MS = 5 * 60_000
 
 
 class Refusal(Exception):
     """A collab answer other than success, sent as `{"collab": reason, ...}`."""
 
-    def __init__(self, status: int, reason: str, **extra):
-        super().__init__(reason)
+    def __init__(self, status: int, collab: str, /, **extra):
+        super().__init__(collab)
         self.status = status
-        self.body = {"collab": reason, **extra}
+        self.body = {"collab": collab, **extra}
 
 
 def enabled() -> bool:
@@ -333,7 +334,7 @@ def push(
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
-        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
+        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps`, `suspect_held` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
         doc_id,
         as_dict=True,
     )
@@ -345,6 +346,9 @@ def push(
             raise Refusal(404, "not_found")
         if header["lineage"] != doc.lineage:
             raise Refusal(409, "lineage")
+        # The rows stay on the device until an admin reviews the document
+        if doc.suspect_held:
+            raise Refusal(423, "paused", reason="suspect", retry_ms=SUSPECT_RETRY_MS)
         session = session_for(adapter, doc_id, header, principal)
         acked = int(session.acked_seq)
         head = int(doc.head_rev)

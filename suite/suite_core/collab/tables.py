@@ -49,6 +49,10 @@ def ensure_tables(adapter: str) -> None:
         "`schema_steps` json NOT NULL DEFAULT '[[0, 1]]'",
         # Rises with every quarantine, so a tab that may have applied a quarantined row rebuilds
         "`q_epoch` int unsigned NOT NULL DEFAULT 0",
+        # Why a compaction could not take the rows; compactions skip the document until a job judges it
+        "`suspect` varchar(40) NULL",
+        # Why judging could not settle it; pushes are refused until an admin reviews it
+        "`suspect_held` varchar(40) NULL",
     ):
         frappe.db.sql_ddl(f"ALTER TABLE `{table(adapter, 'doc')}` ADD COLUMN IF NOT EXISTS {column}")
     frappe.db.sql_ddl(
