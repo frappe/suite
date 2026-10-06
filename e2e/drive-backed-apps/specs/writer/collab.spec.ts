@@ -291,8 +291,31 @@ test.describe("Writer collaboration", () => {
 			.toBe(true);
 		const before = await text.boundingBox();
 		const column = await page.locator("#editor-scroll-container").boundingBox();
+		const track = () =>
+			page.evaluate(
+				() =>
+					new Promise<number[][]>((resolve) => {
+						const p = document.querySelector('[aria-label="Document editor"] p')!;
+						const frames: number[][] = [];
+						const start = performance.now();
+						const tick = () => {
+							const width = document.querySelector("aside")?.getBoundingClientRect().width ?? 0;
+							frames.push([p.getBoundingClientRect().x, width]);
+							if (performance.now() - start < 600) requestAnimationFrame(tick);
+							else resolve(frames);
+						};
+						requestAnimationFrame(tick);
+					}),
+			);
+		const expectInStep = (frames: number[][]) => {
+			expect(frames.some(([, width]) => width > 10 && width < 310)).toBe(true);
+			const drift = Math.max(...frames.map(([x, width]) => Math.abs(before!.x - x - width / 2)));
+			expect(drift).toBeLessThanOrEqual(1);
+		};
 
+		const opening = track();
 		await page.getByRole("button", { name: /versions/i }).first().click();
+		expectInStep(await opening);
 		const aside = page.getByRole("complementary", { name: "Versions" });
 		const row = aside.getByRole("button", { name: /^One/ });
 		await expect(row).toBeVisible();
@@ -312,7 +335,9 @@ test.describe("Writer collaboration", () => {
 		expect(input.x).toBe(commentsHeading.x);
 		expect(input.y - commentsHeading.y).toBe(tocGap);
 
+		const closing = track();
 		await page.getByRole("button", { name: "Close panel" }).click();
+		expectInStep(await closing);
 		expect(await text.boundingBox()).toEqual(before);
 	});
 
@@ -330,6 +355,7 @@ test.describe("Writer collaboration", () => {
 		await takeVersion(owner.context.request, node, "Two");
 		await page.getByRole("button", { name: /versions/i }).first().click();
 		const panel = page.getByRole("complementary", { name: "Versions" });
+		await expect.poll(async () => (await panel.boundingBox())?.width).toBe(320);
 		const editorText = page.getByLabel("Document editor");
 		const previewText = page.locator('[aria-label="Version preview"] .ProseMirror');
 		const place = async (text: typeof editorText) => {
