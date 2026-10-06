@@ -22,6 +22,7 @@ from frappe.utils import (
     time_diff_in_seconds,
 )
 
+from suite.mail import classification
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.sieve_script.sieve_script import SCREENER_MAILBOX_NAME
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
@@ -909,17 +910,24 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
 
     if ids_to_fetch:
         client = get_account_client(account)
+        classify = classification.is_enabled()
+        properties = EMAIL_PROPERTIES + classification.EMAIL_PROPERTIES if classify else EMAIL_PROPERTIES
         emails = [
             e.to_wire()
             for e in chunked_get(
                 client,
-                lambda b, chunk: b.mail.email.get(
-                    ids=chunk, properties=EMAIL_PROPERTIES, fetchAllBodyValues=True
-                ),
+                lambda b, chunk: b.mail.email.get(ids=chunk, properties=properties, fetchAllBodyValues=True),
                 ids_to_fetch,
             )
         ]
-        mailbox_map = {mb["id"]: mb["name"] for mb in get_cached_mailboxes(account)}
+        mailboxes = get_cached_mailboxes(account)
+
+        # A message from the server is one the cache does not hold: new mail, or old mail seen
+        # here for the first time. Either may still be without a category.
+        if classify:
+            classification.classify_emails(client, account, emails, mailboxes)
+
+        mailbox_map = {mb["id"]: mb["name"] for mb in mailboxes}
 
         messages_to_cache = {}
         for email in emails:
