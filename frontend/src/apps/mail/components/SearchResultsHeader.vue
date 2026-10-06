@@ -79,6 +79,7 @@ import { Button, FormControl } from 'frappe-ui'
 
 import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
 import { mailSearchRoute, useScreenSize } from '@/apps/mail/utils/composables'
+import { mailboxRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import { useRootStore } from '@/stores/root'
 
@@ -152,5 +153,5 @@ const removeSearchFilter = (key: string) => {
 const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
 
 const exitSearch = () =>
-	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
+	router.push(mailboxRoute(mailboxIds.inbox, { accountId }))
 </script>

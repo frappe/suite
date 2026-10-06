@@ -72,6 +72,8 @@ export interface User {
 	// `get_user_info` enriches each account with its per-account outgoing default and
 	// JMAP Account doc name (the fields moved off User Settings).
 	accounts: (UserAccount & {
+		/** The user's number for the account, which their URLs name it by (/mail/a/0). */
+		number: number
 		default_outgoing_email?: string
 		jmap_account?: string
 		on_mark_as_junk?: OnMarkAsJunk
@@ -232,6 +234,7 @@ export interface MailboxData {
 	name: string
 	id: string
 	role: string | null
+	parent_id?: string | null
 	total_emails: number
 	total_threads: number
 	unread_threads: number

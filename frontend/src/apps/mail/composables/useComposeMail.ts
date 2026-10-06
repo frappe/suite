@@ -11,6 +11,7 @@ import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
 import { moveRecipient as moveRecipientBetweenFields } from '@/apps/mail/utils/recipientFields'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
+import { accountRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 
 import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
 import type { RecipientField } from '@/apps/mail/utils/recipientFields'
@@ -97,10 +98,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		identities.value.data?.find((identity: Identity) => identity.email === email)
 
 	const viewSentMessage = (threadID: string) =>
-		router.push({
-			name: 'mail-mail',
-			params: { accountId: scopeAccountId.value, mailbox: mailboxIds.value.sent, threadID },
-		})
+		router.push(mailboxRoute(mailboxIds.value.sent, { accountId: scopeAccountId.value, threadID }))
 
 	const getDefaultFromEmail = () => {
 		const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
@@ -437,10 +435,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 			raiseToast(__('Send scheduled.'), 'success', {
 				label: __('View'),
 				onClick: () =>
-					router.push({
-						name: 'mail-outbox',
-						params: { accountId: scopeAccountId.value },
-					}),
+					router.push(accountRoute('mail-outbox', scopeAccountId.value)),
 			})
 		else if (status === 'Submitted')
 			raiseToast(

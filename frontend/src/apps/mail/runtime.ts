@@ -1,6 +1,7 @@
 import { createResource } from 'frappe-ui'
 
 import { mailGuard } from '@/apps/mail/router'
+import { settleOpenMailbox } from '@/apps/mail/utils/locations'
 
 export function bootstrap() {
   if (!window.translatedMessages) {
@@ -13,3 +14,4 @@ export function bootstrap() {
 }
 
 export const beforeEach = mailGuard
+export const afterEach = settleOpenMailbox

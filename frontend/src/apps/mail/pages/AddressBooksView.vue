@@ -51,6 +51,7 @@ import {
 	Badge, FormControl, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRows, ListView } from 'frappe-ui/experimental'
 
+import { accountRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddAddressBookModal from '@/apps/mail/components/Modals/AddAddressBookModal.vue'
@@ -77,9 +78,6 @@ const LIST_OPTIONS = {
 	selectable: false,
 	showTooltip: false,
 	emptyState: { description: __('No address books found.') },
-	getRowRoute: (row) => ({
-		name: 'mail-address-book',
-		params: { accountId, addressBookName: row.id },
-	}),
+	getRowRoute: (row) => accountRoute('mail-address-book', accountId, { addressBookName: row.id }),
 }
 </script>

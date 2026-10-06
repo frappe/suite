@@ -6,7 +6,7 @@
 			<button
 				v-if="showAllInboxes"
 				:class="sheetRowClass(allInboxesActive)"
-				@click="go({ name: 'mail-all-inboxes' })"
+				@click="go(allInboxesRoute())"
 			>
 				<Mails class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" />
 				<span class="flex-1 truncate text-left">{{ __('All Inboxes') }}</span>
@@ -55,6 +55,12 @@ import { sheetRowClass } from '@/components/mobile/mobileClasses'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useFolderSheet } from '@/apps/mail/utils/composables'
+import {
+	accountRoute,
+	allInboxesRoute,
+	mailboxRoute,
+	openMailboxId,
+} from '@/apps/mail/utils/locations'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
 
 import type { MailboxData } from '@/apps/mail/types'
@@ -80,11 +86,8 @@ const groups = computed(() => {
 		icon: getIcon(mailbox),
 		iconColor: FOLDER_ICON_COLOR_MAP[mailbox.color],
 		count: mailbox.unread_threads || 0,
-		active: route.params.mailbox === mailbox.id,
-		to: {
-			name: 'mail-mailbox',
-			params: { accountId: store.accountId, mailbox: mailbox.id },
-		} as RouteLocationRaw,
+		active: openMailboxId.value === mailbox.id,
+		to: mailboxRoute(mailbox.id) as RouteLocationRaw,
 	})
 
 	const items =
@@ -99,11 +102,8 @@ const groups = computed(() => {
 		icon: 'star',
 		iconColor: '',
 		count: 0,
-		active: route.params.mailbox === 'starred',
-		to: {
-			name: 'mail-mailbox',
-			params: { accountId: store.accountId, mailbox: 'starred' },
-		} as RouteLocationRaw,
+		active: openMailboxId.value === 'starred',
+		to: mailboxRoute('starred') as RouteLocationRaw,
 	}
 
 	const outboxRow = {
@@ -113,10 +113,7 @@ const groups = computed(() => {
 		iconColor: '',
 		count: 0,
 		active: route.name === 'mail-outbox' || route.name === 'mail-submission',
-		to: {
-			name: 'mail-outbox',
-			params: { accountId: store.accountId },
-		} as RouteLocationRaw,
+		to: accountRoute('mail-outbox') as RouteLocationRaw,
 	}
 
 	const isSecondary = (m: MailboxData) => !!m.role && SECONDARY_MAILBOX_ROLES.includes(m.role)

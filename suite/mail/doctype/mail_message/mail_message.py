@@ -24,7 +24,7 @@ from frappe.utils import (
 
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.sieve_script.sieve_script import SCREENER_MAILBOX_NAME
-from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.doctype.user_account.user_account import get_account_number, get_user_for_jmap_account
 from suite.mail.jmap import (
     account_view,
     chunked_get,
@@ -1641,13 +1641,15 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 if pn.is_enabled():
                     logger.info("sending-push-notifications", count=len(recent_messages))
 
-                    url = frappe.utils.get_url()
+                    # By mailbox id, which the app turns into the mailbox's own address on
+                    # arrival: a name would stop opening the mail once the folder is renamed.
+                    url = f"{frappe.utils.get_url()}/mail/a/{cint(get_account_number(user, account))}/#id"
                     for mailbox_id, message in recent_messages:
                         pn.send_notification_to_user(
                             user,
                             message["from_name"] or message["from_email"],
                             message["subject"] or _("[No subject]"),
-                            f"{url}/mail/account/{account}/mailbox/{mailbox_id}/{message['thread_id']}",
+                            f"{url}/{mailbox_id}/{message['thread_id']}",
                             f"{url}/assets/suite/mail/frontend/manifest/manifest-icon-192.maskable.png",
                         )
                 else:

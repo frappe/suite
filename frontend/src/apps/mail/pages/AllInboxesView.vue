@@ -11,7 +11,7 @@
 		<div class="flex items-center space-x-2">
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs
-				:items="[{ label: __('All Inboxes'), route: { name: 'mail-all-inboxes' } }]"
+				:items="[{ label: __('All Inboxes'), route: allInboxesRoute() }]"
 				class="-ml-0.5"
 			/>
 		</div>
@@ -201,6 +201,7 @@ import {
 	PAGE_LENGTH,
 	usePaginatedThreads,
 } from '@/apps/mail/composables/usePaginatedThreads'
+import { allInboxesRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
@@ -217,12 +218,9 @@ import type { Mail, Mailbox, MailboxData, Thread, UserResource } from '@/apps/ma
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
 
-// The `mail-all-inboxes-mail` route carries the open thread's owning accountId and mailbox. The
-// mailbox falls through as a plain attribute — every row carries its own folder ids, which is what
-// the pane and its actions target — and this component (a fragment) cannot inherit attributes, so it
-// inherits nothing. accountId is read: it is half of the open thread's identity here (see openKey).
-defineOptions({ inheritAttrs: false })
-
+// The `mail-all-inboxes-mail` route carries the open thread's owning account, which is half of
+// the open thread's identity here (see openKey). Its mailbox is not in the URL: every row carries
+// its own folder ids, which is what the pane and its actions target.
 const { accountId, threadID } = defineProps<{
 	accountId?: string
 	threadID?: string
@@ -573,13 +571,11 @@ const openThread = (key: string) => {
 	threadSlide.value = pendingThreadSlide
 	const row = (threads.data ?? []).find((t: Thread) => threadKey(t) === key)
 	if (!row) return
-	router.push({
-		name: 'mail-all-inboxes-mail',
-		// The row's own ids, which is what the key was made of — and what the pane, its actions and
-		// the URL all need in their plain form.
-		params: { accountId: row.account, mailbox: row.inbox, threadID: row.thread_id },
-		query: route.query,
-	})
+	// The row's own account, which is what the key was made of — and what the pane, its actions
+	// and the URL all need.
+	router.push(
+		allInboxesRoute({ accountId: row.account, threadID: row.thread_id, query: route.query }),
+	)
 }
 
 // Archive and Trash already have optimistic list removal; anything else is a plain move.
@@ -847,7 +843,7 @@ const handleMailDelete = (mail: Mail) =>
 		__('Mail deleted.'),
 	)
 
-const closeThread = () => router.push({ name: 'mail-all-inboxes', query: route.query })
+const closeThread = () => router.push(allInboxesRoute({ query: route.query }))
 
 const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
 	if (thread.seen === (seen ? 1 : 0)) return

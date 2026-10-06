@@ -100,6 +100,7 @@ import {
 import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { extractNameFromEmail, raiseToast } from '@/apps/mail/utils'
+import { accountRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -123,7 +124,7 @@ const showRemoveContacts = ref(false)
 const addressBook = createDocumentResource({
 	doctype: 'Address Book',
 	name: `${store.accountId}|${addressBookName}`,
-	onError: () => router.replace({ name: 'mail-address-books', params: { accountId } }),
+	onError: () => router.replace(accountRoute('mail-address-books', accountId)),
 	setValue: {
 		onSuccess: () => {
 			raiseToast(__('Address book updated.'))
@@ -198,7 +199,7 @@ const deleteAddressBook = createResource({
 		showDeleteAddressBook.value = false
 		raiseToast(__('Address book deleted.'))
 		store.addressBooks.reload()
-		router.push({ name: 'mail-address-books', params: { accountId } })
+		router.push(accountRoute('mail-address-books', accountId))
 	},
 	onError: (error) => {
 		showDeleteAddressBook.value = false
@@ -279,6 +280,6 @@ const LIST_COLUMNS = [
 const LIST_OPTIONS = {
 	showTooltip: false,
 	emptyState: { description: __('No contacts found.') },
-	getRowRoute: (row) => ({ name: 'mail-contact', params: { accountId, contactName: row.id } }),
+	getRowRoute: (row) => accountRoute('mail-contact', accountId, { contactName: row.id }),
 }
 </script>

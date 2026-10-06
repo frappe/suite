@@ -61,6 +61,7 @@ import {
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
+import { allInboxesRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
 
@@ -311,12 +312,8 @@ const setMailsSeen = createResource({
 		// and into the owning account's mailbox, which read as the page reloading.
 		router.push(
 			route.name === 'mail-all-inboxes-mail'
-				? { name: 'mail-all-inboxes', query: route.query }
-				: {
-						name: 'mail-mailbox',
-						params: { accountId: route.params.accountId, mailbox },
-						query: route.query,
-					},
+				? allInboxesRoute({ query: route.query })
+				: mailboxRoute(mailbox, { query: route.query }),
 		)
 		emit('syncUnseen', ids)
 	},

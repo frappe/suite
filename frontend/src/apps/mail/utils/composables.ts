@@ -8,6 +8,12 @@ import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/m
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
+import {
+	accountNumber,
+	accountRoute,
+	isFolderRoute,
+	mailboxRoute,
+} from '@/apps/mail/utils/locations'
 import { useRootStore } from '@/stores/root'
 
 import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
@@ -67,11 +73,12 @@ export const useToggleReadingPane = () => {
 /**
  * Switching accounts stays in place wherever the view allows it — shared by the
  * sidebar's account submenu and the mobile profile sheet. Account-scoped routes
- * swap the accountId param in their own URL. The account-agnostic All Inboxes
- * routes just re-resolve the active account (bouncing to the new account's inbox
- * threw the reader out of the merged list, which spans every account anyway).
- * Everything else goes through the account shortcut, which the guard resolves to
- * the new account's default mailbox.
+ * swap the account in their own URL. A thread open in All Inboxes names its own
+ * account there, so that one just re-resolves the active account (bouncing to the
+ * new account's inbox threw the reader out of the merged list, which spans every
+ * account anyway). Everything else — a folder of the user's own among it, which
+ * the new account need not have — goes through the account shortcut, which the
+ * guard resolves to the new account's default mailbox.
  */
 export const useAccountSwitch = () => {
 	const route = useRoute()
@@ -80,12 +87,12 @@ export const useAccountSwitch = () => {
 
 	const switchAccount = (accountId: string) => {
 		if (accountId === store.accountId) return
-		if ((route.name as string)?.startsWith('mail-all-inboxes'))
+		if (route.name === 'mail-all-inboxes-mail')
 			return store.resolveAccount(store.userResource.data?.accounts, accountId)
 		router.push(
-			route.params.accountId
-				? { name: route.name!, params: { ...route.params, accountId } }
-				: { name: 'mail-account-shortcut', params: { accountId } },
+			route.params.account && !isFolderRoute(route)
+				? { name: route.name!, params: { ...route.params, account: accountNumber(accountId) } }
+				: accountRoute('mail-account-shortcut', accountId),
 		)
 	}
 
@@ -157,11 +164,8 @@ export const useFolderSheet = () => {
 
 // The search page's address — the one place that knows it is the mailbox route with the virtual
 // 'search' mailbox — for whoever sends someone there: the palette, the results header, the phone.
-export const mailSearchRoute = (accountId: string, query: Record<string, string> = {}) => ({
-	name: 'mail-mailbox',
-	params: { accountId, mailbox: 'search' },
-	query,
-})
+export const mailSearchRoute = (accountId: string, query: Record<string, string> = {}) =>
+	mailboxRoute('search', { accountId, query })
 
 export const useMobileSearch = () => {
 	const route = useRoute()
@@ -545,16 +549,10 @@ export const useBlockSender = () => {
 // more-actions menu and the clickable sender address in a thread.
 export const useFilterBySender = () => {
 	const router = useRouter()
-	// Read store.accountId live rather than destructuring, so it reflects account switches.
-	const store = userStore()
 
 	const filterBySender = (email: string) => {
 		if (!email) return
-		router.push({
-			name: 'mail-mailbox',
-			params: { accountId: store.accountId, mailbox: 'search' },
-			query: { from: email },
-		})
+		router.push(mailboxRoute('search', { query: { from: email } }))
 	}
 
 	return { filterBySender }

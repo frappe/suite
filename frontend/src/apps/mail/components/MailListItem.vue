@@ -165,6 +165,7 @@ import {
 	threadParticipants,
 } from '@/apps/mail/utils/participants'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
+import { allInboxesRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -225,15 +226,12 @@ const route = useRoute()
 const { mailboxIds } = userStore()
 const ownEmails = useOwnEmails()
 
-const to = computed(() => ({
-	name: threadRouteName,
-	params: {
-		accountId: accountId || route.params.accountId,
-		mailbox,
-		threadID: mail.thread_id,
-	},
-	query: route.query,
-}))
+const to = computed(() => {
+	const thread = { accountId, threadID: mail.thread_id, query: route.query }
+	return threadRouteName === 'mail-all-inboxes-mail'
+		? allInboxesRoute(thread)
+		: mailboxRoute(mailbox, thread)
+})
 
 const mailboxesToShow = computed(() => mail.mailboxes.filter((m) => m.mailbox_id !== mailbox))
 

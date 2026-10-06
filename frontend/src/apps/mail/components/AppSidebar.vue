@@ -55,9 +55,7 @@
 								@drop="onFolderDrop($event, item)"
 								:active="
 									item.activeFor?.includes(
-										['mail-mailbox', 'mail-mail'].includes(route.name as string)
-											? route.params.mailbox
-											: route.name,
+										isMailboxRoute(route) ? openMailboxId : route.name,
 									)
 								"
 								:on-click="item.onClick"
@@ -128,6 +126,13 @@ import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
 import { canMoveToMailbox } from '@/apps/mail/utils/mailboxTargets'
 import { useAccountSwitch, useScreenSize, useSettings, useShortcuts, useSidebar } from '@/apps/mail/utils/composables'
+import {
+	accountRoute,
+	allInboxesRoute,
+	isMailboxRoute,
+	mailboxRoute,
+	openMailboxId,
+} from '@/apps/mail/utils/locations'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
@@ -247,16 +252,7 @@ const subtitle = computed(() => {
 // pinned "Back to Mail" sidebar item.
 const goToMailbox = () => {
 	const mailbox = mailboxes.data?.[0]?.id
-	if (mailbox)
-		router.push({
-			name: 'mail-mailbox',
-			params: { accountId: store.accountId, mailbox },
-		})
-	else
-		router.push({
-			name: 'mail-address-books',
-			params: { accountId: store.accountId },
-		})
+	router.push(mailbox ? mailboxRoute(mailbox) : accountRoute('mail-address-books'))
 }
 
 const menuItems = computed(() => [
@@ -391,12 +387,7 @@ const mailboxItems = computed(
 						name: getIcon(mailbox),
 						class: FOLDER_ICON_COLOR_MAP[mailbox.color],
 					}),
-					to: isScreener
-						? { name: 'mail-screener', params: { accountId: store.accountId } }
-						: {
-								name: 'mail-mailbox',
-								params: { accountId: store.accountId, mailbox: mailbox.id },
-							},
+					to: isScreener ? accountRoute('mail-screener') : mailboxRoute(mailbox.id),
 					suffix: mailbox.unread_threads ? String(mailbox.unread_threads) : '',
 					activeFor: isScreener ? ['mail-screener', 'mail-screener-sender'] : [mailbox.id],
 					menuOptions: isScreener
@@ -473,7 +464,7 @@ const sidebarItems = computed(() => {
 	const starredItem = {
 		label: __('Starred'),
 		icon: Star,
-		to: { name: 'mail-mailbox', params: { accountId: store.accountId, mailbox: 'starred' } },
+		to: mailboxRoute('starred'),
 		activeFor: ['starred'],
 	}
 	// Synthetic like Starred, but backed by the server's held (FUTURERELEASE)
@@ -481,7 +472,7 @@ const sidebarItems = computed(() => {
 	const outboxItem = {
 		label: __('Outbox'),
 		icon: CalendarClock,
-		to: { name: 'mail-outbox', params: { accountId: store.accountId } },
+		to: accountRoute('mail-outbox'),
 		activeFor: ['mail-outbox', 'mail-submission'],
 	}
 	const defaultItems = [...defaultMailboxes, starredItem, outboxItem]
@@ -513,13 +504,13 @@ const sidebarItems = computed(() => {
 		{
 			label: __('Address Books'),
 			icon: BookUser,
-			to: { name: 'mail-address-books', params: { accountId: store.accountId } },
+			to: accountRoute('mail-address-books'),
 			activeFor: ['mail-address-books', 'mail-address-book'],
 		},
 		{
 			label: __('Contacts'),
 			icon: ContactRound,
-			to: { name: 'mail-contacts', params: { accountId: store.accountId } },
+			to: accountRoute('mail-contacts'),
 			activeFor: ['mail-contacts', 'mail-contact'],
 		},
 	]
@@ -542,9 +533,9 @@ const sidebarItems = computed(() => {
 		pinnedItems.push({
 			label: __('All Inboxes'),
 			icon: Mails,
-			to: { name: 'mail-all-inboxes' },
+			to: allInboxesRoute(),
 			// A thread opened from the merged list is its own route (it carries the
-			// thread's real account/mailbox params) but still belongs to this item.
+			// thread's real account) but still belongs to this item.
 			activeFor: ['mail-all-inboxes', 'mail-all-inboxes-mail'],
 			suffix: allInboxesUnread.data ? String(allInboxesUnread.data) : '',
 		})

@@ -1,5 +1,7 @@
 import type { Router } from 'vue-router'
 
+import { accountRoute } from '@/apps/mail/utils/locations'
+
 import type { ComposeMailData } from '@/apps/mail/types'
 
 /**
@@ -35,5 +37,5 @@ export const takePendingCompose = () => {
  */
 export const openComposePage = (router: Router, accountId: string, draft?: ComposeMailData) => {
 	setPendingCompose(draft)
-	return router.push({ name: 'mail-compose', params: { accountId } })
+	return router.push(accountRoute('mail-compose', accountId))
 }

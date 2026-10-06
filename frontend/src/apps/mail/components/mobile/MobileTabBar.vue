@@ -90,6 +90,7 @@ import { Icon } from 'frappe-ui/experimental'
 
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useFolderSheet, useKeyboardOpen, useMobileSearch, useMobileSelection } from '@/apps/mail/utils/composables'
+import { accountRoute, isMailboxListRoute, openMailboxId } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
@@ -98,7 +99,6 @@ import MobileAppTab from '@/components/mobile/MobileAppTab.vue'
 import { iconClass, labelClass, tabClass } from '@/components/mobile/mobileClasses'
 
 import type { MailboxData } from '@/apps/mail/types'
-
 const route = useRoute()
 const router = useRouter()
 const store = userStore()
@@ -119,9 +119,9 @@ const activeAccountName = computed(
 // reads "Inbox" on the results page, and a tap on it is the way back out of search.
 const currentFolder = computed(() => {
 	if (route.name === 'mail-all-inboxes') return { label: __('All Inboxes'), icon: 'mails' }
-	if (route.name !== 'mail-mailbox') return null
-	if (route.params.mailbox === 'starred') return { label: __('Starred'), icon: 'star' }
-	const mailbox = mailboxes.data?.find((m: MailboxData) => m.id === route.params.mailbox)
+	if (!isMailboxListRoute(route)) return null
+	if (openMailboxId.value === 'starred') return { label: __('Starred'), icon: 'star' }
+	const mailbox = mailboxes.data?.find((m: MailboxData) => m.id === openMailboxId.value)
 	return mailbox ? { label: getMailboxName(mailbox), icon: getIcon(mailbox) } : null
 })
 
@@ -129,12 +129,12 @@ const currentFolder = computed(() => {
 // whole screen to lay itself out in rather than floating over this one.
 const openCompose = () => openComposePage(router, store.accountId)
 
-const MAIL_ROUTES = ['mail-mailbox', 'mail-all-inboxes']
 const isThreadOpen = computed(() => !!route.params.threadID)
 // Search results live on the mailbox route with the virtual 'search' mailbox, but
 // search is the title header's, not a tab's — no tab reads as active there.
 const mailActive = computed(
-	() => MAIL_ROUTES.includes(route.name as string) && !isSearchRoute.value,
+	() =>
+		(isMailboxListRoute(route) || route.name === 'mail-all-inboxes') && !isSearchRoute.value,
 )
 // Either screener route: with a sender open the tab is still the screener's.
 const screenerActive = computed(() =>
@@ -160,7 +160,7 @@ const openMail = () => {
 
 const openScreener = () => {
 	if (screenerActive.value) return
-	router.push({ name: 'mail-screener', params: { accountId: store.accountId } })
+	router.push(accountRoute('mail-screener'))
 }
 
 // Profile is a route now, not a sheet over the current surface — so it dismisses the
@@ -172,7 +172,7 @@ const openProfile = () => {
 		if (route.query.tab) router.replace({ query: {} })
 		return
 	}
-	router.push({ name: 'mail-profile', params: { accountId: store.accountId } })
+	router.push(accountRoute('mail-profile'))
 }
 
 const screeningEnabled = computed(
@@ -193,10 +193,10 @@ const screenerCount = computed(
 const mailUnreadCount = computed(() => {
 	if (route.name === 'mail-all-inboxes') return allInboxesUnread.data ?? 0
 	// In search the tab reads "Inbox" (above), so fall through to the Inbox's count.
-	if (route.name === 'mail-mailbox' && !isSearchRoute.value) {
-		if (route.params.mailbox === 'starred') return 0
+	if (isMailboxListRoute(route) && !isSearchRoute.value) {
+		if (openMailboxId.value === 'starred') return 0
 		return (
-			mailboxes.data?.find((m: MailboxData) => m.id === route.params.mailbox)
+			mailboxes.data?.find((m: MailboxData) => m.id === openMailboxId.value)
 				?.unread_threads ?? 0
 		)
 	}

@@ -607,6 +607,7 @@ import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
+import { allInboxesRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -823,8 +824,8 @@ const shouldShowUnseenMarker = (id: string) =>
 const goToMailbox = () =>
 	router.push(
 		route.name === 'mail-all-inboxes-mail'
-			? { name: 'mail-all-inboxes', query: route.query }
-			: { name: 'mail-mailbox', params: { mailbox }, query: route.query },
+			? allInboxesRoute({ query: route.query })
+			: mailboxRoute(mailbox, { query: route.query }),
 	)
 
 // The thread's messages normally arrive from the parent (loaded via `get_threads`). When the open

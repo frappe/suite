@@ -123,6 +123,7 @@ import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
+import { allInboxesRoute, mailboxRoute, openMailboxId } from '@/apps/mail/utils/locations'
 
 import type { Mail, MailboxData } from '@/apps/mail/types'
 
@@ -149,17 +150,15 @@ const route = useRoute()
 // when All Inboxes opened it, the active account otherwise.
 const { mailboxes, mailboxIds } = injectAccountScope()
 
-const mailbox = computed(() => route.params.mailbox as string)
+const mailbox = openMailboxId
 const threadID = computed(() => route.params.threadID as string)
 
 // Back returns to the list the thread was opened from: the merged All Inboxes
-// list on its thread route (whose mailbox param is the thread's real folder —
-// usually an account's Inbox, which is where back used to land), the mailbox
-// list otherwise.
+// list on its thread route, the mailbox list otherwise.
 const backRoute = computed(() =>
 	route.name === 'mail-all-inboxes-mail'
-		? { name: 'mail-all-inboxes', query: route.query }
-		: { name: 'mail-mailbox', params: { mailbox: mailbox.value }, query: route.query },
+		? allInboxesRoute({ query: route.query })
+		: mailboxRoute(mailbox.value, { query: route.query }),
 )
 
 // The mailboxes the whole thread sits in — the same intersection the list takes across a selection,

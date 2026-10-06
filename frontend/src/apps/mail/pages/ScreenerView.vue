@@ -466,6 +466,7 @@ import {
 	useUndo,
 } from '@/apps/mail/utils/composables'
 import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
+import { accountRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -506,10 +507,7 @@ watch(
 	() => [!!store.userResource?.data, screeningEnabled.value, store.mailboxIds.inbox] as const,
 	([ready, enabled, inboxId]) => {
 		if (ready && !enabled && inboxId)
-			router.replace({
-				name: 'mail-mailbox',
-				params: { accountId: store.accountId, mailbox: inboxId },
-			})
+			router.replace(mailboxRoute(inboxId))
 	},
 	{ immediate: true },
 )
@@ -537,10 +535,7 @@ let previewToken = 0
  */
 const selectSender = (sender: ScreeningSender, replace = false) => {
 	if (openSender.value?.from_email === sender.from_email) return
-	const to = {
-		name: 'mail-screener-sender',
-		params: { accountId: store.accountId, senderEmail: sender.from_email },
-	}
+	const to = accountRoute('mail-screener-sender', undefined, { senderEmail: sender.from_email })
 	replace ? router.replace(to) : router.push(to)
 }
 
@@ -567,7 +562,7 @@ const closeSender = () => {
 	if (!openSender.value) return
 	// Back where there is something to go back to, so opening and closing leaves no residue in the
 	// history; a sender opened straight from a pasted URL has nothing behind it, so replace instead.
-	const list = { name: 'mail-screener', params: { accountId: store.accountId } }
+	const list = accountRoute('mail-screener')
 	if (router.options.history.state.back) router.back()
 	else router.replace(list)
 }
@@ -636,7 +631,7 @@ watch(
 			justActed.clear()
 			openSenderFromRoute(sender)
 		} else if (!justActed.has(email)) {
-			router.replace({ name: 'mail-screener', params: { accountId: store.accountId } })
+			router.replace(accountRoute('mail-screener'))
 		}
 	},
 	{ immediate: true },

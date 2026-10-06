@@ -510,6 +510,7 @@ import {
 	type MailFilterOption,
 } from '@/apps/mail/composables/useMailCommandPaletteSearch'
 import { userStore } from '@/apps/mail/stores/user'
+import { mailboxRoute } from '@/apps/mail/utils/locations'
 import {
 	mailSearchRoute,
 	useMobileSearch,
@@ -1431,15 +1432,11 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 			location = { name: 'writer-document', params: { id: item.name } }
 		} else if (item.resultType === 'mail') {
 			rememberMailSearch()
-			location = {
-				name: 'mail-mail',
-				params: {
-					accountId: item.account,
-					mailbox: 'search',
-					threadID: item.thread_id,
-				},
+			location = mailboxRoute('search', {
+				accountId: item.account,
+				threadID: item.thread_id,
 				query: mailSearchQuery.value,
-			}
+			})
 		} else if (item.resultType === 'calendar-event') {
 			const start = eventStartLocal(item)
 			// The view the reader is in is the view the result opens in — Agenda included.

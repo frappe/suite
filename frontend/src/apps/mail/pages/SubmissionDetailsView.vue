@@ -13,7 +13,7 @@
 			<Breadcrumbs
 				v-else
 				:items="[
-					{ label: __('Outbox'), route: { name: 'mail-outbox', params: { accountId } } },
+					{ label: __('Outbox'), route: accountRoute('mail-outbox', accountId) },
 					...(title ? [{ label: title }] : []),
 				]"
 				class="-ml-0.5 min-w-0"
@@ -165,6 +165,7 @@ import {
 	themeInkClass,
 } from '@/apps/mail/utils/submissionActivity'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { accountRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import LedgerRow from '@/apps/mail/components/LedgerRow.vue'
 import LedgerSection from '@/apps/mail/components/LedgerSection.vue'
@@ -278,21 +279,14 @@ const identifiers = computed(() => {
 // A held message sits in Sent until delivery, so its thread opens there.
 const openEmail = () => {
 	if (!data.value?.thread_id || !store.mailboxIds.sent) return
-	router.push({
-		name: 'mail-mail',
-		params: {
-			accountId,
-			mailbox: store.mailboxIds.sent,
-			threadID: data.value.thread_id,
-		},
-	})
+	router.push(mailboxRoute(store.mailboxIds.sent, { accountId, threadID: data.value.thread_id }))
 }
 
-const backToList = () => router.replace({ name: 'mail-outbox', params: { accountId } })
+const backToList = () => router.replace(accountRoute('mail-outbox', accountId))
 
 /** Follow an action that replaced this submission to its successor's page. */
 const followReplacement = (id: string) =>
-	router.replace({ name: 'mail-submission', params: { accountId, submissionId: id } })
+	router.replace(accountRoute('mail-submission', accountId, { submissionId: id }))
 
 const onActionError = (error: { messages?: string[]; message?: string }) => {
 	showSendNow.value = false

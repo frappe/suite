@@ -47,6 +47,7 @@ import {
 import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { extractNameFromEmail, raiseToast } from '@/apps/mail/utils'
+import { accountRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddContactModal from '@/apps/mail/components/Modals/AddContactModal.vue'
@@ -125,10 +126,7 @@ const deleteContacts = createResource({
 const listOptions = computed(() => ({
 	showTooltip: false,
 	emptyState: { description: contacts.loading ? __('Loading...') : __('No contacts found.') },
-	getRowRoute: (row) => ({
-		name: 'mail-contact',
-		params: { accountId, contactName: row.id },
-	}),
+	getRowRoute: (row) => accountRoute('mail-contact', accountId, { contactName: row.id }),
 }))
 
 const LIST_COLUMNS = [

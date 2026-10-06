@@ -218,6 +218,7 @@ import {
 import { ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { accountRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -251,7 +252,7 @@ const store = userStore()
 const contact = createDocumentResource({
 	doctype: 'Contact Card',
 	name: `${store.accountId}|${contactName}`,
-	onError: () => router.replace({ name: 'mail-contacts', params: { accountId } }),
+	onError: () => router.replace(accountRoute('mail-contacts', accountId)),
 	setValue: {
 		onSuccess: () => raiseToast(__('Contact updated.')),
 		onError: (error) => {
@@ -267,7 +268,7 @@ const deleteContact = createResource({
 	onSuccess: () => {
 		showDeleteContact.value = false
 		raiseToast(__('Contact deleted.'))
-		router.push({ name: 'mail-contacts', params: { accountId } })
+		router.push(accountRoute('mail-contacts', accountId))
 	},
 	onError: (error) => {
 		showDeleteContact.value = false

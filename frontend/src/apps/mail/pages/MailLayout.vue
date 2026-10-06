@@ -5,7 +5,10 @@
 		     would fail. -->
 		<MailServerUnavailableView v-if="mailServerUnavailable" class="mail-app-root" />
 		<component :is="Layout" v-else class="mail-app-root">
-			<router-view />
+			<MailboxNotFound v-if="isMailboxMissing" />
+			<router-view v-else v-slot="{ Component }">
+				<component :is="Component" v-bind="viewIds" />
+			</router-view>
 		</component>
 		<SettingsModal v-if="!mailServerUnavailable && !isMobile" v-model:open="showSettings" />
 		<Teleport v-else-if="!mailServerUnavailable" to="body">
@@ -23,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
+import { computed, onMounted, onScopeDispose, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
@@ -31,6 +34,18 @@ import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
+import {
+	accountIdAt,
+	accountRoute,
+	allInboxesRoute,
+	isFolderRoute,
+	isMailboxRoute,
+	mailboxAddress,
+	mailboxRoute,
+	openMailboxId,
+	routeIds,
+	settleOpenMailbox,
+} from '@/apps/mail/utils/locations'
 import { useScreenSize, useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
@@ -38,6 +53,7 @@ import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
+import MailboxNotFound from '@/apps/mail/components/MailboxNotFound.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
 import PWASettings from '@/apps/mail/components/PWASettings.vue'
@@ -59,7 +75,8 @@ import type { NotificationPayload } from '@/apps/mail/types'
  * Public pre-auth routes (login/signup/...) sit OUTSIDE this layout since they
  * do not need the $user/$dayjs/$socket injects.
  */
-const { userResource, mailboxIds, accountId } = userStore()
+const store = userStore()
+const { userResource } = store
 const router = useRouter()
 
 // `?` and the `g`+letter mailbox jumps belong to the whole non-admin app, not to whichever
@@ -80,19 +97,17 @@ const gPrefix = useGPrefix()
 // `a` is All Inboxes (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
 // already archives a thread, so one letter means archive throughout. The Screener takes `r` for
 // review: `s` is Sent, and `c` would collide with Contacts if that ever gets a jump.
-const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
-
 const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
-	a: () => ({ name: 'mail-all-inboxes' }),
-	r: () => ({ name: 'mail-screener', params: { accountId } }),
-	o: () => ({ name: 'mail-outbox', params: { accountId } }),
-	i: () => mailboxRoute(mailboxIds.inbox),
+	a: () => allInboxesRoute(),
+	r: () => accountRoute('mail-screener'),
+	o: () => accountRoute('mail-outbox'),
+	i: () => mailboxRoute(store.mailboxIds.inbox),
 	f: () => mailboxRoute('starred'),
-	s: () => mailboxRoute(mailboxIds.sent),
-	d: () => mailboxRoute(mailboxIds.drafts),
-	j: () => mailboxRoute(mailboxIds.junk),
-	e: () => mailboxRoute(mailboxIds.archive),
-	t: () => mailboxRoute(mailboxIds.trash),
+	s: () => mailboxRoute(store.mailboxIds.sent),
+	d: () => mailboxRoute(store.mailboxIds.drafts),
+	j: () => mailboxRoute(store.mailboxIds.junk),
+	e: () => mailboxRoute(store.mailboxIds.archive),
+	t: () => mailboxRoute(store.mailboxIds.trash),
 }
 
 // ⌘Z takes back the last undoable action, wherever it was taken. The slot is app-wide (useUndo),
@@ -131,6 +146,28 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 }
 const route = useRoute()
 const { showSettings, openSettings } = useSettings()
+
+// The URL names an account by its number and a mailbox by its role or name; the views take
+// their ids, for the routes that hand them their params at all (see utils/locations).
+const viewIds = computed(() => (route.matched.at(-1)?.props.default ? routeIds(route) : {}))
+const isMailboxMissing = computed(() => isMailboxRoute(route) && !openMailboxId.value)
+
+// The mailbox list changing under an open mailbox. A folder renamed takes its address along,
+// or the URL would go on naming a folder that is no longer there; and a mailbox the list had
+// not loaded in time to find is found. Not while the list is another account's, mid-switch.
+watch(
+	() => store.mailboxes.data,
+	(mailboxes) => {
+		if (!isMailboxRoute(route) || accountIdAt(route.params.account) !== store.accountId) return
+		if (!openMailboxId.value) return settleOpenMailbox(route)
+
+		const address = mailboxAddress(mailboxes, openMailboxId.value)
+		if (!address) return
+		if (address.mailbox === route.params.mailbox && address.custom === isFolderRoute(route)) return
+		const threadID = route.params.threadID as string | undefined
+		router.replace(mailboxRoute(openMailboxId.value, { threadID, query: route.query }))
+	},
+)
 
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layout', () =>
 	mailServerUnavailable.value

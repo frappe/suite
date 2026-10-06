@@ -138,6 +138,7 @@ import {
 	type SubmissionFilters,
 } from '@/apps/mail/utils/submission'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { accountRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
@@ -347,10 +348,8 @@ const listOptions = {
 	rowHeight: 50,
 	// The row opens the submission's details page; the message itself is behind the
 	// explicit Open-email button instead.
-	getRowRoute: (row: Submission) => ({
-		name: 'mail-submission',
-		params: { accountId: store.accountId, submissionId: row.id },
-	}),
+	getRowRoute: (row: Submission) =>
+		accountRoute('mail-submission', undefined, { submissionId: row.id }),
 }
 
 const emptyState = computed(() =>
@@ -362,14 +361,7 @@ const emptyState = computed(() =>
 // A held message sits in Sent until delivery, so its thread opens there.
 const openEmail = (row: Submission) => {
 	if (!row.thread_id || !store.mailboxIds.sent) return
-	router.push({
-		name: 'mail-mail',
-		params: {
-			accountId: store.accountId,
-			mailbox: store.mailboxIds.sent,
-			threadID: row.thread_id,
-		},
-	})
+	router.push(mailboxRoute(store.mailboxIds.sent, { threadID: row.thread_id }))
 }
 
 const rowOptions = (row: Submission) => {
@@ -392,10 +384,7 @@ const rowOptions = (row: Submission) => {
 
 const openDrafts = () => {
 	if (!store.mailboxIds.drafts) return
-	router.push({
-		name: 'mail-mailbox',
-		params: { accountId: store.accountId, mailbox: store.mailboxIds.drafts },
-	})
+	router.push(mailboxRoute(store.mailboxIds.drafts))
 }
 
 const onActionError = (error: { messages?: string[]; message?: string }) => {

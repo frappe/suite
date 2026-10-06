@@ -11,7 +11,7 @@
 				:items="[
 					{
 						label: mailboxName,
-						route: { name: 'mail-mailbox', params: { accountId, mailbox } },
+						route: mailboxRoute(mailbox, { accountId }),
 					},
 				]"
 			/>
@@ -512,6 +512,7 @@ import {
 	usePaginatedThreads,
 } from '@/apps/mail/composables/usePaginatedThreads'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
+import { accountRoute, mailboxRoute } from '@/apps/mail/utils/locations'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -1045,7 +1046,7 @@ const screenerBanner = computed(() => {
 	const [before, after] = sentence.split('{0}')
 	return { phrase, before, after }
 })
-const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
+const goToScreener = () => router.push(accountRoute('mail-screener', accountId))
 
 // Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
@@ -1363,12 +1364,12 @@ onUnmounted(() => {
 })
 
 const goToMailbox = () =>
-	router.push({ name: 'mail-mailbox', params: { accountId, mailbox }, query: route.query })
+	router.push(mailboxRoute(mailbox, { accountId, query: route.query }))
 
 const goToThread = (threadID: string) => {
 	threadSlide.value = pendingThreadSlide
 	if (threadID)
-		router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
+		router.push(mailboxRoute(mailbox, { accountId, threadID, query: route.query }))
 }
 
 const goToThreadByOffset = (offset: number) => {
