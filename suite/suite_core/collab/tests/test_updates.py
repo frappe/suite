@@ -2,7 +2,7 @@ import pycrdt
 from frappe.tests import UnitTestCase
 
 from suite.suite_core.collab.compaction import load, serialize, snapshot, state_vector
-from suite.suite_core.collab.updates import parse, rewrite_values
+from suite.suite_core.collab.updates import encoded_string, encoded_uint, parse, rewrite_values
 
 
 def typed(text: str, client_id: int = 5) -> pycrdt.Doc:
@@ -43,6 +43,28 @@ class TestParse(UnitTestCase):
         update = parse(second.get_update(before))
 
         self.assertEqual(update.split_points(), {(5, 2), (5, 3)})
+
+    def test_values_nested_deeper_than_a_hundred_levels_are_refused(self):
+        def holding(ref: int, content: bytes) -> bytes:
+            return bytes([1, 1, 5, 0, ref, 1]) + encoded_string("t") + content + bytes([0])
+
+        def nested(depth: int) -> str:
+            return "[" * depth + "]" * depth
+
+        def kinds(text: str) -> dict[str, bytes]:
+            return {
+                "JSON": holding(2, encoded_uint(1) + encoded_string(text)),
+                "embed": holding(5, encoded_string(text)),
+                "format": holding(6, encoded_string("bold") + encoded_string(text)),
+            }
+
+        for kind, payload in kinds(nested(101)).items():
+            with self.subTest(kind):
+                self.assertEqual(parse(payload).structs[0].length, 1)
+        for depth in (102, 200_000):
+            for kind, payload in kinds(nested(depth)).items():
+                with self.subTest(kind, depth=depth), self.assertRaises(ValueError):
+                    parse(payload)
 
     def test_malformed_updates_are_refused(self):
         good = typed("abc").get_update()

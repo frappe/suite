@@ -102,7 +102,7 @@ class Reader:
         return self.raw(self.uint()).decode("utf-8")
 
     def json(self) -> None:
-        json.loads(self.string(), parse_constant=refuse_constant)
+        checked_json(self.string())
 
     def id(self) -> tuple[int, int]:
         return self.uint(), self.uint()
@@ -110,6 +110,22 @@ class Reader:
 
 def refuse_constant(name: str):
     raise ValueError(f"not JSON: {name}")
+
+
+def checked_json(text: str) -> None:
+    """Refuse text that is not JSON or nests deeper than a value may, so later walks over it can recurse."""
+    try:
+        values = [(json.loads(text, parse_constant=refuse_constant), 0)]
+    except RecursionError:
+        raise ValueError("value nested too deep") from None
+    while values:
+        value, depth = values.pop()
+        if depth > MAX_DEPTH:
+            raise ValueError("value nested too deep")
+        if isinstance(value, dict | list):
+            values.extend(
+                (item, depth + 1) for item in (value.values() if isinstance(value, dict) else value)
+            )
 
 
 def string_length(struct: Struct, text: str) -> int:
@@ -180,7 +196,7 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
         for _item in range(count):
             value = reader.string()
             if value != "undefined":
-                json.loads(value, parse_constant=refuse_constant)
+                checked_json(value)
         return count
     if ref == 3:  # binary
         reader.raw(reader.uint())

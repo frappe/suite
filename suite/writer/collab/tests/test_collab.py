@@ -75,6 +75,18 @@ def typed(cid: int, texts: list[str]) -> list[bytes]:
     return updates
 
 
+def embedded(cid: int, value: str) -> bytes:
+    """An update in which `cid` puts one embed holding the JSON `value` in the root array "t", at clock 0."""
+    return (
+        bytes([1, 1])
+        + encoded_uint(cid)
+        + bytes([0, 5, 1])
+        + encoded_string("t")
+        + encoded_string(value)
+        + bytes([0])
+    )
+
+
 def push_body(
     lineage: str,
     sid: str,
@@ -294,6 +306,7 @@ class TestWriterCollab(IntegrationTestCase):
         cases = (
             ("not an update", b"\x00\x01"),
             ("empty", b"\x00\x00"),
+            ("nested too deep", embedded(cid, "[" * 200_000 + "]" * 200_000)),
             ("another writer's", typed(cid + 1, ["a"])[0]),
         )
         for case, payload in cases:
