@@ -4,18 +4,23 @@ import json
 
 import frappe
 
-from suite.suite_core.collab import ingest
+from suite.suite_core.collab import ingest, quarantine
 from suite.suite_core.collab.log import ChainBroken, read
 from suite.suite_core.collab.tables import table
 
 
 def backfill_clocks(adapter: str) -> None:
-    """Read each writer's next clock from the log for logs made before clocks were kept. Safe to run again."""
+    """Read each writer's next clock from the log for logs made before clocks were kept, after quarantining
+    the rows that can't be read. Safe to run again."""
     for (doc_id,) in frappe.db.sql(
         f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `start_clocks` IS NULL AND `mode` != 'purged'"
     ):
         try:
             log = read(adapter, doc_id)
+            unreadable = {rev for rev, payload in log["rows"] if quarantine.readable(payload) is None}
+            if unreadable:
+                quarantine.quarantine(adapter, doc_id, unreadable, "malformed_row")
+                log = read(adapter, doc_id)
             clocks = ingest.next_clocks(
                 ([log["checkpoint"]] if log["checkpoint"] else [])
                 + [payload for _rev, payload in log["rows"]]

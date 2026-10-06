@@ -332,3 +332,23 @@ class TestQuarantine(CheckpointCase):
 
         self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
         self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alpha gamma")
+
+    def test_clocks_are_read_from_a_log_once_its_unreadable_row_is_quarantined(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        b = Tab(self, node)
+        b.typed(0, "beta ")
+        self.store_raw(node, a, b"\x01\x01garbage")
+        doc_id = self.doc_row(node).id
+        frappe.db.sql("UPDATE `__writer_collab_session` SET `next_clock` = NULL WHERE `doc_id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
+        frappe.db.commit()
+
+        routes.collab.backfill_clocks(routes.ADAPTER)
+
+        self.assertEqual(
+            (self.states(node), self.doc_row(node).start_clocks), (["ok", "ok", "quarantined"], "{}")
+        )
+        self.assertEqual(b.typed(10, " gamma"), 4)
+        self.assertEqual(self.stored_text(node), "beta alpha gamma")
