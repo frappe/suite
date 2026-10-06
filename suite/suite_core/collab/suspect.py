@@ -125,6 +125,52 @@ def settle(adapter: str, doc_id: str, marked: str, roots: dict[str, type], bundl
     return verdict
 
 
+# What an admin sees of a suspect document: never its content
+LISTED = (
+    "id",
+    "node",
+    "suspect",
+    "suspect_held",
+    "verdict",
+    "judged",
+    "head_rev",
+    "checkpoint_rev",
+    "integrated_rev",
+    "state_bytes",
+    "tail_bytes",
+    "compaction_failures",
+    "last_compaction_error",
+)
+
+
+def listed(adapter: str) -> list[dict]:
+    columns = ", ".join(f"`{column}`" for column in LISTED)
+    return frappe.db.sql(
+        f"SELECT {columns} FROM `{table(adapter, 'doc')}` WHERE `suspect` IS NOT NULL ORDER BY `id`",
+        as_dict=True,
+    )
+
+
+def rejudge(adapter: str, doc_id: str, method: str) -> bool:
+    """An admin asks for a new verdict; a held document is unheld so the judge and the sweep take it again."""
+    if not suspect_of(adapter, doc_id):
+        return False
+    frappe.db.sql(f"UPDATE `{table(adapter, 'doc')}` SET `suspect_held` = NULL WHERE `id` = %s", doc_id)
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    alert(adapter, doc_id, "suspect re-judged", f"{frappe.session.user} asked for a new verdict")
+    request(adapter, doc_id, method)
+    return True
+
+
+def release(adapter: str, doc_id: str) -> bool:
+    """An admin clears a suspect document without a verdict: saving and compactions go on and its rows stay."""
+    if not suspect_of(adapter, doc_id):
+        return False
+    clear(adapter, doc_id, "cleared")
+    alert(adapter, doc_id, "suspect cleared", f"{frappe.session.user} cleared it without a verdict")
+    return True
+
+
 def first_refused(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type]) -> int | None:
     """The index of the first row a compaction refuses, -1 for the checkpoint, None when it takes them all."""
     if not refused(checkpoint, rows, roots):

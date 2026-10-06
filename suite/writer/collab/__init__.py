@@ -5,6 +5,7 @@ import gzip
 import json
 from pathlib import Path
 
+import frappe
 import pycrdt
 
 from suite.suite_core import collab
@@ -149,6 +150,28 @@ def compact(doc_id: str) -> None:
 def judge(doc_id: str) -> None:
     if suspect.judge(ADAPTER, doc_id, ROOTS, KERNEL) in ("clean", "quarantined"):
         consider_compaction(doc_id)
+
+
+# Who may ask for a new verdict on a suspect document or clear it; a System Manager may only list them
+SUSPECT_ADMINS = ("Suite Admin", "Administrator")
+
+
+@frappe.whitelist(methods=["GET"])
+def suspect_documents() -> list[dict]:
+    frappe.only_for(("System Manager", *SUSPECT_ADMINS))
+    return suspect.listed(ADAPTER)
+
+
+@frappe.whitelist(methods=["POST"])
+def rejudge_suspect(doc_id: str) -> bool:
+    frappe.only_for(SUSPECT_ADMINS)
+    return suspect.rejudge(ADAPTER, doc_id, "suite.writer.collab.judge")
+
+
+@frappe.whitelist(methods=["POST"])
+def clear_suspect(doc_id: str) -> bool:
+    frappe.only_for(SUSPECT_ADMINS)
+    return suspect.release(ADAPTER, doc_id)
 
 
 def report_suspect(doc_id: str, rev: int) -> tuple[int, dict]:

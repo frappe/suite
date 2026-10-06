@@ -19,6 +19,9 @@ from suite.writer.collab.tests.test_collab import OUTSIDER, READER, answer, call
 from suite.writer.collab.tests.test_kernel import BUNDLE, paragraph
 
 JUDGE = "suite.writer.collab.judge"
+SYSTEM_MANAGER = "collab-system-manager@example.com"
+SUITE_ADMIN = "collab-suite-admin@example.com"
+NO_ROLE = "collab-no-role@example.com"
 
 
 class Pen(test_quarantine.Tab):
@@ -37,6 +40,18 @@ class Pen(test_quarantine.Tab):
 class TestSuspect(CheckpointCase):
     recovered = test_quarantine.TestQuarantine.recovered
     states = test_quarantine.TestQuarantine.states
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        for email, roles in (
+            (SYSTEM_MANAGER, ("System Manager",)),
+            (SUITE_ADMIN, ("Suite Admin",)),
+            (NO_ROLE, ()),
+        ):
+            ensure_user(email)
+            frappe.get_doc("User", email).add_roles(*roles)
+        frappe.db.commit()
 
     def setUp(self):
         super().setUp()
@@ -435,3 +450,85 @@ class TestSuspect(CheckpointCase):
         self.set_doc(node, fallback_judged_clean_at=now_datetime() - timedelta(hours=25))
         self.assertEqual(falls_back(), ("fallback", 2, [(JUDGE, doc_id)]))
         self.assertEqual(self.states(node), ["ok"] * 5)
+
+    def held_document(self) -> tuple[str, str, Pen]:
+        node = self.new_document()
+        a = Pen(self, node)
+        a.adds(paragraph("alpha"))
+        self.set_doc(node, suspect="unreadable", suspect_held="no_node")
+        return node, self.doc_row(node).id, a
+
+    def test_a_system_manager_lists_suspect_documents_without_their_content_and_changes_nothing(self):
+        node, doc_id, _a = self.held_document()
+        clean = self.new_document()
+        Pen(self, clean).adds(paragraph("beta"))
+
+        frappe.set_user(SYSTEM_MANAGER)
+        listed = {row.id: row for row in writer_collab.suspect_documents()}
+
+        self.assertNotIn(self.doc_row(clean).id, listed)
+        row = listed[doc_id]
+        self.assertEqual(
+            set(row),
+            {
+                "id",
+                "node",
+                "suspect",
+                "suspect_held",
+                "verdict",
+                "judged",
+                "head_rev",
+                "checkpoint_rev",
+                "integrated_rev",
+                "state_bytes",
+                "tail_bytes",
+                "compaction_failures",
+                "last_compaction_error",
+            },
+        )
+        self.assertEqual(
+            (row.node, row.suspect, row.suspect_held, row.head_rev), (node, "unreadable", "no_node", 1)
+        )
+        for refused in (writer_collab.rejudge_suspect, writer_collab.clear_suspect):
+            with self.subTest(method=refused.__name__):
+                self.assertRaises(frappe.PermissionError, refused, doc_id)
+        doc = self.doc_row(node)
+        self.assertEqual((doc.suspect, doc.suspect_held, doc.judged), ("unreadable", "no_node", 0))
+        self.assertEqual(self.requested, [])
+
+        frappe.set_user(NO_ROLE)
+        self.assertRaises(frappe.PermissionError, writer_collab.suspect_documents)
+
+    def test_a_suite_admin_asks_for_a_new_verdict_on_a_held_document(self):
+        node, doc_id, _a = self.held_document()
+        before = self.alerts("suspect re-judged")
+
+        frappe.set_user(SUITE_ADMIN)
+        self.assertTrue(writer_collab.rejudge_suspect(doc_id))
+
+        doc = self.doc_row(node)
+        self.assertEqual((doc.suspect, doc.suspect_held), ("unreadable", None))
+        self.assertEqual(self.requested, [(JUDGE, doc_id)])
+        self.assertEqual(self.alerts("suspect re-judged"), before + 1)
+        writer_collab.judge(doc_id)
+        doc = self.doc_row(node)
+        self.assertEqual((doc.suspect, doc.verdict), (None, "clean"))
+        self.assertFalse(writer_collab.rejudge_suspect(doc_id))
+        self.assertEqual(self.alerts("suspect re-judged"), before + 1)
+
+    def test_a_suite_admin_clears_a_held_document_and_saving_goes_on_with_its_rows(self):
+        node, doc_id, a = self.held_document()
+        self.assertEqual(a.write(lambda body: body.children.append(paragraph("blocked"))).status_code, 423)
+        before = self.alerts("suspect cleared")
+
+        frappe.set_user(SUITE_ADMIN)
+        self.assertTrue(writer_collab.clear_suspect(doc_id))
+
+        doc = self.doc_row(node)
+        self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "cleared", 1))
+        self.assertEqual(self.alerts("suspect cleared"), before + 1)
+        self.assertEqual(self.requested, [])
+        self.assertFalse(writer_collab.clear_suspect(doc_id))
+        frappe.set_user(WRITER)
+        Pen(self, node).adds(paragraph("beta"))
+        self.assertEqual(self.states(node), ["ok", "ok"])
