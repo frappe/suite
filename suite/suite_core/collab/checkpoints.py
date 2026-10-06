@@ -12,7 +12,7 @@ import gzip
 import hashlib
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -30,7 +30,7 @@ ALERT_AT = 3
 def run(
     adapter: str,
     doc_id: str,
-    roots: dict[str, type],
+    roots: Mapping[str, type],
     judge_method: str,
     owner_of: Callable[[str], str | None],
 ) -> None:
@@ -44,7 +44,7 @@ class Compaction:
 
     adapter: str
     doc_id: str
-    roots: dict[str, type]
+    roots: Mapping[str, type]
     judge_method: str
     owner_of: Callable[[str], str | None]
 

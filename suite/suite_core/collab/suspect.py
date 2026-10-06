@@ -12,7 +12,7 @@ A document only a tab's report marked is held only on what its rows show: withou
 is cleared as unjudged, so a report alone never pauses saving.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import frappe
@@ -78,7 +78,7 @@ def request(adapter: str, doc_id: str, method: str) -> None:
 
 
 def judge(
-    adapter: str, doc_id: str, roots: dict[str, type], bundle: Path, owner_of: Callable[[str], str | None]
+    adapter: str, doc_id: str, roots: Mapping[str, type], bundle: Path, owner_of: Callable[[str], str | None]
 ) -> str | None:
     """Judge a suspect document; answers `quarantined`, `clean`, `held` or `unjudged`, or None when it isn't suspect.
 
@@ -106,7 +106,7 @@ def verdict_of(
     adapter: str,
     doc_id: str,
     marked: str,
-    roots: dict[str, type],
+    roots: Mapping[str, type],
     bundle: Path,
     owner_of: Callable[[str], str | None],
 ) -> str | None:
@@ -127,7 +127,7 @@ def settle(
     adapter: str,
     doc_id: str,
     marked: str,
-    roots: dict[str, type],
+    roots: Mapping[str, type],
     bundle: Path,
     owner_of: Callable[[str], str | None],
 ) -> str | None:
@@ -213,7 +213,7 @@ def release(adapter: str, doc_id: str) -> bool:
     return True
 
 
-def first_refused(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type]) -> int | None:
+def first_refused(checkpoint: bytes | None, rows: list[bytes], roots: Mapping[str, type]) -> int | None:
     """The index of the first row a compaction refuses, -1 for the checkpoint, None when it takes them all."""
     if not refused(checkpoint, rows, roots):
         return None
@@ -230,7 +230,7 @@ def first_refused(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, 
     return bad - 1
 
 
-def refused(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type]) -> bool:
+def refused(checkpoint: bytes | None, rows: list[bytes], roots: Mapping[str, type]) -> bool:
     """Whether the compaction refuses these rows for a reason that marks a document suspect."""
     if not checkpoint and not rows:
         return False

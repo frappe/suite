@@ -9,6 +9,7 @@ uncompacted.
 """
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import pycrdt
@@ -35,7 +36,7 @@ class Compacted:
     ms: int = 0
 
 
-def compact(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type]) -> Compacted:
+def compact(checkpoint: bytes | None, rows: list[bytes], roots: Mapping[str, type]) -> Compacted:
     """`roots` names every root type the product writes; a document with another root is refused."""
     if pycrdt.__version__ != PYCRDT:
         raise CompactionFailed("kernel_version")
@@ -100,7 +101,7 @@ def unfit(parts: list[bytes]) -> tuple[int, str] | None:
     return None
 
 
-def same(left: bytes, right: bytes, roots: dict[str, type]) -> bool:
+def same(left: bytes, right: bytes, roots: Mapping[str, type]) -> bool:
     """Whether two states hold the same content, state vector and delete set."""
     return fingerprint(load([left]), roots) == fingerprint(load([right]), roots)
 
@@ -112,11 +113,11 @@ def load(parts: list[bytes]) -> pycrdt.Doc:
     return doc
 
 
-def fingerprint(doc: pycrdt.Doc, roots: dict[str, type]) -> tuple[str, dict, dict]:
+def fingerprint(doc: pycrdt.Doc, roots: Mapping[str, type]) -> tuple[str, dict, dict]:
     return (content(doc, roots), *snapshot(doc))
 
 
-def content(doc: pycrdt.Doc, roots: dict[str, type], rewrite=None) -> str:
+def content(doc: pycrdt.Doc, roots: Mapping[str, type], rewrite=None) -> str:
     """The document as JSON; `rewrite` is applied to its values, never its text, tags or keys."""
     unknown = set(doc.keys()) - set(roots)
     if unknown:
