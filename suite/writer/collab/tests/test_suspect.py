@@ -12,7 +12,7 @@ from frappe.utils.background_jobs import get_redis_conn
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.collab import admission, compaction, kernel, quarantine, suspect
+from suite.suite_core.collab import admission, compaction, kernel, quarantine, scheduling, suspect
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
@@ -556,13 +556,16 @@ class TestSuspect(CheckpointCase):
         node, doc_id, a = self.held_document()
         self.assertEqual(a.write(lambda body: body.children.append(paragraph("blocked"))).status_code, 423)
         before = self.alerts("suspect cleared")
+        backoff = (now_datetime() + timedelta(minutes=2)).replace(microsecond=0)
+        self.set_doc(node, next_compaction_at=backoff)
 
         frappe.set_user(SUITE_ADMIN)
         self.assertTrue(writer_collab.clear_suspect(doc_id))
 
         doc = self.doc_row(node)
         self.assertEqual(
-            (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "unjudged", 1)
+            (doc.suspect, doc.suspect_held, doc.verdict, doc.judged, doc.next_compaction_at),
+            (None, None, "unjudged", 1, backoff),
         )
         self.assertEqual(self.alerts("suspect cleared"), before + 1)
         self.assertEqual(self.requested, [])
@@ -693,3 +696,24 @@ class TestSuspect(CheckpointCase):
         self.assertFalse(
             get_redis_conn().exists(f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}")
         )
+
+    def test_a_verdict_on_a_compaction_suspect_asks_for_a_compaction_at_once(self):
+        for verdict in ("quarantined", "clean"):
+            with self.subTest(verdict), patch.object(scheduling, "TAIL_ROWS", 1):
+                node = self.new_document()
+                a, b = Pen(self, node), Pen(self, node)
+                a.adds(paragraph("alpha"))
+                b.adds(paragraph("beta"))
+                a.adds(paragraph("gamma"))
+                doc_id = self.doc_row(node).id
+                with self.refusing(a.sent[1]):
+                    self.job(doc_id).run()
+                self.assertGreater(self.doc_row(node).next_compaction_at, now_datetime())
+                self.requested.clear()
+
+                with self.refusing(a.sent[1] if verdict == "quarantined" else b""):
+                    writer_collab.judge(doc_id)
+
+                doc = self.doc_row(node)
+                self.assertEqual((doc.verdict, doc.next_compaction_at), (verdict, None))
+                self.assertEqual(self.requested, [("suite.writer.collab.compact", doc_id)])

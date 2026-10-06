@@ -295,12 +295,22 @@ def unsettled(adapter: str, doc_id: str, marked: str, why: str, detail: str) -> 
 
 
 def clear(adapter: str, doc_id: str, verdict: str, *, clean_mark: str | None = None) -> None:
-    """`clean_mark` is the compaction's reason when a judge found its suspect clean."""
+    """`clean_mark` is the compaction's reason when a judge found its suspect clean.
+
+    A verdict ends the failed compaction's backoff, so the document compacts at once.
+    """
     frappe.db.sql(
         f"""UPDATE `{table(adapter, "doc")}` SET `suspect` = NULL, `suspect_held` = NULL, `verdict` = %s,
         `judged` = `judged` + 1, `suspect_judged_clean` = `suspect_judged_clean` OR %s,
-        `fallback_judged_clean_at` = IF(%s, NOW(6), `fallback_judged_clean_at`) WHERE `id` = %s""",
-        (verdict, clean_mark is not None, clean_mark == "fallback", doc_id),
+        `fallback_judged_clean_at` = IF(%s, NOW(6), `fallback_judged_clean_at`),
+        `next_compaction_at` = IF(%s, NULL, `next_compaction_at`) WHERE `id` = %s""",
+        (
+            verdict,
+            clean_mark is not None,
+            clean_mark == "fallback",
+            verdict in {"clean", "quarantined"},
+            doc_id,
+        ),
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
