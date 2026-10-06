@@ -8,6 +8,7 @@ html,
 body,
 #app {
   height: 100%;
+  overscroll-behavior-y: none;
 }
 
 /* setupTheme adds this for one frame so a theme switch doesn't animate. */
@@ -27,10 +28,12 @@ html.theme-switching * {
 
 * {
   scrollbar-width: thin;
+  /* Stop vertical bounce while preserving horizontal back/forward gestures. */
+  overscroll-behavior-y: none;
 }
 
-/* The page behind every area follows the theme. It shows in the phone's safe-area
-   strips, in iOS rubber-band overscroll, and through translucent bars. */
+/* The page behind every area follows the theme in the phone's safe-area strips
+   and through translucent bars. */
 body {
   margin: 0;
   background-color: var(--surface-base);
