@@ -25,6 +25,13 @@ export const compactNow = (api: APIRequestContext, node: string) =>
 export const collabState = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "state", node);
 
+export const logId = (api: APIRequestContext, node: string) => hook<string>(api, "log_id", node);
+
+/** How many rows each collab table holds for a log, keyed by table kind. */
+export async function logRows(api: APIRequestContext, log: string): Promise<Record<string, number>> {
+	return frappeData(await api.post("/api/method/suite.drive.e2e_api.log_rows", { form: { log } }));
+}
+
 /** The text of each top-level block, as the server would serve it. */
 export const serverText = (api: APIRequestContext, node: string) =>
 	hook<string[]>(api, "server_text", node);

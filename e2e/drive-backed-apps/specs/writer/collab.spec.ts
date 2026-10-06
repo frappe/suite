@@ -6,6 +6,8 @@ import {
 	enableCollab,
 	expectConverged,
 	expectSaved,
+	logId,
+	logRows,
 	pastePicture,
 	picturesLoaded,
 	serverText,
@@ -314,6 +316,8 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(page, "Gone for good");
 		await expectSaved(page);
 		const { title } = await getNode(page.request, node);
+		const log = await logId(testApi, node);
+		expect((await logRows(testApi, log)).update).toBeGreaterThan(0);
 
 		await page.goto("/drive");
 		let menu = await openRowMenu(page, title);
@@ -327,7 +331,9 @@ test.describe("Writer collaboration", () => {
 			.click();
 
 		await expect.poll(() => canReadNode(page.request, node)).toBe(false);
-		await expect(collabState(testApi, node)).rejects.toThrow("has no collab log");
+		await expect
+			.poll(() => logRows(testApi, log))
+			.toEqual({ doc: 0, update: 0, session: 0, checkpoint: 0 });
 	});
 
 	test("Drive refuses to restore a version over a collab document", async ({ owner, testApi }) => {

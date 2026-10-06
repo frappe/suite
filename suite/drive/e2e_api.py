@@ -20,7 +20,7 @@ from suite.drive._core.roots import archive_personal_root, personal_root_for, pu
 from suite.drive.framework import principals_for
 from suite.suite_core import collab
 from suite.suite_core.collab import compaction
-from suite.suite_core.collab.tables import table
+from suite.suite_core.collab.tables import KINDS, table
 from suite.writer import collab as writer_collab
 
 DEFAULT_PASSWORD = "DriveWriterE2E!2026"
@@ -171,6 +171,23 @@ def state(node: str) -> dict:
         as_dict=True,
     )[0]
     return {key: int(value) for key, value in row.items()}
+
+
+@whitelist_for_tests(methods=["GET", "POST"])
+def log_id(node: str) -> str:
+    return collab_doc(node)["id"]
+
+
+@whitelist_for_tests(methods=["GET", "POST"])
+def log_rows(log: str) -> dict:
+    """How many rows each collab table holds for the log `log`, its control row included."""
+    return {
+        kind: frappe.db.sql(
+            f"SELECT COUNT(*) FROM `{table(writer_collab.ADAPTER, kind)}` WHERE `{'id' if kind == 'doc' else 'doc_id'}` = %s",
+            log,
+        )[0][0]
+        for kind in KINDS
+    }
 
 
 @whitelist_for_tests(methods=["GET", "POST"])
