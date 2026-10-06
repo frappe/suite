@@ -17,6 +17,7 @@ import {
 import {
   DriveCommentAuthor,
   DriveDocumentHeader,
+  formatDriveListingDate,
   GUEST_NAME_LIMIT,
   useDriveGuestName,
   type DocumentPanel,
@@ -544,7 +545,14 @@ onBeforeUnmount(() => {
                         >
                           <p class="text-sm-medium text-ink-gray-8">{{ versionLabel(version) }}</p>
                           <p class="text-p-xs text-ink-gray-5">
-                            {{ [version.actor, version.creation].filter(Boolean).join(' · ') }}
+                            {{
+                              [
+                                version.actor,
+                                version.creation && formatDriveListingDate(version.creation),
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')
+                            }}
                           </p>
                         </button>
                         <p v-if="!versions.length" class="text-sm text-ink-gray-5">
