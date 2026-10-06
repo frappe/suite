@@ -500,7 +500,7 @@ export type UpdateInviteInput = { name: string; expires_at: string | null; quota
 
 export type UpdateInviteOutput = null
 
-export type UpdateInviteError = 'PermissionError' | 'DoesNotExistError'
+export type UpdateInviteError = 'BadRequest' | 'PermissionError' | 'DoesNotExistError'
 
 const operationUpdateInvite: MutationRef<UpdateInviteInput, UpdateInviteOutput, UpdateInviteError> =
   {
@@ -515,7 +515,7 @@ const operationUpdateInvite: MutationRef<UpdateInviteInput, UpdateInviteOutput, 
     pathParams: ['name'],
     nodeParams: [],
     entity: null,
-    errors: ['PermissionError', 'DoesNotExistError'],
+    errors: ['BadRequest', 'PermissionError', 'DoesNotExistError'],
     loadValidators: async () => (await import('./validators')).operationUpdateInvite,
   }
 
@@ -523,7 +523,7 @@ export type SendInviteInput = { name: string }
 
 export type SendInviteOutput = null
 
-export type SendInviteError = 'PermissionError' | 'DoesNotExistError'
+export type SendInviteError = 'BadRequest' | 'PermissionError' | 'DoesNotExistError'
 
 const operationSendInvite: MutationRef<SendInviteInput, SendInviteOutput, SendInviteError> = {
   id: 'send_invite',
@@ -537,7 +537,7 @@ const operationSendInvite: MutationRef<SendInviteInput, SendInviteOutput, SendIn
   pathParams: ['name'],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'DoesNotExistError'],
+  errors: ['BadRequest', 'PermissionError', 'DoesNotExistError'],
   loadValidators: async () => (await import('./validators')).operationSendInvite,
 }
 

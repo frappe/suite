@@ -1210,7 +1210,7 @@
       "output": {
         "type": "null"
       },
-      "errors": ["PermissionError", "DoesNotExistError"],
+      "errors": ["BadRequest", "PermissionError", "DoesNotExistError"],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -1240,7 +1240,7 @@
       "output": {
         "type": "null"
       },
-      "errors": ["PermissionError", "DoesNotExistError"],
+      "errors": ["BadRequest", "PermissionError", "DoesNotExistError"],
       "entity": null,
       "nodeParams": [],
       "stream": false,

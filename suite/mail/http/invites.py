@@ -3,8 +3,10 @@
 from typing import TypedDict, cast
 
 import frappe
+from frappe import _
+from frappe.utils import escape_html, validate_email_address
 
-from suite.composition.http import Route
+from suite.composition.http import BadRequest, Route
 from suite.mail.http.shapes import Flag
 from suite.mail.utils.dt import from_utc_z, to_utc_z
 
@@ -51,7 +53,7 @@ def update_invite(name: str, expires_at: str | None, quota_gb: float | None) -> 
     doc = frappe.get_doc("Mail Account Request", name)
     doc.check_permission("write")
     if doc.is_verified:
-        frappe.throw("This invitation has already been accepted")
+        frappe.throw(_("This invitation has already been accepted"), BadRequest)
     doc.update({"expires_at": from_utc_z(expires_at), "quota_gb": quota_gb})
     doc.save()
 
@@ -60,6 +62,15 @@ def update_invite(name: str, expires_at: str | None, quota_gb: float | None) -> 
 def send_invite(name: str) -> None:
     doc = frappe.get_doc("Mail Account Request", name)
     doc.check_permission("write")
+    # The controller refuses these too, but as plain validation errors; checking
+    # first lets the route answer 400 with the controller's own messages.
+    if doc.is_expired:
+        frappe.throw(_("This request has expired. Please create a new one."), BadRequest)
+    if not doc.backup_email:
+        frappe.throw(_("Backup Email is required."), BadRequest)
+    backup_email = doc.backup_email.strip().lower()
+    if not validate_email_address(backup_email):
+        frappe.throw(_("{0} is not a valid Email Address").format(escape_html(backup_email)), BadRequest)
     doc.send_verification_email()
 
 
@@ -81,7 +92,7 @@ ROUTES = (
         public_name="admin.invites.update",
         body=UpdateInvite,
         output=type(None),
-        errors=(frappe.PermissionError, frappe.DoesNotExistError),
+        errors=(BadRequest, frappe.PermissionError, frappe.DoesNotExistError),
     ),
     Route(
         "POST",
@@ -91,6 +102,6 @@ ROUTES = (
         public_name="admin.invites.send",
         body=InviteName,
         output=type(None),
-        errors=(frappe.PermissionError, frappe.DoesNotExistError),
+        errors=(BadRequest, frappe.PermissionError, frappe.DoesNotExistError),
     ),
 )
