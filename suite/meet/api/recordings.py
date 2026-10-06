@@ -30,6 +30,17 @@ def get_recordings() -> list[dict]:
             # so an artifact that is gone or unreadable skips one recording
             # instead of failing the list.
             continue
-        recording["room_title"] = frappe.db.get_value("Meet Room", recording.meet_room, "title")
         visible.append(recording)
+    if not visible:
+        return []
+    room_titles = {
+        room.name: room.title
+        for room in frappe.get_all(
+            "Meet Room",
+            filters={"name": ["in", list({recording.meet_room for recording in visible})]},
+            fields=["name", "title"],
+        )
+    }
+    for recording in visible:
+        recording["room_title"] = room_titles.get(recording.meet_room)
     return visible
