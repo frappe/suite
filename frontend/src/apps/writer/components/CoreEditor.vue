@@ -38,8 +38,7 @@
                     role="textbox"
                     aria-label="Document editor"
                     aria-multiline="true"
-                    class="grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
-                    :class="isPainting && 'cursor-crosshair'"
+                    :class="[EDITOR_TEXT_CLASS, isPainting && 'cursor-crosshair']"
                     :style="editorStyle"
                   />
                 </EditorDropZone>
@@ -106,7 +105,11 @@ import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { SIDE_PANEL } from '@/apps/writer/sidePanel'
 import { isModKey, printDoc } from '@/apps/writer/utils'
-import { cssLineHeight } from '@/apps/writer/utils/typography'
+import {
+  EDITOR_TEXT_CLASS,
+  editorColumns,
+  editorTextStyle,
+} from '@/apps/writer/utils/editor-layout'
 import { useSessionStore } from '@/boot/session'
 import { useRootStore } from '@/stores/root'
 
@@ -271,19 +274,9 @@ const bubbleMenuButtons = [
 
 const bubbleMenuOpts = computed(() => bubbleMenuOptions({ editor, comments: props.comments }))
 
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${
-    props.settings?.wide ? '100ch' : '48rem'
-  }) minmax(0, 1fr)`,
-}))
+const gridStyle = computed(() => editorColumns(props.settings))
 
-const editorStyle = computed(() => ({
-  fontFamily: props.settings?.font_family && `var(--font-${props.settings.font_family})`,
-  '--editor-font-size': `${props.settings?.font_size || 15}px`,
-  '--editor-line-height': cssLineHeight(props.settings?.line_height),
-  '--paragraph-spacing-before': `${props.settings?.paragraph_spacing_before || 0}px`,
-  '--paragraph-spacing-after': `${props.settings?.paragraph_spacing_after || 0}px`,
-}))
+const editorStyle = computed(() => editorTextStyle(props.settings))
 
 const uploadFunction = (file) => {
   const fileUpload = useFileUpload()

@@ -287,6 +287,42 @@ test.describe("Writer collaboration", () => {
 		await page.getByRole("button", { name: "Close panel" }).click();
 		expect(await text.boundingBox()).toEqual(before);
 	});
+
+	test("a version preview shows its text where the editor's text sits, and Back to current returns to it", async ({
+		owner,
+	}) => {
+		const { page } = owner;
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await openWriterDocument(page, node);
+		await typeParagraph(page, "First version");
+		await expectSaved(page);
+		await takeVersion(owner.context.request, node, "One");
+		await typeParagraph(page, "Second version");
+		await expectSaved(page);
+		await takeVersion(owner.context.request, node, "Two");
+		await page.getByRole("button", { name: /versions/i }).first().click();
+		const panel = page.getByRole("complementary", { name: "Versions" });
+		const editorText = page.getByLabel("Document editor");
+		const previewText = page.locator('[aria-label="Version preview"] .ProseMirror');
+		const place = async (text: typeof editorText) => {
+			const { x, y, width } = (await text.locator("p", { hasText: "First version" }).boundingBox())!;
+			return { x, width, top: (await text.boundingBox())!.y, y };
+		};
+		const editing = await place(editorText);
+
+		await panel.getByRole("button", { name: /^One/ }).click();
+		await expect(previewText).toContainText("First version");
+		// frappe-ui gives an empty read-only line a fixed height, so lines below one may sit a few px off.
+		expect(await place(previewText)).toMatchObject({ x: editing.x, width: editing.width, top: editing.top });
+
+		await panel.getByRole("button", { name: /^Two/ }).click();
+		await expect(previewText).toContainText("Second version");
+		expect(await place(previewText)).toMatchObject({ x: editing.x, width: editing.width, top: editing.top });
+
+		await page.getByRole("button", { name: "Back to current" }).click();
+		await expect(editorText).toBeVisible();
+		expect(await place(editorText)).toEqual(editing);
+	});
 	test("a copy made in Drive keeps the text and its pictures, and takes its own edits", async ({
 		owner,
 		testApi,

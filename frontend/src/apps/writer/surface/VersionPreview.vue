@@ -7,10 +7,23 @@ import type { DocumentSession } from '@/apps/drive'
 import { DOCUMENT_MEDIA, DriveMedia } from '@/apps/writer/extensions/drive-media'
 import { writerSchema } from '@/apps/writer/schema'
 import { SIDE_PANEL } from '@/apps/writer/sidePanel'
+import {
+  EDITOR_TEXT_CLASS,
+  editorColumns,
+  editorTextStyle,
+  type LayoutSettings,
+} from '@/apps/writer/utils/editor-layout'
 
 import { readVersion } from './versions'
 
-const props = defineProps<{ session: DocumentSession; seq: number; label: string }>()
+const props = defineProps<{
+  session: DocumentSession
+  seq: number
+  label: string
+  settings: LayoutSettings
+  /** Width, in px, the live editor gives its table of contents, so the text lines up. */
+  rail: number
+}>()
 const emit = defineEmits<{ close: [] }>()
 
 const media = inject(DOCUMENT_MEDIA, null)
@@ -37,6 +50,7 @@ async function show(seq: number) {
       extensions: [...writerSchema(), DriveMedia.configure({ media })],
       content,
       editable: false,
+      editorProps: { attributes: { class: `${EDITOR_TEXT_CLASS} max-w-none` } },
       // HTML parses as loosely as the live editor; only Yjs state is checked.
       enableContentCheck: typeof content !== 'string',
       onContentError: () => {
@@ -60,31 +74,41 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <div
-      class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-gray-1 px-5 py-2"
+      class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-gray-1 px-5 py-1.5"
       role="status"
     >
       <p class="truncate text-sm text-ink-gray-7">Viewing {{ label }}</p>
       <Button size="sm" variant="outline" label="Back to current" @click="emit('close')" />
     </div>
     <div class="flex min-h-0 flex-1">
-      <div class="min-w-0 flex-1 overflow-y-auto">
-        <div v-if="loading" class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10">
-          <Skeleton
-            v-for="width in ['70%', '92%', '84%', '60%']"
-            :key="width"
-            class="h-3.5 rounded-4"
-            :style="{ width }"
+      <div class="hidden shrink-0 md:block" :style="{ width: `${rail}px` }" />
+      <div
+        class="min-w-0 flex-1 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
+      >
+        <div
+          class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
+          :style="editorColumns(settings)"
+        >
+          <div class="hidden md:block" />
+          <div v-if="loading" class="space-y-3 px-5 pt-10">
+            <Skeleton
+              v-for="width in ['70%', '92%', '84%', '60%']"
+              :key="width"
+              class="h-3.5 rounded-4"
+              :style="{ width }"
+            />
+          </div>
+          <p v-else-if="failed" class="px-5 pt-10 text-center text-p-sm text-ink-gray-6">
+            This version can't be shown.
+          </p>
+          <EditorContent
+            v-else
+            :editor="editor ?? undefined"
+            aria-label="Version preview"
+            class="flex grow flex-col"
+            :style="editorTextStyle(settings)"
           />
         </div>
-        <p v-else-if="failed" class="m-auto px-5 pt-10 text-center text-p-sm text-ink-gray-6">
-          This version can't be shown.
-        </p>
-        <EditorContent
-          v-else
-          :editor="editor ?? undefined"
-          aria-label="Version preview"
-          class="mx-auto w-full max-w-[770px] pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
-        />
       </div>
       <div v-if="sidePanel" class="hidden w-56 shrink-0 md:block" />
     </div>

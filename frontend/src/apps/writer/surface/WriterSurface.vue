@@ -96,6 +96,9 @@ const threads = ref<CommentThread[]>([])
 const versions = ref<VersionRow[]>([])
 const previewing = ref<VersionRow | null>(null)
 const sidePanel = computed(() => showComments.value || showVersions.value)
+const editorFrame = ref<HTMLElement | null>(null)
+/** Width of the live editor's table of contents when the preview opened. */
+const rail = ref(0)
 const versionsCursor = ref<string | null>(null)
 const loadingMoreVersions = ref(false)
 const panelLoading = ref(false)
@@ -232,6 +235,14 @@ async function loadPanel(kind: DocumentPanel) {
 
 function versionLabel(version: VersionRow) {
   return version.label || `Version ${version.seq}`
+}
+
+function openPreview(version: VersionRow) {
+  const scroll = editorFrame.value?.querySelector('#editor-scroll-container')
+  if (!previewing.value && scroll)
+    rail.value =
+      scroll.getBoundingClientRect().left - editorFrame.value!.getBoundingClientRect().left
+  previewing.value = version
 }
 
 async function closePreview() {
@@ -413,9 +424,11 @@ onBeforeUnmount(() => {
           :session="session"
           :seq="previewing.seq"
           :label="versionLabel(previewing)"
+          :settings="settings"
+          :rail="rail"
           @close="closePreview"
         />
-        <div v-show="!previewing" class="flex min-h-0 flex-1 overflow-hidden">
+        <div v-show="!previewing" ref="editorFrame" class="flex min-h-0 flex-1 overflow-hidden">
           <CollabTextEditor
             v-if="collabLive && room"
             ref="editorSurface"
@@ -529,7 +542,7 @@ onBeforeUnmount(() => {
                   : 'bg-surface-gray-1 hover:bg-surface-gray-2'
               "
               :aria-pressed="previewing?.seq === version.seq"
-              @click="previewing = version"
+              @click="openPreview(version)"
             >
               <p class="text-sm-medium text-ink-gray-8">{{ versionLabel(version) }}</p>
               <p class="text-p-xs text-ink-gray-5">
