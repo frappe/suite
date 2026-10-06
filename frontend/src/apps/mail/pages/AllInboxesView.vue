@@ -283,7 +283,7 @@ const {
 
 const isLoaded = ref(false)
 
-// The remembered All/Unread/Starred/Has-attachments choice, its menu, and its title (see
+// The remembered All/Unread/Starred/Has-attachments or category choice, its menu, and its title (see
 // useStoredFilter) — all shared with the mailbox list.
 const { filter, FILTER_OPTIONS, filterTitle: title } = useStoredFilter({
 	scope: () => 'all-inboxes',

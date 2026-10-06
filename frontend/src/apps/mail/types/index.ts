@@ -65,6 +65,8 @@ export interface User {
 	is_suite_admin: boolean
 	is_system_manager: boolean
 	is_jmap_configured: boolean
+	// Whether the site sorts mail into categories, and so whether lists can be filtered by one.
+	email_classification: boolean
 	// Admins only: whether the site is connected to a Suite Cloud, which the Admin Dashboard needs.
 	is_suite_cloud_configured: boolean
 

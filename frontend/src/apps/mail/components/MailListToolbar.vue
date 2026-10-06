@@ -70,7 +70,7 @@ import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import SplitViewToggle from '@/apps/mail/components/SplitViewToggle.vue'
 
-import type { FilterOption } from '@/apps/mail/utils/listFilter'
+import type { FilterOptions } from '@/apps/mail/utils/listFilter'
 
 // The row above the list, shared by the mailbox list and the merged All Inboxes list:
 // filter selector on the left, Split View and Refresh on the right. The two lists differ
@@ -87,7 +87,7 @@ const {
 } = defineProps<{
 	/** What the selector reads: usually the filter's name, sometimes a count. */
 	title: string
-	filterOptions: FilterOption[]
+	filterOptions: FilterOptions
 	/** False renders the title as plain text — no menu to open. */
 	showFilter?: boolean
 	/** False hands the right-hand cluster entirely to the `actions` slot. */
