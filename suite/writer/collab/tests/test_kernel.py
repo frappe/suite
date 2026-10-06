@@ -129,8 +129,10 @@ class TestKernel(UnitTestCase):
                 kernel.judge(bundle, None, [])
             self.assertEqual(str(failed.exception), "exit 3: Error:")
 
-    def test_the_bundle_has_no_way_to_the_network(self):
-        self.assertEqual(set(re.findall(r'\brequire\("([^"$]+)"\)', BUNDLE.read_text())), {"node:crypto"})
+    def test_the_bundle_needs_only_crypto_and_drops_the_network_globals(self):
+        code = BUNDLE.read_text()
+        self.assertEqual(set(re.findall(r'\brequire\("([^"$]+)"\)', code)), {"node:crypto"})
+        self.assertEqual(set(re.findall(r"[\"'`](node:[\w/]+)", code)), {"node:crypto"})
         bundle = BUNDLE.resolve()
         probe = f"""
         require({json.dumps(str(bundle))})

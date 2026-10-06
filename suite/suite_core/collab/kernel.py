@@ -5,14 +5,16 @@ verdict and the caller keeps the document suspect. The child runs only from back
 reads rows on stdin and answers on stdout, with an empty environment, a heap limit and a timeout,
 and it can't read files other than its bundle, write files or start processes.
 
-The permission model can't block the network. The bundle has no network code on the judging
-path, requires only node:crypto and drops fetch and WebSocket before it reads its input, which
-test_kernel checks against the built bundle.
+The permission model doesn't cover the network: the child can still load Node's network modules.
+The bundle has no network code on the judging path, names no Node module but node:crypto and
+drops fetch and WebSocket before it reads its input, which test_kernel checks against the built
+bundle. This guards against network use by mistake, not against a compromised child.
 
-Bisecting peaks at about 30 times the input in resident memory, past the heap limit: 560 MB
-for a 19 MB checkpoint. Ticket 18's admission is to keep a document's state and tail under 4.5 MiB,
-about 140 MB; a document stored before that bound can need more. A child the host kills for
-memory fails as KernelFailed, and the document is held.
+Bisecting peaks at about 30 times the input in resident memory, past the heap limit: about
+120 MB at the 4 MiB state the scheduler aims for, and 560 MB for a 19.1 MB checkpoint, which
+passed. Nothing bounds the input: a compaction job can meet a larger state. A child that runs out
+of its 512 MB heap or is killed for memory fails as KernelFailed, and the document is held with
+an alert.
 """
 
 import base64
