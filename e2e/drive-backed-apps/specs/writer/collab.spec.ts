@@ -363,9 +363,26 @@ test.describe("Writer collaboration", () => {
 			return { x, width, top: (await text.boundingBox())!.y, y };
 		};
 		const editing = await place(editorText);
+		const look = (bar: ReturnType<typeof page.locator>) =>
+			bar.evaluate((el) => {
+				const style = getComputedStyle(el);
+				return [style.backgroundColor, style.borderBottomColor, el.getBoundingClientRect().height];
+			});
+		const themes = ["light", "dark"] as const;
+		const toolbar = page.getByRole("button", { name: "Bold" }).locator("xpath=ancestor::div[contains(@class, 'border-b')][1]");
+		const toolbarLooks = [];
+		for (const theme of themes) {
+			await page.evaluate((theme) => document.documentElement.setAttribute("data-theme", theme), theme);
+			toolbarLooks.push(await look(toolbar));
+		}
 
 		await panel.getByRole("button", { name: /^One/ }).click();
 		await expect(previewText).toContainText("First version");
+		const bar = page.getByRole("status").filter({ hasText: "Viewing One" });
+		for (const [i, theme] of themes.entries()) {
+			await page.evaluate((theme) => document.documentElement.setAttribute("data-theme", theme), theme);
+			expect(await look(bar)).toEqual(toolbarLooks[i]);
+		}
 		// frappe-ui gives an empty read-only line a fixed height, so lines below one may sit a few px off.
 		expect(await place(previewText)).toMatchObject({ x: editing.x, width: editing.width, top: editing.top });
 

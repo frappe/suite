@@ -429,7 +429,7 @@ onBeforeUnmount(() => {
           >
             <template v-if="previewing" #toolbar>
               <div
-                class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-gray-1 px-5 py-1.5"
+                class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-elevation-2 px-5 py-1.5"
                 role="status"
               >
                 <p class="truncate text-sm text-ink-gray-7">
