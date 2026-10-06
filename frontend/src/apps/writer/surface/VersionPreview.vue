@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Editor, EditorContent } from '@tiptap/vue-3'
 import { Button, Skeleton } from 'frappe-ui'
-import { inject, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import { DOCUMENT_MEDIA, DriveMedia } from '@/apps/writer/extensions/drive-media'
@@ -35,10 +35,7 @@ let request = 0
 
 async function show(seq: number) {
   const current = ++request
-  editor.value?.destroy()
-  editor.value = null
-  loading.value = true
-  failed.value = false
+  loading.value = !editor.value
   try {
     const response = await props.session.credentials.fetch(
       props.session.versions.contentUrl(String(seq)),
@@ -46,6 +43,8 @@ async function show(seq: number) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const content = await readVersion(new Uint8Array(await response.arrayBuffer()))
     if (current !== request) return
+    const shown = editor.value
+    failed.value = false
     editor.value = new Editor({
       extensions: [...writerSchema(), DriveMedia.configure({ media })],
       content,
@@ -57,6 +56,8 @@ async function show(seq: number) {
         failed.value = true
       },
     })
+    await nextTick()
+    shown?.destroy()
   } catch {
     if (current === request) failed.value = true
   } finally {

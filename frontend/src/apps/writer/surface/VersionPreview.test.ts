@@ -43,7 +43,8 @@ function mountPreview(session: DocumentSession, seq = 1) {
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
-    setup: () => () => h(VersionPreview, { session, seq: shown.value, label: 'Version' }),
+    setup: () => () =>
+      h(VersionPreview, { session, seq: shown.value, label: 'Version', settings: {}, rail: 0 }),
   })
   app.mount(root)
   return {
@@ -83,6 +84,31 @@ describe('VersionPreview', () => {
     await vi.waitFor(() => expect(preview.root.querySelectorAll('td')).toHaveLength(2))
     expect(preview.root.textContent).toContain('Friday')
     expect(preview.root.textContent).not.toContain("can't be shown")
+    preview.unmount()
+  })
+
+  it('keeps the shown version, with no loading placeholder, until the next one replaces it', async () => {
+    const requests: ReturnType<typeof deferred>[] = []
+    const preview = mountPreview(
+      fakeSession(() => {
+        const request = deferred()
+        requests.push(request)
+        return request.promise
+      }),
+    )
+    requests[0].resolve(new Response(version('<p>First</p>')))
+    await vi.waitFor(() => expect(preview.root.textContent).toContain('First'))
+
+    preview.shown.value = 2
+    await settle()
+    expect(preview.root.textContent).toContain('First')
+    expect(preview.root.querySelector('[aria-label="Version preview"]')).not.toBeNull()
+
+    requests[1].resolve(new Response(version('<p>Second</p>')))
+    await vi.waitFor(() => expect(preview.root.textContent).toContain('Second'))
+    expect(preview.root.textContent).not.toContain('First')
+    await settle()
+    expect(live.size).toBe(1)
     preview.unmount()
   })
 
