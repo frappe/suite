@@ -7,6 +7,7 @@ import pycrdt
 
 from suite.suite_core.collab import quarantine
 from suite.suite_core.collab.log import chain_next
+from suite.suite_core.collab.tests.test_compaction import crafted
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.collab.tests.test_collab import answer, call, push_body, read_frame, read_open
@@ -73,6 +74,15 @@ class TestQuarantine(CheckpointCase):
             for rev, owner, reason, payload in frappe.db.sql(
                 """SELECT `context_rev`, `owner`, `reason`, `payload` FROM `__writer_collab_recovery`
                 WHERE `doc_id` = %s ORDER BY `context_rev`""",
+                self.doc_row(node).id,
+            )
+        ]
+
+    def states(self, node: str) -> list[str]:
+        return [
+            state
+            for (state,) in frappe.db.sql(
+                "SELECT `state` FROM `__writer_collab_update` WHERE `doc_id` = %s ORDER BY `rev`",
                 self.doc_row(node).id,
             )
         ]
@@ -291,3 +301,34 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual(self.quarantine(node, {2}, "malformed_row"), [2, 3])
 
         self.assertEqual(self.recovered(node), [(2, WRITER, "malformed_row", b"\x01\x01garbage")])
+
+    def test_a_compaction_quarantines_a_row_that_splits_an_emoji(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        # The text node is clock 0, "a" clock 1, the emoji clocks 2 and 3, "b" clock 4
+        a.typed(0, "a😀b")
+        b = Tab(self, node)
+        split = crafted(insert=(b.cid, 0, (a.cid, 2), (a.cid, 3), "x"))
+        self.store_raw(node, b, split)
+        c = Tab(self, node)
+        c.typed(0, "!")
+
+        self.compact(node)
+
+        self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
+        self.assertEqual(self.recovered(node), [(2, WRITER, "cut_surrogate", split)])
+        [(through, state, _integrated)] = self.checkpoints_of(node)
+        self.assertEqual((through, self.text_of(state)), (3, "!a😀b"))
+
+    def test_a_compaction_quarantines_an_unreadable_row_and_compacts_the_rest(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        b = Tab(self, node)
+        self.store_raw(node, b, b"\x01\x01garbage")
+        a.typed(5, " gamma")
+
+        self.compact(node)
+
+        self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
+        self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alpha gamma")

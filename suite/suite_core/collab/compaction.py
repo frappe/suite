@@ -40,11 +40,9 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type])
     if pycrdt.__version__ != PYCRDT:
         raise CompactionFailed("kernel_version")
     parts = ([checkpoint] if checkpoint else []) + list(rows)
-    try:
-        if cuts_a_pair(parts):
-            raise CompactionFailed("cut_surrogate")
-    except ValueError:
-        raise CompactionFailed("malformed_row") from None
+    found = unfit(parts)
+    if found:
+        raise CompactionFailed(found[1])
     try:
         merged = pycrdt.merge_updates(*parts)
         wanted = pycrdt.get_state(merged)
@@ -83,19 +81,23 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type])
     return Compacted(state, integrated=True, report=report)
 
 
-def cuts_a_pair(parts: list[bytes]) -> bool:
-    """Whether a row splits an emoji, or any surrogate pair, between its two halves.
+def unfit(parts: list[bytes]) -> tuple[int, str] | None:
+    """The index of the first part that can't be read or that splits an emoji, or any surrogate pair,
+    between its two halves, with the reason; None when every part is fit.
 
-    Yjs turns both halves into replacement characters and yrs does not, so the
-    compaction would no longer match what browsers hold.
+    Yjs turns both halves of a split pair into replacement characters and yrs does
+    not, so the compaction would no longer match what browsers hold.
     """
     pairs = set()
-    for part in parts:
-        update = updates.parse(part)
+    for index, part in enumerate(parts):
+        try:
+            update = updates.parse(part)
+        except ValueError:
+            return index, "malformed_row"
         pairs.update((struct.client, clock) for struct in update.structs for clock in struct.pairs)
         if update.split_points() & pairs:
-            return True
-    return False
+            return index, "cut_surrogate"
+    return None
 
 
 def same(left: bytes, right: bytes, roots: dict[str, type]) -> bool:

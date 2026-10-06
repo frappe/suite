@@ -18,7 +18,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import admission, compaction, ingest
+from suite.suite_core.collab import admission, compaction, ingest, quarantine
 from suite.suite_core.collab.log import ChainBroken, chain_next, chain_seed, read, rows_after
 from suite.suite_core.collab.tables import table
 
@@ -59,7 +59,7 @@ class Compaction:
             if not admission.enough_memory():
                 raise compaction.CompactionFailed("insufficient_memory")
             admission.limit_memory()
-            snapshot = read(self.adapter, self.doc_id)
+            snapshot = self.fit_snapshot()
             if snapshot is None or snapshot["head_rev"] == snapshot["base"]:
                 frappe.db.rollback()
                 self.settle()
@@ -77,6 +77,24 @@ class Compaction:
                 else type(error).__name__
             )
             self.failed(snapshot and snapshot["head_rev"], reason, error)
+
+    def fit_snapshot(self) -> dict | None:
+        """A snapshot after quarantining, one at a time, each row that can't be read or splits a pair."""
+        while True:
+            snapshot = read(self.adapter, self.doc_id)
+            if snapshot is None:
+                return None
+            checkpoint = [snapshot["checkpoint"]] if snapshot["checkpoint"] else []
+            found = compaction.unfit(checkpoint + [payload for _rev, payload in snapshot["rows"]])
+            if not found:
+                return snapshot
+            index, reason = found
+            index -= len(checkpoint)
+            if index < 0:
+                raise compaction.CompactionFailed(reason)
+            frappe.db.rollback()
+            if not quarantine.quarantine(self.adapter, self.doc_id, {snapshot["rows"][index][0]}, reason):
+                raise compaction.CompactionFailed(reason)
 
     def store(self, snapshot: dict, result: compaction.Compacted) -> bytes:
         """T2: the checkpoint row, unreferenced until the install; answers its sha, which names it to the install.
