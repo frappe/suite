@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -55,10 +56,10 @@ class TestKernel(UnitTestCase):
         rows = typed(
             append(paragraph("abc")), append(paragraph("def")), table_cell(), append(paragraph("after"))
         )
-        verdict = kernel.judge(BUNDLE, None, rows)
-        self.assertEqual(verdict.index, 2)
-        self.assertTrue(
-            verdict.reason.startswith("schema: RangeError: Invalid content for node doc"), verdict.reason
+        # The editor's own message goes on to print the nodes, with their text
+        self.assertEqual(
+            kernel.judge(BUNDLE, None, rows),
+            kernel.Verdict(2, "schema: RangeError: Invalid content for node doc:"),
         )
 
     def test_blames_a_checkpoint_that_holds_the_bad_content(self):
@@ -85,26 +86,46 @@ class TestKernel(UnitTestCase):
         self.assertIsNone(kernel.judge(BUNDLE.with_name("missing.cjs"), None, typed(table_cell())))
 
     def test_runs_the_child_with_no_environment_files_or_processes(self):
+        # macOS adds __CF_USER_TEXT_ENCODING to every process
         probe = """
-        const tried = (run) => { try { run(); return 'allowed' } catch (error) { return error.code } }
-        process.stdout.write(JSON.stringify({ verdict: 'bad', index: 0, reason: JSON.stringify({
-          env: Object.keys(process.env),
-          read: tried(() => require('fs').readFileSync('/etc/hosts')),
-          write: tried(() => require('fs').writeFileSync(require('os').tmpdir() + '/kernel-probe', 'x')),
-          spawn: tried(() => require('child_process').execFileSync('ls')),
-        }) }))
+        const tried = (run) => { try { run(); return 'allowed' } catch (error) { return error.code === 'ERR_ACCESS_DENIED' ? 'denied' : error.code } }
+        const env = Object.keys(process.env).filter((key) => key !== '__CF_USER_TEXT_ENCODING')
+        process.stdout.write(JSON.stringify({ verdict: 'bad', index: 0, reason: [
+          `env ${env.length}`,
+          `read ${tried(() => require('fs').readFileSync('/etc/hosts'))}`,
+          `write ${tried(() => require('fs').writeFileSync(require('os').tmpdir() + '/kernel-probe', 'x'))}`,
+          `spawn ${tried(() => require('child_process').execFileSync('ls'))}`,
+        ].join(', ') }))
         """
         with tempfile.TemporaryDirectory() as folder:
             bundle = Path(folder) / "probe.cjs"
             bundle.write_text(probe)
             with patch.dict(os.environ, {"SUITE_KERNEL_SECRET": "x"}):
-                found = frappe.parse_json(kernel.judge(bundle, None, []).reason)
-        # macOS adds __CF_USER_TEXT_ENCODING to every process
-        self.assertEqual(set(found.env) - {"__CF_USER_TEXT_ENCODING"}, set())
-        self.assertEqual(
-            (found.read, found.write, found.spawn),
-            ("ERR_ACCESS_DENIED", "ERR_ACCESS_DENIED", "ERR_ACCESS_DENIED"),
-        )
+                found = kernel.judge(bundle, None, []).reason
+        self.assertEqual(found, "env 0, read denied, write denied, spawn denied")
+
+    def test_a_reason_keeps_no_document_text(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for name, reason, expected in (
+                ("quoted", 'throws: Error: unexpected "secret words" here', "throws: Error: unexpected"),
+                (
+                    "node",
+                    "schema: RangeError: Invalid content for node doc: <paragraph(secret)>",
+                    "schema: RangeError: Invalid content for node doc:",
+                ),
+                ("long", "x" * 200, "x" * 80),
+            ):
+                bundle = Path(folder) / f"{name}.cjs"
+                bundle.write_text(
+                    f"process.stdout.write(JSON.stringify({{ verdict: 'bad', index: 0, reason: {json.dumps(reason)} }}))"
+                )
+                with self.subTest(name):
+                    self.assertEqual(kernel.judge(bundle, None, []).reason, expected)
+            bundle = Path(folder) / "loud.cjs"
+            bundle.write_text("process.stderr.write('Error: <p>secret words</p>\\n'); process.exit(3)")
+            with self.assertRaises(kernel.KernelFailed) as failed:
+                kernel.judge(bundle, None, [])
+            self.assertEqual(str(failed.exception), "exit 3: Error:")
 
     def test_a_child_that_hangs_or_crashes_fails_loudly(self):
         with tempfile.TemporaryDirectory() as folder:

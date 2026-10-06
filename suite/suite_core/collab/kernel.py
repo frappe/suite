@@ -8,6 +8,7 @@ and it can't read files other than its bundle, write files or start processes.
 
 import base64
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from suite.suite_core.collab.selftest import node_version
 NODE_MAJOR = 24
 HEAP_MB = 512
 TIMEOUT_S = 120
+# A reason is a few words of the error, never document text, so it stops where quoted content could start
+REASON = re.compile(r"[A-Za-z0-9 _.:,-]{0,80}")
 
 
 @dataclass
@@ -64,11 +67,16 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
         answer = json.loads(done.stdout)
         if answer["verdict"] == "clean":
             return Verdict(None)
-        return Verdict(int(answer["index"]), str(answer["reason"]))
+        return Verdict(int(answer["index"]), plain(str(answer["reason"])))
     except subprocess.CalledProcessError as error:
-        raise KernelFailed(f"exit {error.returncode}: {error.stderr[-500:]}") from error
+        last = error.stderr.strip().rsplit("\n", 1)[-1]
+        raise KernelFailed(f"exit {error.returncode}: {plain(last)}") from error
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
         raise KernelFailed(repr(error)) from error
+
+
+def plain(text: str) -> str:
+    return REASON.match(text).group().strip()
 
 
 def usable_node() -> str | None:
