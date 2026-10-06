@@ -60,11 +60,11 @@
           </div>
         </div>
       </div>
-      <div v-if="sidePanel" class="hidden md:block w-56 shrink-0" />
+      <div v-if="sidePanel" class="hidden md:block w-80 shrink-0" />
       <div
         v-if="commentsPainted && comments._map.size"
         class="hidden md:block absolute top-4"
-        :class="sidePanel ? 'right-60' : 'right-4'"
+        :class="sidePanel ? 'right-[21rem]' : 'right-4'"
       >
         <Dropdown :options="commentFilterOptions" align="end">
           <Button

@@ -273,16 +273,44 @@ test.describe("Writer collaboration", () => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await openWriterDocument(page, node);
 		await typeParagraph(page, "Centred text");
+		await page.keyboard.press("Enter");
+		await page.keyboard.type("## First heading");
+		await page.keyboard.press("Enter");
+		await page.keyboard.type("## Second heading");
 		await expectSaved(page);
-		const text = page.getByLabel("Document editor").locator("p").first();
+		await takeVersion(owner.context.request, node, "One");
+		const showToc = page.getByRole("button", { name: "Show table of contents" });
+		if (await showToc.isVisible()) await showToc.click();
+		const tocHeading = page.getByText("Table of contents", { exact: true });
+		const tocEntry = page.getByRole("link", { name: "First heading" });
+		const tocGap = (await tocEntry.boundingBox())!.y - (await tocHeading.boundingBox())!.y;
+		const text = page.getByLabel("Document editor").locator("p", { hasText: "Centred text" });
+		let last = -1;
+		await expect
+			.poll(async () => last === (last = (await text.boundingBox())!.x), { intervals: [400] })
+			.toBe(true);
 		const before = await text.boundingBox();
 		const column = await page.locator("#editor-scroll-container").boundingBox();
 
 		await page.getByRole("button", { name: /versions/i }).first().click();
-		const panel = await page.getByRole("complementary", { name: "Versions" }).boundingBox();
-		expect(panel).toMatchObject({ y: column!.y, height: column!.height, width: 224 });
-		expect(panel!.x + panel!.width).toBe(column!.x + column!.width);
-		expect((await text.boundingBox())!.x).toBe(before!.x - 112);
+		const aside = page.getByRole("complementary", { name: "Versions" });
+		const row = aside.getByRole("button", { name: /^One/ });
+		await expect(row).toBeVisible();
+		const panel = (await aside.boundingBox())!;
+		expect(panel).toMatchObject({ y: column!.y, height: column!.height, width: 320 });
+		expect(panel.x + panel.width).toBe(column!.x + column!.width);
+		expect((await text.boundingBox())!.x).toBe(before!.x - 160);
+		const heading = (await aside.getByRole("heading", { name: "Versions" }).boundingBox())!;
+		const first = (await row.boundingBox())!;
+		expect(first.x).toBe(heading.x);
+		expect(first.y - heading.y).toBe(tocGap);
+
+		await page.getByRole("button", { name: /comments/i }).first().click();
+		const comments = page.getByRole("complementary", { name: "Comments" });
+		const input = (await comments.getByPlaceholder("Add a comment").boundingBox())!;
+		const commentsHeading = (await comments.getByRole("heading", { name: "Comments" }).boundingBox())!;
+		expect(input.x).toBe(commentsHeading.x);
+		expect(input.y - commentsHeading.y).toBe(tocGap);
 
 		await page.getByRole("button", { name: "Close panel" }).click();
 		expect(await text.boundingBox()).toEqual(before);

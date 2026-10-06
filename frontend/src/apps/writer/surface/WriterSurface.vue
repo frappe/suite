@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
       <aside
         v-if="sidePanel"
         :aria-label="showComments ? 'Comments' : 'Versions'"
-        class="absolute bottom-0 right-0 top-0 z-20 flex w-full flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl md:w-56 md:border-outline-gray-2 md:bg-surface-base md:p-2 md:shadow-none"
+        class="absolute bottom-0 right-0 top-0 z-20 flex w-full flex-col border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl md:w-80 md:border-outline-gray-2 md:bg-surface-base md:p-2 md:shadow-none"
         :class="previewing || editable ? 'md:top-[41px]' : 'md:top-0'"
       >
         <div
@@ -472,14 +472,13 @@ onBeforeUnmount(() => {
             {{ showComments ? 'Comments' : 'Versions' }}
           </h2>
           <Button
-            icon="lucide-panel-right-close"
+            icon="lucide-x"
             aria-label="Close panel"
-            tooltip="Hide"
             variant="ghost"
             @click="showComments = showVersions = false"
           />
         </div>
-        <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 md:px-0 md:py-1">
+        <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 md:px-2 md:pb-2 md:pt-0.5">
           <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
           <template v-else-if="showComments">
             <form v-if="canComment" class="space-y-2" @submit.prevent="addComment">

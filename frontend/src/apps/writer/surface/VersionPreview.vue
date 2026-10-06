@@ -111,7 +111,7 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
-      <div v-if="sidePanel" class="hidden w-56 shrink-0 md:block" />
+      <div v-if="sidePanel" class="hidden w-80 shrink-0 md:block" />
     </div>
   </div>
 </template>
