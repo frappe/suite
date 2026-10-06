@@ -677,3 +677,19 @@ class TestSuspect(CheckpointCase):
 
                 self.assertEqual((verdict, self.doc_row(node).suspect_held), ("held", "kernel_failed"))
                 self.assertEqual(self.states(node), ["ok", "ok", "ok"])
+
+    def test_a_judge_that_cannot_reach_redis_takes_no_place(self):
+        node = self.new_document()
+        Pen(self, node).adds(paragraph("alpha"))
+        doc_id = self.doc_row(node).id
+        self.set_doc(node, suspect="unreadable")
+
+        with (
+            patch.object(suspect, "get_redis_conn", side_effect=ConnectionError),
+            self.assertRaises(ConnectionError),
+        ):
+            self.judge(node)
+
+        self.assertFalse(
+            get_redis_conn().exists(f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}")
+        )

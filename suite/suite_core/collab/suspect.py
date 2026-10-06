@@ -88,10 +88,10 @@ def judge(
     marked = suspect_of(adapter, doc_id)
     if not marked:
         return None
+    redis, asked = get_redis_conn(), rejudge_asked(adapter, doc_id)
     held = admission.take_place(adapter, doc_id)
     if held is None:
         return "busy"
-    redis, asked = get_redis_conn(), rejudge_asked(adapter, doc_id)
     try:
         redis.delete(asked)
         verdict = verdict_of(adapter, doc_id, marked, roots, bundle, owner_of)
@@ -280,7 +280,7 @@ def hold(adapter: str, doc_id: str, why: str, detail: str) -> str | None:
     return "held"
 
 
-def unsettled(adapter: str, doc_id: str, marked: str, why: str, detail: str) -> str:
+def unsettled(adapter: str, doc_id: str, marked: str, why: str, detail: str) -> str | None:
     """A judge that can't settle a document holds it only when a compaction marked it; a tab's report alone never pauses saving."""
     if marked != "client":
         return hold(adapter, doc_id, why, detail)
