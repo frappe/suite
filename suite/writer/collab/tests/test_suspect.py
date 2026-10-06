@@ -9,7 +9,7 @@ from frappe.utils import now_datetime
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.collab import compaction, kernel, quarantine, suspect
+from suite.suite_core.collab import admission, compaction, kernel, quarantine, suspect
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
@@ -339,7 +339,6 @@ class TestSuspect(CheckpointCase):
             failing[0] = False
             return self.judge(node)
 
-        self.set_doc(node, compaction_failures=1)
         with patch.object(compaction, "compact", compact):
             self.assertEqual(fails_then_judged(), "clean")
             a.adds(paragraph("beta"))
@@ -370,3 +369,24 @@ class TestSuspect(CheckpointCase):
                 (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "clean", judged)
             )
         a.adds(paragraph("beta"))
+
+    def test_a_report_judged_clean_does_not_count_toward_a_compaction_hold(self):
+        node = self.new_document()
+        a = Pen(self, node)
+        rev = a.adds(paragraph("alpha"))
+        doc_id = self.doc_row(node).id
+        self.assertEqual(self.report(node, rev)[0], 202)
+        writer_collab.judge(doc_id)
+        self.assertEqual(self.doc_row(node).verdict, "clean")
+
+        with patch.object(admission, "enough_memory", lambda: False):
+            self.job(doc_id).run()
+        self.assertEqual((self.doc_row(node).suspect, self.doc_row(node).compaction_failures), (None, 1))
+        with self.refusing(a.sent[0]):
+            self.job(doc_id).run()
+        self.assertEqual(
+            (self.doc_row(node).suspect, self.doc_row(node).compaction_failures), ("unreadable", 2)
+        )
+
+        self.assertEqual(self.judge(node), "clean")
+        self.assertIsNone(self.doc_row(node).suspect_held)

@@ -56,6 +56,8 @@ def ensure_tables(adapter: str) -> None:
         # The last verdict on a suspect document and how many there have been, which a tab that reported one reads on its pull
         "`verdict` varchar(20) NULL",
         "`judged` int unsigned NOT NULL DEFAULT 0",
+        # A judge found a compaction's suspect clean and no checkpoint was installed since; a second mark holds it
+        "`suspect_judged_clean` tinyint(1) NOT NULL DEFAULT 0",
         # When a tab last reported a row it couldn't apply; one report a minute is heard
         "`suspect_reported_at` datetime(6) NULL",
     ):

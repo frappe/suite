@@ -182,6 +182,7 @@ class Compaction:
                 `tail_rows` = (SELECT COUNT(*) FROM `{updates}` WHERE `doc_id` = %(doc)s AND `rev` > %(through)s),
                 `tail_bytes` = (SELECT COALESCE(SUM(LENGTH(`payload`)), 0) FROM `{updates}` WHERE `doc_id` = %(doc)s AND `rev` > %(through)s),
                 `compaction_failures` = 0,
+                `suspect_judged_clean` = 0,
                 `last_compaction_ms` = %(ms)s,
                 `last_compaction_error` = NULL,
                 `next_compaction_at` = %(next)s

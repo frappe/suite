@@ -116,10 +116,10 @@ def settle(adapter: str, doc_id: str, marked: str, roots: dict[str, type], bundl
             return hold(
                 adapter, doc_id, "still_refused", f"rev {revs[index]} quarantined, pycrdt still refuses"
             )
-    if index is None and marked in REASONS and failing_again(adapter, doc_id):
+    if index is None and marked in REASONS and judged_clean(adapter, doc_id):
         return hold(adapter, doc_id, "unreproduced", "Judged clean before, and the compaction still fails")
     verdict = "clean" if index is None else "quarantined"
-    clear(adapter, doc_id, verdict)
+    clear(adapter, doc_id, verdict, compaction_clean=index is None and marked in REASONS)
     return verdict
 
 
@@ -150,12 +150,13 @@ def refused(checkpoint: bytes | None, rows: list[bytes], roots: dict[str, type])
         return error.reason in REASONS
 
 
-def failing_again(adapter: str, doc_id: str) -> bool:
-    """Whether the compaction failed again since a judge last found the document clean; an install resets the count."""
-    verdict, failures = frappe.db.sql(
-        f"SELECT `verdict`, `compaction_failures` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id
-    )[0]
-    return verdict == "clean" and failures >= 2
+def judged_clean(adapter: str, doc_id: str) -> bool:
+    """Whether a judge found a compaction's suspect clean since the last checkpoint install."""
+    return bool(
+        frappe.db.sql(
+            f"SELECT `suspect_judged_clean` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id
+        )[0][0]
+    )
 
 
 def suspect_of(adapter: str, doc_id: str) -> str | None:
@@ -188,11 +189,11 @@ def unsettled(adapter: str, doc_id: str, marked: str, why: str, detail: str) -> 
     return "unjudged"
 
 
-def clear(adapter: str, doc_id: str, verdict: str) -> None:
+def clear(adapter: str, doc_id: str, verdict: str, *, compaction_clean: bool = False) -> None:
     frappe.db.sql(
         f"""UPDATE `{table(adapter, "doc")}` SET `suspect` = NULL, `suspect_held` = NULL, `verdict` = %s,
-        `judged` = `judged` + 1 WHERE `id` = %s""",
-        (verdict, doc_id),
+        `judged` = `judged` + 1, `suspect_judged_clean` = `suspect_judged_clean` OR %s WHERE `id` = %s""",
+        (verdict, compaction_clean, doc_id),
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
