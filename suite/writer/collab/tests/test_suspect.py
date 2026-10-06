@@ -6,16 +6,13 @@ import frappe
 import pycrdt
 from frappe.utils import now_datetime
 
-from suite import drive
-from suite.drive._core.access import grant
-from suite.drive._core.principals import Principals
 from suite.suite_core.collab import admission, compaction, kernel, quarantine, suspect
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
 from suite.writer.collab.tests import test_quarantine
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
-from suite.writer.collab.tests.test_collab import OUTSIDER, READER, answer, call, read_frame
+from suite.writer.collab.tests.test_collab import OUTSIDER, READER, answer, call, read_frame, share
 from suite.writer.collab.tests.test_kernel import BUNDLE, paragraph
 
 JUDGE = "suite.writer.collab.judge"
@@ -242,7 +239,7 @@ class TestSuspect(CheckpointCase):
         ensure_user(OUTSIDER)
         node = self.new_document()
         rev = Pen(self, node).adds(paragraph("alpha"))
-        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        share(node, READER)
         frappe.db.commit()
 
         frappe.set_user(OUTSIDER)
