@@ -159,7 +159,15 @@ def load_session(adapter: str, doc_id: str, sid: str, principal: str):
 
 
 def insert_session(adapter: str, doc_id: str, sid: str, client_id: int, principal: str) -> bool:
-    """Commit a new session row. False if the sid or the clientID is already taken."""
+    """Commit a new session row. False if the sid or the clientID is already taken, by a session or
+    by a writer of the start state. The doc lock keeps the start from changing under the check."""
+    doc = frappe.db.sql(
+        f"SELECT `start_clocks` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE",
+        doc_id,
+        as_dict=True,
+    )[0]
+    if client_id in start_clocks(doc):
+        return False
     try:
         frappe.db.sql(
             f"""INSERT INTO `{table(adapter, "session")}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `next_clock`, `created`)

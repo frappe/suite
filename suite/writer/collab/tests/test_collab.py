@@ -635,6 +635,20 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual((clash, other_lineage), ((200, {"claim": "clash"}), (200, {"claim": "lineage"})))
         self.assertEqual(self.count("session"), sessions)
 
+    def test_a_tab_never_gets_the_id_of_a_writer_its_copy_started_from(self):
+        self.set_mode("on")
+        node = self.new_document()
+        issued, claimed = 7, 2**30 + 7
+        start = pycrdt.merge_updates(typed(issued, ["start"])[0], typed(claimed, ["start"])[0])
+        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, start)
+        frappe.db.commit()
+        lineage = self.open(node)[0]["lineage"]
+
+        with patch("secrets.randbelow", side_effect=[issued - 1, 41]):
+            self.assertEqual(self.session(node)[1], 42)
+        self.assertEqual(self.claim(node, uuid.uuid4().hex, claimed, lineage), (200, {"claim": "clash"}))
+        self.assertEqual(self.claim(node, uuid.uuid4().hex, claimed + 1, lineage), (200, {"claim": "ok"}))
+
     def test_a_claim_outside_the_device_range_is_refused(self):
         self.set_mode("on")
         node = self.new_document()
