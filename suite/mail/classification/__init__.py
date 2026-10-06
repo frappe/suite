@@ -71,8 +71,9 @@ def classify_emails(client: SuiteJMAPClient, account: str, emails: list[dict], m
 
     `emails` are as fetched - wire form, with `EMAIL_PROPERTIES` among their properties - and
     `mailboxes` the account's. An email gains its category keyword here only once the server has
-    taken it, so what is cached afterwards never claims more than the server holds: where the
-    write is refused (a shared account the user may only read) the mail stays unclassified.
+    taken it, so what is cached afterwards says what the server holds: where the write is refused
+    (a shared account the user may only read) the mail stays unclassified, and where it fails
+    part-way the mail written before the failure does not.
 
     Never raises. Classification is a nicety on the way to showing mail, not a reason to fail it.
     """
@@ -86,17 +87,23 @@ def classify_emails(client: SuiteJMAPClient, account: str, emails: list[dict], m
         # Before the write, not after: its echo can reach a worker before this request resumes.
         _expect_echoes(account, list(categories))
 
-        result = chunked_set(
-            client,
-            lambda b, chunk: b.mail.email.set(update=chunk),
-            {id: {f"keywords/{category.keyword}": True} for id, category in categories.items()},
-        )
+        try:
+            written = chunked_set(
+                client,
+                lambda b, chunk: b.mail.email.set(update=chunk),
+                {id: {f"keywords/{category.keyword}": True} for id, category in categories.items()},
+            ).updated
+        except ReadOnlyAccountError:
+            return
+        except Exception as error:
+            # A write goes out in chunks, and the ones before the chunk that failed stay written:
+            # chunked_set hands their outcome over with the error.
+            written = error.applied.updated if hasattr(error, "applied") else {}
+            log_mail_error(_("Failed to classify emails"), frappe.get_traceback(with_context=True))
 
         for email in emails:
-            if email["id"] in result.updated:
+            if email["id"] in written:
                 email["keywords"] = {**(email.get("keywords") or {}), categories[email["id"]].keyword: True}
-    except ReadOnlyAccountError:
-        pass
     except Exception:
         log_mail_error(_("Failed to classify emails"), frappe.get_traceback(with_context=True))
 
