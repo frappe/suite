@@ -88,7 +88,7 @@ class Compaction:
                 if isinstance(error, compaction.CompactionFailed | ChainBroken)
                 else type(error).__name__
             )
-            self.failed(snapshot and snapshot["head_rev"], reason, error)
+            self.failed(snapshot["head_rev"] if snapshot else None, reason, error)
             if reason in suspect.REASONS:
                 suspect.mark(self.adapter, self.doc_id, reason, self.judge_method)
 

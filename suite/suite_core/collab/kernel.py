@@ -33,7 +33,7 @@ NODE_MAJOR = 24
 HEAP_MB = 512
 TIMEOUT_S = 120
 # A reason is a few words of the error, never document text, so it stops where quoted content could start
-REASON = re.compile(r"[A-Za-z0-9 _.:,-]{0,80}")
+REASON_END = re.compile(r"[^A-Za-z0-9 _.:,-]")
 
 
 @dataclass
@@ -90,7 +90,7 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
 
 
 def plain(text: str) -> str:
-    return REASON.match(text).group().strip()
+    return REASON_END.split(text, maxsplit=1)[0][:80].strip()
 
 
 def usable_node() -> str | None:

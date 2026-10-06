@@ -296,11 +296,12 @@ def replay(adapter: str, doc_id: str, header: dict, acked: int, head: int) -> di
         shas = bytes(row.seq_shas)
         for index, seq in enumerate(range(int(row.seq_from), int(row.seq_to) + 1)):
             stored[seq] = (shas[32 * index : 32 * index + 32], row)
-    last = None
     for seq in range(header["from"], through + 1):
-        sha, last = stored.get(seq, (None, None))
+        sha, _row = stored.get(seq, (None, None))
         if sha != header["shas"][seq - header["from"]]:
             raise Refusal(409, "seq_conflict")
+    # Every seq from `from` through `through` matched a stored row, so `through` has one
+    last = stored[through][1]
     return {
         "dup": True,
         "rev": int(last.rev),
