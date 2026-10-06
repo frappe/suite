@@ -63,15 +63,15 @@ def close(adapter: str, doc_id: str, row: Row, cid: int, start: dict[int, int]) 
     """Refuse a row that does not continue its writer's clocks, or that needs a struct neither
     committed nor in the row. Run under the document's lock, which every clock change takes."""
     committed = committed_clocks(adapter, doc_id, referenced_clients(row, cid), start)
+    if row.update.structs and row.clock_from != committed[cid]:
+        raise Unclosed("clock_gap", clock=committed[cid])
     known = dict(committed)
-    if row.update.structs:
-        if row.clock_from != committed[cid]:
-            raise Unclosed("clock_gap", clock=committed[cid])
-        known[cid] = row.clock_to
     for struct in row.update.structs:
+        # A struct can only follow what is committed or earlier in the row, never itself or a later struct
         for ref in struct.refs():
             if ref[1] >= known[ref[0]]:
                 raise Unclosed("missing_dep", client=ref[0], clock=ref[1])
+        known[cid] = struct.clock + struct.length
     for client, ranges in row.update.deletes.items():
         for clock, length in ranges:
             if clock + length > known[client]:

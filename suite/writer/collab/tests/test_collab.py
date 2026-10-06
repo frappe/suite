@@ -16,6 +16,7 @@ from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
 from suite.suite_core.collab.log import chain_next, chain_seed
+from suite.suite_core.collab.updates import encoded_string, encoded_uint
 from suite.tests.utils import ensure_user
 from suite.writer.collab import routes
 
@@ -338,6 +339,39 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(self.push(node, first_sid, first, 1, abc)[0], 200)
         self.assertEqual(self.push(node, second_sid, second, 1, after_c)[0], 200)
         self.assertEqual(self.open(node)[1], [(1, abc), (2, after_c)])
+
+    def test_a_push_whose_text_follows_itself_or_later_text_is_refused_and_stores_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+
+        def after(clock: int, text: str) -> bytes:
+            return bytes([0x84]) + encoded_uint(cid) + encoded_uint(clock) + encoded_string(text)
+
+        in_root = bytes([4, 1]) + encoded_string("t") + encoded_string("b")
+        rows = {
+            # "a" at clock 0 placed after clock 0, itself
+            "itself": bytes([1, 1]) + encoded_uint(cid) + bytes([0]) + after(0, "a") + bytes([0]),
+            # "a" at clock 0 placed after "b" at clock 1, later in the same row
+            "later text": bytes([1, 2])
+            + encoded_uint(cid)
+            + bytes([0])
+            + after(1, "a")
+            + in_root
+            + bytes([0]),
+        }
+        for (case, payload), clock in zip(rows.items(), (0, 1), strict=True):
+            with self.subTest(case):
+                stuck = pycrdt.Doc()
+                stuck.apply_update(payload)
+                self.assertEqual(stuck.get_state(), pycrdt.Doc().get_state())
+                self.assertEqual(
+                    self.push(node, sid, cid, 1, payload),
+                    (409, {"collab": "missing_dep", "client": cid, "clock": clock}),
+                )
+
+        self.assertEqual(self.open(node)[1], [])
+        self.assertEqual(self.push(node, sid, cid, 1)[0], 200)
 
     def test_a_delete_may_reach_the_last_committed_clock_and_no_further(self):
         self.set_mode("on")
