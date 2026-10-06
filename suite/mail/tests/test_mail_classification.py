@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+from suite.mail.api.mail import get_threads
 from suite.mail.doctype.mail_message.mail_message import fetch_messages
 from suite.mail.jmap import get_mailbox_id_by_role
 from suite.mail.tests.base import StalwartIntegrationTestCase
@@ -51,6 +52,22 @@ class TestMailClassification(StalwartIntegrationTestCase):
         self.wait_until(
             lambda: thread["subject"] in subjects("category_primary"),
             message="Classified mail is missing from a search for its category.",
+        )
+        self.assertNotIn(thread["subject"], subjects("category_promotions"))
+
+    def test_the_inbox_can_be_filtered_to_a_category(self):
+        thread = self.deliver_mail(self.sender, self.receiver)
+        account = self.personal_account(self.receiver)
+
+        def subjects(category: str) -> list[str]:
+            with self.set_user(self.receiver.email):
+                inbox = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
+                threads, _mailbox = get_threads(account, inbox, limit=20, filter_by=category)
+            return [thread["subject"] for thread in threads]
+
+        self.wait_until(
+            lambda: thread["subject"] in subjects("category_primary"),
+            message="Classified mail is missing from the inbox filtered to its category.",
         )
         self.assertNotIn(thread["subject"], subjects("category_promotions"))
 

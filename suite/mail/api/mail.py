@@ -20,6 +20,7 @@ from suite.mail.api.contacts import (
     get_contacts,
 )
 from suite.mail.api.utils import get_avatar_url
+from suite.mail.classification import Category
 from suite.mail.doctype.mail_message.mail_message import (
     add_messages_to_mailbox,
     delete_messages,
@@ -275,6 +276,8 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
         "starred": {"someInThreadHaveKeyword": "$flagged"},
         "unread": {"notKeyword": "$seen"},
         "has_attachments": {"hasAttachment": True},
+        # A category is asked for by its keyword: "category_promotions".
+        **{category.keyword: {"hasKeyword": category.keyword} for category in Category},
     }
     if filter_by in filter_map and not (mailbox == "starred" and filter_by == "starred"):
         conditions.append(filter_map[filter_by])
