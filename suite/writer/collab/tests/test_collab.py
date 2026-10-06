@@ -37,11 +37,6 @@ def call(handler, node: str, *, body: bytes = b"", principal: str | None = None)
         frappe.local.request = None
 
 
-def share(node: str, user: str) -> None:
-    """Let `user` read `node`, granted by its writer."""
-    grant(node, user, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
-
-
 def answer(response) -> dict:
     return json.loads(response.get_data())
 
@@ -737,7 +732,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         sid, cid = self.session(node)
-        share(node, READER)
+        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
         frappe.db.commit()
 
         frappe.set_user(READER)

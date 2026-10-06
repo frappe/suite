@@ -106,6 +106,15 @@ BASELINE_DEBT = {
             # The collab reader case needs a READ grant, which has no public call yet.
             "suite/writer/collab/tests/test_collab.py|import|suite.drive._core.access",
             "suite/writer/collab/tests/test_collab.py|import|suite.drive._core.principals",
+            "suite/writer/collab/tests/test_suspect.py|import|suite.drive._core.access",
+            "suite/writer/collab/tests/test_suspect.py|import|suite.drive._core.principals",
+            # The callback cases run Drive's media sweep on one document, and
+            # trash, purge and restore a version as its writer; none of these
+            # is a public call yet.
+            "suite/writer/collab/tests/test_drive_callbacks.py|import|suite.drive._core",
+            "suite/writer/collab/tests/test_drive_callbacks.py|import|suite.drive._core.nodes",
+            "suite/writer/collab/tests/test_drive_callbacks.py|import|suite.drive._core.principals",
+            "suite/writer/collab/tests/test_drive_callbacks.py|import|suite.drive._core.versions",
             # An embedded picture is a media node below the document (§9.4),
             # so the fixture builds roots and nodes and reads Drive's own
             # upload path; there is no upload fixture above it yet.
@@ -125,6 +134,13 @@ BASELINE_DEBT = {
         # bytes, so proving that a migrated version restores means writing the
         # row the way Build wrote it.
         ("suite/writer/tests/test_drive_adoption.py|drive-table-write|Drive Node Version",),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when Drive's media sweep takes the time it measures the grace period from.",
+        # The sweep spares media younger than its grace period, so the case
+        # backdates one media node's `creation` to make it eligible.
+        ("suite/writer/collab/tests/test_drive_callbacks.py|drive-table-write|Drive Node",),
     ),
     **_debt(
         "Suite Slides",
