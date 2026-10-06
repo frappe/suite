@@ -80,8 +80,8 @@ def collab_get(node: str):
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
-def collab_updates_get(node: str, since: str | None = None):
-    return _answer(lambda: _pull(node, since))
+def collab_updates_get(node: str, since: str | None = None, q_epoch: str | None = None):
+    return _answer(lambda: _pull(node, since, q_epoch))
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -113,20 +113,30 @@ def _open(node: str) -> Response:
         frappe.log_error(title="Collab open: chain_break", message=f"{ADAPTER} document {doc.id}")
         raise collab.Refusal(503, "chain_break") from None
     consider_compaction(doc.id)
-    return _frame(collab.open_header(snapshot, can_write=can_write), snapshot["rows"], snapshot["checkpoint"])
+    return _frame(
+        collab.open_header(snapshot, can_write=can_write),
+        collab.with_tombstones(snapshot),
+        snapshot["checkpoint"],
+    )
 
 
-def _pull(node: str, since: str | None) -> Response:
+def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
     collab.require_enabled()
     _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
+    # The epoch is read before the rows, so a quarantine between them shows on the next pull
     doc = _doc(node)
     try:
         after = int(since or 0)
+        seen_epoch = int(q_epoch) if q_epoch is not None else None
     except ValueError:
         raise collab.Refusal(400, "malformed") from None
+    epoch = int(doc.q_epoch)
+    if seen_epoch is not None and seen_epoch < epoch:
+        # The tab may hold a row now quarantined
+        return _frame({"state": "rebuild", "proto": collab.PROTO, "q_epoch": epoch})
     rows = collab.rows_after(ADAPTER, doc.id, max(after, 0))
     consider_compaction(doc.id)
-    return _frame({"state": "live", "proto": collab.PROTO}, rows)
+    return _frame({"state": "live", "proto": collab.PROTO, "q_epoch": epoch}, rows)
 
 
 def _push(node: str) -> Response:

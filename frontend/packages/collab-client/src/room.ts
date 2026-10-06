@@ -272,9 +272,10 @@ export class Room implements CollabRoom {
       run.push(row)
     }
     if (!run.length && !opening) return
+    // An empty row is a quarantined rev: it holds its place in the order and applies nothing
     const parts = [
       ...(opening?.checkpoint ? [opening.checkpoint] : []),
-      ...run.map((row) => row.bytes),
+      ...run.filter((row) => row.bytes.length).map((row) => row.bytes),
     ]
     const bytes = parts.length ? Y.mergeUpdates(parts) : null
     if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)

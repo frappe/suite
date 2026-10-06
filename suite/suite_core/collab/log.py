@@ -63,7 +63,7 @@ def chain_next(previous: bytes, rev: int, payload_sha: bytes) -> bytes:
 def find(adapter: str, node: str) -> dict | None:
     """`node`'s log, or None when it has none or its log is purged."""
     rows = frappe.db.sql(
-        f"""SELECT `id`, `lineage`, `head_rev`, `head_chain` FROM `{table(adapter, "doc")}`
+        f"""SELECT `id`, `lineage`, `head_rev`, `head_chain`, `q_epoch` FROM `{table(adapter, "doc")}`
         WHERE `node` = %s AND `mode` != 'purged'""",
         node,
         as_dict=True,
@@ -111,7 +111,7 @@ def delete_purged(adapter: str, doc_id: str) -> None:
 
 
 def rows_after(adapter: str, doc_id: str, since: int) -> list[tuple[int, bytes]]:
-    """Committed rows after `since`, in rev order. One statement, so one snapshot."""
+    """Committed rows after `since`, in rev order, a quarantined one empty. One statement, so one snapshot."""
     return [
         (int(rev), bytes(payload))
         for rev, payload in frappe.db.sql(
@@ -119,6 +119,11 @@ def rows_after(adapter: str, doc_id: str, since: int) -> list[tuple[int, bytes]]
             (doc_id, since),
         )
     ]
+
+
+def with_tombstones(read: dict) -> list[tuple[int, bytes]]:
+    """A read's rows with each quarantined rev as an empty row, which no real row is, in rev order."""
+    return sorted([*read["rows"], *((rev, b"") for rev in read["quarantined"])])
 
 
 def frame(header: dict, rows: list[tuple[int, bytes]] = (), checkpoint: bytes | None = None) -> bytes:
@@ -145,6 +150,7 @@ def open_header(doc: dict, *, can_write: bool) -> dict:
         "base": doc["base"],
         "can_write": can_write,
         "pace_ms": PACE_MS,
+        "q_epoch": doc["q_epoch"],
     }
 
 

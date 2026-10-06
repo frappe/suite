@@ -27,6 +27,7 @@ from suite.suite_core.collab.log import (
     read,
     require_enabled,
     rows_after,
+    with_tombstones,
 )
 from suite.suite_core.collab.tables import ensure_tables
 
@@ -52,4 +53,5 @@ __all__ = [
     "replace_start",
     "require_enabled",
     "rows_after",
+    "with_tombstones",
 ]

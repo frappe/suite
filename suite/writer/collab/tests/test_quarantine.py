@@ -9,7 +9,7 @@ from suite.suite_core.collab import quarantine
 from suite.suite_core.collab.log import chain_next
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
-from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open
+from suite.writer.collab.tests.test_collab import answer, call, push_body, read_frame, read_open
 
 
 class Tab:
@@ -216,3 +216,38 @@ class TestQuarantine(CheckpointCase):
 
         doc = self.doc_row(node)
         self.assertEqual((doc.q_epoch, self.recovered(node), self.closed(node, a)), (0, [], False))
+
+    def pull(self, node: str, since: str = "0", q_epoch: str | None = None):
+        return call(lambda node: routes.collab_updates_get(node, since=since, q_epoch=q_epoch), node)
+
+    def test_a_tab_reads_a_quarantined_rev_as_an_empty_row(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        b = Tab(self, node)
+        b.typed(0, "beta ")
+        a.typed(5, " gamma")
+        self.quarantine(node, {3})
+
+        header, _checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        self.assertEqual((header["q_epoch"], rows), (1, [(1, a.sent[0]), (2, b.sent[0]), (3, b"")]))
+        header, rows = read_frame(self.pull(node, q_epoch="1").get_data())
+        self.assertEqual(
+            (header["state"], header["q_epoch"], [rev for rev, _ in rows]), ("live", 1, [1, 2, 3])
+        )
+        self.assertEqual(rows[2], (3, b""))
+
+    def test_a_tab_from_before_a_quarantine_is_told_to_rebuild(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        a.typed(5, " gamma")
+        self.assertEqual(Tab(self, node).header["q_epoch"], 0)
+        self.quarantine(node, {2})
+
+        header, rows = read_frame(self.pull(node, q_epoch="0").get_data())
+        self.assertEqual((header["state"], header["q_epoch"], rows), ("rebuild", 1, []))
+        # A tab that sends no epoch is served rows as before
+        self.assertEqual(read_frame(self.pull(node).get_data())[0]["state"], "live")
+        response = self.pull(node, q_epoch="one")
+        self.assertEqual((response.status_code, answer(response)["collab"]), (400, "malformed"))

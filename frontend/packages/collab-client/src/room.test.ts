@@ -229,6 +229,26 @@ describe('collab room', () => {
     expect(text(b)).toBe('one two three')
   })
 
+  it('a quarantined rev holds its place in the order and applies nothing', async () => {
+    const server = fakeServer()
+    const a = await join(server.endpoints())
+    a.doc.getText('t').insert(0, 'one ')
+    await a.flush()
+    const behind = await join(server.endpoints())
+    a.doc.getText('t').insert(4, 'two ')
+    await a.flush()
+    // The server keeps the rev and drops its payload
+    server.rows[1].bytes = new Uint8Array()
+
+    const opened = await join(server.endpoints())
+    expect([text(opened), opened.appliedThrough]).toEqual(['one ', 2])
+    opened.doc.getText('t').insert(0, 'zero ')
+    await opened.flush()
+
+    await behind.pull()
+    expect([text(behind), behind.appliedThrough]).toEqual(['zero one ', 3])
+  })
+
   it('two writers converge on the server order after a poll', async () => {
     const server = fakeServer()
     const [a, b] = [await join(server.endpoints()), await join(server.endpoints())]
