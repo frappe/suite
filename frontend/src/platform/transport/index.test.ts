@@ -287,3 +287,42 @@ describe('transport', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
   })
 })
+
+describe('declared framework response behavior', () => {
+  it('accepts the document refresh envelope for a void document method, but rejects arbitrary payloads', async () => {
+    const save: Operation<Record<string, never>, null> = {
+      id: 'save',
+      owner: 'writer',
+      kind: 'mutation',
+      method: 'POST',
+      path: '/save',
+      empty: true,
+      validateOutput(output): asserts output is null {
+        if (output !== null) throw new TypeError('Expected a void method')
+      },
+    }
+    const network = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ docs: [{ name: 'document' }] }))
+      .mockResolvedValueOnce(response({ unexpected: true }))
+    const client = createTransport({ fetch: network })
+    await expect(client.request(save, {})).resolves.toBeNull()
+    await expect(client.request(save, {})).rejects.toThrow('Expected a void method')
+  })
+  it('does not retry a mutation implemented by a legacy GET endpoint', async () => {
+    const write: Operation<{ token: string }, unknown> = {
+      id: 'subscribe',
+      owner: 'suite',
+      kind: 'mutation',
+      method: 'GET',
+      path: '/subscribe',
+    }
+    const network = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response({ exc_type: 'ServerError' }, 500))
+    await expect(
+      createTransport({ fetch: network }).request(write, { token: 't' }),
+    ).rejects.toMatchObject({ status: 500 })
+    expect(network).toHaveBeenCalledTimes(1)
+  })
+})

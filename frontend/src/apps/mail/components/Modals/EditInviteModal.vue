@@ -1,6 +1,6 @@
 <template>
   <Dialog
-    v-if="accountRequest?.doc"
+    v-if="draft"
     v-model:open="show"
     v-bind="{
       title: __('Edit Invite'),
@@ -9,16 +9,16 @@
           ? [
               {
                 label: __('Send Invitation Email'),
-                loading: accountRequest.sendVerificationEmail?.loading,
+                loading: send.isPending,
                 onClick: sendInvitationEmail,
               },
             ]
           : []),
         {
           label: __('Save'),
-          variant: 'solid',
-          disabled: !isEditableInvite || !accountRequest.isDirty,
-          loading: accountRequest.save?.loading,
+          variant: 'solid' as const,
+          disabled: !isEditableInvite || !isDirty,
+          loading: save.isPending,
           onClick: saveInvite,
         },
       ],
@@ -26,12 +26,12 @@
   >
     <template #default>
       <div class="space-y-4">
-        <FormControl :label="__('Assigned Email')" :value="accountRequest.doc.account" disabled />
+        <FormControl :label="__('Assigned Email')" :value="draft.account" disabled />
         <FormControl
-          v-if="accountRequest.doc.aliases"
+          v-if="draft.aliases"
           type="textarea"
           :label="__('Aliases')"
-          :value="accountRequest.doc.aliases"
+          :value="draft.aliases"
           disabled
         />
         <FormControl
@@ -45,12 +45,8 @@
         <!-- Fixed when the request was created (set_only_once on the doctype), so the roles the
 				account is created with cannot be changed on an existing invite. -->
         <FormControl :label="__('Role')" :value="roleLabel" disabled />
-        <FormControl
-          :label="__('Backup Email')"
-          :value="accountRequest.doc.backup_email"
-          disabled
-        />
-        <FormControl :label="__('Invited By')" :value="accountRequest.doc.invited_by" disabled />
+        <FormControl :label="__('Backup Email')" :value="draft.backup_email" disabled />
+        <FormControl :label="__('Invited By')" :value="draft.invited_by" disabled />
         <FormControl
           v-model="inviteExpiresAt"
           type="datetime-local"
@@ -63,7 +59,7 @@
         <!-- Send Invite, the aliases and the memberships are fixed when the request is created
 				(set_only_once on the doctype), so they are all shown read-only. -->
         <Switch
-          :model-value="Boolean(accountRequest.doc.send_invite)"
+          :model-value="Boolean(draft.send_invite)"
           :label="__('Send Invite')"
           disabled
           class="hover:!bg-surface-base !cursor-default !p-0"
@@ -90,171 +86,90 @@
 </template>
 
 <script setup lang="ts">
-import { createDocumentResource, createResource, Dialog, FormControl, Switch } from 'frappe-ui'
+import { Dialog, FormControl, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
-import { formatSystemDateTime, systemTimeZone, toSystemDateTime } from '@/apps/mail/utils/datetime'
+import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 
 const show = defineModel<boolean>()
-
 const { inviteID } = defineProps<{ inviteID: string }>()
-
 const emit = defineEmits(['reloadInvites'])
-
-type InviteDoc = {
-  account: string
-  aliases?: string
-  is_admin: boolean | 0 | 1
-  backup_email: string
-  invited_by: string
-  expires_at?: string
-  quota_gb?: number | null
-  send_invite: boolean | 0 | 1
-  is_verified: boolean | 0 | 1
-  groups?: string
-  mailing_lists?: string
-}
-
-type MethodResource = { submit?: () => void; loading?: boolean }
-
-type AccountRequestResource = {
-  doc?: InviteDoc
-  isDirty: boolean
-  save?: { submit?: () => void; loading?: boolean }
-  reload?: () => void
-  sendVerificationEmail?: MethodResource
-}
-
-type Directory = { id: string; name: string; email?: string }
-
-const accountRequest = ref<AccountRequestResource>()
-
-const roleLabel = computed(() => (accountRequest.value?.doc?.is_admin ? __('Admin') : __('User')))
-
-// Cleared back to null rather than 0, so a blank field keeps deferring to the configured default
-// instead of silently meaning unlimited.
+const invitation = useQuery(api.mail.admin.invites.get, () =>
+  show.value ? { name: inviteID } : false,
+)
+const draft = ref<OutputOf<typeof api.mail.admin.invites.get>>()
+watch(
+  () => invitation.data,
+  (data) => {
+    draft.value = data ? { ...data } : undefined
+  },
+  { immediate: true },
+)
+const save = useMutation(api.mail.admin.invites.update)
+const send = useMutation(api.mail.admin.invites.send)
+const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(invitation.data))
+const roleLabel = computed(() => (draft.value?.is_admin ? __('Admin') : __('User')))
+const isEditableInvite = computed(() => draft.value && !draft.value.is_verified)
 const inviteQuota = computed<number | string>({
-  get: () => accountRequest.value?.doc?.quota_gb ?? '',
+  get: () => draft.value?.quota_gb ?? '',
   set: (value) => {
-    if (!accountRequest.value?.doc) return
-    accountRequest.value.doc.quota_gb = value === '' ? null : Number(value)
+    if (draft.value) draft.value.quota_gb = value === '' ? null : Number(value)
   },
 })
-
-const isEditableInvite = computed(() => {
-  const doc = accountRequest.value?.doc
-  if (!doc) return false
-  return !doc.is_verified
-})
-
-// `expires_at` is a naive system-zone DB field saved straight through the doc resource; the
-// input edits it as a wall clock in the user's zone, converting on both sides. This also feeds
-// the `datetime-local` input the `YYYY-MM-DDTHH:mm` shape it demands — the raw DB string
-// (space-separated) would render an empty box.
-const inviteExpiresAt = computed<string>({
-  get: () => formatSystemDateTime(accountRequest.value?.doc?.expires_at, 'YYYY-MM-DDTHH:mm'),
-  set: (value) => {
-    if (!accountRequest.value?.doc) return
-    accountRequest.value.doc.expires_at = toSystemDateTime(value)
+const inviteExpiresAt = computed({
+  get: () => toLocalInput(draft.value?.expires_at),
+  set: (value: string) => {
+    if (draft.value) draft.value.expires_at = fromLocalInput(value)
   },
 })
-
-// Expiry is read off the local doc so extending it lights the send action up only once saved.
-// The stored value is system-zone; compare instants, not the browser's reading of the string.
-const isExpired = computed(() => {
-  const expiresAt = accountRequest.value?.doc?.expires_at
-  return Boolean(expiresAt) && dayjs.tz(expiresAt as string, systemTimeZone()).isBefore(dayjs())
-})
-
-// The server sends the link with whatever is stored, so pending edits have to be saved first.
-// Self-signup requests (empty invited_by) verify by OTP instead - the server would not send
-// an invitation email for them.
+const isExpired = computed(() =>
+  Boolean(draft.value?.expires_at && dayjs(draft.value.expires_at).isBefore(dayjs())),
+)
 const canSendInvite = computed(
   () =>
     isEditableInvite.value &&
     !isExpired.value &&
-    !accountRequest.value?.isDirty &&
-    Boolean(accountRequest.value?.doc?.invited_by),
+    !isDirty.value &&
+    Boolean(draft.value?.invited_by),
 )
-
-// The account request stores the ids it was created with; the labels come from the live directory.
-const groups = createResource({
-  url: 'suite.mail.api.admin.get_groups',
-  params: { page_length: 500 },
-})
-const mailingLists = createResource({
-  url: 'suite.mail.api.admin.get_mailing_lists',
-  params: { page_length: 500 },
-})
-
-const lines = (value?: string) =>
-  (value || '')
+const groups = useQuery(api.mail.admin.groups.list, () =>
+  show.value ? { page_length: 500 } : false,
+)
+const mailingLists = useQuery(api.mail.admin.mailingLists.list, () =>
+  show.value ? { page_length: 500 } : false,
+)
+const lines = (value?: string | null) =>
+  (value ?? '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-
-const labelsFor = (rows: Directory[], ids: string[]) => {
-  const map = new Map(rows.map((r) => [String(r.id), r.email || r.name]))
-  return ids.map((id) => map.get(id) || id)
+const labelsFor = (rows: readonly { id: string; name: string; email: string }[], ids: string[]) => {
+  const labels = new Map(rows.map((row) => [row.id, row.email || row.name]))
+  return ids.map((id) => labels.get(id) ?? id)
 }
-
-const groupIds = computed(() => lines(accountRequest.value?.doc?.groups))
-const mailingListIds = computed(() => lines(accountRequest.value?.doc?.mailing_lists))
-const groupLabels = computed(() => labelsFor(groups.data?.items || [], groupIds.value))
+const groupIds = computed(() => lines(draft.value?.groups))
+const mailingListIds = computed(() => lines(draft.value?.mailing_lists))
+const groupLabels = computed(() => labelsFor(groups.data?.items ?? [], groupIds.value))
 const mailingListLabels = computed(() =>
-  labelsFor(mailingLists.data?.items || [], mailingListIds.value),
+  labelsFor(mailingLists.data?.items ?? [], mailingListIds.value),
 )
-
-const saveInvite = () => {
-  if (!isEditableInvite.value) return
-  accountRequest.value?.save?.submit?.()
-}
-
-const sendInvitationEmail = () => {
-  if (!canSendInvite.value) return
-  accountRequest.value?.sendVerificationEmail?.submit?.()
-}
-
-const getMailAccountRequest = () =>
-  createDocumentResource({
-    doctype: 'Mail Account Request',
+async function saveInvite() {
+  if (!isEditableInvite.value || !draft.value) return
+  await save.run({
     name: inviteID,
-    setValue: {
-      onSuccess: () => {
-        show.value = false
-        raiseToast(__('Invite updated.'))
-        emit('reloadInvites')
-      },
-      onError: (error: { messages?: string[]; message?: string }) => {
-        raiseToast(error?.messages?.[0] || error?.message || __('Request failed.'), 'error')
-        accountRequest.value?.reload?.()
-      },
-    },
-    whitelistedMethods: {
-      sendVerificationEmail: {
-        method: 'send_verification_email',
-        onSuccess: () => raiseToast(__('Invitation email sent.')),
-        onError: (error: { messages?: string[]; message?: string }) =>
-          raiseToast(error?.messages?.[0] || error?.message || __('Request failed.'), 'error'),
-      },
-    },
+    expires_at: draft.value.expires_at,
+    quota_gb: draft.value.quota_gb,
   })
-
-watch(
-  show,
-  (val) => {
-    if (val) accountRequest.value = getMailAccountRequest()
-  },
-  { immediate: true },
-)
-
-// Both are live Stalwart reads, so they are only fetched for invites that carry memberships.
-watch(groupIds, (ids) => {
-  if (ids.length && !groups.fetched && !groups.loading) groups.fetch()
-})
-watch(mailingListIds, (ids) => {
-  if (ids.length && !mailingLists.fetched && !mailingLists.loading) mailingLists.fetch()
-})
+  show.value = false
+  raiseToast(__('Invite updated.'))
+  emit('reloadInvites')
+}
+async function sendInvitationEmail() {
+  if (!canSendInvite.value) return
+  await send.run({ name: inviteID })
+  raiseToast(__('Invitation email sent.'))
+}
 </script>

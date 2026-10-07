@@ -47,7 +47,13 @@ vi.mock('@/platform/feedback', () => ({ toast: { error: vi.fn() } }))
 const session = {
   nodeId: 'doc-1',
   title: ref('Plan'),
-  credentials: { group: vi.fn(), fetch: vi.fn(), fetchHeld: vi.fn() },
+  credentials: {
+    context: { partition: () => 'test', scope: () => ({}) },
+    heldContext: { partition: () => 'test', scope: () => ({}) },
+    group: vi.fn(),
+    fetch: vi.fn(),
+    fetchHeld: vi.fn(),
+  },
 }
 
 let host: HTMLElement | null = null

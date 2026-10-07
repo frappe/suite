@@ -1,6 +1,6 @@
 """Frappe HTTP registration for Calendar resources."""
 
-from suite.calendar.http.routes import ROUTES
+from suite.calendar.http.routes import CONTRACT_ROUTES, ROUTES
 from suite.composition.http import HttpOwner
 
 HTTP = HttpOwner(
@@ -8,5 +8,6 @@ HTTP = HttpOwner(
     prefix="/api/suite/calendar/",
     target="suite.calendar.http.routes",
     routes=ROUTES,
+    contract_routes=CONTRACT_ROUTES,
     strip_owner=False,
 )

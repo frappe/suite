@@ -101,14 +101,8 @@
 import { Button, Dialog, SettingsRow, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery } from '@/api'
 import type { WebdavGetOutput } from '@/apps/drive/client/generated'
-import {
-  generateUserKeys,
-  saveSiteSettings,
-  saveUserSettings,
-  webdav,
-} from '@/apps/drive/client/settings'
-import { useMutation, useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
 
 import CopyField from './CopyField.vue'
@@ -116,7 +110,7 @@ import SettingsPage from './SettingsPage.vue'
 
 type Connection = Extract<WebdavGetOutput, { server_url: string }>
 
-const webdavAnswer = useQuery(webdav())
+const webdavAnswer = useQuery(api.drive.webdav.get, {})
 const answer = computed<Partial<Connection>>(() => webdavAnswer.data ?? {})
 const connection = computed(() => {
   const data = webdavAnswer.data
@@ -128,32 +122,20 @@ function isConnection(answer: WebdavGetOutput): answer is Connection {
 }
 
 // A failed write reports itself through the platform error toast.
-const saveSite = useMutation(saveSiteSettings)
-const saveUser = useMutation(saveUserSettings)
-const generate = useMutation(generateUserKeys)
+const saveSite = useMutation(api.drive.siteSettings.update)
+const saveUser = useMutation(api.drive.settings.update)
+const generate = useMutation(api.suite.account.generateKeys)
 
-// The switches show the new value at once; the answer refetch confirms it.
-const siteEnabled = ref(false)
-const userEnabled = ref(false)
-watch(
-  answer,
-  (value) => {
-    siteEnabled.value = value.globally_enabled === true
-    userEnabled.value = value.enabled_for_user === true
-  },
-  { immediate: true },
-)
+// The owner policy updates these reads immediately and rolls back refused writes.
+const siteEnabled = computed(() => answer.value.globally_enabled === true)
+const userEnabled = computed(() => answer.value.enabled_for_user === true)
 
 async function setSiteEnabled(value: boolean) {
-  siteEnabled.value = value
   await saveSite.run({ webdav_enabled: value })
-  if (saveSite.error) siteEnabled.value = !value
 }
 
 async function setUserEnabled(value: boolean) {
-  userEnabled.value = value
   await saveUser.run({ webdav_enabled: value })
-  if (saveUser.error) userEnabled.value = !value
 }
 
 const keys = ref<{ api_key: string; api_secret: string } | null>(null)
@@ -162,7 +144,7 @@ const showSecret = ref(false)
 async function generateKeys() {
   if (!connection.value) return
   const result = await generate.run({ user: connection.value.username })
-  if (!result) return
+
   keys.value = result
   showSecret.value = true
 }

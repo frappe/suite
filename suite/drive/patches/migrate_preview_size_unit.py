@@ -1,24 +1,23 @@
 import frappe
+from frappe.utils import cint
 
-# `preview_size` used to mean a megabyte in-browser preview cutoff, and
-# the since-deleted `remove_personal` patch pinned every site to 100 under
-# that contract.
-# §9.2 redefined the same field as the generated preview's longest side in
-# pixels, `reqd: 1`, `default: 512` (see `_core/previews.py`). A site whose
-# stored value is still exactly this legacy sentinel has not been touched
-# since the old patch wrote it; any other stored value is a genuine
-# post-transition choice and must survive this patch untouched.
-LEGACY_MEGABYTE_CUTOFF = 100
-PIXEL_DEFAULT = 512
+from suite.drive._core.previews import PREVIEW_LONGEST_SIDE, is_plausible_preview_size
+
+# `preview_size` used to mean something other than pixels: the since-deleted
+# `remove_personal` patch pinned it to 100 as a megabyte cutoff, and restored
+# sites carry other old values, such as 250000. §9.2 redefined the same field
+# as the generated preview's longest side in pixels, `reqd: 1`, `default: 512`,
+# and the doctype now refuses a value outside 128..2048 (see `_core/previews.py`).
+# A stored value outside that range cannot be a pixel choice, so it is a
+# legacy value. A value inside it is a genuine choice and must survive.
 
 
 def execute() -> None:
-    """Translate the legacy `preview_size=100` sentinel to the pixel default.
+    """Move a legacy `preview_size` to the pixel default.
 
-    Additive and idempotent: it only ever writes the one known legacy value
-    forward, never derives a value from anything Build or Cleanup removes,
-    and running it again after the value has already moved to 512 (or to
-    any other explicit value) is a no-op.
+    Idempotent: a value already in the pixel range is left as it is, so
+    running it again after the value has moved to 512 is a no-op.
     """
-    if frappe.db.get_single_value("Drive Disk Settings", "preview_size") == LEGACY_MEGABYTE_CUTOFF:
-        frappe.db.set_single_value("Drive Disk Settings", "preview_size", PIXEL_DEFAULT)
+    value = cint(frappe.db.get_single_value("Drive Disk Settings", "preview_size"))
+    if not is_plausible_preview_size(value):
+        frappe.db.set_single_value("Drive Disk Settings", "preview_size", PREVIEW_LONGEST_SIDE)

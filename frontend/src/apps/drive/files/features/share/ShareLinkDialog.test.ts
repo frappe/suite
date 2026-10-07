@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 
+import { testClient } from '@/apps/drive/client/testClient'
 import type { Transport } from '@/platform/transport'
 
 import ShareLinkDialog from './ShareLinkDialog.vue'
@@ -41,7 +42,7 @@ function mountDialog() {
   document.body.append(root)
   const app = createApp({
     setup() {
-      const state = useShare('doc', { transport })
+      const state = useShare('doc', { client: testClient(transport) })
       return () => h(ShareLinkDialog, { open: true, nodeKind: 'file', state })
     },
   })

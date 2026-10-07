@@ -1,44 +1,42 @@
-import { createResource } from 'frappe-ui'
 import { defineStore } from 'pinia'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
+import { api, useQuery } from '@/api'
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { getSessionUser, useSessionStore } from '@/boot/session'
+import { useSession } from '@/platform/session'
 
 export const sessionStore = defineStore('mail-session', () => {
   const session = useSessionStore()
-  const { userResource, reset } = userStore()
+  const { loadUser, reset } = userStore()
 
-  const login = createResource({
-    url: 'login',
-    onError: () => {
-      throw new Error('Invalid email or password')
-    },
-    onSuccess: () => {
-      // Start from a clean slate: a prior session's account/resources may still be in memory
-      // (e.g. cookies cleared without a page reload). Without this, resolveAccount() would
-      // skip setAccount() and the mailboxes/account resources wouldn't load until a reload.
+  const platformSession = useSession()
+  const isLoggingIn = ref(false)
+  const loginError = ref<Error | null>(null)
+  async function login(usr: string, pwd: string) {
+    isLoggingIn.value = true
+    loginError.value = null
+    try {
+      await platformSession.login(usr, pwd)
       reset()
-      userResource.reload()
-      session.user = getSessionUser()
-      login.reset()
-
-      if (session.user === 'Administrator') window.location.replace('/app')
-      else router.replace({ name: 'mail-root-shortcut' })
-    },
-  })
+      await loadUser()
+      if (platformSession.user.value?.id === 'Administrator') window.location.replace('/app')
+      else await router.replace({ name: 'mail-root-shortcut' })
+    } catch (cause) {
+      loginError.value = cause instanceof Error ? cause : new Error(String(cause))
+      throw cause
+    } finally {
+      isLoggingIn.value = false
+    }
+  }
 
   // The platform logout: it runs every logout cleanup, such as dropping this browser's push
   // token, and then reloads the page, which clears Mail's state.
   const logout = session.logout
 
-  const branding = createResource({
-    url: 'suite.mail.api.get_branding',
-    cache: 'brand',
-    auto: true,
-  })
+  const branding = useQuery(api.mail.public.branding)
 
   // Called when a request fails with an auth/permission error: sign the user out (clear state,
   // one toast, redirect to login) when their session is actually gone. No-op when still logged
@@ -50,6 +48,7 @@ export const sessionStore = defineStore('mail-session', () => {
     if (getSessionUser()) return
     if (!session.user) return
 
+    platformSession.expire()
     session.user = null
     reset()
     raiseToast(__('You have been signed out. Please sign in again.'), 'error')
@@ -59,6 +58,8 @@ export const sessionStore = defineStore('mail-session', () => {
   return {
     isLoggedIn: computed(() => session.isLoggedIn),
     login,
+    isLoggingIn,
+    loginError,
     logout,
     branding,
     handleSessionExpired,

@@ -1,3 +1,5 @@
+import { shallowRef } from 'vue'
+
 import { useSession, type Session } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import {
@@ -50,6 +52,8 @@ export interface ScopeOptions {
 }
 
 export interface LinkStore {
+  partition(nodeIds?: readonly string[]): string
+  invalidateAccess(): void
   /** Remembers a share link and the node it opens. A malformed token is ignored. */
   seed(code: string, target: string): void
   /** Stores the unlock ticket that a password link returned. */
@@ -149,6 +153,20 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
   let memory: State = emptyState()
   let lastText: string | null = null
   let generation = 0
+  const accessPartition = shallowRef(crypto.randomUUID())
+  let lastAccess = ''
+  let accessEpoch = crypto.randomUUID()
+  const selections = new Map<string, { signature: string; token: string }>()
+  function syncAccess(state: State): void {
+    const access = JSON.stringify([
+      [...state.links].map(([code, entry]) => [code, entry.target, entry.ticket]),
+      [...state.tags],
+    ])
+    if (access !== lastAccess) {
+      lastAccess = access
+      accessPartition.value = crypto.randomUUID()
+    }
+  }
 
   function current(): State {
     const text = read(STORE_KEY)
@@ -156,6 +174,11 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
       memory = parse(text)
       lastText = text
     }
+    for (const entry of memory.links.values()) {
+      const expires = Number(entry.ticket?.match(TICKET)?.[1] ?? 0)
+      if (entry.ticket && expires * 1000 <= Date.now()) delete entry.ticket
+    }
+    syncAccess(memory)
     return memory
   }
 
@@ -172,6 +195,7 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
         // A full or blocked storage keeps the stored copy. This tab keeps its working copy.
       }
     }
+    syncAccess(state)
     return result
   }
 
@@ -188,6 +212,9 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
     memory = emptyState()
     lastText = null
     generation += 1
+    accessEpoch = crypto.randomUUID()
+    selections.clear()
+    accessPartition.value = crypto.randomUUID()
   }
 
   options.events?.addEventListener('storage', (event) => {
@@ -296,6 +323,30 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
   }
 
   const store: LinkStore = {
+    partition(nodeIds) {
+      const state = current()
+      // Track changes, but rotate only when this request's selected credentials change.
+      void accessPartition.value
+      const credentials = [...new Set(nodeIds ?? [])]
+        .map((node) => codeFor(state, node))
+        .filter((code): code is string => Boolean(code))
+      const selectedCodes = [...new Set(credentials)].sort()
+      const signature = JSON.stringify([
+        accessEpoch,
+        selectedCodes.map((code) => [code, state.links.get(code)?.ticket]),
+      ])
+      let selected = selections.get(signature)
+      if (!selected) {
+        selected = { signature, token: crypto.randomUUID() }
+        selections.set(signature, selected)
+      }
+      return selected.token
+    },
+    invalidateAccess() {
+      accessEpoch = crypto.randomUUID()
+      selections.clear()
+      accessPartition.value = crypto.randomUUID()
+    },
     seed(code, target) {
       if (!TOKEN.test(code) || !target) return
       update((state) => {
@@ -488,7 +539,7 @@ function browserStorage(): KeyValueStorage {
 
 /** Reads a link's target through the platform transport, with only the given credential. */
 const checkLink: LinkCheck = (target, headers) =>
-  transport.request(api.node_get, { node: target }, { headers }).then(
+  transport.request(api.nodes.get, { node: target }, { headers }).then(
     (output): RequestOutcome => ({ ok: true, output }),
     (error: unknown): RequestOutcome =>
       error instanceof TransportError

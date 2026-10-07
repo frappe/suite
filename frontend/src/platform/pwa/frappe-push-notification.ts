@@ -9,6 +9,8 @@ import {
   type Messaging,
 } from 'firebase/messaging'
 
+import { api, client } from '@/api'
+
 // FCM web config to initialize firebase app
 type WebConfigType = {
   projectId: string
@@ -184,17 +186,12 @@ class FrappePushNotification {
   // Register Token Handler
   async registerTokenHandler(token: string): Promise<boolean> {
     try {
-      const response = await fetch(
-        '/api/method/frappe.push_notification.subscribe?fcm_token=' +
-          token +
-          '&project_name=' +
-          this.projectName,
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        },
+      const result = await client.mutation(
+        api.suite.push.subscribe,
+        { fcm_token: token, project_name: this.projectName },
+        { silent: true },
       )
-      return response.status === 200
+      return result.success
     } catch (e) {
       console.error(e)
       return false
@@ -204,19 +201,12 @@ class FrappePushNotification {
   // Unregister Token Handler
   async unregisterTokenHandler(token: string): Promise<boolean> {
     try {
-      const response = await fetch(
-        '/api/method/frappe.push_notification.unsubscribe?fcm_token=' +
-          token +
-          '&project_name=' +
-          this.projectName,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
+      const result = await client.mutation(
+        api.suite.push.unsubscribe,
+        { fcm_token: token, project_name: this.projectName },
+        { silent: true },
       )
-      return response.status === 200
+      return result.success
     } catch (e) {
       console.error(e)
       return false

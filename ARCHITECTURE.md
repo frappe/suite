@@ -151,7 +151,8 @@ frontend/src/
     ├── slides/
     ├── meet/
     ├── mail/
-    └── calendar/
+    ├── calendar/
+    └── people/                      # contacts and address books, on Mail's backend
 ```
 
 This is a target shape, not a requirement to move every existing file immediately. New and rewritten code follows it; untouched products migrate when their owners work in the relevant area.
@@ -318,7 +319,22 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 3. Cross-product frontend use MUST go through a declared lightweight interface such as `@/apps/drive`, exported by `apps/drive/index.ts`.
 4. The Suite shell and composition modules MAY depend on product route declarations; product routes MUST NOT depend on the shell implementation.
 5. Code enters `platform` only when it is product-neutral and has multiple consumers.
-6. The Drive UI MUST create Writer/Sheets/Slides documents through the generic Drive document workflow, not product-specific endpoints.
+6. `frontend/src/api` exposes ordinary requests. Composition assembles lightweight generated references and lazy owner registrations.
+7. `platform/server-state` owns one product-neutral engine. Product policies own request scope and cache effects.
+8. Products MUST NOT create ordinary transport operations, descriptor factories, or separate response caches.
+9. Editors MAY pass a reusable Drive credential context through the client. Drive selects credentials and computes its opaque partition.
+10. The Drive UI MUST create Writer/Sheets/Slides documents through the generic Drive document workflow, not product-specific endpoints.
+
+Calendar's frontend interface exports `UpcomingEventList` and `UpcomingEventRow`
+for Meet and Suite Home to share upcoming-event presentation. Callers retain
+ownership of their event windows, filtering, time formatting, and navigation;
+the list owns the date badges and row layout without fetching events.
+`useUpcomingEvents` owns a session-storage snapshot scoped to the signed-in user
+and event window, allowing Suite Home to show cached events during refresh while
+the server-state query revalidates them.
+Meet exports `ScheduleMeetingDialog` for both home screens. Its `show()` action
+resolves the Calendar account; the dialog owns participants, time validation and
+meeting creation, and emits `scheduled` so each caller can refresh its own list.
 
 ### 9. Ownership and review
 

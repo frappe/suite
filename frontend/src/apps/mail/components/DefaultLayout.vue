@@ -15,10 +15,9 @@
       >
         <slot />
       </div>
-      <!-- The event picked in the sidebar's Upcoming events widget, or from a
-			     message's invite strip, as a card hung on what was clicked — the
-			     calendar app's own card, hosted here so the event opens without
-			     leaving mail. Desktop only; mobile navigates to the calendar instead. -->
+      <!-- The event picked from a message's invite strip, as a card hung on
+			     what was clicked — the calendar app's own card, hosted here so the
+			     event opens without leaving mail. Desktop only; mobile navigates to the calendar instead. -->
       <EventPopover
         :open="!!selectedEvent && !!cardAnchor && !isMobile"
         :anchor="cardAnchor?.element ?? null"
@@ -32,7 +31,6 @@
           :calendar-event="selectedEvent"
           @close="selectedEvent = null"
           @edit="openEventInCalendar"
-          @reload-events="events.reload()"
           @email-participants="emailParticipants"
         />
       </EventPopover>
@@ -42,8 +40,8 @@
 			     navigates to instead. -->
       <SendMail
         v-if="!isMobile"
-        v-model="showCompose"
         :key="composeKey"
+        v-model="showCompose"
         :mail-details="composeDetails"
         @reload-mails="requestListReload()"
       />
@@ -98,7 +96,7 @@ const { requestListReload } = useListReload()
 
 const router = useRouter()
 const route = useRoute()
-const { events, selectedEvent, cardAnchor } = useUpcomingEvents()
+const { selectedEvent, cardAnchor } = useUpcomingEvents()
 
 // ── The phone's chrome ────────────────────────────────────────────────────────────────────────────
 // The shell's bottom nav belongs under the lists. An open thread is full screen: its own reply

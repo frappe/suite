@@ -6,9 +6,24 @@ from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
+from frappe.auth import LoginManager
+from frappe.core.doctype.user.user import get_timezones, switch_theme, update_password
+from frappe.handler import logout
+from frappe.push_notification import subscribe, unsubscribe
+from frappe.translate import get_boot_translations
 
 from suite.api import account, people
+from suite.api.preferences import (
+    Language,
+    PreferenceChanges,
+    Preferences,
+    ThemeChange,
+    get_preferences,
+    languages,
+    update_preferences,
+)
 from suite.composition.http import BadRequest, Route
+from suite.utils.user import generate_user_keys
 
 Given = str | int | float | bool | list | dict | None
 
@@ -75,9 +90,193 @@ class PeopleQuery(TypedDict, total=False):
     cursor: str
 
 
+class UserKeysInput(TypedDict):
+    user: str
+
+
+class UserKeys(TypedDict):
+    api_key: str
+    api_secret: str
+
+
+class Timezones(TypedDict):
+    timezones: list[str]
+
+
+class PasswordChange(TypedDict):
+    old_password: str
+    new_password: str
+
+
+class PasswordReset(TypedDict):
+    key: str
+    new_password: str
+
+
+class LoginInput(TypedDict):
+    usr: str
+    pwd: str
+
+
+login = LoginManager.login
+
+
+class PushToken(TypedDict):
+    fcm_token: str
+    project_name: str
+
+
+class PushResult(TypedDict):
+    success: bool
+    message: str
+
+
+CONTRACT_ROUTES = (
+    Route(
+        "POST",
+        "/api/v2/method/login",
+        "login",
+        id="frappe.login",
+        body=LoginInput,
+        output=object,
+        kind="mutation",
+        public_name="auth.login",
+        allow_guest=True,
+    ),
+    Route(
+        "POST",
+        "/api/v2/method/logout",
+        "logout",
+        id="frappe.logout",
+        output=object,
+        kind="mutation",
+        public_name="auth.logout",
+    ),
+    Route(
+        "GET",
+        "/api/v2/method/frappe.translate.get_boot_translations",
+        "get_boot_translations",
+        id="frappe.translate.get_boot_translations",
+        output=dict[str, str],
+        kind="query",
+        public_name="translations.get",
+        allow_guest=True,
+    ),
+    Route(
+        "GET",
+        "/api/method/frappe.push_notification.subscribe",
+        "subscribe",
+        query=PushToken,
+        output=PushResult,
+        kind="mutation",
+        public_name="push.subscribe",
+        envelope="message",
+    ),
+    Route(
+        "GET",
+        "/api/method/frappe.push_notification.unsubscribe",
+        "unsubscribe",
+        query=PushToken,
+        output=PushResult,
+        kind="mutation",
+        public_name="push.unsubscribe",
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/v2/method/frappe.core.doctype.user.user.switch_theme",
+        "switch_theme",
+        id="frappe.user.switch_theme",
+        body=ThemeChange,
+        output=type(None),
+        kind="mutation",
+        public_name="preferences.setTheme",
+    ),
+    Route(
+        "POST",
+        "/api/method/frappe.core.doctype.user.user.update_password",
+        "update_password",
+        id="frappe.user.reset_password",
+        kind="mutation",
+        public_name="account.resetPassword",
+        envelope="message",
+        body=PasswordReset,
+        output=str,
+        errors=(
+            frappe.AuthenticationError,
+            frappe.ValidationError,
+        ),
+    ),
+    Route(
+        "POST",
+        "/api/method/frappe.core.doctype.user.user.get_timezones",
+        "get_timezones",
+        id="frappe.user.get_timezones",
+        kind="query",
+        public_name="locales.timezones",
+        envelope="message",
+        output=Timezones,
+    ),
+    Route(
+        "POST",
+        "/api/method/frappe.core.doctype.user.user.update_password",
+        "update_password",
+        id="frappe.user.update_password",
+        kind="mutation",
+        public_name="account.changePassword",
+        envelope="message",
+        body=PasswordChange,
+        output=str,
+        errors=(
+            frappe.AuthenticationError,
+            frappe.ValidationError,
+        ),
+    ),
+    Route(
+        "POST",
+        "/api/v2/method/suite.utils.user.generate_user_keys",
+        "generate_user_keys",
+        id="suite.generate_user_keys",
+        kind="mutation",
+        public_name="account.generateKeys",
+        body=UserKeysInput,
+        output=UserKeys,
+        errors=(frappe.PermissionError,),
+    ),
+)
+
+
 ROUTES = (
-    Route("GET", "account", "account_get", allow_guest=True, output=Account | None),
-    Route("GET", "site", "site_get", output=Site),
+    Route(
+        "GET",
+        "preferences",
+        "get_preferences",
+        output=Preferences,
+        kind="query",
+        public_name="preferences.get",
+    ),
+    Route(
+        "PATCH",
+        "preferences",
+        "update_preferences",
+        body=PreferenceChanges,
+        output=Preferences,
+        kind="mutation",
+        public_name="preferences.update",
+    ),
+    Route(
+        "GET", "languages", "languages", output=list[Language], kind="query", public_name="locales.languages"
+    ),
+    Route(
+        "GET",
+        "account",
+        "account_get",
+        allow_guest=True,
+        output=Account | None,
+        kind="query",
+        public_name="account.get",
+    ),
+    Route("GET", "site", "site_get", output=Site, kind="query", public_name="site.get"),
     Route(
         "PATCH",
         "site",
@@ -85,14 +284,29 @@ ROUTES = (
         body=CompleteOnboarding | UpdateSiteSettings,
         errors=(BadRequest, frappe.PermissionError),
         output=Site,
+        kind="mutation",
+        public_name={
+            "CompleteOnboarding": "site.completeOnboarding",
+            "UpdateSiteSettings": "site.updateSettings",
+        },
     ),
-    Route("GET", "users", "users_get", errors=(frappe.PermissionError,), output=list[User]),
+    Route(
+        "GET",
+        "users",
+        "users_get",
+        errors=(frappe.PermissionError,),
+        output=list[User],
+        kind="query",
+        public_name="users.list",
+    ),
     Route(
         "GET",
         "invitations",
         "invitations_get",
         errors=(frappe.PermissionError,),
         output=list[Invitation],
+        kind="query",
+        public_name="invitations.list",
     ),
     Route(
         "POST",
@@ -101,6 +315,8 @@ ROUTES = (
         body=InviteUsers,
         errors=(BadRequest, frappe.PermissionError),
         output=InvitationResult,
+        kind="mutation",
+        public_name="invitations.create",
     ),
     Route(
         "GET",
@@ -109,6 +325,9 @@ ROUTES = (
         errors=(BadRequest, people.BadCursor, frappe.PermissionError),
         query=PeopleQuery,
         output=people.PeoplePage,
+        kind="query",
+        public_name="people.list",
+        page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
     ),
 )
 

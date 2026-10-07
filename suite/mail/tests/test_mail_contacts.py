@@ -75,7 +75,9 @@ class TestMailContacts(StalwartIntegrationTestCase):
             )
 
             cards = self.wait_until(
-                lambda: [c for c in get_contact_cards(self.account, {"text": contact_name}) or []] or None,
+                lambda: (
+                    [c for c in get_contact_cards(self.account, {"text": contact_name})["rows"] or []] or None
+                ),
                 message="Created contact card not found.",
             )
             self.assertEqual(cards[0]["id"], card_id)
@@ -95,7 +97,7 @@ class TestMailContacts(StalwartIntegrationTestCase):
             self.wait_until(
                 lambda: any(
                     c["full_name"] == f"{contact_name} Jr"
-                    for c in get_contact_cards(self.account, {"text": contact_name})
+                    for c in get_contact_cards(self.account, {"text": contact_name})["rows"]
                 ),
                 message="Contact rename did not stick.",
             )
@@ -124,7 +126,7 @@ class TestMailContacts(StalwartIntegrationTestCase):
 
             delete_contact_cards(self.account, [card_id])
             self.wait_until(
-                lambda: not get_contact_cards(self.account, {"text": contact_name}),
+                lambda: not get_contact_cards(self.account, {"text": contact_name})["rows"],
                 message="Deleted contact card still listed.",
             )
             delete_address_books(self.account, [other_book])
@@ -153,12 +155,14 @@ class TestMailContacts(StalwartIntegrationTestCase):
                 ],
             )
             cards = self.wait_until(
-                lambda: [
-                    c
-                    for c in get_contact_cards(self.account, {"text": "Bulk "}) or []
-                    if c["full_name"] in names
-                ]
-                or None,
+                lambda: (
+                    [
+                        c
+                        for c in get_contact_cards(self.account, {"text": "Bulk "})["rows"] or []
+                        if c["full_name"] in names
+                    ]
+                    or None
+                ),
                 message="Bulk-added contact cards not found.",
             )
             self.assertEqual(len(cards), 2)

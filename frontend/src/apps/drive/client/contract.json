@@ -4,6 +4,10 @@
   "operations": [
     {
       "id": "node_create.create_folder",
+      "kind": "mutation",
+      "publicName": "nodes.createFolder",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -343,12 +347,21 @@
         "DriveConflict",
         "DriveOverQuota"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_create.create_file",
+      "kind": "mutation",
+      "publicName": "nodes.createFile",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -708,12 +721,21 @@
         "DriveConflict",
         "DriveOverQuota"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_create.create_link",
+      "kind": "mutation",
+      "publicName": "nodes.createLink",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -1058,12 +1080,21 @@
         "DriveConflict",
         "DriveOverQuota"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_create.create_document",
+      "kind": "mutation",
+      "publicName": "nodes.createDocument",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes",
       "pathParams": [],
@@ -1417,12 +1448,21 @@
         "DriveConflict",
         "DriveOverQuota"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_batch",
+      "kind": "mutation",
+      "publicName": "nodes.batch",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/batch",
       "pathParams": [],
@@ -1531,10 +1571,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_batch_purge",
+      "kind": "mutation",
+      "publicName": "nodes.purgeBatch",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/batch/purge",
       "pathParams": [],
@@ -1607,10 +1652,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_get",
+      "kind": "query",
+      "publicName": "nodes.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}",
       "pathParams": [
@@ -1946,10 +1996,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.rename",
+      "kind": "mutation",
+      "publicName": "nodes.rename",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
       "pathParams": [
@@ -2293,10 +2348,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.move",
+      "kind": "mutation",
+      "publicName": "nodes.move",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
       "pathParams": [
@@ -2644,10 +2704,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.trash",
+      "kind": "mutation",
+      "publicName": "nodes.trash",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
       "pathParams": [
@@ -2992,10 +3057,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.restore",
+      "kind": "mutation",
+      "publicName": "nodes.restore",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
       "pathParams": [
@@ -3344,10 +3414,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_patch.stamp",
+      "kind": "mutation",
+      "publicName": "nodes.stamp",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}",
       "pathParams": [
@@ -3691,10 +3766,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_purge",
+      "kind": "mutation",
+      "publicName": "nodes.purge",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}",
       "pathParams": [
@@ -3727,10 +3807,19 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_children",
+      "kind": "query",
+      "publicName": "nodes.children",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/children",
       "pathParams": [
@@ -4107,14 +4196,23 @@
         "DriveLinkExpired",
         "DriveConflict"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_copy",
+      "kind": "mutation",
+      "publicName": "nodes.copy",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/copy",
       "pathParams": [
@@ -4452,14 +4550,23 @@
         "DriveConflict",
         "DriveOverQuota"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_archive_start",
+      "kind": "mutation",
+      "publicName": "archives.start",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/archive",
       "pathParams": [
@@ -4537,10 +4644,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_archive_status",
+      "kind": "query",
+      "publicName": "archives.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/archive",
       "pathParams": [
@@ -4612,10 +4724,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_archive_download",
+      "kind": "query",
+      "publicName": "archives.download",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/archive/download",
       "pathParams": [
@@ -4634,10 +4751,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "node_put_content",
+      "kind": "mutation",
+      "publicName": "nodes.replaceContent",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "nodes/{node}/content",
       "pathParams": [
@@ -4981,14 +5103,23 @@
         "DriveOverQuota",
         "DriveFileTooLarge"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_get_content",
+      "kind": "query",
+      "publicName": "nodes.download",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/content",
       "pathParams": [
@@ -5021,10 +5152,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "node_media",
+      "kind": "query",
+      "publicName": "nodes.media",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/media",
       "pathParams": [
@@ -5105,10 +5241,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_preview",
+      "kind": "mutation",
+      "publicName": "nodes.setPreview",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/preview",
       "pathParams": [
@@ -5183,10 +5324,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "upload_create",
+      "kind": "mutation",
+      "publicName": "uploads.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "uploads",
       "pathParams": [],
@@ -5296,10 +5442,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "upload_chunk",
+      "kind": "mutation",
+      "publicName": "uploads.chunk",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "uploads/{upload_id}/chunk",
       "pathParams": [
@@ -5345,10 +5496,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": true
+      "stream": true,
+      "bytes": false
     },
     {
       "id": "upload_finish",
+      "kind": "mutation",
+      "publicName": "uploads.finish",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "uploads/{upload_id}/finish",
       "pathParams": [
@@ -5695,12 +5851,25 @@
         "DriveOverQuota",
         "DriveFileTooLarge"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_activity",
+      "kind": "query",
+      "publicName": "nodes.activity",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/activity",
       "pathParams": [
@@ -5832,10 +6001,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_visit",
+      "kind": "mutation",
+      "publicName": "nodes.visit",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/visit",
       "pathParams": [
@@ -5873,10 +6047,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_put_favourite",
+      "kind": "mutation",
+      "publicName": "nodes.star",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "nodes/{node}/favourite",
       "pathParams": [
@@ -5914,10 +6093,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_delete_favourite",
+      "kind": "mutation",
+      "publicName": "nodes.unstar",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}/favourite",
       "pathParams": [
@@ -5948,10 +6132,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_grants",
+      "kind": "query",
+      "publicName": "grants.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/grants",
       "pathParams": [
@@ -6274,10 +6463,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_put_grant",
+      "kind": "mutation",
+      "publicName": "grants.put",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "nodes/{node}/grants/{principal:path}",
       "pathParams": [
@@ -6435,10 +6629,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_delete_grant",
+      "kind": "mutation",
+      "publicName": "grants.remove",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}/grants/{principal:path}",
       "pathParams": [
@@ -6480,10 +6679,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "grant_patch",
+      "kind": "mutation",
+      "publicName": "grants.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "grants/{grant}",
       "pathParams": [
@@ -6628,10 +6832,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "grant_delete",
+      "kind": "mutation",
+      "publicName": "grants.delete",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "grants/{grant}",
       "pathParams": [
@@ -6659,10 +6868,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "grant_rotate",
+      "kind": "mutation",
+      "publicName": "grants.rotate",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "grants/{grant}/rotate",
       "pathParams": [
@@ -6778,10 +6992,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "link_unlock",
+      "kind": "mutation",
+      "publicName": "links.unlock",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "links/unlock",
       "pathParams": [],
@@ -6831,10 +7050,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "view_clear_recents",
+      "kind": "mutation",
+      "publicName": "views.clearRecent",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "views/recents",
       "pathParams": [],
@@ -6869,10 +7093,19 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "view_list",
+      "kind": "query",
+      "publicName": "views.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "views/{view}",
       "pathParams": [
@@ -7293,12 +7526,25 @@
         "DriveNotFound",
         "DriveForbidden"
       ],
-      "entity": null,
+      "entity": {
+        "tag": "DriveNode",
+        "id": "name",
+        "version": "modified"
+      },
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_versions",
+      "kind": "query",
+      "publicName": "versions.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/versions",
       "pathParams": [
@@ -7426,10 +7672,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_create",
+      "kind": "mutation",
+      "publicName": "versions.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/versions",
       "pathParams": [
@@ -7533,10 +7784,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_patch",
+      "kind": "mutation",
+      "publicName": "versions.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "nodes/{node}/versions/{seq}",
       "pathParams": [
@@ -7637,10 +7893,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_delete",
+      "kind": "mutation",
+      "publicName": "versions.delete",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "nodes/{node}/versions/{seq}",
       "pathParams": [
@@ -7674,10 +7935,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_version_content",
+      "kind": "query",
+      "publicName": "versions.download",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/versions/{seq}/content",
       "pathParams": [
@@ -7697,10 +7963,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "node_version_restore",
+      "kind": "mutation",
+      "publicName": "versions.restore",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/versions/{seq}/restore",
       "pathParams": [
@@ -7805,10 +8076,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_threads",
+      "kind": "query",
+      "publicName": "threads.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "nodes/{node}/threads",
       "pathParams": [
@@ -8035,10 +8311,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "node_thread_create",
+      "kind": "mutation",
+      "publicName": "threads.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "nodes/{node}/threads",
       "pathParams": [
@@ -8263,10 +8544,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "thread_patch",
+      "kind": "mutation",
+      "publicName": "threads.resolve",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "threads/{thread}",
       "pathParams": [
@@ -8477,10 +8763,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "thread_comment_create",
+      "kind": "mutation",
+      "publicName": "comments.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "threads/{thread}/comments",
       "pathParams": [
@@ -8623,10 +8914,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "comment_patch",
+      "kind": "mutation",
+      "publicName": "comments.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "comments/{comment}",
       "pathParams": [
@@ -8765,10 +9061,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "comment_delete",
+      "kind": "mutation",
+      "publicName": "comments.delete",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "comments/{comment}",
       "pathParams": [
@@ -8797,10 +9098,19 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_list",
+      "kind": "query",
+      "publicName": "notifications.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "notifications",
       "pathParams": [],
@@ -8960,10 +9270,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_unread_count",
+      "kind": "query",
+      "publicName": "notifications.unreadCount",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "notifications/unread-count",
       "pathParams": [],
@@ -8985,10 +9300,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_read.notification_names",
+      "kind": "mutation",
+      "publicName": "notifications.markRead",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "notifications/read",
       "pathParams": [],
@@ -9026,10 +9346,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "notifications_read.all_notifications",
+      "kind": "mutation",
+      "publicName": "notifications.markAllRead",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "notifications/read",
       "pathParams": [],
@@ -9065,10 +9390,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "roots_discover",
+      "kind": "query",
+      "publicName": "roots.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "roots",
       "pathParams": [],
@@ -9120,10 +9450,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_usage",
+      "kind": "query",
+      "publicName": "roots.usage",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "roots/{root}/usage",
       "pathParams": [
@@ -9265,10 +9600,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_patch.root_quota",
+      "kind": "mutation",
+      "publicName": "roots.setQuota",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "roots/{root}",
       "pathParams": [
@@ -9351,10 +9691,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_patch.root_archive",
+      "kind": "mutation",
+      "publicName": "roots.archive",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "roots/{root}",
       "pathParams": [
@@ -9438,10 +9783,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_purge",
+      "kind": "mutation",
+      "publicName": "roots.purge",
+      "page": null,
+      "envelope": "data",
       "method": "DELETE",
       "path": "roots/{root}",
       "pathParams": [
@@ -9470,10 +9820,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "root_empty_trash",
+      "kind": "mutation",
+      "publicName": "roots.emptyTrash",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "roots/{root}/trash/empty",
       "pathParams": [
@@ -9508,10 +9863,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "settings_get",
+      "kind": "query",
+      "publicName": "settings.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "settings",
       "pathParams": [],
@@ -9540,10 +9900,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "settings_patch",
+      "kind": "mutation",
+      "publicName": "settings.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "settings",
       "pathParams": [],
@@ -9585,10 +9950,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "site_settings_get",
+      "kind": "query",
+      "publicName": "siteSettings.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "site-settings",
       "pathParams": [],
@@ -9667,10 +10037,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "site_settings_patch",
+      "kind": "mutation",
+      "publicName": "siteSettings.update",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "site-settings",
       "pathParams": [],
@@ -9733,10 +10108,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "webdav_get",
+      "kind": "query",
+      "publicName": "webdav.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "webdav",
       "pathParams": [],
@@ -9839,7 +10219,8 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     }
   ]
 }

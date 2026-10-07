@@ -36,6 +36,14 @@ export interface EntityDeclaration {
 }
 
 export interface Operation<Input = unknown, Output = unknown, ErrorType extends string = string> {
+  readonly kind?: 'query' | 'mutation'
+  readonly publicName?: string
+  readonly envelope?: 'message'
+  readonly bytes?: boolean
+  readonly empty?: boolean
+  readonly types?: { input: Input; output: Output; error: ErrorType }
+  loadValidators?: () => Promise<Validators<Input, Output>>
+  localParams?: readonly string[]
   id: string
   owner: string
   method: HttpMethod
@@ -57,7 +65,42 @@ export interface Operation<Input = unknown, Output = unknown, ErrorType extends 
    * see how it ended. Runs once per call, before the first attempt. It may
    * throw to refuse the call, and then nothing is sent.
    */
-  scope?(input: Input): RequestScope<Output>
+  scope?(input: NoInfer<Input>): RequestScope<NoInfer<Output>>
+}
+
+export interface Validators<I, O> {
+  validateInput(input: unknown): asserts input is I
+  validateOutput(output: unknown): asserts output is O
+}
+
+export interface QueryRef<I, O, E extends string = string> extends Operation<I, O, E> {
+  readonly kind: 'query'
+}
+
+export interface MutationRef<I, O, E extends string = string> extends Operation<I, O, E> {
+  readonly kind: 'mutation'
+}
+
+export type PageCapability =
+  | { cursor: string; rows: string; next: string }
+  | { offset: string; rows: string; total: string }
+  | { offset: string; rows: string; more: string }
+
+export interface PageRef<
+  I,
+  Row,
+  E extends string = string,
+  O = { rows: Row[]; next_cursor: string | null },
+> extends QueryRef<I, O, E> {
+  readonly page: PageCapability
+  readonly rowType?: Row
+}
+
+export interface TransferRef<I, O> {
+  readonly kind: 'transfer'
+  readonly id: string
+  readonly owner: string
+  readonly types?: { input: I; output: O }
 }
 
 export interface RequestScope<Output = unknown> {
@@ -70,7 +113,15 @@ export interface RequestScope<Output = unknown> {
 export type RequestOutcome<Output = unknown> =
   { ok: true; output: Output } | { ok: false; error: TransportError }
 
+/** An owner selects credentials and gives the engine an opaque access identity. */
+export interface RequestContext {
+  partition(): string
+  scope(): RequestScope
+}
+
 export interface TransportOptions {
+  context?: RequestContext
+  keepalive?: boolean
   signal?: AbortSignal
   headers?: HeadersInit
 }
@@ -89,7 +140,7 @@ export interface BytesResponse {
 export interface Transport {
   request<Input, Output, ErrorType extends string = string>(
     operation: Operation<Input, Output, ErrorType>,
-    input: Input,
+    input: NoInfer<Input>,
     options?: TransportOptions,
   ): Promise<Output>
 }
@@ -98,6 +149,7 @@ export interface CreateTransportOptions {
   fetch?: typeof fetch
   maxRetries?: number
   retryBaseMs?: number
+  onFailure?: (error: TransportError) => void
   onSessionExpired?: (error: PlatformError<'SessionExpired'>) => void
 }
 
@@ -105,6 +157,8 @@ type ErrorEnvelope = {
   errors?: Array<{ type?: unknown; message?: unknown; [key: string]: unknown }>
   error?: { type?: unknown; message?: unknown; [key: string]: unknown }
   message?: unknown
+  exc_type?: unknown
+  _server_messages?: unknown
 }
 
 const DEFAULT_RETRIES = 2
@@ -127,7 +181,11 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
   return {
     async request(operation, input, requestOptions = {}) {
       validateOperation(operation)
+      const validators: Validators<typeof input, unknown> | undefined =
+        await operation.loadValidators?.()
+      validators?.validateInput(input)
       operation.validateInput?.(input)
+      requestOptions.signal?.throwIfAborted()
 
       const pathInput = asRecord(input)
       const rawBody = operation.body ? pathInput[operation.body] : undefined
@@ -135,7 +193,7 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         throw new TypeError(`Operation input field ${operation.body} must be a Blob`)
       }
       const url = buildUrl(operation, pathInput)
-      const scope = operation.scope?.(input)
+      const scope = requestOptions.context?.scope() ?? operation.scope?.(input)
       const headers = new Headers(scope?.headers)
       new Headers(requestOptions.headers).forEach((value, name) => headers.set(name, value))
       headers.set('Accept', 'application/json')
@@ -147,17 +205,24 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         headers,
         credentials: 'same-origin',
         signal: requestOptions.signal,
+        keepalive: requestOptions.keepalive,
       }
       if (rawBody instanceof Blob) {
         headers.set('Content-Type', 'application/octet-stream')
         init.body = rawBody
-      } else if (operation.method !== 'GET') {
+      } else if (operation.method !== 'GET' && operation.method !== 'DELETE') {
         headers.set('Content-Type', 'application/json; charset=utf-8')
-        init.body = JSON.stringify(withoutPathParams(pathInput, operation.pathParams ?? []))
+        init.body = JSON.stringify(
+          withoutPathParams(pathInput, [
+            ...(operation.pathParams ?? []),
+            ...(operation.localParams ?? []),
+          ]),
+        )
       }
 
       const failed = (error: TransportError): TransportError => {
         scope?.settled?.({ ok: false, error })
+        options.onFailure?.(error)
         return error
       }
 
@@ -168,7 +233,13 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
           response = await fetcher(url, init)
         } catch (cause) {
           if (isAbort(cause)) throw cause
-          if (operation.method !== 'GET' || attempt >= maxRetries) {
+          if (
+            !(
+              operation.kind === 'query' ||
+              (operation.kind === undefined && operation.method === 'GET')
+            ) ||
+            attempt >= maxRetries
+          ) {
             throw failed(
               new TransportError({
                 type: 'NetworkError',
@@ -182,10 +253,19 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
           continue
         }
 
-        const body = await readBody(response)
+        requestOptions.signal?.throwIfAborted()
+        const body =
+          response.ok && operation.bytes ? await response.blob() : await readBody(response)
+        requestOptions.signal?.throwIfAborted()
         if (response.ok) {
-          const output = decodeSuccess(body)
-          if (import.meta.env.DEV) operation.validateOutput?.(output)
+          const output =
+            operation.empty &&
+            isRecord(body) &&
+            Object.keys(body).every((key) => key === 'docs' || key === '_server_messages')
+              ? null
+              : decodeSuccess(body, operation.envelope)
+          validators?.validateOutput(output)
+          operation.validateOutput?.(output)
           scope?.settled?.({ ok: true, output: output as never })
           return output as never
         }
@@ -199,7 +279,8 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         }
 
         const retryable =
-          operation.method === 'GET' &&
+          (operation.kind === 'query' ||
+            (operation.kind === undefined && operation.method === 'GET')) &&
           attempt < maxRetries &&
           (response.status >= 500 || response.status === 429)
         if (!retryable) throw failed(new TransportError(error))
@@ -256,7 +337,18 @@ export function describeFailure(status: number | null): string | null {
   return null
 }
 
-export const transport = createTransport()
+const failureListeners = new Set<(error: TransportError) => void>()
+export function onTransportFailure(listener: (error: TransportError) => void): () => void {
+  failureListeners.add(listener)
+  return () => {
+    failureListeners.delete(listener)
+  }
+}
+export const transport = createTransport({
+  onFailure: (error) => {
+    for (const listener of failureListeners) listener(error)
+  },
+})
 
 function validateOperation(operation: Operation): void {
   if (!operation?.id || !operation.owner || !operation.method || !operation.path) {
@@ -273,10 +365,11 @@ function buildUrl(operation: Operation, input: Record<string, unknown>): string 
     return encodeURIComponent(String(value))
   })
   if (!path.startsWith('/')) path = `${operation.prefix ?? `/api/suite/${operation.owner}/`}${path}`
-  if (operation.method === 'GET' || operation.body) {
+  if (operation.method === 'GET' || operation.method === 'DELETE' || operation.body) {
     const query = new URLSearchParams()
     const omitted = new Set([
       ...(operation.pathParams ?? []),
+      ...(operation.localParams ?? []),
       ...(operation.body ? [operation.body] : []),
     ])
     for (const [key, value] of Object.entries(input)) appendQuery(query, key, value, omitted)
@@ -315,7 +408,8 @@ function asRecord(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>
 }
 
-function decodeSuccess(body: unknown): unknown {
+function decodeSuccess(body: unknown, envelope?: 'message'): unknown {
+  if (envelope === 'message') return isRecord(body) && 'message' in body ? body.message : null
   if (isRecord(body) && 'data' in body) return body.data
   return body
 }
@@ -323,13 +417,26 @@ function decodeSuccess(body: unknown): unknown {
 function decodeError(body: unknown, status: number, fallback: string): PlatformError {
   const envelope = isRecord(body) ? (body as ErrorEnvelope) : {}
   const first = Array.isArray(envelope.errors) ? envelope.errors[0] : envelope.error
-  const type = stringValue(first?.type) ?? 'RequestError'
+  const type = stringValue(first?.type) ?? stringValue(envelope.exc_type) ?? 'RequestError'
   const message =
     stringValue(first?.message) ??
+    serverMessage(envelope._server_messages) ??
     (typeof envelope.message === 'string' ? envelope.message : null) ??
     stringValue(fallback) ??
     'Request failed'
   return { ...(isRecord(first) ? first : {}), type, message, status }
+}
+
+function serverMessage(encoded: unknown): string | null {
+  if (typeof encoded !== 'string') return null
+  try {
+    const messages: unknown = JSON.parse(encoded)
+    const first: unknown = Array.isArray(messages) ? messages[0] : messages
+    const decoded: unknown = typeof first === 'string' ? JSON.parse(first) : first
+    return isRecord(decoded) ? stringValue(decoded.message) : null
+  } catch {
+    return null
+  }
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -359,19 +466,16 @@ function parseRetryAfter(value: string | null): number | null {
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
-      return
+    const abort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
     }
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
-      },
-      { once: true },
-    )
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    if (signal?.aborted) abort()
+    else signal?.addEventListener('abort', abort, { once: true })
   })
 }
 
@@ -387,6 +491,6 @@ function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }

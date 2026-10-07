@@ -3,8 +3,8 @@
     <div class="flex items-start gap-2">
       <Combobox
         ref="combobox"
-        :model-value="null"
         v-model:query="query"
+        :model-value="null"
         class="min-w-0 flex-1"
         size="sm"
         variant="outline"
@@ -85,11 +85,11 @@ import { useDebounceFn } from '@vueuse/core'
 import { Button, Checkbox, Combobox, Select } from 'frappe-ui'
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
+import { api, client } from '@/api'
 import { groupPrincipal, rolesFor } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
-import { transport } from '@/platform/transport'
-import { api as suiteApi, type PeopleGetOutput } from '@/platform/transport/generated'
+import type { PeopleGetOutput } from '@/platform/transport/generated'
 
 import type { PickedPerson } from './shareModel'
 
@@ -116,6 +116,7 @@ const role = ref<number>(DRIVE_ROLES.read)
 // Notify is on by default for people added (§7.8).
 const notify = ref(true)
 const staged = ref<PickedPerson[]>([])
+let request = 0
 watch(
   () => staged.value.length > 0,
   (pending) => (picking.value = pending),
@@ -182,12 +183,11 @@ onMounted(() => {
   if (props.autofocus) combobox.value?.focus()
 })
 
-let request = 0
 async function search(text: string, id: number) {
   if (id !== request) return
   loading.value = true
   try {
-    const page = await transport.request(suiteApi.people_get, text ? { q: text } : {})
+    const page = await client.query(api.suite.people.list, text ? { q: text } : {})
     if (id === request) rows.value = page.rows
   } catch {
     if (id === request) rows.value = []

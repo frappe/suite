@@ -9,8 +9,9 @@ vi.mock('@/router', () => ({ default: {} }))
 vi.mock('@/boot/session', () => ({ useSessionStore: () => ({ isLoggedIn: true }) }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
-    userResource: { promise: Promise.resolve(), data: state.user },
-    mailboxes: { promise: Promise.resolve(), data: [{ id: 'inbox' }] },
+    userResource: { data: state.user },
+    loadUser: () => Promise.resolve(state.user),
+    mailboxes: { refetch: () => Promise.resolve(), data: [{ id: 'inbox' }] },
     resolveAccount: () => {},
     accountId: 'acc',
     mailboxIds: {},

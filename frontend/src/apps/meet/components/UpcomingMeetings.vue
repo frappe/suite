@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { useNow } from '@vueuse/core'
-import { useCall } from 'frappe-ui'
-import { computed, onMounted } from 'vue'
+import { Button } from 'frappe-ui'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useQuery } from '@/api'
+import { UpcomingEventList, type UpcomingEventRow } from '@/apps/calendar'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import AvatarGroup from '@/apps/meet/components/AvatarGroup.vue'
+import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
+import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+
+const accountError = ref(false)
 
 interface CalendarEventParticipant {
   email: string
@@ -72,17 +78,23 @@ const calendarStore = useCalendarUserStore()
 const now = useNow({ interval: 30_000 })
 
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
+const session = useSession()
+// Follow the clock so a tab left open across midnight fetches the new day.
+const today = computed(() => dayjs(now.value).startOf('day'))
+const fromDate = computed(() => today.value.format('YYYY-MM-DD[T]HH:mm:ss'))
+const toDate = computed(() => today.value.endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'))
+const timeZone = timezone()
 
-const upcomingEvents = useCall({
-  url: '/api/v2/method/suite.calendar.api.get_calendar_events',
-  immediate: false,
-  params: () => ({
-    account: calendarStore.accountId,
-    from_date: dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-    to_date: dayjs().endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-    time_zone: timezone(),
-  }),
-})
+const upcomingEvents = useQuery(api.calendar.events.window, () =>
+  calendarStore.accountId
+    ? {
+        account: calendarStore.accountId,
+        from_date: fromDate.value,
+        to_date: toDate.value,
+        time_zone: timeZone,
+      }
+    : false,
+)
 
 const meetings = computed(() => {
   const currentTime = dayjs(now.value)
@@ -92,7 +104,7 @@ const meetings = computed(() => {
     .filter((event) => {
       const start = dayjs(event.start)
       const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-      return getMeetingUrl(event) && start.isSame(currentTime, 'day') && end.isAfter(currentTime)
+      return getMeetingUrl(event) && end.isAfter(currentTime) && start.isSame(currentTime, 'day')
     })
     .sort((left, right) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
     .slice(0, 4)
@@ -100,6 +112,18 @@ const meetings = computed(() => {
 
 const formatMeetingMonth = (event: CalendarEvent) => dayjs(event.start).format('MMM')
 const formatMeetingDay = (event: CalendarEvent) => dayjs(event.start).format('D')
+const eventParticipants = (event: CalendarEvent) => {
+  const participants = new Map<string, { email: string; name: string; image?: string }>()
+  for (const participant of event.participants || []) {
+    if (!participant.email || participants.has(participant.email)) continue
+    participants.set(participant.email, {
+      email: participant.email,
+      name: participant._name || participant.email,
+      image: participant.user_image || undefined,
+    })
+  }
+  return [...participants.values()]
+}
 
 const isAllDayEvent = (event: CalendarEvent) => {
   const start = dayjs(event.start)
@@ -115,27 +139,11 @@ const isAllDayEvent = (event: CalendarEvent) => {
 }
 
 const formatMeetingTime = (event: CalendarEvent) => {
-  if (isAllDayEvent(event)) return 'All day'
+  if (isAllDayEvent(event)) return __('All day')
 
   const start = dayjs(event.start)
   const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-  return `${start.format('h:mma')} - ${end.format('h:mma')}`
-}
-
-const eventParticipants = (event: CalendarEvent) => {
-  const participantsByEmail = new Map<
-    string,
-    { user_id: string; full_name: string; avatar_url?: string }
-  >()
-  for (const participant of event.participants || []) {
-    if (!participant.email || participantsByEmail.has(participant.email)) continue
-    participantsByEmail.set(participant.email, {
-      user_id: participant.email,
-      full_name: participant._name || participant.email || '?',
-      avatar_url: participant.user_image,
-    })
-  }
-  return [...participantsByEmail.values()]
+  return `${start.format('h:mm a')} – ${end.format('h:mm a')}`
 }
 
 const getMeetingUrl = (event: CalendarEvent) => {
@@ -153,8 +161,15 @@ const getTrustedMeetUrl = (url?: string | null) => {
 
   try {
     const parsed = new URL(value, window.location.origin)
-    if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/meet/'))
-      return parsed.pathname + parsed.search + parsed.hash
+    if (
+      (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+      !parsed.username &&
+      !parsed.password &&
+      meetingCodeFrom(parsed.href, parsed.origin)
+    )
+      return parsed.origin === window.location.origin
+        ? parsed.pathname + parsed.search + parsed.hash
+        : parsed.href
   } catch {
     return ''
   }
@@ -163,78 +178,67 @@ const getTrustedMeetUrl = (url?: string | null) => {
 }
 
 const getMeetingId = (event: CalendarEvent) =>
-  getMeetingUrl(event).split('/meet/').pop()?.replace(/\W+$/, '') || ''
+  meetingCodeFrom(getMeetingUrl(event), window.location.origin)
 
 const joinMeeting = (event: CalendarEvent) => {
+  if (getMeetingUrl(event).startsWith('http')) return
   const meetingId = getMeetingId(event)
   if (!meetingId) return
   router.push({ name: 'meet-meeting', params: { meetingId } })
 }
 
-const reload = () => {
-  if (calendarStore.accountId) upcomingEvents.reload()
+const meetingRows = computed(() =>
+  meetings.value.map((event) => ({
+    id: event.id,
+    title: event.title || __('Scheduled meeting'),
+    month: formatMeetingMonth(event),
+    day: formatMeetingDay(event),
+    time: formatMeetingTime(event),
+    actionLabel: __('Join {0}', [event.title || __('Scheduled meeting')]),
+    href: getMeetingUrl(event).startsWith('http') ? getMeetingUrl(event) : undefined,
+    participants: eventParticipants(event),
+  })),
+)
+const joinRow = (row: UpcomingEventRow) => {
+  const event = meetings.value.find((event) => event.id === row.id)
+  if (event) joinMeeting(event)
 }
 
-onMounted(() => {
-  const userPromise = calendarStore.userResource.promise
-  if (!userPromise) {
-    reload()
-    return
+const reload = async () => {
+  try {
+    await calendarStore.loadUser()
+    accountError.value = false
+    if (calendarStore.accountId) await upcomingEvents.refetch()
+  } catch (error) {
+    accountError.value = true
+    console.warn('Could not load upcoming calendar meetings:', error)
   }
-  userPromise
-    .then(reload)
-    .catch((error: unknown) => console.warn('Could not load upcoming calendar meetings:', error))
-})
+}
+
+onMounted(reload)
 
 defineExpose({ reload })
 </script>
 
 <template>
-  <div v-if="meetings.length" class="mt-10">
-    <h2 class="mb-3 text-base-medium text-ink-gray-8">Upcoming meetings</h2>
-    <div class="overflow-hidden rounded-7 border border-outline-gray-1 bg-surface-gray-1">
-      <button
-        v-for="(event, index) in meetings"
-        :key="event.id"
-        type="button"
-        class="flex min-h-[66px] w-full items-center gap-8 border-outline-gray-1 px-2.5 py-2.5 text-left transition-colors first:rounded-t-7 last:rounded-b-7 hover:bg-surface-gray-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink-gray-4"
-        :class="index !== meetings.length - 1 ? 'border-b' : ''"
-        @click="joinMeeting(event)"
-      >
-        <div class="flex min-w-0 flex-1 items-center gap-2.5">
-          <div
-            class="flex w-11 shrink-0 items-center justify-center rounded-6 border border-outline-gray-1 bg-surface-base p-1"
-          >
-            <div
-              class="flex h-[38px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-center"
-            >
-              <div class="w-full text-xs font-medium uppercase text-ink-red-5">
-                {{ formatMeetingMonth(event) }}
-              </div>
-              <div class="w-full text-md font-medium text-ink-gray-7">
-                {{ formatMeetingDay(event) }}
-              </div>
-            </div>
-          </div>
-
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm-medium text-ink-gray-8">
-              {{ event.title || 'Scheduled Meeting' }}
-            </div>
-            <div class="mt-1.5 flex min-w-0 items-center gap-0.5 text-sm text-ink-gray-6">
-              <span class="shrink-0">{{ formatMeetingTime(event) }}</span>
-              <span v-if="eventParticipants(event).length" class="shrink-0">・</span>
-              <AvatarGroup
-                v-if="eventParticipants(event).length"
-                :participants="eventParticipants(event)"
-                :error="null"
-                :max-displayed="2"
-                size="sm"
-              />
-            </div>
-          </div>
-        </div>
-      </button>
+  <section
+    v-if="meetings.length || accountError || upcomingEvents.error"
+    :aria-label="__('Scheduled meetings')"
+  >
+    <h2 class="mb-3 text-base font-medium text-ink-gray-8">{{ __('Upcoming meetings') }}</h2>
+    <div
+      v-if="accountError || upcomingEvents.error"
+      class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
+      role="alert"
+    >
+      {{ __('Could not load meetings.') }}
+      <Button variant="outline" :label="__('Retry')" @click="reload" />
     </div>
-  </div>
+    <UpcomingEventList
+      v-else
+      :events="meetingRows"
+      :current-user="session.user.value?.id"
+      @select="joinRow"
+    />
+  </section>
 </template>

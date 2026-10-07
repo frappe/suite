@@ -45,7 +45,7 @@ export interface MailSearchResult {
   resultType: 'mail'
   account: string
   thread_id: string
-  subject?: string
+  subject?: string | null
   from_name?: string
   from_email: string
   recipients?: Recipient[]

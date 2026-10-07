@@ -1,8 +1,9 @@
 import { translate as __ } from '@/platform/translation'
 
 /**
- * Meet's Settings tabs. The Suite Settings dialog shows them as the Meet
- * group; the in-call dialog shows the same tabs after Controls.
+ * Meet's Settings tabs, for the in-call and preview dialogs. Meet has no
+ * group in the Suite Settings dialog: a device, background or layout choice
+ * only means something inside a call.
  */
 export const meetSettings = {
   label: () => __('Meet'),

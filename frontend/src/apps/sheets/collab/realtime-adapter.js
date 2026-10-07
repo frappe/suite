@@ -16,7 +16,7 @@
 // after a read check on the sheet, and joins again after every reconnect
 // because a new socket starts in no rooms. `close()` leaves it.
 
-import { call } from '../utils/api.js'
+import { relay } from '../utils/relay.js'
 
 /**
  * @param {object} opts
@@ -27,7 +27,7 @@ import { call } from '../utils/api.js'
 export function createRealtimeAdapter({
   sheetId,
   realtime = window.frappe?.realtime,
-  callFn = call,
+  callFn = relay,
 } = {}) {
   if (!sheetId) throw new Error('createRealtimeAdapter: sheetId is required')
 
@@ -52,7 +52,6 @@ export function createRealtimeAdapter({
       event,
       payload: JSON.stringify(payload ?? {}),
     }).catch((err) => {
-      // eslint-disable-next-line no-console
       console.warn(`[yjs:${event}] relay failed`, err)
     })
   }

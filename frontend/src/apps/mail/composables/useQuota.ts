@@ -1,27 +1,18 @@
-import { createResource } from 'frappe-ui'
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 
+import { api, useQuery } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { formatBytes } from '@/apps/mail/utils'
 
 /**
  * The active account's storage quota, shared by the sidebar meter and the
- * Account settings page. The resource is cached per account, so both read one
- * fetch.
+ * Account settings page. Both observers share the active account’s query.
  */
 export function useQuota() {
   const store = userStore()
 
-  const quota = createResource({
-    url: 'suite.mail.api.account.get_quota',
-    auto: true,
-    makeParams: () => ({ account: store.accountId }),
-    cache: ['quota', store.accountId],
-  })
-
-  watch(
-    () => store.accountId,
-    () => quota.reload(),
+  const quota = useQuery(api.mail.settings.quota, () =>
+    store.accountId ? { account: store.accountId } : false,
   )
 
   /** Whether the account has a ceiling at all; an unlimited one has nothing to meter. */

@@ -1,20 +1,21 @@
 import { loadCalendarSettings } from '@/apps/calendar'
 import { loadDriveSettings } from '@/apps/drive'
 import { loadMailSettings } from '@/apps/mail'
-import { loadMeetSettings } from '@/apps/meet'
 import { loadAccountSettings, loadWorkspaceSettings } from '@/shell/settings/accountSettings'
 import type { SettingsGroupLoader, SettingsTabIdOf } from '@/shell/settings/settings'
 
 /**
  * The one Settings list, in heading order. Each loader imports its group
  * module when Settings opens [T016].
+ *
+ * Meet is absent: its settings only mean anything inside a call, so the
+ * in-call dialog owns them (`apps/meet/settings`).
  */
 export const settingsGroups = [
   loadAccountSettings,
   loadDriveSettings,
   loadMailSettings,
   loadCalendarSettings,
-  loadMeetSettings,
   loadWorkspaceSettings,
 ] as const satisfies readonly SettingsGroupLoader[]
 

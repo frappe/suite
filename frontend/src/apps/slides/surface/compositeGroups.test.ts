@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CredentialGrouper } from '@/apps/drive'
+import type { RequestContext } from '@/platform/transport'
 
 import {
   CompositeGroupLoader,
@@ -10,6 +11,8 @@ import {
   type CompositeItem,
   type CompositeManifest,
 } from './compositeGroups'
+
+const context = (): RequestContext => ({ partition: () => 'test', scope: () => ({}) })
 
 const manifest: CompositeManifest = {
   presentation: 'deck',
@@ -26,8 +29,10 @@ const manifest: CompositeManifest = {
 describe('composite group loading', () => {
   it('keeps manifest order when one group fails and retries only that group', async () => {
     const grouper = {
-      group: vi.fn((ids: readonly string[]) => [{ nodeIds: [...ids], fetch: vi.fn() }]),
-      fetch: vi.fn(),
+      group: vi.fn((ids: readonly string[]) => [
+        { nodeIds: [...ids], fetch: vi.fn(), context: context() },
+      ]),
+      context: context(),
     }
     let fail = true
     const request = vi.fn(async (references: string[]) => {
@@ -71,19 +76,20 @@ describe('composite group loading', () => {
 
   it("selects link codes by each reference's node and asks for the references themselves", async () => {
     // A grouper holding one code per node, with room for two codes a request.
-    const sentWith = new Map<CredentialGrouper['fetch'], string[]>()
-    const grouper: Pick<CredentialGrouper, 'group' | 'fetch'> = {
+    const sentWith = new Map<RequestContext, string[]>()
+    const grouper: Pick<CredentialGrouper, 'group' | 'context'> = {
       group: (nodes) => {
         const groups = []
         for (let start = 0; start < nodes.length; start += 2) {
           const nodeIds = nodes.slice(start, start + 2)
-          const fetch = vi.fn() as unknown as CredentialGrouper['fetch']
-          sentWith.set(fetch, nodeIds)
-          groups.push({ nodeIds, fetch })
+          const requestContext = context()
+          const fetch = vi.fn()
+          sentWith.set(requestContext, nodeIds)
+          groups.push({ nodeIds, fetch, context: requestContext })
         }
         return groups
       },
-      fetch: vi.fn(),
+      context: context(),
     }
     const deck: CompositeManifest = {
       ...manifest,
@@ -96,7 +102,7 @@ describe('composite group loading', () => {
       ],
     }
     const asked: Array<{ references: string[]; codesFor: string[] }> = []
-    const request = vi.fn(async (references: string[], send: CredentialGrouper['fetch']) => {
+    const request = vi.fn(async (references: string[], send: RequestContext) => {
       asked.push({ references, codesFor: sentWith.get(send) ?? [] })
       return {
         references: references.map((reference) => ({

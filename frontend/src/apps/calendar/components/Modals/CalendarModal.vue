@@ -8,8 +8,8 @@
           label: __('Save'),
           variant: 'solid',
           disabled: !form.name.trim() || (!isNew && !isDirty),
-          loading: save.loading,
-          onClick: () => save.submit(),
+          loading: savePending,
+          onClick: () => save(),
         },
       ],
     }"
@@ -22,7 +22,7 @@
           :placeholder="__('Personal')"
           autofocus
           required
-          @keydown.enter="form.name.trim() && (isNew || isDirty) && save.submit()"
+          @keydown.enter="form.name.trim() && (isNew || isDirty) && save()"
         />
         <FormControl
           v-model="form.color"
@@ -43,9 +43,10 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, FormControl } from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 
+import { api, useMutation } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { CALENDAR_COLORS, type CalendarRow } from '@/apps/calendar/utils/calendars'
@@ -108,28 +109,23 @@ const isDirty = computed(
 const onSaved = (message: string) => {
   raiseToast(message)
   show.value = false
-  store.calendars.reload()
+  store.calendars.refetch().catch(() => {})
 }
-const onError = (error) => raiseToast(error.messages?.[0] || error.message, 'error')
-
-const createCalendar = createResource({
-  url: 'suite.calendar.api.create_calendar',
-  makeParams: () => ({ account: store.accountId, name: form.name, color: form.color }),
-  onSuccess: () => onSaved(__('Calendar created.')),
-  onError,
-})
-
-const editCalendar = createResource({
-  url: 'suite.calendar.api.edit_calendar',
-  makeParams: () => ({
-    account: calendar!.account,
-    id: calendar!.id,
-    name: form.name,
-    color: form.color,
-  }),
-  onSuccess: () => onSaved(__('Calendar updated.')),
-  onError,
-})
-
-const save = computed(() => (isNew.value ? createCalendar : editCalendar))
+const createCalendar = useMutation(api.calendar.calendars.create)
+const editCalendar = useMutation(api.calendar.calendars.update)
+const savePending = computed(() => createCalendar.isPending || editCalendar.isPending)
+const save = async () => {
+  if (isNew.value) {
+    await createCalendar.run({ account: store.accountId, name: form.name, color: form.color })
+    onSaved(__('Calendar created.'))
+  } else if (calendar) {
+    await editCalendar.run({
+      account: calendar.account,
+      id: calendar.id,
+      name: form.name,
+      color: form.color,
+    })
+    onSaved(__('Calendar updated.'))
+  }
+}
 </script>

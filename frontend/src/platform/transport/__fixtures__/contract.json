@@ -11,21 +11,39 @@
       "query": {
         "type": "object",
         "properties": {
-          "expand": { "type": "array", "items": { "type": "string" } }
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "body": null,
       "output": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "title": { "type": "string" },
-          "modified": { "type": ["string", "null"] }
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "modified": {
+            "type": ["string", "null"]
+          }
         },
         "required": ["name", "title"]
       },
       "errors": ["DriveNotFound", "DriveForbidden"],
-      "entity": { "tag": "Drive Node", "id": "name", "version": "modified" }
+      "entity": {
+        "tag": "Drive Node",
+        "id": "name",
+        "version": "modified"
+      },
+      "kind": "query",
+      "publicName": "nodes.get",
+      "page": null
     },
     {
       "id": "node_patch.rename",
@@ -36,20 +54,37 @@
       "query": null,
       "body": {
         "type": "object",
-        "properties": { "title": { "type": "string" } },
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
         "required": ["title"]
       },
       "output": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "title": { "type": "string" },
-          "modified": { "type": ["string", "null"] }
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "modified": {
+            "type": ["string", "null"]
+          }
         },
         "required": ["name", "title"]
       },
       "errors": ["DriveForbidden", "DriveConflict"],
-      "entity": { "tag": "Drive Node", "id": "name", "version": "modified" }
+      "entity": {
+        "tag": "Drive Node",
+        "id": "name",
+        "version": "modified"
+      },
+      "kind": "mutation",
+      "publicName": "nodes.rename",
+      "page": null
     }
   ]
 }

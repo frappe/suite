@@ -337,7 +337,8 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, KeyboardShortcut, Tooltip, useKeyboardShortcut } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Button, KeyboardShortcut, Tooltip, useKeyboardShortcut } from 'frappe-ui'
 import {
   CommandPalette,
   CommandPaletteEmpty,
@@ -353,6 +354,7 @@ import { DialogDescription } from 'reka-ui'
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
+import { api, useQuery, type InputOf } from '@/api'
 import CalendarFilterBadges from '@/apps/calendar/components/CommandPalette/CalendarFilterBadges.vue'
 import CalendarFilterPanel from '@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue'
 import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/CalendarSearchResult.vue'
@@ -692,36 +694,16 @@ useKeyboardShortcut({
   handler: () => void cycleThemeAndAnnounce(),
 })
 
-// The query the results on screen answer. Recorded when an answer arrives rather than when a
-// request stops loading: aborting the previous request on each keystroke stops its loading too,
-// and reading that as an answer is what made the list claim "No results" mid-word.
-const settledQuery = ref('')
-// What was asked of the calendar beyond the words, since a filter is a question on its own: with
-// nothing typed, the query alone never changes, and a search set running by a filter would have
-// looked answered from the moment it was asked.
-const calendarAsked = computed(() => JSON.stringify(calendarFilterParams.value))
-const settledCalendarFilters = ref(calendarAsked.value)
-const settleSearch = () => {
-  settledQuery.value = query.value
-  settledCalendarFilters.value = calendarAsked.value
-}
-// Every app's search is asked the same way: on demand, debounced, and settling the query it
-// answered however it lands.
-const appSearch = (method: 'GET' | 'POST', url: string) =>
-  createResource({
-    auto: false,
-    method,
-    url,
-    debounce: 180,
-    onSuccess: settleSearch,
-    onError: settleSearch,
-  })
-
-const meetSearch = appSearch('POST', 'frappe.client.get_list')
-// Shared-aware, like the grid's own fetch: a calendar shared with the reader lives in its
-// owner's account, so a search of the route's account alone cannot see what the grid is
-// drawing from it.
-const calendarSearch = appSearch('POST', 'suite.calendar.api.search_calendar_events_with_shared')
+const meetInput = ref<InputOf<typeof api.meet.rooms.search> | false>(false)
+const calendarInput = ref<InputOf<typeof api.calendar.events.search> | false>(false)
+const debouncedMeetInput = refDebounced(meetInput, 180)
+const debouncedCalendarInput = refDebounced(calendarInput, 180)
+const meetSearch = useQuery(api.meet.rooms.search, () =>
+  meetInput.value === false ? false : debouncedMeetInput.value,
+)
+const calendarSearch = useQuery(api.calendar.events.search, () =>
+  calendarInput.value === false ? false : debouncedCalendarInput.value,
+)
 const normalizedQuery = computed(() => query.value.trim().toLowerCase())
 // What a row is marked by: the words asked, which for mail are the query line less its
 // operators — `is:unread` narrows the search and is not a word any subject holds.
@@ -730,14 +712,15 @@ const mailSearchWords = computed(() => parseMailSearchQuery(query.value.trim()).
 const appQuery = computed(() => normalizedQuery.value.replace(/^>\s*/, '').trim())
 const meetResults = computed<MeetResult[]>(() => {
   if (activeApp.value !== 'meet' || !Array.isArray(meetSearch.data)) return []
-  return meetSearch.data.slice(0, 20).map((meeting: Omit<MeetResult, 'resultType'>) => ({
+  return meetSearch.data.slice(0, 20).map((meeting) => ({
     ...meeting,
+    title: meeting.title || meeting.name,
     resultType: 'meeting' as const,
   }))
 })
 const calendarResults = computed<CalendarSearchResultItem[]>(() => {
   if (activeApp.value !== 'calendar' || !Array.isArray(calendarSearch.data)) return []
-  return calendarSearch.data.map((event: Omit<CalendarSearchResultItem, 'resultType'>) => ({
+  return calendarSearch.data.map((event) => ({
     ...event,
     resultType: 'calendar-event' as const,
   }))
@@ -919,24 +902,15 @@ watch(
     }
 
     if (activeApp.value === 'meet') {
-      meetSearch.submit({
-        doctype: 'Meet Room',
-        fields: ['name', 'title', 'modified'],
-        or_filters: [
-          ['Meet Room', 'title', 'like', `%${text}%`],
-          ['Meet Room', 'name', 'like', `%${text}%`],
-        ],
-        order_by: 'modified desc',
-        limit_page_length: 20,
-      })
+      meetInput.value = { q: text }
     } else if (calendarSearchActive.value) {
-      calendarSearch.submit({
+      calendarInput.value = {
         account: String(route.params.accountId || ''),
         text,
         limit: CALENDAR_RESULT_LIMIT,
         time_zone: dayjs.tz.guess(),
         filters: calendarFilterParams.value,
-      })
+      }
     } else {
       // No search here (Home and Drive): only the commands answer, and they are
       // filtered already, so nothing is left to wait for.
@@ -978,8 +952,12 @@ watch(
 // empty list means "not yet" rather than "nothing".
 const isSearching = computed(() => {
   if (mailSearchActive.value) return mailSearchPending.value
-  if (settledQuery.value !== query.value) return true
-  return calendarSearchActive.value && settledCalendarFilters.value !== calendarAsked.value
+  return (
+    meetSearch.isFetching ||
+    calendarSearch.isFetching ||
+    JSON.stringify(meetInput.value) !== JSON.stringify(debouncedMeetInput.value) ||
+    JSON.stringify(calendarInput.value) !== JSON.stringify(debouncedCalendarInput.value)
+  )
 })
 
 // Said in one place and in the order the reader needs it: what mode you are in, what the operator
@@ -1005,22 +983,17 @@ const emptyMessage = computed(() => {
 })
 
 function resetSearches() {
-  // Nothing was asked, so nothing is outstanding: the query is as answered as it is going to be.
-  settleSearch()
+  meetInput.value = false
+  calendarInput.value = false
   cancelSearches()
-  for (const resource of [meetSearch, calendarSearch]) {
-    resource.reset()
-  }
   resetMailSearch()
 }
 
 function cancelSearches() {
-  for (const resource of [meetSearch, calendarSearch]) {
-    // A debounced resource's submit carries the debouncer's cancel.
-    const submit: object = resource.submit
-    if ('cancel' in submit && typeof submit.cancel === 'function') submit.cancel()
-    resource.abort()
-  }
+  meetInput.value = false
+  calendarInput.value = false
+  meetSearch.cancel()
+  calendarSearch.cancel()
   cancelMailSearch()
 }
 

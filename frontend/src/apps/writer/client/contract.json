@@ -4,6 +4,10 @@
   "operations": [
     {
       "id": "collab_get",
+      "kind": "query",
+      "publicName": "collab.open",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "documents/{node}/collab",
       "pathParams": [
@@ -21,10 +25,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "collab_updates_get",
+      "kind": "query",
+      "publicName": "collab.pull",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "documents/{node}/collab/updates",
       "pathParams": [
@@ -42,10 +51,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "collab_updates_post",
+      "kind": "mutation",
+      "publicName": "collab.push",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "documents/{node}/collab/updates",
       "pathParams": [
@@ -75,10 +89,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": false
     },
     {
       "id": "collab_stage_put",
+      "kind": "mutation",
+      "publicName": "collab.stage",
+      "page": null,
+      "envelope": "data",
       "method": "PUT",
       "path": "documents/{node}/collab/stage/{stage_id}/{idx}",
       "pathParams": [
@@ -110,10 +129,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": false
     },
     {
       "id": "collab_sessions_post",
+      "kind": "mutation",
+      "publicName": "collab.startSession",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "documents/{node}/collab/sessions",
       "pathParams": [
@@ -143,10 +167,15 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": false
     },
     {
       "id": "collab_suspect_post",
+      "kind": "mutation",
+      "publicName": "collab.reportSuspect",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "documents/{node}/collab/suspect",
       "pathParams": [
@@ -176,7 +205,235 @@
       "nodeParams": [
         "node"
       ],
-      "stream": true
+      "stream": true,
+      "bytes": false
+    },
+    {
+      "id": "document",
+      "kind": "query",
+      "publicName": "documents.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "/api/v2/document/Writer Document/{name}",
+      "pathParams": [
+        "name"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "collab": {
+            "title": "Collab",
+            "type": "integer"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html"
+          },
+          "ycomments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ycomments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "WriterRow",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "save_doc",
+      "kind": "mutation",
+      "publicName": "documents.save",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Writer Document/{name}/method/save_doc",
+      "pathParams": [
+        "name"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SaveBody",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "save_html",
+      "kind": "mutation",
+      "publicName": "documents.saveHTML",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Writer Document/{name}/method/save_html",
+      "pathParams": [
+        "name"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "html": {
+            "title": "Html",
+            "type": "string"
+          }
+        },
+        "required": [
+          "html"
+        ],
+        "title": "SaveHTML",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_settings",
+      "kind": "mutation",
+      "publicName": "documents.updateSettings",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/document/Writer Document/{name}/method/update_settings",
+      "pathParams": [
+        "name"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SaveSettings",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "save_comments",
+      "kind": "mutation",
+      "publicName": "comments.save",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.writer.api.docs.save_comments",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "doc": {
+            "title": "Doc",
+            "type": "string"
+          },
+          "data": {
+            "title": "Data",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc",
+          "data"
+        ],
+        "title": "SaveComments",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
     }
   ]
 }

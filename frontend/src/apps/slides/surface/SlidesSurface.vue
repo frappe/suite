@@ -3,12 +3,12 @@ import { useMediaQuery } from '@vueuse/core'
 import { Button, Skeleton, TextInput, toast } from 'frappe-ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 
+import { api, client } from '@/api'
 import {
   DriveCommentAuthor,
   DriveDocumentHeader,
   GUEST_NAME_LIMIT,
   useDriveGuestName,
-  type CredentialGrouper,
   type DocumentPanel,
   type DocumentSession,
 } from '@/apps/drive'
@@ -32,7 +32,7 @@ import {
   loadTemplates,
   presentationDoc,
   resetEditorState,
-  setDocumentFetch,
+  setDocumentContext,
   slidesLength,
   viewOnly,
 } from '@/apps/slides/stores/presentation'
@@ -62,7 +62,6 @@ import {
   mergeCompositeSlides,
   placeAt,
   type CompositeItem,
-  type CompositeManifest,
   type MergedCompositeSlide,
 } from './compositeGroups'
 import ExportView from './ExportView.vue'
@@ -70,7 +69,6 @@ import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 
-type Send = CredentialGrouper['fetch']
 type Panel = DocumentPanel
 
 /** `GET nodes/<id>/threads` */
@@ -85,8 +83,9 @@ interface CommentThread {
     creation: string | null
   }[]
 }
-
-const props = defineProps<{ session: DocumentSession }>()
+const props = defineProps<{
+  session: DocumentSession
+}>()
 const loading = ref(true)
 const loadError = ref('')
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
@@ -109,7 +108,6 @@ const exporting = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
 const isSlideInteractionActive = ref(false)
 let autosaveTimer: number | undefined
-
 const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
@@ -124,7 +122,10 @@ const access = createSlidesAccess(props.session, {
     retainRecovery()
     toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
       duration: Number.POSITIVE_INFINITY,
-      action: { label: 'Download my changes', onClick: downloadChanges },
+      action: {
+        label: 'Download my changes',
+        onClick: downloadChanges,
+      },
     })
   },
   widened() {
@@ -144,16 +145,13 @@ const editing = computed(() => editable.value && !phone.value)
 
 // Body requests go through the session, with this document's link credentials.
 // A refused write is a verdict: access narrows until the presentation opens again.
-const send: Send = async (url, init) => {
-  const response = await props.session.credentials.fetch(url, init)
-  if (init?.method === 'POST' && (response.status === 401 || response.status === 403))
-    access.refuse()
-  return response
-}
-const releaseFetch = setDocumentFetch(props.session.contentDocname, send)
+const releaseContext = setDocumentContext(
+  props.session.contentDocname,
+  props.session.credentials.context,
+  () => access.refuse(),
+)
 // A migrated deck names its pictures by node id; the session signs their urls.
 const releaseMedia = setDocumentMedia((id) => props.session.media(id))
-
 const history = useCommandHistory(slides, {
   actions: historyMetaActions,
   actionOrder: historyMetaActionOrder,
@@ -163,7 +161,6 @@ setCommandHistory(history)
 // stores keep their own `inReadonlyMode`, which follows access and edit locks only.
 const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
 useShortcuts(canvasReadonly, inSlideShowMode)
-
 provide('inReadonlyMode', canvasReadonly)
 provide('inSlideShowMode', inSlideShowMode)
 provide('isOnline', online)
@@ -191,12 +188,14 @@ watch(
   (canEdit) => {
     viewOnly.value = !canEdit
   },
-  { immediate: true, flush: 'sync' },
+  {
+    immediate: true,
+    flush: 'sync',
+  },
 )
 watch(phone, (isPhone) => {
   if (isPhone) resetFocus()
 })
-
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
@@ -207,16 +206,16 @@ watch(isSaving, (now, before) => {
   clearRecovery(props.session.nodeId)
   hasRecovery.value = false
 })
-
 function showPanel(next: Panel | null) {
   panel.value = next
   if (next === 'comments') void loadComments()
 }
-
 async function loadComments() {
   panelLoading.value = true
   try {
-    const result = (await props.session.comments.list()) as { threads?: CommentThread[] }
+    const result = (await props.session.comments.list()) as {
+      threads?: CommentThread[]
+    }
     threads.value = result.threads ?? []
   } catch (error) {
     toast.error(error instanceof Error ? error.message : 'Could not load the comments.')
@@ -234,7 +233,6 @@ async function flushEdits() {
     )
   }
 }
-
 async function restoreVersion(seq: string) {
   await flushEdits()
   restoring.value = true
@@ -245,7 +243,6 @@ async function restoreVersion(seq: string) {
     restoring.value = false
   }
 }
-
 async function addComment() {
   const text = commentText.value.trim()
   if (!text || !access.canComment.value) return
@@ -258,7 +255,6 @@ async function addComment() {
   commentText.value = ''
   await loadComments()
 }
-
 function exportPdf() {
   exporting.value = true
   void nextTick(() => {
@@ -268,33 +264,45 @@ function exportPdf() {
         () => {
           exporting.value = false
         },
-        { once: true },
+        {
+          once: true,
+        },
       )
       window.print()
     }, 200)
   })
 }
-
 async function loadComposite() {
   // Sent with every held link code: the server names the node of each
   // reference those codes open, and each group then sends only its own codes.
-  const manifest = await frappeGet<CompositeManifest>(
-    'suite.slides.api.composite.composite_manifest',
-    { name: props.session.contentDocname },
-    props.session.credentials.fetchHeld,
+  const manifest = await client.query(
+    api.slides.composites.manifest,
+    {
+      name: props.session.contentDocname,
+    },
+    {
+      context: props.session.credentials.heldContext,
+    },
   )
   let shown: MergedCompositeSlide[] = []
   const loader = new CompositeGroupLoader(
     manifest,
     props.session.credentials,
-    async (references, groupSend) =>
-      frappeGet(
-        'suite.slides.api.composite.composite_group',
-        { name: props.session.contentDocname, references },
-        groupSend,
+    (references, context) =>
+      client.query(
+        api.slides.composites.group,
+        {
+          name: props.session.contentDocname,
+          references,
+        },
+        {
+          context,
+        },
       ),
     (items) => {
-      compositeItems.value = items.map((item) => ({ ...item }))
+      compositeItems.value = items.map((item) => ({
+        ...item,
+      }))
       // A group that arrives moves indexes; the viewer stays on the slide they read.
       const place = placeAt(shown, slideIndex.value ?? 0)
       shown = mergeCompositeSlides(items)
@@ -307,7 +315,9 @@ async function loadComposite() {
     },
   )
   compositeLoader.value = loader
-  compositeItems.value = loader.items.map((item) => ({ ...item }))
+  compositeItems.value = loader.items.map((item) => ({
+    ...item,
+  }))
   await loader.load()
 }
 
@@ -315,7 +325,6 @@ async function loadComposite() {
 // latest load may end the loading state: an earlier one returns no document, and
 // ending it then draws the panels before any slide is there.
 let latestLoad = 0
-
 async function load() {
   const run = ++latestLoad
   loading.value = true
@@ -339,9 +348,10 @@ async function load() {
     if (run === latestLoad) loading.value = false
   }
 }
-
 function normalizeCompositeSlide(value: unknown) {
-  const slide: Record<string, unknown> = { ...(value as Record<string, unknown>) }
+  const slide: Record<string, unknown> = {
+    ...(value as Record<string, unknown>),
+  }
   if (typeof slide.elements === 'string') {
     try {
       slide.elements = JSON.parse(slide.elements)
@@ -355,7 +365,6 @@ function normalizeCompositeSlide(value: unknown) {
   slide.fadeUnmatchedElements = slide.fade_unmatched_elements ?? slide.fadeUnmatchedElements ?? 0
   return slide
 }
-
 function placeholderSlide(entry: { reference: string; index: number; status: string }) {
   return {
     name: `composite-placeholder-${entry.reference}`,
@@ -369,27 +378,6 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
     compositePlaceholder: entry.status,
   }
 }
-
-async function frappeGet<T>(
-  method: string,
-  args: Record<string, unknown>,
-  through: Send,
-): Promise<T> {
-  const query = new URLSearchParams()
-  for (const [key, value] of Object.entries(args)) {
-    query.set(key, Array.isArray(value) ? JSON.stringify(value) : String(value))
-  }
-  const response = await through(`/api/method/${method}?${query}`, { credentials: 'same-origin' })
-  const body = (await response.json().catch(() => ({}))) as {
-    message?: T
-    data?: T
-    exc?: string
-    exc_type?: string
-  }
-  if (!response.ok || body.exc) throw new Error(body.exc_type ?? 'Request failed')
-  return (body.message ?? body.data ?? body) as T
-}
-
 function retainRecovery() {
   if (!slides.value?.length) return
   try {
@@ -399,21 +387,22 @@ function retainRecovery() {
     toast.error('Your latest changes could not be kept on this device.')
   }
 }
-
 function downloadChanges() {
   const downloaded = downloadRecovery(props.session.nodeId, props.session.title.value)
   hasRecovery.value = false
   if (!downloaded) toast.error('No recovery copy is kept for this presentation.')
 }
-
 const saveState = computed<DocumentSaveState>(() =>
   isSaving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean',
 )
 async function flush() {
   await saveChanges()
 }
-useDocumentLeaveGuard({ state: () => saveState.value, flush, retainRecovery })
-
+useDocumentLeaveGuard({
+  state: () => saveState.value,
+  flush,
+  retainRecovery,
+})
 function setOnline() {
   online.value = true
 }
@@ -435,7 +424,7 @@ onBeforeUnmount(() => {
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveCurrentState().finally(() => {
-    releaseFetch()
+    releaseContext()
     releaseMedia()
     resumeWrites(props.session.contentDocname)
   })

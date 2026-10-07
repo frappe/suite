@@ -334,7 +334,12 @@ after_app_install = "suite.composition.lifecycle.after_app_install"
 extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 
 # drive — lets the listed sites frame Drive pages and API answers
-after_request = ["suite.drive.framework.allow_embedding", "suite.suite_core.build.after_request"]
+after_request = [
+    "suite.mail.framework.close_mail_clients",
+    "suite.drive.framework.allow_embedding",
+    "suite.suite_core.build.after_request",
+]
+after_job = "suite.mail.framework.close_mail_clients"
 
 # The WebDAV protocol dispatcher and the Suite resource dispatcher own disjoint
 # prefixes. WebDAV's entry predates the framework-adapter rule. Drive's write

@@ -4,7 +4,9 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import cint
 
+from suite.drive._core.previews import MAX_PREVIEW_SIZE, MIN_PREVIEW_SIZE, is_plausible_preview_size
 from suite.drive._core.quota import site_quota_bytes
 from suite.drive.webdav import ALLOWED_METHODS, parse_webdav_methods
 
@@ -26,8 +28,18 @@ class DriveDiskSettings(Document):
     # end: auto-generated types
 
     def validate(self):
+        self._validate_preview_size()
         self._validate_drive_quotas()
         self._validate_webdav_methods()
+
+    def _validate_preview_size(self):
+        if not is_plausible_preview_size(cint(self.preview_size)):
+            frappe.throw(
+                _("Preview size must be between {0} and {1} pixels").format(
+                    MIN_PREVIEW_SIZE, MAX_PREVIEW_SIZE
+                ),
+                frappe.ValidationError,
+            )
 
     def _validate_drive_quotas(self):
         # Validate both quotas even when a caller sets them as text before saving.

@@ -9,9 +9,9 @@ const REFUSALS = new Set(['PermissionError', 'DriveForbidden', 'DriveNotFound'])
 
 /** One document write, as the editor calls it. */
 export interface DocumentWrite {
-  readonly loading: boolean
+  readonly isPending: boolean
   readonly error: unknown
-  submit(params?: object): Promise<unknown>
+  run(params: object): Promise<unknown>
 }
 
 export interface WriteGate {
@@ -22,7 +22,7 @@ export interface WriteGate {
   /**
    * The same document with each named write passed through the gate.
    *
-   * While the gate is shut, a write resolves to `null` and sends nothing. So a
+   * While the gate is shut, a write rejects with `AbortError` and sends nothing. So a
    * debounced autosave, the save on unmount, the automatic version and a
    * settings change that were pending when access narrowed are cancelled.
    */
@@ -60,21 +60,21 @@ export function createWriteGate(
 
   function refuse(): void {
     verdict.value = Math.min(verdict.value ?? BELOW_EDIT, BELOW_EDIT)
-    void session.refreshAccess()
+    void session.refreshAccess().catch(() => {})
   }
 
   function gated(write: DocumentWrite): DocumentWrite {
     return {
-      get loading() {
-        return write.loading
+      get isPending() {
+        return write.isPending
       },
       get error() {
         return write.error
       },
-      async submit(params) {
-        if (!writable.value) return null
+      async run(params) {
+        if (!writable.value) throw new DOMException('Editing access changed', 'AbortError')
         try {
-          return await write.submit(params)
+          return await write.run(params)
         } catch (error) {
           if (isRefusal(error)) refuse()
           throw error

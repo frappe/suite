@@ -1,7 +1,7 @@
-import { useCall } from 'frappe-ui'
 import { io, type Socket } from 'socket.io-client'
 import { computed, onUnmounted, readonly, ref } from 'vue'
 
+import { api, client } from '@/api'
 import { session } from '@/boot/session'
 
 import type {
@@ -35,33 +35,36 @@ export function useMeetingPreviewPresence(meetingId: string) {
       isRefreshing = true
 
       console.log('Refreshing preview presence token')
-      await fetchPresenceToken.submit({ meeting_id: meetingId })
-      isRefreshing = false
+      try {
+        await fetchPresenceToken()
+      } finally {
+        isRefreshing = false
+      }
     }, refreshAfter)
   }
 
-  const fetchPresenceToken = useCall<PresenceTokenResponse, { meeting_id: string }>({
-    url: '/api/suite/meet/rooms/presence-tokens',
-    immediate: false,
-    onSuccess(data: PresenceTokenResponse) {
+  const controller = new AbortController()
+  async function fetchPresenceToken() {
+    try {
+      const data = await client.query(
+        api.meet.rooms.presenceToken,
+        { meeting_id: meetingId },
+        { signal: controller.signal },
+      )
       if (data.restricted_preview) {
         hasFetchedParticipants.value = true
         return
       }
-
-      if (data.auth_token || data.sfu_url) {
-        connectToSFU(data)
-      } else {
-        error.value = data.error || 'Failed to get presence token'
-      }
-    },
-    onError(err: Error) {
-      error.value = err.message || 'Failed to fetch presence token'
-    },
-  })
+      if (data.auth_token && data.sfu_url) connectToSFU(data)
+      else error.value = 'Failed to get presence token'
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        error.value = cause instanceof Error ? cause.message : 'Failed to fetch presence token'
+    }
+  }
 
   if (session.isLoggedIn) {
-    fetchPresenceToken.submit({ meeting_id: meetingId })
+    fetchPresenceToken()
   }
 
   const connectToSFU = (tokenData: PresenceTokenResponse) => {
@@ -152,7 +155,7 @@ export function useMeetingPreviewPresence(meetingId: string) {
       const newParticipant: ParticipantPreview = {
         user_id: data.userData.userId,
         full_name: data.userData.name || data.userData.userId,
-        avatar_url: data.userData.avatar,
+        avatar_url: data.userData.avatar ?? undefined,
         has_video: data.userData.video_enabled,
         has_audio: data.userData.audio_enabled,
         is_guest: data.userData.is_guest,
@@ -184,10 +187,11 @@ export function useMeetingPreviewPresence(meetingId: string) {
 
   const refresh = (): void => {
     error.value = null
-    fetchPresenceToken.submit({ meeting_id: meetingId })
+    fetchPresenceToken()
   }
 
   onUnmounted(() => {
+    controller.abort()
     if (refreshTimer) {
       clearTimeout(refreshTimer)
     }

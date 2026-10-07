@@ -1,4 +1,5 @@
-import type { CredentialGroup, CredentialGrouper } from '@/apps/drive'
+import type { CredentialGrouper } from '@/apps/drive'
+import type { RequestContext } from '@/platform/transport'
 
 export interface CompositeReference {
   reference: string
@@ -10,7 +11,6 @@ export interface CompositeReference {
 export interface ManifestReference extends CompositeReference {
   node: string | null
 }
-
 export interface CompositeManifest {
   presentation: string
   node: string
@@ -18,20 +18,17 @@ export interface CompositeManifest {
   group_limit: number
   references: ManifestReference[]
 }
-
 export interface CompositeAnswer extends CompositeReference {
   readable: boolean
   node: string | null
   composite: boolean | null
   slides: unknown[] | null
 }
-
 export type CompositeItem = ManifestReference & {
   status: 'loading' | 'ready' | 'unreadable' | 'failed'
   answer?: CompositeAnswer
   group?: number
 }
-
 interface CompositeGroupResponse {
   references: CompositeAnswer[]
 }
@@ -39,30 +36,30 @@ interface CompositeGroupResponse {
 /** One request: the references it asks for, and the fetch that carries their link codes. */
 interface LoadGroup {
   references: string[]
-  fetch: CredentialGroup['fetch']
+  context: RequestContext
 }
 
 /** The loader selects codes by node id; it never sends every held code. */
-type Grouper = Pick<CredentialGrouper, 'group' | 'fetch'>
-
+type Grouper = Pick<CredentialGrouper, 'group' | 'context'>
 export class CompositeGroupLoader {
   readonly items: CompositeItem[]
   private groups: LoadGroup[] = []
-
   constructor(
     private readonly manifest: CompositeManifest,
     private readonly grouper: Grouper,
     private readonly request: (
       references: string[],
-      send: CredentialGrouper['fetch'],
+      context: RequestContext,
     ) => Promise<CompositeGroupResponse>,
     private readonly changed: (items: readonly CompositeItem[]) => void = () => {},
   ) {
     this.items = [...manifest.references]
       .sort((left, right) => left.index - right.index)
-      .map((reference) => ({ ...reference, status: 'loading' }))
+      .map((reference) => ({
+        ...reference,
+        status: 'loading',
+      }))
   }
-
   async load(): Promise<readonly CompositeItem[]> {
     this.groups = []
     for (let start = 0; start < this.items.length; start += this.manifest.group_limit) {
@@ -71,7 +68,6 @@ export class CompositeGroupLoader {
     await Promise.all(this.groups.map((_group, index) => this.loadGroup(index)))
     return this.items
   }
-
   async retry(group: number): Promise<void> {
     for (const item of this.items) {
       if (item.group === group) item.status = 'loading'
@@ -91,9 +87,13 @@ export class CompositeGroupLoader {
     const credentialGroups = nodes.length ? this.grouper.group(nodes) : []
     const groups: LoadGroup[] = credentialGroups.map((group) => ({
       references: [],
-      fetch: group.fetch,
+      context: group.context,
     }))
-    if (!groups.length) groups.push({ references: [], fetch: this.grouper.fetch })
+    if (!groups.length)
+      groups.push({
+        references: [],
+        context: this.grouper.context,
+      })
     let current = 0
     let left = credentialGroups[0]?.nodeIds.length ?? 0
     for (const item of items) {
@@ -108,12 +108,11 @@ export class CompositeGroupLoader {
     }
     return groups
   }
-
   private async loadGroup(groupIndex: number): Promise<void> {
     const group = this.groups[groupIndex]
     if (!group) return
     try {
-      const response = await this.request(group.references, group.fetch)
+      const response = await this.request(group.references, group.context)
       const answers = new Map(response.references.map((row) => [row.reference, row]))
       for (const reference of group.references) {
         const item = this.items.find((candidate) => candidate.reference === reference)
@@ -134,14 +133,12 @@ export class CompositeGroupLoader {
     this.changed(this.items)
   }
 }
-
 export interface MergedCompositeSlide {
   reference: string
   index: number
   status: CompositeItem['status']
   slide: unknown | null
 }
-
 export function mergeCompositeSlides(items: readonly CompositeItem[]): MergedCompositeSlide[] {
   return items.flatMap((item) => {
     if (item.status === 'ready' && item.answer?.slides?.length) {
@@ -168,7 +165,6 @@ export interface CompositePlace {
   reference: string
   offset: number
 }
-
 export function placeAt(
   merged: readonly MergedCompositeSlide[],
   index: number,
@@ -178,7 +174,10 @@ export function placeAt(
   let offset = 0
   while (index - offset - 1 >= 0 && merged[index - offset - 1]!.reference === entry.reference)
     offset += 1
-  return { reference: entry.reference, offset }
+  return {
+    reference: entry.reference,
+    offset,
+  }
 }
 
 /**

@@ -1,0 +1,538 @@
+{
+  "owner": "sheets",
+  "prefix": "/api/suite/sheets/",
+  "operations": [
+    {
+      "id": "get_sheet",
+      "kind": "query",
+      "publicName": "documents.get",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/suite.sheets.api.get_sheet",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "compressed": {
+            "enum": [
+              0,
+              1
+            ],
+            "title": "Compressed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SheetInput",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "can_write": {
+            "title": "Can Write",
+            "type": "boolean"
+          },
+          "sheets_data": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheets Data"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "can_write",
+          "sheets_data",
+          "owner",
+          "node"
+        ],
+        "title": "SheetBody",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "save_sheet",
+      "kind": "mutation",
+      "publicName": "documents.save",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.sheets.api.save_sheet",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sheets_data": {
+            "title": "Sheets Data",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "ops": {
+            "title": "Ops",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "sheets_data"
+        ],
+        "title": "SaveSheet",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "head_seq": {
+            "title": "Head Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "head_seq"
+        ],
+        "title": "SavedSheet",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "ops_for_cell",
+      "kind": "query",
+      "publicName": "history.cell",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/suite.sheets.versioning.api.ops_for_cell",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "sheet": {
+            "title": "Sheet",
+            "type": "string"
+          },
+          "cell_id": {
+            "title": "Cell Id",
+            "type": "string"
+          },
+          "sub_sheet": {
+            "title": "Sub Sheet",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sheet",
+          "cell_id"
+        ],
+        "title": "CellInput",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "CellOperation": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "seq": {
+                "title": "Seq",
+                "type": "integer"
+              },
+              "sub_sheet": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Sub Sheet"
+              },
+              "op_type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Op Type"
+              },
+              "summary": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Summary"
+              },
+              "actor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Actor"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "before": {
+                "title": "Before"
+              },
+              "after": {
+                "title": "After"
+              }
+            },
+            "required": [
+              "id",
+              "seq",
+              "sub_sheet",
+              "op_type",
+              "summary",
+              "actor",
+              "creation",
+              "before",
+              "after"
+            ],
+            "title": "CellOperation",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/CellOperation"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_ai_settings",
+      "kind": "query",
+      "publicName": "assistant.settings",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/suite.sheets.api.get_ai_settings",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "keyIsSet": {
+            "title": "Keyisset",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "model",
+          "keyIsSet"
+        ],
+        "title": "AISettings",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "save_ai_settings",
+      "kind": "mutation",
+      "publicName": "assistant.updateSettings",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.sheets.api.save_ai_settings",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "enabled": {
+            "enum": [
+              0,
+              1
+            ],
+            "title": "Enabled",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "title": "SaveAISettings",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "keyIsSet": {
+            "title": "Keyisset",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "model",
+          "keyIsSet"
+        ],
+        "title": "AISettings",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "ai_assist",
+      "kind": "query",
+      "publicName": "assistant.ask",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.sheets.api.ai_assist",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "selection": {
+            "title": "Selection",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "prompt",
+          "selection"
+        ],
+        "title": "AssistInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "actions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actions",
+          "model",
+          "source"
+        ],
+        "title": "AssistResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_link_preview",
+      "kind": "query",
+      "publicName": "links.preview",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/suite.sheets.link_preview.get_link_preview",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "LinkInput",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "LinkFailure": {
+            "properties": {
+              "error": {
+                "const": true,
+                "title": "Error",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "title": "LinkFailure",
+            "type": "object"
+          },
+          "LinkPreview": {
+            "properties": {
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "description": {
+                "title": "Description",
+                "type": "string"
+              },
+              "favicon": {
+                "title": "Favicon",
+                "type": "string"
+              },
+              "host": {
+                "title": "Host",
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "description",
+              "favicon",
+              "host"
+            ],
+            "title": "LinkPreview",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/LinkPreview"
+          },
+          {
+            "$ref": "#/$defs/LinkFailure"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    }
+  ]
+}

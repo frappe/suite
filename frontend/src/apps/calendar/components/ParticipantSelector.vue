@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { useDebounceFn } from '@vueuse/core'
-import { Avatar, Combobox, createResource, FormControl, toast } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Avatar, Combobox, FormControl, toast } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
+import { api, useQuery } from '@/api'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 import { extractNameFromEmail } from '@/apps/calendar/utils/format'
 
@@ -48,36 +49,25 @@ const normalizedExcludedEmails = computed(() =>
   props.excludedEmails.map((email) => email.toLowerCase()),
 )
 
-// True from the keystroke until the search it starts has answered. `mailContacts.loading`
-// alone is not that: the request is debounced, so between typing and sending there is a
-// window where nothing is in flight and nothing has come back either.
-const searchPending = ref(false)
-
-const mailContacts = createResource({
-  url: 'suite.mail.api.mail.get_email_suggestions',
-  makeParams: (text: string) => ({
-    account: props.account,
-    text,
-  }),
-  transform: (data: ContactSuggestion[]): ContactOption[] =>
-    data.map((contact) => ({
-      ...contact,
-      label: contact.email,
-      value: contact.email,
-      description: contact.name || undefined,
-    })),
-  onSuccess: () => (searchPending.value = false),
-  onError: () => (searchPending.value = false),
-})
-
-const debouncedSearch = useDebounceFn((text: string) => text && mailContacts.reload(text), 300)
-
 const searchText = ref('')
-
-watch(searchText, (text) => {
-  searchPending.value = !!text
-  debouncedSearch(text)
-})
+const debouncedSearch = refDebounced(searchText, 300)
+const suggestions = useQuery(api.mail.contacts.suggest, () =>
+  props.account && debouncedSearch.value && debouncedSearch.value === searchText.value
+    ? { account: props.account, text: debouncedSearch.value }
+    : false,
+)
+const searchPending = computed(
+  () =>
+    !!searchText.value && (debouncedSearch.value !== searchText.value || suggestions.isFetching),
+)
+const contacts = computed<ContactOption[]>(() =>
+  (suggestions.data ?? []).map((contact) => ({
+    ...contact,
+    label: contact.email,
+    value: contact.email,
+    description: contact.name || undefined,
+  })),
+)
 
 const combobox = ref<{ clear: () => void } | null>(null)
 const showSuggestions = ref(false)
@@ -117,7 +107,7 @@ const isAdded = (email: string) =>
 // result being withheld.
 const options = computed<ContactOption[]>(() =>
   searchText.value
-    ? ((mailContacts?.data as ContactOption[] | undefined) || []).filter(
+    ? ((contacts.value as ContactOption[] | undefined) || []).filter(
         (option) => !normalizedExcludedEmails.value.includes(option.email.toLowerCase()),
       )
     : [],
@@ -170,7 +160,7 @@ const selectSuggestion = (option: ContactOption) => {
 const handleParticipantSelect = async (email: string | null) => {
   if (!email) return
   justSelectedOption.value = true
-  const contact = (mailContacts.data as ContactOption[] | undefined)?.find(
+  const contact = contacts.value?.find(
     (option) => option.email.toLowerCase() === email.toLowerCase(),
   )
   addParticipant(email, contact)

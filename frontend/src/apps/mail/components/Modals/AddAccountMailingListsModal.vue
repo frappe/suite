@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !listIds.length,
-          loading: addLists.loading,
-          onClick: addLists.submit,
+          loading: addLists.isPending,
+          onClick: addListsSubmit,
         },
       ],
     }"
@@ -30,22 +30,22 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, MultiSelect } from 'frappe-ui'
+import { Dialog, ErrorMessage, MultiSelect } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { memberId, currentIds } = defineProps<{ memberId: string; currentIds: string[] }>()
+const { memberId, currentIds } = defineProps<{
+  memberId: string
+  currentIds: string[]
+}>()
 const emit = defineEmits(['reload'])
-
 const listIds = ref<string[]>([])
-
-const lists = createResource({
-  url: 'suite.mail.api.admin.get_mailing_lists',
-  params: { page_length: 500 },
-  auto: true,
-})
+const lists = useQuery(api.mail.admin.mailingLists.list, () => ({
+  page_length: 500,
+}))
 
 // Exclude mailing lists the account is already a recipient of.
 const options = computed(() =>
@@ -56,21 +56,21 @@ const options = computed(() =>
       value: ml.id,
     })),
 )
-
 watch(show, () => {
   if (show.value) {
     listIds.value = []
     addLists.reset()
   }
 })
-
-const addLists = createResource({
-  url: 'suite.mail.api.admin.add_member_to_mailing_lists',
-  makeParams: () => ({ member_id: memberId, list_ids: listIds.value }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Added to mailing lists.'))
-  },
-})
+const addLists = useMutation(api.mail.admin.mailingLists.addMemberToMailingLists)
+async function addListsSubmit() {
+  const input: InputOf<typeof api.mail.admin.mailingLists.addMemberToMailingLists> = {
+    member_id: memberId,
+    list_ids: listIds.value,
+  }
+  await addLists.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Added to mailing lists.'))
+}
 </script>

@@ -2,7 +2,7 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from suite.composition.tests.http_conformance import HttpConformanceMixin
-from suite.writer.collab.routes import HTTP
+from suite.writer.http.framework import HTTP
 
 
 def setUpModule():

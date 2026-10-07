@@ -42,9 +42,7 @@ describe('storage type icons', () => {
   })
 
   it('falls back to a plain gray file for a type it does not know', () => {
-    expect(storageTypeIcon('Unknown')).toBe('lucide-file')
-    expect(storageTypeTint('Unknown')).toBe(
-      nodeIconTint({ kind: 'file', mime: null, content_doctype: null }),
-    )
+    expect(storageTypeIcon('Unknown')).toBe('file-icon-file')
+    expect(storageTypeTint('Unknown')).toBe('text-ink-gray-6')
   })
 })

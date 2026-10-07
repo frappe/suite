@@ -9,7 +9,7 @@
       class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
       :class="headerVisible ? 'h-11' : 'h-0'"
     >
-      <MeetingHeader :meetingId="meetingId" :meetingTitle="previewTitle">
+      <MeetingHeader :meeting-id="meetingId" :meeting-title="previewTitle">
         <template #right>
           <RecordingIndicator
             v-if="!showPreview && recording.isLive.value && recording.state.value"
@@ -63,7 +63,7 @@
           <lucide-alert-circle class="w-12 h-12 mx-auto" />
         </div>
         <p class="text-lg mb-4">{{ connectionState.connectionError }}</p>
-        <Button @click="resetToPreview" variant="outline" theme="red">Try Again</Button>
+        <Button variant="outline" theme="red" @click="resetToPreview">Try Again</Button>
       </div>
     </div>
 
@@ -71,22 +71,22 @@
       <!-- Preview mode -->
       <MeetingPreview
         v-if="showPreview"
-        :meetingId="meetingId"
-        :meetingTitle="previewTitle"
-        :isCameraOn="mediaState.isCameraOn"
-        :isMicOn="mediaState.isMicOn"
-        :mediaStream="mediaState.localStream"
-        :cameraPermissionGranted="mediaState.cameraPermissionGranted"
-        :microphonePermissionGranted="mediaState.microphonePermissionGranted"
-        :isConnecting="isInitializingPreview || sfuConnection.isConnecting.value"
-        :userInitials="currentUser.userInitials.value"
-        :userAvatar="currentUser.userAvatar.value"
-        :currentUserName="
+        :meeting-id="meetingId"
+        :meeting-title="previewTitle"
+        :is-camera-on="mediaState.isCameraOn"
+        :is-mic-on="mediaState.isMicOn"
+        :media-stream="mediaState.localStream"
+        :camera-permission-granted="mediaState.cameraPermissionGranted"
+        :microphone-permission-granted="mediaState.microphonePermissionGranted"
+        :is-connecting="isInitializingPreview || sfuConnection.isConnecting.value"
+        :user-initials="currentUser.userInitials.value"
+        :user-avatar="currentUser.userAvatar.value"
+        :current-user-name="
           currentUser.currentUser.value?.full_name || currentUser.currentUser.value?.name || 'You'
         "
-        :guestAuthToken="connectionState.guestAuthToken"
-        :isWaitingForApproval="lobbyStore.isWaitingForApproval"
-        :setLocalVideoRef="mediaControls.setLocalVideoRef"
+        :guest-auth-token="connectionState.guestAuthToken"
+        :is-waiting-for-approval="lobbyStore.isWaitingForApproval"
+        :set-local-video-ref="mediaControls.setLocalVideoRef"
         @toggle-microphone="mediaControls.toggleMicrophone()"
         @toggle-camera="mediaControls.toggleCamera()"
         @join-from-preview="joinMeetingFromPreview"
@@ -171,10 +171,10 @@
                     (currentUser.currentUser.value?.name as string) ||
                     'You'
                   "
-                  :isHost="isCurrentUserHost"
-                  :isCohost="isCurrentUserCohost"
-                  :isGuest="isGuestSession"
-                  :hostOnlyChat="chatStore.hostOnlyChat"
+                  :is-host="isCurrentUserHost"
+                  :is-cohost="isCurrentUserCohost"
+                  :is-guest="isGuestSession"
+                  :host-only-chat="chatStore.hostOnlyChat"
                   :pinned-message="chatStore.pinnedMessage"
                   @close="toggleChat"
                   @send="chat.onSendChat"
@@ -186,21 +186,21 @@
                 <PeoplePanel
                   v-if="activePanel === 'people'"
                   :open="true"
-                  :currentUser="currentUser.currentUser.value"
+                  :current-user="currentUser.currentUser.value"
                   :participants="participantsForPeoplePanel"
-                  :isMicOn="mediaState.isMicOn"
-                  :isCameraOn="mediaState.isCameraOn"
-                  :creatorUserId="meetingOwner"
-                  :coHosts="meetingCoHosts"
-                  :lobbyUsers="lobbyStore.lobbyUsers"
+                  :is-mic-on="mediaState.isMicOn"
+                  :is-camera-on="mediaState.isCameraOn"
+                  :creator-user-id="meetingOwner"
+                  :co-hosts="meetingCoHosts"
+                  :lobby-users="lobbyStore.lobbyUsers"
                   @close="togglePeople"
-                  @muteParticipant="handleMuteParticipant"
-                  @kickParticipant="handleKickParticipant"
-                  @lowerHand="handleLowerHand"
-                  @promoteToCohost="handlePromoteToCohost"
-                  @approveLobbyUser="handleApproveLobbyUser"
-                  @approveAllLobbyUsers="handleApproveAllLobbyUsers"
-                  @rejectLobbyUser="handleRejectLobbyUser"
+                  @mute-participant="handleMuteParticipant"
+                  @kick-participant="handleKickParticipant"
+                  @lower-hand="handleLowerHand"
+                  @promote-to-cohost="handlePromoteToCohost"
+                  @approve-lobby-user="handleApproveLobbyUser"
+                  @approve-all-lobby-users="handleApproveAllLobbyUsers"
+                  @reject-lobby-user="handleRejectLobbyUser"
                 />
               </div>
             </Transition>
@@ -210,30 +210,30 @@
           <div class="pointer-events-none min-h-0">
             <!-- Meeting controls -->
             <MeetingToolbar
-              :isChatOpen="chatStore.isChatOpen"
-              :isPeopleOpen="isPeopleOpen"
-              :hasUnread="chatStore.hasUnreadMessages"
-              :lobbyUserCount="lobbyStore.lobbyUsers?.length || 0"
-              :isMicOn="mediaState.isMicOn"
-              :isCameraOn="mediaState.isCameraOn"
-              :isScreenSharing="mediaState.isScreenSharing"
-              :isFullscreen="isFullscreen"
-              :statsVisible="showStatsForNerds"
-              :isHandRaised="isHandRaised"
-              :isReactionPickerOpen="isReactionPickerOpen"
-              :isCaptionsEnabled="isCaptionsEnabled"
-              :areCaptionsAvailable="areCaptionsAvailable"
-              @update:isReactionPickerOpen="isReactionPickerOpen = $event"
-              :meetingId="meetingId"
-              :meetingTitle="meetingTitle"
-              :currentUser="currentUser.currentUser.value"
-              :cameraPermissionGranted="mediaState.cameraPermissionGranted"
-              :microphonePermissionGranted="mediaState.microphonePermissionGranted"
-              :canManageRecording="
+              :is-chat-open="chatStore.isChatOpen"
+              :is-people-open="isPeopleOpen"
+              :has-unread="chatStore.hasUnreadMessages"
+              :lobby-user-count="lobbyStore.lobbyUsers?.length || 0"
+              :is-mic-on="mediaState.isMicOn"
+              :is-camera-on="mediaState.isCameraOn"
+              :is-screen-sharing="mediaState.isScreenSharing"
+              :is-fullscreen="isFullscreen"
+              :stats-visible="showStatsForNerds"
+              :is-hand-raised="isHandRaised"
+              :is-reaction-picker-open="isReactionPickerOpen"
+              :is-captions-enabled="isCaptionsEnabled"
+              :are-captions-available="areCaptionsAvailable"
+              :meeting-id="meetingId"
+              :meeting-title="meetingTitle"
+              :current-user="currentUser.currentUser.value"
+              :camera-permission-granted="mediaState.cameraPermissionGranted"
+              :microphone-permission-granted="mediaState.microphonePermissionGranted"
+              :can-manage-recording="
                 recording.globalEnabled.value && (isCurrentUserHost || isCurrentUserCohost)
               "
-              :recordingStatus="recording.state.value?.status"
-              :recordingLoading="recording.startLoading.value || recording.stopLoading.value"
+              :recording-status="recording.state.value?.status"
+              :recording-loading="recording.startLoading.value || recording.stopLoading.value"
+              @update:is-reaction-picker-open="isReactionPickerOpen = $event"
               @toggle-chat="toggleChat"
               @toggle-people="togglePeople"
               @toggle-reactions="toggleReactions($event)"
@@ -266,7 +266,7 @@
 
     <!-- Join request notifications -->
     <JoinRequestNotifications
-      :waitingUsers="lobbyUsersForNotifications"
+      :waiting-users="lobbyUsersForNotifications"
       @approve-user="lobby.approveUser"
       @reject-user="lobby.rejectUser"
     />
@@ -285,7 +285,7 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, toast, useCall, useDoc, usePageMeta } from 'frappe-ui'
+import { Badge, Button, toast, usePageMeta } from 'frappe-ui'
 import {
   computed,
   h,
@@ -299,10 +299,11 @@ import {
 } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
+import { api, client, useQuery } from '@/api'
 import { session, userResource } from '@/boot/session'
+import { appPageMeta } from '@/platform/page-meta'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
-import { appPageMeta } from '@/utils/documentTitle'
 
 import CaptionOverlay from '../components/CaptionOverlay.vue'
 import ChatPanel from '../components/ChatPanel.vue'
@@ -355,27 +356,17 @@ import { setShowStatsForNerds, showStatsForNerds } from '../data/statsPreference
 import { useSocket } from '../socket'
 import { deviceManager } from '../utils/media/DeviceManager'
 import type { Participant } from '../utils/media/ParticipantManager'
-import { submit } from '../utils/request'
 
 // Router
 const route = useRoute()
 const router = useRouter()
 const meetingId = computed(() => route.params.meetingId as string)
-
-interface MeetingDocument {
-  name: string
-  title?: string
-  owner?: string
-  co_hosts?: { user: string }[]
-}
-
 function redirectToLogin() {
   const path = window.location.pathname.startsWith('/meet')
     ? window.location.pathname
     : `/meet${window.location.pathname}`
   window.location.href = `/login?redirect-to=${encodeURIComponent(path)}`
 }
-
 async function copyMeetingLink() {
   try {
     await navigator.clipboard.writeText(window.location.href)
@@ -384,7 +375,6 @@ async function copyMeetingLink() {
     toast.error('Could not copy meeting link')
   }
 }
-
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeting', [
   {
     commands: [
@@ -417,34 +407,18 @@ const gridLayout = useGridLayout(mediaState)
 const notifiedLobbyUsers = ref(new Set<string>())
 
 // --- Meeting doc ---
-const meetingDoc = useDoc<
-  MeetingDocument,
-  {
-    approveJoinRequest: (params: { user_id: string }) => unknown
-    approveAllJoinRequests: () => unknown
-    rejectJoinRequest: (params: { user_id: string }) => unknown
-    getWaitingRoomDetails: () => unknown
-    banGuest: (params: { guest_id: string }) => unknown
-    promoteToCohost: (params: { user_id: string }) => unknown
-  }
->({
-  doctype: 'Meet Room',
-  name: meetingId,
-  immediate: session.isLoggedIn,
-  methods: {
-    approveJoinRequest: 'approve_join_request',
-    approveAllJoinRequests: 'approve_all_join_requests',
-    rejectJoinRequest: 'reject_join_request',
-    getWaitingRoomDetails: 'get_waiting_room_details',
-    banGuest: 'ban_guest',
-    promoteToCohost: 'promote_to_cohost',
-  },
-})
-const meetingTitle = computed(
-  () => meetingDoc.doc?.title || meetingDoc.doc?.name || meetingId.value,
+const meetingDoc = useQuery(api.meet.rooms.get, () =>
+  session.isLoggedIn
+    ? {
+        name: meetingId.value,
+      }
+    : false,
 )
-const meetingOwner = computed(() => meetingDoc.doc?.owner || '')
-const meetingCoHosts = computed(() => meetingDoc.doc?.co_hosts?.map((row) => row.user) || [])
+const meetingTitle = computed(
+  () => meetingDoc.data?.title || meetingDoc.data?.name || meetingId.value,
+)
+const meetingOwner = computed(() => meetingDoc.data?.owner || '')
+const meetingCoHosts = computed(() => meetingDoc.data?.co_hosts?.map((row) => row.user) || [])
 const isCurrentUserHost = computed(() =>
   Boolean(session.user?.sessionUser && session.user.sessionUser === meetingOwner.value),
 )
@@ -455,7 +429,6 @@ const recording = useRecording(meetingId.value)
 const recordingDialogOpen = ref(false)
 const recordingStopDialogOpen = ref(false)
 const recordingPreflight = ref<RecordingPreflight | null>(null)
-
 async function handleRecordingAction() {
   try {
     if (recording.isStarting.value) return
@@ -470,7 +443,6 @@ async function handleRecordingAction() {
     toast.error(error instanceof Error ? error.message : 'Could not manage recording')
   }
 }
-
 async function confirmRecordingStop() {
   try {
     await recording.stop()
@@ -479,7 +451,6 @@ async function confirmRecordingStop() {
     toast.error(error instanceof Error ? error.message : 'Could not stop recording')
   }
 }
-
 async function confirmRecordingStart() {
   try {
     await recording.start()
@@ -488,25 +459,22 @@ async function confirmRecordingStart() {
     throw error
   }
 }
-const previewDetails = useCall<{ title?: string }, { meeting_id: string }>({
-  url: '/api/suite/meet/rooms/preview',
-  params: { meeting_id: meetingId.value },
-  immediate: !session.isLoggedIn,
-})
-const checkMeetingAccess = useCall<AccessData, { meeting_id: string }>({
-  url: '/api/suite/meet/rooms/access',
-  immediate: false,
-})
+const previewDetails = useQuery(api.meet.rooms.preview, () =>
+  !session.isLoggedIn
+    ? {
+        meeting_id: meetingId.value,
+      }
+    : false,
+)
 const previewTitle = computed(
-  () => meetingDoc.doc?.title || previewDetails.data?.title || meetingId.value,
+  () => meetingDoc.data?.title || previewDetails.data?.title || meetingId.value,
 )
 usePageMeta(() => appPageMeta(previewTitle.value, 'Meet'))
-
 watch(
   () => meetingDoc.error,
   (error) => {
-    if (error && !previewDetails.data && !previewDetails.loading) {
-      void previewDetails.reload()
+    if (error && !previewDetails.data && !previewDetails.isFetching) {
+      void previewDetails.refetch().catch(() => {})
     }
   },
 )
@@ -521,7 +489,6 @@ const lobbyUsersForNotifications = computed(() => {
       user_image: user.avatar,
     }))
 })
-
 const e2eeJoinPendingMessage = ref('')
 const e2eeJoinStatus = ref<'pending' | 'failed' | ''>('')
 const e2eeJoinReason = ref('')
@@ -533,10 +500,14 @@ const e2eeJoinTitle = computed(() => {
   }
   return 'Joining encrypted meeting'
 })
-
 function handleE2EEJoinStatus(event: Event): void {
   const detail = (event as CustomEvent).detail as
-    { status?: string; reason?: string; message?: string } | undefined
+    | {
+        status?: string
+        reason?: string
+        message?: string
+      }
+    | undefined
   if (detail?.status === 'pending') {
     e2eeJoinStatus.value = 'pending'
     e2eeJoinReason.value = detail.reason || ''
@@ -554,7 +525,6 @@ function handleE2EEJoinStatus(event: Event): void {
   e2eeJoinReason.value = ''
   e2eeJoinPendingMessage.value = ''
 }
-
 function getE2EEJoinPendingMessage(detail: { reason?: string; message?: string }): string {
   if (detail.reason === 'waiting-for-host') {
     return "You'll join automatically when the host arrives."
@@ -578,7 +548,6 @@ const sfuConnection = useSFUConnection({
   mediaState,
   participantStore,
   lobbyStore,
-  meetingDoc,
   gridLayout,
   meetingId: meetingId.value,
   notifiedLobbyUsers,
@@ -644,7 +613,9 @@ const sfuConnection = useSFUConnection({
   onE2EERequired: () => captions.disableCaptionsForE2EE(),
   onRecordingState: recording.syncState,
   onRecordingEnabled: recording.setGlobalEnabled,
-  onCohostPromoted: () => meetingDoc.reload(),
+  onCohostPromoted: async () => {
+    await meetingDoc.refetch()
+  },
 })
 
 // --- Background effects & noise cancellation ---
@@ -683,13 +654,14 @@ const mediaControls = useMediaControls({
   backgroundEffects,
   noiseCancellation,
 })
-
 meetingControls.toggleMicrophone = () => mediaControls.toggleMicrophone()
 meetingControls.toggleCamera = () => mediaControls.toggleCamera()
 watch(
   () => mediaState.isMicOn,
   (val) => (meetingControls.isMicOn = val),
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
 
 // --- Chat ---
@@ -699,7 +671,6 @@ const chat = useChat({
   sfuClient: sfuConnection.sfuClient,
   canPin: () => isCurrentUserHost.value || isCurrentUserCohost.value,
 })
-
 function unpinChatMessage() {
   const messageId = chatStore.pinnedMessage?.messageId
   if (messageId) chat.pinMessage(messageId, 'unpin')
@@ -726,7 +697,6 @@ const raiseHand = useRaiseHand({
   currentUser,
   sfuClient: sfuConnection.sfuClient,
 })
-
 const captions = useCaptions({
   sfuClient: sfuConnection.sfuClient,
 })
@@ -740,11 +710,8 @@ const {
 // --- Lobby ---
 const lobby = useLobby({
   lobbyStore,
-  meetingDoc,
+  meetingId,
 })
-
-type AccessData = { allow_guest?: boolean; host_only_chat?: boolean }
-
 // --- Provide meeting context for child components ---
 provideMeetingContext({
   mediaState,
@@ -783,7 +750,6 @@ provide(
   'meetingTitle',
   computed(() => meetingTitle.value),
 )
-
 provide(pollKey, poll)
 
 // --- Computed properties ---
@@ -807,10 +773,8 @@ const showPreview = computed(() => {
   const joinRequestRejected = lobbyStore.isJoinRequestRejected
   return inPreview || joinRequestRejected
 })
-
 const canLeaveMeeting = ref(false)
 let pendingLeaveConfirmation: Promise<boolean> | null = null
-
 async function confirmMeetingLeave() {
   if (
     canLeaveMeeting.value ||
@@ -818,7 +782,6 @@ async function confirmMeetingLeave() {
   )
     return true
   if (pendingLeaveConfirmation) return pendingLeaveConfirmation
-
   pendingLeaveConfirmation = confirmLeave({
     title: 'Leave meeting?',
     message: 'You will be disconnected from the meeting.',
@@ -831,13 +794,11 @@ async function confirmMeetingLeave() {
     pendingLeaveConfirmation = null
   }
 }
-
 async function confirmAndEndCall() {
   if (!(await confirmMeetingLeave())) return
   canLeaveMeeting.value = true
   await sfuConnection.endCall()
 }
-
 onBeforeRouteLeave(confirmMeetingLeave)
 onBeforeRouteUpdate((to, from) => {
   if (to.params.meetingId === from.params.meetingId) return true
@@ -848,7 +809,6 @@ onBeforeRouteUpdate((to, from) => {
 const CONNECTING_TOAST_ID = 'meet-connecting'
 const CONNECTING_TOAST_DELAY_MS = 5000
 let connectingToastTimer: ReturnType<typeof setTimeout> | null = null
-
 const clearConnectingToast = () => {
   if (connectingToastTimer) {
     clearTimeout(connectingToastTimer)
@@ -856,7 +816,6 @@ const clearConnectingToast = () => {
   }
   toast.dismiss(CONNECTING_TOAST_ID)
 }
-
 watch(
   [
     isConnecting,
@@ -868,16 +827,13 @@ watch(
   ],
   ([connecting, preview, waiting, lobby, error, e2eePending]) => {
     const shouldTrack = connecting && !preview && !waiting && !lobby && !error && !e2eePending
-
     if (!shouldTrack) {
       clearConnectingToast()
       return
     }
-
     if (connectingToastTimer) {
       return
     }
-
     connectingToastTimer = setTimeout(() => {
       connectingToastTimer = null
       if (
@@ -897,19 +853,15 @@ watch(
     }, CONNECTING_TOAST_DELAY_MS)
   },
 )
-
 const isPeopleOpen = ref(false)
-
 const activePanel = computed(() => {
   if (chatStore.isChatOpen) return 'chat'
   if (isPeopleOpen.value) return 'people'
   return null
 })
-
 const participantsForPeoplePanel = computed<Record<string, Participant>>(
   () => participantStore.participants as Record<string, Participant>,
 )
-
 const participantAvatars = computed(() =>
   Object.fromEntries(
     Object.entries(participantsForPeoplePanel.value).map(([userId, participant]) => [
@@ -918,15 +870,12 @@ const participantAvatars = computed(() =>
     ]),
   ),
 )
-
 const { isMobile } = useResponsiveGrid()
-
 const panelWidth = computed(() => {
   if (!activePanel.value) return '0rem'
   if (isMobile.value) return '0rem'
   return '24rem'
 })
-
 const isHandRaised = computed(() => {
   const currentUserId = currentUser.currentUser.value?.user_id as string
   return currentUserId ? !!raiseHandStore.raisedHands?.[currentUserId] : false
@@ -955,14 +904,13 @@ const handlers = useMeetingHandlers({
   sfuConnection,
   mediaControls,
   lobby,
-  meetingDoc,
+  refreshMeeting: () => meetingDoc.refetch(),
   meetingId: meetingId.value,
   isCurrentUserHost,
   isPeopleOpen,
   notifiedLobbyUsers,
   router,
 })
-
 const {
   resetToPreview,
   joinMeetingFromPreview,
@@ -983,7 +931,6 @@ const {
   handleReportProblem,
   handleDeviceChanged,
 } = handlers
-
 const showMeetingNotification = (notification: {
   message: string
   fromUser: string
@@ -991,7 +938,10 @@ const showMeetingNotification = (notification: {
   type: 'chat' | 'poll'
 }) => {
   const participant = participantStore.participants[notification.fromUser] as
-    { avatar?: string } | undefined
+    | {
+        avatar?: string
+      }
+    | undefined
   const openChat = () => {
     if (!chatStore.isChatOpen) toggleChat()
   }
@@ -1001,7 +951,6 @@ const showMeetingNotification = (notification: {
     toast.dismiss(toastId)
     openChat()
   }
-
   toastId = toast.custom(
     () =>
       h(
@@ -1017,16 +966,30 @@ const showMeetingNotification = (notification: {
             label: notification.fromName,
             size: 'lg',
           }),
-          h('span', { class: 'min-w-0 flex-1' }, [
-            h(
-              'span',
-              { class: 'block truncate text-p-base font-medium text-ink-base' },
-              notification.type === 'poll'
-                ? `${notification.fromName} started a poll`
-                : notification.fromName,
-            ),
-            h('span', { class: 'block truncate text-p-base text-ink-base' }, notification.message),
-          ]),
+          h(
+            'span',
+            {
+              class: 'min-w-0 flex-1',
+            },
+            [
+              h(
+                'span',
+                {
+                  class: 'block truncate text-p-base font-medium text-ink-base',
+                },
+                notification.type === 'poll'
+                  ? `${notification.fromName} started a poll`
+                  : notification.fromName,
+              ),
+              h(
+                'span',
+                {
+                  class: 'block truncate text-p-base text-ink-base',
+                },
+                notification.message,
+              ),
+            ],
+          ),
         ],
       ),
     {
@@ -1037,13 +1000,11 @@ const showMeetingNotification = (notification: {
   )
   meetingNotificationIds.add(toastId)
 }
-
 const meetingNotificationIds = new Set<string | number>()
 const clearMeetingNotifications = () => {
   for (const id of meetingNotificationIds) toast.dismiss(id)
   meetingNotificationIds.clear()
 }
-
 watch(
   () => chatStore.isChatOpen,
   (isOpen) => {
@@ -1061,23 +1022,23 @@ const togglePeople = () => {
     }
   }
 }
-
 const toggleReactions = (payload: string) => {
   reactions.onSendReaction(payload)
   isReactionPickerOpen.value = false
 }
-
 const toggleStatsForNerds = () => {
   setShowStatsForNerds(!showStatsForNerds.value)
 }
-
 const syncFullscreenState = () => {
   isFullscreen.value = !!document.fullscreenElement
 }
-
 const handleE2EENeedsMediaRepublish = async (event: Event) => {
   const detail = (event as CustomEvent).detail as
-    { needsCamera?: boolean; needsMicrophone?: boolean } | undefined
+    | {
+        needsCamera?: boolean
+        needsMicrophone?: boolean
+      }
+    | undefined
   try {
     await mediaControls.republishMediaAfterE2EE(detail)
   } catch (error) {
@@ -1103,7 +1064,6 @@ onMounted(async () => {
   gridLayout.resetGridLayout()
   currentUser.resetCurrentUser()
   e2eeState.reset()
-
   document.addEventListener('fullscreenchange', syncFullscreenState)
   document.addEventListener('meet:e2ee-needs-media-republish', handleE2EENeedsMediaRepublish)
   document.addEventListener('meet:e2ee-join-status', handleE2EEJoinStatus)
@@ -1112,10 +1072,9 @@ onMounted(async () => {
   // Check meeting access for unauthenticated users
   if (!session.isLoggedIn) {
     try {
-      const accessData = await submit(checkMeetingAccess, {
+      const accessData = await client.query(api.meet.rooms.access, {
         meeting_id: meetingId.value,
       })
-
       if (accessData?.host_only_chat !== undefined) {
         chatStore.hostOnlyChat = !!accessData.host_only_chat
       }
@@ -1147,7 +1106,6 @@ onMounted(async () => {
     isInitializingPreview.value = false
     return
   }
-
   if (!userResource.fetched) {
     try {
       await userResource.fetch()
@@ -1158,11 +1116,9 @@ onMounted(async () => {
 
   // Initialize camera
   await mediaControls.initializeCamera()
-
   if (selectedSpeakerId.value) {
     await mediaControls.applySpeakerDevice()
   }
-
   isInitializingPreview.value = false
 
   // Auto-join if just created
@@ -1171,7 +1127,6 @@ onMounted(async () => {
     await joinMeetingFromPreview()
   }
 })
-
 onUnmounted(() => {
   clearConnectingToast()
   clearMeetingNotifications()
@@ -1179,7 +1134,6 @@ onUnmounted(() => {
   document.removeEventListener('meet:e2ee-needs-media-republish', handleE2EENeedsMediaRepublish)
   document.removeEventListener('meet:e2ee-join-status', handleE2EEJoinStatus)
 })
-
 watch(selectedSpeakerId, async (newSpeakerId) => {
   if (newSpeakerId && deviceManager.isDeviceAvailable(newSpeakerId, 'speaker')) {
     await mediaControls.applySpeakerDevice()
@@ -1200,9 +1154,10 @@ watch(
       }
     }
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
-
 watch(
   () => chatStore.hostOnlyChat,
   (isRestricted, oldValue) => {
@@ -1215,14 +1170,12 @@ watch(
     }
   },
 )
-
 let previousTheme: string | null = null
 let previousThemeMode: string | null = null
 let previousBodyTheme: string | null = null
 let previousBodyThemeMode: string | null = null
 let themeObserver: MutationObserver | null = null
 let userChangedTheme = false
-
 const forceDarkTheme = () => {
   if (document.documentElement.getAttribute('data-theme') !== 'dark') {
     document.documentElement.setAttribute('data-theme', 'dark')
@@ -1231,7 +1184,6 @@ const forceDarkTheme = () => {
     document.body.setAttribute('data-theme', 'dark')
   }
 }
-
 onMounted(() => {
   previousTheme = document.documentElement.getAttribute('data-theme')
   previousThemeMode = document.documentElement.getAttribute('data-theme-mode')
@@ -1240,7 +1192,6 @@ onMounted(() => {
   forceDarkTheme()
   document.documentElement.setAttribute('data-theme-mode', 'dark')
   document.body.setAttribute('data-theme-mode', 'dark')
-
   themeObserver = new MutationObserver(forceDarkTheme)
   themeObserver.observe(document.documentElement, {
     attributes: true,
@@ -1250,7 +1201,6 @@ onMounted(() => {
     attributes: true,
     attributeFilter: ['data-theme'],
   })
-
   const modeObserver = new MutationObserver(() => {
     userChangedTheme = true
   })
@@ -1259,11 +1209,9 @@ onMounted(() => {
     attributeFilter: ['data-theme-mode'],
   })
 })
-
 onUnmounted(() => {
   themeObserver?.disconnect()
   themeObserver = null
-
   if (userChangedTheme) {
     const mode = document.documentElement.getAttribute('data-theme-mode') || 'light'
     const resolved =
@@ -1282,19 +1230,16 @@ onUnmounted(() => {
     } else {
       document.documentElement.removeAttribute('data-theme')
     }
-
     if (previousThemeMode) {
       document.documentElement.setAttribute('data-theme-mode', previousThemeMode)
     } else {
       document.documentElement.removeAttribute('data-theme-mode')
     }
-
     if (previousBodyTheme) {
       document.body.setAttribute('data-theme', previousBodyTheme)
     } else {
       document.body.removeAttribute('data-theme')
     }
-
     if (previousBodyThemeMode) {
       document.body.setAttribute('data-theme-mode', previousBodyThemeMode)
     } else {

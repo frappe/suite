@@ -115,7 +115,9 @@ class TestMailScreening(StalwartIntegrationTestCase):
         with self.set_user(self.screener.email):
             junk_id = {(m["role"] or "").lower(): m["id"] for m in get_mailboxes(self.account)}["junk"]
         self.wait_until(
-            lambda: subject_junked in [t["subject"] for t in get_threads(self.account, junk_id, limit=20)[0]],
+            lambda: (
+                subject_junked in [t["subject"] for t in get_threads(self.account, junk_id, limit=20)["rows"]]
+            ),
             message="Screened-out sender's mail did not move to Junk.",
         )
 
@@ -164,7 +166,9 @@ class TestMailScreening(StalwartIntegrationTestCase):
 
         self.assertEqual(self._screened().get(sender.email), "Accepted")
         self.wait_until(
-            lambda: subject in [t["subject"] for t in get_threads(self.account, archive_id, limit=20)[0]],
+            lambda: (
+                subject in [t["subject"] for t in get_threads(self.account, archive_id, limit=20)["rows"]]
+            ),
             message="Allowed sender's mail did not move to Archive.",
         )
         self.assertNotIn(subject, [t["subject"] for t in self.get_inbox_threads(self.screener)])

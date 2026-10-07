@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
 import type { Session } from '@/platform/session'
-import type { Transport } from '@/platform/transport'
 
 import { createTheme } from './index'
 
@@ -39,7 +38,13 @@ describe('theme', () => {
     const session = {
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
     } as unknown as Session
-    const theme = createTheme({ transport: { request } as Transport, session })
+    const theme = createTheme({
+      preferences: {
+        read: () => request({ id: 'frappe.user.get_theme' }, {}),
+        save: (theme) => request({ id: 'frappe.user.switch_theme' }, { theme }),
+      },
+      session,
+    })
     await theme.initialize()
     expect(theme.savedMode.value).toBe('automatic')
     await theme.set('dark')
@@ -82,25 +87,37 @@ describe('theme', () => {
   })
 
   it('rolls back a saved preference when the server rejects it', async () => {
-    const request = vi.fn(async () => {
+    const request = vi.fn(async (..._args: unknown[]) => {
       throw new Error('offline')
     })
     const session = {
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
     } as unknown as Session
     document.documentElement.setAttribute('data-theme-mode', 'light')
-    const theme = createTheme({ transport: { request } as Transport, session })
+    const theme = createTheme({
+      preferences: {
+        read: () => request({ id: 'frappe.user.get_theme' }, {}),
+        save: (theme) => request({ id: 'frappe.user.switch_theme' }, { theme }),
+      },
+      session,
+    })
     await expect(theme.set('dark')).resolves.toBe(false)
     expect(theme.savedMode.value).toBe('light')
     expect(document.documentElement.dataset.theme).toBe('light')
   })
 
   it('initializes the server preference once', async () => {
-    const request = vi.fn(async () => ({ desk_theme: 'Dark' }))
+    const request = vi.fn(async (..._args: unknown[]) => ({ desk_theme: 'Dark' }))
     const session = {
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
     } as unknown as Session
-    const theme = createTheme({ transport: { request } as Transport, session })
+    const theme = createTheme({
+      preferences: {
+        read: () => request({ id: 'frappe.user.get_theme' }, {}),
+        save: (theme) => request({ id: 'frappe.user.switch_theme' }, { theme }),
+      },
+      session,
+    })
     await Promise.all([theme.initialize(), theme.initialize()])
     expect(request).toHaveBeenCalledOnce()
     expect(theme.savedMode.value).toBe('dark')

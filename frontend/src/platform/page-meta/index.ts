@@ -39,6 +39,22 @@ export function openingTitle(state: HistoryState): string | null {
   return typeof title === 'string' && title ? title : null
 }
 
+/** `pageTitle | appName`, or the app name alone when the page has no title of its own. */
+export function appDocumentTitle(pageTitle: string | undefined, appName: string) {
+  const title = pageTitle?.trim()
+  if (!title || title === appName || title === `Frappe ${appName}`) return appName
+  if (title.endsWith(` | ${appName}`)) return title
+  return `${title} | ${appName}`
+}
+
+/**
+ * The title an app page shows. No `icon`: the Suite logo is the one favicon,
+ * and frappe-ui's `usePageMeta` restores it when a page sets none.
+ */
+export function appPageMeta(pageTitle: string | undefined, appName: string) {
+  return { title: appDocumentTitle(pageTitle, appName) }
+}
+
 export function installPageMeta(router: Router): () => void {
   installedRouter = router
   applyRouteMeta(router.currentRoute.value, router.options.history.state)
@@ -99,7 +115,6 @@ export function applyRouteMeta(
   state: HistoryState = {},
 ): void {
   routeTitle = openingTitle(state) ?? (typeof route.meta.title === 'string' ? route.meta.title : '')
-  setFavicon(typeof route.meta.favicon === 'string' ? route.meta.favicon : null)
   renderTitle()
 }
 
@@ -109,24 +124,6 @@ function renderTitle(): void {
     .filter(({ active, title }) => active && !!title)
     .sort((a, b) => b.order - a.order)[0]
   document.title = override?.title || routeTitle
-}
-
-function setFavicon(href: string | null): void {
-  if (typeof document === 'undefined' || !href) return
-  let icon = document.querySelector<HTMLLinkElement>("link[rel='icon']")
-  if (!icon) {
-    icon = document.createElement('link')
-    icon.rel = 'icon'
-    document.head.appendChild(icon)
-  }
-  icon.href = href
-  icon.type = faviconType(href)
-}
-
-function faviconType(href: string): string {
-  if (/\.svg(?:$|\?)/.test(href)) return 'image/svg+xml'
-  if (/\.png(?:$|\?)/.test(href)) return 'image/png'
-  return 'image/x-icon'
 }
 
 function once(cleanup: () => void): () => void {

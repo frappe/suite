@@ -238,6 +238,7 @@ test.describe("Writer collaboration", () => {
 			["Typed in the current tab"],
 		);
 		expect(blocks.join("\n")).not.toContain("Typed in the old tab");
+		await collaborator.context.unrouteAll({ behavior: "ignoreErrors" });
 	});
 
 	test("a tab that can't apply a change the server judges clean stops editing, and the others go on", async ({

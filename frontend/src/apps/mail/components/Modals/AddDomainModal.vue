@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add Domain'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !domainName,
-          loading: addDomain.loading,
-          onClick: addDomain.submit,
+          loading: addDomain.isPending,
+          onClick: () => addDomainSubmit(),
         },
       ],
     }"
@@ -29,7 +29,7 @@
           placeholder="example.com"
           autocomplete="off"
           :description="__('After adding, copy the generated DNS records to your DNS provider.')"
-          @blur="checkDomain.submit()"
+          @blur="checkDomainSubmit().catch(() => {})"
         />
         <div v-if="ownership" class="bg-surface-gray-1 space-y-1 rounded-4 border p-3 text-sm">
           <p class="text-ink-gray-5 text-xs">{{ __('Ownership record (TXT)') }}</p>
@@ -55,58 +55,59 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { copyToClipBoard, raiseToast } from '@/apps/mail/utils'
-
-type OwnershipRecord = { type: string; host: string; fqdn: string; value: string }
-type ResourceError = { messages?: string[]; message?: string }
 
 const show = defineModel<boolean>()
 const router = useRouter()
-
 const domainName = ref('')
 const domainDescription = ref('')
-
 const emit = defineEmits(['reloadDomains'])
-
 watch(show, () => {
   if (show.value) {
     domainName.value = ''
     domainDescription.value = ''
     addDomain.reset()
-    checkDomain.reset()
+    checkedName.value = ''
   }
 })
 
 // The record is the same for every domain the site adds, so it can be shown before the add.
-const checkDomain = createResource({
-  url: 'suite.mail.api.admin.get_domain_ownership_record',
-  makeParams: () => ({ name: domainName.value.trim() }),
-  validate: () => (domainName.value.trim() ? undefined : ' '),
-})
-const ownership = computed<OwnershipRecord | undefined>(() => checkDomain.data?.ownership_record)
-
-const addDomain = createResource({
-  url: 'suite.mail.api.admin.add_domain',
-  makeParams: () => ({
+const checkedName = ref('')
+const checkDomain = useQuery(api.mail.admin.domains.ownershipRecord, () =>
+  checkedName.value
+    ? {
+        name: checkedName.value,
+      }
+    : false,
+)
+async function checkDomainSubmit() {
+  checkedName.value = domainName.value.trim()
+  await checkDomain.refetch()
+}
+const ownership = computed(() => checkDomain.data?.ownership_record)
+const addDomain = useMutation(api.mail.admin.domains.create)
+async function addDomainSubmit() {
+  const input: InputOf<typeof api.mail.admin.domains.create> = {
     name: domainName.value.trim(),
     description: domainDescription.value?.trim() || undefined,
-  }),
-  onSuccess: (data: string) => {
-    if (!data) return
-
-    show.value = false
-    emit('reloadDomains')
-    raiseToast(__('Domain added.'))
-    router.push({ name: 'mail-domain', params: { domainId: data } })
-  },
-})
-
-const errorMessage = computed(() => {
-  const error: ResourceError | undefined = addDomain.error || checkDomain.error
-  return error ? error.messages?.[0] || error.message || __('Request failed.') : ''
-})
+  }
+  const result = await addDomain.run(input)
+  const data = result
+  if (!data) return
+  show.value = false
+  emit('reloadDomains')
+  raiseToast(__('Domain added.'))
+  router.push({
+    name: 'mail-domain',
+    params: {
+      domainId: data,
+    },
+  })
+}
+const errorMessage = computed(() => addDomain.error?.message || checkDomain.error?.message || '')
 </script>

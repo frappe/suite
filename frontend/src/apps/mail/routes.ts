@@ -1,4 +1,7 @@
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteLocationNormalized, RouteParamsGeneric, RouteRecordRaw } from 'vue-router'
+
+import { userStore } from '@/apps/mail/stores/user'
+import { openedMailboxId } from '@/apps/mail/utils/unifiedFolders'
 
 // Installs Mail's guard on the suite router. The suite router loads this module once, when a
 // Mail route first opens, so the guard is in place before any Mail page resolves.
@@ -19,6 +22,27 @@ import '@/apps/mail/runtime'
  * the shell. The public routes set `frame: 'none'`, so they stay outside it
  * [T010].
  */
+
+// An account's folder is named by its slug in the URL (`mailbox/sent`), but MailboxView works in
+// mailbox ids, so the param is translated on the way in. The guard has already waited for the
+// account's mailboxes and turned an id in the URL into the slug (see ./router.ts), and MailLayout
+// moves the URL along when a rename changes the slug.
+const mailboxProps = (route: RouteLocationNormalized) => ({
+  ...route.params,
+  mailbox: openedMailboxId(
+    route.params.accountId,
+    route.params.mailbox,
+    userStore().mailboxes.data,
+  ),
+})
+
+// The People path of an old Mail contacts or address-books URL. Without an account it is People's
+// shortcut, which opens the active one.
+const peopleLocation = (list: 'contacts' | 'address-books', params: RouteParamsGeneric) => {
+  const item = params.contactName ?? params.addressBookName
+  const path = params.accountId ? `/people/account/${params.accountId}/${list}` : `/people/${list}`
+  return item ? `${path}/${item}` : path
+}
 
 // Lightweight placeholder used by shortcut routes — the mail guard intercepts
 // them and redirects before any component ever mounts.
@@ -93,34 +117,46 @@ export const routes: RouteRecordRaw[] = [
     path: '',
     component: () => import('@/apps/mail/pages/MailLayout.vue'),
     children: [
+      // "All accounts": one folder merged across every account, named by its slug since mailbox
+      // ids are per account (see utils/unifiedFolders).
       {
-        path: 'all-inboxes',
-        name: 'mail-all-inboxes',
-        component: () => import('@/apps/mail/pages/AllInboxesView.vue'),
+        path: 'all/:folder',
+        name: 'mail-unified',
+        component: () => import('@/apps/mail/pages/UnifiedFolderView.vue'),
+        props: true,
       },
-      // The merged view with a thread open, so opening a mail keeps you in All Inboxes
-      // instead of navigating into the owning account's mailbox. Same component as the
-      // list-only route above, mirroring how `mail-mail` reuses MailboxView, and the same
-      // three params as `mail-mail` so a row only swaps the route name. accountId is the
-      // row's own account: the merged list spans accounts, so the URL has to say which
-      // one the thread belongs to rather than relying on whichever is active.
+      // The merged view with a thread open, so opening a mail keeps you in the merged folder
+      // instead of navigating into the owning account's mailbox. Same component as the list-only
+      // route above, mirroring how `mail-mail` reuses MailboxView. accountId is the row's own
+      // account: the merged list spans accounts, so the URL has to say which one the thread
+      // belongs to rather than relying on whichever is active. The folder needs no second naming:
+      // in that account it is the one with the folder's slug.
+      {
+        path: 'all/:folder/account/:accountId/:threadID',
+        name: 'mail-unified-mail',
+        component: () => import('@/apps/mail/pages/UnifiedFolderView.vue'),
+        props: true,
+      },
+      // The merged Inbox's old address, kept so bookmarks still land.
+      { path: 'all-inboxes', redirect: { name: 'mail-unified', params: { folder: 'inbox' } } },
       {
         path: 'all-inboxes/account/:accountId/mailbox/:mailbox/:threadID',
-        name: 'mail-all-inboxes-mail',
-        component: () => import('@/apps/mail/pages/AllInboxesView.vue'),
-        props: true,
+        redirect: (to) => ({
+          name: 'mail-unified-mail',
+          params: { folder: 'inbox', accountId: to.params.accountId, threadID: to.params.threadID },
+        }),
       },
       {
         path: 'account/:accountId/mailbox/:mailbox',
         name: 'mail-mailbox',
         component: () => import('@/apps/mail/pages/MailboxView.vue'),
-        props: true,
+        props: mailboxProps,
       },
       {
         path: 'account/:accountId/mailbox/:mailbox/:threadID',
         name: 'mail-mail',
         component: () => import('@/apps/mail/pages/MailboxView.vue'),
-        props: true,
+        props: mailboxProps,
       },
       // Compose as a page of its own rather than an overlay over the list. `noLayout` keeps
       // the app chrome — and the full-height scroll frame it brings — out of the way, so the
@@ -167,29 +203,14 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/apps/mail/pages/SubmissionDetailsView.vue'),
         props: true,
       },
+      // Contacts and address books moved to People. Old links land there.
       {
-        path: 'account/:accountId/address-books/',
-        name: 'mail-address-books',
-        component: () => import('@/apps/mail/pages/AddressBooksView.vue'),
-        props: true,
+        path: 'account/:accountId/address-books/:addressBookName?',
+        redirect: (to) => peopleLocation('address-books', to.params),
       },
       {
-        path: 'account/:accountId/address-books/:addressBookName',
-        name: 'mail-address-book',
-        component: () => import('@/apps/mail/pages/AddressBookView.vue'),
-        props: true,
-      },
-      {
-        path: 'account/:accountId/contacts/',
-        name: 'mail-contacts',
-        component: () => import('@/apps/mail/pages/ContactsView.vue'),
-        props: true,
-      },
-      {
-        path: 'account/:accountId/contacts/:contactName',
-        name: 'mail-contact',
-        component: () => import('@/apps/mail/pages/ContactView.vue'),
-        props: true,
+        path: 'account/:accountId/contacts/:contactName?',
+        redirect: (to) => peopleLocation('contacts', to.params),
       },
       {
         path: 'mail-exchanges',
@@ -343,15 +364,11 @@ export const routes: RouteRecordRaw[] = [
       },
       {
         path: 'address-books/:addressBookName?',
-        name: 'mail-address-books-shortcut',
-        component: ShortcutRedirect,
-        meta: { shortcut: true },
+        redirect: (to) => peopleLocation('address-books', to.params),
       },
       {
         path: 'contacts/:contactName?',
-        name: 'mail-contacts-shortcut',
-        component: ShortcutRedirect,
-        meta: { shortcut: true },
+        redirect: (to) => peopleLocation('contacts', to.params),
       },
     ],
   },

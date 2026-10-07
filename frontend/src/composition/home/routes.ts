@@ -10,7 +10,6 @@ export const routes: RouteRecordRaw[] = [
       frame: 'shell',
       scroll: 'content',
       title: 'Home',
-      favicon: '/assets/suite/frontend/logo.svg',
     },
   },
 ]

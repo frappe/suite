@@ -1,7 +1,8 @@
 import type { Socket } from 'socket.io-client'
 
+import { api, client } from '@/api'
+
 import { isUnknownRecord, normalizeJoinPayload, type JoinPayload } from '../types'
-import { request } from '../utils/request'
 import type { GuestSessionStatus, StoredGuestSession } from './useConnectionState'
 
 type ActiveGuestSessionStatus = Extract<GuestSessionStatus, 'pending' | 'admitted'>
@@ -59,7 +60,7 @@ export async function getApprovedGuestConnectionDetails(
   session: StoredGuestSession,
 ): Promise<JoinPayload> {
   const response = normalizeJoinPayload(
-    await request('/api/suite/meet/rooms/guest-connections', {
+    await client.mutation(api.meet.guests.connect, {
       meeting_id: session.meetingId,
       guest_id: session.guestId,
       guest_session_token: session.guestSessionToken,

@@ -1,6 +1,6 @@
-import { createResource } from 'frappe-ui'
 import { defineComponent, h, type Component } from 'vue'
 
+import { api, client } from '@/api'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -19,13 +19,6 @@ function scoped(load: () => Promise<BodyModule>) {
     })
   }
 }
-
-// The Advanced tab holds only the CalDAV client config. The server withholds
-// it unless Mail Settings enables it.
-const clientConfig = createResource({
-  url: 'suite.mail.api.account.get_calendar_client_config',
-  cache: 'calendar-client-config',
-})
 
 const calendar = {
   label: () => __('Calendar'),
@@ -61,7 +54,6 @@ const calendar = {
       id: 'calendar.advanced',
       label: () => __('Advanced'),
       icon: 'lucide-code',
-      condition: () => Boolean(clientConfig.data?.server_url),
       body: scoped(() => import('@/apps/calendar/components/Settings/AdvancedSettings.vue')),
     },
   ],
@@ -69,6 +61,13 @@ const calendar = {
 
 /** Reads the client config for the Advanced tab, then resolves the group. */
 export async function calendarSettings() {
-  if (useSession().capabilities.value.jmap) await clientConfig.fetch().catch(() => undefined)
-  return calendar
+  const config = useSession().capabilities.value.jmap
+    ? await client.query(api.mail.calendar.clientConfig).catch(() => undefined)
+    : undefined
+  return {
+    ...calendar,
+    tabs: calendar.tabs.filter(
+      (tab) => tab.id !== 'calendar.advanced' || Boolean(config?.server_url),
+    ),
+  }
 }

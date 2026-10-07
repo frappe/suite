@@ -5,9 +5,9 @@
         :label="__('Save')"
         variant="solid"
         :size="isMobile ? 'md' : 'sm'"
-        :loading="saveSettings.loading"
+        :loading="saveSettings.isPending"
         :disabled="isNotDirty"
-        @click="saveSettings.submit()"
+        @click="save()"
       />
     </template>
   </AppSettingsHeader>
@@ -27,17 +27,18 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, Select, SettingsRow } from 'frappe-ui'
-import { computed, inject, ref } from 'vue'
+import { Button, Select, SettingsRow } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
-import type { User, UserResource } from '@/apps/mail/types'
+import { api, useMutation } from '@/api'
+import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const user = inject('$user') as UserResource
+const user = userStore().userResource
 const { isMobile } = useScreenSize()
 
 // The select speaks the Select field's strings; the saved value is compared through the same
@@ -46,22 +47,13 @@ const savedPeriod = computed(() => String(undoSendPeriodOf(user.data)))
 const undoSendPeriod = ref(savedPeriod.value)
 const isNotDirty = computed(() => undoSendPeriod.value === savedPeriod.value)
 
-const saveSettings = createResource({
-  url: 'frappe.client.set_value',
-  makeParams: () => ({
-    doctype: 'User Settings',
-    name: user.data.user_settings,
-    fieldname: 'undo_send_period',
-    value: undoSendPeriod.value,
-  }),
-  onSuccess: () => {
-    // Apply locally before the reload lands, so nothing reads the old period in between.
-    user.data.undo_send_period = undoSendPeriod.value as User['undo_send_period']
-    raiseToast(__('Compose settings updated.'))
-    user.reload()
-  },
-  onError: () => raiseToast(__('Unable to save compose settings.'), 'error'),
-})
+const saveSettings = useMutation(api.mail.settings.updatePreferences)
+async function save() {
+  const period = undoSendPeriod.value
+  if (period !== '5' && period !== '10' && period !== '20' && period !== '30') return
+  await saveSettings.run({ undo_send_period: period })
+  raiseToast(__('Compose settings updated.'))
+}
 
 const UNDO_SEND_OPTIONS = UNDO_SEND_PERIODS.map((seconds) => ({
   label: __('{0} seconds', [String(seconds)]),

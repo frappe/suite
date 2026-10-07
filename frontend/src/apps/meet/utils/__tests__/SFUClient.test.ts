@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { request } from '../request'
+import { api, client as apiClient } from '@/api'
+
 import {
   connectionDetailsFromJoinPayload,
   SFUClient,
@@ -19,7 +20,10 @@ const mockSignalChannel = () => ({
   updateAuth: vi.fn(),
 })
 
-vi.mock('../request', () => ({ request: vi.fn() }))
+vi.mock('@/api', async (original) => ({
+  ...(await original<typeof import('@/api')>()),
+  client: { mutation: vi.fn() },
+}))
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -465,13 +469,13 @@ describe('scheduleTokenRefresh', () => {
     client.connectionDetails.tokenExpiresAt = Date.now() + 10_000
     client.connectionDetails.meetingId = 'meet-1'
 
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'new-token',
       expires_in: 3600,
       codec_strategy: 'svc',
     })
     client.scheduleTokenRefresh()
-    expect(request).toHaveBeenCalled()
+    expect(apiClient.mutation).toHaveBeenCalled()
   })
 
   it('does not refresh an already-expired token', () => {
@@ -481,7 +485,7 @@ describe('scheduleTokenRefresh', () => {
 
     client.scheduleTokenRefresh()
 
-    expect(request).not.toHaveBeenCalled()
+    expect(apiClient.mutation).not.toHaveBeenCalled()
     expect(client.tokenRefreshTimer).toBeNull()
   })
 
@@ -493,7 +497,7 @@ describe('scheduleTokenRefresh', () => {
 
     expect(vi.getTimerCount()).toBe(1)
     vi.advanceTimersByTime(239_999)
-    expect(request).not.toHaveBeenCalled()
+    expect(apiClient.mutation).not.toHaveBeenCalled()
   })
 
   it('clears existing timer before scheduling', () => {
@@ -554,11 +558,11 @@ describe('getConnectionDetails', () => {
     })
     expect(details.authToken).toBe('pre-tok')
     expect(details.isHost).toBe(true)
-    expect(request).not.toHaveBeenCalled()
+    expect(apiClient.mutation).not.toHaveBeenCalled()
   })
 
   it('ignores prefetched details for a different meeting id', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'tok-1',
       meeting_id: 'meet-1',
       user_id: 'usr-1',
@@ -585,11 +589,11 @@ describe('getConnectionDetails', () => {
       isCohost: false,
     })
     expect(details.authToken).toBe('tok-1')
-    expect(request).toHaveBeenCalled()
+    expect(apiClient.mutation).toHaveBeenCalled()
   })
 
   it('fetches regular connection details', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'tok-1',
       meeting_id: 'meet-1',
       user_id: 'usr-1',
@@ -610,7 +614,7 @@ describe('getConnectionDetails', () => {
     expect(details.e2eeRequired).toBe(true)
     expect(details.isHost).toBe(true)
     expect(details.isCohost).toBe(false)
-    expect(request).toHaveBeenCalledWith('/api/suite/meet/rooms/connections', {
+    expect(apiClient.mutation).toHaveBeenCalledWith(api.meet.rooms.connect, {
       meeting_id: 'meet-1',
     })
   })
@@ -621,7 +625,7 @@ describe('getConnectionDetails', () => {
     sessionStorage.setItem('guest_meeting_id', 'meet-2')
     sessionStorage.setItem('guest_session_token', 'private-proof')
 
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'fresh-guest-token',
       expires_in: 300,
       sfu_url: 'https://sfu.example.com',
@@ -635,7 +639,7 @@ describe('getConnectionDetails', () => {
     expect(details.userId).toBe('guest-1')
     expect(details.userData?.is_guest).toBe(true)
     expect(details.e2eeRequired).toBe(true)
-    expect(request).toHaveBeenCalledWith('/api/suite/meet/rooms/guest-tokens', {
+    expect(apiClient.mutation).toHaveBeenCalledWith(api.meet.guests.refreshToken, {
       meeting_id: 'meet-2',
       guest_id: 'guest-1',
       guest_session_token: 'private-proof',
@@ -661,7 +665,7 @@ describe('connect refresh', () => {
     }
     const signalChannel = client.signalChannel
 
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'fresh-token',
       meeting_id: 'meet-1',
       user_id: 'usr-1',
@@ -705,7 +709,7 @@ describe('connect refresh', () => {
       isCohost: false,
     }
 
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'fresh-guest-token-2',
       expires_in: 300,
       sfu_url: 'https://sfu.example.com',
@@ -723,6 +727,8 @@ describe('connect refresh', () => {
 describe('E2EE signaling payloads', () => {
   it('passes encryption metadata when creating WebRTC transport', async () => {
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connected = true
     client.connectionDetails.e2eeRequired = true
 
@@ -744,6 +750,8 @@ describe('E2EE signaling payloads', () => {
 
   it('includes E2EE capability metadata in join request', async () => {
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connected = true
     client.connectionDetails.e2eeRequired = true
 
@@ -810,6 +818,8 @@ describe('E2EE signaling payloads', () => {
 
   it('includes Participant Connection ownership in join requests', async () => {
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connected = true
     const sendRequest = vi.spyOn(client, 'sendRequest').mockResolvedValue({ success: true })
 
@@ -831,6 +841,8 @@ describe('E2EE signaling payloads', () => {
 
   it('reports RTCRtpScriptTransform capability in join request', async () => {
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connected = true
     client.connectionDetails.e2eeRequired = true
 
@@ -894,6 +906,8 @@ describe('E2EE signaling payloads', () => {
 
   it('uses the explicit E2EE required flag without host public key compatibility', async () => {
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connected = true
     client.connectionDetails.e2eeRequired = true
 
@@ -912,13 +926,15 @@ describe('E2EE signaling payloads', () => {
   })
 
   it('picks up e2ee_required returned by refresh_sfu_token', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'tok-2',
       expires_in: 3600,
       codec_strategy: 'svc',
       e2ee_required: true,
     })
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connectionDetails.e2eeRequired = false
     await client.refreshToken()
     expect(client.connectionDetails.e2eeRequired).toBe(true)
@@ -926,43 +942,53 @@ describe('E2EE signaling payloads', () => {
 
   it('refreshes guests only with their private session proof', async () => {
     sessionStorage.setItem('guest_session_token', 'private-proof')
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'guest-token-2',
       expires_in: 300,
     })
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connectionDetails.meetingId = 'meet-2'
     client.connectionDetails.userId = 'guest-2'
     client.connectionDetails.userData = { is_guest: true }
 
     await client.refreshToken()
 
-    expect(request).toHaveBeenCalledWith('/api/suite/meet/rooms/guest-tokens', {
-      meeting_id: 'meet-2',
-      guest_id: 'guest-2',
-      guest_session_token: 'private-proof',
-    })
+    expect(apiClient.mutation).toHaveBeenCalledWith(
+      api.meet.guests.refreshToken,
+      {
+        meeting_id: 'meet-2',
+        guest_id: 'guest-2',
+        guest_session_token: 'private-proof',
+      },
+      { silent: true },
+    )
     expect(client.connectionDetails.tokenExpiresAt).toBe(Date.now() + 300_000)
   })
 
   it('fails guest refresh closed without proof', async () => {
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connectionDetails.meetingId = 'meet-2'
     client.connectionDetails.userId = 'guest-2'
     client.connectionDetails.userData = { is_guest: true }
 
     await expect(client.refreshToken()).rejects.toThrow('Guest session proof required')
-    expect(request).not.toHaveBeenCalled()
+    expect(apiClient.mutation).not.toHaveBeenCalled()
   })
 
   it('does not downgrade local e2ee requirement during token refresh', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'tok-2',
       expires_in: 3600,
       codec_strategy: 'svc',
       e2ee_required: false,
     })
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connectionDetails.e2eeRequired = true
     await client.refreshToken()
     expect(client.connectionDetails.e2eeRequired).toBe(true)
@@ -970,10 +996,12 @@ describe('E2EE signaling payloads', () => {
 
   it('forces a post-authorization refresh after an in-flight request', async () => {
     const refreshResolvers: Array<(value: { auth_token: string; expires_in: number }) => void> = []
-    vi.mocked(request).mockImplementation(
+    vi.mocked(apiClient.mutation).mockImplementation(
       () => new Promise((resolve) => refreshResolvers.push(resolve)),
     )
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connected = true
     const sendRequestSpy = vi.spyOn(client, 'sendRequest').mockResolvedValue({ success: true })
 
@@ -981,7 +1009,7 @@ describe('E2EE signaling payloads', () => {
     const promotionRefresh = client.refreshToken({ forceNewRequest: true })
     refreshResolvers[0]({ auth_token: 'pre-promotion', expires_in: 3600 })
     await scheduledRefresh
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(apiClient.mutation).toHaveBeenCalledTimes(2))
     refreshResolvers[1]({ auth_token: 'post-promotion', expires_in: 3600 })
 
     await expect(Promise.all([scheduledRefresh, promotionRefresh])).resolves.toEqual([
@@ -995,10 +1023,12 @@ describe('E2EE signaling payloads', () => {
 
   it('discards a token refresh from before disconnect', async () => {
     let resolveRefresh!: (value: { auth_token: string; expires_in: number }) => void
-    vi.mocked(request).mockImplementation(
+    vi.mocked(apiClient.mutation).mockImplementation(
       () => new Promise((resolve) => (resolveRefresh = resolve)),
     )
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     const refresh = client.refreshToken()
 
     client.disconnect()
@@ -1011,11 +1041,13 @@ describe('E2EE signaling payloads', () => {
   })
 
   it('does not sync a refreshed token after the connection is rebuilt', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'old-connection-token',
       expires_in: 3600,
     })
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connected = true
     vi.mocked(client.signalChannel.updateAuth).mockImplementation(() => {
       client.disconnect()
@@ -1028,6 +1060,8 @@ describe('E2EE signaling payloads', () => {
 
   it('setE2EERequired updates connectionDetails for the realtime-event flow', () => {
     const client = createClient()
+    client.connectionDetails.meetingId = 'meet-1'
+    client.connectionDetails.userId = 'usr-1'
     client.connectionDetails.e2eeRequired = false
     client.setE2EERequired(true)
     expect(client.isE2EERequired()).toBe(true)
@@ -1108,7 +1142,7 @@ describe('setupDefaultHandlers', () => {
   })
 
   it('recovers auth:expired through token refresh and server token update', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'fresh-token',
       expires_in: 3600,
     })
@@ -1127,7 +1161,7 @@ describe('setupDefaultHandlers', () => {
   })
 
   it('refreshes an already-expired token before a reconnect attempt', async () => {
-    vi.mocked(request).mockResolvedValue({
+    vi.mocked(apiClient.mutation).mockResolvedValue({
       auth_token: 'reconnect-token',
       expires_in: 3600,
     })

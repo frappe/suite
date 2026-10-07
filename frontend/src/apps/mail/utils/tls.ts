@@ -1,60 +1,13 @@
+import type { api, OutputOf } from '@/api'
+
 // What the TLS report pages share: the shapes Suite's admin API answers and how a result reads.
 
-export type TlsTotals = {
-  reports: number
-  sessions: number
-  successful: number
-  failed: number
-  success_rate: number | null
-}
-
-export type TlsReportRow = TlsTotals & {
-  id: string
-  domain: string
-  reporter: string
-  reporter_email?: string | null
-  contact_info?: string | null
-  report_id?: string | null
-  subject?: string | null
-  to?: string[]
-  date_range_begin?: string | null
-  date_range_end?: string | null
-  received_at?: string | null
-  policy_types: string[]
-}
-
-export type TlsPolicy = {
-  policy_type?: string | null
-  policy_domain?: string | null
-  mx_hosts: string[]
-  policy_strings: string[]
-  successful: number
-  failed: number
-}
-
-export type TlsFailure = {
-  result_type?: string | null
-  count: number
-  policy_type?: string | null
-  policy_domain?: string | null
-  sending_mta_ip?: string | null
-  receiving_mx_hostname?: string | null
-  receiving_mx_helo?: string | null
-  receiving_ip?: string | null
-  failure_reason_code?: string | null
-  additional_information?: string | null
-}
-
-export type TlsFailureType = { result_type: string; reports: number; failed: number }
-
-export type TlsSummary = {
-  since: string | null
-  until: string
-  totals: TlsTotals
-  domains: (TlsTotals & { domain: string })[]
-  reporters: (TlsTotals & { reporter: string })[]
-  failures: TlsFailureType[]
-}
+export type TlsTotals = OutputOf<typeof api.mail.admin.tls.summary>['totals']
+export type TlsReportRow = OutputOf<typeof api.mail.admin.tls.list>['items'][number]
+export type TlsSummary = OutputOf<typeof api.mail.admin.tls.summary>
+export type TlsPolicy = OutputOf<typeof api.mail.admin.tls.get>['policies'][number]
+export type TlsFailure = OutputOf<typeof api.mail.admin.tls.get>['failures'][number]
+export type TlsFailureType = OutputOf<typeof api.mail.admin.tls.summary>['failures'][number]
 
 // The result types RFC 8460 defines, in the words an admin would look for.
 const RESULT_TYPES: Record<string, string> = {

@@ -6,9 +6,9 @@
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
-          loading: updateGroup.loading,
-          onClick: updateGroup.submit,
+          variant: 'solid' as const,
+          loading: updateGroup.isPending,
+          onClick: updateGroupSubmit,
         },
       ],
     }"
@@ -30,39 +30,37 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
 type GroupData = {
   id: string
-  description?: string
+  description?: string | null
 }
-
 const show = defineModel<boolean>()
-const { group } = defineProps<{ group: GroupData }>()
+const { group } = defineProps<{
+  group: GroupData
+}>()
 const emit = defineEmits(['reload'])
-
 const description = ref('')
-
 watch(show, () => {
   if (show.value && group) {
     description.value = group.description || ''
     updateGroup.reset()
   }
 })
-
-const updateGroup = createResource({
-  url: 'suite.mail.api.admin.update_group',
-  makeParams: () => ({
+const updateGroup = useMutation(api.mail.admin.groups.update)
+async function updateGroupSubmit() {
+  const input: InputOf<typeof api.mail.admin.groups.update> = {
     group_id: group.id,
     description: description.value?.trim() || '',
-  }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Group updated.'))
-  },
-})
+  }
+  await updateGroup.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Group updated.'))
+}
 </script>

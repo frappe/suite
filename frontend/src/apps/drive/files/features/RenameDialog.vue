@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model:open="open" title="Rename" size="md">
     <form ref="form" class="space-y-4" @submit.prevent="submit">
-      <FormControl v-model="title" label="Name" required :error="error" />
+      <FormControl v-model="title" label="Name" required :error="mutation.error?.message" />
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
         <Button
@@ -20,9 +20,8 @@
 import { Button, Dialog, FormControl } from 'frappe-ui'
 import { nextTick, ref, useTemplateRef, watch } from 'vue'
 
-import { renameNode } from '@/apps/drive/client/nodes'
+import { api, useMutation } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
-import { useMutation } from '@/platform/server-state'
 
 import { selectStem } from '../internal/filename'
 
@@ -30,19 +29,19 @@ const props = defineProps<{ node: DriveNode | null }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ renamed: [node: DriveNode] }>()
 const title = ref('')
-const error = ref<string>()
 const form = useTemplateRef('form')
 // Every refusal shows under the field, so none needs a toast.
-const mutation = useMutation(renameNode(), { silent: true })
+const mutation = useMutation(api.drive.nodes.rename, { silent: true })
 
 watch(
   () => props.node,
   (node) => {
     title.value = node?.title ?? ''
-    error.value = undefined
   },
   { immediate: true },
 )
+
+watch([open, () => props.node?.name], () => mutation.reset())
 
 // The dialog focuses the field itself instead of using `autofocus`, which
 // would select the whole title. A file selects its name up to the extension.
@@ -79,12 +78,8 @@ watch(
 
 async function submit() {
   if (!props.node || !title.value.trim()) return
-  error.value = undefined
   const renamed = await mutation.run({ node: props.node.name, title: title.value.trim() })
-  if (!renamed) {
-    error.value = mutation.error?.message ?? 'Could not rename this item.'
-    return
-  }
+
   emit('renamed', renamed)
   open.value = false
 }

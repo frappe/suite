@@ -1,8 +1,9 @@
-import { toast, useCall } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { submit } from '../utils/request'
+import { api, useMutation } from '@/api'
+
 import { useConnectionState } from './useConnectionState'
 
 type MeetingType = 'open' | 'restricted'
@@ -10,11 +11,7 @@ type MeetingType = 'open' | 'restricted'
 export const useStartMeeting = () => {
   const router = useRouter()
   const connectionState = useConnectionState()
-  const createMeeting = useCall<{ code: string; url: string }, { type: MeetingType }>({
-    url: '/api/suite/meet/rooms',
-    method: 'POST',
-    immediate: false,
-  })
+  const createMeeting = useMutation(api.meet.rooms.create, { silent: true })
 
   const copyMeetingLink = (meetingCode: string) => {
     const path = router.resolve({
@@ -28,7 +25,7 @@ export const useStartMeeting = () => {
     const creatingToastId = toast.loading('Creating meeting...')
     let meetingCode: string
     try {
-      ;({ code: meetingCode } = await submit(createMeeting, { type: meetingType }))
+      ;({ code: meetingCode } = await createMeeting.run({ type: meetingType }))
     } catch (error) {
       toast.dismiss(creatingToastId)
       console.error('Error creating meeting:', error)
@@ -65,7 +62,7 @@ export const useStartMeeting = () => {
   }
 
   return {
-    isStartingMeeting: computed(() => createMeeting.loading),
+    isStartingMeeting: computed(() => createMeeting.isPending),
     startMeeting,
   }
 }

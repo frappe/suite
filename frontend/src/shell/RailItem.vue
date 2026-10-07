@@ -1,10 +1,10 @@
 <template>
   <FrappeRailItem
     :label="label"
-    :description="description ?? progressDescription"
+    :description="description ?? progressDescription ?? unreadDescription"
     :route="to"
     :active="resolvedActive"
-    :badge="hasBadgeSlot ? 0 : badge"
+    :badge="hasBadgeSlot || unreadDot ? 0 : badge"
     :badge-style="badgeStyle"
     :variant="variant"
     @click="$emit('click', $event)"
@@ -15,6 +15,13 @@
       <component :is="icon" v-if="icon" class="size-[22px]" aria-hidden="true" />
       <slot v-else />
       <AreaProgressDot :progress="progress" :label="label" />
+      <!-- The unread dot hangs off the icon's corner, where the progress dot sits,
+           rather than off the item's: frappe-ui places its own at the item's. -->
+      <span
+        v-if="unreadDot"
+        aria-hidden="true"
+        class="absolute -right-0.5 -top-0.5 block size-2 rounded-full border border-[var(--surface-base)] bg-surface-red-6"
+      />
       <span v-if="hasBadgeSlot" class="absolute -right-2.5 -top-2.5">
         <slot name="badge" />
       </span>
@@ -43,6 +50,8 @@ const props = withDefaults(
     variant?: 'subtle' | 'ghost'
     /** Background work of this item's area, drawn as a dot on the icon. */
     progress?: AreaProgress | null
+    /** What the dot counts, in its tooltip: "3 unread", "2 upcoming". */
+    badgeNoun?: string
   }>(),
   {
     active: undefined,
@@ -59,6 +68,12 @@ const route = useRoute()
 const slots = useSlots()
 const hasBadgeSlot = computed(() => Boolean(slots.badge))
 const progressDescription = computed(() => progressDetail(props.progress))
+// A dot drawn here rather than by frappe-ui, so the count it hides is spelled out in the tooltip
+// as frappe-ui does for its own. Progress takes the corner when there is some.
+const unreadDot = computed(() => props.badgeStyle === 'dot' && props.badge > 0 && !props.progress)
+const unreadDescription = computed(() =>
+  unreadDot.value ? `${props.badge} ${props.badgeNoun ?? __('unread')}` : undefined,
+)
 // The item is active on every route its area's route group holds, also on a
 // child that clears `area` to skip the capability gate (Mail's admin dashboard).
 const resolvedActive = computed(

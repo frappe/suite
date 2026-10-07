@@ -8,34 +8,34 @@
         [mailbox?._name],
       ),
       icon: 'lucide-alert-triangle',
-      theme: 'amber',
-      actions: [{ label: __('Confirm'), theme: 'red', onClick: deleteFolder.submit }],
+      theme: 'amber' as const,
+      actions: [{ label: __('Confirm'), theme: 'red' as const, onClick: deleteFolderSubmit }],
     }"
   />
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog } from 'frappe-ui'
+import { Dialog } from 'frappe-ui'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-
-const { mailbox } = defineProps<{ mailbox?: MailboxData }>()
-
+const { mailbox } = defineProps<{
+  mailbox?: MailboxData
+}>()
 const store = userStore()
-
-const deleteFolder = createResource({
-  url: 'suite.mail.api.mail.delete_mailbox',
-  makeParams: () => ({ account: store.accountId, id: mailbox.id, name: mailbox._name }),
-  onSuccess: () => {
-    raiseToast(__('Folder deleted.'))
-    show.value = false
-    store.mailboxes.reload()
-    store.sieveScripts.reload()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
+const deleteFolder = useMutation(api.mail.mailboxes.delete)
+async function deleteFolderSubmit() {
+  const input: InputOf<typeof api.mail.mailboxes.delete> = {
+    account: store.accountId,
+    id: mailbox.id,
+    name: mailbox._name,
+  }
+  await deleteFolder.run(input)
+  raiseToast(__('Folder deleted.'))
+  show.value = false
+}
 </script>

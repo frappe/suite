@@ -17,7 +17,7 @@
   </div>
 
   <ListView
-    v-if="list.loaded"
+    v-if="list.status === 'success'"
     ref="listView"
     class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
     :columns="LIST_COLUMNS"
@@ -65,28 +65,28 @@
   </ListView>
   <DashboardListSkeleton v-else :columns="5" />
   <DashboardPager
-    v-if="list.loaded && list.total"
+    v-if="list.status === 'success' && list.total"
     :count="list.rows.length"
-    :total="list.total"
-    :page-length="list.pageLength"
-    :has-more="list.hasMore"
-    :loading="list.loading"
-    @update:page-length="list.setPageLength"
-    @load-more="list.loadMore"
+    :total="list.total ?? 0"
+    :page-length="pageLength"
+    :has-more="list.hasNext"
+    :loading="list.isFetching"
+    @update:page-length="(value) => (pageLength = value)"
+    @load-more="list.fetchNext().catch(() => {})"
   />
 
   <EditInviteModal
     v-if="selectedInvite"
     v-model="showEditInvite"
     :invite-i-d="selectedInvite"
-    @reload-invites="list.reload()"
+    @reload-invites="list.refetch().catch(() => {})"
   />
   <Dialog v-model:open="showDeleteInvites" v-bind="DELETE_INVITES_OPTIONS" />
 </template>
 
 <script setup lang="ts">
-import { watchDebounced } from '@vueuse/core'
-import { Badge, Button, createResource, Dialog, FormControl } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListEmptyState,
@@ -100,11 +100,12 @@ import {
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import { api, useInfiniteQuery, useMutation, type InputOf } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import EditInviteModal from '@/apps/mail/components/Modals/EditInviteModal.vue'
 import { raiseToast } from '@/apps/mail/utils'
-import { usePagedList } from '@/apps/mail/utils/pagedList'
+import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DashboardListSkeleton } from '@/platform/dashboard'
 
 type InviteStatus = 'All' | 'Pending' | 'Accepted' | 'Expired'
 type InviteStatusLabel = Exclude<InviteStatus, 'All'>
@@ -112,12 +113,11 @@ type InviteRow = {
   name: string
   account: string
   is_admin: boolean
-  backup_email: string
+  backup_email: string | null
   invited_by: string
   is_verified: number | boolean
   status: InviteStatusLabel
 }
-
 const search = ref('')
 // The overview links here with ?status=Expired; the filter follows the query on arrival.
 const route = useRoute()
@@ -132,12 +132,18 @@ watch(
 const selectedInvite = ref('')
 const showEditInvite = ref(false)
 const showDeleteInvites = ref(false)
-
-const list = usePagedList<InviteRow>('suite.mail.api.admin.get_account_requests', () => ({
-  search: search.value,
-  ...(status.value !== 'All' ? { status: status.value } : {}),
+const debouncedSearch = refDebounced(search, 300)
+const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
+const list = useInfiniteQuery(api.mail.admin.invites.list, () => ({
+  search: debouncedSearch.value,
+  ...(status.value !== 'All'
+    ? {
+        status: status.value,
+      }
+    : {}),
+  start: 0,
+  page_length: pageLength.value,
 }))
-
 const inviteRows = computed<InviteRow[]>(() =>
   list.rows.map((row) => ({
     ...row,
@@ -145,10 +151,6 @@ const inviteRows = computed<InviteRow[]>(() =>
     status: row.status,
   })),
 )
-
-watchDebounced(() => search.value, list.reload, { debounce: 300 })
-watch(() => status.value, list.reload)
-
 const listView = useTemplateRef<{
   selections?: Set<string>
   toggleAllRows?: () => void
@@ -166,45 +168,57 @@ watch(
     }
   },
 )
-
-const reloadInvites = () => list.reload()
-defineExpose({ reloadInvites })
-
-const deleteInvites = createResource({
-  url: 'suite.mail.api.admin.delete_account_requests',
-  makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
-  onSuccess: () => {
-    list.reload()
-    showDeleteInvites.value = false
-    raiseToast(__('Invites deleted.'))
-    listView.value?.toggleAllRows?.()
-  },
-  onError: (error: { messages?: string[] }) => {
-    showDeleteInvites.value = false
-    raiseToast(error.messages?.[0] || __('Failed to delete invites.'), 'error')
-  },
+const reloadInvites = () => list.refetch().catch(() => {})
+defineExpose({
+  reloadInvites,
 })
-
+const deleteInvites = useMutation(api.mail.admin.members.deleteAccountRequests)
+async function deleteInvitesSubmit() {
+  const input: InputOf<typeof api.mail.admin.members.deleteAccountRequests> = {
+    names: Array.from(listView.value?.selections || []),
+  }
+  await deleteInvites.run(input)
+  showDeleteInvites.value = false
+  raiseToast(__('Invites deleted.'))
+  listView.value?.toggleAllRows?.()
+}
 const DELETE_INVITES_OPTIONS = {
   title: __('Delete Invites'),
   message: __(
     'Are you sure you want to delete the selected invites? This will invalidate them for the recipients if pending.',
   ),
   actions: [
-    { label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteInvites.submit },
+    {
+      label: __('Confirm'),
+      variant: 'solid' as const,
+      theme: 'red' as const,
+      onClick: deleteInvitesSubmit,
+    },
   ],
 }
-
 const LIST_COLUMNS = [
-  { label: __('Assigned Email'), key: 'account' },
-  { label: __('Role'), key: 'role' },
-  { label: __('Backup Email'), key: 'backup_email' },
-  { label: __('Invited By'), key: 'invited_by' },
-  { label: __('Invitation Status'), key: 'status' },
+  {
+    label: __('Assigned Email'),
+    key: 'account',
+  },
+  {
+    label: __('Role'),
+    key: 'role',
+  },
+  {
+    label: __('Backup Email'),
+    key: 'backup_email',
+  },
+  {
+    label: __('Invited By'),
+    key: 'invited_by',
+  },
+  {
+    label: __('Invitation Status'),
+    key: 'status',
+  },
 ]
-
 const hasActiveFilters = computed(() => !!search.value || status.value !== 'All')
-
 const listOptions = computed(() => ({
   showTooltip: false,
   rowHeight: 50,
@@ -224,14 +238,24 @@ const listOptions = computed(() => ({
     showEditInvite.value = true
   },
 }))
-
 const STATUS_OPTIONS = [
-  { label: __('All'), value: 'All' },
-  { label: __('Pending'), value: 'Pending' },
-  { label: __('Accepted'), value: 'Accepted' },
-  { label: __('Expired'), value: 'Expired' },
+  {
+    label: __('All'),
+    value: 'All',
+  },
+  {
+    label: __('Pending'),
+    value: 'Pending',
+  },
+  {
+    label: __('Accepted'),
+    value: 'Accepted',
+  },
+  {
+    label: __('Expired'),
+    value: 'Expired',
+  },
 ]
-
 const getTheme = (status: InviteStatusLabel) =>
   status === 'Accepted' ? 'green' : status === 'Expired' ? 'gray' : 'amber'
 </script>

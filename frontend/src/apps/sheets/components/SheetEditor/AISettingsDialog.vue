@@ -35,10 +35,10 @@
         <p class="ai-label">Anthropic API key</p>
         <FormControl
           type="password"
-          :modelValue="apiKey"
+          :model-value="apiKey"
           :placeholder="keyIsSet ? '•••••••••• key on file — leave blank to keep' : 'sk-ant-...'"
           autocomplete="off"
-          @update:modelValue="apiKey = $event"
+          @update:model-value="apiKey = $event"
         />
         <p v-if="keyIsSet" class="ai-key-state">A key is currently configured.</p>
 
@@ -46,9 +46,9 @@
         <p class="ai-label ai-label--gap">Model</p>
         <FormControl
           type="text"
-          :modelValue="model"
+          :model-value="model"
           placeholder="claude-opus-4-8"
-          @update:modelValue="model = $event"
+          @update:model-value="model = $event"
         />
         <p class="ai-key-state">
           Tip: set this to <code>mock</code> for a keyless local demo — sums, averages, counts,
@@ -78,7 +78,7 @@
 import { Badge, Button, Dialog, FormControl, Spinner, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
-import { call } from '../../utils/api.js'
+import { api, client } from '@/api'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -112,7 +112,7 @@ watch(show, async (open) => {
   apiKey.value = ''
   loading.value = true
   try {
-    const s = await call('suite.sheets.api.get_ai_settings')
+    const s = await client.query(api.sheets.assistant.settings)
     enabled.value = !!s.enabled
     model.value = s.model || 'claude-opus-4-8'
     keyIsSet.value = !!s.keyIsSet
@@ -126,7 +126,7 @@ watch(show, async (open) => {
 async function save() {
   saving.value = true
   try {
-    const s = await call('suite.sheets.api.save_ai_settings', {
+    const s = await client.mutation(api.sheets.assistant.updateSettings, {
       api_key: apiKey.value, // '' = keep existing key
       enabled: enabled.value ? 1 : 0,
       model: model.value || '',

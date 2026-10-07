@@ -22,12 +22,13 @@ describe('canonical route metadata', () => {
       '/drive/trash',
       '/mail/:pathMatch(.*)*',
       '/calendar/:pathMatch(.*)*',
+      '/people/:pathMatch(.*)*',
       '/meet/:pathMatch(.*)*',
       '/d/:node/:slug?',
     ])
   })
 
-  it.each(['mail', 'calendar', 'meet'])('renders %s in the shell', (area) => {
+  it.each(['mail', 'calendar', 'people', 'meet'])('renders %s in the shell', (area) => {
     expect(canonicalRoutes.find((route) => route.meta?.area === area)?.meta?.frame).toBe('shell')
   })
 })

@@ -157,9 +157,10 @@
 <script setup lang="ts">
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
-import { Button, Combobox, createResource, ErrorMessage, Tooltip } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, Tooltip } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
 
+import { api, useMutation } from '@/api'
 import {
   calendarLogo,
   driveLogo,
@@ -254,10 +255,8 @@ const current = computed(() => copy[step.value])
 
 const inviteSummaryLabel = computed(() => inviteSummary.value || __('Working solo for now'))
 
-const markOnboarded = createResource({
-  url: 'suite.api.account.mark_onboarded',
-  makeParams: () => ({ timezone: timezone.value }),
-})
+const markOnboarded = useMutation(api.suite.site.completeOnboarding, { silent: true })
+let onboarding: Promise<unknown> | undefined
 
 function getStarted() {
   step.value = 'workspace'
@@ -276,7 +275,8 @@ function goBack() {
 // so closing the tab here doesn't send the user back through the wizard.
 function finish() {
   step.value = 'ready'
-  markOnboarded.submit().catch(() => {})
+  onboarding = markOnboarded.run({ is_onboarded: true, timezone: timezone.value })
+  void onboarding.catch(() => {})
 }
 
 const isDark = computed(() =>
@@ -293,8 +293,9 @@ async function openSuite() {
   navigating.value = true
   // Completion already ran on reaching this step; only retry if it's unfinished.
   try {
-    if (markOnboarded.loading) await markOnboarded.promise
-    else if (!markOnboarded.fetched || markOnboarded.error) await markOnboarded.submit()
+    if (!onboarding || markOnboarded.error)
+      onboarding = markOnboarded.run({ is_onboarded: true, timezone: timezone.value })
+    await onboarding
   } catch {
     navigating.value = false
     return

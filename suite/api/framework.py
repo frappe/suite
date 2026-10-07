@@ -1,6 +1,6 @@
 """Frappe HTTP registration for Suite resources."""
 
-from suite.api.routes import ROUTES
+from suite.api.routes import CONTRACT_ROUTES, ROUTES
 from suite.composition.http import HttpOwner
 
 HTTP = HttpOwner(
@@ -8,5 +8,6 @@ HTTP = HttpOwner(
     prefix="/api/suite/",
     target="suite.api.routes",
     routes=ROUTES,
+    contract_routes=CONTRACT_ROUTES,
     strip_owner=False,
 )

@@ -8,21 +8,20 @@
           type="combobox"
           :open-on-click="true"
           :options="selectFromOptions"
-          @update:model-value="contacts.reload"
         />
         <hr />
         <FormControl v-model="search" :placeholder="__('Search...')" />
         <ListView
-          v-if="contacts?.data"
+          v-if="rows"
           ref="listView"
           class="h-60 shrink-0"
           :columns="LIST_COLUMNS"
-          :rows="contacts.data"
+          :rows="rows"
           :options="LIST_OPTIONS"
           row-key="email"
         >
           <ListHeader />
-          <ListRows v-if="contacts.data.length" @scroll="loadMoreContacts" />
+          <ListRows v-if="rows.length" @scroll="loadMoreContacts" />
           <ListEmptyState v-else />
         </ListView>
       </div>
@@ -31,11 +30,12 @@
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn, watchDebounced } from '@vueuse/core'
-import { createResource, Dialog, FormControl } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Dialog, FormControl } from 'frappe-ui'
 import { ListEmptyState, ListHeader, ListRows, ListView } from 'frappe-ui/experimental'
 import { computed, ref, useTemplateRef } from 'vue'
 
+import { api, useInfiniteQuery, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { extractNameFromEmail } from '@/apps/mail/utils'
 
@@ -55,7 +55,7 @@ const options = computed(() => ({
   actions: [
     {
       label: __('Insert'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled: listView.value?.selections.size === 0,
       onClick: () => {
         emit('insert', Array.from(listView.value?.selections))
@@ -68,52 +68,49 @@ const options = computed(() => ({
 const selectFrom = ref('all')
 const selectFromOptions = computed(() => [
   { label: __('All Contacts'), value: 'all' },
-  ...addressBooks.data.map((ab) => ({
+  ...(addressBooks.data ?? []).map((ab) => ({
     label: ab._name,
     value: ab.id,
   })),
 ])
 
 const search = ref('')
-const limit = ref(50)
+const debouncedSearch = refDebounced(search, 300)
 
-const contacts = createResource({
-  url: 'suite.mail.api.contacts.get_contacts',
-  auto: true,
-  makeParams: () => {
-    const filters = []
-
-    if (search.value)
-      filters.push({
-        operator: 'OR',
-        conditions: [{ text: search.value }, { email: search.value }],
-      })
-
-    if (selectFrom.value !== 'all') filters.push({ inAddressBook: selectFrom.value })
-
-    const filter =
-      filters.length === 0
-        ? null
-        : filters.length === 1
-          ? filters[0]
-          : { operator: 'AND', conditions: filters }
-
-    return { account: store.accountId, filter, limit: limit.value }
-  },
-  transform: (data) =>
-    data.map((c) => ({ ...c, full_name: c.full_name || extractNameFromEmail(c.email) })),
-})
-
-watchDebounced(() => search.value, contacts.reload, { debounce: 300 })
-
-const loadMoreContacts = useDebounceFn((e) => {
-  const { scrollTop, scrollHeight, clientHeight } = e.target
-  if (scrollTop + clientHeight >= scrollHeight - 10 && contacts.data?.length === limit.value) {
-    limit.value += 50
-    contacts.reload()
-    setTimeout(() => e.target.scrollTo({ top: e.target.scrollHeight, behavior: 'smooth' }), 100)
+const contacts = useInfiniteQuery(api.mail.contacts.list, () => {
+  const filters: NonNullable<InputOf<typeof api.mail.contacts.list>['filter']>[] = []
+  if (debouncedSearch.value)
+    filters.push({
+      operator: 'OR',
+      conditions: [{ text: debouncedSearch.value }, { email: debouncedSearch.value }],
+    })
+  if (selectFrom.value !== 'all') filters.push({ inAddressBook: selectFrom.value })
+  return {
+    account: store.accountId,
+    filter: filters.length > 1 ? { operator: 'AND', conditions: filters } : (filters[0] ?? null),
+    start: 0,
+    limit: 50,
   }
-}, 500)
+})
+const rows = computed(() =>
+  contacts.rows.flatMap((card) =>
+    card.emails
+      .filter((email) => email.address)
+      .map((email) => ({
+        email: email.address!,
+        full_name: card.full_name || extractNameFromEmail(email.address!),
+        user_image: null,
+      })),
+  ),
+)
+function loadMoreContacts(event: Event) {
+  const target = event.target
+  if (
+    target instanceof HTMLElement &&
+    target.scrollTop + target.clientHeight >= target.scrollHeight - 10
+  )
+    void contacts.fetchNext().catch(() => {})
+}
 
 const LIST_COLUMNS = [
   { label: __('Name'), key: 'full_name' },

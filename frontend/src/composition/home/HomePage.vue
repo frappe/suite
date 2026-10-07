@@ -121,11 +121,25 @@
           </div>
 
           <div
-            v-if="upcomingQuery.status === 'pending' && !upcomingEvents.length"
-            class="space-y-2"
-            aria-label="Loading upcoming events"
+            v-if="upcomingQuery.status === 'pending' && cachedUpcomingEvents == null"
+            class="overflow-hidden rounded-7 border border-outline-gray-1 bg-surface-gray-1"
+            :aria-label="__('Loading upcoming events')"
+            role="status"
           >
-            <Skeleton v-for="index in 3" :key="index" class="h-10 w-full" />
+            <div
+              v-for="index in 3"
+              :key="index"
+              class="flex min-h-[66px] items-center gap-2.5 border-outline-gray-1 px-2.5 py-2.5 [&:not(:last-child)]:border-b"
+              aria-hidden="true"
+            >
+              <div
+                class="size-11 shrink-0 rounded-6 border border-outline-gray-1 bg-surface-base"
+              />
+              <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                <Skeleton class="h-4 w-40 max-w-full" />
+                <Skeleton class="h-3 w-32 max-w-full" />
+              </div>
+            </div>
           </div>
           <div
             v-else-if="upcomingQuery.status === 'error' && !upcomingEvents.length"
@@ -138,48 +152,17 @@
             <Button :label="__('Retry')" variant="ghost" @click="upcomingQuery.refetch()" />
           </div>
           <p
-            v-else-if="!eventGroups.length"
+            v-else-if="!upcomingRows.length"
             class="rounded-5 border border-outline-gray-1 px-3 py-8 text-center text-p-sm text-ink-gray-5"
           >
             {{ __('Nothing scheduled') }}
           </p>
-          <List
+          <UpcomingEventList
             v-else
-            class="-mx-3 list-row-px-3"
-            :columns="
-              isMobile ? ['5.5rem', 'minmax(0,1fr)', '4rem'] : ['7rem', 'minmax(0,1fr)', '5rem']
-            "
-            :row-height="isMobile ? 48 : 40"
+            :events="upcomingRows"
+            :current-user="session.user.value?.id"
             data-testid="upcoming-rows"
-          >
-            <ListGroup v-for="group in eventGroups" :key="group.day" :label="__(group.day)">
-              <ListRow
-                v-for="event in group.events"
-                :key="eventKey(event)"
-                :value="eventKey(event)"
-              >
-                <ListCell>
-                  <span class="truncate text-base text-ink-gray-5">
-                    {{ formatEventTime(event) }}
-                  </span>
-                </ListCell>
-                <ListCell>
-                  <span class="truncate text-base text-ink-gray-8">
-                    {{ event.title || __('Untitled event') }}
-                  </span>
-                </ListCell>
-                <ListCell class="justify-end">
-                  <Button
-                    v-if="event.conferencing"
-                    :label="__('Join')"
-                    icon-left="lucide-video"
-                    variant="outline"
-                    :route="meetRoute(event.conferencing.meeting_id)"
-                  />
-                </ListCell>
-              </ListRow>
-            </ListGroup>
-          </List>
+          />
           <div
             v-if="upcomingQuery.status === 'error' && upcomingEvents.length"
             class="mt-3 flex items-center justify-between rounded-4 bg-surface-red-2 px-3 py-2"
@@ -214,119 +197,107 @@
       </template>
     </Dialog>
 
-    <Dialog v-model:open="scheduleDialogOpen" :title="__('Schedule meeting')" size="md">
-      <div class="space-y-4">
-        <FormControl v-model="meetingTitle" :label="__('Title')" required />
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormControl
-            v-model="meetingStart"
-            :label="__('Starts')"
-            type="datetime-local"
-            required
-          />
-          <FormControl v-model="meetingEnd" :label="__('Ends')" type="datetime-local" required />
-        </div>
-        <p v-if="scheduleError" class="text-p-sm text-ink-red-7">
-          {{ scheduleError }}
-        </p>
-      </div>
-      <template #actions>
-        <div class="flex justify-end gap-2">
-          <Button :label="__('Cancel')" @click="scheduleDialogOpen = false" />
-          <Button
-            :disabled="!meetingTitle.trim()"
-            :label="__('Schedule')"
-            :loading="scheduleMeetingMutation.isPending"
-            variant="solid"
-            @click="submitScheduledMeeting"
-          />
-        </div>
-      </template>
-    </Dialog>
+    <ScheduleMeetingDialog ref="schedule-dialog" @scheduled="upcomingQuery.refetch()" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useNow } from '@vueuse/core'
 import {
   Button,
   Dialog,
-  Dropdown,
   FormControl,
   PageHeader,
   PageHeaderMobile,
   PageHeaderTitle,
   ScrollArea,
   Skeleton,
-  toast,
 } from 'frappe-ui'
-import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 import { computed, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
-import { upcomingEvents as upcomingEventsDescriptor, type CalendarEvent } from '@/apps/calendar'
+import { api, useMutation, useQuery } from '@/api'
+import {
+  UpcomingEventList,
+  useUpcomingEvents,
+  type CalendarEvent,
+  type UpcomingEventRow,
+} from '@/apps/calendar'
 import {
   DriveFileCard,
   driveNodeRoute,
-  driveRecents,
   formatDriveListingDate,
   useDriveDocumentCreation,
   useDrivePreviewRefresh,
   type DriveNodeSummary,
 } from '@/apps/drive'
-import { createRoom, scheduleMeeting } from '@/apps/meet'
+import { ScheduleMeetingDialog } from '@/apps/meet'
 import { documentTypes } from '@/composition/documentRegistry'
-import {
-  formatEventTime,
-  groupHomeEvents,
-  homeEventWindow,
-  toLocalDateTimeInput,
-} from '@/composition/home/homeTime'
+import { formatEventTime, groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
+import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
-import { useMutation, useQuery } from '@/platform/server-state'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { isMobile } from '@/shell/useIsMobile'
 
 const router = useRouter()
+const session = useSession()
 const scrollArea = useTemplateRef<InstanceType<typeof ScrollArea>>('home-scroll')
 useRestoredScroll(() => scrollArea.value?.viewportElement)
 const homeNow = new Date()
-const eventWindow = homeEventWindow(homeNow)
+const upcomingNow = useNow({ interval: 30_000 })
+const eventWindow = computed(() => homeEventWindow(upcomingNow.value))
 // Recent shows documents and files, not folders. Recents has no kind filter,
 // so ask for more than the grid holds and keep the first non-folders.
 const RECENT_CARDS = 12
-const recentQuery = useQuery(driveRecents(RECENT_CARDS * 4))
+const recentQuery = useQuery(api.drive.views.list, {
+  view: 'recents',
+  limit: RECENT_CARDS * 4,
+  expand: 'preview',
+})
 // Thumbnail URLs are signed and expire, so Recent refetches them as Drive's grid does.
 useDrivePreviewRefresh(() => recentQuery.refetch())
-const upcomingQuery = useQuery(upcomingEventsDescriptor(eventWindow))
+const { query: upcomingQuery, events: cachedUpcomingEvents } = useUpcomingEvents(
+  () => eventWindow.value,
+)
 const createDocumentMutation = useDriveDocumentCreation()
-const createRoomMutation = useMutation(createRoom)
-const scheduleMeetingMutation = useMutation(scheduleMeeting)
-
+const createRoomMutation = useMutation(api.meet.rooms.create)
 const recentRows = computed(() =>
-  (recentQuery.rows as DriveNodeSummary[])
+  ((recentQuery.data?.rows ?? []) as DriveNodeSummary[])
     .filter((node) => node.kind !== 'folder')
     .slice(0, RECENT_CARDS),
 )
-const upcomingEvents = computed(() => (upcomingQuery.data ?? []) as CalendarEvent[])
-const eventGroups = computed(() => groupHomeEvents(upcomingEvents.value, homeNow))
+const upcomingEvents = computed(() => cachedUpcomingEvents.value ?? [])
+const upcomingRows = computed(() =>
+  groupHomeEvents(upcomingEvents.value, upcomingNow.value)
+    .flatMap((group) =>
+      group.events.map((event) => {
+        const start = new Date(event.start ?? '')
+        const title = event.title || __('Untitled event')
+        return {
+          id: eventKey(event),
+          title,
+          month: start.toLocaleDateString(undefined, { month: 'short' }),
+          day: String(start.getDate()),
+          time: formatEventTime(event),
+          actionLabel: event.conferencing ? __('Join {0}', [title]) : __('Open {0}', [title]),
+          route: event.conferencing ? meetRoute(event.conferencing.meeting_id) : '/calendar',
+          participants: eventParticipants(event),
+        }
+      }),
+    )
+    .slice(0, 3),
+)
 
 const joinDialogOpen = ref(false)
 const meetingCode = ref('')
 const meetingCodeError = ref('')
-const scheduleDialogOpen = ref(false)
-const nextHour = new Date(homeNow)
-nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0)
-const meetingTitle = ref('')
-const meetingStart = ref(toLocalDateTimeInput(nextHour))
-const meetingEnd = ref(toLocalDateTimeInput(new Date(nextHour.getTime() + 60 * 60_000)))
-const scheduleError = ref('')
-
+const scheduleDialog = useTemplateRef<InstanceType<typeof ScheduleMeetingDialog>>('schedule-dialog')
 const newMenuItems = documentTypes.map((definition) => ({
   label: definition.newLabel(),
   icon: definition.icon,
   onClick: () => createDocument(definition.contentDoctype),
 }))
-
 const meetMenuItems = [
   {
     label: __('Start instant meeting'),
@@ -347,7 +318,6 @@ const meetMenuItems = [
     },
   },
 ]
-
 const scheduleMenuItems = [
   {
     label: __('Event'),
@@ -357,25 +327,21 @@ const scheduleMenuItems = [
   {
     label: __('Meeting'),
     icon: 'lucide-video',
-    onClick: () => {
-      scheduleError.value = ''
-      scheduleDialogOpen.value = true
-    },
+    onClick: () => scheduleDialog.value?.show(),
   },
 ]
-
 async function createDocument(contentDoctype: string) {
   const node = await createDocumentMutation.run({
     content_doctype: contentDoctype,
   })
   if (node) await router.push(driveNodeRoute(node))
 }
-
 async function startMeeting(type: 'open' | 'restricted') {
-  const room = await createRoomMutation.run({ type })
+  const room = await createRoomMutation.run({
+    type,
+  })
   if (room) await router.push(meetRoute(room.code))
 }
-
 function joinWithCode() {
   const code = meetingCode.value.trim()
   meetingCodeError.value = ''
@@ -386,33 +352,36 @@ function joinWithCode() {
   joinDialogOpen.value = false
   void router.push(meetRoute(code))
 }
-
-async function submitScheduledMeeting() {
-  scheduleError.value = ''
-  const start = new Date(meetingStart.value)
-  const end = new Date(meetingEnd.value)
-  if (!meetingTitle.value.trim() || Number.isNaN(start.getTime()) || end <= start) {
-    scheduleError.value = __('Enter a title and an end time after the start time.')
-    return
-  }
-  const result = await scheduleMeetingMutation.run({
-    title: meetingTitle.value.trim(),
-    start: start.toISOString(),
-    end: end.toISOString(),
-    attendees: [],
-  })
-  if (!result) return
-  scheduleDialogOpen.value = false
-  meetingTitle.value = ''
-  toast.success(__('Meeting scheduled.'))
-  await upcomingQuery.refetch()
-}
-
 function meetRoute(code: string): string {
   return `/meet/${encodeURIComponent(code)}`
 }
-
 function eventKey(event: CalendarEvent): string {
   return String(event.id ?? event.name ?? event.uid ?? `${event.start}-${event.title}`)
+}
+
+function eventParticipants(event: CalendarEvent) {
+  const participants: NonNullable<UpcomingEventRow['participants']>[number][] = []
+  for (const participant of event.participants || []) {
+    if (
+      !participant ||
+      typeof participant !== 'object' ||
+      !('email' in participant) ||
+      typeof participant.email !== 'string' ||
+      !participant.email
+    )
+      continue
+    participants.push({
+      email: participant.email,
+      name:
+        '_name' in participant && typeof participant._name === 'string' && participant._name
+          ? participant._name
+          : participant.email,
+      image:
+        'user_image' in participant && typeof participant.user_image === 'string'
+          ? participant.user_image
+          : undefined,
+    })
+  }
+  return participants
 }
 </script>

@@ -142,7 +142,7 @@
       v-model="showReschedule"
       :title="__('Reschedule delivery')"
       :initial-value="data?.send_at"
-      @confirm="(sendAt: string) => rescheduleMail.submit({ send_at: sendAt })"
+      :save="(sendAt: string) => rescheduleMailSubmit({ send_at: sendAt })"
     />
     <Dialog v-model:open="showSendNow" v-bind="sendNowOptions" />
     <Dialog v-model:open="showRetry" v-bind="retryOptions" />
@@ -151,18 +151,19 @@
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, createResource, Dialog, Skeleton, usePageMeta } from 'frappe-ui'
+import { Breadcrumbs, Button, Dialog, Skeleton, usePageMeta } from 'frappe-ui'
 import { ArrowUpRight } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import LedgerRow from '@/apps/mail/components/LedgerRow.vue'
 import LedgerSection from '@/apps/mail/components/LedgerSection.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 import SubmissionActivity from '@/apps/mail/components/SubmissionActivity.vue'
 import { userStore } from '@/apps/mail/stores/user'
-import { raiseToast } from '@/apps/mail/utils'
+import { raiseError, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import {
@@ -171,17 +172,19 @@ import {
   statusTheme,
   subjectLabel,
   submissionActions,
+  submissionDetails,
   type SubmissionDetails,
 } from '@/apps/mail/utils/submission'
 import { activityEntries, statusSummary, themeInkClass } from '@/apps/mail/utils/submissionActivity'
-import { appPageMeta } from '@/utils/documentTitle'
+import { appPageMeta } from '@/platform/page-meta'
 
-const { accountId, submissionId } = defineProps<{ accountId: string; submissionId: string }>()
-
+const { accountId, submissionId } = defineProps<{
+  accountId: string
+  submissionId: string
+}>()
 const store = userStore()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-
 const showReschedule = ref(false)
 const showSendNow = ref(false)
 const showRetry = ref(false)
@@ -191,40 +194,28 @@ const showCancel = ref(false)
 // the skeleton until the server responds — reload() alone would keep showing the previous
 // submission's content under the new URL. In-place refreshes (the actions below) keep the
 // content in place instead.
-const refetching = ref(false)
-
-const submission = createResource({
-  url: 'suite.mail.api.scheduled.get_scheduled_mail',
-  auto: true,
-  makeParams: () => ({ account: accountId, id: submissionId }),
-  onSuccess: () => (refetching.value = false),
-  onError: (error: { messages?: string[]; message?: string }) => {
-    refetching.value = false
-    raiseToast(error.messages?.[0] || error.message || __('Submission not found.'), 'error')
-    backToList()
-  },
-})
+const refetching = computed(() => submission.status === 'pending')
+const submission = useQuery(api.mail.scheduled.get, () => ({
+  account: accountId,
+  id: submissionId,
+}))
 
 // Actions that replace the submission land on the successor's id (see below).
 watch(
   () => submissionId,
   () => {
-    refetching.value = true
-    submission.reload()
+    submission.refetch().catch(() => {})
   },
 )
-
 const data = computed<SubmissionDetails | null>(() =>
-  refetching.value ? null : submission.data || null,
+  refetching.value || !submission.data ? null : submissionDetails(submission.data),
 )
 
 // The subject once known; until then the tab keeps saying "Outbox" (where the user came
 // from) and the breadcrumb renders no second crumb — a placeholder title would just flash
 // and be replaced.
 const title = computed(() => (data.value ? subjectLabel(data.value) : ''))
-
 usePageMeta(() => appPageMeta(title.value || __('Outbox'), 'Mail'))
-
 const summary = computed(() => (data.value ? statusSummary(data.value) : ''))
 const activity = computed(() => (data.value ? activityEntries(data.value) : []))
 
@@ -236,27 +227,23 @@ const actions = computed(() => {
     reschedule: () => (showReschedule.value = true),
     cancelDelivery: () => (showCancel.value = true),
     sendAgain: () => (showRetry.value = true),
-    remove: () => dismissMail.submit(),
+    remove: () => dismissMailSubmit(),
   })
 })
-
 const canOpenEmail = computed(
   () => !!data.value?.thread_id && !data.value.email_deleted && !!store.mailboxIds.sent,
 )
-
 const fromLabel = computed(() => {
   if (!data.value) return undefined
   const { from_name, from_email, identity_email, envelope_from } = data.value
   const email = from_email || identity_email || envelope_from
   return from_name && email ? `${from_name} <${email}>` : email
 })
-
 const recipientsOfType = (type: string) =>
   data.value?.recipients
     .filter((r) => r.type === type)
     .map((r) => (r.display_name ? `${r.display_name} <${r.email}>` : r.email))
     .join(', ') || undefined
-
 const reportsLabel = computed(() =>
   data.value
     ? __('{0} delivery reports, {1} read receipts', [
@@ -265,7 +252,6 @@ const reportsLabel = computed(() =>
       ])
     : undefined,
 )
-
 const identifiers = computed(() => {
   if (!data.value) return ''
   const { id, email_id, thread_id, identity_email } = data.value
@@ -291,68 +277,102 @@ const openEmail = () => {
     },
   })
 }
-
-const backToList = () => router.replace({ name: 'mail-outbox', params: { accountId } })
+const backToList = () =>
+  router.replace({
+    name: 'mail-outbox',
+    params: {
+      accountId,
+    },
+  })
 
 /** Follow an action that replaced this submission to its successor's page. */
 const followReplacement = (id: string) =>
-  router.replace({ name: 'mail-submission', params: { accountId, submissionId: id } })
-
-const onActionError = (error: { messages?: string[]; message?: string }) => {
+  router.replace({
+    name: 'mail-submission',
+    params: {
+      accountId,
+      submissionId: id,
+    },
+  })
+const onActionError = (error: unknown) => {
   showSendNow.value = false
   showRetry.value = false
   showCancel.value = false
-  raiseToast(error.messages?.[0] || error.message || __('Request failed.'), 'error')
-  submission.reload()
+  raiseError(error)
+  submission.refetch().catch(() => {})
 }
-
-const rescheduleMail = createResource({
-  url: 'suite.mail.api.scheduled.reschedule_mail',
-  makeParams: ({ send_at }: { send_at: string }) => ({
+const rescheduleMail = useMutation(api.mail.scheduled.reschedule, {
+  silent: true,
+})
+async function rescheduleMailSubmit({ send_at }: { send_at: string }) {
+  const input: InputOf<typeof api.mail.scheduled.reschedule> = {
     account: accountId,
     id: submissionId,
     send_at,
-  }),
-  onSuccess: (result: { id: string; send_at: string }) => {
-    raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(result.send_at)]))
-    followReplacement(result.id)
-  },
-  onError: onActionError,
+  }
+  const result = await rescheduleMail.run(input)
+  raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(result.send_at)]))
+  if (result.id) followReplacement(result.id)
+}
+const sendNow = useMutation(api.mail.scheduled.sendNow, {
+  silent: true,
 })
-
-const sendNow = createResource({
-  url: 'suite.mail.api.scheduled.send_scheduled_mail_now',
-  makeParams: () => ({ account: accountId, id: submissionId }),
-  onSuccess: (result: { id: string }) => {
+async function sendNowSubmit() {
+  const input: InputOf<typeof api.mail.scheduled.sendNow> = {
+    account: accountId,
+    id: submissionId,
+  }
+  try {
+    const result = await sendNow.run(input)
     showSendNow.value = false
     raiseToast(__('Message sent.'))
-    followReplacement(result.id)
-  },
-  onError: onActionError,
+    if (result.id) followReplacement(result.id)
+  } catch (error) {
+    onActionError(error)
+  }
+}
+const retryMail = useMutation(api.mail.scheduled.retry, {
+  silent: true,
 })
-
-const retryMail = createResource({
-  url: 'suite.mail.api.scheduled.retry_failed_mail',
-  makeParams: () => ({ account: accountId, id: submissionId }),
-  onSuccess: (result: { id: string }) => {
+async function retryMailSubmit() {
+  const input: InputOf<typeof api.mail.scheduled.retry> = {
+    account: accountId,
+    id: submissionId,
+  }
+  try {
+    const result = await retryMail.run(input)
     showRetry.value = false
     raiseToast(__('Message sent.'))
-    followReplacement(result.id)
-  },
-  onError: onActionError,
+    if (result.id) followReplacement(result.id)
+  } catch (error) {
+    onActionError(error)
+  }
+}
+const dismissMail = useMutation(api.mail.scheduled.dismiss, {
+  silent: true,
 })
-
-const dismissMail = createResource({
-  url: 'suite.mail.api.scheduled.dismiss_failed_mail',
-  makeParams: () => ({ account: accountId, id: submissionId }),
-  onSuccess: backToList,
-  onError: onActionError,
+async function dismissMailSubmit() {
+  const input: InputOf<typeof api.mail.scheduled.dismiss> = {
+    account: accountId,
+    id: submissionId,
+  }
+  try {
+    await dismissMail.run(input)
+    await backToList()
+  } catch (error) {
+    onActionError(error)
+  }
+}
+const cancelSchedule = useMutation(api.mail.scheduled.cancel, {
+  silent: true,
 })
-
-const cancelSchedule = createResource({
-  url: 'suite.mail.api.scheduled.cancel_scheduled_mail',
-  makeParams: () => ({ account: accountId, id: submissionId }),
-  onSuccess: (result: { id?: string }) => {
+async function cancelScheduleSubmit() {
+  const input: InputOf<typeof api.mail.scheduled.cancel> = {
+    account: accountId,
+    id: submissionId,
+  }
+  try {
+    const result = await cancelSchedule.run(input)
     showCancel.value = false
     raiseToast(
       result.id
@@ -361,18 +381,22 @@ const cancelSchedule = createResource({
       'success',
     )
     backToList()
-  },
-  onError: onActionError,
-})
-
+  } catch (error) {
+    onActionError(error)
+  }
+}
 const sendNowOptions = computed(() => ({
   title: __('Send Now'),
   message: __('Deliver this email immediately instead of at the scheduled time?'),
   actions: [
-    { label: __('Send'), variant: 'solid', loading: sendNow.loading, onClick: sendNow.submit },
+    {
+      label: __('Send'),
+      variant: 'solid' as const,
+      loading: sendNow.isPending,
+      onClick: sendNowSubmit,
+    },
   ],
 }))
-
 const retryOptions = computed(() => ({
   title: __('Send Again'),
   message:
@@ -380,24 +404,28 @@ const retryOptions = computed(() => ({
       ? __('The delivery failed. Try to send this email again now?')
       : __('Send this email again now?'),
   actions: [
-    { label: __('Send'), variant: 'solid', loading: retryMail.loading, onClick: retryMail.submit },
+    {
+      label: __('Send'),
+      variant: 'solid' as const,
+      loading: retryMail.isPending,
+      onClick: retryMailSubmit,
+    },
   ],
 }))
-
 const cancelOptions = computed(() => ({
   title: __('Cancel Delivery'),
   message: data.value?.email_deleted
     ? __('Cancel the scheduled delivery?')
     : __('Cancel the scheduled delivery and move the message back to Drafts?'),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
+  theme: 'amber' as const,
   actions: [
     {
       label: __('Confirm'),
-      variant: 'solid',
-      theme: 'red',
-      loading: cancelSchedule.loading,
-      onClick: cancelSchedule.submit,
+      variant: 'solid' as const,
+      theme: 'red' as const,
+      loading: cancelSchedule.isPending,
+      onClick: cancelScheduleSubmit,
     },
   ],
 }))

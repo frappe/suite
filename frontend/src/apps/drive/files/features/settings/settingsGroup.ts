@@ -1,10 +1,9 @@
-import { webdav } from '@/apps/drive/client/settings'
-import { useQuery } from '@/platform/server-state'
+import { api, useQuery } from '@/api'
 import { translate as __ } from '@/platform/translation'
 
 // Held for the session: the group condition and the External access body
 // read the same answer.
-const webdavAnswer = useQuery(webdav())
+const webdavAnswer = useQuery(api.drive.webdav.get, {})
 
 const drive = {
   label: () => __('Drive'),

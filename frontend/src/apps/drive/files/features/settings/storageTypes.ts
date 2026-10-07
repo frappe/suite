@@ -1,42 +1,33 @@
-import type { DriveNode } from '@/apps/drive/client/types'
-import { nodeIconTint } from '@/apps/drive/files/internal/icons'
+import { fileTypeIcon, fileTypeTint, type FileType } from '@/apps/drive/files/internal/icons'
 
 // The route names a file by its mime family from the legacy mime table, and a
 // content document by its content doctype. Both lists on the Statistics tab
 // draw an item by its type, so a row and a file of that type look the same.
-const TYPE_ICONS: Record<string, string> = {
-  Image: 'lucide-image',
-  Video: 'lucide-video',
-  Audio: 'lucide-audio-lines',
-  PDF: 'lucide-file',
-  Archive: 'lucide-file-archive',
-  Text: 'lucide-file-text',
-  Code: 'lucide-file-code',
-  Book: 'lucide-book',
-  Document: 'lucide-file-text',
-  'Writer Document': 'lucide-file-text',
-  Spreadsheet: 'lucide-table',
-  Sheet: 'lucide-table',
-  Presentation: 'lucide-presentation',
+// Any other type is a plain file.
+const STORAGE_FILE_TYPES: Record<string, FileType> = {
+  Image: 'image',
+  Video: 'video',
+  Audio: 'audio',
+  PDF: 'pdf',
+  Archive: 'archive',
+  Text: 'text',
+  Code: 'code',
+  'XML Data': 'code',
+  Document: 'text',
+  'Writer Document': 'doc',
+  Spreadsheet: 'sheet',
+  Sheet: 'sheet',
+  Presentation: 'slides',
 }
 
-type IconNode = Pick<DriveNode, 'kind' | 'mime' | 'content_doctype'>
-
-// A node of each type that Drive tints, so a type takes the tint Drive gives
-// its files. Any other type is gray there too.
-const TYPE_NODES: Record<string, IconNode> = {
-  Image: { kind: 'file', mime: 'image/png', content_doctype: null },
-  PDF: { kind: 'file', mime: 'application/pdf', content_doctype: null },
-  'Writer Document': { kind: 'document', mime: null, content_doctype: 'Writer Document' },
-  Spreadsheet: { kind: 'document', mime: null, content_doctype: 'Spreadsheet' },
-  Sheet: { kind: 'document', mime: null, content_doctype: 'Sheet' },
-  Presentation: { kind: 'document', mime: null, content_doctype: 'Presentation' },
+function storageFileType(type: string): FileType {
+  return STORAGE_FILE_TYPES[type] ?? 'file'
 }
 
 export function storageTypeIcon(type: string): string {
-  return TYPE_ICONS[type] ?? 'lucide-file'
+  return fileTypeIcon(storageFileType(type))
 }
 
 export function storageTypeTint(type: string): string {
-  return nodeIconTint(TYPE_NODES[type] ?? { kind: 'file', mime: null, content_doctype: null })
+  return fileTypeTint(storageFileType(type))
 }

@@ -15,7 +15,7 @@
               type="button"
               class="flex rounded-[10px] focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
               :aria-label="__('Workspace logo options')"
-              :disabled="uploading || saveWorkspace.loading"
+              :disabled="uploading || saveWorkspace.isPending"
             >
               <Avatar :image="logo" :label="name" shape="square" size="3xl" class="!h-16 !w-16" />
             </button>
@@ -25,7 +25,7 @@
             type="button"
             class="flex rounded-[10px] focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
             :aria-label="__('Upload workspace logo')"
-            :disabled="uploading || saveWorkspace.loading"
+            :disabled="uploading || saveWorkspace.isPending"
             @click="openFileSelector"
           >
             <Avatar :label="name" shape="square" size="3xl" class="!h-16 !w-16">
@@ -41,7 +41,7 @@
               maxlength="20"
               class="w-full rounded-4 border border-transparent bg-transparent hover:border-outline-gray-2 ps-1.5 pe-6 py-1 text-xl-semibold text-ink-gray-8 placeholder-ink-gray-4 focus:border-outline-gray-4 focus:shadow-sm focus:outline-none focus:ring-0"
               :placeholder="__('Acme Inc.')"
-              :disabled="saveWorkspace.loading"
+              :disabled="saveWorkspace.isPending"
               @blur="saveName"
               @keydown.enter="($event.target as HTMLInputElement).blur()"
             />
@@ -60,9 +60,10 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, createResource, Dropdown, ErrorMessage, FileUploader, toast } from 'frappe-ui'
+import { Avatar, Dropdown, ErrorMessage, FileUploader, toast } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
+import { api, useMutation } from '@/api'
 import { useWorkspace } from '@/shell/useWorkspace'
 
 const AUTOSAVE_TOAST_ID = 'suite-workspace-autosave'
@@ -88,12 +89,12 @@ function logoMenuOptions(openFileSelector: () => void) {
   ]
 }
 
-const saveWorkspace = createResource({ url: 'suite.api.account.update_workspace' })
+const saveWorkspace = useMutation(api.suite.site.updateSettings, { silent: true })
 
 async function save(message: string) {
   const nextName = name.value.trim()
   try {
-    await saveWorkspace.submit({ workspace_name: nextName, workspace_logo: logo.value })
+    await saveWorkspace.run({ workspace_name: nextName, workspace_logo: logo.value })
     setWorkspace({ workspace_name: nextName, workspace_logo: logo.value })
     toast.success(message, { id: AUTOSAVE_TOAST_ID })
   } catch {

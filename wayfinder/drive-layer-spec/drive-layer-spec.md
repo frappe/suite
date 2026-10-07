@@ -529,7 +529,7 @@ node [010 §3].
 
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
-| `preview_size` | Int | | reqd 1, default 512 | Longest side of the preview, in px [006 §2]. |
+| `preview_size` | Int | | reqd 1, default 512 | Longest side of the preview, in px [006 §2]. Saving refuses a value outside 128 to 2048. A render reads a value outside that range as 512, and `migrate_preview_size_unit` resets one to 512: an older site stored a different unit in this field. |
 | `default_personal_quota` | Int, length 20 | | default 0 | Site default for a Personal root, in bytes. 0 is unlimited [010 §6]. |
 | `shared_quota` | Int, length 20 | | default 0 | Site default for the Shared root, in bytes. 0 is unlimited [010 §6]. |
 | `webdav_enabled` | Check | | default 0 | Site switch for the DAV mount. |
@@ -2434,7 +2434,13 @@ Render pipeline, for nodes with bytes.
    preview blob and runs no render [006 §1].
 3. Otherwise it renders by mime: image through PIL, a video frame through
    PyAV, a PDF page through pymupdf, as today. An unsupported mime writes
-   no row.
+   no row. A video is read from a seekable source, because PyAV reads the
+   index first, which an MP4 can keep at the end of the file, and then
+   seeks to the middle frame. On a driver with native ranged reads, such
+   as S3, the source is a buffered view over `read_range` that fetches only
+   the parts PyAV reads. Its plain stream cannot seek, and reading it would
+   download the whole file. A local or in-memory driver's stream is a
+   seekable file already.
 4. The preview blob is stored with `frappe.storage.blob.put_blob(stream,
    is_private=True, filename=...)`.
 

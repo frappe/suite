@@ -1,171 +1,300 @@
 // Generated from src/apps/writer/client/contract.json. Do not edit.
-import type { Operation } from '@/platform/transport'
+import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 
-export type CollabGetInput = { "node": string }
+export type CollabGetInput = { node: string }
 
 export type CollabGetOutput = Blob
 
-export type CollabGetError = "DriveNotFound" | "DriveForbidden" | "DriveLocked"
+export type CollabGetError = 'DriveNotFound' | 'DriveForbidden' | 'DriveLocked'
 
-const operationCollabGet: Operation<CollabGetInput, CollabGetOutput, CollabGetError> = {
-  id: "collab_get",
-  owner: "writer",
-  method: "GET",
-  path: "documents/{node}/collab",
-  prefix: "/api/suite/writer/",
-  pathParams: ["node"],
-  nodeParams: ["node"],
+const operationCollabGet: QueryRef<CollabGetInput, CollabGetOutput, CollabGetError> = {
+  id: 'collab_get',
+  owner: 'writer',
+  kind: 'query',
+  publicName: 'collab.open',
+  bytes: true,
+  method: 'GET',
+  path: 'documents/{node}/collab',
+  prefix: '/api/suite/writer/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
   entity: null,
-  errors: ["DriveNotFound","DriveForbidden","DriveLocked"],
-  validateInput(value): asserts value is CollabGetInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'collab_get input') },
-  validateOutput(value): asserts value is CollabGetOutput { void value },
+  errors: ['DriveNotFound', 'DriveForbidden', 'DriveLocked'],
+  loadValidators: async () => (await import('./validators')).operationCollabGet,
 }
 
-export type CollabUpdatesGetInput = { "node": string }
+export type CollabUpdatesGetInput = { node: string }
 
 export type CollabUpdatesGetOutput = Blob
 
-export type CollabUpdatesGetError = "DriveNotFound" | "DriveForbidden" | "DriveLocked"
+export type CollabUpdatesGetError = 'DriveNotFound' | 'DriveForbidden' | 'DriveLocked'
 
-const operationCollabUpdatesGet: Operation<CollabUpdatesGetInput, CollabUpdatesGetOutput, CollabUpdatesGetError> = {
-  id: "collab_updates_get",
-  owner: "writer",
-  method: "GET",
-  path: "documents/{node}/collab/updates",
-  prefix: "/api/suite/writer/",
-  pathParams: ["node"],
-  nodeParams: ["node"],
+const operationCollabUpdatesGet: QueryRef<
+  CollabUpdatesGetInput,
+  CollabUpdatesGetOutput,
+  CollabUpdatesGetError
+> = {
+  id: 'collab_updates_get',
+  owner: 'writer',
+  kind: 'query',
+  publicName: 'collab.pull',
+  bytes: true,
+  method: 'GET',
+  path: 'documents/{node}/collab/updates',
+  prefix: '/api/suite/writer/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
   entity: null,
-  errors: ["DriveNotFound","DriveForbidden","DriveLocked"],
-  validateInput(value): asserts value is CollabUpdatesGetInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"}},"required":["node"],"additionalProperties":false,"$defs":{}}, 'collab_updates_get input') },
-  validateOutput(value): asserts value is CollabUpdatesGetOutput { void value },
+  errors: ['DriveNotFound', 'DriveForbidden', 'DriveLocked'],
+  loadValidators: async () => (await import('./validators')).operationCollabUpdatesGet,
 }
 
-export type CollabUpdatesPostInput = { "node": string; "chunk": unknown } & { chunk: Blob }
+export type CollabUpdatesPostInput = { node: string; chunk: unknown } & { chunk: Blob }
 
-export type CollabUpdatesPostOutput = { [key: string]: (number) | (string) }
+export type CollabUpdatesPostOutput = { [key: string]: number | string }
 
-export type CollabUpdatesPostError = "DriveNotFound" | "DriveForbidden" | "DriveLocked"
+export type CollabUpdatesPostError = 'DriveNotFound' | 'DriveForbidden' | 'DriveLocked'
 
-const operationCollabUpdatesPost: Operation<CollabUpdatesPostInput, CollabUpdatesPostOutput, CollabUpdatesPostError> = {
-  id: "collab_updates_post",
-  owner: "writer",
-  method: "POST",
-  path: "documents/{node}/collab/updates",
-  prefix: "/api/suite/writer/",
-  pathParams: ["node"],
-  nodeParams: ["node"],
+const operationCollabUpdatesPost: MutationRef<
+  CollabUpdatesPostInput,
+  CollabUpdatesPostOutput,
+  CollabUpdatesPostError
+> = {
+  id: 'collab_updates_post',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'collab.push',
+  method: 'POST',
+  path: 'documents/{node}/collab/updates',
+  prefix: '/api/suite/writer/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
   entity: null,
-  errors: ["DriveNotFound","DriveForbidden","DriveLocked"],
+  errors: ['DriveNotFound', 'DriveForbidden', 'DriveLocked'],
   body: 'chunk',
-  validateInput(value): asserts value is CollabUpdatesPostInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"chunk":{}},"required":["node","chunk"],"additionalProperties":false,"$defs":{}}, 'collab_updates_post input') },
-  validateOutput(value): asserts value is CollabUpdatesPostOutput { assertSchema(value, {"additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}]},"type":"object"}, 'collab_updates_post output') },
+  loadValidators: async () => (await import('./validators')).operationCollabUpdatesPost,
 }
 
-export type CollabStagePutInput = { "node": string; "stage_id": string; "idx": string; "chunk": unknown } & { chunk: Blob }
+export type CollabStagePutInput = {
+  node: string
+  stage_id: string
+  idx: string
+  chunk: unknown
+} & { chunk: Blob }
 
-export type CollabStagePutOutput = { [key: string]: (number) | (string) }
+export type CollabStagePutOutput = { [key: string]: number | string }
 
-export type CollabStagePutError = "DriveNotFound" | "DriveForbidden" | "DriveLocked"
+export type CollabStagePutError = 'DriveNotFound' | 'DriveForbidden' | 'DriveLocked'
 
-const operationCollabStagePut: Operation<CollabStagePutInput, CollabStagePutOutput, CollabStagePutError> = {
-  id: "collab_stage_put",
-  owner: "writer",
-  method: "PUT",
-  path: "documents/{node}/collab/stage/{stage_id}/{idx}",
-  prefix: "/api/suite/writer/",
-  pathParams: ["node","stage_id","idx"],
-  nodeParams: ["node"],
+const operationCollabStagePut: MutationRef<
+  CollabStagePutInput,
+  CollabStagePutOutput,
+  CollabStagePutError
+> = {
+  id: 'collab_stage_put',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'collab.stage',
+  method: 'PUT',
+  path: 'documents/{node}/collab/stage/{stage_id}/{idx}',
+  prefix: '/api/suite/writer/',
+  pathParams: ['node', 'stage_id', 'idx'],
+  nodeParams: ['node'],
   entity: null,
-  errors: ["DriveNotFound","DriveForbidden","DriveLocked"],
+  errors: ['DriveNotFound', 'DriveForbidden', 'DriveLocked'],
   body: 'chunk',
-  validateInput(value): asserts value is CollabStagePutInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"stage_id":{"type":"string"},"idx":{"type":"string"},"chunk":{}},"required":["node","stage_id","idx","chunk"],"additionalProperties":false,"$defs":{}}, 'collab_stage_put input') },
-  validateOutput(value): asserts value is CollabStagePutOutput { assertSchema(value, {"additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}]},"type":"object"}, 'collab_stage_put output') },
+  loadValidators: async () => (await import('./validators')).operationCollabStagePut,
 }
 
-export type CollabSessionsPostInput = { "node": string; "chunk": unknown } & { chunk: Blob }
+export type CollabSessionsPostInput = { node: string; chunk: unknown } & { chunk: Blob }
 
-export type CollabSessionsPostOutput = { [key: string]: (number) | (string) }
+export type CollabSessionsPostOutput = { [key: string]: number | string }
 
-export type CollabSessionsPostError = "DriveNotFound" | "DriveForbidden" | "DriveLocked"
+export type CollabSessionsPostError = 'DriveNotFound' | 'DriveForbidden' | 'DriveLocked'
 
-const operationCollabSessionsPost: Operation<CollabSessionsPostInput, CollabSessionsPostOutput, CollabSessionsPostError> = {
-  id: "collab_sessions_post",
-  owner: "writer",
-  method: "POST",
-  path: "documents/{node}/collab/sessions",
-  prefix: "/api/suite/writer/",
-  pathParams: ["node"],
-  nodeParams: ["node"],
+const operationCollabSessionsPost: MutationRef<
+  CollabSessionsPostInput,
+  CollabSessionsPostOutput,
+  CollabSessionsPostError
+> = {
+  id: 'collab_sessions_post',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'collab.startSession',
+  method: 'POST',
+  path: 'documents/{node}/collab/sessions',
+  prefix: '/api/suite/writer/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
   entity: null,
-  errors: ["DriveNotFound","DriveForbidden","DriveLocked"],
+  errors: ['DriveNotFound', 'DriveForbidden', 'DriveLocked'],
   body: 'chunk',
-  validateInput(value): asserts value is CollabSessionsPostInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"chunk":{}},"required":["node","chunk"],"additionalProperties":false,"$defs":{}}, 'collab_sessions_post input') },
-  validateOutput(value): asserts value is CollabSessionsPostOutput { assertSchema(value, {"additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}]},"type":"object"}, 'collab_sessions_post output') },
+  loadValidators: async () => (await import('./validators')).operationCollabSessionsPost,
 }
 
-export type CollabSuspectPostInput = { "node": string; "chunk": unknown } & { chunk: Blob }
+export type CollabSuspectPostInput = { node: string; chunk: unknown } & { chunk: Blob }
 
-export type CollabSuspectPostOutput = { [key: string]: (number) | (string) }
+export type CollabSuspectPostOutput = { [key: string]: number | string }
 
-export type CollabSuspectPostError = "DriveNotFound" | "DriveForbidden" | "DriveLocked"
+export type CollabSuspectPostError = 'DriveNotFound' | 'DriveForbidden' | 'DriveLocked'
 
-const operationCollabSuspectPost: Operation<CollabSuspectPostInput, CollabSuspectPostOutput, CollabSuspectPostError> = {
-  id: "collab_suspect_post",
-  owner: "writer",
-  method: "POST",
-  path: "documents/{node}/collab/suspect",
-  prefix: "/api/suite/writer/",
-  pathParams: ["node"],
-  nodeParams: ["node"],
+const operationCollabSuspectPost: MutationRef<
+  CollabSuspectPostInput,
+  CollabSuspectPostOutput,
+  CollabSuspectPostError
+> = {
+  id: 'collab_suspect_post',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'collab.reportSuspect',
+  method: 'POST',
+  path: 'documents/{node}/collab/suspect',
+  prefix: '/api/suite/writer/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
   entity: null,
-  errors: ["DriveNotFound","DriveForbidden","DriveLocked"],
+  errors: ['DriveNotFound', 'DriveForbidden', 'DriveLocked'],
   body: 'chunk',
-  validateInput(value): asserts value is CollabSuspectPostInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"chunk":{}},"required":["node","chunk"],"additionalProperties":false,"$defs":{}}, 'collab_suspect_post input') },
-  validateOutput(value): asserts value is CollabSuspectPostOutput { assertSchema(value, {"additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}]},"type":"object"}, 'collab_suspect_post output') },
+  loadValidators: async () => (await import('./validators')).operationCollabSuspectPost,
 }
+
+export type DocumentInput = { name: string }
+
+export type DocumentOutput = {
+  name: string
+  collab?: number
+  content?: string | null
+  html?: string | null
+  ycomments?: string | null
+  settings?: string | { [key: string]: unknown } | null
+}
+
+export type DocumentError = never
+
+const operationDocument: QueryRef<DocumentInput, DocumentOutput, DocumentError> = {
+  id: 'document',
+  owner: 'writer',
+  kind: 'query',
+  publicName: 'documents.get',
+  method: 'GET',
+  path: '/api/v2/document/Writer Document/{name}',
+  prefix: '/api/suite/writer/',
+  pathParams: ['name'],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationDocument,
+}
+
+export type SaveDocInput = { data: string; html?: string; name: string }
+
+export type SaveDocOutput = null
+
+export type SaveDocError = never
+
+const operationSaveDoc: MutationRef<SaveDocInput, SaveDocOutput, SaveDocError> = {
+  id: 'save_doc',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'documents.save',
+  empty: true,
+  method: 'POST',
+  path: '/api/v2/document/Writer Document/{name}/method/save_doc',
+  prefix: '/api/suite/writer/',
+  pathParams: ['name'],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationSaveDoc,
+}
+
+export type SaveHtmlInput = { html: string; name: string }
+
+export type SaveHtmlOutput = null
+
+export type SaveHtmlError = never
+
+const operationSaveHtml: MutationRef<SaveHtmlInput, SaveHtmlOutput, SaveHtmlError> = {
+  id: 'save_html',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'documents.saveHTML',
+  empty: true,
+  method: 'POST',
+  path: '/api/v2/document/Writer Document/{name}/method/save_html',
+  prefix: '/api/suite/writer/',
+  pathParams: ['name'],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationSaveHtml,
+}
+
+export type UpdateSettingsInput = { data: string; name: string }
+
+export type UpdateSettingsOutput = null
+
+export type UpdateSettingsError = never
+
+const operationUpdateSettings: MutationRef<
+  UpdateSettingsInput,
+  UpdateSettingsOutput,
+  UpdateSettingsError
+> = {
+  id: 'update_settings',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'documents.updateSettings',
+  empty: true,
+  method: 'POST',
+  path: '/api/v2/document/Writer Document/{name}/method/update_settings',
+  prefix: '/api/suite/writer/',
+  pathParams: ['name'],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationUpdateSettings,
+}
+
+export type SaveCommentsInput = { doc: string; data: string }
+
+export type SaveCommentsOutput = null
+
+export type SaveCommentsError = never
+
+const operationSaveComments: MutationRef<SaveCommentsInput, SaveCommentsOutput, SaveCommentsError> =
+  {
+    id: 'save_comments',
+    owner: 'writer',
+    kind: 'mutation',
+    publicName: 'comments.save',
+    empty: true,
+    method: 'POST',
+    path: '/api/v2/method/suite.writer.api.docs.save_comments',
+    prefix: '/api/suite/writer/',
+    pathParams: [],
+    nodeParams: [],
+    entity: null,
+    errors: [],
+    loadValidators: async () => (await import('./validators')).operationSaveComments,
+  }
 
 export const api = {
-  "collab_get": operationCollabGet,
-  "collab_updates_get": operationCollabUpdatesGet,
-  "collab_updates_post": operationCollabUpdatesPost,
-  "collab_stage_put": operationCollabStagePut,
-  "collab_sessions_post": operationCollabSessionsPost,
-  "collab_suspect_post": operationCollabSuspectPost
+  collab: {
+    open: operationCollabGet,
+    pull: operationCollabUpdatesGet,
+    push: operationCollabUpdatesPost,
+    stage: operationCollabStagePut,
+    startSession: operationCollabSessionsPost,
+    reportSuspect: operationCollabSuspectPost,
+  },
+  documents: {
+    get: operationDocument,
+    save: operationSaveDoc,
+    saveHTML: operationSaveHtml,
+    updateSettings: operationUpdateSettings,
+  },
+  comments: {
+    save: operationSaveComments,
+  },
 } as const
-
-function assertSchema(value: unknown, schema: any, label: string, root: any = schema): void {
-  if (!schema || Object.keys(schema).length === 0) return
-  if (schema.$ref) return assertSchema(value, resolveRef(root, schema.$ref), label, root)
-  if (schema.const !== undefined && value !== schema.const) throw new TypeError(label + ' must equal ' + JSON.stringify(schema.const))
-  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) throw new TypeError(label + ' is not an allowed value')
-  if (Array.isArray(schema.anyOf) && !schema.anyOf.some((part: any) => valid(value, part, root))) throw new TypeError(label + ' does not match any allowed shape')
-  if (Array.isArray(schema.oneOf) && schema.oneOf.filter((part: any) => valid(value, part, root)).length !== 1) throw new TypeError(label + ' must match exactly one shape')
-  if (Array.isArray(schema.allOf)) for (const part of schema.allOf) assertSchema(value, part, label, root)
-  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : []
-  if (types.length && !types.some((type: string) => matchesType(value, type))) throw new TypeError(label + ' has the wrong type')
-  if ((types.includes('object') || schema.properties) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>
-    for (const key of schema.required ?? []) if (record[key] === undefined) throw new TypeError(label + '.' + key + ' is required')
-    if (schema.additionalProperties === false) for (const key of Object.keys(record)) if (!(key in (schema.properties ?? {}))) throw new TypeError(label + '.' + key + ' is not allowed')
-    for (const [key, child] of Object.entries(schema.properties ?? {})) if (record[key] !== undefined) assertSchema(record[key], child, label + '.' + key, root)
-  }
-  if ((types.includes('array') || schema.items) && Array.isArray(value)) value.forEach((item, index) => assertSchema(item, schema.items ?? {}, label + '[' + index + ']', root))
-}
-
-function valid(value: unknown, schema: any, root: any): boolean {
-  try { assertSchema(value, schema, 'value', root); return true } catch { return false }
-}
-
-function resolveRef(root: any, ref: string): any {
-  if (!ref.startsWith('#/')) throw new TypeError('Only local JSON schema references are supported')
-  return ref.slice(2).split('/').reduce((value, part) => value?.[part.replace(/~1/g, '/').replace(/~0/g, '~')], root)
-}
-
-function matchesType(value: unknown, type: string): boolean {
-  if (type === 'null') return value === null
-  if (type === 'array') return Array.isArray(value)
-  if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value)
-  if (type === 'integer') return typeof value === 'number' && Number.isInteger(value)
-  return typeof value === type
-}

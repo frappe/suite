@@ -13,7 +13,7 @@ export interface PresenceTokenResponse {
   restricted_preview?: boolean
   auth_token?: string
   sfu_url?: string
-  sfu_port?: number
+  sfu_port?: number | null
   error?: string
   expires_in?: number
 }

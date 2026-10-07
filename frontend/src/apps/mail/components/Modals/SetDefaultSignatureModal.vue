@@ -7,7 +7,7 @@
         :label="__('Identity')"
         variant="outline"
         :options="
-          identities.data.map((identity: Identity) => ({
+          (identities.data ?? []).map((identity: Identity) => ({
             label: `${identity.email} (${identity.id})`,
             value: identity.name,
           }))
@@ -30,45 +30,43 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, FormControl } from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { TextEditor } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 
 const { identities } = userStore()
-
 const show = defineModel<boolean>()
-
-const { signature } = defineProps<{ signature: string }>()
-
-const identity = ref(identities?.data[0]?.name || '')
-
+const { signature } = defineProps<{
+  signature: string
+}>()
+const identity = ref(identities.data?.[0]?.name || '')
 const addSignatureOptions = computed(() => ({
   title: __('Set Default Signature'),
   actions: [
     {
       label: __('Save'),
-      variant: 'solid',
+      variant: 'solid' as const,
       disabled: !identity.value,
       onClick: () => {
-        setSignature.submit()
+        setSignatureSubmit()
         show.value = false
       },
     },
   ],
 }))
-
-const setSignature = createResource({
-  url: 'suite.mail.api.account.set_signature',
-  makeParams: () => ({ identity: identity.value, signature }),
-  onSuccess: () => {
-    raiseToast(__('Identity updated.'))
-    identities.reload()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
+const setSignature = useMutation(api.mail.identities.setSignature)
+async function setSignatureSubmit() {
+  const input: InputOf<typeof api.mail.identities.setSignature> = {
+    identity: identity.value,
+    signature,
+  }
+  await setSignature.run(input)
+  raiseToast(__('Identity updated.'))
+}
 </script>

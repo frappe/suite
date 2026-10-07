@@ -15,7 +15,6 @@ const FIRST_TABS = [
 	{ heading: "Drive", tab: "Statistics" },
 	{ heading: "Mail", tab: "Credentials" },
 	{ heading: "Calendar", tab: "Calendars" },
-	{ heading: "Meet", tab: "Devices" },
 	{ heading: "Workspace", tab: "General" },
 ];
 
@@ -75,7 +74,7 @@ test.describe("desktop", () => {
 		const settings = await openSettingsFromRail(page);
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Profile" })).toBeVisible();
 
-		for (const body of ["PreferencesSettings.vue", "StatisticsSettings.vue", "CredentialsSettings.vue", "DeviceSettingsTab.vue"]) {
+		for (const body of ["PreferencesSettings.vue", "StatisticsSettings.vue", "CredentialsSettings.vue", "CalendarsSettings.vue"]) {
 			expect(served.has(body), `${body} before its click`).toBe(false);
 		}
 

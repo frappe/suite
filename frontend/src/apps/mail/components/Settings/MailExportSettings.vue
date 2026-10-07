@@ -64,9 +64,11 @@
   <Button
     class="min-h-7"
     :label="__('Create Export')"
-    :loading="ongoingExport.data?.name"
-    :disabled="ongoingExport.loading || ongoingExport.error || createMailExport.loading"
-    @click="createMailExport.submit()"
+    :loading="Boolean(ongoingExport.data?.name) || createMailExport.isPending"
+    :disabled="
+      ongoingExport.isFetching || Boolean(ongoingExport.error) || createMailExport.isPending
+    "
+    @click="createMailExportSubmit()"
   />
   <div class="!mt-3 space-x-1 text-base">
     <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
@@ -74,31 +76,34 @@
       {{ exportLinkText }}
     </a>
   </div>
-  <ErrorMessage v-if="createMailExport.error" :message="createMailExport.error" class="mb-2.5" />
+  <ErrorMessage
+    v-if="createMailExport.error"
+    :message="createMailExport.error?.message"
+    class="mb-2.5"
+  />
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
-import { computed, inject, onMounted, reactive, ref } from 'vue'
+import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { computed, onScopeDispose, reactive, ref } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
+import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 
-const { accountId, mailboxes } = userStore()
-
-const user = inject('$user')
-const socket = inject('$socket')
-
-const mailExport = reactive({
+const store = userStore()
+const { mailboxes } = store
+const user = store.userResource
+const socket = useMailSocket()
+const mailExport = reactive<Omit<InputOf<typeof api.mail.exchanges.exportMail>, 'account'>>({
   format: 'jmap',
   archive_type: '.zip',
   sort: 'Received At (ASC)',
   limit: undefined,
 })
-
 const customSelection = ref(false)
-
 const filter = reactive({
   inMailbox: '',
   after: '',
@@ -106,78 +111,77 @@ const filter = reactive({
   hasAttachment: ' ',
   isRead: ' ',
 })
-
 const mailboxOptions = computed(() =>
-  [{ label: __(''), value: ' ' }].concat(
-    mailboxes.data.map((m: { id: string; _name: string }) => ({
+  [
+    {
+      label: __(''),
+      value: ' ',
+    },
+  ].concat(
+    (mailboxes.data ?? []).map((m: { id: string; _name: string }) => ({
       label: m._name,
       value: m.id,
     })),
   ),
 )
-
 const sortOptions = computed(() => [
-  { label: __('Oldest Emails'), value: 'Received At (ASC)' },
-  { label: __('Newest Emails'), value: 'Received At (DESC)' },
-])
-
-const createMailExport = createResource({
-  url: 'suite.mail.api.account.create_mail_export',
-  makeParams: () => {
-    const cleanedFilter = Object.fromEntries(
-      Object.entries(filter)
-        .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
-        .filter(([, v]) => Boolean(v)),
-    )
-    // The date pickers give local days; the API listens UTC, so send the day's bounds
-    // in the user's zone or the first/last hours of the range get cut off.
-    if (cleanedFilter.after) cleanedFilter.after = utcDayStart(cleanedFilter.after as string)
-    if (cleanedFilter.before) cleanedFilter.before = utcDayEnd(cleanedFilter.before as string)
-    return {
-      account: accountId,
-      ...mailExport,
-      limit: mailExport.limit || undefined,
-      filter: cleanedFilter,
-    }
+  {
+    label: __('Oldest Emails'),
+    value: 'Received At (ASC)',
   },
-  onSuccess: () => ongoingExport.reload(),
-})
-
-const ongoingExport = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Mail Exchange',
-    fieldname: 'name',
-    filters: {
-      user: user.data.name,
-      operation: 'Export',
-      status: ['in', ['Queued', 'In Progress']],
-    },
-  }),
-})
-
-onMounted(() =>
-  socket.on('mail_exchange_completed', (payload: { action: 'Import' | 'Export' }) => {
-    if (payload.action === 'Export') ongoingExport.reload()
-  }),
+  {
+    label: __('Newest Emails'),
+    value: 'Received At (DESC)',
+  },
+])
+const createMailExport = useMutation(api.mail.exchanges.exportMail)
+async function createMailExportSubmit() {
+  const cleanedFilter = Object.fromEntries(
+    Object.entries(filter)
+      .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
+      .filter(([, v]) => Boolean(v)),
+  )
+  if (cleanedFilter.after) cleanedFilter.after = utcDayStart(cleanedFilter.after as string)
+  if (cleanedFilter.before) cleanedFilter.before = utcDayEnd(cleanedFilter.before as string)
+  const input: InputOf<typeof api.mail.exchanges.exportMail> = {
+    account: store.accountId,
+    ...mailExport,
+    limit: mailExport.limit || undefined,
+    filter: cleanedFilter,
+  }
+  await createMailExport.run(input)
+  await ongoingExport.refetch().catch(() => {})
+}
+const ongoingExport = useQuery(api.mail.exchanges.ongoing, () =>
+  user.data && store.accountId
+    ? {
+        doctype: 'Mail Exchange',
+        fieldname: 'name',
+        filters: {
+          user: user.data!.name,
+          operation: 'Export',
+          status: ['in', ['Queued', 'In Progress']],
+        },
+      }
+    : false,
 )
-
+const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
+  if (payload.action === 'Export') ongoingExport.refetch().catch(() => {})
+}
+socket.on('mail_exchange_completed', onExchangeCompleted)
+onScopeDispose(() => socket.off('mail_exchange_completed', onExchangeCompleted))
 const exportSubtitle = computed(() => {
   if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")
   return __('No exports in progress.')
 })
-
 const exportHref = computed(() => {
   if (ongoingExport.data?.name) return `/mail/mail-exchanges/${ongoingExport.data.name}`
   return '/mail/mail-exchanges?operation=Export'
 })
-
 const exportLinkText = computed(() => {
   if (ongoingExport.data?.name) return __('Track status')
   return __('View history')
 })
-
 const FORMAT_OPTIONS = ['jmap', 'mbox', 'maildir', 'maildir-nested']
 const ARCHIVE_TYPE_OPTIONS = ['.zip', '.tgz', '.tar.gz']
 </script>

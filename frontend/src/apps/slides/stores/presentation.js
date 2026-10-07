@@ -1,12 +1,13 @@
-import { createResource, frappeRequest, toast } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import tinycolor from 'tinycolor2'
 import { v4 as uuid4 } from 'uuid'
 import { computed, ref } from 'vue'
 
+import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { getSessionUser } from '@/boot/session'
-import { appDocumentTitle } from '@/utils/documentTitle'
+import { appDocumentTitle } from '@/platform/page-meta'
 
 import { recordVisit } from './driveVisit'
 import { lockedElsewhere } from './editLock'
@@ -34,42 +35,16 @@ const inReadonlyMode = computed(() => viewOnly.value || lockedElsewhere.value ||
 
 const applyReverseTransition = ref(false)
 
-// The `/d/` surface sends a presentation's body requests through its Drive
-// document session, which adds that document's share-link credentials. Keyed by
-// presentation, so a save that lands after the editor moved to another deck
-// still goes out with its own deck's credentials. No entry means an old page,
-// which sends through frappe-ui.
-const documentFetches = new Map()
-
-// returns the release, which leaves a later surface's fetch for the same deck in place
-const setDocumentFetch = (id, send) => {
-  documentFetches.set(id, send)
+// The open surface binds its owner-selected access context to this deck.
+const documentContexts = new Map()
+const setDocumentContext = (id, context, onRefused) => {
+  const binding = { context, onRefused }
+  documentContexts.set(id, binding)
   return () => {
-    if (documentFetches.get(id) === send) documentFetches.delete(id)
+    if (documentContexts.get(id) === binding) documentContexts.delete(id)
   }
 }
-
-// frappeRequest's contract: `message` on success, an error with `exc_type` and `status` otherwise
-const request = async ({ doc, url, method = 'GET', params = {}, signal }) => {
-  const documentFetch = documentFetches.get(doc)
-  if (!documentFetch) return frappeRequest({ url, method, params, signal })
-  const headers = { Accept: 'application/json', 'X-Frappe-CSRF-Token': window.csrf_token ?? '' }
-  let target = `/api/method/${url}`
-  const init = { method, headers, signal }
-  if (method === 'GET') {
-    target += `?${new URLSearchParams(params)}`
-  } else {
-    headers['Content-Type'] = 'application/json'
-    init.body = JSON.stringify(params)
-  }
-  const response = await documentFetch(target, init)
-  const body = await response.json().catch(() => ({}))
-  if (response.ok && !body.exc_type) return body.message
-  const error = new Error([url, body.exc_type].filter(Boolean).join(' '))
-  error.exc_type = body.exc_type
-  error.status = response.status
-  throw error
-}
+const contextFor = (id) => documentContexts.get(id)?.context
 
 const getElementDimensions = async (el) => {
   let width = 0,
@@ -242,16 +217,11 @@ const isLatestLoad = (load) => load === latestLoad
 // an offline copy warms exactly this url and param order (utils/pinTargets.ts).
 // Guest-reachable, so a share link's holder loads the deck to edit it too.
 const fetchDoc = (name) =>
-  request({
-    doc: name,
-    url: 'suite.slides.doctype.presentation.presentation.get_public_presentation',
-    method: 'GET',
-    params: { name },
-  })
+  client.query(api.slides.documents.get, { name }, { context: contextFor(name) })
 
 // touches no editor state, so a save during the load still targets what is on screen
 const fetchPresentation = async (name, load) => {
-  const doc = await fetchDoc(name)
+  const doc = structuredClone(await fetchDoc(name))
   const local = await getPresentationFromLocalDB(name).catch(() => null)
   // the push this draft waited on landed after all
   const landed = local?.dirty && holdsOwnRows(doc, local.content.map(toSlideRow))
@@ -308,8 +278,10 @@ const showPresentation = (id, { doc, content, dirty }) => {
   else markClean()
 }
 
-const fetchReadonly = async (name, url) => {
-  const doc = await request({ doc: name, url, method: 'GET', params: { name } })
+const fetchReadonly = async (name, reference) => {
+  const doc = structuredClone(
+    await client.query(reference, { name }, { context: contextFor(name) }),
+  )
   normalizeSlideDoc(doc)
   return doc
 }
@@ -368,17 +340,15 @@ const pushSlides = async (id, rows, baseModified, cancel) => {
   cancel?.addEventListener('abort', abort, { once: true })
   let response
   try {
-    response = await request({
-      doc: id,
-      url: 'suite.slides.api.slides.save_slides',
-      method: 'POST',
-      params: {
+    response = await client.mutation(
+      api.slides.documents.save,
+      {
         name: id,
         slides: rows,
         base_modified: baseModified,
       },
-      signal: controller.signal,
-    })
+      { context: contextFor(id), signal: controller.signal, silent: true },
+    )
   } finally {
     clearTimeout(timer)
     cancel?.removeEventListener('abort', abort)
@@ -392,7 +362,8 @@ const savePresentationDoc = async (id, updatedSlides, baseModified, cancel) => {
   try {
     modified = await pushSlides(id, rows, baseModified, cancel)
   } catch (err) {
-    if (err?.exc_type !== 'TimestampMismatchError') {
+    if (err?.type !== 'TimestampMismatchError') {
+      if (err?.status === 401 || err?.status === 403) documentContexts.get(id)?.onRefused?.()
       lastFailedPush = { id, rows }
       throw err
     }
@@ -415,15 +386,9 @@ const initPresentationDoc = async (id, readonly = false, load = startLoad()) => 
   let loaded
 
   if (readonly) {
-    let doc = await fetchReadonly(
-      id,
-      'suite.slides.doctype.presentation.presentation.get_public_presentation',
-    )
+    let doc = await fetchReadonly(id, api.slides.documents.get)
     if (doc.is_composite) {
-      doc = await fetchReadonly(
-        id,
-        'suite.slides.doctype.presentation.presentation.get_composite_presentation',
-      )
+      doc = await fetchReadonly(id, api.slides.documents.composite)
     }
     loaded = { doc, content: JSON.parse(JSON.stringify(doc.slides || [])), dirty: false }
   } else {
@@ -436,24 +401,19 @@ const initPresentationDoc = async (id, readonly = false, load = startLoad()) => 
   clearSaveFailure()
   showPresentation(id, loaded)
   // on `/d/` the Drive document session records the visit when it opens
-  if (!documentFetches.has(id) && loaded.doc.node) recordVisit(loaded.doc.node).catch(() => {})
+  if (!documentContexts.has(id) && loaded.doc.node) recordVisit(loaded.doc.node).catch(() => {})
   return loaded.doc
 }
 
 const templateList = ref([])
 
-const templateListResource = createResource({
-  url: 'suite.slides.doctype.presentation.presentation.get_templates',
-  method: 'GET',
-  onSuccess: (data) => {
-    templateList.value = data
-  },
-})
-
-// The layout picker and "add slide" read the open deck's theme layouts from here.
-const loadTemplates = () => {
+const loadTemplates = async () => {
   if (templateList.value.length || inReadonlyMode.value) return
-  templateListResource.fetch()
+  try {
+    templateList.value = await client.query(api.slides.templates.list, {}, { cache: 'prefer' })
+  } catch (error) {
+    toast.error(error.message || 'Could not load templates')
+  }
 }
 
 const presentationTheme = computed(() => {
@@ -494,5 +454,6 @@ export {
   startLoad,
   resetEditorState,
   pageTitle,
-  setDocumentFetch,
+  setDocumentContext,
+  contextFor,
 }

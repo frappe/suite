@@ -9,7 +9,7 @@
   </p>
 
   <template v-else>
-    <form class="flex flex-col space-y-4" @submit.prevent="sendResetLink.submit({ user: email })">
+    <form class="flex flex-col space-y-4" @submit.prevent="send()">
       <FormControl
         v-model="email"
         :label="__('Email')"
@@ -17,8 +17,8 @@
         autocomplete="email"
         required
       />
-      <ErrorMessage :message="sendResetLink.error" />
-      <Button variant="solid" :loading="sendResetLink.loading" type="submit">
+      <ErrorMessage :message="sendResetLink.error?.message" />
+      <Button variant="solid" :loading="sendResetLink.isPending" type="submit">
         {{ __('Send Reset Link') }}
       </Button>
     </form>
@@ -33,14 +33,16 @@
   </template>
 </template>
 <script setup lang="ts">
-import { Button, createResource, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
 import { ref } from 'vue'
+
+import { api, useMutation } from '@/api'
 
 const email = ref('')
 const user = ref('')
 
-const sendResetLink = createResource({
-  url: 'suite.mail.api.account.send_reset_password_link',
-  onSuccess: (data: string) => (user.value = data),
-})
+const sendResetLink = useMutation(api.mail.public.sendResetLink, { silent: true })
+async function send() {
+  user.value = await sendResetLink.run({ user: email.value })
+}
 </script>

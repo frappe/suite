@@ -45,64 +45,44 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Breadcrumbs, createResource, Dropdown } from 'frappe-ui'
+import { Badge, Breadcrumbs, Dropdown } from 'frappe-ui'
 import { Download } from 'lucide-vue-next'
-import { computed, inject } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useQuery } from '@/api'
 import CopyCode from '@/apps/mail/components/CopyCode.vue'
 import { formatBytes, getTheme } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 
 const { id } = defineProps<{ id: string }>()
 
-const user = inject('$user')
-
 const router = useRouter()
 
-const calendarExchange = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Calendar Exchange',
-    filters: { name: id },
-    fieldname: [
-      'status',
-      'operation',
-      'started_at',
-      'completed_at',
-      'output',
-      'import_format',
-      'export_format',
-    ],
-  }),
-  onSuccess: (data) => {
-    if (!data?.operation) router.replace('/mail/calendar-exchanges')
+const calendarExchange = useQuery(api.mail.exchanges.get, () => ({
+  doctype: 'Calendar Exchange',
+  name: id,
+}))
+watch(
+  () => [calendarExchange.status, calendarExchange.data] as const,
+  ([status, data]) => {
+    if (status === 'error' || (status === 'success' && !data?.operation))
+      router.replace('/mail/calendar-exchanges')
   },
-  onError: () => router.replace('/mail/calendar-exchanges'),
-})
+)
 
 const operationDetails = computed(() => {
   const format =
     calendarExchange.data?.operation === 'Import'
       ? calendarExchange.data?.import_format
       : calendarExchange.data?.export_format
-  return `${format.toUpperCase()} · ${formatSystemDateTime(calendarExchange.data?.started_at, 'MMM D, YYYY [at] h:mm A')}`
+  return `${(format ?? '').toUpperCase()} · ${formatSystemDateTime(calendarExchange.data?.started_at, 'MMM D, YYYY [at] h:mm A')}`
 })
 
-const attachment = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'File',
-    fieldname: ['file_size', 'file_url', 'file_type', 'file_name'],
-    filters: {
-      attached_to_doctype: 'Calendar Exchange',
-      attached_to_name: id,
-      attached_to_field: 'file',
-    },
-  }),
-})
+const attachment = useQuery(api.mail.exchanges.attachment, () => ({
+  doctype: 'Calendar Exchange',
+  name: id,
+}))
 
 const dropdownOptions = computed(() => [
   {

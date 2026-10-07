@@ -240,8 +240,6 @@ import {
   Alert,
   Breadcrumbs,
   Button,
-  ContextMenu,
-  Dropdown,
   MultiSelect,
   PageHeader,
   PageHeaderBackButton,
@@ -255,31 +253,18 @@ import {
 import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
+import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
-import { archiveDownloadUrl, startArchive } from '@/apps/drive/client/archives'
-import {
-  batchNodes,
-  copyNode,
-  moveNode,
-  node,
-  nodeContentUrl,
-  children as nodesChildren,
-  starNode,
-  trashNode,
-  unstarNode,
-  visitNode,
-} from '@/apps/drive/client/nodes'
-import { observeDriveChanges } from '@/apps/drive/client/realtime'
-import { roots } from '@/apps/drive/client/roots'
+import { archiveDownloadUrl } from '@/apps/drive/client/archives'
+import { nodeContentUrl } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
-import { view } from '@/apps/drive/client/views'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
 import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
-import { confirm, toast } from '@/platform/feedback'
+import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
-import { useMutation, useQuery } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
+import { TransportError } from '@/platform/transport'
 
 import BatchOutcome from '../features/BatchOutcome.vue'
 import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
@@ -340,7 +325,7 @@ const session = useSession()
 // A visitor without a session gets no sidebar, search or Star (spec §10.3).
 const signedIn = computed(() => session.status.value === 'authenticated')
 // Roots need a session (spec §10.13). A guest only ever opens a shared folder.
-const discovered = useQuery(() => (signedIn.value ? roots() : false))
+const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
 const presentationVersion = ref(0)
 const selectionState = ref<SelectionState>(clearSelection())
 const searchText = ref(String(route.query.q ?? ''))
@@ -426,8 +411,10 @@ const parentId = computed(() =>
     ? String(route.params.node ?? '')
     : (rootLocation.value?.node ?? ''),
 )
-const detail = useQuery(() =>
-  parentId.value && concreteDestination.value ? node(parentId.value, 'access,breadcrumbs') : false,
+const detail = useQuery(api.drive.nodes.get, () =>
+  parentId.value && concreteDestination.value
+    ? { node: parentId.value, expand: 'access,breadcrumbs' }
+    : false,
 )
 // A password link shows the unlock screen in place of the folder (spec §10.2),
 // also when its ticket expires and the next listing refresh is refused.
@@ -580,21 +567,24 @@ const trashRoot = computed(() => {
       : discovered.data?.personal.node) ?? null
   )
 })
-const listingQuery = useQuery(() => {
-  const types = listingTypes.value.map((option) => option.value)
+const childListing = useInfiniteQuery(api.drive.nodes.children, () =>
+  !isSearching.value && concreteDestination.value && parentId.value
+    ? {
+        node: parentId.value,
+        limit: 60,
+        order_by: userPresentation.value.sort,
+        ascending: userPresentation.value.dir === 'asc',
+        type: listingTypes.value.map((option) => option.value).join(','),
+        expand: expansion.value,
+      }
+    : false,
+)
+const viewListing = useInfiniteQuery(api.drive.views.list, () => {
+  const type = listingTypes.value.map((option) => option.value).join(',')
   if (isSearching.value)
-    return view({ view: 'search', term: searchTerm.value, types, expand: expansion.value })
-  if (concreteDestination.value) {
-    if (!parentId.value) return false
-    return nodesChildren({
-      node: parentId.value,
-      order_by: userPresentation.value.sort,
-      ascending: userPresentation.value.dir === 'asc',
-      types,
-      expand: expansion.value,
-    })
-  }
-  const name =
+    return { view: 'search', term: searchTerm.value, type, limit: 60, expand: expansion.value }
+  if (concreteDestination.value) return false
+  const view =
     props.destination === 'shared'
       ? 'shared'
       : props.destination === 'recent'
@@ -603,8 +593,15 @@ const listingQuery = useQuery(() => {
           ? 'favourites'
           : 'trash'
   const root = trashRoot.value ?? undefined
-  if (props.destination === 'trash' && !root) return false
-  return view({ view: name, root, types, expand: expansion.value })
+  if (view === 'trash' && !root) return false
+  return { view, root, type, limit: 60, expand: expansion.value }
+})
+const listingQuery = new Proxy(childListing, {
+  get(_target, key) {
+    const active = isSearching.value || !concreteDestination.value ? viewListing : childListing
+    if (key === 'rows') return active.rows.filter((row): row is DriveNode => 'name' in row)
+    return Reflect.get(active, key)
+  },
 })
 // A new sort, view or search term keeps the old rows up until the new ones come.
 const listing = heldWhileRearranging(
@@ -665,20 +662,20 @@ const empty = computed(() =>
 const emptyTitle = computed(() => empty.value.title)
 const emptyDescription = computed(() => empty.value.description)
 
-const batchMutation = useMutation(batchNodes())
-const moveMutation = useMutation(moveNode(), { silent: ['DriveConflict'] })
-const copyMutation = useMutation(copyNode(), { silent: ['DriveConflict'] })
-const trashMutation = useMutation(trashNode())
-const starMutation = useMutation(starNode())
-const unstarMutation = useMutation(unstarNode())
-const visitMutation = useMutation(visitNode(), { silent: true })
-const archiveMutation = useMutation(startArchive())
+const batchMutation = useMutation(api.drive.nodes.batch)
+const moveMutation = useMutation(api.drive.nodes.move)
+const copyMutation = useMutation(api.drive.nodes.copy)
+const trashMutation = useMutation(api.drive.nodes.trash)
+const starMutation = useMutation(api.drive.nodes.star)
+const unstarMutation = useMutation(api.drive.nodes.unstar)
+const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
+const archiveMutation = useMutation(api.drive.archives.start)
 
 onMounted(() => {
   narrowMedia = window.matchMedia('(max-width: 767px)')
   narrow.value = narrowMedia.matches
   narrowMedia.addEventListener('change', onNarrowChange)
-  stopRealtime = observeDriveChanges()
+  stopRealtime = () => {}
   syncSavedViewQuery()
   if (presentation.value.view === 'grid') startPreviewObservation()
   window.addEventListener('keydown', onWindowKeydown)
@@ -752,7 +749,7 @@ watch(
     }
     if (visitedFolder !== folder.name && linkAccess(folder, signedIn.value).visit) {
       visitedFolder = folder.name
-      void visitMutation.run({ node: folder.name })
+      void visitMutation.run({ node: folder.name }).catch(() => {})
     }
   },
 )
@@ -774,7 +771,10 @@ watch(
   () => [detail.error, listing.error] as const,
   (errors) => {
     const refused = errors.some(
-      (error) => error && !isDriveLocked(error) && [401, 403, 404, 410].includes(error.status),
+      (error) =>
+        error instanceof TransportError &&
+        !isDriveLocked(error) &&
+        [401, 403, 404, 410].includes(error.status),
     )
     if (guestFrame && refused) guestFrame.requireSignIn()
   },
@@ -1113,7 +1113,8 @@ async function openNode(row: DriveNode, newTab = false) {
       confirmLabel: 'Open',
     })
     if (!allowed) return
-    if (linkAccess(row, signedIn.value).visit) await visitMutation.run({ node: row.name })
+    if (linkAccess(row, signedIn.value).visit)
+      await client.mutation(api.drive.nodes.visit, { node: row.name })
     window.open(row.url, '_blank', 'noopener,noreferrer')
     return
   }
@@ -1389,13 +1390,7 @@ async function applyPicker(parent: string, destination: string) {
     pickerMode.value === 'move'
       ? await moveMutation.run({ node: activeNode.value.name, parent_node: parent })
       : await copyMutation.run({ node: activeNode.value.name, parent_node: parent })
-  if (!result) {
-    toast.error(
-      (pickerMode.value === 'move' ? moveMutation.error : copyMutation.error)?.message ??
-        'The action failed.',
-    )
-    return
-  }
+
   if (pickerMode.value === 'move') announceMove(moving, destination)
   else announceCopy({ node: result.name, title: result.title }, destination)
   pickerOpen.value = false
@@ -1416,12 +1411,16 @@ async function runBatch(
   patch: { parent_node?: string; state?: 'Trashed' },
   verb: string,
 ): Promise<DriveBatchResult | null> {
-  const result = await batchMutation.run({ nodes, patch })
-  if (!result) return null
-  batchOutcome.value = result
-  batchVerb.value = verb
-  selectionState.value = { selected: result.failed.map((failure) => failure.node), anchor: null }
-  return result
+  try {
+    const result = await batchMutation.run({ nodes, patch })
+
+    batchOutcome.value = result
+    batchVerb.value = verb
+    selectionState.value = { selected: result.failed.map((failure) => failure.node), anchor: null }
+    return result
+  } catch {
+    return null
+  }
 }
 async function toggleStar(row: DriveNode) {
   const starred = !row.favourite

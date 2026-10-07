@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
+import { installApiErrorHandler } from '@/platform/server-state'
+
 import IdentitySettings from './IdentitySettings.vue'
 
-// Resources the component creates, captured by URL so a test can drive the
-// server's answer (onSuccess / onError) after inspecting the submitted params.
+// Deferred command replies let each scenario observe the form before and after settlement.
 const resources = vi.hoisted(() => new Map<string, FakeResource>())
 const toasts = vi.hoisted(() => vi.fn())
+const diagnostics = vi.hoisted(() => vi.fn())
 const state = vi.hoisted(() => ({ store: null as unknown as Store }))
 
 type FakeResource = {
@@ -53,36 +55,43 @@ vi.mock('frappe-ui', async () => {
         }
       },
     }),
-    createResource: (options: {
-      url: string
-      makeParams: () => unknown
-      onSuccess: (data?: unknown) => void
-      onError: (error: unknown) => void
-    }) => {
+  }
+})
+vi.mock('@/api', async () => {
+  const { api } = await import('@/apps/mail/client/generated')
+  return {
+    api: { mail: api },
+    useQuery: () => ({ data: [] }),
+    useMutation: (reference: { id: string }) => {
+      const url =
+        reference.id === 'delete_identity_names'
+          ? 'suite.mail.doctype.identity.identity.bulk_delete'
+          : reference.id
       const resource: FakeResource = {
         loading: false,
         params: null,
-        submit: () => {
-          resource.params = options.makeParams()
-        },
-        onSuccess: options.onSuccess,
-        onError: options.onError,
+        submit: () => {},
+        onSuccess: () => {},
+        onError: () => {},
       }
-      resources.set(options.url, resource)
-      return resource
-    },
-    createDocumentResource: ({ name }: { name: string }) => {
-      const row = state.store.identities.data.find((i) => i.name === name)
-      const doc = row ? { ...row, reply_to: [], bcc: [], html_signature: '' } : null
+      resources.set(url, resource)
       return {
-        doc,
-        originalDoc: doc,
-        loading: false,
-        get: { loading: false },
-        save: { loading: false },
+        isPending: false,
+        error: null,
+        reset: () => {},
+        run: (input: unknown) => {
+          resource.params = input
+          return new Promise((resolve, reject) => {
+            resource.onSuccess = resolve
+            resource.onError = (error) => {
+              const refusal = error as { messages: string[] }
+              toasts(refusal.messages[0], 'error')
+              reject(new Error(refusal.messages[0]))
+            }
+          })
+        },
       }
     },
-    useList: () => ({ data: [] }),
   }
 })
 vi.mock('frappe-ui/experimental', () => ({
@@ -137,10 +146,16 @@ const alias: IdentityRow = {
 function mount(identities: IdentityRow[]) {
   state.store = {
     accountId: 'oa',
-    identities: reactive({ data: identities, loading: false, reload: vi.fn() }),
+    identities: reactive({
+      data: identities,
+      loading: false,
+      refetch: vi.fn().mockResolvedValue(undefined),
+    }),
   }
   const root = document.createElement('div')
   const app = createApp(defineComponent({ render: () => h(IdentitySettings) }))
+  app.config.errorHandler = diagnostics
+  installApiErrorHandler(app)
   app.config.globalProperties.__ = window.__
   app.provide('$user', { data: { name: 'me@example.com' } })
   app.mount(root)
@@ -161,6 +176,7 @@ beforeEach(() => {
   window.__ = (message: string) => message
   resources.clear()
   toasts.mockReset()
+  diagnostics.mockReset()
 })
 afterEach(() => mounted?.app.unmount())
 
@@ -200,10 +216,10 @@ describe('IdentitySettings delete', () => {
     button(root, 'Confirm')!.click()
 
     resources.get(DELETE_URL)!.onSuccess()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     await nextTick()
     expect(confirmDialog(root)).toBeNull()
     expect(toasts).toHaveBeenCalledWith('Identity deleted.')
-    expect(identities.reload).toHaveBeenCalled()
 
     // The reload answers without the deleted row.
     identities.data = [alias]
@@ -237,9 +253,12 @@ describe('IdentitySettings delete', () => {
     button(root, 'Confirm')!.click()
 
     resources.get(DELETE_URL)!.onError({ messages: ['Identity Deletion Error'] })
+    await new Promise((resolve) => setTimeout(resolve, 0))
     await nextTick()
-    expect(confirmDialog(root)).toBeNull()
+    expect(confirmDialog(root)).not.toBeNull()
     expect(toasts).toHaveBeenCalledWith('Identity Deletion Error', 'error')
     expect(displayName(root)).toBe('Me')
+    // The fixture rejects with a plain Error, which still belongs to diagnostics.
+    expect(diagnostics.mock.calls[0]?.[0]).toEqual(new Error('Identity Deletion Error'))
   })
 })

@@ -520,7 +520,7 @@ const onFilesSelected = async (e: Event) => {
 
 const ACTIONS = [
   { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
-  { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' },
+  { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
 ]
 
 // Start where there is still something to write: the body on a reply (recipients and subject came

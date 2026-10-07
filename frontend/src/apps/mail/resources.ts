@@ -1,45 +1,48 @@
-import { createResource } from 'frappe-ui'
-
+import { api, client } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment } from '@/apps/mail/types'
-import { raiseToast } from '@/apps/mail/utils'
+import { raiseError } from '@/apps/mail/utils'
 
-const store = userStore()
-
-// Attachments belong to a specific account's blob store: callers inside a pane pass
-// the pane's owning account (a cross-account thread in All Inboxes); everything else
-// falls back to the active account.
-export const fetchAttachment = createResource({
-  url: 'suite.mail.api.mail.fetch_attachment',
-  makeParams: ({ blobID, account }: { blobID: string; account?: string }) => ({
-    account: account || store.accountId,
-    blob_id: blobID,
-  }),
-  onError: (error) => raiseToast(error.message, 'error'),
-  cache: ['attachment'],
-})
-
-export const getAttachmentUrl = async (blobID: string, type?: string, account?: string) => {
-  const attachment = await fetchAttachment.submit({ blobID, account })
-  const byteArray = new Uint8Array(attachment)
-  const blob = new Blob([byteArray], { type })
-  return URL.createObjectURL(blob)
+/** Creates a preview URL for the blob in the message's owning account. */
+export async function getAttachmentUrl(
+  blobID: string,
+  type?: string,
+  account?: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  try {
+    const bytes = await client.query(
+      api.mail.attachments.download,
+      { account: account || userStore().accountId, blob_id: blobID },
+      { signal },
+    )
+    signal?.throwIfAborted()
+    return URL.createObjectURL(type ? new Blob([bytes], { type }) : bytes)
+  } catch (cause) {
+    failedDownload(cause)
+  }
 }
 
-const fetchAttachmentsAsZip = createResource({
-  url: 'suite.mail.api.mail.fetch_attachments_as_zip',
-  makeParams: ({ attachments, account }: { attachments: Attachment[]; account?: string }) => ({
-    account: account || store.accountId,
-    attachments: JSON.stringify(
-      attachments.map((a) => ({ blob_id: a.blob_id, filename: a.filename })),
-    ),
-  }),
-  onError: (error) => raiseToast(error.message, 'error'),
-})
+/** Creates a ZIP URL; the caller owns its download and eventual revocation. */
+export async function getAttachmentsZipUrl(
+  attachments: Attachment[],
+  account?: string,
+): Promise<string> {
+  try {
+    const bytes = await client.query(api.mail.attachments.zip, {
+      account: account || userStore().accountId,
+      attachments: attachments.map((attachment) => ({
+        blob_id: attachment.blob_id,
+        filename: attachment.filename,
+      })),
+    })
+    return URL.createObjectURL(bytes)
+  } catch (cause) {
+    failedDownload(cause)
+  }
+}
 
-export const getAttachmentsZipUrl = async (attachments: Attachment[], account?: string) => {
-  const zip = await fetchAttachmentsAsZip.submit({ attachments, account })
-  const byteArray = new Uint8Array(zip)
-  const blob = new Blob([byteArray], { type: 'application/zip' })
-  return URL.createObjectURL(blob)
+function failedDownload(cause: unknown): never {
+  if (!(cause instanceof Error && cause.name === 'AbortError')) raiseError(cause)
+  throw cause
 }

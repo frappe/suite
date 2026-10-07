@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !groupIds.length,
-          loading: addGroups.loading,
-          onClick: addGroups.submit,
+          loading: addGroups.isPending,
+          onClick: addGroupsSubmit,
         },
       ],
     }"
@@ -30,22 +30,22 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, MultiSelect } from 'frappe-ui'
+import { Dialog, ErrorMessage, MultiSelect } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { memberId, currentIds } = defineProps<{ memberId: string; currentIds: string[] }>()
+const { memberId, currentIds } = defineProps<{
+  memberId: string
+  currentIds: string[]
+}>()
 const emit = defineEmits(['reload'])
-
 const groupIds = ref<string[]>([])
-
-const groups = createResource({
-  url: 'suite.mail.api.admin.get_groups',
-  params: { page_length: 500 },
-  auto: true,
-})
+const groups = useQuery(api.mail.admin.groups.list, () => ({
+  page_length: 500,
+}))
 
 // Exclude groups the member already belongs to.
 const options = computed(() =>
@@ -56,21 +56,21 @@ const options = computed(() =>
       value: g.id,
     })),
 )
-
 watch(show, () => {
   if (show.value) {
     groupIds.value = []
     addGroups.reset()
   }
 })
-
-const addGroups = createResource({
-  url: 'suite.mail.api.admin.add_member_to_groups',
-  makeParams: () => ({ member_id: memberId, group_ids: groupIds.value }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Added to groups.'))
-  },
-})
+const addGroups = useMutation(api.mail.admin.groups.addMemberToGroups)
+async function addGroupsSubmit() {
+  const input: InputOf<typeof api.mail.admin.groups.addMemberToGroups> = {
+    member_id: memberId,
+    group_ids: groupIds.value,
+  }
+  await addGroups.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Added to groups.'))
+}
 </script>

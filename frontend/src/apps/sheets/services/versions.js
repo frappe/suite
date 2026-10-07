@@ -4,9 +4,7 @@
 // versions panel reads them through the document session. This module keeps
 // the one query that has no Drive equivalent — the edits one cell has seen.
 
-import { call } from '../utils/api.js'
-
-const PREFIX = 'suite.sheets.versioning.api'
+import { api, client } from '@/api'
 
 // `fetch` is the Drive session's, so a share link's holder is answered for
 // the link they opened the sheet with.
@@ -14,17 +12,17 @@ export async function cellHistory(
   sheet,
   cellRef,
   sheetName = 'Sheet1',
-  { limit = 50, fetch } = {},
+  { limit = 50, context } = {},
 ) {
-  const ops = await call(
-    `${PREFIX}.ops_for_cell`,
+  const ops = await client.query(
+    api.sheets.history.cell,
     {
       sheet,
       cell_id: cellRef,
       sub_sheet: sheetName,
       limit,
     },
-    { fetch },
+    { context },
   )
   // Adapter for CellHistoryPopover.vue's existing field names.
   return (ops || []).map((o) => ({

@@ -1,13 +1,22 @@
-import { createResource, toast } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, client } from '@/api'
 import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
-import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import { matchesScreenedValue, raiseOptimisticToast } from '@/apps/mail/utils'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
+import {
+  INBOX_FOLDER,
+  isUnifiedRoute,
+  mailboxForUnifiedFolder,
+  rememberUnified,
+  unifiedFolderFor,
+  unifiedFolderRoute,
+} from '@/apps/mail/utils/unifiedFolders'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme as useSuiteTheme } from '@/composables/useTheme'
 import { openSettings as openSuiteSettings } from '@/shell/settings/useSettingsDialog'
@@ -36,61 +45,76 @@ export const useReadingPane = () => {
  */
 export const useToggleReadingPane = () => {
   const { userResource } = userStore()
-
-  const setReadingPane = createResource({
-    url: 'frappe.client.set_value',
-    makeParams: ({ value }: { value: 0 | 1 }) => ({
-      doctype: 'User Settings',
-      name: userResource.data?.user_settings,
-      fieldname: 'show_reading_pane',
-      value,
-    }),
-  })
-
   return () => {
     const user = userResource.data
-    if (!user?.user_settings) return
-
-    const next = user.show_reading_pane ? 0 : 1
-    user.show_reading_pane = next
-    setReadingPane.submit(
-      { value: next },
-      {
-        onError: () => {
-          user.show_reading_pane = next ? 0 : 1
-          raiseToast(__('Unable to update Split View.'), 'error')
-        },
-      },
-    )
+    if (!user) return
+    return client.mutation(api.mail.settings.updatePreferences, {
+      show_reading_pane: user.show_reading_pane ? 0 : 1,
+    })
   }
 }
 
 /**
  * Switching accounts stays in place wherever the view allows it — shared by the
  * sidebar's account submenu and the mobile profile sheet. Account-scoped routes
- * swap the accountId param in their own URL. The account-agnostic All Inboxes
- * routes just re-resolve the active account (bouncing to the new account's inbox
- * threw the reader out of the merged list, which spans every account anyway).
- * Everything else goes through the account shortcut, which the guard resolves to
- * the new account's default mailbox.
+ * swap the accountId param in their own URL. Everything else goes through the
+ * account shortcut, which the guard resolves to the new account's default mailbox.
+ *
+ * "All accounts" is a mode of the same switcher, and the folder carries across it
+ * both ways: Sent in one account opens the merged Sent, and the merged Sent opens
+ * the chosen account's Sent — its inbox when it has no such folder.
  */
 export const useAccountSwitch = () => {
   const route = useRoute()
   const router = useRouter()
   const store = userStore()
 
-  const switchAccount = (accountId: string) => {
+  const switchAccount = async (accountId: string) => {
+    // Picking an account, anywhere, ends "All accounts".
+    rememberUnified(false)
+    if (isUnifiedRoute(route.name)) {
+      const mailboxes =
+        accountId === store.accountId
+          ? store.mailboxes.data
+          : await client.query(api.mail.mailboxes.list, { account: accountId }).catch(() => null)
+      const mailbox = mailboxForUnifiedFolder(route.params.folder, mailboxes)
+      return router.push(
+        mailbox
+          ? { name: 'mail-mailbox', params: { accountId, mailbox } }
+          : { name: 'mail-account-shortcut', params: { accountId } },
+      )
+    }
     if (accountId === store.accountId) return
-    if ((route.name as string)?.startsWith('mail-all-inboxes'))
-      return store.resolveAccount(store.userResource.data?.accounts, accountId)
     router.push(
       route.params.accountId
-        ? { name: route.name!, params: { ...route.params, accountId } }
-        : { name: 'mail-account-shortcut', params: { accountId } },
+        ? {
+            name: route.name!,
+            params: {
+              ...route.params,
+              accountId,
+            },
+          }
+        : {
+            name: 'mail-account-shortcut',
+            params: {
+              accountId,
+            },
+          },
     )
   }
 
-  return { switchAccount }
+  const switchToAll = () => {
+    if (isUnifiedRoute(route.name)) return
+    rememberUnified(true)
+    const inMailbox = route.name === 'mail-mailbox' || route.name === 'mail-mail'
+    router.push(
+      unifiedFolderRoute(
+        inMailbox ? unifiedFolderFor(route.params.mailbox, store.mailboxes.data) : INBOX_FOLDER,
+      ),
+    )
+  }
+
+  return { switchAccount, switchToAll }
 }
 
 // Horizontal swipe-to-page detection, shared by the mailbox thread pane and the screener
@@ -104,7 +128,6 @@ export const useAccountSwitch = () => {
 export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) => void) => {
   const gesture = createSwipeGesture()
   let lastSwipeAt = 0
-
   const swipe = (offset: 1 | -1) => {
     if (!enabled()) return
     const now = Date.now()
@@ -112,44 +135,43 @@ export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) =>
     lastSwipeAt = now
     onSwipe(offset)
   }
-
   const onTouchStart = (e: TouchEvent) => {
     if (!enabled()) return gesture.cancel()
     gesture.start(e.touches[0].clientX, e.touches[0].clientY, e.touches.length)
   }
-
   const onTouchMove = (e: TouchEvent) => {
     const touch = e.touches[0]
     if (touch) gesture.move(touch.clientX, touch.clientY)
   }
-
   const onTouchEnd = (e: TouchEvent) => {
     const offset = gesture.end(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
     if (offset) swipe(offset)
   }
-
   const onEmailSwipe = (e: Event) => swipe((e as CustomEvent).detail === 'left' ? 1 : -1)
-
   onMounted(() => window.addEventListener('email-swipe', onEmailSwipe))
   onUnmounted(() => window.removeEventListener('email-swipe', onEmailSwipe))
-
-  return { onTouchStart, onTouchMove, onTouchEnd }
+  return {
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+  }
 }
 
 // The search page's address — the one place that knows it is the mailbox route with the virtual
 // 'search' mailbox — for whoever sends someone there: the palette, the results header, the phone.
 export const mailSearchRoute = (accountId: string, query: Record<string, string> = {}) => ({
   name: 'mail-mailbox',
-  params: { accountId, mailbox: 'search' },
+  params: {
+    accountId,
+    mailbox: 'search',
+  },
   query,
 })
-
 export const useMobileSearch = () => {
   const route = useRoute()
   const router = useRouter()
   const store = userStore()
   const root = useRootStore()
-
   const isSearchRoute = computed(
     () => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
   )
@@ -173,18 +195,23 @@ export const useMobileSearch = () => {
     get: () => root.paletteOpen,
     set: (open: boolean) => (root.paletteOpen = open),
   })
-
-  return { hasSearchQuery, isSearchRoute, openSearch, paletteOpen }
+  return {
+    hasSearchQuery,
+    isSearchRoute,
+    openSearch,
+    paletteOpen,
+  }
 }
 
 // Mobile selection mode — MailboxView owns the selection; the compose button
 // (mounted in DefaultLayout) hides behind the contextual action bar while it's on.
 const isMobileSelectionActive = ref(false)
-
 export const useMobileSelection = () => {
   const setMobileSelectionActive = (active: boolean) => (isMobileSelectionActive.value = active)
-
-  return { isMobileSelectionActive, setMobileSelectionActive }
+  return {
+    isMobileSelectionActive,
+    setMobileSelectionActive,
+  }
 }
 
 /**
@@ -196,9 +223,7 @@ export const useMobileSelection = () => {
  */
 export const useTextEditorButtons = (dropAlignment: () => boolean = () => false) => {
   const { isMobile } = useScreenSize()
-
   const alignButtons = ['Separator', 'Align Left', 'Align Center', 'Align Right']
-
   const buttons = computed(() => [
     'Paragraph',
     ['Heading 2', 'Heading 3', 'Heading 4', 'Heading 5', 'Heading 6'],
@@ -214,10 +239,10 @@ export const useTextEditorButtons = (dropAlignment: () => boolean = () => false)
     'Image',
     'Link',
   ])
-
-  return { buttons }
+  return {
+    buttons,
+  }
 }
-
 const keyboardOpen = ref(false)
 let watchingFocus = false
 
@@ -236,7 +261,6 @@ const NON_TEXT_INPUT_TYPES = new Set([
   'reset',
   'submit',
 ])
-
 const isEditable = (el: Element | null) => {
   if (!el) return false
   if (el.tagName === 'INPUT') return !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
@@ -257,7 +281,6 @@ const isEditable = (el: Element | null) => {
  */
 export const useKeyboardOpen = () => {
   const { isMobile } = useScreenSize()
-
   if (!watchingFocus && isMobile.value) {
     watchingFocus = true
     // Re-read the focus on the next frame rather than trusting the event: moving between two
@@ -275,14 +298,12 @@ export const useKeyboardOpen = () => {
   }
   return keyboardOpen
 }
-
 const undoAction = ref<() => void>()
 
 // The action in the slot that is the app's rather than a view's, if that is what is there. A list's
 // undo puts rows back into a list that has to still be on screen, so it dies with its view; a send's
 // undo is a server call, as good from the next page as from this one, and stays.
 let outlivingAction: (() => void) | undefined
-
 export const useUndo = () => {
   const setUndoAction = (action?: () => void, { outlivesView = false } = {}) => {
     undoAction.value = action
@@ -300,7 +321,6 @@ export const useUndo = () => {
     if (undoAction.value && undoAction.value === outlivingAction) return
     setUndoAction(undefined)
   }
-
   const undo = () => {
     if (!undoAction.value) return
     undoAction.value()
@@ -323,15 +343,19 @@ export const useUndo = () => {
       prev?.()
     }
   }
-
-  return { setUndoAction, undo, prependUndoAction, retireUndoAction, dropViewUndo }
+  return {
+    setUndoAction,
+    undo,
+    prependUndoAction,
+    retireUndoAction,
+    dropViewUndo,
+  }
 }
 
 // Shared state for the compose window. A single <SendMail> (rendered in DefaultLayout) reacts to
 // this, so anything deeper in the tree — a `mailto:` link clicked inside a message, which is served
 // from an iframe and can't reach it by props — can ask for a draft.
 const composeRequest = ref<ComposeMailData>()
-
 export const useComposeMail = () => ({
   composeRequest,
   requestCompose: (details: ComposeMailData) => (composeRequest.value = details),
@@ -344,7 +368,6 @@ export const useComposeMail = () => ({
 // whichever list is on screen answers in its own terms — the mailbox resets Drafts and Sent, All
 // Inboxes refreshes in place, the screener reloads its senders.
 const listReloadRequest = ref(0)
-
 export const useListReload = () => ({
   listReloadRequest,
   requestListReload: () => listReloadRequest.value++,
@@ -356,7 +379,6 @@ interface BlockableSender {
   name?: string
   email: string
 }
-
 const showBlockSender = ref(false)
 const sendersToBlock = ref<BlockableSender[]>([])
 
@@ -370,7 +392,6 @@ export const useOwnEmails = () => {
     () => new Set((identities.data ?? []).map((i: Identity) => i.email.toLowerCase())),
   )
 }
-
 export const useBlockSender = () => {
   const store = userStore()
   const { userResource, identities, screenedAddresses } = store
@@ -384,7 +405,12 @@ export const useBlockSender = () => {
 
   // Senders worth offering to block: drop the user's own identities and addresses already blocked,
   // and de-duplicate by email (keeping the first occurrence's display name).
-  const blockableSenders = (senders: { name?: string; email?: string }[]) => {
+  const blockableSenders = (
+    senders: {
+      name?: string
+      email?: string
+    }[],
+  ) => {
     const own = new Set((identities.data ?? []).map((i: Identity) => i.email))
     // "Already blocked" = screened with the Reject action (their mail is discarded), whether by their
     // exact address or by a '@domain' entry covering them.
@@ -397,67 +423,12 @@ export const useBlockSender = () => {
     for (const { name, email } of senders) {
       if (!email || own.has(email) || isBlocked(email) || seen.has(email)) continue
       seen.add(email)
-      result.push({ name, email })
+      result.push({
+        name,
+        email,
+      })
     }
     return result
-  }
-
-  const blockResource = createResource({
-    url: 'suite.mail.api.mail.screen_email_addresses',
-    makeParams: ({ emails }: { emails: string[] }) => ({
-      account: store.accountId,
-      emails,
-      action: 'Reject',
-    }),
-    onSuccess: () => screenedAddresses.reload(),
-  })
-
-  const junkResource = createResource({
-    url: 'suite.mail.api.mail.screen_email_addresses',
-    makeParams: ({ emails }: { emails: string[] }) => ({
-      account: store.accountId,
-      emails,
-      action: 'Spam',
-    }),
-    onSuccess: () => screenedAddresses.reload(),
-  })
-
-  const unjunkResource = createResource({
-    url: 'suite.mail.api.mail.unscreen_email_addresses',
-    makeParams: ({ emails }: { emails: string[] }) => ({
-      account: store.accountId,
-      emails,
-    }),
-    onSuccess: () => screenedAddresses.reload(),
-  })
-
-  const unblockResource = createResource({
-    url: 'suite.mail.api.mail.unscreen_email_addresses',
-    makeParams: ({ emails }: { emails: string[] }) => ({
-      account: store.accountId,
-      emails,
-    }),
-    onSuccess: () => screenedAddresses.reload(),
-  })
-
-  // Optimistically reflect the senders' blocked state so the immediate toast isn't lying, mirroring the
-  // backend exactly: blocking adds an exact-address 'Reject' entry per sender (overriding any existing
-  // rule); unblocking removes the exact-address entries — '@domain' rules that also cover a sender are
-  // left in place, just as the unscreen API leaves them. Returns a revert to restore the list on failure.
-  const applyScreenOptimistic = (emails: string[], block: boolean) => {
-    const prev = screenedAddresses.data
-    if (!prev) return () => {}
-    const isExact = (a: ScreenedAddress) =>
-      !a.email.startsWith('@') && emails.some((email) => matchesScreenedValue(email, a.email))
-    const kept = prev.filter((a: ScreenedAddress) => !isExact(a))
-    const blocked: ScreenedAddress[] = emails.map((email) => ({
-      email,
-      action: 'Reject',
-      creation: '',
-      modified: '',
-    }))
-    screenedAddresses.data = block ? [...kept, ...blocked] : kept
-    return () => (screenedAddresses.data = prev)
   }
 
   // Block the senders chosen in the prompt ('Ask to Block Sender' confirm). Blocking becomes the new
@@ -465,30 +436,32 @@ export const useBlockSender = () => {
   const blockSenders = (senders: BlockableSender[]) => {
     const emails = senders.map((sender) => sender.email)
     if (!emails.length) return
-
+    const account = store.accountId
     setUndoAction(() => {
-      const revert = applyScreenOptimistic(emails, false) // optimistic: unblock reflected at once
-      const forward = (async () => {
-        try {
-          await unblockResource.submit({ emails })
-        } catch (error) {
-          revert()
-          throw error
-        }
-      })()
+      const forward = client.mutation(
+        api.mail.screening.remove,
+        {
+          account,
+          emails,
+        },
+        {
+          silent: true,
+        },
+      )
       const restored = emails.length === 1 ? __('Sender unblocked.') : __('Senders unblocked.')
       raiseOptimisticToast(forward, restored)
     })
-
-    const revert = applyScreenOptimistic(emails, true) // optimistic: senders shown blocked at once
-    const forward = (async () => {
-      try {
-        await blockResource.submit({ emails })
-      } catch (error) {
-        revert()
-        throw error
-      }
-    })()
+    const forward = client.mutation(
+      api.mail.screening.set,
+      {
+        account,
+        emails,
+        action: 'Reject',
+      },
+      {
+        silent: true,
+      },
+    )
     const success = emails.length === 1 ? __('Sender blocked.') : __('Senders blocked.')
     raiseOptimisticToast(forward, success, undo)
   }
@@ -499,23 +472,43 @@ export const useBlockSender = () => {
   const junkSenders = (senders: BlockableSender[]) => {
     const emails = senders.map((sender) => sender.email)
     if (!emails.length) return
-
-    junkResource.submit({ emails })
-    prependUndoAction(() => unjunkResource.submit({ emails }))
+    const account = store.accountId
+    void client
+      .mutation(api.mail.screening.set, {
+        account,
+        emails,
+        action: 'Spam',
+      })
+      .catch(() => {})
+    prependUndoAction(() =>
+      client.mutation(api.mail.screening.remove, {
+        account,
+        emails,
+      }),
+    )
   }
 
   // Whether marking these senders as junk will auto-file their future mail into Junk (vs prompting
   // to block, or doing nothing when there's nothing blockable). Lets the caller show one accurate toast.
-  const willJunkSenders = (senders: { name?: string; email?: string }[]) =>
+  const willJunkSenders = (
+    senders: {
+      name?: string
+      email?: string
+    }[],
+  ) =>
     blockableSenders(senders).length > 0 &&
     activeAccount.value?.on_mark_as_junk !== 'Ask to Block Sender'
 
   // Apply the account's 'on mark as junk' behaviour to the senders of a just-junked message:
   // 'Ask to Block Sender' opens the prompt; otherwise silently junk their future mail.
-  const promptBlockSenders = (senders: { name?: string; email?: string }[]) => {
+  const promptBlockSenders = (
+    senders: {
+      name?: string
+      email?: string
+    }[],
+  ) => {
     const list = blockableSenders(senders)
     if (!list.length) return
-
     if (activeAccount.value?.on_mark_as_junk === 'Ask to Block Sender') {
       sendersToBlock.value = list
       showBlockSender.value = true
@@ -523,8 +516,13 @@ export const useBlockSender = () => {
     }
     junkSenders(list)
   }
-
-  return { showBlockSender, sendersToBlock, willJunkSenders, promptBlockSenders, blockSenders }
+  return {
+    showBlockSender,
+    sendersToBlock,
+    willJunkSenders,
+    promptBlockSenders,
+    blockSenders,
+  }
 }
 
 // Navigate to the search results scoped to a sender — Gmail's "Filter messages like this". Lands on the
@@ -534,17 +532,22 @@ export const useFilterBySender = () => {
   const router = useRouter()
   // Read store.accountId live rather than destructuring, so it reflects account switches.
   const store = userStore()
-
   const filterBySender = (email: string) => {
     if (!email) return
     router.push({
       name: 'mail-mailbox',
-      params: { accountId: store.accountId, mailbox: 'search' },
-      query: { from: email },
+      params: {
+        accountId: store.accountId,
+        mailbox: 'search',
+      },
+      query: {
+        from: email,
+      },
     })
   }
-
-  return { filterBySender }
+  return {
+    filterBySender,
+  }
 }
 
 /** A Mail tab in the Suite Settings list, for example `'mail.screener'`. */
@@ -555,12 +558,9 @@ export type MailSettingsTabId = (typeof mailSettings.tabs)[number]['id']
 export const useSettings = () => ({
   openSettings: (tab: MailSettingsTabId) => openSuiteSettings(tab),
 })
-
 const showShortcuts = ref(false)
-
 export const useShortcuts = () => ({
   showShortcuts,
   openShortcuts: () => (showShortcuts.value = true),
 })
-
 export const useTheme = () => useSuiteTheme()

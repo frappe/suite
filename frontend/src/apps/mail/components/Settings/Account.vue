@@ -1,6 +1,6 @@
 <template>
   <AppSettingsHeader :title="__('Account')">
-    <template v-if="jmapAccount.doc" #actions>
+    <template v-if="draft" #actions>
       <Button
         :label="__('Save')"
         variant="solid"
@@ -12,7 +12,7 @@
     </template>
   </AppSettingsHeader>
   <AppSettingsBody>
-    <template v-if="jmapAccount.doc">
+    <template v-if="draft">
       <div class="flex flex-col gap-5">
         <h2 class="text-base-semibold text-ink-gray-8">{{ __('Outgoing') }}</h2>
         <SettingsRow
@@ -21,10 +21,10 @@
           :description="__('The address selected automatically when composing a message.')"
         >
           <Combobox
-            v-model="jmapAccount.doc.default_outgoing_email"
+            v-model="draft.default_outgoing_email"
             trigger="button"
             align="end"
-            :options="identities.data.map((i: Identity) => i.email)"
+            :options="(identities.data ?? []).map((i: Identity) => i.email)"
           />
         </SettingsRow>
         <SettingsRow
@@ -78,7 +78,7 @@
           :title="__('When Marking as Junk')"
           :description="__('Choose how to handle future messages from this sender.')"
         >
-          <Select v-model="jmapAccount.doc.on_mark_as_junk" :options="ON_MARK_AS_JUNK_OPTIONS" />
+          <Select v-model="draft.on_mark_as_junk" :options="ON_MARK_AS_JUNK_OPTIONS" />
         </SettingsRow>
 
         <!-- Read-only, so it sits after the settings rather than ahead of them; the
@@ -86,7 +86,7 @@
         <h2 class="text-base-semibold text-ink-gray-8">{{ __('Storage') }}</h2>
         <StorageMeter :used-percentage :label :limited="isLimited" />
 
-        <ErrorMessage :message="jmapAccount.save.error" />
+        <ErrorMessage :message="savePreferences.error?.message" />
 
         <Dialog v-model:open="showMoveToInbox" v-bind="moveToInboxOptions" />
       </div>
@@ -95,22 +95,13 @@
 </template>
 
 <script setup lang="ts">
-import {
-  Button,
-  Combobox,
-  createDocumentResource,
-  createResource,
-  Dialog,
-  ErrorMessage,
-  Select,
-  SettingsRow,
-  Switch,
-} from 'frappe-ui'
-import { computed, inject, ref } from 'vue'
+import { Button, Combobox, Dialog, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf, type OutputOf } from '@/api'
 import { useQuota } from '@/apps/mail/composables/useQuota'
 import { userStore } from '@/apps/mail/stores/user'
-import type { Identity, MailboxData } from '@/apps/mail/types'
+import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
@@ -119,7 +110,6 @@ import StorageMeter from '@/components/StorageMeter.vue'
 
 const { isMobile } = useScreenSize()
 const { isLimited, usedPercentage, label } = useQuota()
-const user = inject('$user')
 // Read store.accountId live in makeParams; destructuring would snapshot the
 // unwrapped value and miss account switches while this component stays mounted.
 const store = userStore()
@@ -127,107 +117,104 @@ const { identities, mailboxes, mailboxIds } = store
 
 // Outgoing settings live on the active account's JMAP Account. Recovery (backup_email) and the
 // JMAP connection credentials moved to the dedicated Credentials tab (CredentialsSettings.vue).
-const activeAccount = user.data?.accounts?.find((a) => a.id === store.accountId)
-
-const jmapAccount = createDocumentResource({
-  doctype: 'JMAP Account',
-  name: activeAccount?.jmap_account,
-})
-
+const preferences = useQuery(api.mail.settings.account, () =>
+  store.accountId
+    ? {
+        account: store.accountId,
+      }
+    : false,
+)
+const draft = ref<OutputOf<typeof api.mail.settings.account>>()
+watch(
+  () => preferences.data,
+  (data) => {
+    draft.value = data
+      ? {
+          ...data,
+        }
+      : undefined
+  },
+  {
+    immediate: true,
+  },
+)
+const savePreferences = useMutation(api.mail.settings.updateAccount)
 const createContactsAfterEmailSubmit = computed({
-  get: () => !!jmapAccount.doc.create_contacts_after_email_submit,
-  set: (val: boolean) => (jmapAccount.doc.create_contacts_after_email_submit = val ? 1 : 0),
+  get: () => !!draft.value?.create_contacts_after_email_submit,
+  set: (val: boolean) => (draft.value!.create_contacts_after_email_submit = val ? 1 : 0),
 })
-
 const destroyEmailAfterSubmit = computed({
-  get: () => !!jmapAccount.doc.destroy_email_after_submit,
-  set: (val: boolean) => (jmapAccount.doc.destroy_email_after_submit = val ? 1 : 0),
+  get: () => !!draft.value?.destroy_email_after_submit,
+  set: (val: boolean) => (draft.value!.destroy_email_after_submit = val ? 1 : 0),
 })
-
 const destroyNewsletterAfterSubmit = computed({
-  get: () => !!jmapAccount.doc.destroy_newsletter_after_submit,
-  set: (val: boolean) => (jmapAccount.doc.destroy_newsletter_after_submit = val ? 1 : 0),
+  get: () => !!draft.value?.destroy_newsletter_after_submit,
+  set: (val: boolean) => (draft.value!.destroy_newsletter_after_submit = val ? 1 : 0),
 })
-
 const keepForwardedEmailInThread = computed({
-  get: () => !!jmapAccount.doc.keep_forwarded_email_in_thread,
-  set: (val: boolean) => (jmapAccount.doc.keep_forwarded_email_in_thread = val ? 1 : 0),
+  get: () => !!draft.value?.keep_forwarded_email_in_thread,
+  set: (val: boolean) => (draft.value!.keep_forwarded_email_in_thread = val ? 1 : 0),
 })
-
 const enableScreening = computed({
-  get: () => !!jmapAccount.doc.enable_screening,
-  set: (val: boolean) => (jmapAccount.doc.enable_screening = val ? 1 : 0),
+  get: () => !!draft.value?.enable_screening,
+  set: (val: boolean) => (draft.value!.enable_screening = val ? 1 : 0),
 })
-
 const blockRemoteImages = computed({
-  get: () => !!jmapAccount.doc.block_remote_images,
-  set: (val: boolean) => (jmapAccount.doc.block_remote_images = val ? 1 : 0),
+  get: () => !!draft.value?.block_remote_images,
+  set: (val: boolean) => (draft.value!.block_remote_images = val ? 1 : 0),
 })
-
 const ON_MARK_AS_JUNK_OPTIONS = [
   {
     label: __('Move future emails to Junk'),
     value: "Junk Sender's Mail",
   },
-  { label: __('Ask whether to block the sender'), value: 'Ask to Block Sender' },
+  {
+    label: __('Ask whether to block the sender'),
+    value: 'Ask to Block Sender',
+  },
 ]
-
 const accountDirty = computed(
-  () => JSON.stringify(jmapAccount.doc) !== JSON.stringify(jmapAccount.originalDoc),
+  () => JSON.stringify(draft.value) !== JSON.stringify(preferences.data),
 )
 const isDirty = computed(() => accountDirty.value)
-const loading = computed(() => jmapAccount.get.loading)
-const saving = computed(() => jmapAccount.save.loading)
-
+const loading = computed(() => preferences.isFetching)
+const saving = computed(() => savePreferences.isPending)
 const showMoveToInbox = ref(false)
-
-const moveScreeningToInbox = createResource({
-  url: 'suite.mail.api.mail.move_screening_mails_to_inbox',
-  makeParams: () => ({ account: store.accountId }),
-  onSuccess: () => {
-    raiseToast(__('Unscreened messages moved to Inbox.'))
-    showMoveToInbox.value = false
-    mailboxes.reload()
-  },
-})
-
+const moveScreeningToInbox = useMutation(api.mail.screening.moveToInbox)
+async function moveScreeningToInboxSubmit() {
+  const input: InputOf<typeof api.mail.screening.moveToInbox> = {
+    account: store.accountId,
+  }
+  await moveScreeningToInbox.run(input)
+  raiseToast(__('Unscreened messages moved to Inbox.'))
+  showMoveToInbox.value = false
+}
 const moveToInboxOptions = computed(() => ({
   title: __('Move unscreened messages?'),
   message: __('Screening is off. Move the messages currently in the Screener to your Inbox?'),
   actions: [
     {
       label: __('Move to Inbox'),
-      variant: 'solid',
-      onClick: () => moveScreeningToInbox.submit(),
-      loading: moveScreeningToInbox.loading,
+      variant: 'solid' as const,
+      onClick: () => moveScreeningToInboxSubmit(),
+      loading: moveScreeningToInbox.isPending,
     },
   ],
 }))
-
 const save = async () => {
-  let askMoveToInbox = false
-  if (accountDirty.value) {
-    const screeningChanged =
-      !!jmapAccount.doc.enable_screening !== !!jmapAccount.originalDoc?.enable_screening
-    // Turning screening off leaves the already-screened mail in the Screening folder — offer to move
-    // it to the inbox (only worth asking when there's something there).
-    askMoveToInbox =
-      screeningChanged &&
-      !jmapAccount.doc.enable_screening &&
-      (mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.total_threads ?? 0) >
-        0
-    await jmapAccount.save.submit()
-    // Sync the shared user data so compose picks up the new default and the junk flow picks up
-    // the "on mark as junk" choice without a page reload (both read from user.data.accounts).
-    if (activeAccount) {
-      activeAccount.default_outgoing_email = jmapAccount.doc.default_outgoing_email
-      activeAccount.on_mark_as_junk = jmapAccount.doc.on_mark_as_junk
-      activeAccount.enable_screening = !!jmapAccount.doc.enable_screening
-      activeAccount.block_remote_images = !!jmapAccount.doc.block_remote_images
-    }
-    // Enabling screening creates the Screening folder server-side; reload so it shows up.
-    if (screeningChanged) mailboxes.reload()
-  }
+  if (!draft.value) return
+  const screeningChanged =
+    Boolean(draft.value.enable_screening) !== Boolean(preferences.data?.enable_screening)
+  const askMoveToInbox =
+    screeningChanged &&
+    !draft.value.enable_screening &&
+    (mailboxes.data?.find((m) => m.id === mailboxIds.screener)?.total_threads ?? 0) > 0
+  await savePreferences.run({
+    account: store.accountId,
+    changes: {
+      ...draft.value,
+    },
+  })
   raiseToast(__('Account updated.'))
   if (askMoveToInbox) showMoveToInbox.value = true
 }

@@ -14,7 +14,11 @@
         )
       "
     >
-      <Switch v-model="screeningEnabled" :disabled="setScreening.loading" />
+      <Switch
+        :model-value="screeningEnabled"
+        :disabled="setScreening.isPending"
+        @update:model-value="toggleScreening"
+      />
     </SettingsRow>
 
     <template v-if="screenedAddresses.data?.length">
@@ -119,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, Dialog, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, Dialog, FormControl, SettingsRow, Switch } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListHeader,
@@ -129,6 +133,7 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref, useTemplateRef } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import AddScreenedSenderModal from '@/apps/mail/components/Modals/AddScreenedSenderModal.vue'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData, ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
@@ -139,7 +144,6 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 const store = userStore()
 const { screenedAddresses, mailboxes, mailboxIds } = store
-
 const search = ref('')
 const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
@@ -150,68 +154,49 @@ const showRemoveModal = ref(false)
 const activeAccount = computed(() =>
   store.userResource?.data?.accounts?.find((a) => a.id === store.accountId),
 )
-
-const setScreening = createResource({
-  url: 'frappe.client.set_value',
-  makeParams: ({ value }: { value: boolean }) => ({
-    doctype: 'JMAP Account',
-    name: activeAccount.value?.jmap_account,
-    fieldname: 'enable_screening',
-    value: value ? 1 : 0,
-  }),
-})
-
-const screeningEnabled = computed({
-  get: () => !!activeAccount.value?.enable_screening,
-  set: (val: boolean) => toggleScreening(val),
-})
-
+const setScreening = useMutation(api.mail.settings.updateAccount)
+const screeningEnabled = computed(() => !!activeAccount.value?.enable_screening)
 const toggleScreening = async (val: boolean) => {
   const account = activeAccount.value
   if (!account) return
   // Read the count before the reload below refreshes the data from the server.
   const waiting =
     mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.total_threads ?? 0
-  account.enable_screening = val
-  try {
-    await setScreening.submit({ value: val })
-    // Enabling screening creates the Screening folder server-side; reload so it shows up.
-    mailboxes.reload()
-    raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
-    // Turning screening off leaves the already-screened mail in the Screening folder — offer to
-    // move it to the inbox (only worth asking when there's something there).
-    if (!val && waiting > 0) showMoveToInbox.value = true
-  } catch (error) {
-    account.enable_screening = !val
-    raiseToast((error as Error).message || __('Could not update the Screener.'), 'error')
-  }
+  await setScreening.run({
+    account: store.accountId,
+    changes: {
+      enable_screening: val ? 1 : 0,
+    },
+  })
+  // Enabling screening creates the Screening folder server-side; reload so it shows up.
+  mailboxes.refetch().catch(() => {})
+  raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
+  // Turning screening off leaves the already-screened mail in the Screening folder — offer to
+  // move it to the inbox (only worth asking when there's something there).
+  if (!val && waiting > 0) showMoveToInbox.value = true
 }
-
 const showMoveToInbox = ref(false)
-
-const moveScreeningToInbox = createResource({
-  url: 'suite.mail.api.mail.move_screening_mails_to_inbox',
-  makeParams: () => ({ account: store.accountId }),
-  onSuccess: () => {
-    raiseToast(__('Unscreened messages moved to Inbox.'))
-    showMoveToInbox.value = false
-    mailboxes.reload()
-  },
-})
-
+const moveScreeningToInbox = useMutation(api.mail.screening.moveToInbox)
+async function moveScreeningToInboxSubmit() {
+  const input: InputOf<typeof api.mail.screening.moveToInbox> = {
+    account: store.accountId,
+  }
+  await moveScreeningToInbox.run(input)
+  raiseToast(__('Unscreened messages moved to Inbox.'))
+  showMoveToInbox.value = false
+}
 const moveToInboxOptions = computed(() => ({
   title: __('Move unscreened messages?'),
   message: __('Screening is off. Move the messages currently in the Screener to your Inbox?'),
   actions: [
     {
       label: __('Move to Inbox'),
-      variant: 'solid',
-      onClick: () => moveScreeningToInbox.submit(),
-      loading: moveScreeningToInbox.loading,
+      variant: 'solid' as const,
+      onClick: () => moveScreeningToInboxSubmit(),
+      loading: moveScreeningToInbox.isPending,
     },
   ],
 }))
-
 const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
   Accepted: __('Accept'),
   Reject: __('Block'),
@@ -228,7 +213,6 @@ const SORT_LABELS: Record<SortField, string> = {
 }
 const sortField = ref<SortField>('modified')
 const sortDir = ref<'asc' | 'desc'>('desc')
-
 const sortLabel = computed(() => SORT_LABELS[sortField.value])
 const sortOptions = computed(() =>
   (Object.keys(SORT_LABELS) as SortField[]).map((field) => ({
@@ -243,7 +227,6 @@ const toggleSortDir = () => (sortDir.value = sortDir.value === 'asc' ? 'desc' : 
 const rows = computed(() => {
   const query = search.value.trim().toLowerCase()
   const dir = sortDir.value === 'asc' ? 1 : -1
-
   return (screenedAddresses.data ?? [])
     .filter((a: ScreenedAddress) => !query || a.email.toLowerCase().includes(query))
     .slice()
@@ -262,59 +245,51 @@ const rows = computed(() => {
         : '',
     }))
 })
-
 const selectedEmails = () => Array.from(listViewRef.value?.selections ?? []) as string[]
 
 // Bulk edit: `screen_email_addresses` upserts the action for every selected address and rebuilds the
 // sieve script only once, so switching many senders between Block/Junk/Accept is a single request.
-const editScreenedAddresses = createResource({
-  url: 'suite.mail.api.mail.screen_email_addresses',
-  makeParams: ({ action }: { action: ScreeningAction }) => ({
+const editScreenedAddresses = useMutation(api.mail.screening.set)
+async function editScreenedAddressesSubmit({ action }: { action: ScreeningAction }) {
+  const input: InputOf<typeof api.mail.screening.set> = {
     account: store.accountId,
     emails: selectedEmails(),
     action,
-  }),
-  onSuccess: () => {
-    raiseToast(__('Action updated.'))
-    listViewRef.value?.toggleAllRows()
-    screenedAddresses.reload()
-  },
-  // Keep the selection on failure so the user can retry the same rows.
-  onError: (error) => raiseToast(error.message || __('Failed to update action.'), 'error'),
-})
-
+  }
+  await editScreenedAddresses.run(input)
+  raiseToast(__('Action updated.'))
+  listViewRef.value?.toggleAllRows()
+}
 const bulkActionOptions = (['Accepted', 'Reject', 'Spam'] as ScreeningAction[]).map((action) => ({
   label: ACTION_LABELS[action] ?? action,
-  onClick: () => editScreenedAddresses.submit({ action }),
+  onClick: () =>
+    editScreenedAddressesSubmit({
+      action,
+    }),
 }))
 
 // Bulk delete: deletes the selected records and rebuilds the sieve script once (the backend deletes the
 // rows in a single query and regenerates the script a single time afterwards).
-const unscreenEmailAddresses = createResource({
-  url: 'suite.mail.api.mail.unscreen_email_addresses',
-  makeParams: () => ({ account: store.accountId, emails: selectedEmails() }),
-  onSuccess: () => {
-    raiseToast(__('Senders removed.'))
-    showRemoveModal.value = false
-    listViewRef.value?.toggleAllRows()
-    screenedAddresses.reload()
-  },
-  // Close the confirmation and keep the selection so the user can retry.
-  onError: (error) => {
-    showRemoveModal.value = false
-    raiseToast(error.message || __('Failed to remove senders.'), 'error')
-  },
-})
-
+const unscreenEmailAddresses = useMutation(api.mail.screening.remove)
+async function unscreenEmailAddressesSubmit() {
+  const input: InputOf<typeof api.mail.screening.remove> = {
+    account: store.accountId,
+    emails: selectedEmails(),
+  }
+  await unscreenEmailAddresses.run(input)
+  raiseToast(__('Senders removed.'))
+  showRemoveModal.value = false
+  listViewRef.value?.toggleAllRows()
+}
 const removeModalOptions = computed(() => ({
   title: __('Remove Screened Senders'),
   message: __('Are you sure you want to remove the selected senders from your screened list?'),
   actions: [
     {
       label: __('Confirm'),
-      variant: 'solid',
-      onClick: () => unscreenEmailAddresses.submit(),
-      loading: unscreenEmailAddresses.loading,
+      variant: 'solid' as const,
+      onClick: () => unscreenEmailAddressesSubmit(),
+      loading: unscreenEmailAddresses.isPending,
     },
   ],
 }))
@@ -322,11 +297,22 @@ const removeModalOptions = computed(() => ({
 // `fr` units (numbers) so the columns share the row width instead of overflowing (percentages plus the
 // checkbox column would exceed 100% and add a horizontal scrollbar).
 const COLUMNS = [
-  { label: __('Email or Domain'), key: 'email', width: 3 },
-  { label: __('Action'), key: 'action', width: 1 },
-  { label: __('Last Modified'), key: 'modified', width: 1 },
+  {
+    label: __('Email or Domain'),
+    key: 'email',
+    width: 3,
+  },
+  {
+    label: __('Action'),
+    key: 'action',
+    width: 1,
+  },
+  {
+    label: __('Last Modified'),
+    key: 'modified',
+    width: 1,
+  },
 ]
-
 const MESSAGE = __(
   'Screen specific senders — or a whole domain (e.g. @example.com) — to either reject their messages or send them straight to Spam.',
 )

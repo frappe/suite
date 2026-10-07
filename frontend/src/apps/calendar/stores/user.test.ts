@@ -5,8 +5,9 @@ import { reactive } from 'vue'
 import { userStore } from '@/apps/calendar/stores/user'
 
 // The store only needs `data` and `fetch` from a resource; nothing fires on its own.
-vi.mock('frappe-ui', () => ({
-  createResource: () => reactive({ data: undefined, fetch: vi.fn() }),
+vi.mock('@/api', async (original) => ({
+  ...(await original<typeof import('@/api')>()),
+  useQuery: () => reactive({ data: undefined, refetch: vi.fn().mockResolvedValue(undefined) }),
 }))
 
 const participant = (email: string, isDefault: 0 | 1 = 0) => ({

@@ -61,7 +61,7 @@
       </div>
     </div>
 
-    <template v-else-if="threadsResource?.data?.length || filter || mailbox === 'search'">
+    <template v-else-if="threadRows.length || filter || mailbox === 'search'">
       <ThreadPane
         :thread-open="!!threadID"
         @touch-start="onThreadTouchStart"
@@ -132,7 +132,7 @@
             />
 
             <!-- Loading bar -->
-            <LoadingBar v-if="threadsResource?.loading" />
+            <LoadingBar v-if="activeThreads.isFetching" />
           </div>
 
           <!-- Toolbar/Actions -->
@@ -143,7 +143,7 @@
             :show-filter="!selections.length && mailbox !== 'search'"
             :show-actions="!selections.length"
             :fetching="isFetching"
-            :loading="threadsResource?.loading"
+            :loading="activeThreads.isFetching"
             @refresh="refreshThreads()"
           >
             <template #lead>
@@ -213,7 +213,7 @@
 
           <!-- Mail list -->
           <div
-            v-if="threadsResource?.data?.length"
+            v-if="threadRows.length"
             ref="mailList"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
           >
@@ -311,7 +311,7 @@
             <!-- While the (still-mounted) search header's new query loads, this area is the
 						     loading surface — the empty message must not flash first. -->
             <LoaderCircle
-              v-if="threadsResource?.loading"
+              v-if="activeThreads.isFetching"
               class="text-ink-gray-5 h-5 w-5 animate-spin"
             />
             <p v-else class="text-ink-gray-5">
@@ -329,19 +329,19 @@
         <MailThread
           ref="mailThread"
           :slide="threadSlide"
-          @slide-done="threadSlide = ''"
           :mailbox
           :thread-i-d
           :threads="threadIDs"
           :messages="currentThread?.messages"
           :can-go-next="canGoNext"
+          @slide-done="threadSlide = ''"
           @reload-mails="resetThreads"
           @set-seen="
             (seen: boolean, ids: string[]) =>
               handleSetSeen({ [Number(seen)]: [threadID!] }, seen, ids)
           "
           @sync-unseen="handleSyncUnseen"
-          @set-flagged="(ids: string[], flagged: boolean) => setFlagged.submit({ ids, flagged })"
+          @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
           @move-thread="
             (moveToMailbox: string) => handleMoveThreads({ [moveToMailbox]: [threadID!] })
           "
@@ -437,9 +437,7 @@
 import {
   Breadcrumbs,
   Button,
-  call,
   Checkbox,
-  createResource,
   Dialog,
   Dropdown,
   Tooltip,
@@ -466,6 +464,7 @@ import {
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
@@ -483,7 +482,13 @@ import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePag
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
-import { isMac, raisePromiseToast, raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
+import {
+  isMac,
+  raiseError,
+  raisePromiseToast,
+  raiseToast,
+  shouldIgnoreKeypress,
+} from '@/apps/mail/utils'
 import {
   useListReload,
   useMobileSearch,
@@ -504,29 +509,32 @@ import {
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
+import { threadRow } from '@/apps/mail/utils/threadRows'
+import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import { appPageMeta } from '@/platform/page-meta'
 import { stripShortcutHint } from '@/utils/actionLabel'
-import { appPageMeta } from '@/utils/documentTitle'
 
-const { accountId, mailbox, threadID } = defineProps<{
+const {
+  accountId,
+  mailbox,
+  threadID = '',
+} = defineProps<{
   accountId: string
   mailbox: string
   threadID?: string
 }>()
-
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
 const { setMobileSelectionActive } = useMobileSelection()
 const { dropViewUndo } = useUndo()
-
 const socket = inject('$socket')
 // MailLayout's overlay layer; see the selection bar's Teleport.
 const overlayLayer = usePortalTarget()
 const user = inject('$user') as UserResource
-
 const store = userStore()
 const { mailboxes, mailboxIds } = store
 
@@ -542,25 +550,16 @@ const showReadingPane = useReadingPane()
 // merge, the removal suppression, the sentinel, the edge crossing. See there.
 const {
   container: mailListRef,
-  hasMore,
   loadingMore,
   isFetching,
   canGoNext,
   threadIDs,
   threadByOffset,
-  takeResetWindow,
-  resetLimit,
-  beginReset,
-  beginRefresh,
-  onResetSuccess,
-  appendThreads,
   loadMoreThenOpenEdge,
   topUpIfShort,
-  suppressRemoved,
-  unsuppressRemoved,
 } = usePaginatedThreads({
-  resource: () => threadsResource.value,
-  fetchMore: () => (mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload(),
+  query: () => activeThreads.value,
+  rows: () => threadRows.value,
   openThreadID: () => threadID,
   onEdgeThread: (id, action) => (action === 'open' ? goToThread(id) : focusOnThread(id)),
   // Deferred read — visibleThreadCount is declared below, with the rows it counts.
@@ -602,7 +601,7 @@ const {
   toggleGroupCollapse,
   revealThread,
 } = useListRows({
-  threads: () => threadsResource.value?.data ?? [],
+  threads: () => threadRows.value ?? [],
   // Rows are keyed by mail name, prefixed with the account in an all-accounts search — where two
   // accounts' rows sit in one list and a name alone need not be unique.
   rowKey: (mail: Thread) =>
@@ -633,13 +632,14 @@ const isStackSelected = (threads: Thread[]) =>
 watch(
   () => threadID,
   (val) => val && revealThread(val),
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
 
 // Selection
 
 const mailThreadRef = useTemplateRef('mailThread')
-
 const selections = ref<string[]>([])
 
 // Mobile selection mode (design: 5·Selection): rows show checkboxes, the toolbar
@@ -654,9 +654,7 @@ const showMoreActions = ref(false)
 const showMoveToSheet = ref(false)
 const showAddToSheet = ref(false)
 const showRemoveFromSheet = ref(false)
-
 const visibleSelectActions = computed(() => selectActions.value.filter((a) => a.condition()))
-
 const moreSelectionOptions = computed(() => [
   ...visibleSelectActions.value.slice(4).map((a) => ({
     label: a.label,
@@ -664,10 +662,22 @@ const moreSelectionOptions = computed(() => [
     onClick: a.onClick,
   })),
   ...(showMoveTo.value
-    ? [{ label: __('Move To'), icon: FolderInput, onClick: () => (showMoveToSheet.value = true) }]
+    ? [
+        {
+          label: __('Move To'),
+          icon: FolderInput,
+          onClick: () => (showMoveToSheet.value = true),
+        },
+      ]
     : []),
   ...(showAddTo.value
-    ? [{ label: __('Add To'), icon: FolderPlus, onClick: () => (showAddToSheet.value = true) }]
+    ? [
+        {
+          label: __('Add To'),
+          icon: FolderPlus,
+          onClick: () => (showAddToSheet.value = true),
+        },
+      ]
     : []),
   ...(showRemoveFrom.value
     ? [
@@ -680,7 +690,6 @@ const moreSelectionOptions = computed(() => [
     : []),
 ])
 const lastSelected = ref<string[]>()
-
 const isAllSelected = computed(
   () => threadIDs.value.length && selections.value.length === threadIDs.value.length,
 )
@@ -703,45 +712,36 @@ const toggleSelect = (
   else selections.value = selections.value.filter((id) => !allIDs.has(id))
   lastSelected.value = threadIDs
 }
-
 const getShiftSelectedIDs = (thread: string) => {
   if (!(isShiftPressed.value && lastSelected.value?.length)) return []
-
   const currentIndex = threadIDs.value.indexOf(thread)
   const firstIndex = threadIDs.value.indexOf(lastSelected.value[0])
   const lastIndex = threadIDs.value.indexOf(lastSelected.value.at(-1))
-
   const farthestIndex =
     Math.abs(currentIndex - firstIndex) > Math.abs(currentIndex - lastIndex)
       ? firstIndex
       : lastIndex
-
   const [lower, higher] = [farthestIndex, currentIndex].sort((a, b) => a - b)
   return threadIDs.value.slice(lower, higher + 1)
 }
-
 const toggleSelectAll = (selected: boolean) => {
   if (selected) selections.value = [...threadIDs.value]
   else selections.value = []
   lastSelected.value = undefined
 }
-
 const resetSelections = () => {
   selections.value = []
   lastSelected.value = undefined
 }
-
 const isGroupSelected = (key: string) =>
   getGroupThreads(key).every((id) => selections.value.includes(id))
 
 // Shortcuts
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
-
 const isShiftPressed = ref(false)
 const gPrefix = useGPrefix()
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
-
 const handleKeyDown = (e: KeyboardEvent) => {
   isShiftPressed.value = e.shiftKey
   const key = e.key.toLowerCase()
@@ -752,9 +752,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     gPrefix.disarm()
     return toggleSelectAll(true)
   }
-
   if (shouldIgnoreKeypress(e)) return
-
   if (key === 'g') return handleGKeyPress(e)
   // A letter after `g` is a mailbox jump, which MailLayout owns. Swallow it here so it can't
   // also fire a thread-action shortcut sharing that letter.
@@ -764,22 +762,18 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
   if (key === 'enter') return handleEnter(e)
   if (key === 'escape') return handleEscape(e)
-
   const hasSelection = selections.value.length > 0 || threadID
   if (hasSelection) handleThreadActions(e, key)
   handleArrowNavigation(e, key)
 }
-
 const handleGKeyPress = (e: KeyboardEvent) => {
   // The reading pane walks threads, so it names one; the list walks rows, so it takes the edge row —
   // which is the day's header when one sits above the first mail.
   const intent = gPrefix.press(e.shiftKey)
-
   if (intent === 'last') {
     if (threadID) return goToThread(threadIDs.value.at(-1))
     return focusRow(navigableRows.value.at(-1))
   }
-
   if (intent === 'first') {
     if (threadID) return goToThread(threadIDs.value[0])
     return focusRow(navigableRows.value[0])
@@ -789,7 +783,6 @@ const handleGKeyPress = (e: KeyboardEvent) => {
 // Enter means "act on the row I'm on": open a mail, or fold/unfold a stack or a day.
 const handleEnter = (e: KeyboardEvent) => {
   e.preventDefault()
-
   const row = focusedRow.value
   if (!row) return focusRow(navigableRows.value[0])
   if (row.type === 'thread') return goToThread(row.thread.thread_id)
@@ -797,14 +790,12 @@ const handleEnter = (e: KeyboardEvent) => {
   // Folds the day, or does nothing on the last group — exactly what clicking the header does.
   toggleGroupCollapse(row.dateKey)
 }
-
 const handleEscape = (e: KeyboardEvent) => {
   e.preventDefault()
   if (threadID) goToMailbox()
   else if (selections.value.length) resetSelections()
   else focusedRowKey.value = undefined
 }
-
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
   const thread_ids = selections.value.length ? selections.value : [threadID!]
 
@@ -812,13 +803,17 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   if (key === (isMac ? 'backspace' : 'delete')) {
     e.preventDefault()
     if (e.shiftKey || mailbox === mailboxIds.trash) return junkOrDeleteThreads(thread_ids, false)
-    return handleMoveThreads({ [mailboxIds.trash]: thread_ids })
+    return handleMoveThreads({
+      [mailboxIds.trash]: thread_ids,
+    })
   }
 
   // Mark as read/unread (u)
   if (key === 'u') {
     e.preventDefault()
-    return handleSetSeen({ [Number(e.shiftKey)]: thread_ids })
+    return handleSetSeen({
+      [Number(e.shiftKey)]: thread_ids,
+    })
   }
 
   // Archive (e)
@@ -826,7 +821,9 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
     e.preventDefault()
     return mailbox === mailboxIds.sent
       ? handleAddThreadsToMailbox(mailboxIds.archive, thread_ids)
-      : handleMoveThreads({ [mailboxIds.archive]: thread_ids })
+      : handleMoveThreads({
+          [mailboxIds.archive]: thread_ids,
+        })
   }
 
   // Mark as junk (!)
@@ -835,15 +832,11 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
     return junkOrDeleteThreads(thread_ids, true)
   }
 }
-
 const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
   if (!isNavigationKey(key)) return
-
   e.preventDefault()
-
   const offset = navigationOffset(key)
   const prevIDs = focusedRow.value ? rowThreadIDs(focusedRow.value) : []
-
   let newIDs: string[] = []
 
   // At the last loaded thread, stepping further loads the next window (like the ThreadHeader arrows).
@@ -858,7 +851,6 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
   } else {
     const rows = navigableRows.value
     const next = stepFromKey(rows, focusedRowKey.value, offset)
-
     if (next) {
       focusRow(next)
       newIDs = rowThreadIDs(next)
@@ -868,15 +860,12 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
   // Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
   // takes its whole run and onto a header takes the day — the same sets their checkboxes select.
   if (!(isShiftPressed.value && newIDs.length)) return
-
   const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
   toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
 }
-
 const handleKeyUp = (e: KeyboardEvent) => {
   if (e.key === 'Shift') isShiftPressed.value = false
 }
-
 interface SelectAction {
   label: string
   // One-word label for the mobile selection bar; verb phrases stay in menus/tooltips.
@@ -885,7 +874,6 @@ interface SelectAction {
   icon: typeof RefreshCw
   condition: () => boolean
 }
-
 const selectActions = computed((): SelectAction[] => [
   {
     label: __('Star'),
@@ -894,7 +882,7 @@ const selectActions = computed((): SelectAction[] => [
     condition: () =>
       selections.value.some(
         (threadID) =>
-          threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)?.flagged === 0,
+          threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.flagged === 0,
       ),
   },
   {
@@ -904,7 +892,7 @@ const selectActions = computed((): SelectAction[] => [
     condition: () =>
       selections.value.some(
         (threadID) =>
-          threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)?.flagged === 1,
+          threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.flagged === 1,
       ),
   },
   {
@@ -912,7 +900,9 @@ const selectActions = computed((): SelectAction[] => [
     onClick: () =>
       mailbox === mailboxIds.sent
         ? handleAddThreadsToMailbox(mailboxIds.archive, selections.value)
-        : handleMoveThreads({ [mailboxIds.archive]: selections.value }),
+        : handleMoveThreads({
+            [mailboxIds.archive]: selections.value,
+          }),
     icon: Archive,
     condition: () => mailbox !== mailboxIds.archive,
   },
@@ -924,25 +914,29 @@ const selectActions = computed((): SelectAction[] => [
     condition: () =>
       mailbox !== mailboxIds.drafts &&
       selections.value.some(
-        (threadID) =>
-          threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)?.junk === 0,
+        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.junk === 0,
       ),
   },
   {
     label: __('Mark as Not Junk'),
     shortLabel: __('Not Junk'),
-    onClick: () => handleSetSpamStatus({ 0: selections.value }),
+    onClick: () =>
+      handleSetSpamStatus({
+        0: selections.value,
+      }),
     icon: CircleCheck,
     condition: () =>
       selections.value.some(
-        (threadID) =>
-          threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)?.junk === 1,
+        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.junk === 1,
       ),
   },
   {
     label: __('Move to Trash (Delete)'),
     shortLabel: __('Trash'),
-    onClick: () => handleMoveThreads({ [mailboxIds.trash]: selections.value }),
+    onClick: () =>
+      handleMoveThreads({
+        [mailboxIds.trash]: selections.value,
+      }),
     icon: Trash2,
     condition: () => mailbox !== mailboxIds.trash,
   },
@@ -956,23 +950,27 @@ const selectActions = computed((): SelectAction[] => [
   {
     label: __('Mark as Read (Shift+U)'),
     shortLabel: __('Read'),
-    onClick: () => handleSetSeen({ 1: selections.value }),
+    onClick: () =>
+      handleSetSeen({
+        1: selections.value,
+      }),
     icon: MailOpen,
     condition: () =>
       selections.value.some(
-        (threadID) =>
-          threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)?.seen === 0,
+        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.seen === 0,
       ),
   },
   {
     label: __('Mark as Unread (U)'),
     shortLabel: __('Unread'),
-    onClick: () => handleSetSeen({ 0: selections.value }),
+    onClick: () =>
+      handleSetSeen({
+        0: selections.value,
+      }),
     icon: MailIcon,
     condition: () =>
       selections.value.some(
-        (threadID) =>
-          threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)?.seen === 1,
+        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.seen === 1,
       ),
   },
 ])
@@ -1014,9 +1012,19 @@ const screenerBanner = computed(() => {
     ? __('{0} is waiting to be screened.')
     : __('{0} are waiting to be screened.')
   const [before, after] = sentence.split('{0}')
-  return { phrase, before, after }
+  return {
+    phrase,
+    before,
+    after,
+  }
 })
-const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
+const goToScreener = () =>
+  router.push({
+    name: 'mail-screener',
+    params: {
+      accountId,
+    },
+  })
 
 // Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
@@ -1040,7 +1048,9 @@ const searchTotal = ref<number | null>(null)
 // The search dialog stores bare `YYYY-MM-DD` days in the route; the API listens UTC, so the
 // day's bounds are resolved in the user's zone here at the request boundary (the URL stays clean).
 const searchFilter = () => {
-  const filter: Record<string, any> = { ...route.query }
+  const filter: Record<string, any> = {
+    ...route.query,
+  }
   if (typeof filter.after === 'string' && filter.after) filter.after = utcDayStart(filter.after)
   if (typeof filter.before === 'string' && filter.before) filter.before = utcDayEnd(filter.before)
   return filter
@@ -1048,30 +1058,23 @@ const searchFilter = () => {
 
 // Reset resource for search: the window starts at the top and runs as deep as the composable asks
 // (one page on a reset, the loaded list on a refresh), over-fetching one row to drive `hasMore`.
-const searchResults = createResource({
-  url: 'suite.mail.api.mail.search_mails',
-  makeParams: () => ({
-    account: store.accountId,
-    filter: searchFilter(),
-    limit: resetLimit(),
-    start: 0,
-    all_accounts: isAllAccountsSearch.value,
-  }),
-  transform: (data: [Thread[], number]) => {
-    searchTotal.value = data[1] ?? 0
-    return takeResetWindow(data[0])
+const searchResults = useInfiniteQuery(api.mail.messages.search, () =>
+  mailbox === 'search' && hasSearchQuery.value
+    ? {
+        account: store.accountId,
+        filter: searchFilter(),
+        limit: PAGE_LENGTH,
+        start: 0,
+        all_accounts: isAllAccountsSearch.value,
+      }
+    : false,
+)
+watch(
+  () => searchResults.total,
+  (total) => {
+    searchTotal.value = total ?? null
   },
-  onSuccess: () => {
-    onResetSuccess()
-    if (mailbox === 'search') isMailboxLoaded.value = true
-  },
-  // On failure the count never arrives, so clear the pending state instead of leaving the title stuck
-  // on "Searching…" — the empty result list then reads as "0 results".
-  onError: () => {
-    searchTotal.value = 0
-  },
-})
-
+)
 watch(
   () => JSON.stringify(route.query),
   () => {
@@ -1089,30 +1092,33 @@ const { filter, reloadFilter, FILTER_OPTIONS, filterTitle } = useStoredFilter({
   onChange: () => resetThreads(false),
   starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
 })
-
 const isMailboxLoaded = ref(false)
 
 // Reset resource for a mailbox: the window starts at the top and runs as deep as the composable asks
 // (see resetLimit) — one page on a reset, the loaded list on a refresh, so a refresh can tell which
 // loaded rows are gone. Over-fetches one row to detect whether more exist without relying on the
 // (flaky) stored count.
-const threads = createResource({
-  url: 'suite.mail.api.mail.get_threads',
-  makeParams: () => ({
-    account: store.accountId,
-    mailbox,
-    limit: resetLimit(),
-    start: 0,
-    filter_by: filter.value,
-  }),
-  transform: (data: [Thread[], string]) => takeResetWindow(data[0]),
-  onSuccess: (data: [Thread[], string]) => {
-    onResetSuccess()
-    if (mailbox === data[1]) isMailboxLoaded.value = true
+const threads = useInfiniteQuery(api.mail.threads.list, () =>
+  mailbox !== 'search'
+    ? {
+        account: store.accountId,
+        mailbox,
+        limit: PAGE_LENGTH,
+        start: 0,
+        filter_by: filter.value,
+      }
+    : false,
+)
+const activeThreads = computed(() => (mailbox === 'search' ? searchResults : threads))
+const threadRows = computed(() =>
+  activeThreads.value.rows.map((row) => threadRow(row, store.accountId)),
+)
+watch(
+  () => threads.status,
+  (status) => {
+    isMailboxLoaded.value = status !== 'pending'
   },
-})
-
-const threadsResource = computed(() => (mailbox === 'search' ? searchResults : threads))
+)
 
 // The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so show it whenever the
 // mailbox has threads — or a filter is applied (the filtered view may be empty while the mailbox isn't).
@@ -1120,55 +1126,23 @@ const threadsResource = computed(() => (mailbox === 'search' ? searchResults : t
 const showDeleteBanner = computed(
   () =>
     [mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
-    !threadsResource.value.data?.loading &&
-    (!!threadsResource.value.data?.length || !!filter.value) &&
+    !activeThreads.value.isFetching &&
+    (!!threadRows.value?.length || !!filter.value) &&
     (showReadingPane.value || !threadID),
 )
-
-// ── Append fetches ──────────────────────────────────────────────────────────────────────────────
-// The other half of the two fetch paths that write `threadsResource.value.data`: the reset resources
-// above replace it (start:0), these push the next window onto it (via appendThreads). Kept separate so
-// createResource's replace-on-reload never fights the append.
-
-const loadMoreThreads = createResource({
-  url: 'suite.mail.api.mail.get_threads',
-  makeParams: () => ({
-    account: store.accountId,
-    mailbox,
-    limit: PAGE_LENGTH + 1,
-    start: threadsResource.value.data.length,
-    filter_by: filter.value,
-  }),
-  onSuccess: (data: [Thread[], string]) => appendThreads(data[0]),
-  onError: () => (loadingMore.value = false),
-})
-
-const loadMoreSearch = createResource({
-  url: 'suite.mail.api.mail.search_mails',
-  makeParams: () => ({
-    account: store.accountId,
-    filter: searchFilter(),
-    limit: PAGE_LENGTH + 1,
-    start: threadsResource.value.data.length,
-    all_accounts: isAllAccountsSearch.value,
-  }),
-  onSuccess: (data: [Thread[], number]) => appendThreads(data[0]),
-  onError: () => (loadingMore.value = false),
-})
 
 // Keep infinite scroll alive while the rendered list is too short to scroll (see topUpIfShort). Must
 // stay below groupedRows: `watch` evaluates its source at setup.
 watch(groupedRows, topUpIfShort)
-
 const isLoading = computed(() => {
   // Search is one page: its header (input + filter chips) mounts immediately and stays put
   // across query changes — loading shows inline in the list area, never as the full spinner.
   // Checked first: entering the route resets isMailboxLoaded, which must not blank the view.
   if (mailbox === 'search') return false
   if (!isMailboxLoaded.value) return true
-  if (emptyMailbox.loading) return true
+  if (emptyMailbox.isPending) return true
   if (refillPending.value) return true
-  return !threadsResource.value.data.length && threadsResource.value?.loading
+  return !threadRows.value.length && activeThreads.value.isFetching
 })
 
 // Reset-to-top: refetch only the first window, replacing the loaded list and scrolling to the top
@@ -1183,7 +1157,6 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
   // This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
   // the resource's `loading` drives isLoading, so the flag has done its job.
   refillPending.value = false
-  beginReset()
   resetSelections()
   // Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
   if (mailbox === 'search') {
@@ -1195,8 +1168,8 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
       return
     }
   }
-  threadsResource.value.reload()
-  if (reloadMailboxes) mailboxes.reload()
+  void activeThreads.value.refetch().catch(() => {})
+  if (reloadMailboxes) mailboxes.refetch().catch(() => {})
 }
 
 // The composer lives in the layout now, above every route, so it has no view to hand an event to —
@@ -1208,65 +1181,29 @@ watch(listReloadRequest, () => resetThreads(true, ['drafts', 'sent']))
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
 const refreshThreads = (reloadMailboxes = true) => {
-  if (!beginRefresh()) return
-  threadsResource.value.reload()
-  if (reloadMailboxes) mailboxes.reload()
+  if (isFetching.value) return
+  void activeThreads.value.refetch().catch(() => {})
+  if (reloadMailboxes) mailboxes.refetch().catch(() => {})
 }
 
 // After an optimistic action whose threads stay in the list (add-to-mailbox, or a move that leaves
 // copies in the current mailbox): refresh selections + sidebar counts only, never refetch the list.
 const syncAfterAction = () => {
   resetSelections()
-  mailboxes.reload()
+  mailboxes.refetch().catch(() => {})
 }
 
 // Drops threads from the loaded list optimistically and returns the removed rows (so an undo can put
 // them back). Their server rows leave the current view too, so the append offset (data.length) stays
 // aligned.
-const removeThreadsFromList = (thread_ids: string[]): Thread[] => {
-  const data = threadsResource.value.data ?? []
-  const removed = data.filter((thread: Thread) => thread_ids.includes(thread.thread_id))
-  threadsResource.value.data = data.filter(
-    (thread: Thread) => !thread_ids.includes(thread.thread_id),
-  )
-  // Suppress re-insertion by an in-flight refresh/append until the server-side removal lands.
-  suppressRemoved(thread_ids)
-  // If this emptied the list but more exist, a refill is coming (refillIfEmpty, once the mutation
-  // lands) — flag it so the empty state doesn't flash in the meantime.
-  if (!threadsResource.value.data.length && hasMore.value) refillPending.value = true
-  return removed
-}
-
-// When an optimistic removal empties the loaded list while more threads exist server-side (e.g. select
-// all + delete/move), refetch the first window so the view refills — the sentinel unmounts with an empty
-// list and couldn't otherwise re-trigger a load. Must run *after* the server mutation lands: a reset
-// mid-request refetches start:0 and gets the same not-yet-removed rows back (they'd reappear).
+const removeThreadsFromList = (ids: string[]): Thread[] =>
+  threadRows.value.filter((row) => ids.includes(row.thread_id))
 const refillIfEmpty = () => {
-  if (!threadsResource.value.data.length && hasMore.value) resetThreads()
-  // resetThreads sets the resource loading (so isLoading holds the spinner from here); clear the flag.
   refillPending.value = false
 }
-
-// Re-insert threads (after undoing a move/junk) at their correct position by received_at, so they
-// return to where they were instead of jumping to the top. Scroll stays put — the browser's
-// scroll-anchoring holds the viewport as rows reappear above it.
-const restoreThreadsToList = (restored: Thread[]) => {
-  if (!restored.length) return
-  // Rows are back (removal failed / undo), so no refill is coming — drop the pending-refill hold.
-  refillPending.value = false
-  // A restored thread should be visible again — lift any removal suppression.
-  unsuppressRemoved(restored.map((t: Thread) => t.thread_id))
-  const list = [...(threadsResource.value.data ?? [])]
-  const present = new Set(list.map((t: Thread) => t.thread_id))
-  for (const thread of restored) {
-    if (present.has(thread.thread_id)) continue
-    // The list is sorted newest-first; drop the thread before the first older row.
-    const idx = list.findIndex((t: Thread) => t.received_at < thread.received_at)
-    idx === -1 ? list.push(thread) : list.splice(idx, 0, thread)
-  }
-  threadsResource.value.data = list
+const restoreThreadsToList = (_rows: Thread[]) => {
+  void activeThreads.value.refetch().catch(() => {})
 }
-
 watch(
   () => [mailbox, accountId],
   (_new, old) => {
@@ -1274,9 +1211,7 @@ watch(
     // loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
     // every account, so a mere account switch mustn't reset it — keep the results and scroll position.
     if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
-
     isMailboxLoaded.value = false
-    threadsResource.value.data = []
     reloadFilter()
     focusedRowKey.value = undefined
     collapsedGroups.value = []
@@ -1286,7 +1221,9 @@ watch(
     expandedStacks.value = new Set()
     resetThreads(false)
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
 
 // Periodically refresh the mailbox list (keeps sidebar counts current), then merge in new threads only
@@ -1297,33 +1234,28 @@ watch(
 // gating on that count made this backstop blind to exactly the arrivals the socket exists to deliver.
 const pollForChanges = async () => {
   const prevTotal = mailboxObj.value?.total_emails
-  await mailboxes.reload()
+  await mailboxes.refetch().catch(() => {})
   if (mailboxObj.value?.total_emails !== prevTotal) refreshThreads(false)
 }
 
 // Mail was read, moved or deleted somewhere else (another device, another tab). Which mailboxes it
 // touched isn't known — a deleted mail can no longer be asked — so every list refreshes.
 const onMailChanged = () => refreshThreads()
-
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
   window.addEventListener('keyup', handleKeyUp)
   reloadInterval.value = setInterval(pollForChanges, 30000)
-
   socket.on('new_mail_created', (updatedMailboxes: string[]) => {
     if (updatedMailboxes.includes(mailbox)) refreshThreads()
   })
   socket.on('mail_changed', onMailChanged)
-
   socket.on('mail_exchange_completed', (payload: { success: boolean; message: string }) =>
     raiseToast(payload.message, payload.success ? 'success' : 'error'),
   )
-
   socket.on('calendar_exchange_completed', (payload: { success: boolean; message: string }) =>
     raiseToast(payload.message, payload.success ? 'success' : 'error'),
   )
 })
-
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('keyup', handleKeyUp)
@@ -1333,15 +1265,25 @@ onUnmounted(() => {
   dropViewUndo()
 })
 
+// The URL names the folder by slug; this view works in its id (see utils/unifiedFolders).
+const mailboxInUrl = () => mailboxParam(mailbox, mailboxes.data)
+
 const goToMailbox = () =>
-  router.push({ name: 'mail-mailbox', params: { accountId, mailbox }, query: route.query })
+  router.push({
+    name: 'mail-mailbox',
+    params: { accountId, mailbox: mailboxInUrl() },
+    query: route.query,
+  })
 
 const goToThread = (threadID: string) => {
   threadSlide.value = pendingThreadSlide
   if (threadID)
-    router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
+    router.push({
+      name: 'mail-mail',
+      params: { accountId, mailbox: mailboxInUrl(), threadID },
+      query: route.query,
+    })
 }
-
 const goToThreadByOffset = (offset: number) => {
   const next = threadByOffset(offset)
   if (next) return goToThread(next)
@@ -1395,7 +1337,7 @@ const {
   handleMailMove,
   handleMailSpam,
   handleMailDelete,
-  setFlagged,
+  setFlaggedSubmit,
   selectedRows,
   moveToOptions,
   addToOptions,
@@ -1406,7 +1348,7 @@ const {
   showJunkOrDeleteThreads,
   junkOrDeleteThreadsOptions,
 } = useThreadActions({
-  threadsResource,
+  rows: threadRows,
   mailbox: computed(() => mailbox),
   threadID: computed(() => threadID),
   selections,
@@ -1425,7 +1367,6 @@ const {
 // undo snapshot, Junk diversion and toast included. The sidebar owns the drop; it borrows the move
 // from here, since only the view knows how to perform one.
 const threadDrag = useThreadDrag()
-
 onMounted(() => threadDrag.setMoveHandler(handleMoveThreads))
 onUnmounted(() => threadDrag.setMoveHandler(null))
 
@@ -1457,34 +1398,39 @@ const startThreadDrag = (thread: Thread, e: DragEvent) => {
 // ── Cross-account search row actions ──────────────────────────────────────────────────────────────
 // In an all-accounts search the merged rows can belong to any account, so the shared handlers above
 // (which target the single active account) can't drive them. These act on each row's own account via
-// stateless call()s — mirroring the All Inboxes view — with the active account left untouched. Star and
+// client mutations — mirroring the All Inboxes view — with the active account left untouched. Star and
 // read/unread update optimistically in place; archive/trash re-run the search on success, since a
 // result's membership is server-determined (an archived mail may still match the query). Delete is
 // account-agnostic (it targets Mail Message names), so it stays on the shared junk/delete flow below.
 const crossAccountSetSeen = (mail: Thread, seen: boolean) => {
   if (mail.seen === (seen ? 1 : 0)) return
   mail.seen = seen ? 1 : 0
-  call('suite.mail.api.mail.set_mails_seen', { account: mail.account, ids: [mail.id], seen })
-    .then(() => mailboxes.reload())
+  client
+    .mutation(api.mail.messages.seen, {
+      account: mail.account,
+      ids: [mail.id],
+      seen,
+    })
+    .then(() => mailboxes.refetch().catch(() => {}))
     .catch((error) => {
       mail.seen = seen ? 0 : 1 // revert the optimistic update
-      raiseToast(error?.messages?.[0] || error?.message, 'error')
+      raiseError(error)
     })
 }
-
 const crossAccountSetFlagged = (mail: Thread, flagged: boolean) => {
   if (mail.flagged === (flagged ? 1 : 0)) return
   mail.flagged = flagged ? 1 : 0
-  call('suite.mail.api.mail.set_flagged', {
-    account: mail.account,
-    ids: [mail.id],
-    flagged,
-  }).catch((error) => {
-    mail.flagged = flagged ? 0 : 1 // revert the optimistic update
-    raiseToast(error?.messages?.[0] || error?.message, 'error')
-  })
+  client
+    .mutation(api.mail.messages.flag, {
+      account: mail.account,
+      ids: [mail.id],
+      flagged,
+    })
+    .catch((error) => {
+      mail.flagged = flagged ? 0 : 1 // revert the optimistic update
+      raiseError(error)
+    })
 }
-
 const crossAccountMoveOut = (
   mail: Thread,
   target: string | undefined,
@@ -1495,12 +1441,14 @@ const crossAccountMoveOut = (
   if (!target) return raiseToast(missing, 'error')
   raisePromiseToast(
     () =>
-      call('suite.mail.api.mail.move_mails', {
-        account: mail.account,
-        ids: [mail.id],
-        mailbox: target,
-        clear_junk: true,
-      }).then(() => resetThreads(false)),
+      client
+        .mutation(api.mail.messages.move, {
+          account: mail.account,
+          ids: [mail.id],
+          mailbox: target,
+          clear_junk: true,
+        })
+        .then(() => resetThreads(false)),
     loading,
     success,
   )
@@ -1511,13 +1459,13 @@ const crossAccountMoveOut = (
 const rowSetSeen = (mail: Thread, seen: boolean) =>
   isAllAccountsSearch.value
     ? crossAccountSetSeen(mail, seen)
-    : handleSetSeen({ [Number(seen)]: [mail.thread_id] })
-
+    : handleSetSeen({
+        [Number(seen)]: [mail.thread_id],
+      })
 const rowSetFlagged = (mail: Thread, flagged: boolean) =>
   isAllAccountsSearch.value
     ? crossAccountSetFlagged(mail, flagged)
     : setFlaggedByThreadIDs([mail.thread_id], flagged)
-
 const rowArchive = (mail: Thread) =>
   isAllAccountsSearch.value
     ? crossAccountMoveOut(
@@ -1529,8 +1477,9 @@ const rowArchive = (mail: Thread) =>
       )
     : mailbox === mailboxIds.sent
       ? handleAddThreadsToMailbox(mailboxIds.archive, [mail.thread_id])
-      : handleMoveThreads({ [mailboxIds.archive]: [mail.thread_id] })
-
+      : handleMoveThreads({
+          [mailboxIds.archive]: [mail.thread_id],
+        })
 const rowTrash = (mail: Thread) =>
   isAllAccountsSearch.value
     ? crossAccountMoveOut(
@@ -1540,7 +1489,9 @@ const rowTrash = (mail: Thread) =>
         __('Thread moved to Trash.'),
         __('No Trash folder for this account.'),
       )
-    : handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
+    : handleMoveThreads({
+        [mailboxIds.trash]: [mail.thread_id],
+      })
 
 // A stack's hover actions apply to its whole run in one operation — one request, one toast, one undo,
 // rather than N of each. The row's own tooltips name the count. These take the same paths as the
@@ -1548,44 +1499,43 @@ const rowTrash = (mail: Thread) =>
 // disabled in all-accounts search (see stackingEnabled).
 
 const stackIDs = (threads: Thread[]) => threads.map((t) => t.thread_id)
-
 const stackSetSeen = (threads: Thread[], seen: boolean) =>
-  handleSetSeen({ [Number(seen)]: stackIDs(threads) })
-
+  handleSetSeen({
+    [Number(seen)]: stackIDs(threads),
+  })
 const stackArchive = (threads: Thread[]) =>
   mailbox === mailboxIds.sent
     ? handleAddThreadsToMailbox(mailboxIds.archive, stackIDs(threads))
-    : handleMoveThreads({ [mailboxIds.archive]: stackIDs(threads) })
-
+    : handleMoveThreads({
+        [mailboxIds.archive]: stackIDs(threads),
+      })
 const stackTrash = (threads: Thread[]) =>
-  handleMoveThreads({ [mailboxIds.trash]: stackIDs(threads) })
-
+  handleMoveThreads({
+    [mailboxIds.trash]: stackIDs(threads),
+  })
 const stackDelete = (threads: Thread[]) => junkOrDeleteThreads(stackIDs(threads), false)
-
 const showEmptyMailbox = ref(false)
-
-const emptyMailbox = createResource({
-  url: 'suite.mail.api.mail.empty_user_mailbox',
-  makeParams: () => ({ account: store.accountId, mailbox }),
-  onSuccess: () => {
-    threadsResource.value.data = []
-    raiseToast(__('{0} emptied.', [mailboxName.value]))
-    resetThreads()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
-
+const emptyMailbox = useMutation(api.mail.mailboxes.empty)
+async function emptyMailboxSubmit() {
+  const input: InputOf<typeof api.mail.mailboxes.empty> = {
+    account: store.accountId,
+    mailbox,
+  }
+  await emptyMailbox.run(input)
+  raiseToast(__('{0} emptied.', [mailboxName.value]))
+  resetThreads()
+}
 const emptyMailboxOptions = computed(() => ({
   title: __('Empty {0}', [mailboxName.value]),
   message: __(`Are you sure you want to empty the contents of this mailbox?`),
   icon: 'lucide-alert-triangle',
-  theme: 'amber',
+  theme: 'amber' as const,
   actions: [
     {
       label: __('Confirm'),
-      variant: 'solid',
+      variant: 'solid' as const,
       onClick: () => {
-        emptyMailbox.submit()
+        emptyMailboxSubmit()
         showEmptyMailbox.value = false
       },
     },
@@ -1601,37 +1551,31 @@ const mailboxName = computed(() => {
     case 'search':
       return __('Search')
     default:
-      return mailboxObj.value?._name
+      return mailboxObj.value?._name ?? ''
   }
 })
 const unreadThreadsPrefix = computed(() =>
   mailboxObj.value?.unread_threads ? `(${mailboxObj.value.unread_threads})` : '',
 )
-
 const currentThread = computed(() =>
-  threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID),
+  threadRows.value?.find((t: Thread) => t.thread_id === threadID),
 )
-
 usePageMeta(() => {
   if (threadID) return appPageMeta(currentThread.value?.subject || __('[No Subject]'), 'Mail')
   return appPageMeta(`${unreadThreadsPrefix.value} ${mailboxName.value}`, 'Mail')
 })
-
 const title = computed(() => {
   if (selections.value.length)
     return selections.value.length === 1
       ? __('1 item selected')
       : __('{0} items selected', [String(selections.value.length)])
-
   if (mailbox === 'search') {
     // Null until the current search resolves — show a neutral label rather than a stale/zero count.
     if (searchTotal.value === null) return __('Searching…')
     return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
   }
-
   return filterTitle.value
 })
-
 const threadCount = computed(() => {
   const count = mailboxObj.value?.total_threads
   return count ? count.toLocaleString() : ''

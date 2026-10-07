@@ -15,19 +15,19 @@ const holds = new Map<string, Promise<void>>()
 
 const servedFor = (name: string) => docs.get(name) ?? served
 
-vi.mock('frappe-ui', () => ({
-  createResource: () => ({}),
-  call: vi.fn(),
-  frappeRequest: async (options: any) => {
-    requests.push(options)
-    if (options.url !== 'suite.slides.doctype.presentation.presentation.get_public_presentation')
-      return {}
-    const held = holds.get(options.params.name)
+vi.mock('@/api', async () => {
+  const { api: slidesAPI } = await import('@/apps/slides/client/generated')
+  const send = async (reference: { path: string }, params: Record<string, unknown>) => {
+    const url = reference.path.replace('/api/method/', '')
+    requests.push({ url, method: reference.method, params })
+    if (!url.endsWith('get_public_presentation')) return {}
+    const held = holds.get(String(params.name))
     if (held) await held
-    return JSON.parse(JSON.stringify(servedFor(options.params.name)))
-  },
-  toast: { warning, error: vi.fn() },
-}))
+    return structuredClone(servedFor(String(params.name)))
+  }
+  return { api: { slides: slidesAPI }, client: { query: send, mutation: send } }
+})
+vi.mock('frappe-ui', () => ({ toast: { warning: warning, error: vi.fn() } }))
 vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { query: {} } } } }))
 vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({ commandHistory: {} }))

@@ -5,38 +5,26 @@
 </template>
 
 <script setup lang="ts">
-import { SettingsRow, Switch, toast, useCall } from 'frappe-ui'
+import { SettingsRow, Switch, toast } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
+
+import { api, useMutation } from '@/api'
 
 import { useDeviceIdentity } from '../../composables/useDeviceIdentity'
 import { getE2EETransformCapability } from '../../utils/media/e2ee'
-import { submit, type Call } from '../../utils/request'
 
 interface E2EESettingsSectionProps {
   meetingId: string
-  meetingDoc: {
-    reload: () => Promise<void>
-    updateSettings: { loading: boolean }
-    enableE2ee: Call<unknown> & { loading: boolean }
-    loading: boolean
-  }
+  busy: boolean
+  refresh: () => Promise<unknown>
   globallyEnabled: boolean
 }
 
 const props = defineProps<E2EESettingsSectionProps>()
 
 const { getIdentity } = useDeviceIdentity()
-const registerE2EEDeviceCall = useCall<
-  unknown,
-  {
-    device_id: string
-    ed25519_public_key: string
-  }
->({
-  url: '/api/suite/meet/e2ee-devices',
-  method: 'POST',
-  immediate: false,
-})
+const enableEncryption = useMutation(api.meet.rooms.enableEncryption, { silent: true })
+const registerE2EEDeviceCall = useMutation(api.meet.devices.register, { silent: true })
 
 const e2eeEnabled = ref<boolean>(props.globallyEnabled)
 const isConvertingToE2EE = ref(false)
@@ -54,9 +42,8 @@ const e2eeDescription = computed(() => {
 const isToggleDisabled = computed(
   () =>
     isConvertingToE2EE.value ||
-    props.meetingDoc.updateSettings.loading ||
-    props.meetingDoc.enableE2ee.loading ||
-    props.meetingDoc.loading ||
+    props.busy ||
+    enableEncryption.isPending ||
     e2eeEnabled.value ||
     isE2EEMediaSupported.value !== true,
 )
@@ -92,12 +79,12 @@ watch(
     try {
       // Register the device identity used to sign epoch key packages.
       const identity = await getIdentity()
-      await submit(registerE2EEDeviceCall, {
+      await registerE2EEDeviceCall.run({
         device_id: identity.deviceId,
         ed25519_public_key: identity.authPublicKey,
       })
 
-      await submit(props.meetingDoc.enableE2ee)
+      await enableEncryption.run({ name: props.meetingId })
       e2eeEnabled.value = true
 
       // Broadcast locally after the server-side meeting flag is enabled, so
@@ -110,7 +97,7 @@ watch(
         }),
       )
 
-      await props.meetingDoc.reload()
+      await props.refresh()
       toast.success('Meeting is now end-to-end encrypted.')
     } catch (error) {
       console.error('Failed to enable E2EE:', error)

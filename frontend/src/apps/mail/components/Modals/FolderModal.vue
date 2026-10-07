@@ -3,14 +3,14 @@
     v-model:open="show"
     v-bind="{
       title: isNew ? __('New Folder') : __('Folder Settings'),
-      size: 'xl',
+      size: 'xl' as const,
       paddingTop: '10%',
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !folder.name || (!isNew && isNotDirty),
-          onClick: () => (isNew ? createFolder.submit() : updateFolder.submit()),
+          onClick: () => (isNew ? createFolderSubmit() : updateFolderSubmit()),
         },
       ],
     }"
@@ -136,16 +136,17 @@
   <SetSieveScriptStateModal
     v-model="showEnableFolderAutomation"
     :script="automationScript || DEFAULT_AUTOMATION_SCRIPT"
-    :action="automationScript ? undefined : createAutomationScript.submit"
+    :action="automationScript ? undefined : createAutomationScriptSubmit"
   />
 </template>
 
 <script setup lang="ts">
-import { Alert, Button, createResource, Dialog, FormControl, Switch, Tabs } from 'frappe-ui'
+import { Alert, Button, Dialog, FormControl, Switch, Tabs } from 'frappe-ui'
 import { IconPicker } from 'frappe-ui/experimental'
 import { Settings, Zap } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
 import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
@@ -153,124 +154,117 @@ import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-
-const { mailbox } = defineProps<{ mailbox?: MailboxData }>()
-
+const { mailbox } = defineProps<{
+  mailbox?: MailboxData
+}>()
 const store = userStore()
-const { mailboxes, sieveScripts } = store
-
+const { sieveScripts } = store
 const isNew = computed(() => !mailbox)
 const activeScript = computed(() => sieveScripts.data?.find((s) => s.active)?._name)
 const automationScript = computed(() =>
   sieveScripts.data?.find((s) => s._name === 'frappe_mail_automation'),
 )
-
 const tab = ref('general')
 
 // iconLeft, not icon: `icon` is Tabs' icon-only trigger — it drops the label.
 const TABS = [
-  { value: 'general', label: __('General'), iconLeft: Settings },
-  { value: 'automation', label: __('Automation'), iconLeft: Zap },
+  {
+    value: 'general',
+    label: __('General'),
+    iconLeft: Settings,
+  },
+  {
+    value: 'automation',
+    label: __('Automation'),
+    iconLeft: Zap,
+  },
 ]
-
 const DEFAULT_FOLDER = {
   id: '',
   name: '',
-  role: null,
-  parent: null,
+  role: null as string | null,
+  parent: null as string | null,
   icon: 'folder',
   color: 'Gray',
   disable_push_notification: false,
 }
-
-const folder = reactive({ ...DEFAULT_FOLDER })
-
-const original = reactive({ ...DEFAULT_FOLDER })
-
+const folder = reactive({
+  ...DEFAULT_FOLDER,
+})
+const original = reactive({
+  ...DEFAULT_FOLDER,
+})
 const isNotificationsDisabled = computed(
   () =>
     !isNew.value &&
     ((mailbox?.role && ['sent', 'drafts', 'junk', 'trash', 'archive'].includes(mailbox.role)) ||
       mailbox?._name === SCREENER_MAILBOX_NAME),
 )
-
 const isNotDirty = computed(() => {
   const folderUnchanged =
     folder.name === original.name &&
     folder.icon === original.icon &&
     folder.color === original.color &&
     folder.disable_push_notification === original.disable_push_notification
-
   const automationUnchanged =
     automationRules.emails_from === originalAutomationRules.emails_from &&
     automationRules.subject_contains === originalAutomationRules.subject_contains &&
     automationRules.mark_as_read === originalAutomationRules.mark_as_read &&
     automationRules.add_star === originalAutomationRules.add_star &&
     automationRules.match_if === originalAutomationRules.match_if
-
   return folderUnchanged && automationUnchanged
 })
-
-const createFolder = createResource({
-  url: 'suite.mail.api.mail.create_mailbox',
-  makeParams: () => ({
+const createFolder = useMutation(api.mail.mailboxes.create)
+async function createFolderSubmit() {
+  const input: InputOf<typeof api.mail.mailboxes.create> = {
     account: store.accountId,
-    ...folder,
+    name: folder.name,
+    parent: folder.parent,
+    icon: folder.icon,
+    color: folder.color,
+    disable_push_notification: folder.disable_push_notification,
     automation_rules: isDefaultAutomation.value ? null : automationRules,
-  }),
-  onSuccess: () => {
-    raiseToast(__('Folder created.'))
-    show.value = false
-    mailboxes.reload()
-    sieveScripts.reload()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
-
-const updateFolder = createResource({
-  url: 'suite.mail.api.mail.update_mailbox',
-  makeParams: () => ({
+  }
+  await createFolder.run(input)
+  raiseToast(__('Folder created.'))
+  show.value = false
+}
+const updateFolder = useMutation(api.mail.mailboxes.update)
+async function updateFolderSubmit() {
+  const input: InputOf<typeof api.mail.mailboxes.update> = {
     account: store.accountId,
     ...folder,
     old_name: original.name,
     automation_rules: isDefaultAutomation.value ? null : automationRules,
-  }),
-  onSuccess: () => {
-    raiseToast(__('Folder updated.'))
-    show.value = false
-    mailboxes.reload()
-    sieveScripts.reload()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
-
-const createAutomationScript = createResource({
-  url: 'suite.mail.api.sieve.create_automation_script',
-  makeParams: () => ({ account: store.accountId, active: true }),
-  onSuccess: () => {
-    raiseToast(__('Folder Automation enabled.'))
-    sieveScripts.reload()
-    showEnableFolderAutomation.value = false
-  },
-  onError: (e) => raiseToast(e.messages[0], 'error'),
-})
-
+  }
+  await updateFolder.run(input)
+  raiseToast(__('Folder updated.'))
+  show.value = false
+}
+const createAutomationScript = useMutation(api.mail.sieve.createAutomation)
+async function createAutomationScriptSubmit() {
+  const input: InputOf<typeof api.mail.sieve.createAutomation> = {
+    account: store.accountId,
+    active: true,
+  }
+  await createAutomationScript.run(input)
+  raiseToast(__('Folder Automation enabled.'))
+  showEnableFolderAutomation.value = false
+}
 watch(show, (val) => {
   if (!val) return
-
   tab.value = 'general'
   Object.assign(automationRules, DEFAULT_AUTOMATION_RULES)
   Object.assign(originalAutomationRules, DEFAULT_AUTOMATION_RULES)
-
-  if (isNew.value) {
+  if (!mailbox) {
     Object.assign(folder, DEFAULT_FOLDER)
     return
   }
-
   folder.id = original.id = mailbox.id
   folder.name = original.name = mailbox._name
   folder.role = original.role = mailbox.role
-  folder.icon = original.icon = mailbox.icon || FOLDER_ICON_MAP[mailbox.role] || 'folder'
+  folder.icon = original.icon =
+    mailbox.icon || (mailbox.role ? FOLDER_ICON_MAP[mailbox.role] : undefined) || 'folder'
   folder.color = original.color = mailbox.color || 'Gray'
   folder.disable_push_notification = original.disable_push_notification =
     isNotificationsDisabled.value ? true : !!mailbox.disable_push_notification
@@ -288,32 +282,50 @@ watch(show, (val) => {
     })
   }
 })
-
 const COLOR_OPTIONS = [
-  { label: __('Gray'), value: 'Gray' },
-  { label: __('Blue'), value: 'Blue' },
-  { label: __('Green'), value: 'Green' },
-  { label: __('Amber'), value: 'Amber' },
-  { label: __('Red'), value: 'Red' },
-  { label: __('Purple'), value: 'Purple' },
+  {
+    label: __('Gray'),
+    value: 'Gray',
+  },
+  {
+    label: __('Blue'),
+    value: 'Blue',
+  },
+  {
+    label: __('Green'),
+    value: 'Green',
+  },
+  {
+    label: __('Amber'),
+    value: 'Amber',
+  },
+  {
+    label: __('Red'),
+    value: 'Red',
+  },
+  {
+    label: __('Purple'),
+    value: 'Purple',
+  },
 ]
-
 const DEFAULT_AUTOMATION_RULES = {
   emails_from: '',
   subject_contains: '',
   mark_as_read: false,
   add_star: false,
-  match_if: 'any',
+  match_if: 'any' as const,
 }
-
-const automationRules = reactive({ ...DEFAULT_AUTOMATION_RULES })
-const originalAutomationRules = reactive({ ...DEFAULT_AUTOMATION_RULES })
-
+const automationRules = reactive({
+  ...DEFAULT_AUTOMATION_RULES,
+})
+const originalAutomationRules = reactive({
+  ...DEFAULT_AUTOMATION_RULES,
+})
 const isDefaultAutomation = computed(
   () => JSON.stringify(automationRules) === JSON.stringify(DEFAULT_AUTOMATION_RULES),
 )
-
 const showEnableFolderAutomation = ref(false)
-
-const DEFAULT_AUTOMATION_SCRIPT = { _name: 'frappe_mail_automation' }
+const DEFAULT_AUTOMATION_SCRIPT = {
+  _name: 'frappe_mail_automation',
+}
 </script>

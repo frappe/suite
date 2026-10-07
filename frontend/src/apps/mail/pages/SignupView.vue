@@ -1,5 +1,5 @@
 <template>
-  <form class="flex flex-col space-y-4" @submit.prevent="next">
+  <form class="flex flex-col space-y-4" @submit.prevent="next().catch(() => {})">
     <div v-if="route.query.step === '1'" class="flex items-center justify-between">
       <FormControl
         v-model="user.username"
@@ -59,8 +59,8 @@
       <button
         class="text-left text-base text-ink-gray-6 hover:underline"
         type="button"
-        :disabled="resendOtp.loading"
-        @click="resendOtp.submit()"
+        :disabled="resendOtp.isPending"
+        @click="resendOtp.run({ account_request: accountRequest })"
       >
         {{ __('Resend code') }}
       </button>
@@ -84,9 +84,7 @@
       />
     </template>
 
-    <ErrorMessage
-      :message="validateUsername.error || signup.error || verifyOtp.error || createAccount.error"
-    />
+    <ErrorMessage :message="errorMessage" />
     <Button
       variant="solid"
       :label="
@@ -97,7 +95,11 @@
             : __('Next')
       "
       :loading="
-        validateUsername.loading || signup.loading || verifyOtp.loading || createAccount.loading
+        validateUsername.isFetching ||
+        signup.isPending ||
+        verifyOtp.isPending ||
+        createAccount.isPending ||
+        session.isLoggingIn
       "
       type="submit"
     />
@@ -115,16 +117,18 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { sessionStore } from '@/apps/mail/stores/session'
 
 const router = useRouter()
 const route = useRoute()
-const { login } = sessionStore()
+const session = sessionStore()
+const { login } = session
 
 const usernameVerified = ref(false)
 const accountRequest = ref('')
@@ -139,69 +143,64 @@ const user = reactive({
   password: '',
 })
 
-createResource({
-  url: 'suite.mail.api.get_signup_settings',
-  auto: true,
-  onSuccess: (data) => {
-    if (!Number(data.allow_signup)) {
-      router.push({ name: 'mail-login' })
-    }
+const settings = useQuery(api.mail.public.signupSettings)
+watch(
+  () => settings.data,
+  (data) => {
+    if (data && !data.allow_signup) router.replace({ name: 'mail-login' })
   },
-})
+)
+const signupDomains = useQuery(api.mail.public.signupDomains)
+watch(
+  () => signupDomains.data,
+  (domains) => {
+    if (domains?.length && !domains.includes(user.domain)) user.domain = domains[0]
+  },
+)
+const validationInput = ref<InputOf<typeof api.mail.public.checkEmail> | false>(false)
+const validateUsername = useQuery(api.mail.public.checkEmail, validationInput)
+const signup = useMutation(api.mail.public.signup, { silent: true })
+const resendOtp = useMutation(api.mail.public.resendCode, { silent: true })
+const verifyOtp = useMutation(api.mail.public.verifyCode, { silent: true })
+const createAccount = useMutation(api.mail.public.createAccount, { silent: true })
+const errorMessage = computed(
+  () =>
+    validateUsername.error?.message ||
+    signup.error?.message ||
+    verifyOtp.error?.message ||
+    createAccount.error?.message ||
+    resendOtp.error?.message ||
+    session.loginError?.message,
+)
 
-const signupDomains = createResource({
-  url: 'suite.mail.api.get_signup_domains',
-  auto: true,
-  onSuccess: (data) => (user.domain = data[0]),
-})
-
-const validateUsername = createResource({
-  url: 'suite.mail.api.account.validate_email_assigned',
-  makeParams: () => ({ email: `${user.username}@${user.domain}` }),
-  onSuccess: () => {
+async function next() {
+  if (route.query.step === '1') {
+    validationInput.value = { email: `${user.username}@${user.domain}` }
+    await validateUsername.refetch()
     usernameVerified.value = true
-    router.push({ query: { step: '2' } })
-  },
-})
-
-// Signup only records the request and emails a verification code; the account is
-// created after the code is verified (verify_otp releases the request key).
-const signup = createResource({
-  url: 'suite.mail.api.account.signup',
-  makeParams: () => ({ username: user.username, domain: user.domain, email: user.email }),
-  onSuccess: (name: string) => {
-    accountRequest.value = name
-    router.push({ query: { step: '4' } })
-  },
-})
-
-const resendOtp = createResource({
-  url: 'suite.mail.api.account.resend_otp',
-  makeParams: () => ({ account_request: accountRequest.value }),
-})
-
-const verifyOtp = createResource({
-  url: 'suite.mail.api.account.verify_otp',
-  makeParams: () => ({ account_request: accountRequest.value, otp: otp.value }),
-  onSuccess: (requestKey: string) =>
-    createAccount.submit({
+    await router.push({ query: { step: '2' } })
+  } else if (route.query.step === '3') {
+    accountRequest.value = await signup.run({
+      username: user.username,
+      domain: user.domain,
+      email: user.email,
+    })
+    await router.push({ query: { step: '4' } })
+  } else if (route.query.step === '4') {
+    const requestKey = await verifyOtp.run({
+      account_request: accountRequest.value,
+      otp: otp.value,
+    })
+    await createAccount.run({
       request_key: requestKey,
       first_name: user.first_name,
       last_name: user.last_name,
       password: user.password,
-    }),
-})
-
-const createAccount = createResource({
-  url: 'suite.mail.api.account.create_account',
-  onSuccess: () => login.submit({ usr: `${user.username}@${user.domain}`, pwd: user.password }),
-})
-
-const next = () => {
-  if (route.query.step === '1') validateUsername.submit()
-  else if (route.query.step === '3') signup.submit()
-  else if (route.query.step === '4') verifyOtp.submit()
-  else router.push({ query: { step: Number(route.query.step || 0) + 1 } })
+    })
+    await login(`${user.username}@${user.domain}`, user.password)
+  } else {
+    await router.push({ query: { step: Number(route.query.step || 0) + 1 } })
+  }
 }
 
 watch(

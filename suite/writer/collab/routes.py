@@ -14,9 +14,16 @@ from frappe import _
 from werkzeug.wrappers import Response
 
 from suite import drive
-from suite.composition.http import HttpOwner, Route
+from suite.composition.http import Route
 from suite.suite_core import collab
 from suite.writer.collab import ADAPTER, SCHEMA, consider_compaction, report_suspect
+
+# The Writer table resolves every handler here, the contract-only ones too
+from suite.writer.http.routes import document as document
+from suite.writer.http.routes import save_comments as save_comments
+from suite.writer.http.routes import save_doc as save_doc
+from suite.writer.http.routes import save_html as save_html
+from suite.writer.http.routes import update_settings as update_settings
 
 # Every row reads or writes its own bytes, so each is a stream; a POST answers JSON
 ROUTES = (
@@ -27,6 +34,8 @@ ROUTES = (
         allow_guest=True,
         errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         stream=True,
+        kind="query",
+        public_name="collab.open",
     ),
     Route(
         "GET",
@@ -35,6 +44,8 @@ ROUTES = (
         allow_guest=True,
         errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         stream=True,
+        kind="query",
+        public_name="collab.pull",
     ),
     Route(
         "POST",
@@ -44,6 +55,8 @@ ROUTES = (
         errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         output=dict[str, int | str],
         stream=True,
+        kind="mutation",
+        public_name="collab.push",
     ),
     Route(
         "PUT",
@@ -53,6 +66,8 @@ ROUTES = (
         errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         output=dict[str, int | str],
         stream=True,
+        kind="mutation",
+        public_name="collab.stage",
     ),
     Route(
         "POST",
@@ -62,6 +77,8 @@ ROUTES = (
         errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         output=dict[str, int | str],
         stream=True,
+        kind="mutation",
+        public_name="collab.startSession",
     ),
     Route(
         "POST",
@@ -71,15 +88,9 @@ ROUTES = (
         errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         output=dict[str, int | str],
         stream=True,
+        kind="mutation",
+        public_name="collab.reportSuspect",
     ),
-)
-
-HTTP = HttpOwner(
-    owner="writer",
-    prefix="/api/suite/writer/",
-    target="suite.writer.collab.routes",
-    routes=ROUTES,
-    strip_owner=False,
 )
 
 PRINCIPAL_HEADER = "X-Collab-Principal"

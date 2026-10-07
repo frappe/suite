@@ -21,7 +21,6 @@ WRITE_ONCE_FIELDS = (
     "stop_operation_id",
     "metadata_accepted_at",
     "finalization_deadline",
-    "publication_key",
 )
 TERMINAL_MUTABLE_FIELDS = {
     "terminal_acknowledged_at",
@@ -281,7 +280,7 @@ class MeetRecording(Document):
         if cint(self.finalization_attempts) < 0 or cint(self.notification_attempts) < 0:
             frappe.throw(_("Recording finalization counters cannot be negative"))
         if self.finalization_stage:
-            if not self.metadata_accepted_at or not self.finalization_deadline or not self.publication_key:
+            if not self.metadata_accepted_at or not self.finalization_deadline:
                 frappe.throw(_("Recording finalization requires durable metadata"))
             if get_datetime(self.finalization_deadline) <= get_datetime(self.metadata_accepted_at):
                 frappe.throw(_("Recording finalization deadline must follow metadata acceptance"))

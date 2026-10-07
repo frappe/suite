@@ -13,7 +13,7 @@ import { ensureFrappeRealtime } from '../../collab/frappe-realtime-init.js'
 import { createHocuspocusClient } from '../../collab/hocuspocus-client.js'
 import { createRealtimeAdapter } from '../../collab/realtime-adapter.js'
 import { createYDoc, hydrateYDoc } from '../../collab/ydoc.js'
-import { call, isRefusal } from '../../utils/api.js'
+import { isRefusal, relay } from '../../utils/relay.js'
 import { userInitials } from '../../utils/session.js'
 
 // Feature flag for the Hocuspocus-backed collab path. When false (default),
@@ -148,7 +148,7 @@ export function useCollaboration({
   credentialFetch,
   _self = getSessionUser(),
   _realtime = window.frappe?.realtime,
-  _callFn = (method, args) => call(method, args, { fetch: credentialFetch }),
+  _callFn = (method, args) => relay(method, args, { fetch: credentialFetch }),
   _watch = watch,
   _onUnmounted = onUnmounted,
 }) {

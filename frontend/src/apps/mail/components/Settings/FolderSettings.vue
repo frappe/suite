@@ -21,7 +21,7 @@
           <Icon
             :name="getIcon(mailbox)"
             class="icon shrink-0"
-            :class="FOLDER_ICON_COLOR_MAP[mailbox.color]"
+            :class="mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined"
           />
           <span class="text-base">{{ mailbox._name }}</span>
         </div>
@@ -32,7 +32,7 @@
 					     itself would keep the sheet from opening. -->
           <div class="flex" @click.stop>
             <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
-              <Button variant="">
+              <Button variant="ghost">
                 <template #icon>
                   <Ellipsis class="text-ink-gray-5 h-4 w-4" />
                 </template>
@@ -57,17 +57,18 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
 import { Ellipsis, Eye, EyeOff, Settings, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
+import { api, useMutation } from '@/api'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import { FOLDER_ICON_COLOR_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
-import { getIcon, raiseToast } from '@/apps/mail/utils'
+import { getIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
@@ -81,21 +82,22 @@ const { isMobile } = useScreenSize()
 const managedMailboxes = computed(
   () => mailboxes?.data?.filter((m: MailboxData) => m._name !== SCREENER_MAILBOX_NAME) ?? [],
 )
-
 const showFolderModal = ref(false)
 const selectedMailbox = ref<MailboxData>()
 const showDeleteFolderModal = ref(false)
-
 const editMailbox = (mailbox?: MailboxData) => {
   selectedMailbox.value = mailbox
   showFolderModal.value = true
 }
-
 const mailboxOptions = (mailbox: MailboxData) => [
   {
     label: mailbox.subscribed ? __('Hide') : __('Show'),
     icon: mailbox.subscribed ? EyeOff : Eye,
-    onClick: () => updateFolder.submit({ name: mailbox.name, value: mailbox.subscribed ? 0 : 1 }),
+    onClick: () =>
+      updateFolder.run({
+        name: mailbox.name,
+        subscribed: mailbox.subscribed ? 0 : 1,
+      }),
   },
   {
     label: __('Configure'),
@@ -105,26 +107,12 @@ const mailboxOptions = (mailbox: MailboxData) => [
   {
     label: __('Delete'),
     icon: Trash2,
-    theme: 'red',
+    theme: 'red' as const,
     onClick: () => {
       selectedMailbox.value = mailbox
       showDeleteFolderModal.value = true
     },
   },
 ]
-
-const updateFolder = createResource({
-  url: 'frappe.client.set_value',
-  makeParams: ({ name, value }: { name: string; value: 0 | 1 }) => ({
-    doctype: 'Mailbox',
-    name,
-    fieldname: 'subscribed',
-    value,
-  }),
-  onSuccess: () => {
-    raiseToast(__('Folder updated.'))
-    mailboxes.reload()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
+const updateFolder = useMutation(api.mail.mailboxes.subscribe)
 </script>

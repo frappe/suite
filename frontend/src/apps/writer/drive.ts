@@ -6,8 +6,7 @@
  * Every call goes to `/api/suite/drive/` or `/api/suite/`, never to a legacy
  * Drive method.
  */
-import { transport, type Operation } from '@/platform/transport'
-import { api as suiteApi } from '@/platform/transport/generated'
+import { api, client } from '@/api'
 
 /** A person on this site, in the shape the mention menu reads. */
 export interface WriterUser {
@@ -19,31 +18,6 @@ export interface WriterUser {
   label: string
 }
 
-function driveOperation<Input, Output>(
-  id: string,
-  method: Operation['method'],
-  path: string,
-): Operation<Input, Output> {
-  const pathParams = [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!)
-  const nodeParams = pathParams.includes('node') ? ['node'] : []
-  return { id, owner: 'drive', method, path, pathParams, nodeParams }
-}
-
-/** One node's refusal in a batch answer (§11.5). */
-interface BatchResult {
-  ok: string[]
-  failed: Array<{ node: string; type: string; message: string }>
-}
-
-const nodeBatchTrash = driveOperation<
-  { nodes: string[]; patch: { state: 'Trashed' } },
-  BatchResult
->('node_batch', 'POST', 'nodes/batch')
-const nodeBatchPurge = driveOperation<{ nodes: string[] }, BatchResult>(
-  'node_batch_purge',
-  'POST',
-  'nodes/batch/purge',
-)
 /**
  * Delete nodes forever. Used to roll back the pictures a failed import uploaded.
  *
@@ -54,11 +28,11 @@ const nodeBatchPurge = driveOperation<{ nodes: string[] }, BatchResult>(
  */
 export async function purgeNodes(nodes: readonly string[]): Promise<void> {
   if (!nodes.length) return
-  const trashed = await transport.request(nodeBatchTrash, {
+  const trashed = await client.mutation(api.drive.nodes.batch, {
     nodes: [...nodes],
     patch: { state: 'Trashed' },
   })
-  if (trashed.ok.length) await transport.request(nodeBatchPurge, { nodes: trashed.ok })
+  if (trashed.ok.length) await client.mutation(api.drive.nodes.purgeBatch, { nodes: trashed.ok })
 }
 
 /**
@@ -68,7 +42,7 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
  */
 export async function searchUsers(query: string): Promise<WriterUser[]> {
   const q = query.trim()
-  const page = await transport.request(suiteApi.people_get, q ? { q } : {})
+  const page = await client.query(api.suite.people.list, q ? { q } : {})
   return page.rows.flatMap((row) =>
     row.kind === 'user'
       ? [

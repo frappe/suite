@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !canAdd,
-          loading: screenEmailAddress.loading,
-          onClick: screenEmailAddress.submit,
+          loading: screenEmailAddress.isPending,
+          onClick: screenEmailAddressSubmit,
         },
       ],
     }"
@@ -22,7 +22,7 @@
           variant="outline"
           :label="__('Email or Domain')"
           :placeholder="__('john@example.com or @example.com')"
-          @keydown.enter="canAdd && screenEmailAddress.submit()"
+          @keydown.enter="canAdd && screenEmailAddressSubmit()"
         />
         <FormControl
           v-model="action"
@@ -40,27 +40,35 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, FormControl } from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 import { isEmailOrDomain, raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-
 const store = userStore()
 const { screenedAddresses } = store
-
 const email = ref('')
 const action = ref<ScreeningAction>('Reject')
 
 // 'Accepted' lets the sender's mail reach the inbox; 'Reject' discards it silently; 'Spam' files it
 // into the Spam folder.
 const ACTION_OPTIONS = [
-  { label: __('Accept'), value: 'Accepted' },
-  { label: __('Block'), value: 'Reject' },
-  { label: __('Move to Junk'), value: 'Spam' },
+  {
+    label: __('Accept'),
+    value: 'Accepted',
+  },
+  {
+    label: __('Block'),
+    value: 'Reject',
+  },
+  {
+    label: __('Move to Junk'),
+    value: 'Spam',
+  },
 ]
 
 // Mirror the backend's normalisation (trim; lowercase a '@domain' entry) so '@Frappe.io' is caught as
@@ -69,25 +77,23 @@ const normalizeScreenedValue = (value: string) => {
   const trimmed = value.trim()
   return trimmed.startsWith('@') ? '@' + trimmed.slice(1).toLowerCase() : trimmed
 }
-
 const isAlreadyScreened = computed(() =>
   (screenedAddresses.data ?? []).some(
     (a: ScreenedAddress) => a.email === normalizeScreenedValue(email.value),
   ),
 )
-
 const canAdd = computed(() => isEmailOrDomain(email.value) && !isAlreadyScreened.value)
-
-const screenEmailAddress = createResource({
-  url: 'suite.mail.api.mail.screen_email_address',
-  makeParams: () => ({ account: store.accountId, email: email.value, action: action.value }),
-  onSuccess: () => {
-    raiseToast(__('Sender screened.'))
-    show.value = false
-    screenedAddresses.reload()
-  },
-  onError: (error) => raiseToast(error.message, 'error'),
-})
+const screenEmailAddress = useMutation(api.mail.screening.setAddress)
+async function screenEmailAddressSubmit() {
+  const input: InputOf<typeof api.mail.screening.setAddress> = {
+    account: store.accountId,
+    email: email.value,
+    action: action.value,
+  }
+  await screenEmailAddress.run(input)
+  raiseToast(__('Sender screened.'))
+  show.value = false
+}
 
 // Start each visit from a clean form.
 watch(show, (open) => {

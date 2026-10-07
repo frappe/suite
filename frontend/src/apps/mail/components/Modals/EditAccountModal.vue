@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !description,
-          loading: updateMember.loading,
-          onClick: updateMember.submit,
+          loading: updateMember.isPending,
+          onClick: updateMemberSubmit,
         },
       ],
     }"
@@ -48,9 +48,10 @@
 </template>
 
 <script setup lang="ts">
-import { Combobox, createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Combobox, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { raiseToast } from '@/apps/mail/utils'
 
@@ -61,23 +62,26 @@ type MemberData = {
   locale?: string | null
   time_zone?: string | null
 }
-
 const show = defineModel<boolean>()
-const { member } = defineProps<{ member: MemberData }>()
+const { member } = defineProps<{
+  member: MemberData
+}>()
 const emit = defineEmits(['reload'])
-
 const ROLE_OPTIONS = [
-  { label: __('User'), value: 'user' },
-  { label: __('Admin'), value: 'admin' },
+  {
+    label: __('User'),
+    value: 'user',
+  },
+  {
+    label: __('Admin'),
+    value: 'admin',
+  },
 ]
-
 const role = ref('user')
 const description = ref('')
 const locale = ref<string | null>(null)
 const timeZone = ref<string | null>(null)
-
 const { localeOptions, timeZoneOptions } = useAccountOptions()
-
 watch(show, () => {
   if (show.value && member) {
     role.value = member.is_admin ? 'admin' : 'user'
@@ -87,21 +91,19 @@ watch(show, () => {
     updateMember.reset()
   }
 })
-
-const updateMember = createResource({
-  url: 'suite.mail.api.admin.update_member',
-  makeParams: () => ({
+const updateMember = useMutation(api.mail.admin.members.update)
+async function updateMemberSubmit() {
+  const input: InputOf<typeof api.mail.admin.members.update> = {
     member_id: member.name,
     role: role.value,
     description: description.value?.trim(),
     locale: locale.value || '',
     // Always sent: an empty value clears the time zone, which is how it is unset.
     time_zone: timeZone.value || '',
-  }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Account updated.'))
-  },
-})
+  }
+  await updateMember.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Account updated.'))
+}
 </script>

@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !validEmails.length,
-          loading: addRecipients.loading,
-          onClick: addRecipients.submit,
+          loading: addRecipients.isPending,
+          onClick: addRecipientsSubmit,
         },
       ],
     }"
@@ -57,34 +57,47 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { listId } = defineProps<{ listId: string }>()
+const { listId } = defineProps<{
+  listId: string
+}>()
 const emit = defineEmits(['reload'])
-
-const emails = ref<{ email: string }[]>([{ email: '' }])
-
+const emails = ref<
+  {
+    email: string
+  }[]
+>([
+  {
+    email: '',
+  },
+])
 const validEmails = computed(() => emails.value.map((e) => e.email.trim()).filter(Boolean))
-
 watch(show, () => {
   if (show.value) {
-    emails.value = [{ email: '' }]
+    emails.value = [
+      {
+        email: '',
+      },
+    ]
     addRecipients.reset()
   }
 })
-
-const addRecipients = createResource({
-  url: 'suite.mail.api.admin.add_mailing_list_recipients',
-  makeParams: () => ({ list_id: listId, recipients: validEmails.value }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Recipients added.'))
-  },
-})
+const addRecipients = useMutation(api.mail.admin.mailingLists.addRecipients)
+async function addRecipientsSubmit() {
+  const input: InputOf<typeof api.mail.admin.mailingLists.addRecipients> = {
+    list_id: listId,
+    recipients: validEmails.value,
+  }
+  await addRecipients.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Recipients added.'))
+}
 </script>

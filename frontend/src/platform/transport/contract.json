@@ -3,7 +3,300 @@
   "prefix": "/api/suite/",
   "operations": [
     {
+      "id": "get_preferences",
+      "kind": "query",
+      "publicName": "preferences.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "preferences",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "user_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "desk_theme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desk Theme"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "first_name",
+          "last_name",
+          "user_image",
+          "language",
+          "time_zone",
+          "desk_theme"
+        ],
+        "title": "Preferences",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_preferences",
+      "kind": "mutation",
+      "publicName": "preferences.update",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "preferences",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "title": "Last Name",
+            "type": "string"
+          },
+          "user_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "title": "PreferenceChanges",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "user_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "desk_theme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desk Theme"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "first_name",
+          "last_name",
+          "user_image",
+          "language",
+          "time_zone",
+          "desk_theme"
+        ],
+        "title": "Preferences",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "languages",
+      "kind": "query",
+      "publicName": "locales.languages",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "languages",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Language": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "language_name": {
+                "title": "Language Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "language_name"
+            ],
+            "title": "Language",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/Language"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "account_get",
+      "kind": "query",
+      "publicName": "account.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "account",
       "pathParams": [],
@@ -81,10 +374,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "site_get",
+      "kind": "query",
+      "publicName": "site.get",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "site",
       "pathParams": [],
@@ -121,10 +419,15 @@
       "errors": [],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "site_patch.complete_onboarding",
+      "kind": "mutation",
+      "publicName": "site.completeOnboarding",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "site",
       "pathParams": [],
@@ -181,10 +484,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "site_patch.update_site_settings",
+      "kind": "mutation",
+      "publicName": "site.updateSettings",
+      "page": null,
+      "envelope": "data",
       "method": "PATCH",
       "path": "site",
       "pathParams": [],
@@ -240,10 +548,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "users_get",
+      "kind": "query",
+      "publicName": "users.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "users",
       "pathParams": [],
@@ -302,10 +615,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "invitations_get",
+      "kind": "query",
+      "publicName": "invitations.list",
+      "page": null,
+      "envelope": "data",
       "method": "GET",
       "path": "invitations",
       "pathParams": [],
@@ -364,10 +682,15 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "invitations_post",
+      "kind": "mutation",
+      "publicName": "invitations.create",
+      "page": null,
+      "envelope": "data",
       "method": "POST",
       "path": "invitations",
       "pathParams": [],
@@ -431,10 +754,19 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
     },
     {
       "id": "people_get",
+      "kind": "query",
+      "publicName": "people.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
       "method": "GET",
       "path": "people",
       "pathParams": [],
@@ -569,7 +901,387 @@
       ],
       "entity": null,
       "nodeParams": [],
-      "stream": false
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.login",
+      "kind": "mutation",
+      "publicName": "auth.login",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/login",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "usr": {
+            "title": "Usr",
+            "type": "string"
+          },
+          "pwd": {
+            "title": "Pwd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "usr",
+          "pwd"
+        ],
+        "title": "LoginInput",
+        "type": "object"
+      },
+      "output": {},
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.logout",
+      "kind": "mutation",
+      "publicName": "auth.logout",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/logout",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {},
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.translate.get_boot_translations",
+      "kind": "query",
+      "publicName": "translations.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "/api/v2/method/frappe.translate.get_boot_translations",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "subscribe",
+      "kind": "mutation",
+      "publicName": "push.subscribe",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/frappe.push_notification.subscribe",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "fcm_token": {
+            "title": "Fcm Token",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fcm_token",
+          "project_name"
+        ],
+        "title": "PushToken",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "PushResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "unsubscribe",
+      "kind": "mutation",
+      "publicName": "push.unsubscribe",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/frappe.push_notification.unsubscribe",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "fcm_token": {
+            "title": "Fcm Token",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fcm_token",
+          "project_name"
+        ],
+        "title": "PushToken",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "PushResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.switch_theme",
+      "kind": "mutation",
+      "publicName": "preferences.setTheme",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/frappe.core.doctype.user.user.switch_theme",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "theme": {
+            "enum": [
+              "Light",
+              "Dark",
+              "Automatic"
+            ],
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme"
+        ],
+        "title": "ThemeChange",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.reset_password",
+      "kind": "mutation",
+      "publicName": "account.resetPassword",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/frappe.core.doctype.user.user.update_password",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "new_password": {
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "new_password"
+        ],
+        "title": "PasswordReset",
+        "type": "object"
+      },
+      "output": {
+        "type": "string"
+      },
+      "errors": [
+        "AuthenticationError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.get_timezones",
+      "kind": "query",
+      "publicName": "locales.timezones",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/frappe.core.doctype.user.user.get_timezones",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "timezones": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Timezones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "timezones"
+        ],
+        "title": "Timezones",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.update_password",
+      "kind": "mutation",
+      "publicName": "account.changePassword",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/frappe.core.doctype.user.user.update_password",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "old_password": {
+            "title": "Old Password",
+            "type": "string"
+          },
+          "new_password": {
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
+        "type": "object"
+      },
+      "output": {
+        "type": "string"
+      },
+      "errors": [
+        "AuthenticationError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "suite.generate_user_keys",
+      "kind": "mutation",
+      "publicName": "account.generateKeys",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.utils.user.generate_user_keys",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "title": "UserKeysInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "api_secret": {
+            "title": "Api Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key",
+          "api_secret"
+        ],
+        "title": "UserKeys",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
     }
   ]
 }

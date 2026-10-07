@@ -35,7 +35,6 @@ declare module 'vue-router' {
     phoneChrome?: PhoneChromeOwner
     allowGuest?: boolean
     title?: string
-    favicon?: string
   }
 }
 
@@ -48,6 +47,8 @@ export interface AreaDefinition {
   to: string
   loadRoutes: () => Promise<{ routes: RouteRecordRaw[] }>
   requires?: PlatformCapability[]
+  /** What the rail's dot counts, in its tooltip ("3 unread"). Translated; "unread" when unset. */
+  badgeNoun?: () => string
 }
 
 export interface DocumentTypeDefinition {

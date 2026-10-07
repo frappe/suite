@@ -10,6 +10,7 @@ import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { useScreenSize } from '@/composables/useScreenSize'
+import { provideAreaShortcuts } from '@/platform/shortcuts'
 
 /**
  * Calendar route-group layout.
@@ -26,10 +27,11 @@ import { useScreenSize } from '@/composables/useScreenSize'
  */
 const { isMobile } = useScreenSize()
 const { userResource } = userStore()
-const { showShortcuts } = useShortcuts()
+const { showShortcuts, openShortcuts } = useShortcuts()
 const route = useRoute()
 const router = useRouter()
 
+provideAreaShortcuts(openShortcuts)
 provide('$user', userResource)
 provide('$dayjs', dayjs)
 useCalendarSocket()

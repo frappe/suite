@@ -1,11 +1,13 @@
 import { ref } from 'vue'
 
-import { call, isRefusal } from '../../utils/api.js'
+import { api, client } from '@/api'
+
 import {
   decodeFromDownload,
   encodeForUpload,
   isDecompressionSupported,
 } from '../../utils/compress.js'
+import { isRefusal } from '../../utils/relay.js'
 import { boundsOf, packSheet, packSheetChunked, unpackSheet } from '../../utils/sheet-codec.js'
 import { recordVisit } from './driveVisit'
 
@@ -19,7 +21,7 @@ import { recordVisit } from './driveVisit'
 //   - `onRefused()` — the server refused a save for lack of access.
 //   - `recordVisits` — record a Drive visit when a linked sheet loads. The `/d/`
 //     surface passes false: its Drive session records the visit itself.
-//   - `credentialFetch` — send load and save through this fetch. The `/d/`
+//   - `requestContext` — use the open document's Drive access scope. The `/d/`
 //     surface passes the Drive session's, which adds its link credentials.
 export function usePersistence({
   sheet,
@@ -37,11 +39,10 @@ export function usePersistence({
   getViewState,
   applyViewState,
   currentTitle,
-  emit,
   isWritable = () => true,
   onRefused = () => {},
   recordVisits = true,
-  credentialFetch,
+  requestContext,
 }) {
   const isSaving = ref(false)
   const saveError = ref('')
@@ -58,15 +59,19 @@ export function usePersistence({
   // editor so it can render a proper error screen instead of mounting a
   // blank canvas. Shape: { kind: 'denied' | 'missing' | 'other', message }.
   const loadError = ref(null)
-
   async function loadSheet(name) {
     loadError.value = null
     try {
       const canGz = isDecompressionSupported()
-      const doc = await call(
-        'suite.sheets.api.get_sheet',
-        { name, compressed: canGz ? 1 : 0 },
-        { fetch: credentialFetch },
+      const doc = await client.query(
+        api.sheets.documents.get,
+        {
+          name,
+          compressed: canGz ? 1 : 0,
+        },
+        {
+          context: requestContext,
+        },
       )
       // A sheet Drive owns has a node; a legacy sheet has none and no Recents row.
       if (recordVisits && doc.node) recordVisit(doc.node).catch(() => {})
@@ -74,7 +79,12 @@ export function usePersistence({
       const saved = JSON.parse(plain || '{}')
       if (saved.formats) formats.restore(saved.formats)
       sheet.restore(
-        unpackSheet(saved.sheet) ?? { sheets: { Sheet1: {} }, current: 'Sheet1' },
+        unpackSheet(saved.sheet) ?? {
+          sheets: {
+            Sheet1: {},
+          },
+          current: 'Sheet1',
+        },
         boundsOf(saved.sheet),
       )
       if (saved.merge && merge?.restore) merge.restore(saved.merge)
@@ -95,14 +105,17 @@ export function usePersistence({
       sheetOwner.value = doc.owner || ''
     } catch (err) {
       console.error('Load failed:', err)
-      const t = err?.excType || ''
+      const t = err?.type || ''
       const kind =
         t === 'DoesNotExistError' || t === 'DriveNotFound'
           ? 'missing'
           : isRefusal(err)
             ? 'denied'
             : 'other'
-      loadError.value = { kind, message: err?.message || 'Could not open this sheet' }
+      loadError.value = {
+        kind,
+        message: err?.message || 'Could not open this sheet',
+      }
     }
   }
 
@@ -110,11 +123,15 @@ export function usePersistence({
   // doc name.  Called immediately on mount so every doc has a real ID from the
   // start — no manual-save step, matching Google Sheets' always-saved model.
   async function autoCreate(title, { ops } = {}) {
-    return _persist(null, title || 'Untitled Sheet', { ops })
+    return _persist(null, title || 'Untitled Sheet', {
+      ops,
+    })
   }
-
   async function saveExisting(name, title, { keepalive = false, ops } = {}) {
-    return _persist(name, title, { keepalive, ops })
+    return _persist(name, title, {
+      keepalive,
+      ops,
+    })
   }
 
   // Transient → retry with backoff. Permanent → fail fast so the user
@@ -126,7 +143,8 @@ export function usePersistence({
   function _isTransientSaveError(err) {
     // No status → fetch itself threw (offline, DNS failure, server killed
     // mid-flight before the response existed). Always retry these.
-    if (err?.status == null) return true
+    if (err?.type === 'NetworkError') return true
+    if (err?.status == null) return false
     // Server-side hiccups (502 Bad Gateway during deploy, 503 overloaded,
     // 504 timeout) — usually clear on the next attempt.
     if (err.status >= 500 && err.status <= 599) return true
@@ -147,7 +165,6 @@ export function usePersistence({
     const { args, keepalive } = _lastSaveArgs
     return _send(args, keepalive)
   }
-
   async function _persist(name, title, { keepalive = false, ops } = {}) {
     isSaving.value = true
     // Build the payload ONCE up-front. If we rebuilt on each retry the
@@ -160,7 +177,10 @@ export function usePersistence({
       // deepClone. The chunked packer yields to the event loop so a 2M-cell
       // pack doesn't block input for seconds; the keepalive/unmount save can't
       // afford to yield (the page may die first), so it packs synchronously.
-      const live = { sheets: sheet.getAllRaw(), current: sheet.getCurrentSheet() }
+      const live = {
+        sheets: sheet.getAllRaw(),
+        current: sheet.getCurrentSheet(),
+      }
       const packed = keepalive ? packSheet(live) : await packSheetChunked(live)
       const sheetsData = _workbookJson(packed)
       const payload = await encodeForUpload(sheetsData)
@@ -168,16 +188,26 @@ export function usePersistence({
         title,
         sheets_data: payload,
         request_id: crypto.randomUUID(),
-        ...(name ? { name } : {}),
-        ...(ops && ops.length ? { ops: JSON.stringify(ops) } : {}),
+        ...(name
+          ? {
+              name,
+            }
+          : {}),
+        ...(ops && ops.length
+          ? {
+              ops: JSON.stringify(ops),
+            }
+          : {}),
       }
     } catch (err) {
       isSaving.value = false
       saveError.value = err.message || "Couldn't prepare save payload."
-      return null
+      throw err
     }
-
-    _lastSaveArgs = { args, keepalive }
+    _lastSaveArgs = {
+      args,
+      keepalive,
+    }
     return _send(args, keepalive)
   }
 
@@ -188,10 +218,20 @@ export function usePersistence({
   function workbookJson(draft = null) {
     let sheets = sheet.getAllRaw()
     if (draft)
-      sheets = { ...sheets, [draft.sheet]: { ...sheets[draft.sheet], [draft.cell]: draft.value } }
-    return _workbookJson(packSheet({ sheets, current: sheet.getCurrentSheet() }))
+      sheets = {
+        ...sheets,
+        [draft.sheet]: {
+          ...sheets[draft.sheet],
+          [draft.cell]: draft.value,
+        },
+      }
+    return _workbookJson(
+      packSheet({
+        sheets,
+        current: sheet.getCurrentSheet(),
+      }),
+    )
   }
-
   function _workbookJson(packed) {
     return JSON.stringify({
       sheet: packed,
@@ -209,7 +249,6 @@ export function usePersistence({
       view: getViewState?.() ?? null,
     })
   }
-
   async function _send(args, keepalive) {
     isSaving.value = true
     // keepalive saves fire from onBeforeUnmount — the browser may kill
@@ -223,12 +262,13 @@ export function usePersistence({
         }
         if (!isWritable()) {
           saveError.value = 'Not saved: you can no longer edit this sheet.'
-          return null
+          throw new DOMException('Editing access changed', 'AbortError')
         }
         try {
-          const result = await call('suite.sheets.api.save_sheet', args, {
+          const result = await client.mutation(api.sheets.documents.save, args, {
             keepalive,
-            fetch: credentialFetch,
+            context: requestContext,
+            silent: true,
           })
           // Deliberately DON'T write `title` back into currentTitle here.
           // `title` is a snapshot captured when this save was queued (up to
@@ -240,7 +280,7 @@ export function usePersistence({
           // First success clears any sticky error from a previous failure.
           saveError.value = ''
           _lastSaveArgs = null
-          return typeof result === 'string' ? result : result?.name
+          return result.name
         } catch (err) {
           lastErr = err
           if (isRefusal(err)) onRefused()
@@ -254,12 +294,11 @@ export function usePersistence({
       saveError.value = lastErr?.message
         ? `Couldn't save: ${lastErr.message}`
         : "Couldn't save — check your connection, then click retry."
-      return null
+      throw lastErr || new Error(saveError.value)
     } finally {
       isSaving.value = false
     }
   }
-
   return {
     isSaving,
     saveError,

@@ -16,8 +16,8 @@
       </div>
 
       <CopyControl :label="__('Server URL')" :value="config.server_url" />
-      <CopyControl :label="__('Calendar URL')" :value="config.calendar_url" />
-      <CopyControl :label="__('Username')" :value="config.username" />
+      <CopyControl :label="__('Calendar URL')" :value="config.calendar_url ?? ''" />
+      <CopyControl :label="__('Username')" :value="config.username ?? ''" />
       <p class="text-ink-gray-5 text-sm">
         {{ __('Sign in using your existing mail account password.') }}
       </p>
@@ -25,18 +25,14 @@
   </AppSettingsBody>
 </template>
 <script setup lang="ts">
-import { createResource } from 'frappe-ui'
 import { computed } from 'vue'
 
+import { api, useQuery } from '@/api'
 import CopyControl from '@/components/CopyControl.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const clientConfig = createResource({
-  url: 'suite.mail.api.account.get_calendar_client_config',
-  cache: 'calendar-client-config',
-  auto: true,
-})
+const clientConfig = useQuery(api.mail.calendar.clientConfig)
 
 const config = computed(() => clientConfig.data ?? {})
 </script>

@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import hashlib
+import io
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -9,10 +10,14 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import frappe
+from frappe.api import handle
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
 from suite import drive
+from suite.composition.http import handle_before_request
 from suite.meet.api.recording import (
     BYTES_PER_SECOND,
     DEFAULT_ESTIMATE_SECONDS,
@@ -30,6 +35,7 @@ from suite.meet.api.recording import (
     start,
     stop,
 )
+from suite.meet.api.recordings import get_recordings
 from suite.meet.patches.backfill_recording_finalization import execute as backfill_recording_finalization
 from suite.meet.recording.ingest import (
     _recordings_folder,
@@ -37,6 +43,7 @@ from suite.meet.recording.ingest import (
     append_chunk,
     begin_upload,
     complete_upload,
+    delete_recordings_for_purged_artifacts,
     finalization_status,
     process_upload,
     reconcile_due_finalizations,
@@ -53,6 +60,7 @@ PUBLIC_JWK = {
 
 class IntegrationTestRecordingReliability(IntegrationTestCase):
     def setUp(self):
+        self.artifacts = []
         self.owner = "reliability-owner@example.com"
         self.cohost = "reliability-cohost@example.com"
         for email, first_name in ((self.owner, "Reliability Owner"), (self.cohost, "Reliability Cohost")):
@@ -82,6 +90,12 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             if upload_id:
                 _upload_path(upload_id).unlink(missing_ok=True)
             frappe.delete_doc("Meet Recording", recording, force=True, ignore_permissions=True)
+        for owner, artifact in self.artifacts:
+            if frappe.db.exists("Drive Node", artifact):
+                frappe.set_user(owner)
+                self._artifact_request(artifact, "PATCH", state="Trashed")
+                self._artifact_request(artifact, "DELETE")
+        frappe.set_user("Administrator")
         for room in frappe.get_all("Meet Room", filters={"owner": self.owner}, pluck="name"):
             frappe.delete_doc("Meet Room", room, force=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
@@ -541,7 +555,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                     "upload_completed_at": None,
                     "finalization_deadline": None,
                     "finalization_next_retry_at": None,
-                    "publication_key": None,
                 },
                 update_modified=False,
             )
@@ -555,7 +568,10 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             self.assertIsNotNone(recording.finalization_deadline)
             self.assertLess(recording.finalization_deadline, now_datetime())
             self.assertIsNotNone(recording.finalization_next_retry_at)
-            self.assertEqual(recording.publication_key, f"meet-recording-{recording.name}")
+            before = recording.as_dict()
+            backfill_recording_finalization()
+            recording.reload()
+            self.assertEqual(recording.as_dict(), before)
         finally:
             path.unlink(missing_ok=True)
 
@@ -657,7 +673,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         reconcile_pending_recordings()
         self.assertEqual(frappe.db.get_value("Meet Recording", started["name"], "status"), "Failed")
 
-    def test_recording_metadata_is_removed_once_its_artifact_is_gone_from_drive(self):
+    def _publish_recording(self) -> tuple[str, str]:
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
         content = b"real-recording-artifact"
@@ -675,22 +691,97 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
             result = process_upload(recording.name)
         artifact = result["artifact"]
+        self.artifacts.append((self.owner, artifact))
         stream, _mime = drive.read_file(artifact)
         with stream:
             self.assertEqual(stream.read(), content)
+        return recording.name, artifact
 
-        reconcile_due_finalizations()
-        self.assertTrue(frappe.db.exists("Meet Recording", recording.name))
+    def _artifact_request(self, artifact: str, method: str, **body) -> None:
+        request = Request(
+            EnvironBuilder(path=f"/api/suite/drive/nodes/{artifact}", method=method).get_environ()
+        )
+        with (
+            patch.object(frappe.local, "request", request, create=True),
+            patch.object(frappe.local, "form_dict", frappe._dict(body)),
+            patch.object(frappe.local, "response", frappe._dict(type="json")),
+        ):
+            handle_before_request()
+            response = handle(request)
+            self.assertEqual(response.status_code, 200)
 
-        # Drive deletes a purged node's row outright. A recording left pointing
-        # at a node that no longer exists loses its metadata on the next sweep.
+    def test_trash_and_restore_keep_recording_metadata_and_listing(self):
+        name, artifact = self._publish_recording()
+        before = get_recordings()
+        metadata = frappe.get_doc("Meet Recording", name).as_dict()
+        self.assertEqual([row.name for row in before], [name])
+        self.assertEqual(before[0].room_title, self.room.title)
+
+        for state in ("Trashed", "Active"):
+            with self.subTest(state=state):
+                self._artifact_request(artifact, "PATCH", state=state)
+                delete_recordings_for_purged_artifacts()
+                self.assertTrue(frappe.db.exists("Meet Recording", name))
+                self.assertEqual(frappe.get_doc("Meet Recording", name).as_dict(), metadata)
+                self.assertEqual(get_recordings(), before)
+
+    def test_unreadable_artifacts_are_hidden_without_removing_recording_metadata(self):
+        name, artifact = self._publish_recording()
+        frappe.set_user(self.cohost)
+        foreign_artifact = drive.store_file(
+            drive.personal_root_for(self.cohost), "Private recording.mp4", io.BytesIO(b"private")
+        )
+        self.artifacts.append((self.cohost, foreign_artifact))
+        frappe.set_user(self.owner)
         frappe.db.set_value(
             "Meet Recording",
-            recording.name,
+            name,
             "artifact",
-            f"purged-{frappe.generate_hash(length=10)}",
+            foreign_artifact,
             update_modified=False,
         )
-        reconcile_due_finalizations()
-        self.assertFalse(frappe.db.exists("Meet Recording", recording.name))
+        self.assertEqual(get_recordings(), [])
+        delete_recordings_for_purged_artifacts()
+        self.assertTrue(frappe.db.exists("Meet Recording", name))
         self.assertTrue(frappe.db.exists("Drive Node", artifact))
+
+    def test_permanent_purge_hides_artifacts_then_removes_only_their_metadata(self):
+        name, artifact = self._publish_recording()
+        retained_name, retained_artifact = self._publish_recording()
+        self._artifact_request(artifact, "PATCH", state="Trashed")
+        self._artifact_request(artifact, "DELETE")
+        self.assertFalse(frappe.db.exists("Drive Node", artifact))
+        self.assertTrue(frappe.db.exists("Meet Recording", name))
+        self.assertEqual([row.name for row in get_recordings()], [retained_name])
+
+        delete_recordings_for_purged_artifacts()
+        self.assertFalse(frappe.db.exists("Meet Recording", name))
+        self.assertTrue(frappe.db.exists("Meet Recording", retained_name))
+        self.assertTrue(frappe.db.exists("Drive Node", retained_artifact))
+        delete_recordings_for_purged_artifacts()
+        self.assertTrue(frappe.db.exists("Meet Recording", retained_name))
+
+    def test_room_titles_follow_recording_order_and_missing_rooms_have_no_title(self):
+        older, _ = self._publish_recording()
+        newer, _ = self._publish_recording()
+        frappe.db.set_value("Meet Recording", older, "started_at", datetime(2026, 1, 1, 10))
+        frappe.db.set_value("Meet Recording", newer, "started_at", datetime(2026, 1, 1, 11))
+        frappe.db.set_value("Meet Recording", newer, "meet_room", "missing-recording-room")
+        with patch("suite.meet.api.recordings.frappe.get_all", wraps=frappe.get_all) as get_all:
+            rows = get_recordings()
+        self.assertEqual([row.name for row in rows], [newer, older])
+        self.assertEqual([row.room_title for row in rows], [None, self.room.title])
+        self.assertEqual(sum(call.args[0] == "Meet Room" for call in get_all.call_args_list), 1)
+
+    def test_recordings_list_is_limited_to_the_latest_one_hundred(self):
+        names = []
+        for index in range(101):
+            name, _ = self._publish_recording()
+            frappe.db.set_value(
+                "Meet Recording", name, "started_at", datetime(2026, 1, 1) + timedelta(minutes=index)
+            )
+            names.append(name)
+
+        rows = get_recordings()
+        self.assertEqual([row.name for row in rows], list(reversed(names[1:])))
+        self.assertEqual([row.room_title for row in rows], [self.room.title] * 100)

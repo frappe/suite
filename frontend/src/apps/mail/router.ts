@@ -1,6 +1,14 @@
 import type { RouteLocationNormalized } from 'vue-router'
 
 import { userStore } from '@/apps/mail/stores/user'
+import {
+  INBOX_FOLDER,
+  mailboxIdForParam,
+  mailboxParam,
+  prefersUnified,
+  UNIFIED_THREAD_ROUTE,
+  unifiedFolderRoute,
+} from '@/apps/mail/utils/unifiedFolders'
 import { useSessionStore } from '@/boot/session'
 import suiteRouter from '@/router'
 
@@ -27,7 +35,7 @@ const buildDefaultRoute = (
   const firstMailbox = mailboxes.data?.[0]?.id
   if (firstMailbox) return { name: 'mail-mailbox', params: { accountId, mailbox: firstMailbox } }
 
-  return { name: 'mail-address-books', params: { accountId } }
+  return { name: 'people-address-books', params: { accountId } }
 }
 
 const resolveShortcut = (
@@ -41,13 +49,6 @@ const resolveShortcut = (
       if (params.threadID) return { name: 'mail-mail', params: { accountId, ...params } }
       if (params.mailbox) return { name: 'mail-mailbox', params: { accountId, ...params } }
       return defaultRoute
-    case 'mail-address-books-shortcut':
-      if (params.addressBookName)
-        return { name: 'mail-address-book', params: { accountId, ...params } }
-      return { name: 'mail-address-books', params: { accountId } }
-    case 'mail-contacts-shortcut':
-      if (params.contactName) return { name: 'mail-contact', params: { accountId, ...params } }
-      return { name: 'mail-contacts', params: { accountId } }
     default:
       return defaultRoute
   }
@@ -70,8 +71,8 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   if (!isLoggedIn) return
 
   // Wait for user data.
-  const { userResource, mailboxes, resolveAccount } = userStore()
-  await userResource.promise
+  const { userResource, mailboxes, resolveAccount, loadUser } = userStore()
+  await loadUser()
   const user = userResource.data
 
   // The Admin Dashboard is Suite Cloud's face on the site: it is for admins, and only on a
@@ -88,39 +89,59 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
     return
   }
 
-  // Resolve active account. The merged All Inboxes thread route carries the thread's
+  // Resolve active account. The merged folder's thread route carries the thread's
   // owning account purely to scope the pane (see utils/accountScope) — opening a
   // thread there must not switch the active account out from under the merged list.
   const routeAccountId =
-    to.name === 'mail-all-inboxes-mail' ? undefined : (to.params.accountId as string | undefined)
+    to.name === UNIFIED_THREAD_ROUTE ? undefined : (to.params.accountId as string | undefined)
   resolveAccount(user?.accounts, routeAccountId)
   const accountId = userStore().accountId
 
   // Wait for mailbox list. The fetch rejects when the mail server is temporarily down;
   // swallow that so navigation still completes — otherwise the initial navigation aborts,
   // the app never mounts and the user gets a blank page instead of the unavailable banner.
-  await mailboxes.promise?.catch(() => {})
+  await mailboxes.refetch().catch(() => {})
   const defaultRoute = buildDefaultRoute(accountId, mailboxes)
 
   if (to.meta.isDashboard && !canAdminister) return defaultRoute
 
-  // Validate mailbox param for mailbox routes.
+  // Validate mailbox param for mailbox routes. The param is the folder's slug (see
+  // utils/unifiedFolders), though an id still opens it — links made before folders were named,
+  // and every link built from an id — and is answered with the slug.
   if (to.name === 'mail-mailbox' || to.name === 'mail-mail') {
+    const param = to.params.mailbox as string
+    const mailboxId = mailboxIdForParam(param, mailboxes.data)
+
     // The screener mailbox has its own dedicated view (Allow/Block UI). Redirect its
     // plain mailbox URL to the screener route so direct navigation and reloads land on
     // the screener view, matching the sidebar link (which already targets 'mail-screener').
     const screenerId = userStore().mailboxIds.screener
-    if (screenerId && to.params.mailbox === screenerId)
+    if (screenerId && mailboxId === screenerId)
       return { name: 'mail-screener', params: { accountId } }
 
     // With no mailbox list (fetch failed above) the param can't be validated — keep the
     // requested route rather than bouncing the user off the URL they asked for.
     const mailboxExists =
       !mailboxes.data ||
-      mailboxes.data.some((m: { id: string }) => m.id === to.params.mailbox) ||
-      ['starred', 'search'].includes(to.params.mailbox as string)
+      mailboxes.data.some((m: { id: string }) => m.id === mailboxId) ||
+      ['starred', 'search'].includes(mailboxId)
     if (!mailboxExists) return defaultRoute
+
+    const canonical = mailboxParam(mailboxId, mailboxes.data)
+    if (canonical !== param)
+      return {
+        name: to.name,
+        params: { ...to.params, mailbox: canonical },
+        query: to.query,
+        hash: to.hash,
+        replace: true,
+      }
   }
+
+  // /mail itself reopens "All accounts" for a reader who last chose it, while they still have
+  // more than one account to merge.
+  if (to.name === 'mail-root-shortcut' && prefersUnified() && (user?.accounts?.length ?? 0) > 1)
+    return { ...unifiedFolderRoute(INBOX_FOLDER), query: to.query }
 
   // Expand shortcut routes to their full account-scoped equivalents. The
   // query rides along — it can carry a compose deep link (?compose=1&to=).

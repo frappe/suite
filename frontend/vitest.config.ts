@@ -56,7 +56,7 @@ export default defineConfig({
         test: {
           name: 'unified',
           include: [
-            'src/{shell,platform,composition}/**/*.test.{js,ts}',
+            'src/{api,shell,platform,composition}/**/*.test.{js,ts}',
             'src/apps/drive/{files,client}/**/*.test.{js,ts}',
             'src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}',
             'packages/collab-client/src/**/*.test.ts',
@@ -69,7 +69,7 @@ export default defineConfig({
           name: 'legacy',
           include: ['src/**/*.test.{js,ts}', 'recorder/**/*.test.{js,ts}'],
           exclude: [
-            'src/{shell,platform,composition}/**/*.test.{js,ts}',
+            'src/{api,shell,platform,composition}/**/*.test.{js,ts}',
             'src/apps/drive/{files,client}/**/*.test.{js,ts}',
             'src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}',
           ],

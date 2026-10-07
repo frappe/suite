@@ -1,7 +1,6 @@
+import { api, useQuery } from '@/api'
 import MailIcon from '@/apps/mail/AreaIcon.vue'
-import { inboxSummary } from '@/apps/mail/client/inboxSummary'
 import type { AreaDefinition } from '@/platform/contracts'
-import { useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
 
 export const mailArea: AreaDefinition = {
@@ -21,5 +20,5 @@ export const loadMailSettings = () =>
   import('@/apps/mail/settings').then((module) => module.mailSettings)
 
 export function useInboxSummary(enabled: () => boolean = () => true) {
-  return useQuery(() => (enabled() ? inboxSummary() : false))
+  return useQuery(api.mail.inbox.summary, () => (enabled() ? {} : false))
 }

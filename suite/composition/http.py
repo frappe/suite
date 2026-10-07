@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from functools import cache, lru_cache
-from typing import Any
+from typing import Any, Literal
 
 import frappe
 
@@ -14,6 +14,9 @@ V2_PREFIX = "/api/v2/method/"
 ORIGINAL_PATH = "suite.original_path"
 
 _FIELD = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::(path))?\}")
+
+
+RouteKind = Literal["query", "mutation"]
 
 
 class BadRequest(frappe.ValidationError):
@@ -40,6 +43,12 @@ class Route:
     output: Any = None
     entity: dict[str, str] | None = None
     stream: bool = False
+    response_bytes: bool = False
+    kind: RouteKind | None = None
+    public_name: str | dict[str, str] | None = None
+    page: dict[str, str] | None = None
+    id: str | None = None
+    envelope: Literal["data", "message"] = "data"
 
 
 @dataclass(frozen=True)
@@ -52,6 +61,8 @@ class HttpOwner:
     routes: tuple[Route, ...]
     unknown: str = "unknown"
     strip_owner: bool = True
+    # Existing Framework endpoints have contracts without new resource aliases.
+    contract_routes: tuple[Route, ...] = ()
 
 
 @dataclass(frozen=True)

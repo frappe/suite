@@ -203,7 +203,7 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         with cls.set_user(member.email):
             account = get_user_personal_jmap_account(member.email, raise_exception=True)
             inbox = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
-            threads, _mailbox = get_threads(account, inbox, limit=20)
+            threads = get_threads(account, inbox, limit=20)["rows"]
             return threads
 
     @classmethod

@@ -28,7 +28,7 @@ describe('settings groups', () => {
     group('Account', [['account.profile'], ['account.preferences']]),
     group('Drive', [['drive.statistics'], ['drive.external-access', false]]),
     group('Mail', [['mail.credentials']], false),
-    group('Meet', [['meet.layout', false]]),
+    group('Chat', [['chat.layout', false]]),
     group('Workspace', [['workspace.general'], ['workspace.users']]),
   ])
 

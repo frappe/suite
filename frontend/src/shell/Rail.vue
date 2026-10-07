@@ -23,6 +23,14 @@
         viewport-class="px-[11px] pb-2.5 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <nav class="flex flex-col items-center gap-1" :aria-label="__('Areas')">
+          <!-- Search reaches every area at once, so it opens the rail's list of
+               areas rather than sitting in each area's sidebar. -->
+          <RailItem
+            :label="__('Search')"
+            :description="searchShortcut"
+            :icon="SearchIcon"
+            @click="root.paletteOpen = true"
+          />
           <RailItem
             v-for="area in areas"
             :key="area.id"
@@ -31,6 +39,8 @@
             :icon="area.icon"
             :to="area.to"
             :badge="badges[area.id] ?? 0"
+            badge-style="dot"
+            :badge-noun="area.badgeNoun?.()"
             :progress="areaProgress?.progress(area.id) ?? null"
             @click="openProgress(area.id)"
           />
@@ -51,6 +61,15 @@
            lets the styles below size and ink it like the items around it. It
            also holds the bell's 34 px while the async component loads, so the
            group below does not move once the bell arrives. -->
+      <RailItem
+        v-if="hasAreaShortcuts"
+        :label="__('Shortcuts')"
+        description="?"
+        variant="ghost"
+        @click="openAreaShortcuts()"
+      >
+        <span class="lucide-keyboard size-4" aria-hidden="true" />
+      </RailItem>
       <div class="rail-bell flex min-h-[34px]">
         <slot name="bell" />
       </div>
@@ -75,11 +94,14 @@ import {
 } from 'vue'
 
 import type { AreaDefinition } from '@/platform/contracts'
+import { hasAreaShortcuts, openAreaShortcuts } from '@/platform/shortcuts'
 import AccountMenu from '@/shell/AccountMenu.vue'
 import { useAreaProgress } from '@/shell/areaProgress'
 import RailItem from '@/shell/RailItem.vue'
+import SearchIcon from '@/shell/SearchIcon.vue'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useWorkspace } from '@/shell/useWorkspace'
+import { useRootStore } from '@/stores/root'
 
 defineProps<{
   areas: readonly AreaDefinition[]
@@ -92,6 +114,8 @@ const suiteLogo = '/assets/suite/frontend/logo.svg'
 const { workspaceName, workspaceLogo } = useWorkspace()
 const workspaceMark = computed(() => workspaceLogo.value || (workspaceName.value ? '' : suiteLogo))
 const areaProgress = useAreaProgress()
+const root = useRootStore()
+const searchShortcut = /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'
 
 // The item still navigates to its area. The source opens its own view there.
 function openProgress(area: string) {

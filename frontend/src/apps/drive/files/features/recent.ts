@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 
+import type { InfiniteQueryState } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
-import type { QueryResult } from '@/platform/server-state'
 
 /**
  * Recent as Drive shows it: the files the user opened, without the folders
@@ -11,12 +11,12 @@ import type { QueryResult } from '@/platform/server-state'
  * Only `rows` changes. A window that held only folders adds no rows, and the
  * listing then reads the next window as it does for access-filtered windows.
  */
-export function recentFiles<Page extends { rows: DriveNode[] }>(
-  source: QueryResult<Page>,
+export function recentFiles<Row extends DriveNode>(
+  source: InfiniteQueryState<Row>,
   applies: () => boolean,
-): QueryResult<Page> {
+): InfiniteQueryState<Row> {
   const rows = computed(() => {
-    const all = source.rows as DriveNode[]
+    const all = source.rows
     return applies() ? all.filter((row) => row.kind !== 'folder') : all
   })
   return new Proxy(source, {

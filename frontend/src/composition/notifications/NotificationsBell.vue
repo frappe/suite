@@ -99,29 +99,23 @@ import { Button, Popover, ScrollArea, Skeleton } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import {
-  driveNodeRoute,
-  driveNotifications,
-  driveUnreadNotificationCount,
-  loadDriveNodeSummary,
-  markAllDriveNotificationsRead,
-  markDriveNotificationsRead,
-  type DriveNotification,
-} from '@/apps/drive'
+import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
+import { driveNodeRoute, loadDriveNodeSummary, type DriveNotification } from '@/apps/drive'
 import {
   notificationDescription,
   notificationTime,
   notificationTitle,
 } from '@/composition/notifications/notificationPresentation'
-import { useMutation, useQuery } from '@/platform/server-state'
 import { translate as __ } from '@/platform/translation'
 
 const router = useRouter()
 const open = ref(false)
-const count = useQuery(driveUnreadNotificationCount())
-const feed = useQuery(() => (open.value ? driveNotifications() : false))
-const markRead = useMutation(markDriveNotificationsRead())
-const markAll = useMutation(markAllDriveNotificationsRead())
+const count = useQuery(api.drive.notifications.unreadCount, {})
+const feed = useInfiniteQuery(api.drive.notifications.list, () =>
+  open.value ? { limit: 60 } : false,
+)
+const markRead = useMutation(api.drive.notifications.markRead)
+const markAll = useMutation(api.drive.notifications.markAllRead)
 const unread = computed(() => count.data?.unread ?? 0)
 
 async function openNotification(notification: DriveNotification) {

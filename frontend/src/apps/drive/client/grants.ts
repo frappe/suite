@@ -1,7 +1,6 @@
-import { transport as defaultTransport, type Transport } from '@/platform/transport'
+import { api, client } from '@/api'
+import type { ImperativeClient } from '@/platform/server-state/types'
 
-import { api } from './generated'
-import { driveOperation } from './operation'
 import { DRIVE_ROLES, type DrivePerson } from './types'
 
 /**
@@ -168,47 +167,31 @@ export function endOfDayStamp(date: string): string {
   return new Date(year, month - 1, day, 23, 59, 59).toISOString().replace('.000Z', 'Z')
 }
 
-const listOperation = driveOperation<{ node: string; inherited: true }, GrantList>(api.node_grants)
-const explainOperation = driveOperation<
-  { node: string; principal: string },
-  { explain: GrantExplanation }
->(api.node_grants)
-const putOperation = driveOperation<{ node: string; principal: string } & GrantWrite, DriveGrant>(
-  api.node_put_grant,
-)
-const deleteOperation = driveOperation<
-  { node: string; principal: string; below?: true },
-  { count: number }
->(api.node_delete_grant)
 // The grant routes name a grant, not a node, so they carry the node's link codes themselves.
-const patchOperation = (node: string) =>
-  driveOperation<{ grant: string } & GrantPatch, DriveGrant>(api.grant_patch, { covers: [node] })
-const removeOperation = (node: string) =>
-  driveOperation<{ grant: string }, { count: number }>(api.grant_delete, { covers: [node] })
-const rotateOperation = (node: string) =>
-  driveOperation<{ grant: string }, DriveGrant>(api.grant_rotate, { covers: [node] })
 
 /** The grant calls of one node. Every call needs MANAGE on it. */
-export function nodeGrants(node: string, transport: Transport = defaultTransport) {
+export function nodeGrants(node: string, requester: ImperativeClient = client) {
   return {
     async list(): Promise<GrantList> {
-      const answer = await transport.request(listOperation, { node, inherited: true })
+      const answer = await requester.query(api.drive.grants.list, { node, inherited: true })
       return {
-        grants: answer.grants ?? [],
-        inherited: answer.inherited ?? [],
-        owner: answer.owner ?? null,
+        grants: 'grants' in answer ? answer.grants : [],
+        inherited: 'inherited' in answer ? (answer.inherited ?? []) : [],
+        owner: 'owner' in answer ? answer.owner : null,
       }
     },
     async explain(principal: string): Promise<GrantExplanation> {
-      return (await transport.request(explainOperation, { node, principal })).explain
+      const answer = await requester.query(api.drive.grants.list, { node, principal })
+      if (!answer.explain) throw new TypeError('Expected a grant explanation')
+      return answer.explain
     },
     /** Writes the row of a principal: a user, a group, the org or the public, or `$LINK` for a new link. */
     put(principal: string, write: GrantWrite): Promise<DriveGrant> {
-      return transport.request(putOperation, { node, principal, ...write })
+      return requester.mutation(api.drive.grants.put, { node, principal, ...write })
     },
     /** Removes a principal's local row. `below` also removes it from every item inside; the answer counts them all. */
     async remove(principal: string, below = false): Promise<number> {
-      const answer = await transport.request(deleteOperation, {
+      const answer = await requester.mutation(api.drive.grants.remove, {
         node,
         principal,
         ...(below ? { below: true as const } : {}),
@@ -217,14 +200,19 @@ export function nodeGrants(node: string, transport: Transport = defaultTransport
     },
     /** Rewrites one existing row by its id: the way to change a link. */
     patch(grant: string, write: GrantPatch): Promise<DriveGrant> {
-      return transport.request(patchOperation(node), { grant, ...write })
+      return requester.mutation(
+        api.drive.grants.update,
+        { node, grant, ...write },
+        { silent: true },
+      )
     },
     /** Removes one existing row by its id: the way to remove a link. */
     async removeGrant(grant: string): Promise<number> {
-      return (await transport.request(removeOperation(node), { grant })).count
+      return (await requester.mutation(api.drive.grants.delete, { node, grant }, { silent: true }))
+        .count
     },
     rotate(grant: string): Promise<DriveGrant> {
-      return transport.request(rotateOperation(node), { grant })
+      return requester.mutation(api.drive.grants.rotate, { node, grant }, { silent: true })
     },
   }
 }

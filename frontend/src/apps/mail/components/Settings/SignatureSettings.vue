@@ -26,7 +26,7 @@
             :options="signatureOptions(signature)"
             :title="signature.signature_name"
           >
-            <Button variant="">
+            <Button variant="ghost">
               <template #icon>
                 <Ellipsis class="text-ink-gray-5 h-4 w-4" />
               </template>
@@ -44,31 +44,33 @@
       </p>
     </div>
 
-    <AddSignatureModal v-model="showAddSignature" @reload-signatures="signatures.reload()" />
+    <AddSignatureModal
+      v-model="showAddSignature"
+      @reload-signatures="signatures.refetch().catch(() => {})"
+    />
     <SetDefaultSignatureModal v-model="showSetSignature" :signature="selectedSignature" />
     <EditSignatureModal
       v-model="showEditSignature"
       :signature-i-d="selectedSignature"
-      @reload-signatures="signatures.reload()"
+      @reload-signatures="signatures.refetch().catch(() => {})"
     />
   </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import { Button, toast, useList } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
-import { inject, ref } from 'vue'
+import { ref } from 'vue'
 
+import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import AddSignatureModal from '@/apps/mail/components/Modals/AddSignatureModal.vue'
 import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal.vue'
 import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSignatureModal.vue'
-import type { MailSignature } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const user = inject('$user')
 const { isMobile } = useScreenSize()
 
 const showAddSignature = ref(false)
@@ -76,20 +78,15 @@ const selectedSignature = ref('')
 const showSetSignature = ref(false)
 const showEditSignature = ref(false)
 
-const signatures = useList({
-  doctype: 'Mail Signature',
-  immediate: true,
-  fields: ['name', 'signature_name', 'html_body'],
-  filters: { user: user.data.name },
-  cacheKey: ['mailSignatures', user.data.name],
-})
+const signatures = useQuery(api.mail.signatures.list)
+const deleteSignature = useMutation(api.mail.signatures.delete)
 
 const editSignature = (signature: string) => {
   selectedSignature.value = signature
   showEditSignature.value = true
 }
 
-const signatureOptions = (signature: MailSignature) => [
+const signatureOptions = (signature: OutputOf<typeof api.mail.signatures.list>[number]) => [
   {
     label: __('Set Default'),
     icon: Pin,
@@ -97,7 +94,7 @@ const signatureOptions = (signature: MailSignature) => [
       selectedSignature.value = signature.html_body!
       showSetSignature.value = true
     },
-    condition: () => signature.html_body,
+    condition: () => Boolean(signature.html_body),
   },
   {
     label: __('Edit'),
@@ -107,13 +104,9 @@ const signatureOptions = (signature: MailSignature) => [
   {
     label: __('Delete'),
     icon: Trash2,
-    theme: 'red',
+    theme: 'red' as const,
     onClick: async () => {
-      try {
-        await signatures.delete.submit({ name: signature.name })
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : __('Could not delete signature'))
-      }
+      await deleteSignature.run({ name: signature.name })
     },
   },
 ]

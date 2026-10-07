@@ -1,12 +1,12 @@
+import { api, client } from '@/api'
 /**
  * Toasts that report a finished Drive change: a move, a move to Trash and a
  * restore, each with Undo, and a copy, without it.
  */
-import { batchNodes, moveNode } from '@/apps/drive/client/nodes'
+
 import type { DriveFailure } from '@/apps/drive/client/types'
 import { toast } from '@/platform/feedback'
-import { useMutation } from '@/platform/server-state'
-import type { PlatformError } from '@/platform/transport'
+import { TransportError } from '@/platform/transport'
 
 /** An item a change touched, with the title its toast names. */
 export interface ChangedItem {
@@ -144,17 +144,22 @@ export function announceRestore(items: readonly ChangedItem[]): void {
   })
 }
 
-/** One item goes back through the single move route. Answers what failed. */
+/** One item goes back through the single move route. */
 async function moveBack(item: MovedItem): Promise<DriveFailure[]> {
-  const move = useMutation(moveNode(), { silent: true })
-  if (await move.run({ node: item.node, parent_node: item.from, expect_parent_node: item.to }))
+  try {
+    await client.mutation(
+      api.drive.nodes.move,
+      { node: item.node, parent_node: item.from, expect_parent_node: item.to },
+      { silent: true },
+    )
     return []
-  return [refusal(item.node, move.error)]
+  } catch (cause) {
+    return [refusal(item.node, cause)]
+  }
 }
 
-/** Several items go back through the batch route, one request for each pair of folders they went between. */
+/** A batch preserves each item's destination check when undoing a move. */
 async function moveAllBack(items: readonly MovedItem[]): Promise<DriveFailure[]> {
-  const batch = useMutation(batchNodes(), { silent: true })
   const byMove = new Map<string, MovedItem[]>()
   for (const item of items) {
     const key = `${item.from}\u0000${item.to}`
@@ -162,27 +167,43 @@ async function moveAllBack(items: readonly MovedItem[]): Promise<DriveFailure[]>
   }
   const failed: DriveFailure[] = []
   for (const group of byMove.values()) {
+    const first = group[0]
+    if (!first) continue
     const nodes = group.map((item) => item.node)
-    const { from, to } = group[0]!
-    const result = await batch.run({ nodes, patch: { parent_node: from, expect_parent_node: to } })
-    failed.push(...(result ? result.failed : nodes.map((node) => refusal(node, batch.error))))
+    try {
+      const result = await client.mutation(
+        api.drive.nodes.batch,
+        { nodes, patch: { parent_node: first.from, expect_parent_node: first.to } },
+        { silent: true },
+      )
+      failed.push(...result.failed)
+    } catch (cause) {
+      failed.push(...nodes.map((node) => refusal(node, cause)))
+    }
   }
   return failed
 }
 
-/** Trashes or restores the items in one batch request. Answers what failed. */
 async function setState(
   items: readonly ChangedItem[],
   state: 'Active' | 'Trashed',
 ): Promise<DriveFailure[]> {
-  const batch = useMutation(batchNodes(), { silent: true })
   const nodes = items.map((item) => item.node)
-  const result = await batch.run({ nodes, patch: { state } })
-  return result ? result.failed : nodes.map((node) => refusal(node, batch.error))
+  try {
+    return (
+      await client.mutation(api.drive.nodes.batch, { nodes, patch: { state } }, { silent: true })
+    ).failed
+  } catch (cause) {
+    return nodes.map((node) => refusal(node, cause))
+  }
 }
 
-function refusal(node: string, error: PlatformError | null): DriveFailure {
-  return { node, type: error?.type ?? 'Error', message: error?.message ?? '' }
+function refusal(node: string, cause: unknown): DriveFailure {
+  return {
+    node,
+    type: cause instanceof TransportError ? cause.type : 'Error',
+    message: cause instanceof Error ? cause.message : 'The action failed.',
+  }
 }
 
 /** “Report.pdf” for one item, “3 items” for several. */

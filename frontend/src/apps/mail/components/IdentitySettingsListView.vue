@@ -5,14 +5,14 @@
     :columns="REPLY_TO_COLUMNS"
     :rows="data"
     :options="replyToOptions"
-    row-key="name"
+    row-key="email"
   >
     <ListHeader class="!mb-0 rounded-b-none border-b bg-transparent" />
     <ListRows>
       <template v-if="data.length">
         <ListRow
           v-for="(row, index) in data"
-          :key="row.name"
+          :key="row.email"
           v-slot="{ column, item }"
           :row="row"
           :class="{ 'rounded-b-none border-b': index !== data.length - 1 }"
@@ -40,7 +40,7 @@ import { Trash2 } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 const { data, emptyStateDescription } = defineProps<{
-  data: { name: string; email: string; display_name?: string }[]
+  data: { email: string; display_name?: string | null }[]
   emptyStateDescription: string
 }>()
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useNow, useStorage } from '@vueuse/core'
-import { Button, Dropdown, SidebarItem, SidebarSection, Tooltip } from 'frappe-ui'
-import { Ellipsis, Keyboard, Plus, User } from 'lucide-vue-next'
+import { Button, SidebarItem, SidebarSection, Tooltip } from 'frappe-ui'
+import { Ellipsis, Plus } from 'lucide-vue-next'
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -10,7 +10,6 @@ import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
-import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
@@ -25,9 +24,8 @@ import {
   viewLabel,
   type MobileView,
 } from '@/apps/calendar/utils/mobileView'
-import { accountSubmenu } from '@/composables/accountSubmenu'
-import { AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
-import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
+import { accountSubmenu, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
+import { Dropdown } from '@/platform/feedback'
 
 const { events, selectedEvent, isMobile } = defineProps<{
   /** Whether the page is in its phone layout; the sheet then carries the view switcher. */
@@ -130,8 +128,6 @@ const subtitle = computed(() => {
   return currentAccount._name
 })
 
-const { openShortcuts } = useShortcuts()
-
 const calendarActions = useCalendarActions()
 const {
   selected: selectedCalendar,
@@ -139,32 +135,14 @@ const {
   showDelete: showDeleteCalendar,
 } = calendarActions
 
-const menuItems = computed(() => [
-  {
-    group: '',
-    options: [
-      {
-        icon: Keyboard,
-        label: __('Shortcuts'),
-        onClick: openShortcuts,
-        condition: () => !isMobile,
-      },
-    ],
-  },
-  {
-    group: '',
-    options: [
-      {
-        icon: User,
-        label: __('Accounts'),
-        submenu: accountSubmenu(user.data.accounts, store.accountId, (accountId) =>
-          router.push({ name: route.name, params: { ...route.params, accountId } }),
-        ),
-        condition: () => user.data.accounts?.length > 1,
-      },
-    ],
-  },
-])
+// The account menu lists the accounts themselves. With one account there is nothing to pick.
+const accountMenu = computed(() =>
+  user.data.accounts?.length > 1
+    ? accountSubmenu(user.data.accounts, store.accountId, (accountId) =>
+        router.push({ name: route.name, params: { ...route.params, accountId } }),
+      )
+    : [],
+)
 
 // --- The phone's view switcher, in the sheet the bottom nav opens ---
 // The URL is the source of truth for the view, so switching is a navigation, not
@@ -196,10 +174,9 @@ const selectView = (view: MobileView) => {
 	     bottom nav's sheet on a phone. The phone header's menu button opens the
 	     sheet too. -->
   <AreaSidebar area="calendar" :title="__('Calendar')">
-    <!-- The active account leads. Its menu holds the shortcuts list and the
-		     account switcher. -->
+    <!-- The active account leads. Its menu lists the accounts; with one account it is just named. -->
     <SidebarSection class="!mt-0">
-      <Dropdown :options="menuItems" :match-trigger-width="true">
+      <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
         <SidebarItem :label="subtitle" icon="lucide-circle-user-round">
           <template #suffix>
             <span
@@ -209,7 +186,7 @@ const selectView = (view: MobileView) => {
           </template>
         </SidebarItem>
       </Dropdown>
-      <CommandPaletteSidebarItem v-if="!isMobile" />
+      <SidebarItem v-else :label="subtitle" icon="lucide-circle-user-round" />
     </SidebarSection>
 
     <!-- The phone's views, and its search page. On a desktop the header's

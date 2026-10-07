@@ -115,7 +115,6 @@ def begin_upload(
         accepted_at = now_datetime()
         recording.metadata_accepted_at = accepted_at
         recording.finalization_deadline = add_to_date(accepted_at, hours=FINALIZATION_TIMEOUT_HOURS)
-        recording.publication_key = f"meet-recording-{recording.name}"
     recording.finalization_stage = recording.finalization_stage or "Awaiting Upload"
     drive.reduce_storage_reservation(
         None,
@@ -140,7 +139,6 @@ def reject_upload_metadata(recording_name: str, *, event_sequence: int, error: E
     now = now_datetime()
     recording.metadata_accepted_at = now
     recording.finalization_deadline = add_to_date(now, hours=FINALIZATION_TIMEOUT_HOURS)
-    recording.publication_key = f"meet-recording-{recording.name}"
     recording.status = "Failed"
     recording.state_revision += 1
     recording.recorder_event_sequence = cint(event_sequence)
@@ -438,7 +436,6 @@ def reconcile_due_finalizations():
         accepted_at = get_datetime(recording.modified) or now
         recording.metadata_accepted_at = accepted_at
         recording.finalization_deadline = add_to_date(accepted_at, hours=FINALIZATION_TIMEOUT_HOURS)
-        recording.publication_key = f"meet-recording-{recording.name}"
         if cint(recording.upload_size) > 0 and cint(recording.upload_offset) == cint(recording.upload_size):
             recording.upload_completed_at = accepted_at
             recording.finalization_stage = "Pending"

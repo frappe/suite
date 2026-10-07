@@ -171,6 +171,7 @@ async function openedSurface(versions?: DocumentSession['versions']) {
     access: ref({ role: 50 }),
     refreshAccess: async () => {},
     versions,
+    credentials: { context: {}, heldContext: {}, fetch, fetchHeld: fetch, group: () => [] },
   } as unknown as DocumentSession
   const router = createRouter({
     history: createMemoryHistory(),

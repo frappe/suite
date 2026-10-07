@@ -216,8 +216,8 @@ frontend/src/
 ├── composition/                 wires products into the shell: routes, registries
 └── apps/<product>/
     ├── index.ts                 the only path another product or composition imports
-    ├── client/                  server operations: generated.ts, operation.ts, types.ts,
-    │                            one file per resource (nodes.ts, views.ts, grants.ts)
+    ├── client/                  server contracts: generated.ts, api.ts, policy.ts,
+    │                            lazy validators and named product workflows
     └── <area>/                  one area of the product (Drive: files/)
         ├── pages/               route components and routes.ts
         ├── features/            UI behaviour; a subfolder per feature (share/, trash/, uploads/)
@@ -245,16 +245,15 @@ frontend/src/
   (`selection.ts`, `nodeActions.ts`, `format.ts`); a composable `useX.ts`
   only when it needs a component's setup (`useTrashActions.ts`,
   `useShare.ts`). A test sits beside its subject as `<name>.test.ts`.
-- Descriptor factories in `client/` are verbs for mutations (`renameNode`,
-  `purgeNodes`) and nouns for reads (`node`, `children`, `view`).
+- Generated catalog paths use nouns for groups and verbs for commands
+  (`api.drive.nodes.get`, `api.drive.nodes.rename`).
 - Constants are `UPPER_SNAKE` (`LINK_CAP`, `UNDO_DURATION`). Server field
   names stay `snake_case` in TypeScript types because they are the wire
   format; local names are `camelCase`.
 
 ### Typing
 
-- `strict: true`. No `any` outside generic plumbing (`platform/server-state`)
-  and generated code. No `as` cast where a type guard or a narrower parameter
+- `strict: true`. Avoid `any`, including generic plumbing and generated code. No `as` cast where a type guard or a narrower parameter
   type (`Pick<DriveNode, 'access'>`) does the job. No `!` where the type can
   carry the fact.
 - `interface` for an object shape, `type` for a union or alias. Inputs are
@@ -285,29 +284,47 @@ frontend/src/
 
 ### Server state
 
-- A `client/` module defines descriptors with `query`, `infinite`, `mutation`
-  and `upload` from `@/platform/server-state`, wrapped in the product's
-  `driveOperation` to add the entity tag and request scope. Components and
-  composables consume them with `useQuery` and `useMutation`.
-- `useQuery` takes a descriptor or a function returning one (or `false` to
-  wait). A list gives `member` so a changed entity knows which lists it
-  belongs to.
-- A mutation declares what it changes: `touches` (the entity ids it rewrites),
-  `optimistic` (the fields to show before the answer), `invalidates` (operation
-  ids or entity tags to refetch). Listeners use `onTouch(id, fn)`.
-- A request outside the cache (a one-off visit record, a lookup) calls
-  `transport.request(operation, input)` directly.
-- **Target:** `createResource` from frappe-ui is legacy. The shell's settings
-  pages still use it; new code uses an `Operation` and server-state.
+- Ordinary requests import `api`, `client`, and composables from `@/api`.
+  Pass a generated reference and typed arguments. Do not construct descriptors,
+  transport operations, request wrappers, or per-call policies.
+- `useQuery(reference, input)` and `useInfiniteQuery(reference, input)` accept
+  a value, ref, or getter. `false` disables the observer and its refetch.
+- `client.query` reads fresh by default. `{ cache: 'prefer' }` permits a fresh
+  cached answer. Both caller forms share cache, flights, entities, and effects.
+- Backend route metadata declares kind, public name, page fields, and bytes.
+  Generated references expose these facts. Owner policies declare scope,
+  membership, optimism, and effects. Composition loads policies and validators
+  only when the owner is used.
+- Every mutation declares effects or explicit `none`. The catalog coverage test
+  rejects missing decisions and invalid reader IDs.
+- Access partitions contain opaque identities. Never put credentials in keys
+  or persisted entities. Editor sessions use Drive's reusable credential
+  context for document and composite-group calls.
+- Keep transfer, editor save, and creation workflows in their products.
+  Collaboration, media bytes, offline pinning, and identity bootstrap have
+  explicit protocol boundaries. Do not add ordinary calls to those boundaries.
+- Direct `transport.request` is internal to transport and these recorded
+  boundaries. `createResource`, `useDoc`, and descriptor builders are removed
+  from ordinary production callers.
 
 ### Errors and feedback
 
 - A failed request is a `TransportError` with `type` (the server's error class
   name, `DriveRestoreDestinationRequired`) and `status`. Branch on `type`,
   never on the message.
-- `mutation.run()` resolves `undefined` on failure and sets `mutation.error`.
+- Awaited queries and mutations reject on failure. `mutation.run()` also sets
+  `mutation.error`. Success UI runs only after the awaited command succeeds.
   The default error toast is on; pass `{ silent: true }` when the component
   shows the refusal itself (under a field, or as a toast with Retry).
+- Vue event handlers can await a mutation without a local catch when they need
+  only default feedback or an inline `mutation.error`. Return or await the
+  promise so Vue owns its rejection. Reset inline error state when the dialog
+  context changes. Keep local handling for recovery, partial results, and
+  background work that Vue does not await.
+- Async menus use `Dropdown` and `ContextMenu` from `@/platform/feedback`.
+  They preserve Frappe UI behavior and report callback rejections through the
+  application's error handler. `AdaptiveDropdown` uses this adapter on desktop
+  and returns the action promise from its mobile event handler.
 - User feedback goes through `@/platform/feedback`: `toast`, `confirm`,
   `prompt`. A destructive action confirms first; a reversible change reports
   in a toast with Undo (`features/changeToast.ts`).
@@ -335,7 +352,7 @@ frontend/src/
   folders; `yarn test <file>` runs one file.
 - Fake the boundary: stub `globalThis.fetch` with a small in-memory server
   that keeps state (`features/trash/useTrashActions.test.ts`), or pass a fake
-  `Transport` into `createServerState` (`client/nodes.test.ts`). Mock a module
+  `Transport` into `createApiClient` (`client/nodes.test.ts`). Mock a module
   only when it is pure side effect, such as `@/platform/feedback`.
 - Mount with `createApp` and `h`, assert through the DOM a user sees (roles,
   labels, text), and unmount in `afterEach`. Pure modules are tested as

@@ -40,7 +40,7 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
 
     def _threads(self, mailbox: str, filter_by: str | None = None) -> list[dict]:
         with self.set_user(self.receiver.email):
-            threads, _ = get_threads(self.account, mailbox, limit=20, filter_by=filter_by)
+            threads = get_threads(self.account, mailbox, limit=20, filter_by=filter_by)["rows"]
             return threads
 
     def test_flagged_and_seen(self):
@@ -61,8 +61,10 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
         with self.set_user(self.receiver.email):
             set_mails_seen(self.account, [self.mail_id], True)
         self.wait_until(
-            lambda: self.thread["subject"]
-            not in [t["subject"] for t in self._threads(self.inbox, filter_by="unread")],
+            lambda: (
+                self.thread["subject"]
+                not in [t["subject"] for t in self._threads(self.inbox, filter_by="unread")]
+            ),
             message="Seen thread still shows in the unread filter.",
         )
 
@@ -76,8 +78,10 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
         with self.set_user(self.receiver.email):
             move_mails(self.account, [self.mail_id], archive)
         self.wait_until(
-            lambda: subject in [t["subject"] for t in self._threads(archive)]
-            and subject not in [t["subject"] for t in self._threads(self.inbox)],
+            lambda: (
+                subject in [t["subject"] for t in self._threads(archive)]
+                and subject not in [t["subject"] for t in self._threads(self.inbox)]
+            ),
             message="Mail did not move from Inbox to Archive.",
         )
 
@@ -85,8 +89,10 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
         with self.set_user(self.receiver.email):
             add_mails_to_mailbox(self.account, [self.mail_id], self.inbox)
         self.wait_until(
-            lambda: subject in [t["subject"] for t in self._threads(self.inbox)]
-            and subject in [t["subject"] for t in self._threads(archive)],
+            lambda: (
+                subject in [t["subject"] for t in self._threads(self.inbox)]
+                and subject in [t["subject"] for t in self._threads(archive)]
+            ),
             message="Mail is not visible in both mailboxes after labeling.",
         )
 
@@ -101,8 +107,10 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
         with self.set_user(self.receiver.email):
             set_mails_mailboxes(self.account, [{"id": self.mail_id, "mailbox_ids": [archive], "junk": False}])
         self.wait_until(
-            lambda: subject in [t["subject"] for t in self._threads(archive)]
-            and subject not in [t["subject"] for t in self._threads(self.inbox)],
+            lambda: (
+                subject in [t["subject"] for t in self._threads(archive)]
+                and subject not in [t["subject"] for t in self._threads(self.inbox)]
+            ),
             message="set_mails_mailboxes did not restore the exact membership.",
         )
 
@@ -113,8 +121,10 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
             set_mails_spam_status(self.account, [self.mail_id], spam=True, screen_action="Spam")
 
         self.wait_until(
-            lambda: subject in [t["subject"] for t in self._threads(self.mailboxes["junk"])]
-            and subject not in [t["subject"] for t in self._threads(self.inbox)],
+            lambda: (
+                subject in [t["subject"] for t in self._threads(self.mailboxes["junk"])]
+                and subject not in [t["subject"] for t in self._threads(self.inbox)]
+            ),
             message="Junked mail is not confined to the Junk view.",
         )
         # The sender got a Spam screening rule in the same call.
@@ -145,7 +155,7 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
 
         def search(filter, **kwargs):
             with self.set_user(self.receiver.email):
-                mails, _total = search_mails(self.account, filter=filter, limit=10, **kwargs)
+                mails = search_mails(self.account, filter=filter, limit=10, **kwargs)["rows"]
                 return mails if any(m["subject"] == subject for m in mails) else None
 
         found = self.wait_until(
@@ -163,17 +173,19 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
         )
 
         with self.set_user(self.receiver.email):
-            self.assertEqual(search_mails(self.account, filter=None), ([], 0))
+            self.assertEqual(search_mails(self.account, filter=None), {"rows": [], "total": 0})
 
     def test_email_suggestions_and_avatar(self):
         with self.set_user(self.receiver.email):
             suggestions = self.wait_until(
-                lambda: [
-                    s
-                    for s in get_email_suggestions(self.account, self.sender.username)
-                    if s.get("email") == self.sender.email
-                ]
-                or None,
+                lambda: (
+                    [
+                        s
+                        for s in get_email_suggestions(self.account, self.sender.username)
+                        if s.get("email") == self.sender.email
+                    ]
+                    or None
+                ),
                 message="Sender did not show up in email suggestions.",
             )
             self.assertTrue(suggestions)

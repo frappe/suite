@@ -27,14 +27,14 @@ describe('type filter', () => {
       everywhere.map((option) => [option.value, nodeIcon(option.sample)]),
     )
     expect(icons).toEqual({
-      folder: 'lucide-folder',
-      document: 'lucide-file-text',
-      spreadsheet: 'lucide-table',
-      presentation: 'lucide-presentation',
-      pdf: 'lucide-file',
-      image: 'lucide-image',
-      video: 'lucide-video',
-      audio: 'lucide-audio-lines',
+      folder: 'file-icon-folder',
+      document: 'file-icon-doc',
+      spreadsheet: 'file-icon-sheet',
+      presentation: 'file-icon-slides',
+      pdf: 'file-icon-pdf',
+      image: 'file-icon-image',
+      video: 'file-icon-video',
+      audio: 'file-icon-audio',
     })
   })
 

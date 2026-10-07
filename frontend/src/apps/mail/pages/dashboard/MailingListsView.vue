@@ -1,5 +1,6 @@
 <template>
   <DashboardLayout
+    area="mail"
     :breadcrumbs="[{ label: __('Mailing Lists') }]"
     :button-label="__('Add Mailing List')"
     :button-action="() => (showAdd = true)"
@@ -12,7 +13,7 @@
       </FormControl>
     </div>
     <ListView
-      v-if="list.loaded"
+      v-if="list.status === 'success'"
       class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
       :columns="LIST_COLUMNS"
       :rows="list.rows"
@@ -37,20 +38,20 @@
     </ListView>
     <DashboardListSkeleton v-else :columns="3" />
     <DashboardPager
-      v-if="list.loaded && list.total"
+      v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
-      :total="list.total"
-      :page-length="list.pageLength"
-      :has-more="list.hasMore"
-      :loading="list.loading"
-      @update:page-length="list.setPageLength"
-      @load-more="list.loadMore"
+      :total="list.total ?? 0"
+      :page-length="pageLength"
+      :has-more="list.hasNext"
+      :loading="list.isFetching"
+      @update:page-length="(value) => (pageLength = value)"
+      @load-more="list.fetchNext().catch(() => {})"
     />
   </DashboardLayout>
-  <AddMailingListModal v-model="showAdd" @reload="list.reload()" />
+  <AddMailingListModal v-model="showAdd" @reload="list.refetch().catch(() => {})" />
 </template>
 <script setup lang="ts">
-import { watchDebounced } from '@vueuse/core'
+import { refDebounced } from '@vueuse/core'
 import { FormControl, usePageMeta } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
@@ -63,36 +64,46 @@ import {
 } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import { api, useInfiniteQuery } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddMailingListModal from '@/apps/mail/components/Modals/AddMailingListModal.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
-import { usePagedList } from '@/apps/mail/utils/pagedList'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Mailing Lists'), 'Mail'))
-
 const showAdd = ref(false)
 useAddOnArrival(showAdd)
 const search = ref('')
-
-const list = usePagedList<ListRowType>('suite.mail.api.admin.get_mailing_lists', () => ({
-  search: search.value,
+const debouncedSearch = refDebounced(search, 300)
+const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
+const list = useInfiniteQuery(api.mail.admin.mailingLists.list, () => ({
+  search: debouncedSearch.value,
+  start: 0,
+  page_length: pageLength.value,
 }))
-
-watchDebounced(() => search.value, list.reload, { debounce: 300 })
-
-type ListRowType = { id: string; email?: string; description?: string; recipient_count?: number }
-
+type ListRowType = {
+  id: string
+  email?: string
+  description?: string
+  recipient_count?: number
+}
 const LIST_COLUMNS = [
-  { label: __('Email'), key: 'email' },
-  { label: __('Description'), key: 'description' },
-  { label: __('Recipients'), key: 'recipient_count' },
+  {
+    label: __('Email'),
+    key: 'email',
+  },
+  {
+    label: __('Description'),
+    key: 'description',
+  },
+  {
+    label: __('Recipients'),
+    key: 'recipient_count',
+  },
 ]
-
 const hasActiveFilters = computed(() => !!search.value)
-
 const listOptions = computed(() => ({
   selectable: false,
   showTooltip: false,
@@ -106,10 +117,15 @@ const listOptions = computed(() => ({
         description: __('Create a mailing list to broadcast mail to many recipients at once.'),
         button: {
           label: __('Add Mailing List'),
-          variant: 'solid',
+          variant: 'solid' as const,
           onClick: () => (showAdd.value = true),
         },
       },
-  getRowRoute: (row: ListRowType) => ({ name: 'mail-mailing-list', params: { listId: row.id } }),
+  getRowRoute: (row: ListRowType) => ({
+    name: 'mail-mailing-list',
+    params: {
+      listId: row.id,
+    },
+  }),
 }))
 </script>

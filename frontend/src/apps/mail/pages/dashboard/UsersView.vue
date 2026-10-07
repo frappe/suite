@@ -23,7 +23,7 @@
     </div>
   </div>
   <ListView
-    v-if="list.loaded"
+    v-if="list.status === 'success'"
     ref="listView"
     class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
     :columns="LIST_COLUMNS"
@@ -92,14 +92,14 @@
   </ListView>
   <DashboardListSkeleton v-else :columns="6" />
   <DashboardPager
-    v-if="list.loaded && list.total"
+    v-if="list.status === 'success' && list.total"
     :count="list.rows.length"
-    :total="list.total"
-    :page-length="list.pageLength"
-    :has-more="list.hasMore"
-    :loading="list.loading"
-    @update:page-length="list.setPageLength"
-    @load-more="list.loadMore"
+    :total="list.total ?? 0"
+    :page-length="pageLength"
+    :has-more="list.hasNext"
+    :loading="list.isFetching"
+    @update:page-length="(value) => (pageLength = value)"
+    @load-more="list.fetchNext().catch(() => {})"
   />
   <Dialog v-model:open="showEnableMembers" v-bind="ENABLE_MEMBERS_OPTIONS" />
   <Dialog v-model:open="showDisableMembers" v-bind="DISABLE_MEMBERS_OPTIONS" />
@@ -107,8 +107,8 @@
 </template>
 
 <script setup lang="ts">
-import { watchDebounced } from '@vueuse/core'
-import { Avatar, Badge, Button, createResource, Dialog, FormControl } from 'frappe-ui'
+import { refDebounced } from '@vueuse/core'
+import { Avatar, Badge, Button, Dialog, FormControl } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListEmptyState,
@@ -122,13 +122,14 @@ import {
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import { api, useInfiniteQuery, useMutation, type InputOf } from '@/api'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
-import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import StorageBar from '@/apps/mail/components/StorageBar.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
-import { usePagedList } from '@/apps/mail/utils/pagedList'
+import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DashboardListSkeleton } from '@/platform/dashboard'
 
 type MemberRow = {
   name: string
@@ -140,7 +141,6 @@ type MemberRow = {
   quota_gb?: number | null
   used_bytes?: number | null
 }
-
 const search = ref('')
 const roleFilter = ref<'all' | 'admin' | 'user'>('all')
 // The overview links here with ?status=disabled; the filter follows the query on arrival.
@@ -160,36 +160,35 @@ const listView = useTemplateRef<{
   selections?: Set<string>
   toggleAllRows?: () => void
 }>('listView')
-
-const list = usePagedList<MemberRow>('suite.mail.api.admin.get_members', () => {
-  const params: { search: string; is_admin?: boolean; is_enabled?: boolean } = {
-    search: search.value,
+const debouncedSearch = refDebounced(search, 300)
+const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
+const list = useInfiniteQuery(api.mail.admin.members.list, () => {
+  const params: {
+    search: string
+    is_admin?: boolean
+    is_enabled?: boolean
+  } = {
+    search: debouncedSearch.value,
   }
-
   if (roleFilter.value !== 'all') {
     params.is_admin = roleFilter.value === 'admin'
   }
-
   if (statusFilter.value !== 'all') {
     params.is_enabled = statusFilter.value === 'enabled'
   }
-
-  return params
+  return {
+    ...params,
+    start: 0,
+    page_length: pageLength.value,
+  }
 })
-
 const normalizedMembers = computed<MemberRow[]>(() => {
   const map = new Map<string, MemberRow>()
-
   for (const row of list.rows) {
     if (!map.has(row.name)) map.set(row.name, row)
   }
-
   return Array.from(map.values())
 })
-
-watchDebounced(() => search.value, list.reload, { debounce: 300 })
-watch(() => roleFilter.value, list.reload)
-watch(() => statusFilter.value, list.reload)
 
 // The ListView keeps its selection across reloads, so after "select all" on 100 rows and a
 // switch to 20 the banner still claimed 100. Names that are no longer listed leave the set;
@@ -205,34 +204,63 @@ watch(
     }
   },
 )
-
-const reloadMembers = () => list.reload()
-defineExpose({ reloadMembers })
-
+const reloadMembers = () => list.refetch().catch(() => {})
+defineExpose({
+  reloadMembers,
+})
 const LIST_COLUMNS = [
-  { label: __('User'), key: 'user' },
-  { label: __('Role'), key: 'role' },
-  { label: __('Status'), key: 'status' },
-  { label: __('Storage'), key: 'quota' },
-  { label: __('Last Active'), key: 'last_active' },
+  {
+    label: __('User'),
+    key: 'user',
+  },
+  {
+    label: __('Role'),
+    key: 'role',
+  },
+  {
+    label: __('Status'),
+    key: 'status',
+  },
+  {
+    label: __('Storage'),
+    key: 'quota',
+  },
+  {
+    label: __('Last Active'),
+    key: 'last_active',
+  },
 ]
-
 const ROLE_FILTER_OPTIONS = [
-  { label: __('All'), value: 'all' },
-  { label: __('Admin'), value: 'admin' },
-  { label: __('User'), value: 'user' },
+  {
+    label: __('All'),
+    value: 'all',
+  },
+  {
+    label: __('Admin'),
+    value: 'admin',
+  },
+  {
+    label: __('User'),
+    value: 'user',
+  },
 ]
-
 const STATUS_FILTER_OPTIONS = [
-  { label: __('All'), value: 'all' },
-  { label: __('Enabled'), value: 'enabled' },
-  { label: __('Disabled'), value: 'disabled' },
+  {
+    label: __('All'),
+    value: 'all',
+  },
+  {
+    label: __('Enabled'),
+    value: 'enabled',
+  },
+  {
+    label: __('Disabled'),
+    value: 'disabled',
+  },
 ]
-
 const hasActiveFilters = computed(
   () => !!search.value || roleFilter.value !== 'all' || statusFilter.value !== 'all',
 )
-
 const listOptions = computed(() => ({
   showTooltip: false,
   rowHeight: 50,
@@ -247,78 +275,79 @@ const listOptions = computed(() => ({
       },
   getRowRoute: (row: MemberRow) => ({
     name: 'mail-account',
-    params: { accountId: row.name },
+    params: {
+      accountId: row.name,
+    },
   }),
 }))
-
-const enableMembers = createResource({
-  url: 'suite.mail.api.admin.enable_members',
-  makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
-  onSuccess: () => {
-    list.reload()
-    showEnableMembers.value = false
-    raiseToast(__('Accounts enabled.'))
-    listView.value?.toggleAllRows?.()
-  },
-  onError: (error: { messages?: string[] }) => {
-    showEnableMembers.value = false
-    raiseToast(error.messages?.[0] || __('Failed to enable accounts.'), 'error')
-  },
-})
-
+const enableMembers = useMutation(api.mail.admin.members.enable)
+async function enableMembersSubmit() {
+  const input: InputOf<typeof api.mail.admin.members.enable> = {
+    names: Array.from(listView.value?.selections || []),
+  }
+  await enableMembers.run(input)
+  showEnableMembers.value = false
+  raiseToast(__('Accounts enabled.'))
+  listView.value?.toggleAllRows?.()
+}
 const ENABLE_MEMBERS_OPTIONS = {
   title: __('Enable Accounts'),
   message: __(
     'Are you sure you want to enable the selected accounts? They will be able to log in again.',
   ),
-  actions: [{ label: __('Confirm'), variant: 'solid', onClick: enableMembers.submit }],
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid' as const,
+      onClick: enableMembersSubmit,
+    },
+  ],
 }
-
-const disableMembers = createResource({
-  url: 'suite.mail.api.admin.disable_members',
-  makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
-  onSuccess: () => {
-    list.reload()
-    showDisableMembers.value = false
-    raiseToast(__('Accounts disabled.'))
-    listView.value?.toggleAllRows?.()
-  },
-  onError: (error: { messages?: string[] }) => {
-    showDisableMembers.value = false
-    raiseToast(error.messages?.[0] || __('Failed to disable accounts.'), 'error')
-  },
-})
-
+const disableMembers = useMutation(api.mail.admin.members.disable)
+async function disableMembersSubmit() {
+  const input: InputOf<typeof api.mail.admin.members.disable> = {
+    names: Array.from(listView.value?.selections || []),
+  }
+  await disableMembers.run(input)
+  showDisableMembers.value = false
+  raiseToast(__('Accounts disabled.'))
+  listView.value?.toggleAllRows?.()
+}
 const DISABLE_MEMBERS_OPTIONS = {
   title: __('Disable Accounts'),
   message: __(
     'Are you sure you want to disable the selected accounts? They will no longer be able to log in.',
   ),
-  actions: [{ label: __('Confirm'), variant: 'solid', onClick: disableMembers.submit }],
+  actions: [
+    {
+      label: __('Confirm'),
+      variant: 'solid' as const,
+      onClick: disableMembersSubmit,
+    },
+  ],
 }
-
-const deleteMembers = createResource({
-  url: 'suite.mail.api.admin.delete_members',
-  makeParams: () => ({ names: Array.from(listView.value?.selections || []) }),
-  onSuccess: () => {
-    list.reload()
-    showDeleteMembers.value = false
-    raiseToast(__('Accounts deleted.'))
-    listView.value?.toggleAllRows?.()
-  },
-  onError: (error: { messages?: string[] }) => {
-    showDeleteMembers.value = false
-    raiseToast(error.messages?.[0] || __('Failed to delete accounts.'), 'error')
-  },
-})
-
+const deleteMembers = useMutation(api.mail.admin.members.delete)
+async function deleteMembersSubmit() {
+  const input: InputOf<typeof api.mail.admin.members.delete> = {
+    names: Array.from(listView.value?.selections || []),
+  }
+  await deleteMembers.run(input)
+  showDeleteMembers.value = false
+  raiseToast(__('Accounts deleted.'))
+  listView.value?.toggleAllRows?.()
+}
 const DELETE_MEMBERS_OPTIONS = {
   title: __('Delete Accounts'),
   message: __(
     'Are you sure you want to delete the selected accounts? This action cannot be undone.',
   ),
   actions: [
-    { label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteMembers.submit },
+    {
+      label: __('Confirm'),
+      variant: 'solid' as const,
+      theme: 'red' as const,
+      onClick: deleteMembersSubmit,
+    },
   ],
 }
 </script>

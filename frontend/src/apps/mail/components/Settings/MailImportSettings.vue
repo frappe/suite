@@ -42,9 +42,9 @@
     class="min-h-7"
     :label="__('Create Import')"
     variant="solid"
-    :loading="ongoingImport.data?.name"
-    :disabled="ongoingImport.loading || ongoingImport.error || !mailImport.file"
-    @click="createMailImport.submit()"
+    :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
+    :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
+    @click="createMailImportSubmit()"
   />
   <div class="!mt-3 space-x-1 text-base">
     <span class="text-ink-gray-5">{{ importSubtitle }}</span>
@@ -52,32 +52,35 @@
       {{ importLinkText }}
     </a>
   </div>
-  <ErrorMessage v-if="createMailImport.error" :message="createMailImport.error" class="mb-2.5" />
+  <ErrorMessage
+    v-if="createMailImport.error"
+    :message="createMailImport.error?.message"
+    class="mb-2.5"
+  />
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, ErrorMessage, FormControl } from 'frappe-ui'
-import { computed, inject, onMounted, reactive, ref, watch } from 'vue'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type InputOf } from '@/api'
+import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
-import { raiseToast } from '@/apps/mail/utils'
+import { raiseError } from '@/apps/mail/utils'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
-const { accountId, mailboxes } = userStore()
-
-const user = inject('$user')
-const socket = inject('$socket')
-
-const mailImport = reactive({
+const store = userStore()
+const { mailboxes } = store
+const user = store.userResource
+const socket = useMailSocket()
+const mailImport = reactive<Omit<InputOf<typeof api.mail.exchanges.importMail>, 'account'>>({
   format: 'eml',
   file: '',
   mailbox: '',
   seen: true,
 })
-
 const fileInput = ref<HTMLInputElement | null>(null)
 const { uploading, progress, upload } = useChunkedUpload()
-
 const acceptTypes = computed(() => (mailImport.format === 'eml' ? '.eml' : '.zip,.tgz,.tar.gz'))
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
@@ -86,33 +89,36 @@ const onFileSelected = async (event: Event) => {
   const file = input.files?.[0]
   input.value = '' // let the same file be re-selected after an error
   if (!file) return
-
   try {
-    const uploaded = await upload(file, { private: true })
+    const uploaded = await upload(file, {
+      private: true,
+    })
     mailImport.file = uploaded.file_url
   } catch (error) {
-    raiseToast((error as Error).message, 'error')
+    raiseError(error)
   }
 }
-
 const mailboxOptions = computed(() =>
-  mailboxes.data.map((m: { id: string; _name: string }) => ({
+  (mailboxes.data ?? []).map((m: { id: string; _name: string }) => ({
     label: m._name,
     value: m.id,
   })),
 )
-
 const markAsReadOptions = computed(() => [
-  { label: __('Yes'), value: true },
-  { label: __('No'), value: false },
+  {
+    label: __('Yes'),
+    value: true,
+  },
+  {
+    label: __('No'),
+    value: false,
+  },
 ])
-
 const fileUploadSubtitle = computed(() => {
   if (mailImport.file) return __('File uploaded: {0}', [mailImport.file])
   if (mailImport.format === 'eml') return __('Supported file format: .eml')
   return __('Supported file formats: .zip, .tar, .tgz')
 })
-
 watch(
   mailboxOptions,
   (options) => {
@@ -120,49 +126,48 @@ watch(
       mailImport.mailbox = options[0].value
     }
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
-
-const createMailImport = createResource({
-  url: 'suite.mail.api.account.create_mail_import',
-  makeParams: () => ({ account: accountId, ...mailImport }),
-  onSuccess: () => ongoingImport.reload(),
-})
-
-const ongoingImport = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Mail Exchange',
-    fieldname: 'name',
-    filters: {
-      user: user.data.name,
-      operation: 'Import',
-      status: ['in', ['Queued', 'In Progress']],
-    },
-  }),
-})
-
-onMounted(() =>
-  socket.on('mail_exchange_completed', (payload: { action: 'Import' | 'Export' }) => {
-    if (payload.action === 'Import') ongoingImport.reload()
-  }),
+const createMailImport = useMutation(api.mail.exchanges.importMail)
+async function createMailImportSubmit() {
+  const input: InputOf<typeof api.mail.exchanges.importMail> = {
+    account: store.accountId,
+    ...mailImport,
+  }
+  await createMailImport.run(input)
+  await ongoingImport.refetch().catch(() => {})
+}
+const ongoingImport = useQuery(api.mail.exchanges.ongoing, () =>
+  user.data && store.accountId
+    ? {
+        doctype: 'Mail Exchange',
+        fieldname: 'name',
+        filters: {
+          user: user.data!.name,
+          operation: 'Import',
+          status: ['in', ['Queued', 'In Progress']],
+        },
+      }
+    : false,
 )
-
+const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
+  if (payload.action === 'Import') ongoingImport.refetch().catch(() => {})
+}
+socket.on('mail_exchange_completed', onExchangeCompleted)
+onScopeDispose(() => socket.off('mail_exchange_completed', onExchangeCompleted))
 const importSubtitle = computed(() => {
   if (ongoingImport.data?.name) return __("Import in progress. We'll email you when it's ready.")
   return __('No imports in progress.')
 })
-
 const importHref = computed(() => {
   if (ongoingImport.data?.name) return `/mail/mail-exchanges/${ongoingImport.data.name}`
   return '/mail/mail-exchanges?operation=Import'
 })
-
 const importLinkText = computed(() => {
   if (ongoingImport.data?.name) return __('Track status')
   return __('View history')
 })
-
 const FORMAT_OPTIONS = ['eml', 'jmap', 'mbox', 'maildir', 'maildir-nested']
 </script>

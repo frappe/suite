@@ -1,7 +1,8 @@
-import { createResource, toast } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
+import { api, useMutation } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
@@ -56,44 +57,50 @@ export function useEventDelete(getEvent: () => DeletableEvent | undefined, onDel
   const calendarEvent = computed<DeletableEvent>(() => getEvent() ?? {})
   const eventId = computed(() => serverEventId(calendarEvent.value))
 
-  const deleteEventInstance = createResource({
-    url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
-    makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-      account: calendarEvent.value.account,
-      master_id: calendarEvent.value.master_id,
-      recurrence_id: calendarEvent.value.recurrence_id,
-      send_scheduling_messages: sendEmail,
-    }),
-    onSuccess: onDeleted,
-  })
+  const deleteEventInstance = useMutation(api.calendar.events.deleteInstance, { silent: true })
+  const deleteEvent = useMutation(api.calendar.events.delete, { silent: true })
+  const deleteFollowing = useMutation(api.calendar.events.deleteFollowing, { silent: true })
 
-  const deleteEvent = createResource({
-    url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
-    makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-      account: calendarEvent.value.account,
-      ids: [eventId.value],
-      send_scheduling_messages: sendEmail,
-    }),
-    onSuccess: onDeleted,
-  })
+  function deletionTarget() {
+    const event = calendarEvent.value
+    const id = eventId.value
+    if (!event.account || !id) throw new Error('An event deletion requires an account and event ID')
+    return { event, account: event.account, id }
+  }
 
-  // "This and following" is an edit, not a delete: the series stops at the occurrence before
-  // this one. The server does the arithmetic — where a counted series stops, and which of its
-  // overrides belonged to the occurrences going away — because a rule truncated here without
-  // them leaves every edited occurrence behind as an event of its own.
-  const deleteFollowing = createResource({
-    url: 'suite.calendar.api.delete_calendar_event_series_from',
-    makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-      account: calendarEvent.value.account,
-      master_id: eventId.value,
-      recurrence_id: calendarEvent.value.recurrence_id,
+  async function deleteEventInstanceSubmit({ sendEmail }: { sendEmail: boolean }) {
+    const { event, account } = deletionTarget()
+    if (!event.master_id || !event.recurrence_id)
+      throw new Error('An instance deletion requires its series and recurrence ID')
+    await deleteEventInstance.run({
+      account,
+      master_id: event.master_id,
+      recurrence_id: event.recurrence_id,
       send_scheduling_messages: sendEmail,
-    }),
-    onSuccess: onDeleted,
-  })
+    })
+    onDeleted()
+  }
+
+  async function deleteEventSubmit({ sendEmail }: { sendEmail: boolean }) {
+    const { account, id } = deletionTarget()
+    await deleteEvent.run({ account, ids: [id], send_scheduling_messages: sendEmail })
+    onDeleted()
+  }
+
+  async function deleteFollowingSubmit({ sendEmail }: { sendEmail: boolean }) {
+    const { event, account, id } = deletionTarget()
+    if (!event.recurrence_id) throw new Error('Ending a series requires its recurrence ID')
+    await deleteFollowing.run({
+      account,
+      master_id: id,
+      recurrence_id: event.recurrence_id,
+      send_scheduling_messages: sendEmail,
+    })
+    onDeleted()
+  }
 
   const isDeleting = computed(
-    () => deleteEventInstance.loading || deleteEvent.loading || deleteFollowing.loading,
+    () => deleteEventInstance.isPending || deleteEvent.isPending || deleteFollowing.isPending,
   )
 
   // When the organizer deletes an event with other participants, offer to email a
@@ -135,11 +142,11 @@ export function useEventDelete(getEvent: () => DeletableEvent | undefined, onDel
   }
 
   const handleDeleteEventInstance = () =>
-    confirmDelete((sendEmail) => deleteEventInstance.submit({ sendEmail }), false)
+    confirmDelete((sendEmail) => deleteEventInstanceSubmit({ sendEmail }), false)
 
   const handleDeleteEvent = () =>
     confirmDelete(
-      (sendEmail) => deleteEvent.submit({ sendEmail }),
+      (sendEmail) => deleteEventSubmit({ sendEmail }),
       !!calendarEvent.value.recurrence_id,
     )
 
@@ -148,7 +155,7 @@ export function useEventDelete(getEvent: () => DeletableEvent | undefined, onDel
   // one occurrence or the whole thing does — and a draft, which invited nobody, still asks
   // nobody.
   const handleDeleteFollowingEventInstances = () =>
-    confirmDelete((sendEmail) => deleteFollowing.submit({ sendEmail }), true)
+    confirmDelete((sendEmail) => deleteFollowingSubmit({ sendEmail }), true)
 
   // How far the delete reaches used to be a submenu off the Delete item: three
   // commands hidden behind a hover, each firing the moment it was touched. It

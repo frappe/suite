@@ -3,56 +3,80 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { titleExtension } from './filename'
 import { previewKind, type TextLanguage } from './previewKind'
 
-/** What the tint reads from: the kind, and a file's MIME type or a document's doctype. */
-type TintedNode = Pick<DriveNode, 'kind' | 'mime' | 'content_doctype'>
+import './icons.css'
 
 /**
- * What the icon and type label read from. The title is required: a text file
- * often has no telling MIME type, so its extension decides what it is.
+ * What Drive draws a node as. Each type has one icon, `file-icon-<type>`, and
+ * one ink colour.
  */
-type TypedNode = TintedNode & Pick<DriveNode, 'title'>
+export type FileType =
+  | 'folder'
+  | 'doc'
+  | 'sheet'
+  | 'slides'
+  | 'pdf'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'text'
+  | 'csv'
+  | 'code'
+  | 'archive'
+  | 'file'
+  | 'link'
 
-interface FileType {
+/**
+ * What the type reads from. The title is required: a text file often has no
+ * telling MIME type, so its extension decides what it is.
+ */
+type TypedNode = Pick<DriveNode, 'kind' | 'title' | 'mime' | 'content_doctype'>
+
+interface StoredFile {
+  type: FileType
   label: string
-  icon: string
 }
 
-const CONTENT_ICONS: Record<string, string> = {
-  'Writer Document': 'lucide-file-text',
+const CONTENT_TYPES: Record<string, FileType> = {
+  'Writer Document': 'doc',
   // The Sheets surface registers 'Sheet'; 'Spreadsheet' is the older name and
   // still reaches rows created before it changed.
-  Sheet: 'lucide-table',
-  Spreadsheet: 'lucide-table',
-  Presentation: 'lucide-presentation',
+  Sheet: 'sheet',
+  Spreadsheet: 'sheet',
+  Presentation: 'slides',
 }
 
-/** One tint per kind, as the prototype paints them. */
-const CONTENT_TINTS: Record<string, string> = {
-  'Writer Document': 'text-ink-blue-6',
-  Sheet: 'text-ink-green-6',
-  Spreadsheet: 'text-ink-green-6',
-  Presentation: 'text-ink-orange-6',
+/** Drive's own documents, PDFs and media each have a colour; everything else is gray. */
+const TINTS: Record<FileType, string> = {
+  folder: 'text-ink-gray-6',
+  doc: 'text-ink-blue-6',
+  sheet: 'text-ink-green-6',
+  slides: 'text-ink-orange-6',
+  pdf: 'text-ink-red-6',
+  image: 'text-ink-violet-6',
+  video: 'text-ink-pink-6',
+  audio: 'text-ink-cyan-6',
+  text: 'text-ink-gray-6',
+  csv: 'text-ink-gray-6',
+  code: 'text-ink-gray-6',
+  archive: 'text-ink-gray-6',
+  file: 'text-ink-gray-6',
+  link: 'text-ink-gray-6',
 }
-
-const CODE = 'lucide-file-code'
-const TEXT = 'lucide-file-text'
-/** Plain text that holds a table: CSV and TSV. */
-const TABLE = 'lucide-file-spreadsheet'
 
 /** Each language the text preview knows, by its usual name. */
-const TEXT_TYPES: Record<TextLanguage, FileType> = {
-  html: { label: 'HTML', icon: CODE },
-  markdown: { label: 'Markdown', icon: TEXT },
-  javascript: { label: 'JavaScript', icon: CODE },
-  typescript: { label: 'TypeScript', icon: CODE },
-  json: { label: 'JSON', icon: CODE },
-  css: { label: 'CSS', icon: CODE },
-  scss: { label: 'SCSS', icon: CODE },
-  python: { label: 'Python', icon: CODE },
-  sql: { label: 'SQL', icon: CODE },
-  xml: { label: 'XML', icon: CODE },
-  yaml: { label: 'YAML', icon: CODE },
-  plain: { label: 'Text', icon: TEXT },
+const TEXT_TYPES: Record<TextLanguage, StoredFile> = {
+  html: { label: 'HTML', type: 'code' },
+  markdown: { label: 'Markdown', type: 'text' },
+  javascript: { label: 'JavaScript', type: 'code' },
+  typescript: { label: 'TypeScript', type: 'code' },
+  json: { label: 'JSON', type: 'code' },
+  css: { label: 'CSS', type: 'code' },
+  scss: { label: 'SCSS', type: 'code' },
+  python: { label: 'Python', type: 'code' },
+  sql: { label: 'SQL', type: 'code' },
+  xml: { label: 'XML', type: 'code' },
+  yaml: { label: 'YAML', type: 'code' },
+  plain: { label: 'Text', type: 'text' },
 }
 
 /**
@@ -63,45 +87,54 @@ const TEXT_TYPES: Record<TextLanguage, FileType> = {
  * the listing asks it too, so the listing and the preview agree on what a
  * file is. Any other file is just a file.
  */
-function fileType({ title, mime }: TypedNode): FileType {
+function storedFile({ title, mime }: TypedNode): StoredFile {
   const type = (mime ?? '').toLowerCase()
   const preview = previewKind({ title, mime, hasPreview: false })
-  if (preview.kind === 'image') return { label: 'Image', icon: 'lucide-image' }
-  if (preview.kind === 'video') return { label: 'Video', icon: 'lucide-video' }
-  if (preview.kind === 'audio') return { label: 'Audio', icon: 'lucide-audio-lines' }
-  if (preview.kind === 'pdf') return { label: 'PDF', icon: 'lucide-file' }
+  if (preview.kind === 'image') return { label: 'Image', type: 'image' }
+  if (preview.kind === 'video') return { label: 'Video', type: 'video' }
+  if (preview.kind === 'audio') return { label: 'Audio', type: 'audio' }
+  if (preview.kind === 'pdf') return { label: 'PDF', type: 'pdf' }
   if (preview.kind === 'text') {
     const extension = titleExtension(title)?.toLowerCase()
-    if (extension === 'csv' || type === 'text/csv') return { label: 'CSV', icon: TABLE }
+    if (extension === 'csv' || type === 'text/csv') return { label: 'CSV', type: 'csv' }
     if (extension === 'tsv' || type === 'text/tab-separated-values')
-      return { label: 'TSV', icon: TABLE }
+      return { label: 'TSV', type: 'csv' }
     return TEXT_TYPES[preview.language]
   }
-  if (type === 'application/zip') return { label: 'ZIP', icon: 'lucide-file-archive' }
+  if (type === 'application/zip') return { label: 'ZIP', type: 'archive' }
   if (type.includes('zip') || type.includes('compressed'))
-    return { label: 'Archive', icon: 'lucide-file-archive' }
-  return { label: 'File', icon: 'lucide-file' }
+    return { label: 'Archive', type: 'archive' }
+  return { label: 'File', type: 'file' }
+}
+
+export function fileType(node: TypedNode): FileType {
+  if (node.kind === 'folder') return 'folder'
+  if (node.kind === 'link') return 'link'
+  if (node.kind === 'document') return CONTENT_TYPES[node.content_doctype ?? ''] ?? 'file'
+  return storedFile(node).type
+}
+
+/** The icon class for a type. */
+export function fileTypeIcon(type: FileType): string {
+  return `file-icon-${type}`
+}
+
+/** The ink class for a type. */
+export function fileTypeTint(type: FileType): string {
+  return TINTS[type]
 }
 
 export function nodeIcon(node: TypedNode): string {
-  if (node.kind === 'folder') return 'lucide-folder'
-  if (node.kind === 'link') return 'lucide-external-link'
-  if (node.kind === 'document') return CONTENT_ICONS[node.content_doctype ?? ''] ?? 'lucide-file'
-  return fileType(node).icon
+  return fileTypeIcon(fileType(node))
+}
+
+export function nodeIconTint(node: TypedNode): string {
+  return fileTypeTint(fileType(node))
 }
 
 export function nodeTypeLabel(node: TypedNode): string {
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'link') return 'Link'
   if (node.kind === 'document') return node.content_doctype ?? 'Document'
-  return fileType(node).label
-}
-
-export function nodeIconTint(node: TintedNode): string {
-  if (node.kind === 'folder') return 'text-ink-gray-6'
-  if (node.kind === 'document')
-    return CONTENT_TINTS[node.content_doctype ?? ''] ?? 'text-ink-gray-6'
-  if (node.mime === 'application/pdf') return 'text-ink-red-6'
-  if (node.mime?.startsWith('image/')) return 'text-ink-violet-6'
-  return 'text-ink-gray-6'
+  return storedFile(node).label
 }

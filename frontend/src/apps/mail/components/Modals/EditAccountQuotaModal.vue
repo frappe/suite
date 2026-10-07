@@ -6,9 +6,9 @@
       actions: [
         {
           label: __('Save'),
-          variant: 'solid',
-          loading: updateQuota.loading,
-          onClick: updateQuota.submit,
+          variant: 'solid' as const,
+          loading: updateQuota.isPending,
+          onClick: updateQuotaSubmit,
         },
       ],
     }"
@@ -36,33 +36,39 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
-type MemberData = { name: string; quota: { total: number } }
-
+type MemberData = {
+  name: string
+  quota: {
+    total: number
+  }
+}
 const show = defineModel<boolean>()
-const { member } = defineProps<{ member: MemberData }>()
+const { member } = defineProps<{
+  member: MemberData
+}>()
 const emit = defineEmits(['reload'])
-
 const quotaGb = ref(0)
-
 watch(show, () => {
   if (show.value && member) {
     quotaGb.value = member.quota?.total ? Math.round(member.quota.total / 1024 ** 3) : 0
     updateQuota.reset()
   }
 })
-
-const updateQuota = createResource({
-  url: 'suite.mail.api.admin.update_member',
-  makeParams: () => ({ member_id: member.name, quota_gb: Number(quotaGb.value) || 0 }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Quota updated.'))
-  },
-})
+const updateQuota = useMutation(api.mail.admin.members.update)
+async function updateQuotaSubmit() {
+  const input: InputOf<typeof api.mail.admin.members.update> = {
+    member_id: member.name,
+    quota_gb: Number(quotaGb.value) || 0,
+  }
+  await updateQuota.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Quota updated.'))
+}
 </script>

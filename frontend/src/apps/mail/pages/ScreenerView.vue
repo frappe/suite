@@ -7,7 +7,7 @@
         v-if="isMobile"
         class="min-w-0 flex-1"
         :title="__('Screener')"
-        :count="senders.data?.length ? waitingLabel : undefined"
+        :count="senderRows?.length ? waitingLabel : undefined"
       >
         <template #actions>
           <AdaptiveDropdown :options="bulkOptions">
@@ -25,7 +25,7 @@
     <!-- First-visit explainer — a full-width slab under the header, spanning list and reading
 		     pane. Dismissal sticks per device (education, not account state). -->
     <div
-      v-if="!explainerDismissed && senders.data?.length && !(openSender && !showReadingPane)"
+      v-if="!explainerDismissed && senderRows?.length && !(openSender && !showReadingPane)"
       class="bg-surface-blue-1 flex shrink-0 items-start gap-3 border-b px-5 py-4"
     >
       <div class="min-w-0 flex-1">
@@ -64,7 +64,7 @@
     <div class="relative flex flex-1 overflow-hidden">
       <!-- Loading the sender list — centered like the mailbox empty/loading states. -->
       <div
-        v-if="senders.loading && !senders.data"
+        v-if="senderQuery.isFetching && !senderRows"
         class="flex h-[calc(100dvh-6.1rem)] w-full flex-col items-center justify-center"
       >
         <div class="text-ink-gray-5 flex items-center space-x-2">
@@ -75,7 +75,7 @@
 
       <!-- Nothing to screen — one centered empty screen, no split. -->
       <div
-        v-else-if="!senders.data?.length"
+        v-else-if="!senderRows?.length"
         class="text-ink-gray-5 flex h-[calc(100dvh-6.1rem)] w-full flex-col items-center justify-center"
       >
         <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
@@ -152,7 +152,7 @@
             </div>
 
             <div
-              v-for="sender in senders.data"
+              v-for="sender in senderRows"
               :key="sender.from_email"
               :data-sender-email="sender.from_email"
               class="sm:hover:bg-surface-gray-1 flex cursor-default select-none items-stretch gap-4 border-b px-5 py-2.5"
@@ -416,8 +416,6 @@
 import {
   Breadcrumbs,
   Button,
-  call,
-  createResource,
   Dialog,
   Dropdown,
   Popover,
@@ -442,6 +440,7 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
@@ -451,8 +450,8 @@ import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.v
 import SplitViewToggle from '@/apps/mail/components/SplitViewToggle.vue'
 import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
-import type { Mail, MailboxData, ScreeningSender } from '@/apps/mail/types'
-import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
+import type { MailboxData, ScreeningSender } from '@/apps/mail/types'
+import { raiseError, raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import {
   useListReload,
   useReadingPane,
@@ -466,22 +465,21 @@ import {
   navigationOffset,
   neighbourAfterRemoval,
 } from '@/apps/mail/utils/listNavigation'
+import { mailRow } from '@/apps/mail/utils/threadRows'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import { appPageMeta } from '@/utils/documentTitle'
+import { appPageMeta } from '@/platform/page-meta'
 
 const store = userStore()
 const { senderEmail } = defineProps<{
   /** The open sender, from the route. Absent on the plain screener route — the list, nothing open. */
   senderEmail?: string
 }>()
-
 const router = useRouter()
 const { isMobile } = useScreenSize()
 // MailLayout's overlay layer; see the preview pane's Teleport.
 const overlayLayer = usePortalTarget()
 const { listReloadRequest } = useListReload()
 const { openSettings } = useSettings()
-
 const showReadingPane = useReadingPane()
 
 // The same undo the thread lists hang Cmd/Ctrl+Z off — one shared slot, so the last thing you did in
@@ -500,26 +498,29 @@ watch(
     if (ready && !enabled && inboxId)
       router.replace({
         name: 'mail-mailbox',
-        params: { accountId: store.accountId, mailbox: inboxId },
+        params: {
+          accountId: store.accountId,
+          mailbox: inboxId,
+        },
       })
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
 
 // The sender whose mail is open in the read-only preview, and that sender's messages.
 const openSender = ref<ScreeningSender | null>(null)
-const senderMails = createResource({
-  url: 'suite.mail.api.mail.get_screening_sender_mails',
-  makeParams: () => ({ account: store.accountId, from_email: openSender.value?.from_email }),
-})
-
-// The preview reads `previewMails`, not the resource's `.data`: fast navigation fires several fetches
-// at once and the resource flips `loading` off on the first reply that lands, so an out-of-order reply
-// could otherwise leak the previous sender in (and the thread then appends the next one onto it). Each
-// fetch carries a token; only the most recent one is applied.
-const previewMails = ref<Mail[]>()
-const previewLoading = ref(false)
-let previewToken = 0
+const senderMails = useQuery(api.mail.screener.messages, () =>
+  openSender.value
+    ? {
+        account: store.accountId,
+        from_email: openSender.value.from_email,
+      }
+    : false,
+)
+const previewMails = computed(() => senderMails.data?.map(mailRow))
+const previewLoading = computed(() => senderMails.isFetching)
 
 /**
  * Which sender is open is the URL's business, so opening one is a navigation and the back gesture
@@ -531,7 +532,10 @@ const selectSender = (sender: ScreeningSender, replace = false) => {
   if (openSender.value?.from_email === sender.from_email) return
   const to = {
     name: 'mail-screener-sender',
-    params: { accountId: store.accountId, senderEmail: sender.from_email },
+    params: {
+      accountId: store.accountId,
+      senderEmail: sender.from_email,
+    },
   }
   replace ? router.replace(to) : router.push(to)
 }
@@ -540,26 +544,17 @@ const selectSender = (sender: ScreeningSender, replace = false) => {
 const openSenderFromRoute = (sender: ScreeningSender) => {
   if (openSender.value?.from_email === sender.from_email) return
   openSender.value = sender
-
-  const token = ++previewToken
-  previewMails.value = undefined
-  previewLoading.value = true
-  ;(senderMails.reload() as Promise<Mail[]>)
-    .then((mails) => {
-      if (token !== previewToken) return
-      previewMails.value = mails ?? []
-      previewLoading.value = false
-    })
-    .catch(() => {
-      if (token === previewToken) previewLoading.value = false
-    })
 }
-
 const closeSender = () => {
   if (!openSender.value) return
   // Back where there is something to go back to, so opening and closing leaves no residue in the
   // history; a sender opened straight from a pasted URL has nothing behind it, so replace instead.
-  const list = { name: 'mail-screener', params: { accountId: store.accountId } }
+  const list = {
+    name: 'mail-screener',
+    params: {
+      accountId: store.accountId,
+    },
+  }
   if (router.options.history.state.back) router.back()
   else router.replace(list)
 }
@@ -573,27 +568,30 @@ const closeSender = () => {
  */
 const markSenderSeen = (seen: boolean, ids: string[]) => {
   if (!seen || !ids.length) return
-
-  call('suite.mail.api.mail.set_mails_seen', { account: store.accountId, ids, seen: true })
-    .then(() => store.mailboxes.reload())
-    .catch((error) => raiseToast(error?.messages?.[0] || error?.message, 'error'))
-
-  const sender = senders.data?.find(
-    (s: ScreeningSender) => s.from_email === openSender.value?.from_email,
-  )
-  if (sender) sender.unread = 0
-  previewMails.value?.forEach((mail) => (mail.seen = 1))
+  client
+    .mutation(api.mail.messages.seen, {
+      account: store.accountId,
+      ids,
+      seen: true,
+    })
+    .then(() => store.mailboxes.refetch().catch(() => {}))
+    .catch((error) => raiseError(error))
+  senderRows.value?.find((s: ScreeningSender) => s.from_email === openSender.value?.from_email)
 }
-
-const senders = createResource({
-  url: 'suite.mail.api.mail.get_screening_senders',
-  makeParams: () => ({ account: store.accountId }),
-  auto: true,
-})
+const senderQuery = useQuery(api.mail.screener.senders, () => ({
+  account: store.accountId,
+}))
+const senderRows = computed(() =>
+  (senderQuery.data ?? []).map((row) => ({
+    ...row,
+    from_name: row.from_name ?? '',
+    subject: row.subject ?? '',
+  })),
+)
 
 // The layout's composer, announcing that it sent something (see useListReload). Writing to someone
 // is what accepts them, so the waiting list can be one sender shorter for it.
-watch(listReloadRequest, () => senders.reload())
+watch(listReloadRequest, () => senderQuery.refetch().catch(() => {}))
 
 /**
  * Senders this view has just judged, held only until the route stops naming them.
@@ -611,7 +609,7 @@ const justActed = new Set<string>()
  * you work — so that lands quietly back on the list instead of erroring.
  */
 watch(
-  [() => senderEmail, () => senders.data],
+  [() => senderEmail, () => senderRows.value],
   ([email, list]) => {
     if (!email) {
       justActed.clear()
@@ -619,17 +617,23 @@ watch(
       return
     }
     if (!list) return
-
     const sender = (list as ScreeningSender[]).find((s: ScreeningSender) => s.from_email === email)
     if (sender) {
       // The route has caught up with the list, so nothing is still in flight.
       justActed.clear()
       openSenderFromRoute(sender)
     } else if (!justActed.has(email)) {
-      router.replace({ name: 'mail-screener', params: { accountId: store.accountId } })
+      router.replace({
+        name: 'mail-screener',
+        params: {
+          accountId: store.accountId,
+        },
+      })
     }
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
 
 // Swipe on the open preview (mobile): left → next sender, right → previous — the
@@ -641,7 +645,7 @@ const {
 } = useSwipeNav(
   () => isMobile.value && !!openSender.value,
   (offset) => {
-    const list = senders.data ?? []
+    const list = senderRows.value ?? []
     const idx = list.findIndex(
       (s: ScreeningSender) => s.from_email === openSender.value!.from_email,
     )
@@ -669,7 +673,6 @@ watch(openSender, (sender) => {
 const handleKeydown = (e: KeyboardEvent) => {
   const key = e.key.toLowerCase()
   if (!openSender.value || shouldIgnoreKeypress(e)) return
-
   if (key === 'escape') {
     e.preventDefault()
     closeSender()
@@ -699,21 +702,18 @@ const handleKeydown = (e: KeyboardEvent) => {
     runAction('allow', [openSender.value.from_email], undefined, key === 'e' ? 'archive' : 'trash')
     return
   }
-
   if (!isNavigationKey(key)) return
-
   e.preventDefault()
   const offset = navigationOffset(key)
-  const list = senders.data ?? []
+  const list = senderRows.value ?? []
   const cur = list.findIndex((s: ScreeningSender) => s.from_email === openSender.value!.from_email)
   const next = list[cur + offset]
   if (!next) return
-
   selectSender(next, true)
   nextTick(() =>
-    document
-      .querySelector(`[data-sender-email="${next.from_email}"]`)
-      ?.scrollIntoView({ block: 'nearest' }),
+    document.querySelector(`[data-sender-email="${next.from_email}"]`)?.scrollIntoView({
+      block: 'nearest',
+    }),
   )
 }
 
@@ -723,20 +723,16 @@ const handleKeydown = (e: KeyboardEvent) => {
 // the thread count.
 const screeningCount = () =>
   store.mailboxes.data?.find((m: MailboxData) => m.id === store.mailboxIds.screener)?.total_emails
-
 const pollForChanges = async () => {
   const prev = screeningCount()
-  await store.mailboxes.reload()
-  if (screeningCount() !== prev) senders.reload()
+  await store.mailboxes.refetch().catch(() => {})
+  if (screeningCount() !== prev) senderQuery.refetch().catch(() => {})
 }
-
 let pollInterval: ReturnType<typeof setInterval>
-
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
   pollInterval = setInterval(pollForChanges, 30000)
 })
-
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   // Don't leave a verdict undoable from a view that can't show what came back.
@@ -748,20 +744,17 @@ onUnmounted(() => {
     flushScreening()
   }
 })
-
 usePageMeta(() => {
   // Name the open sender, the way the mailbox view names the open thread. The queue's own title is
   // the right one for the list, but it made every sender's page — each its own URL, each shareable
   // and restorable — read as the same tab, and the count kept moving under it as you triaged.
   if (openSender.value)
     return appPageMeta(openSender.value.from_name || openSender.value.from_email, 'Mail')
-
-  const n = senders.data?.length ?? 0
+  const n = senderRows.value?.length ?? 0
   return appPageMeta(n ? `(${n}) ${__('Screener')}` : __('Screener'), 'Mail')
 })
-
 const waitingLabel = computed(() => {
-  const n = senders.data?.length ?? 0
+  const n = senderRows.value?.length ?? 0
   return n === 1 ? __('1 new sender') : __('{0} new senders', [String(n)])
 })
 
@@ -769,29 +762,29 @@ const waitingLabel = computed(() => {
 // mail already waiting in the Screener is filed — Inbox, or straight to Archive/Trash when you've
 // read it here and don't want to triage it again.
 type AllowDestination = 'inbox' | 'archive' | 'trash'
-
-const allowResource = createResource({
-  url: 'suite.mail.api.mail.allow_screening_senders',
-  makeParams: ({
-    from_emails,
-    destination,
-  }: {
-    from_emails: string[]
-    destination: AllowDestination
-  }) => ({
+const allowResource = useMutation(api.mail.screener.allow)
+async function allowResourceSubmit({
+  from_emails,
+  destination,
+}: {
+  from_emails: string[]
+  destination: AllowDestination
+}) {
+  const input: InputOf<typeof api.mail.screener.allow> = {
     account: store.accountId,
     from_emails,
     destination,
-  }),
-})
-
-const screenOutResource = createResource({
-  url: 'suite.mail.api.mail.screen_out_senders',
-  makeParams: ({ from_emails }: { from_emails: string[] }) => ({
+  }
+  return await allowResource.run(input)
+}
+const screenOutResource = useMutation(api.mail.screener.reject)
+async function screenOutResourceSubmit({ from_emails }: { from_emails: string[] }) {
+  const input: InputOf<typeof api.mail.screener.reject> = {
     account: store.accountId,
     from_emails,
-  }),
-})
+  }
+  return await screenOutResource.run(input)
+}
 
 // Deny/Allow clicks are coalesced and flushed as one batched request per action. Triaging senders in
 // quick succession otherwise fires a request per click, and each rebuilds the shared automation sieve —
@@ -800,7 +793,10 @@ const screenOutResource = createResource({
 // wins if both buttons are hit before the flush.
 const SCREEN_FLUSH_DELAY = 500
 // Allows carry their destination, so they batch per destination rather than as one set.
-const pending = { allow: new Map<string, AllowDestination>(), screenOut: new Set<string>() }
+const pending = {
+  allow: new Map<string, AllowDestination>(),
+  screenOut: new Set<string>(),
+}
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 let flushChain: Promise<void> = Promise.resolve()
 
@@ -812,7 +808,6 @@ let flushChain: Promise<void> = Promise.resolve()
  * verdict has just emptied of them. Undo is the only caller.
  */
 const idsBySender = new Map<string, (ids: string[]) => void>()
-
 const awaitVerdictIds = (fromEmail: string) =>
   new Promise<string[]>((resolve) => {
     // A second verdict on the same sender before the flush replaces the first, whose toast has been
@@ -830,7 +825,6 @@ const resolveVerdictIds = (fromEmails: string[], moved: Record<string, string[]>
     resolve(moved?.[email] ?? [])
   }
 }
-
 const flushScreening = () => {
   flushTimer = null
   const allowGroups = new Map<AllowDestination, string[]>()
@@ -852,7 +846,10 @@ const flushScreening = () => {
     let firstError: unknown
     for (const [destination, from_emails] of allowGroups) {
       try {
-        const moved = await allowResource.submit({ from_emails, destination })
+        const moved = await allowResourceSubmit({
+          from_emails,
+          destination,
+        })
         resolveVerdictIds(from_emails, moved)
         submitted = true
       } catch (error) {
@@ -862,7 +859,9 @@ const flushScreening = () => {
     }
     if (screenOutEmails.length) {
       try {
-        const junked = await screenOutResource.submit({ from_emails: screenOutEmails })
+        const junked = await screenOutResourceSubmit({
+          from_emails: screenOutEmails,
+        })
         resolveVerdictIds(screenOutEmails, junked)
         submitted = true
       } catch (error) {
@@ -871,14 +870,13 @@ const flushScreening = () => {
       }
     }
     // Allowing/screening senders changes inbox/junk counts too.
-    if (submitted) store.mailboxes.reload()
+    if (submitted) store.mailboxes.refetch().catch(() => {})
     if (firstError) {
-      senders.reload()
-      raiseToast((firstError as Error).message || __('Action failed.'), 'error')
+      senderQuery.refetch().catch(() => {})
+      raiseError(firstError)
     }
   })
 }
-
 const queueScreening = (
   action: 'allow' | 'screenOut',
   fromEmails: string[],
@@ -910,7 +908,7 @@ const runAction = (
   // straight through — the one below, or the one above at the end of the queue, since a pass that
   // starts at the oldest sender spends all of itself there (see neighbourAfterRemoval). Resolved
   // before the optimistic removal.
-  const list = senders.data ?? []
+  const list = senderRows.value ?? []
   const actingOnOpen = !!openSender.value && matchSender(openSender.value)
   let nextSender: ScreeningSender | undefined
   if (actingOnOpen) {
@@ -934,9 +932,11 @@ const runAction = (
   list.forEach((s: ScreeningSender, index: number) => {
     if (!matchSender(s)) return
     justActed.add(s.from_email)
-    removed.push({ index, sender: s })
+    removed.push({
+      index,
+      sender: s,
+    })
   })
-  senders.data = list.filter((s: ScreeningSender) => !matchSender(s))
 
   // Advance to the next sender (or close the preview if there's nothing below).
   if (actingOnOpen) {
@@ -949,13 +949,12 @@ const runAction = (
   // per sender — what comes back is what moved, whether or not this list showed it.
   const movedIds = Promise.all(fromEmails.map(awaitVerdictIds)).then((groups) => groups.flat())
 
-  // `list`, not `senders.data`: the row has just been dropped from the list, and the toast still
+  // `list`, not `senderRows.value`: the row has just been dropped from the list, and the toast still
   // wants to name the sender the way the row did. A domain target matches nobody, which is right.
   const acted =
     fromEmails.length === 1
       ? list.find((s: ScreeningSender) => s.from_email === fromEmails[0])
       : undefined
-
   queueScreening(action, fromEmails, destination)
   announce(action, fromEmails, destination, movedIds, removed, acted?.from_name)
 }
@@ -989,15 +988,13 @@ interface RemovedSender {
  * overlapping the undo). Ascending index, so each splice lands before the next one is measured.
  */
 const restoreSenders = (removed: RemovedSender[]) => {
-  const list = [...((senders.data ?? []) as ScreeningSender[])]
+  const list = [...((senderRows.value ?? []) as ScreeningSender[])]
   const present = new Set(list.map((s) => s.from_email))
-
   for (const { index, sender } of [...removed].sort((a, b) => a.index - b.index)) {
     if (present.has(sender.from_email)) continue
     list.splice(Math.min(index, list.length), 0, sender)
   }
-
-  senders.data = list
+  void senderQuery.refetch().catch(() => {})
 }
 
 /**
@@ -1032,26 +1029,25 @@ const undoVerdict = async (
   // does for every other undoable action in mail; not reused here because its failure branch is one
   // generic line, and an undo that did not land is worth naming precisely.
   const pendingToast = raiseToast(undone)
-
   try {
     const ids = await settledVerdictIds(movedIds)
     // One call so the rules are dropped and the mail comes home together: a half-undone verdict —
     // the mail back in the Screener but the rule still standing — would let the senders past it.
-    await call('suite.mail.api.mail.undo_screening_verdict', {
+    await client.mutation(api.mail.screener.undo, {
       account: store.accountId,
       from_emails: fromEmails,
       ids,
     })
     // Reconciliation, not the mechanism: the rows are already back. This settles what the optimistic
     // splice can only approximate — the server's ordering, and counts that moved while it was away.
-    senders.reload()
-    store.mailboxes.reload()
+    senderQuery.refetch().catch(() => {})
+    store.mailboxes.refetch().catch(() => {})
   } catch (error) {
     // The undo did not land, so the verdict still stands: retract the line that said otherwise and
     // let the refetch take the rows away again.
     toast.dismiss(pendingToast)
-    senders.reload()
-    raiseToast((error as Error).message || __('Could not undo that.'), 'error')
+    senderQuery.refetch().catch(() => {})
+    raiseError(error)
   }
 }
 
@@ -1084,7 +1080,6 @@ const announce = (
   // `@domain` the rule is written as; a sweep over the whole queue has no one name, so it counts.
   const count = fromEmails.length
   const subject = count > 1 ? __('{0} senders', [String(count)]) : senderName || target
-
   const verdict = action === 'allow' ? __('{0} allowed.', [subject]) : __('{0} denied.', [subject])
 
   // Archive and Trash file the mail somewhere this list can't show, and the verdict alone would
@@ -1116,9 +1111,16 @@ const announce = (
 
   // Through `undo`, not the closure directly: it is what clears the slot, so pressing the button
   // leaves nothing behind for Cmd+Z to run a second time.
-  raiseToast(message, 'success', { label: __('Undo'), onClick: () => undo() }, VERDICT_TOAST_MS)
+  raiseToast(
+    message,
+    'success',
+    {
+      label: __('Undo'),
+      onClick: () => undo(),
+    },
+    VERDICT_TOAST_MS,
+  )
 }
-
 const allow = (fromEmails: string[], destination: AllowDestination = 'inbox') =>
   runAction('allow', fromEmails, undefined, destination)
 const screenOut = (fromEmails: string[]) => runAction('screenOut', fromEmails)
@@ -1128,7 +1130,6 @@ const screenOut = (fromEmails: string[]) => runAction('screenOut', fromEmails)
 // every already-screened message from that domain too. We also clear every visible sender in the
 // domain in one go.
 const domainOf = (email: string) => email.slice(email.lastIndexOf('@') + 1).toLowerCase()
-
 const runDomainAction = (action: 'allow' | 'screenOut', sender: ScreeningSender) => {
   const domain = domainOf(sender.from_email)
   if (!domain) return
@@ -1168,9 +1169,11 @@ const allowOptions = (sender: ScreeningSender) => [
       },
     ],
   },
-  { group: '', options: [domainOption('allow', sender)] },
+  {
+    group: '',
+    options: [domainOption('allow', sender)],
+  },
 ]
-
 const denyOptions = (sender: ScreeningSender) => [domainOption('screenOut', sender)]
 
 // Everything the desktop split-buttons hold, in one menu — the phone's verdict bar carries only the
@@ -1209,7 +1212,7 @@ const moreOptions = (sender: ScreeningSender) => [
       {
         label: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
         icon: GlobeOff,
-        theme: 'red',
+        theme: 'red' as const,
         onClick: () => runDomainAction('screenOut', sender),
       },
     ],
@@ -1221,32 +1224,33 @@ const moreOptions = (sender: ScreeningSender) => [
 const showClearAll = ref(false)
 
 // Shared by Clear All and the turn-off flow, which is why the success handling lives with each caller.
-const moveScreeningToInbox = createResource({
-  url: 'suite.mail.api.mail.move_screening_mails_to_inbox',
-  makeParams: () => ({ account: store.accountId }),
-})
-
+const moveScreeningToInbox = useMutation(api.mail.screening.moveToInbox)
+async function moveScreeningToInboxSubmit() {
+  const input: InputOf<typeof api.mail.screening.moveToInbox> = {
+    account: store.accountId,
+  }
+  await moveScreeningToInbox.run(input)
+}
 const clearAll = async () => {
-  await moveScreeningToInbox.submit()
-  senders.data = []
+  await moveScreeningToInboxSubmit()
+  void senderQuery.refetch().catch(() => {})
   closeSender()
   showClearAll.value = false
-  store.mailboxes.reload()
+  store.mailboxes.refetch().catch(() => {})
   raiseToast(__('Unscreened messages moved to Inbox.'))
 }
-
 const clearAllOptions = computed(() => ({
   title: __('Move All to Inbox'),
   message: __(
     'Messages from {0} senders will be moved to your Inbox. Future emails from them will still go to the Screener.',
-    [String(senders.data?.length ?? 0)],
+    [String(senderRows.value?.length ?? 0)],
   ),
   actions: [
     {
       label: __('Move to Inbox'),
-      variant: 'solid',
+      variant: 'solid' as const,
       onClick: clearAll,
-      loading: moveScreeningToInbox.loading,
+      loading: moveScreeningToInbox.isPending,
     },
   ],
 }))
@@ -1264,7 +1268,6 @@ const readExplainerDismissed = () => {
   }
 }
 const explainerDismissed = ref(readExplainerDismissed())
-
 const dismissExplainer = () => {
   explainerDismissed.value = true
   try {
@@ -1276,28 +1279,23 @@ const dismissExplainer = () => {
 
 // Bulk triage over every waiting sender. Allow/Deny reuse the per-sender flow (optimistic clear +
 // batched request) but, since they act on everyone at once, go behind a confirm dialog.
-const allSenderEmails = () => (senders.data ?? []).map((s: ScreeningSender) => s.from_email)
-
+const allSenderEmails = () => (senderRows.value ?? []).map((s: ScreeningSender) => s.from_email)
 const showBulkConfirm = ref(false)
 const pendingBulkAction = ref<'allow' | 'screenOut' | null>(null)
-
 const allowAll = () => confirmBulk('allow')
 const denyAll = () => confirmBulk('screenOut')
-
 const confirmBulk = (action: 'allow' | 'screenOut') => {
   pendingBulkAction.value = action
   showBulkConfirm.value = true
 }
-
 const runBulk = () => {
   const action = pendingBulkAction.value
   showBulkConfirm.value = false
   pendingBulkAction.value = null
   if (action) runAction(action, allSenderEmails())
 }
-
 const bulkConfirmOptions = computed(() => {
-  const count = senders.data?.length ?? 0
+  const count = senderRows.value?.length ?? 0
   const isAllow = pendingBulkAction.value === 'allow'
   return {
     title: isAllow ? __('Allow All Senders') : __('Deny All Senders'),
@@ -1307,16 +1305,27 @@ const bulkConfirmOptions = computed(() => {
     actions: [
       {
         label: isAllow ? __('Allow All') : __('Deny All'),
-        variant: 'solid',
+        variant: 'solid' as const,
         onClick: runBulk,
       },
     ],
   }
 })
-
 const bulkOptions = computed(() => [
-  { label: __('Allow All'), icon: Check, onClick: allowAll },
-  { label: __('Deny All'), icon: X, onClick: denyAll },
-  { label: __('Move All to Inbox'), icon: Inbox, onClick: () => (showClearAll.value = true) },
+  {
+    label: __('Allow All'),
+    icon: Check,
+    onClick: allowAll,
+  },
+  {
+    label: __('Deny All'),
+    icon: X,
+    onClick: denyAll,
+  },
+  {
+    label: __('Move All to Inbox'),
+    icon: Inbox,
+    onClick: () => (showClearAll.value = true),
+  },
 ])
 </script>

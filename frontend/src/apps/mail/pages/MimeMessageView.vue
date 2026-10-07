@@ -45,44 +45,16 @@
 </template>
 
 <script lang="ts" setup>
-import { Button, createResource, Tooltip } from 'frappe-ui'
+import { Button, Tooltip } from 'frappe-ui'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import { api, useQuery } from '@/api'
 import { copyToClipBoard } from '@/apps/mail/utils'
 
 const route = useRoute()
 const message = ref('')
-
-interface MimeField {
-  label: string
-  value: string
-  description?: string
-}
-
-interface Mime {
-  message?: string
-  message_id: MimeField
-  created_at: MimeField
-  subject: MimeField
-  from: MimeField
-  to: MimeField
-  cc?: MimeField
-  bcc?: MimeField
-  spf?: MimeField
-  dkim?: MimeField
-  dmarc?: MimeField
-}
-
-const mime = createResource({
-  url: 'suite.mail.api.mail.get_mime_message',
-  auto: true,
-  makeParams: () => ({ name: route.params.id }),
-  transform: (data: Mime) => {
-    message.value = data.message as string
-    delete data.message
-    if (data.cc && !data.cc.value) delete data.cc
-    if (data.bcc && !data.bcc.value) delete data.bcc
-  },
-})
+const mime = useQuery(api.mail.messages.mime, () => ({
+  name: String(route.params.id),
+}))
 </script>

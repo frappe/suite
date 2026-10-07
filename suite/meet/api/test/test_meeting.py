@@ -26,6 +26,7 @@ from suite.meet.api.meeting import (
 )
 from suite.meet.api.schedule import create_meet_link, create_scheduled_meeting
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
+from suite.meet.utils.sfu_config import get_sfu_config
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
@@ -96,6 +97,15 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertTrue(decoded["is_host"])
         self.assertFalse(decoded["is_cohost"])
         self.assertFalse(decoded["is_guest"])
+
+    def test_presence_preview_returns_numeric_port_from_string_site_config(self):
+        frappe.set_user(self.host_email)
+        get_sfu_config.clear_cache()
+        self.addCleanup(get_sfu_config.clear_cache)
+        with patch.dict(frappe.conf, {"sfu_server_port": "3000"}):
+            result = get_sfu_presence_preview_token(self.meeting.name)
+        self.assertEqual(result["sfu_port"], 3000)
+        self.assertIsInstance(result["sfu_port"], int)
 
     def test_unapproved_user_gets_restricted_preview_without_sfu_token(self):
         frappe.set_user(self.outsider_email)

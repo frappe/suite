@@ -1,211 +1,635 @@
 // Generated from src/platform/transport/contract.json. Do not edit.
-import type { Operation } from '@/platform/transport'
+import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 
-export type AccountGetInput = Record<string, never>
+export type GetPreferencesInput = Record<string, never>
 
-export type AccountGetOutput = ({ "name": string; "email": string; "full_name": string; "avatar": (string) | (null); "roles": { "system_manager": boolean }; "is_jmap_configured": boolean }) | (null)
+export type GetPreferencesOutput = {
+  name: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  user_image: string | null
+  language: string | null
+  time_zone: string | null
+  desk_theme: string | null
+}
 
-export type AccountGetError = never
+export type GetPreferencesError = never
 
-const operationAccountGet: Operation<AccountGetInput, AccountGetOutput, AccountGetError> = {
-  id: "account_get",
-  owner: "suite",
-  method: "GET",
-  path: "account",
-  prefix: "/api/suite/",
+const operationGetPreferences: QueryRef<
+  GetPreferencesInput,
+  GetPreferencesOutput,
+  GetPreferencesError
+> = {
+  id: 'get_preferences',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'preferences.get',
+  method: 'GET',
+  path: 'preferences',
+  prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
   errors: [],
-  validateInput(value): asserts value is AccountGetInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'account_get input') },
-  validateOutput(value): asserts value is AccountGetOutput { assertSchema(value, {"$defs":{"Account":{"properties":{"name":{"title":"Name","type":"string"},"email":{"title":"Email","type":"string"},"full_name":{"title":"Full Name","type":"string"},"avatar":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Avatar"},"roles":{"$ref":"#/$defs/AccountRoles"},"is_jmap_configured":{"title":"Is Jmap Configured","type":"boolean"}},"required":["name","email","full_name","avatar","roles","is_jmap_configured"],"title":"Account","type":"object"},"AccountRoles":{"properties":{"system_manager":{"title":"System Manager","type":"boolean"}},"required":["system_manager"],"title":"AccountRoles","type":"object"}},"anyOf":[{"$ref":"#/$defs/Account"},{"type":"null"}]}, 'account_get output') },
+  loadValidators: async () => (await import('./validators')).operationGetPreferences,
+}
+
+export type UpdatePreferencesInput = {
+  first_name?: string
+  last_name?: string
+  user_image?: string | null
+  language?: string
+  time_zone?: string
+}
+
+export type UpdatePreferencesOutput = {
+  name: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  user_image: string | null
+  language: string | null
+  time_zone: string | null
+  desk_theme: string | null
+}
+
+export type UpdatePreferencesError = never
+
+const operationUpdatePreferences: MutationRef<
+  UpdatePreferencesInput,
+  UpdatePreferencesOutput,
+  UpdatePreferencesError
+> = {
+  id: 'update_preferences',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'preferences.update',
+  method: 'PATCH',
+  path: 'preferences',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationUpdatePreferences,
+}
+
+export type LanguagesOutputLanguage = { name: string; language_name: string }
+
+export type LanguagesInput = Record<string, never>
+
+export type LanguagesOutput = Array<LanguagesOutputLanguage>
+
+export type LanguagesError = never
+
+const operationLanguages: QueryRef<LanguagesInput, LanguagesOutput, LanguagesError> = {
+  id: 'languages',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'locales.languages',
+  method: 'GET',
+  path: 'languages',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationLanguages,
+}
+
+export type AccountGetOutputAccount = {
+  name: string
+  email: string
+  full_name: string
+  avatar: string | null
+  roles: AccountGetOutputAccountRoles
+  is_jmap_configured: boolean
+}
+
+export type AccountGetOutputAccountRoles = { system_manager: boolean }
+
+export type AccountGetInput = Record<string, never>
+
+export type AccountGetOutput = AccountGetOutputAccount | null
+
+export type AccountGetError = never
+
+const operationAccountGet: QueryRef<AccountGetInput, AccountGetOutput, AccountGetError> = {
+  id: 'account_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'account.get',
+  method: 'GET',
+  path: 'account',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationAccountGet,
 }
 
 export type SiteGetInput = Record<string, never>
 
-export type SiteGetOutput = { "is_onboarded": boolean; "can_onboard": boolean; "workspace_name": string; "workspace_logo": string }
+export type SiteGetOutput = {
+  is_onboarded: boolean
+  can_onboard: boolean
+  workspace_name: string
+  workspace_logo: string
+}
 
 export type SiteGetError = never
 
-const operationSiteGet: Operation<SiteGetInput, SiteGetOutput, SiteGetError> = {
-  id: "site_get",
-  owner: "suite",
-  method: "GET",
-  path: "site",
-  prefix: "/api/suite/",
+const operationSiteGet: QueryRef<SiteGetInput, SiteGetOutput, SiteGetError> = {
+  id: 'site_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'site.get',
+  method: 'GET',
+  path: 'site',
+  prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
   errors: [],
-  validateInput(value): asserts value is SiteGetInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'site_get input') },
-  validateOutput(value): asserts value is SiteGetOutput { assertSchema(value, {"properties":{"is_onboarded":{"title":"Is Onboarded","type":"boolean"},"can_onboard":{"title":"Can Onboard","type":"boolean"},"workspace_name":{"title":"Workspace Name","type":"string"},"workspace_logo":{"title":"Workspace Logo","type":"string"}},"required":["is_onboarded","can_onboard","workspace_name","workspace_logo"],"title":"Site","type":"object"}, 'site_get output') },
+  loadValidators: async () => (await import('./validators')).operationSiteGet,
 }
 
-export type SitePatchCompleteOnboardingInput = { "is_onboarded": true; "timezone"?: string }
+export type SitePatchCompleteOnboardingInput = { is_onboarded: true; timezone?: string }
 
-export type SitePatchCompleteOnboardingOutput = { "is_onboarded": boolean; "can_onboard": boolean; "workspace_name": string; "workspace_logo": string }
+export type SitePatchCompleteOnboardingOutput = {
+  is_onboarded: boolean
+  can_onboard: boolean
+  workspace_name: string
+  workspace_logo: string
+}
 
-export type SitePatchCompleteOnboardingError = "BadRequest" | "PermissionError"
+export type SitePatchCompleteOnboardingError = 'BadRequest' | 'PermissionError'
 
-const operationSitePatchCompleteOnboarding: Operation<SitePatchCompleteOnboardingInput, SitePatchCompleteOnboardingOutput, SitePatchCompleteOnboardingError> = {
-  id: "site_patch.complete_onboarding",
-  owner: "suite",
-  method: "PATCH",
-  path: "site",
-  prefix: "/api/suite/",
+const operationSitePatchCompleteOnboarding: MutationRef<
+  SitePatchCompleteOnboardingInput,
+  SitePatchCompleteOnboardingOutput,
+  SitePatchCompleteOnboardingError
+> = {
+  id: 'site_patch.complete_onboarding',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'site.completeOnboarding',
+  method: 'PATCH',
+  path: 'site',
+  prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ["BadRequest","PermissionError"],
-  validateInput(value): asserts value is SitePatchCompleteOnboardingInput { assertSchema(value, {"type":"object","properties":{"is_onboarded":{"const":true,"title":"Is Onboarded","type":"boolean"},"timezone":{"title":"Timezone","type":"string"}},"required":["is_onboarded"],"additionalProperties":false,"$defs":{}}, 'site_patch.complete_onboarding input') },
-  validateOutput(value): asserts value is SitePatchCompleteOnboardingOutput { assertSchema(value, {"properties":{"is_onboarded":{"title":"Is Onboarded","type":"boolean"},"can_onboard":{"title":"Can Onboard","type":"boolean"},"workspace_name":{"title":"Workspace Name","type":"string"},"workspace_logo":{"title":"Workspace Logo","type":"string"}},"required":["is_onboarded","can_onboard","workspace_name","workspace_logo"],"title":"Site","type":"object"}, 'site_patch.complete_onboarding output') },
+  errors: ['BadRequest', 'PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationSitePatchCompleteOnboarding,
 }
 
-export type SitePatchUpdateSiteSettingsInput = { "workspace_name": string; "workspace_logo"?: string }
+export type SitePatchUpdateSiteSettingsInput = { workspace_name: string; workspace_logo?: string }
 
-export type SitePatchUpdateSiteSettingsOutput = { "is_onboarded": boolean; "can_onboard": boolean; "workspace_name": string; "workspace_logo": string }
+export type SitePatchUpdateSiteSettingsOutput = {
+  is_onboarded: boolean
+  can_onboard: boolean
+  workspace_name: string
+  workspace_logo: string
+}
 
-export type SitePatchUpdateSiteSettingsError = "BadRequest" | "PermissionError"
+export type SitePatchUpdateSiteSettingsError = 'BadRequest' | 'PermissionError'
 
-const operationSitePatchUpdateSiteSettings: Operation<SitePatchUpdateSiteSettingsInput, SitePatchUpdateSiteSettingsOutput, SitePatchUpdateSiteSettingsError> = {
-  id: "site_patch.update_site_settings",
-  owner: "suite",
-  method: "PATCH",
-  path: "site",
-  prefix: "/api/suite/",
+const operationSitePatchUpdateSiteSettings: MutationRef<
+  SitePatchUpdateSiteSettingsInput,
+  SitePatchUpdateSiteSettingsOutput,
+  SitePatchUpdateSiteSettingsError
+> = {
+  id: 'site_patch.update_site_settings',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'site.updateSettings',
+  method: 'PATCH',
+  path: 'site',
+  prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ["BadRequest","PermissionError"],
-  validateInput(value): asserts value is SitePatchUpdateSiteSettingsInput { assertSchema(value, {"type":"object","properties":{"workspace_name":{"title":"Workspace Name","type":"string"},"workspace_logo":{"title":"Workspace Logo","type":"string"}},"required":["workspace_name"],"additionalProperties":false,"$defs":{}}, 'site_patch.update_site_settings input') },
-  validateOutput(value): asserts value is SitePatchUpdateSiteSettingsOutput { assertSchema(value, {"properties":{"is_onboarded":{"title":"Is Onboarded","type":"boolean"},"can_onboard":{"title":"Can Onboard","type":"boolean"},"workspace_name":{"title":"Workspace Name","type":"string"},"workspace_logo":{"title":"Workspace Logo","type":"string"}},"required":["is_onboarded","can_onboard","workspace_name","workspace_logo"],"title":"Site","type":"object"}, 'site_patch.update_site_settings output') },
+  errors: ['BadRequest', 'PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationSitePatchUpdateSiteSettings,
+}
+
+export type UsersGetOutputUser = {
+  name: string
+  email: string
+  full_name: string
+  user_image: string | null
+  is_admin: boolean
 }
 
 export type UsersGetInput = Record<string, never>
 
-export type UsersGetOutput = Array<{ "name": string; "email": string; "full_name": string; "user_image": (string) | (null); "is_admin": boolean }>
+export type UsersGetOutput = Array<UsersGetOutputUser>
 
-export type UsersGetError = "PermissionError"
+export type UsersGetError = 'PermissionError'
 
-const operationUsersGet: Operation<UsersGetInput, UsersGetOutput, UsersGetError> = {
-  id: "users_get",
-  owner: "suite",
-  method: "GET",
-  path: "users",
-  prefix: "/api/suite/",
+const operationUsersGet: QueryRef<UsersGetInput, UsersGetOutput, UsersGetError> = {
+  id: 'users_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'users.list',
+  method: 'GET',
+  path: 'users',
+  prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ["PermissionError"],
-  validateInput(value): asserts value is UsersGetInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'users_get input') },
-  validateOutput(value): asserts value is UsersGetOutput { assertSchema(value, {"$defs":{"User":{"properties":{"name":{"title":"Name","type":"string"},"email":{"title":"Email","type":"string"},"full_name":{"title":"Full Name","type":"string"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"},"is_admin":{"title":"Is Admin","type":"boolean"}},"required":["name","email","full_name","user_image","is_admin"],"title":"User","type":"object"}},"items":{"$ref":"#/$defs/User"},"type":"array"}, 'users_get output') },
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationUsersGet,
+}
+
+export type InvitationsGetOutputInvitation = {
+  name: string
+  email: string
+  creation: string
+  invited_by: string
+  invited_by_name: string | null
 }
 
 export type InvitationsGetInput = Record<string, never>
 
-export type InvitationsGetOutput = Array<{ "name": string; "email": string; "creation": string; "invited_by": string; "invited_by_name": (string) | (null) }>
+export type InvitationsGetOutput = Array<InvitationsGetOutputInvitation>
 
-export type InvitationsGetError = "PermissionError"
+export type InvitationsGetError = 'PermissionError'
 
-const operationInvitationsGet: Operation<InvitationsGetInput, InvitationsGetOutput, InvitationsGetError> = {
-  id: "invitations_get",
-  owner: "suite",
-  method: "GET",
-  path: "invitations",
-  prefix: "/api/suite/",
+const operationInvitationsGet: QueryRef<
+  InvitationsGetInput,
+  InvitationsGetOutput,
+  InvitationsGetError
+> = {
+  id: 'invitations_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'invitations.list',
+  method: 'GET',
+  path: 'invitations',
+  prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ["PermissionError"],
-  validateInput(value): asserts value is InvitationsGetInput { assertSchema(value, {"type":"object","properties":{},"required":[],"additionalProperties":false,"$defs":{}}, 'invitations_get input') },
-  validateOutput(value): asserts value is InvitationsGetOutput { assertSchema(value, {"$defs":{"Invitation":{"properties":{"name":{"title":"Name","type":"string"},"email":{"title":"Email","type":"string"},"creation":{"title":"Creation","type":"string"},"invited_by":{"title":"Invited By","type":"string"},"invited_by_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Invited By Name"}},"required":["name","email","creation","invited_by","invited_by_name"],"title":"Invitation","type":"object"}},"items":{"$ref":"#/$defs/Invitation"},"type":"array"}, 'invitations_get output') },
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationInvitationsGet,
 }
 
-export type InvitationsPostInput = { "emails": string }
+export type InvitationsPostInput = { emails: string }
 
-export type InvitationsPostOutput = { "disabled_user_emails": Array<string>; "accepted_invite_emails": Array<string>; "pending_invite_emails": Array<string>; "invited_emails": Array<string> }
-
-export type InvitationsPostError = "BadRequest" | "PermissionError"
-
-const operationInvitationsPost: Operation<InvitationsPostInput, InvitationsPostOutput, InvitationsPostError> = {
-  id: "invitations_post",
-  owner: "suite",
-  method: "POST",
-  path: "invitations",
-  prefix: "/api/suite/",
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ["BadRequest","PermissionError"],
-  validateInput(value): asserts value is InvitationsPostInput { assertSchema(value, {"type":"object","properties":{"emails":{"title":"Emails","type":"string"}},"required":["emails"],"additionalProperties":false,"$defs":{}}, 'invitations_post input') },
-  validateOutput(value): asserts value is InvitationsPostOutput { assertSchema(value, {"properties":{"disabled_user_emails":{"items":{"type":"string"},"title":"Disabled User Emails","type":"array"},"accepted_invite_emails":{"items":{"type":"string"},"title":"Accepted Invite Emails","type":"array"},"pending_invite_emails":{"items":{"type":"string"},"title":"Pending Invite Emails","type":"array"},"invited_emails":{"items":{"type":"string"},"title":"Invited Emails","type":"array"}},"required":["disabled_user_emails","accepted_invite_emails","pending_invite_emails","invited_emails"],"title":"InvitationResult","type":"object"}, 'invitations_post output') },
+export type InvitationsPostOutput = {
+  disabled_user_emails: Array<string>
+  accepted_invite_emails: Array<string>
+  pending_invite_emails: Array<string>
+  invited_emails: Array<string>
 }
 
-export type PeopleGetInput = { "q"?: string; "cursor"?: string }
+export type InvitationsPostError = 'BadRequest' | 'PermissionError'
 
-export type PeopleGetOutput = { "rows": Array<({ "kind": "user"; "name": string; "email": string; "full_name": (string) | (null); "user_image": (string) | (null) }) | ({ "kind": "group"; "name": string; "member_count": number })>; "next_cursor": (string) | (null) }
-
-export type PeopleGetError = "BadRequest" | "BadCursor" | "PermissionError"
-
-const operationPeopleGet: Operation<PeopleGetInput, PeopleGetOutput, PeopleGetError> = {
-  id: "people_get",
-  owner: "suite",
-  method: "GET",
-  path: "people",
-  prefix: "/api/suite/",
+const operationInvitationsPost: MutationRef<
+  InvitationsPostInput,
+  InvitationsPostOutput,
+  InvitationsPostError
+> = {
+  id: 'invitations_post',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'invitations.create',
+  method: 'POST',
+  path: 'invitations',
+  prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ["BadRequest","BadCursor","PermissionError"],
-  validateInput(value): asserts value is PeopleGetInput { assertSchema(value, {"type":"object","properties":{"q":{"title":"Q","type":"string"},"cursor":{"title":"Cursor","type":"string"}},"required":[],"additionalProperties":false,"$defs":{}}, 'people_get input') },
-  validateOutput(value): asserts value is PeopleGetOutput { assertSchema(value, {"$defs":{"PersonGroup":{"properties":{"kind":{"const":"group","title":"Kind","type":"string"},"name":{"title":"Name","type":"string"},"member_count":{"title":"Member Count","type":"integer"}},"required":["kind","name","member_count"],"title":"PersonGroup","type":"object"},"PersonUser":{"properties":{"kind":{"const":"user","title":"Kind","type":"string"},"name":{"title":"Name","type":"string"},"email":{"title":"Email","type":"string"},"full_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Full Name"},"user_image":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"User Image"}},"required":["kind","name","email","full_name","user_image"],"title":"PersonUser","type":"object"}},"properties":{"rows":{"items":{"anyOf":[{"$ref":"#/$defs/PersonUser"},{"$ref":"#/$defs/PersonGroup"}]},"title":"Rows","type":"array"},"next_cursor":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Next Cursor"}},"required":["rows","next_cursor"],"title":"PeoplePage","type":"object"}, 'people_get output') },
+  errors: ['BadRequest', 'PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationInvitationsPost,
+}
+
+export type PeopleGetOutputPersonGroup = { kind: 'group'; name: string; member_count: number }
+
+export type PeopleGetOutputPersonUser = {
+  kind: 'user'
+  name: string
+  email: string
+  full_name: string | null
+  user_image: string | null
+}
+
+export type PeopleGetInput = { q?: string; cursor?: string }
+
+export type PeopleGetOutput = {
+  rows: Array<PeopleGetOutputPersonUser | PeopleGetOutputPersonGroup>
+  next_cursor: string | null
+}
+
+export type PeopleGetError = 'BadRequest' | 'BadCursor' | 'PermissionError'
+
+const operationPeopleGet: PageRef<
+  PeopleGetInput,
+  PeopleGetOutputPersonUser | PeopleGetOutputPersonGroup,
+  PeopleGetError,
+  PeopleGetOutput
+> = {
+  id: 'people_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'people.list',
+  page: { cursor: 'cursor', rows: 'rows', next: 'next_cursor' },
+  method: 'GET',
+  path: 'people',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['BadRequest', 'BadCursor', 'PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationPeopleGet,
+}
+
+export type FrappeLoginInput = { usr: string; pwd: string }
+
+export type FrappeLoginOutput = unknown
+
+export type FrappeLoginError = never
+
+const operationFrappeLogin: MutationRef<FrappeLoginInput, FrappeLoginOutput, FrappeLoginError> = {
+  id: 'frappe.login',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'auth.login',
+  method: 'POST',
+  path: '/api/v2/method/login',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationFrappeLogin,
+}
+
+export type FrappeLogoutInput = Record<string, never>
+
+export type FrappeLogoutOutput = unknown
+
+export type FrappeLogoutError = never
+
+const operationFrappeLogout: MutationRef<FrappeLogoutInput, FrappeLogoutOutput, FrappeLogoutError> =
+  {
+    id: 'frappe.logout',
+    owner: 'suite',
+    kind: 'mutation',
+    publicName: 'auth.logout',
+    method: 'POST',
+    path: '/api/v2/method/logout',
+    prefix: '/api/suite/',
+    pathParams: [],
+    nodeParams: [],
+    entity: null,
+    errors: [],
+    loadValidators: async () => (await import('./validators')).operationFrappeLogout,
+  }
+
+export type FrappeTranslateGetBootTranslationsInput = Record<string, never>
+
+export type FrappeTranslateGetBootTranslationsOutput = { [key: string]: string }
+
+export type FrappeTranslateGetBootTranslationsError = never
+
+const operationFrappeTranslateGetBootTranslations: QueryRef<
+  FrappeTranslateGetBootTranslationsInput,
+  FrappeTranslateGetBootTranslationsOutput,
+  FrappeTranslateGetBootTranslationsError
+> = {
+  id: 'frappe.translate.get_boot_translations',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'translations.get',
+  method: 'GET',
+  path: '/api/v2/method/frappe.translate.get_boot_translations',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () =>
+    (await import('./validators')).operationFrappeTranslateGetBootTranslations,
+}
+
+export type SubscribeInput = { fcm_token: string; project_name: string }
+
+export type SubscribeOutput = { success: boolean; message: string }
+
+export type SubscribeError = never
+
+const operationSubscribe: MutationRef<SubscribeInput, SubscribeOutput, SubscribeError> = {
+  id: 'subscribe',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'push.subscribe',
+  envelope: 'message',
+  method: 'GET',
+  path: '/api/method/frappe.push_notification.subscribe',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationSubscribe,
+}
+
+export type UnsubscribeInput = { fcm_token: string; project_name: string }
+
+export type UnsubscribeOutput = { success: boolean; message: string }
+
+export type UnsubscribeError = never
+
+const operationUnsubscribe: MutationRef<UnsubscribeInput, UnsubscribeOutput, UnsubscribeError> = {
+  id: 'unsubscribe',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'push.unsubscribe',
+  envelope: 'message',
+  method: 'GET',
+  path: '/api/method/frappe.push_notification.unsubscribe',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationUnsubscribe,
+}
+
+export type FrappeUserSwitchThemeInput = { theme: 'Light' | 'Dark' | 'Automatic' }
+
+export type FrappeUserSwitchThemeOutput = null
+
+export type FrappeUserSwitchThemeError = never
+
+const operationFrappeUserSwitchTheme: MutationRef<
+  FrappeUserSwitchThemeInput,
+  FrappeUserSwitchThemeOutput,
+  FrappeUserSwitchThemeError
+> = {
+  id: 'frappe.user.switch_theme',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'preferences.setTheme',
+  empty: true,
+  method: 'POST',
+  path: '/api/v2/method/frappe.core.doctype.user.user.switch_theme',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationFrappeUserSwitchTheme,
+}
+
+export type FrappeUserResetPasswordInput = { key: string; new_password: string }
+
+export type FrappeUserResetPasswordOutput = string
+
+export type FrappeUserResetPasswordError = 'AuthenticationError' | 'ValidationError'
+
+const operationFrappeUserResetPassword: MutationRef<
+  FrappeUserResetPasswordInput,
+  FrappeUserResetPasswordOutput,
+  FrappeUserResetPasswordError
+> = {
+  id: 'frappe.user.reset_password',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'account.resetPassword',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/frappe.core.doctype.user.user.update_password',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['AuthenticationError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationFrappeUserResetPassword,
+}
+
+export type FrappeUserGetTimezonesInput = Record<string, never>
+
+export type FrappeUserGetTimezonesOutput = { timezones: Array<string> }
+
+export type FrappeUserGetTimezonesError = never
+
+const operationFrappeUserGetTimezones: QueryRef<
+  FrappeUserGetTimezonesInput,
+  FrappeUserGetTimezonesOutput,
+  FrappeUserGetTimezonesError
+> = {
+  id: 'frappe.user.get_timezones',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'locales.timezones',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/frappe.core.doctype.user.user.get_timezones',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationFrappeUserGetTimezones,
+}
+
+export type FrappeUserUpdatePasswordInput = { old_password: string; new_password: string }
+
+export type FrappeUserUpdatePasswordOutput = string
+
+export type FrappeUserUpdatePasswordError = 'AuthenticationError' | 'ValidationError'
+
+const operationFrappeUserUpdatePassword: MutationRef<
+  FrappeUserUpdatePasswordInput,
+  FrappeUserUpdatePasswordOutput,
+  FrappeUserUpdatePasswordError
+> = {
+  id: 'frappe.user.update_password',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'account.changePassword',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/frappe.core.doctype.user.user.update_password',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['AuthenticationError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationFrappeUserUpdatePassword,
+}
+
+export type SuiteGenerateUserKeysInput = { user: string }
+
+export type SuiteGenerateUserKeysOutput = { api_key: string; api_secret: string }
+
+export type SuiteGenerateUserKeysError = 'PermissionError'
+
+const operationSuiteGenerateUserKeys: MutationRef<
+  SuiteGenerateUserKeysInput,
+  SuiteGenerateUserKeysOutput,
+  SuiteGenerateUserKeysError
+> = {
+  id: 'suite.generate_user_keys',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'account.generateKeys',
+  method: 'POST',
+  path: '/api/v2/method/suite.utils.user.generate_user_keys',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationSuiteGenerateUserKeys,
 }
 
 export const api = {
-  "account_get": operationAccountGet,
-  "site_get": operationSiteGet,
-  "site_patch": {
-    "complete_onboarding": operationSitePatchCompleteOnboarding,
-    "update_site_settings": operationSitePatchUpdateSiteSettings
+  preferences: {
+    get: operationGetPreferences,
+    update: operationUpdatePreferences,
+    setTheme: operationFrappeUserSwitchTheme,
   },
-  "users_get": operationUsersGet,
-  "invitations_get": operationInvitationsGet,
-  "invitations_post": operationInvitationsPost,
-  "people_get": operationPeopleGet
+  locales: {
+    languages: operationLanguages,
+    timezones: operationFrappeUserGetTimezones,
+  },
+  account: {
+    get: operationAccountGet,
+    resetPassword: operationFrappeUserResetPassword,
+    changePassword: operationFrappeUserUpdatePassword,
+    generateKeys: operationSuiteGenerateUserKeys,
+  },
+  site: {
+    get: operationSiteGet,
+    completeOnboarding: operationSitePatchCompleteOnboarding,
+    updateSettings: operationSitePatchUpdateSiteSettings,
+  },
+  users: {
+    list: operationUsersGet,
+  },
+  invitations: {
+    list: operationInvitationsGet,
+    create: operationInvitationsPost,
+  },
+  people: {
+    list: operationPeopleGet,
+  },
+  auth: {
+    login: operationFrappeLogin,
+    logout: operationFrappeLogout,
+  },
+  translations: {
+    get: operationFrappeTranslateGetBootTranslations,
+  },
+  push: {
+    subscribe: operationSubscribe,
+    unsubscribe: operationUnsubscribe,
+  },
 } as const
-
-function assertSchema(value: unknown, schema: any, label: string, root: any = schema): void {
-  if (!schema || Object.keys(schema).length === 0) return
-  if (schema.$ref) return assertSchema(value, resolveRef(root, schema.$ref), label, root)
-  if (schema.const !== undefined && value !== schema.const) throw new TypeError(label + ' must equal ' + JSON.stringify(schema.const))
-  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) throw new TypeError(label + ' is not an allowed value')
-  if (Array.isArray(schema.anyOf) && !schema.anyOf.some((part: any) => valid(value, part, root))) throw new TypeError(label + ' does not match any allowed shape')
-  if (Array.isArray(schema.oneOf) && schema.oneOf.filter((part: any) => valid(value, part, root)).length !== 1) throw new TypeError(label + ' must match exactly one shape')
-  if (Array.isArray(schema.allOf)) for (const part of schema.allOf) assertSchema(value, part, label, root)
-  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : []
-  if (types.length && !types.some((type: string) => matchesType(value, type))) throw new TypeError(label + ' has the wrong type')
-  if ((types.includes('object') || schema.properties) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>
-    for (const key of schema.required ?? []) if (record[key] === undefined) throw new TypeError(label + '.' + key + ' is required')
-    if (schema.additionalProperties === false) for (const key of Object.keys(record)) if (!(key in (schema.properties ?? {}))) throw new TypeError(label + '.' + key + ' is not allowed')
-    for (const [key, child] of Object.entries(schema.properties ?? {})) if (record[key] !== undefined) assertSchema(record[key], child, label + '.' + key, root)
-  }
-  if ((types.includes('array') || schema.items) && Array.isArray(value)) value.forEach((item, index) => assertSchema(item, schema.items ?? {}, label + '[' + index + ']', root))
-}
-
-function valid(value: unknown, schema: any, root: any): boolean {
-  try { assertSchema(value, schema, 'value', root); return true } catch { return false }
-}
-
-function resolveRef(root: any, ref: string): any {
-  if (!ref.startsWith('#/')) throw new TypeError('Only local JSON schema references are supported')
-  return ref.slice(2).split('/').reduce((value, part) => value?.[part.replace(/~1/g, '/').replace(/~0/g, '~')], root)
-}
-
-function matchesType(value: unknown, type: string): boolean {
-  if (type === 'null') return value === null
-  if (type === 'array') return Array.isArray(value)
-  if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value)
-  if (type === 'integer') return typeof value === 'number' && Number.isInteger(value)
-  return typeof value === type
-}

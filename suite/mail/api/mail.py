@@ -1,6 +1,7 @@
 import hashlib
 import io
 import os
+import re
 import zipfile
 from datetime import datetime
 
@@ -11,6 +12,7 @@ from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.utils import add_to_date, cint, now, random_string
 from jmap import MethodError
+from werkzeug.wrappers import Response
 
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
@@ -18,6 +20,7 @@ from suite.mail.api.contacts import (
     get_contacts,
 )
 from suite.mail.api.utils import get_avatar_url
+from suite.mail.classification import Category
 from suite.mail.doctype.mail_message.mail_message import (
     add_messages_to_mailbox,
     delete_messages,
@@ -83,11 +86,18 @@ SCREENING_FETCH_LIMIT = 500
 # clock: a skewed client clock must not be able to shorten (or invalidate) the hold.
 UNDO_SEND_GRACE_SECONDS = 3
 
-# All Inboxes bounds. limit/start are user-supplied, and per_account_limit (= start + limit) is fetched
+# Unified folder bounds. limit/start are user-supplied, and per_account_limit (= start + limit) is fetched
 # from *every* account and merged in memory, so both are clamped. MAX_FETCH caps the deepest reachable
-# position (page length ~25 → ~20 pages), which is far beyond any real unified-inbox scroll.
+# position (page length ~25 → ~20 pages), which is far beyond any real unified-list scroll.
 ALL_INBOX_MAX_LIMIT = 100
 ALL_INBOX_MAX_FETCH = 500
+
+# Starred is a keyword rather than a mailbox, so it has no slug of its own; it is the one unified
+# folder named outright.
+STARRED_FOLDER = "starred"
+
+# The order the system folders take in the unified folder list; any other role follows them.
+UNIFIED_ROLE_ORDER = ("inbox", "sent", "drafts", "important", "junk", "archive", "trash")
 
 
 def get_undo_send_hold() -> tuple[int, datetime]:
@@ -169,6 +179,9 @@ def get_mailboxes(account: str) -> list[dict]:
     result = []
     for mailbox in mailboxes:
         mailbox_data = {field: mailbox[field] for field in fields}
+        # What the folder is called in the unified views, so switching between an account and all of
+        # them can keep the reader in the same folder without the client re-deriving the rule.
+        mailbox_data["slug"] = mailbox_slug({"role": mailbox["role"], "name": mailbox["_name"]})
         mailbox_data.update(settings_map.get(mailbox["id"], {}))
         result.append(mailbox_data)
 
@@ -243,7 +256,7 @@ def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool =
 
 
 @frappe.whitelist()
-def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_by: str | None = None) -> list:
+def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_by: str | None = None) -> dict:
     """Returns a page of threads from the selected mailbox for the account."""
 
     if mailbox == "starred":
@@ -263,6 +276,8 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
         "starred": {"someInThreadHaveKeyword": "$flagged"},
         "unread": {"notKeyword": "$seen"},
         "has_attachments": {"hasAttachment": True},
+        # A category is asked for by its keyword: "category_promotions".
+        **{category.keyword: {"hasKeyword": category.keyword} for category in Category},
     }
     if filter_by in filter_map and not (mailbox == "starred" and filter_by == "starred"):
         conditions.append(filter_map[filter_by])
@@ -312,7 +327,7 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
     add_user_images_to_emails(account, threads, is_thread=False)
     add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
 
-    return threads, mailbox
+    return {"rows": threads, "mailbox": mailbox, "has_more": len(threads) == limit}
 
 
 def visible_in_mailbox(messages: list[dict], mailbox: str, trash: str | None, junk: str | None) -> list[dict]:
@@ -431,52 +446,163 @@ def get_user_jmap_accounts() -> list[dict]:
     return accounts
 
 
-@frappe.whitelist()
-def get_all_inbox_threads(limit: int, start: int = 0, filter_by: str | None = None) -> list:
-    """Returns a merged, newest-first page of Inbox threads across all of the user's accounts.
+def mailbox_slug(mailbox: dict) -> str | None:
+    """The name a folder goes by across accounts, from its JMAP wire object.
 
-    Each thread is tagged with its owning account (`account`, `account_name`) and that account's
-    Inbox/Archive/Trash mailbox ids, so the client can open it in — and act on it within — the correct
-    JMAP account. Every account is over-fetched to `start + limit` (the deepest global position this
-    page can reach), the results are merged, sorted newest-first, then sliced to the requested window.
+    Mailbox ids are per account, so they can't name "the same folder" in several of them. A system
+    folder goes by its role, so "Sent" and "Sent Items" are one folder; any other goes by its name,
+    lowercased with every run of other characters folded into a hyphen. Worked out from the live
+    name rather than stored, so a rename made in any client is picked up as soon as it is fetched.
+
+    None for the Screener, which has its own per-account view, and for a name with nothing left to
+    route by.
+    """
+
+    if role := (mailbox.get("role") or "").lower():
+        return role
+
+    name = mailbox.get("name") or ""
+    if name == SCREENER_MAILBOX_NAME:
+        return None
+
+    return re.sub(r"[\W_]+", "-", name.lower()).strip("-") or None
+
+
+def is_listed_mailbox(mailbox: dict) -> bool:
+    """Whether a mailbox shows in the folder list: system folders always, others while subscribed."""
+
+    return bool(mailbox.get("role") or mailbox.get("isSubscribed"))
+
+
+@frappe.whitelist()
+def get_unified_threads(folder: str, limit: int, start: int = 0, filter_by: str | None = None) -> dict:
+    """Returns a merged, newest-first page of a folder's threads across all of the user's accounts.
+
+    `folder` is a slug (see mailbox_slug) or "starred". Each account contributes the threads of every
+    listed mailbox with that slug; an account without one contributes nothing. Each thread is tagged
+    with its owning account (`account`, `account_name`), the mailbox it was listed from
+    (`view_mailbox`) and that account's Archive/Trash ids, so the client can open it in — and act on it
+    within — the correct JMAP account. Every account is over-fetched to `start + limit` (the deepest
+    global position this page can reach), the results are merged, sorted newest-first, then sliced to
+    the requested window.
     """
 
     accounts = get_user_jmap_accounts()
-    if not accounts:
-        return []
+    if not accounts or not folder:
+        return {"rows": [], "has_more": False}
 
     # Clamp user input before it fans out across accounts: limit to a sane page size, and start so the
     # per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH — bounding both the JMAP
     # fetch per account and the in-memory merge, regardless of what the client sends.
     limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
-    start = min(max(cint(start), 0), ALL_INBOX_MAX_FETCH - limit)
-    per_account_limit = start + limit
+    start = max(cint(start), 0)
+    if start >= ALL_INBOX_MAX_FETCH:
+        return {"rows": [], "has_more": False}
+    per_account_limit = min(start + limit, ALL_INBOX_MAX_FETCH)
 
     merged: list[dict] = []
     for account in accounts:
         account_id = account["name"]
-        inbox_id = get_mailbox_id_by_role(account_id, "inbox")
-        if not inbox_id:
-            continue
+        mailboxes = get_cached_mailboxes(account_id)
+        if folder == STARRED_FOLDER:
+            view_mailboxes = [STARRED_FOLDER]
+        else:
+            view_mailboxes = [
+                m["id"] for m in mailboxes if is_listed_mailbox(m) and mailbox_slug(m) == folder
+            ]
 
-        threads, _mailbox = get_threads(account_id, inbox_id, per_account_limit, 0, filter_by)
-        if not threads:
-            continue
-
-        # Attach once per account (role lookups are cached) so per-item actions can target the right
-        # mailbox without another round trip.
-        archive_id = get_mailbox_id_by_role(account_id, "archive")
-        trash_id = get_mailbox_id_by_role(account_id, "trash")
-        for thread in threads:
-            thread["account"] = account_id
-            thread["account_name"] = account["_name"]
-            thread["inbox"] = inbox_id
-            thread["archive"] = archive_id
-            thread["trash"] = trash_id
-        merged.extend(threads)
+        ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in mailboxes}
+        # Two folders of one account can share a slug ("Receipts" and "receipts"), and a thread can sit
+        # in both — it is listed once, from the first.
+        seen: set[str] = set()
+        for view_mailbox in view_mailboxes:
+            threads = get_threads(account_id, view_mailbox, per_account_limit, 0, filter_by)["rows"]
+            for thread in threads:
+                if thread["thread_id"] in seen:
+                    continue
+                seen.add(thread["thread_id"])
+                thread["account"] = account_id
+                thread["account_name"] = account["_name"]
+                thread["view_mailbox"] = view_mailbox
+                thread["archive"] = ids_by_role.get("archive")
+                thread["trash"] = ids_by_role.get("trash")
+                merged.append(thread)
 
     merged.sort(key=lambda thread: thread["received_at"], reverse=True)
-    return merged[start : start + limit]
+    rows = merged[start : start + limit]
+    return {"rows": rows, "has_more": len(rows) == limit and start + limit < ALL_INBOX_MAX_FETCH}
+
+
+@frappe.whitelist()
+def get_unified_folders() -> list[dict]:
+    """Returns the folders of all of the user's accounts, merged by slug, with their unread counts summed.
+
+    Mailbox is a JMAP-backed virtual DocType, so it can't be queried across accounts with a table
+    filter. Each account's mailboxes are fetched live (a fresh Mailbox/get, bypassing the 1-hour
+    mailboxes cache) — the same source the per-account badges use. A folder takes its name, icon and
+    colour from the first account that has it, personal first.
+    """
+
+    if not can_use_mail(frappe.session.user):
+        return []
+
+    folders: dict[str, dict] = {}
+    for account in get_user_jmap_accounts():
+        client = get_account_client(account["name"])
+        try:
+            with client.batch() as b:
+                h = b.mail.mailbox.get()
+            mailboxes = [m.to_wire() for m in h.result.items]
+        except MethodError:
+            # A stale/revoked account answers with a method-level error; keep the list working for
+            # the rest.
+            continue
+
+        for mailbox in mailboxes:
+            slug = mailbox_slug(mailbox)
+            if not slug or not is_listed_mailbox(mailbox):
+                continue
+
+            folder = folders.setdefault(
+                slug,
+                {
+                    "slug": slug,
+                    "name": mailbox["name"],
+                    "role": (mailbox.get("role") or "").lower() or None,
+                    "unread_threads": 0,
+                    "accounts": [],
+                    "_mailbox": (account["name"], mailbox["id"]),
+                },
+            )
+            folder["unread_threads"] += cint(mailbox.get("unreadThreads"))
+            if account["name"] not in folder["accounts"]:
+                folder["accounts"].append(account["name"])
+
+    # Icon and colour are Mailbox Settings, kept per account; the folder wears its first account's.
+    owners = [folder.pop("_mailbox") for folder in folders.values()]
+    if owners:
+        settings = frappe.db.get_all(
+            "Mailbox Settings",
+            filters={
+                "account": ["in", list({account for account, _id in owners})],
+                "mailbox_id": ["in", list({mailbox_id for _account, mailbox_id in owners})],
+            },
+            fields=["account", "mailbox_id", "icon", "color"],
+        )
+        by_owner = {(s.account, s.mailbox_id): s for s in settings}
+        for folder, owner in zip(folders.values(), owners):
+            s = by_owner.get(owner)
+            folder["icon"] = s.icon if s else None
+            folder["color"] = s.color if s else None
+
+    def order(folder: dict) -> tuple:
+        role = folder["role"]
+        if role:
+            rank = UNIFIED_ROLE_ORDER.index(role) if role in UNIFIED_ROLE_ORDER else len(UNIFIED_ROLE_ORDER)
+            return (0, rank, "")
+        return (1, 0, folder["name"].lower())
+
+    return sorted(folders.values(), key=order)
 
 
 @frappe.whitelist()
@@ -664,14 +790,14 @@ def get_delivery_status(account: str, blob_id: str) -> dict:
 
 
 @frappe.whitelist()
-def fetch_attachment(account: str, blob_id: str) -> bytes:
+def fetch_attachment(account: str, blob_id: str) -> Response:
     """Returns the content of an attachment."""
 
-    return fetch_blob(account, blob_id)
+    return Response(fetch_blob(account, blob_id), mimetype="application/octet-stream")
 
 
 @frappe.whitelist()
-def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> bytes:
+def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> Response:
     """Returns the provided attachments bundled into a ZIP archive."""
 
     attachments = [a for a in attachments if a.get("blob_id")]
@@ -692,7 +818,7 @@ def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> bytes
             filename = _get_unique_filename(attachment.get("filename") or "attachment", used_names)
             zf.writestr(filename, content)
 
-    return buffer.getvalue()
+    return Response(buffer.getvalue(), mimetype="application/zip")
 
 
 def _get_unique_filename(filename: str, used_names: dict[str, int]) -> str:
@@ -708,7 +834,7 @@ def _get_unique_filename(filename: str, used_names: dict[str, int]) -> str:
 
 
 @frappe.whitelist()
-def fetch_mail_as_eml(name: str) -> bytes:
+def fetch_mail_as_eml(name: str) -> Response:
     """Returns the MIME message content of the mail as bytes for EML download."""
 
     doc = frappe.get_doc("Mail Message", name)
@@ -716,8 +842,8 @@ def fetch_mail_as_eml(name: str) -> bytes:
 
     content = doc.message or doc.get_mime_message()
     if isinstance(content, str):
-        return content.encode("utf-8")
-    return content
+        content = content.encode("utf-8")
+    return Response(content, mimetype="message/rfc822")
 
 
 @frappe.whitelist()
@@ -1038,7 +1164,7 @@ def search_mails(
     limit: int = 5,
     start: int = 0,
     all_accounts: bool = False,
-) -> tuple[list[dict], int]:
+) -> dict:
     """Returns search results for the given query.
 
     By default the search is scoped to `account`. When `all_accounts` is truthy the query fans out
@@ -1049,7 +1175,7 @@ def search_mails(
     """
 
     if not filter:
-        return ([], 0)
+        return {"rows": [], "total": 0}
 
     # `filter` may arrive carrying the search-page query blob (see MailboxView), which includes the
     # out-of-band `all_accounts` flag — drop it so it never becomes a bogus JMAP search condition.
@@ -1058,20 +1184,21 @@ def search_mails(
     # The flag crosses the wire as a bool, an int, or a "true"/"1" string depending on the caller, so
     # normalize all truthy forms (cint("true") would be 0).
     if str(all_accounts).lower() in ("1", "true"):
-        return _search_all_accounts(filter, limit=limit, start=start)
+        rows, total = _search_all_accounts(filter, limit=limit, start=start)
+        return {"rows": rows, "total": total}
 
     normalized_filter = normalize_filter(filter)
     mails, total = search_messages(account, normalized_filter, position=start, limit=limit)
     add_user_images_to_emails(account, mails)
     _tag_search_results(account, mails)
 
-    return mails, total
+    return {"rows": mails, "total": total}
 
 
 def _search_all_accounts(filter: dict, limit: int, start: int) -> tuple[list[dict], int]:
     """Search across every JMAP account the user owns, returning a merged newest-first page.
 
-    Mirrors the All Inboxes fan-out (`get_all_inbox_threads`): each account is over-fetched to the
+    Mirrors the unified folder fan-out (`get_unified_threads`): each account is over-fetched to the
     deepest global position this page can reach (`start + limit`, clamped), the results are tagged,
     merged, sorted newest-first, then sliced to the requested window. `total` is the summed match
     count across accounts.
@@ -1084,8 +1211,10 @@ def _search_all_accounts(filter: dict, limit: int, start: int) -> tuple[list[dic
     # Clamp user input before it fans out across accounts (see the All Inboxes bounds): limit to a sane
     # page size, and start so the per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH.
     limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
-    start = min(max(cint(start), 0), ALL_INBOX_MAX_FETCH - limit)
-    per_account_limit = start + limit
+    start = max(cint(start), 0)
+    if start >= ALL_INBOX_MAX_FETCH:
+        return [], 0
+    per_account_limit = min(start + limit, ALL_INBOX_MAX_FETCH)
 
     # Mailbox ids are account-specific, so a "Look In" folder filter can't carry across accounts.
     filter = {k: v for k, v in filter.items() if k != "inMailbox"}
@@ -1325,6 +1454,7 @@ def create_mailbox(
         )
 
     build_automation_sieve(account, activate=True)
+    return mailbox_id
 
 
 @frappe.whitelist()

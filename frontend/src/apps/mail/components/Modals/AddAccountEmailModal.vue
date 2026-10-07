@@ -6,10 +6,10 @@
       actions: [
         {
           label: __('Add'),
-          variant: 'solid',
+          variant: 'solid' as const,
           disabled: !(username && domain),
-          loading: addEmail.loading,
-          onClick: addEmail.submit,
+          loading: addEmail.isPending,
+          onClick: addEmailSubmit,
         },
       ],
     }"
@@ -55,23 +55,23 @@
 </template>
 
 <script setup lang="ts">
-import { createResource, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { ref, watch } from 'vue'
 
+import { api, useMutation, type InputOf } from '@/api'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { memberId } = defineProps<{ memberId: string }>()
+const { memberId } = defineProps<{
+  memberId: string
+}>()
 const emit = defineEmits(['reload'])
-
 const username = ref('')
 const domain = ref('')
 const description = ref('')
-
 const { domains, domainsError } = useEnabledDomains(show)
-
 watch(show, () => {
   if (show.value) {
     username.value = ''
@@ -80,18 +80,16 @@ watch(show, () => {
     addEmail.reset()
   }
 })
-
-const addEmail = createResource({
-  url: 'suite.mail.api.admin.add_member_email',
-  makeParams: () => ({
+const addEmail = useMutation(api.mail.admin.members.addEmail)
+async function addEmailSubmit() {
+  const input: InputOf<typeof api.mail.admin.members.addEmail> = {
     member_id: memberId,
     email: `${username.value}@${domain.value}`,
     description: description.value?.trim() || undefined,
-  }),
-  onSuccess: () => {
-    show.value = false
-    emit('reload')
-    raiseToast(__('Email address added.'))
-  },
-})
+  }
+  await addEmail.run(input)
+  show.value = false
+  emit('reload')
+  raiseToast(__('Email address added.'))
+}
 </script>

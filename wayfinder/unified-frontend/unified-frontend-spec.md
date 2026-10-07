@@ -224,7 +224,6 @@ declare module 'vue-router' {
     scroll: 'shell' | 'content'
     allowGuest?: boolean               // skips the auth gate
     title?: string                     // stable fallback title
-    favicon?: string                   // area favicon
   }
 }
 ```
@@ -241,7 +240,7 @@ declare module 'vue-router' {
   [T001, CONTEXT].
 - `allowGuest` controls the auth gate. On an allowed route a visitor
   without a session gets the Guest surface (section 10.3) [T001, T011].
-- Route metadata owns title and favicon (section 3.13) [T002].
+- Route metadata owns the page title (section 3.13) [T002].
 
 ### 3.4 Shell frames and geometry
 
@@ -490,19 +489,19 @@ Engine rules for generic events [SSC]:
 
 ### 3.13 Page metadata
 
-- `@/platform/page-meta` is the only code that writes the browser title and
-  favicon [T002].
-- Route metadata supplies the fallback title and the area favicon [T002].
+- `@/platform/page-meta` is the only code that writes the browser title
+  [T002].
+- Route metadata supplies the fallback title [T002].
 - The active view may register a reactive title override, such as a
   document name, a mail subject, an unread count or a calendar month [T002].
-- A view override changes the title only. The area favicon stays route
-  metadata [T002].
+- A view override changes the title only [T002].
 - The platform arbitrates precedence across navigation and Vue activation,
   deactivation and unmount. It restores the route fallback when an
   override's scope ends [T002].
-- Product code does not write `document.title` or the favicon [T002].
-  Per-app page titles in Mail, Meet and Calendar stay as debt (section 9.6)
-  [T010].
+- Product code does not write `document.title` [T002]. Per-app page titles in
+  Mail, Meet and Calendar stay as debt (section 9.6) [T010].
+- The favicon is the Suite logo on every route. `index.html` declares it and
+  nothing rewrites it, so no area or view swaps in a product mark [T002].
 
 ### 3.14 Translation
 
@@ -1905,13 +1904,13 @@ There is one Settings group per product, named after the product. Order
 | Drive | Statistics; External access | `suite_flip_files` on; External access when WebDAV is on or the caller is a Drive admin (`GET /api/suite/drive/webdav`) |
 | Mail | Mail's tabs | mail users only |
 | Calendar | Calendar's tabs | mail users only |
-| Meet | Devices, Audio, Video, Notifications, Layout | none |
 | Workspace | General, Users | system managers |
 
 - Today's product sub-headings ("Mail Setup", "Data", "Developer") are
   removed [T016].
-- Meet's Controls tab needs a live meeting. It stays in the in-call dialog
-  only [T016].
+- Meet contributes no group. Devices, Audio, Video, Notifications and Layout
+  only mean something inside a call, so they stay in the in-call and preview
+  dialog with Controls [T016].
 - Theme lives in Preferences [T016].
 - Profile editing stays in Settings [T016].
 - The legacy Storage tab does not ship. Every control on it dies with Drive

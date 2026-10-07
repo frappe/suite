@@ -70,6 +70,14 @@ _DECLARED = (
         errors=(DriveForbidden, DriveConflict, DriveOverQuota),
         allow_guest=True,
         output=shapes.NodeShape,
+        kind="mutation",
+        public_name={
+            "CreateFolder": "nodes.createFolder",
+            "CreateFile": "nodes.createFile",
+            "CreateLink": "nodes.createLink",
+            "CreateDocument": "nodes.createDocument",
+        },
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
     ),
     # A batch reports each node's refusal in its body (§11.5), so it adds none.
     Route(
@@ -79,6 +87,8 @@ _DECLARED = (
         body=shapes.BatchNodes,
         allow_guest=True,
         output=shapes.BatchResult,
+        kind="mutation",
+        public_name="nodes.batch",
     ),
     Route(
         "POST",
@@ -86,6 +96,8 @@ _DECLARED = (
         "node_batch_purge",
         body=shapes.BatchPurge,
         output=shapes.BatchResult,
+        kind="mutation",
+        public_name="nodes.purgeBatch",
     ),
     Route(
         "GET",
@@ -95,6 +107,8 @@ _DECLARED = (
         query=shapes.NodeGetQuery,
         output=shapes.NodeShape,
         entity={"tag": "DriveNode", "id": "name", "version": "modified"},
+        kind="query",
+        public_name="nodes.get",
     ),
     Route(
         "PATCH",
@@ -105,9 +119,23 @@ _DECLARED = (
         allow_guest=True,
         output=shapes.NodeShape,
         entity={"tag": "DriveNode", "id": "name", "version": "modified"},
+        kind="mutation",
+        public_name={
+            "Rename": "nodes.rename",
+            "Move": "nodes.move",
+            "Trash": "nodes.trash",
+            "Restore": "nodes.restore",
+            "Stamp": "nodes.stamp",
+        },
     ),
     Route(
-        "DELETE", "nodes/{node}", "node_purge", errors=(DriveForbidden, DriveConflict), output=shapes.Count
+        "DELETE",
+        "nodes/{node}",
+        "node_purge",
+        errors=(DriveForbidden, DriveConflict),
+        output=shapes.Count,
+        kind="mutation",
+        public_name="nodes.purge",
     ),
     Route(
         "GET",
@@ -117,6 +145,10 @@ _DECLARED = (
         allow_guest=True,
         query=shapes.ChildrenQuery,
         output=shapes.Page[shapes.NodeShape],
+        kind="query",
+        public_name="nodes.children",
+        page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
     ),
     Route(
         "POST",
@@ -126,6 +158,9 @@ _DECLARED = (
         errors=(DriveForbidden, DriveConflict, DriveOverQuota),
         allow_guest=True,
         output=shapes.NodeShape,
+        kind="mutation",
+        public_name="nodes.copy",
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
     ),
     Route(
         "POST",
@@ -135,6 +170,8 @@ _DECLARED = (
         errors=(DriveConflict,),
         allow_guest=True,
         output=shapes.ArchiveStatus,
+        kind="mutation",
+        public_name="archives.start",
     ),
     Route(
         "GET",
@@ -143,6 +180,8 @@ _DECLARED = (
         errors=(DriveConflict,),
         allow_guest=True,
         output=shapes.ArchiveStatus,
+        kind="query",
+        public_name="archives.get",
     ),
     Route(
         "GET",
@@ -151,6 +190,8 @@ _DECLARED = (
         errors=(DriveConflict,),
         allow_guest=True,
         stream=True,
+        kind="query",
+        public_name="archives.download",
     ),
     Route(
         "PUT",
@@ -160,6 +201,9 @@ _DECLARED = (
         errors=(DriveForbidden, DriveConflict, DriveOverQuota, DriveFileTooLarge),
         allow_guest=True,
         output=shapes.NodeShape,
+        kind="mutation",
+        public_name="nodes.replaceContent",
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
     ),
     # A file answers a signed redirect; a document streams its export.
     Route(
@@ -170,6 +214,8 @@ _DECLARED = (
         allow_guest=True,
         query=shapes.ContentQuery,
         stream=True,
+        kind="query",
+        public_name="nodes.download",
     ),
     Route(
         "GET",
@@ -178,6 +224,8 @@ _DECLARED = (
         errors=(DriveConflict,),
         allow_guest=True,
         output=shapes.MediaList,
+        kind="query",
+        public_name="nodes.media",
     ),
     Route(
         "POST",
@@ -187,6 +235,8 @@ _DECLARED = (
         errors=(DriveForbidden,),
         allow_guest=True,
         output=shapes.PreviewAnswer,
+        kind="mutation",
+        public_name="nodes.setPreview",
     ),
     Route(
         "POST",
@@ -196,6 +246,8 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden, DriveConflict, DriveOverQuota, DriveFileTooLarge),
         allow_guest=True,
         output=shapes.ChunkedUpload | shapes.DirectUpload,
+        kind="mutation",
+        public_name="uploads.create",
     ),
     # The chunk is the raw request body, up to `upload.MAX_CHUNK_BYTES`.
     Route(
@@ -207,6 +259,8 @@ _DECLARED = (
         query=shapes.ChunkQuery,
         output=shapes.UploadProgress,
         stream=True,
+        kind="mutation",
+        public_name="uploads.chunk",
     ),
     Route(
         "POST",
@@ -216,6 +270,9 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden, DriveConflict, DriveOverQuota, DriveFileTooLarge),
         allow_guest=True,
         output=shapes.NodeShape,
+        kind="mutation",
+        public_name="uploads.finish",
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
     ),
     Route(
         "GET",
@@ -225,6 +282,9 @@ _DECLARED = (
         allow_guest=True,
         query=shapes.PageQuery,
         output=shapes.Page[shapes.ActivityShape],
+        kind="query",
+        public_name="nodes.activity",
+        page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
     ),
     Route(
         "POST",
@@ -233,6 +293,8 @@ _DECLARED = (
         body=shapes.Empty,
         errors=(DriveConflict,),
         output=shapes.Count,
+        kind="mutation",
+        public_name="nodes.visit",
     ),
     Route(
         "PUT",
@@ -241,8 +303,17 @@ _DECLARED = (
         body=shapes.Empty,
         errors=(DriveForbidden,),
         output=shapes.Count,
+        kind="mutation",
+        public_name="nodes.star",
     ),
-    Route("DELETE", "nodes/{node}/favourite", "node_delete_favourite", output=shapes.Count),
+    Route(
+        "DELETE",
+        "nodes/{node}/favourite",
+        "node_delete_favourite",
+        output=shapes.Count,
+        kind="mutation",
+        public_name="nodes.unstar",
+    ),
     Route(
         "GET",
         "nodes/{node}/grants",
@@ -250,6 +321,8 @@ _DECLARED = (
         errors=(DriveForbidden,),
         query=shapes.GrantsQuery,
         output=shapes.GrantsShape,
+        kind="query",
+        public_name="grants.list",
     ),
     # The principal is the whole tail, not one segment. A `$GROUP:` names a
     # `User Group`, whose docname may hold a slash; werkzeug has already
@@ -263,6 +336,8 @@ _DECLARED = (
         body=shapes.GrantWrite,
         errors=(DriveForbidden,),
         output=shapes.GrantShape,
+        kind="mutation",
+        public_name="grants.put",
     ),
     Route(
         "DELETE",
@@ -271,6 +346,8 @@ _DECLARED = (
         errors=(DriveForbidden,),
         query=shapes.RevokeQuery,
         output=shapes.Count,
+        kind="mutation",
+        public_name="grants.remove",
     ),
     # A grant that exists is addressed by its id. This is the only way to
     # change or remove a share link: its `$LINK:<token>` principal is the
@@ -282,6 +359,8 @@ _DECLARED = (
         body=shapes.GrantPatch,
         errors=(DriveNotFound, DriveForbidden),
         output=shapes.GrantShape,
+        kind="mutation",
+        public_name="grants.update",
     ),
     Route(
         "DELETE",
@@ -289,6 +368,8 @@ _DECLARED = (
         "grant_delete",
         errors=(DriveNotFound, DriveForbidden),
         output=shapes.Count,
+        kind="mutation",
+        public_name="grants.delete",
     ),
     Route(
         "POST",
@@ -297,6 +378,8 @@ _DECLARED = (
         body=shapes.Empty,
         errors=(DriveNotFound, DriveForbidden),
         output=shapes.GrantShape,
+        kind="mutation",
+        public_name="grants.rotate",
     ),
     # The token travels in the body with the password: both are secrets.
     Route(
@@ -307,6 +390,8 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden, DriveLocked, DriveLinkExpired, frappe.RateLimitExceededError),
         output=shapes.UnlockTicket,
         allow_guest=True,
+        kind="mutation",
+        public_name="links.unlock",
     ),
     # The literal leads the pattern that would also match it, the same guard
     # `nodes/batch` gets above. A DELETE carries its arguments in the query.
@@ -316,6 +401,8 @@ _DECLARED = (
         "view_clear_recents",
         query=shapes.ClearRecents,
         output=shapes.Count,
+        kind="mutation",
+        public_name="views.clearRecent",
     ),
     Route(
         "GET",
@@ -323,7 +410,11 @@ _DECLARED = (
         "view_list",
         errors=(DriveNotFound, DriveForbidden),
         query=shapes.ViewQuery,
+        entity={"tag": "DriveNode", "id": "name", "version": "modified"},
         output=shapes.Page[shapes.NodeShape | shapes.ArchivedRootShape],
+        kind="query",
+        public_name="views.list",
+        page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
     ),
     Route(
         "GET",
@@ -333,6 +424,9 @@ _DECLARED = (
         allow_guest=True,
         query=shapes.PageQuery,
         output=shapes.Page[shapes.VersionShape],
+        kind="query",
+        public_name="versions.list",
+        page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
     ),
     Route(
         "POST",
@@ -342,6 +436,8 @@ _DECLARED = (
         errors=(DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.VersionShape,
+        kind="mutation",
+        public_name="versions.create",
     ),
     Route(
         "PATCH",
@@ -351,6 +447,8 @@ _DECLARED = (
         errors=(DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.VersionShape,
+        kind="mutation",
+        public_name="versions.update",
     ),
     Route(
         "DELETE",
@@ -358,6 +456,8 @@ _DECLARED = (
         "node_version_delete",
         errors=(DriveForbidden, DriveConflict),
         output=shapes.Count,
+        kind="mutation",
+        public_name="versions.delete",
     ),
     Route(
         "GET",
@@ -366,6 +466,8 @@ _DECLARED = (
         errors=(DriveConflict,),
         allow_guest=True,
         stream=True,
+        kind="query",
+        public_name="versions.download",
     ),
     Route(
         "POST",
@@ -375,6 +477,8 @@ _DECLARED = (
         errors=(DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.VersionShape | None,
+        kind="mutation",
+        public_name="versions.restore",
     ),
     Route(
         "GET",
@@ -384,6 +488,8 @@ _DECLARED = (
         allow_guest=True,
         query=shapes.ThreadsQuery,
         output=shapes.ThreadList,
+        kind="query",
+        public_name="threads.list",
     ),
     Route(
         "POST",
@@ -393,6 +499,8 @@ _DECLARED = (
         errors=(DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.ThreadShape,
+        kind="mutation",
+        public_name="threads.create",
     ),
     Route(
         "PATCH",
@@ -402,6 +510,8 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.ThreadShape,
+        kind="mutation",
+        public_name="threads.resolve",
     ),
     Route(
         "POST",
@@ -411,6 +521,8 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.CommentShape,
+        kind="mutation",
+        public_name="comments.create",
     ),
     Route(
         "PATCH",
@@ -420,6 +532,8 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.CommentShape,
+        kind="mutation",
+        public_name="comments.update",
     ),
     Route(
         "DELETE",
@@ -428,6 +542,8 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden, DriveConflict),
         allow_guest=True,
         output=shapes.Count,
+        kind="mutation",
+        public_name="comments.delete",
     ),
     Route(
         "GET",
@@ -435,12 +551,17 @@ _DECLARED = (
         "notifications_list",
         query=shapes.NotificationsQuery,
         output=shapes.Page[shapes.NotificationShape],
+        kind="query",
+        public_name="notifications.list",
+        page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
     ),
     Route(
         "GET",
         "notifications/unread-count",
         "notifications_unread_count",
         output=shapes.UnreadCount,
+        kind="query",
+        public_name="notifications.unreadCount",
     ),
     Route(
         "POST",
@@ -448,8 +569,15 @@ _DECLARED = (
         "notifications_read",
         body=shapes.NotificationNames | shapes.AllNotifications,
         output=shapes.Count,
+        kind="mutation",
+        public_name={
+            "NotificationNames": "notifications.markRead",
+            "AllNotifications": "notifications.markAllRead",
+        },
     ),
-    Route("GET", "roots", "roots_discover", output=shapes.RootLocations),
+    Route(
+        "GET", "roots", "roots_discover", output=shapes.RootLocations, kind="query", public_name="roots.list"
+    ),
     Route(
         "GET",
         "roots/{root}/usage",
@@ -457,6 +585,8 @@ _DECLARED = (
         errors=(DriveNotFound, DriveForbidden),
         query=shapes.RootUsageQuery,
         output=shapes.RootUsage,
+        kind="query",
+        public_name="roots.usage",
     ),
     Route(
         "PATCH",
@@ -465,6 +595,8 @@ _DECLARED = (
         body=shapes.RootQuota | shapes.RootArchive,
         errors=(DriveNotFound, DriveForbidden, DriveConflict),
         output=shapes.RootShape,
+        kind="mutation",
+        public_name={"RootQuota": "roots.setQuota", "RootArchive": "roots.archive"},
     ),
     Route(
         "DELETE",
@@ -472,6 +604,8 @@ _DECLARED = (
         "root_purge",
         errors=(DriveNotFound, DriveForbidden, DriveConflict),
         output=shapes.Count,
+        kind="mutation",
+        public_name="roots.purge",
     ),
     Route(
         "POST",
@@ -480,20 +614,33 @@ _DECLARED = (
         body=shapes.Empty,
         errors=(DriveNotFound, DriveForbidden, DriveConflict),
         output=shapes.Count,
+        kind="mutation",
+        public_name="roots.emptyTrash",
     ),
-    Route("GET", "settings", "settings_get", output=shapes.UserSettings),
+    Route(
+        "GET",
+        "settings",
+        "settings_get",
+        output=shapes.UserSettings,
+        kind="query",
+        public_name="settings.get",
+    ),
     Route(
         "PATCH",
         "settings",
         "settings_patch",
         body=shapes.WebdavSwitch,
         output=shapes.UserSettings,
+        kind="mutation",
+        public_name="settings.update",
     ),
     Route(
         "GET",
         "site-settings",
         "site_settings_get",
         output=shapes.SiteSettings | shapes.AdminSiteSettings,
+        kind="query",
+        public_name="siteSettings.get",
     ),
     Route(
         "PATCH",
@@ -502,12 +649,16 @@ _DECLARED = (
         body=shapes.WebdavSwitch,
         errors=(DriveForbidden,),
         output=shapes.AdminSiteSettings,
+        kind="mutation",
+        public_name="siteSettings.update",
     ),
     Route(
         "GET",
         "webdav",
         "webdav_get",
         output=shapes.WebdavHidden | shapes.WebdavOff | shapes.WebdavConnection,
+        kind="query",
+        public_name="webdav.get",
     ),
 )
 

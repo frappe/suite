@@ -34,8 +34,7 @@
 import { Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { roots, rootUsage } from '@/apps/drive/client/roots'
-import { useQuery } from '@/platform/server-state'
+import { api, useQuery } from '@/api'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
@@ -47,10 +46,10 @@ const FILL: Record<StorageLevel, string> = {
   full: 'bg-surface-red-6',
 }
 
-const discovered = useQuery(roots())
-const usage = useQuery(() => {
+const discovered = useQuery(api.drive.roots.list, {})
+const usage = useQuery(api.drive.roots.usage, () => {
   const personal = discovered.data?.personal.node
-  return personal ? rootUsage(personal) : null
+  return personal ? { root: personal } : false
 })
 const failed = computed(() => discovered.status === 'error' || usage.status === 'error')
 const meter = computed(() => (usage.data ? storageMeter(usage.data) : null))

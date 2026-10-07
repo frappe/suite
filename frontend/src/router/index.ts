@@ -6,6 +6,7 @@ import {
   type RouteRecordNormalized,
 } from 'vue-router'
 
+import { api, client } from '@/api'
 import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appRegistry'
 import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
@@ -14,7 +15,6 @@ import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
 import { installPwa } from '@/platform/pwa'
 import { installScrollRestoration } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
-import { transport, type Operation } from '@/platform/transport'
 
 // `/`, the PWA start URL and the old launcher URL all open Home.
 const startPath = '/home'
@@ -39,15 +39,6 @@ type OnboardingState = { isOnboarded: boolean; canOnboard: boolean }
 
 const hasServerBoot =
   typeof window !== 'undefined' && typeof window.suite_is_onboarded !== 'undefined'
-const onboardingOperation: Operation<
-  Record<string, never>,
-  { is_onboarded?: boolean; can_onboard?: boolean }
-> = {
-  id: 'suite.onboarding-state',
-  owner: 'suite',
-  method: 'GET',
-  path: '/api/v2/method/suite.api.account.get_onboarding_state',
-}
 let onboardingStatePromise: Promise<OnboardingState> | undefined
 
 function ensureOnboardingState(): OnboardingState | Promise<OnboardingState> {
@@ -58,21 +49,9 @@ function ensureOnboardingState(): OnboardingState | Promise<OnboardingState> {
     }
   }
   if (!onboardingStatePromise) {
-    onboardingStatePromise = transport
-      .request(onboardingOperation, {})
-      .then((response) => {
-        const state =
-          'message' in response && response.message && typeof response.message === 'object'
-            ? (response.message as {
-                is_onboarded?: boolean
-                can_onboard?: boolean
-              })
-            : response
-        return {
-          isOnboarded: !!state.is_onboarded,
-          canOnboard: !!state.can_onboard,
-        }
-      })
+    onboardingStatePromise = client
+      .query(api.suite.site.get)
+      .then((state) => ({ isOnboarded: state.is_onboarded, canOnboard: state.can_onboard }))
       .catch(() => {
         onboardingStatePromise = undefined
         return { isOnboarded: true, canOnboard: false }

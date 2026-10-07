@@ -20,8 +20,7 @@
 import { Dialog, ErrorMessage, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { node } from '@/apps/drive/client/nodes'
-import { useQuery } from '@/platform/server-state'
+import { api, useQuery } from '@/api'
 
 import { formatBytes, formatDate } from '../internal/format'
 import { nodeTypeLabel } from '../internal/icons'
@@ -29,8 +28,8 @@ import { nodeTypeLabel } from '../internal/icons'
 /** Read-only facts about one node: type, size, location, owner and dates. */
 const props = defineProps<{ node: string }>()
 const open = defineModel<boolean>('open', { required: true })
-const detail = useQuery(() =>
-  open.value && props.node ? node(props.node, 'access,breadcrumbs') : false,
+const detail = useQuery(api.drive.nodes.get, () =>
+  open.value && props.node ? { node: props.node, expand: 'access,breadcrumbs' } : false,
 )
 
 const fields = computed(() => {

@@ -4,6 +4,8 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
+import { checkApiClient } from './check-api-client.mjs'
+
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = path.join(frontendRoot, 'src')
 const deskScriptRoot = path.join(frontendRoot, '..', 'suite', 'public', 'js')
@@ -37,11 +39,8 @@ const boundaryDebtGroups = [
     removal: 'Publish Calendar scheduling contracts before changing the existing Meet integration.',
     entries: [
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/stores/user',
+      'meet/components/UpcomingMeetings.test.ts|@/apps/calendar/stores/user',
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/utils/dayjs',
-      'meet/pages/Home.vue|@/apps/calendar/stores/user',
-      'meet/pages/Home.vue|@/apps/calendar/utils/dayjs',
-      'meet/pages/Home.vue|@/apps/calendar/components/ParticipantSelector.vue',
-      'meet/pages/Home.vue|@/apps/calendar/utils/scheduleTime',
     ],
   },
 ]
@@ -53,13 +52,10 @@ const moduleGraphDebtGroups = [
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
-      'calendar/components/AppSidebar.vue|@/composables/accountSubmenu',
-      'calendar/components/AppSidebar.vue|@/shell/CommandPaletteSidebarItem.vue',
       'calendar/components/CommandPalette/CalendarFilterPanel.vue|@/apps/mail/components/Controls/ContactCombobox.vue',
       'calendar/components/CommandPalette/CalendarSearchResult.vue|@/components/HighlightedText.vue',
       'calendar/components/EventAlertList.vue|@/utils/calendarAlert',
       'calendar/components/EventDetail.vue|@/components/LinkifiedText.vue',
-      'calendar/components/Modals/EventModal.vue|@/apps/meet/utils/request',
       'calendar/components/Modals/EventModal.vue|@/composables/useScreenSize',
       'calendar/components/Modals/EventRepeatSettingsModal.vue|@/composables/useScreenSize',
       'calendar/components/Settings/AdvancedSettings.vue|@/components/CopyControl.vue',
@@ -82,7 +78,6 @@ const moduleGraphDebtGroups = [
       'calendar/pages/CalendarLayout.vue|@/composables/useScreenSize',
       'calendar/pages/CalendarView.vue|@/composables/useScreenSize',
       'calendar/pages/CalendarView.vue|@/stores/root',
-      'calendar/pages/CalendarView.vue|@/utils/documentTitle',
       'calendar/pages/ProfileView.vue|@/boot/session',
       'calendar/pages/ProfileView.vue|@/components/MobileProfilePage.vue',
       'calendar/router.ts|@/composables/useScreenSize',
@@ -96,8 +91,6 @@ const moduleGraphDebtGroups = [
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
-      'mail/components/AppSidebar.vue|@/composables/accountSubmenu',
-      'mail/components/AppSidebar.vue|@/shell/CommandPaletteSidebarItem.vue',
       'mail/components/AttachmentViewer.vue|@/utils/pdfjs',
       'mail/components/CommandPalette/MailSearchResult.vue|@/components/HighlightedText.vue',
       'mail/components/DefaultLayout.vue|@/apps/calendar/components/EventDetail.vue',
@@ -145,37 +138,15 @@ const moduleGraphDebtGroups = [
       'mail/components/Settings/VacationResponseSettings.vue|@/components/settings/AppSettingsHeader.vue',
       'mail/components/ThreadHeader.vue|@/components/AdaptiveDropdown.vue',
       'mail/composables/useMailCommandPaletteSearch.ts|@/utils/session',
-      'mail/pages/AddressBookView.vue|@/utils/documentTitle',
-      'mail/pages/AddressBooksView.vue|@/utils/documentTitle',
-      'mail/pages/AllInboxesView.vue|@/utils/documentTitle',
       'mail/pages/ComposeView.vue|@/components/AdaptiveDropdown.vue',
       'mail/pages/ComposeView.vue|@/composables/useKeyboardInsets',
-      'mail/pages/ContactView.vue|@/utils/documentTitle',
-      'mail/pages/ContactsView.vue|@/utils/documentTitle',
       'mail/pages/MailLayout.vue|@/boot/config',
       'mail/pages/MailLayout.vue|@/stores/root',
       'mail/pages/MailboxView.vue|@/components/AdaptiveDropdown.vue',
       'mail/pages/MailboxView.vue|@/utils/actionLabel',
-      'mail/pages/MailboxView.vue|@/utils/documentTitle',
       'mail/pages/OutboxView.vue|@/components/AdaptiveDropdown.vue',
-      'mail/pages/OutboxView.vue|@/utils/documentTitle',
       'mail/pages/ProfileView.vue|@/components/MobileProfilePage.vue',
       'mail/pages/ScreenerView.vue|@/components/AdaptiveDropdown.vue',
-      'mail/pages/ScreenerView.vue|@/utils/documentTitle',
-      'mail/pages/SubmissionDetailsView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/AccountView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/AccountsView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/DmarcReportView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/DmarcReportsView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/DomainView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/DomainsView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/GroupView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/GroupsView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/MailingListView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/MailingListsView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/OverviewView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/TlsReportView.vue|@/utils/documentTitle',
-      'mail/pages/dashboard/TlsReportsView.vue|@/utils/documentTitle',
       'mail/router.test.ts|@/boot/session',
       'mail/router.test.ts|@/router',
       'mail/router.ts|@/boot/session',
@@ -219,7 +190,6 @@ const moduleGraphDebtGroups = [
       'meet/pages/Meeting.vue|@/boot/session',
       'meet/pages/Meeting.vue|@/stores/root',
       'meet/pages/Meeting.vue|@/utils/confirmLeave',
-      'meet/pages/Meeting.vue|@/utils/documentTitle',
       'meet/router.ts|@/boot/session',
       'meet/socket.ts|@/realtime',
       'meet/utils/emojiSuggest.ts|@/utils/localStorage',
@@ -236,7 +206,6 @@ const moduleGraphDebtGroups = [
       'sheets/components/SheetEditor/index.vue|@/composables/useThemeMenuOption',
       'sheets/components/SheetEditor/index.vue|@/stores/root',
       'sheets/components/SheetEditor/index.vue|@/utils/confirmLeave',
-      'sheets/components/SheetEditor/index.vue|@/utils/documentTitle',
       'sheets/components/SheetEditor/useCollaboration.js|@/boot/session',
     ],
   },
@@ -247,7 +216,7 @@ const moduleGraphDebtGroups = [
     entries: [
       'shell/AppContainer.vue|@/boot/session',
       'shell/AppContainer.vue|@/stores/root',
-      'shell/CommandPaletteSidebarItem.vue|@/stores/root',
+      'shell/Rail.vue|@/stores/root',
       'shell/SetupView.vue|@/utils/setupTheme',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/CalendarFilterBadges.vue',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue',
@@ -274,10 +243,8 @@ const moduleGraphDebtGroups = [
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
-      'slides/pages/Slideshow.vue|@/utils/documentTitle',
       'slides/router.ts|@/router',
       'slides/stores/presentation.js|@/boot/session',
-      'slides/stores/presentation.js|@/utils/documentTitle',
       'slides/stores/presentationRestore.test.ts|@/boot/session',
       'slides/stores/saveTimeout.test.ts|@/boot/session',
       'slides/stores/saving.js|@/boot/session',
@@ -322,7 +289,6 @@ const unstableFrappeUIDebtGroups = [
       'mail/components/IdentitySettingsListView.vue|frappe-ui/experimental',
       'mail/components/Modals/AddAccountEmailModal.vue|frappe-ui/experimental',
       'mail/components/Modals/AddAccountModal.vue|frappe-ui/experimental',
-      'mail/components/Modals/AddAddressBookContactsModal.vue|frappe-ui/experimental',
       'mail/components/Modals/AddGroupEmailModal.vue|frappe-ui/experimental',
       'mail/components/Modals/AddMailingListEmailModal.vue|frappe-ui/experimental',
       'mail/components/Modals/AddMailingListRecipientsModal.vue|frappe-ui/experimental',
@@ -338,13 +304,9 @@ const unstableFrappeUIDebtGroups = [
       'mail/components/Settings/ScreenedEmailAddressSettings.vue|frappe-ui/experimental',
       'mail/components/Settings/VacationResponseSettings.vue|frappe-ui/experimental',
       'mail/components/ThreadHeader.vue|frappe-ui/experimental',
-      'mail/pages/AddressBookView.vue|frappe-ui/experimental',
-      'mail/pages/AddressBooksView.vue|frappe-ui/experimental',
       'mail/pages/CalendarExchangesView.vue|frappe-ui/experimental',
       'mail/pages/ComposeView.vue|frappe-ui/experimental',
-      'mail/pages/ContactView.vue|frappe-ui/experimental',
       'mail/pages/ContactsExchangesView.vue|frappe-ui/experimental',
-      'mail/pages/ContactsView.vue|frappe-ui/experimental',
       'mail/pages/MailExchangesView.vue|frappe-ui/experimental',
       'mail/pages/OutboxView.vue|frappe-ui/experimental',
       'mail/pages/SignupView.vue|frappe-ui/experimental',
@@ -363,6 +325,19 @@ const unstableFrappeUIDebtGroups = [
       'mail/utils/quotedContentExtension.test.ts|frappe-ui/experimental',
       'mail/utils/text-editor.ts|frappe-ui/experimental',
       'mail/utils/useThreadActions.ts|frappe-ui/experimental',
+    ],
+  },
+  {
+    owner: 'People frontend owner',
+    // Moved from Mail with the contact pages. frappe-ui's ListView family stays
+    // experimental until `frappe-ui/list` reaches parity.
+    removal: 'Remove each entry when the owner migrates it to a stable frappe-ui export.',
+    entries: [
+      'people/components/Modals/AddAddressBookContactsModal.vue|frappe-ui/experimental',
+      'people/pages/AddressBookView.vue|frappe-ui/experimental',
+      'people/pages/AddressBooksView.vue|frappe-ui/experimental',
+      'people/pages/ContactView.vue|frappe-ui/experimental',
+      'people/pages/ContactsView.vue|frappe-ui/experimental',
     ],
   },
   {
@@ -478,7 +453,8 @@ const displayPath = (relative) =>
 
 function layerFor(relative) {
   const segments = relative.split('/')
-  if (['composition', 'shell', 'platform'].includes(segments[0])) return { kind: segments[0] }
+  if (['api', 'composition', 'shell', 'platform'].includes(segments[0]))
+    return { kind: segments[0] }
   if (segments[0] === 'apps' && products.has(segments[1]))
     return { kind: 'product', product: segments[1] }
   return { kind: 'legacy' }
@@ -515,6 +491,19 @@ function graphViolation(source, target, specifier) {
   const from = layerFor(source)
   const to = target.layer
   if (from.kind === 'legacy') return null
+  if (specifier === '@/api' && from.kind !== 'platform') return null
+  if (
+    /\.(test|spec)\.[cm]?[jt]sx?$/.test(source) &&
+    (specifier === '@/api' || /^@\/apps\/[^/]+\/client\/(api|policy|links)$/.test(specifier))
+  )
+    return null
+  if (from.kind === 'api' && (to.kind === 'platform' || to.kind === 'api')) return null
+  if (from.kind === 'api')
+    return specifier === '@/composition/api'
+      ? null
+      : 'the API entry may import only its composition registration and platform types'
+  if (source === 'composition/api.ts' && /^@\/apps\/[^/]+\/client\/(api|policy)$/.test(specifier))
+    return null
 
   if (from.kind === 'composition') {
     if (['composition', 'shell', 'platform'].includes(to.kind)) return null
@@ -710,6 +699,7 @@ function compare(label, actual, baseline) {
 }
 
 selfTest()
+checkApiClient(sourceRoot)
 const scanned = scan()
 const actualBoundary = keyed(scanned.boundary)
 const actualFrappeUI = keyed(scanned.frappeUI)

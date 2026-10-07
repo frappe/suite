@@ -45,64 +45,44 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Breadcrumbs, createResource, Dropdown } from 'frappe-ui'
+import { Badge, Breadcrumbs, Dropdown } from 'frappe-ui'
 import { Download } from 'lucide-vue-next'
-import { computed, inject } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { api, useQuery } from '@/api'
 import CopyCode from '@/apps/mail/components/CopyCode.vue'
 import { formatBytes, getTheme } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 
 const { id } = defineProps<{ id: string }>()
 
-const user = inject('$user')
-
 const router = useRouter()
 
-const contactsExchange = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Contacts Exchange',
-    filters: { name: id },
-    fieldname: [
-      'status',
-      'operation',
-      'started_at',
-      'completed_at',
-      'output',
-      'import_format',
-      'export_format',
-    ],
-  }),
-  onSuccess: (data) => {
-    if (!data?.operation) router.replace('/mail/contacts-exchanges')
+const contactsExchange = useQuery(api.mail.exchanges.get, () => ({
+  doctype: 'Contacts Exchange',
+  name: id,
+}))
+watch(
+  () => [contactsExchange.status, contactsExchange.data] as const,
+  ([status, data]) => {
+    if (status === 'error' || (status === 'success' && !data?.operation))
+      router.replace('/mail/contacts-exchanges')
   },
-  onError: () => router.replace('/mail/contacts-exchanges'),
-})
+)
 
 const operationDetails = computed(() => {
   const format =
     contactsExchange.data?.operation === 'Import'
       ? contactsExchange.data?.import_format
       : contactsExchange.data?.export_format
-  return `${format.toUpperCase()} · ${formatSystemDateTime(contactsExchange.data?.started_at, 'MMM D, YYYY [at] h:mm A')}`
+  return `${(format ?? '').toUpperCase()} · ${formatSystemDateTime(contactsExchange.data?.started_at, 'MMM D, YYYY [at] h:mm A')}`
 })
 
-const attachment = createResource({
-  url: 'frappe.client.get_value',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'File',
-    fieldname: ['file_size', 'file_url', 'file_type', 'file_name'],
-    filters: {
-      attached_to_doctype: 'Contacts Exchange',
-      attached_to_name: id,
-      attached_to_field: 'file',
-    },
-  }),
-})
+const attachment = useQuery(api.mail.exchanges.attachment, () => ({
+  doctype: 'Contacts Exchange',
+  name: id,
+}))
 
 const dropdownOptions = computed(() => [
   {

@@ -1,7 +1,8 @@
-import { call, toast } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { v4 as uuid4 } from 'uuid'
 import { ref } from 'vue'
 
+import { api, client } from '@/api'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 import {
   activeElementIds,
@@ -15,7 +16,7 @@ import {
   resetFocus,
 } from '@/apps/slides/stores/element'
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
-import { presentationId } from '@/apps/slides/stores/presentation'
+import { contextFor, presentationId } from '@/apps/slides/stores/presentation'
 import { getNewSlide, insertSlide, slideIndex } from '@/apps/slides/stores/slide'
 import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
@@ -128,10 +129,14 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
   if (srcPresentation !== presentationId.value) {
     // if pasted elements are from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
-    json = await call('suite.slides.doctype.presentation.presentation.get_updated_json', {
-      presentation: presentationId.value,
-      elements: pastedArray,
-    })
+    json = await client.mutation(
+      api.slides.media.adoptElements,
+      {
+        presentation: presentationId.value,
+        elements: pastedArray,
+      },
+      { context: contextFor(presentationId.value) },
+    )
   }
 
   // a foreign slide index means nothing here, and there is no original to displace from
@@ -151,12 +156,13 @@ const handlePastedSlideJSON = async (slideJSON) => {
   if (slideJSON.parent != presentationId.value) {
     // if pasted slide is from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
-    slideJSON = await call(
-      'suite.slides.doctype.presentation.presentation.update_slide_attachments',
+    slideJSON = await client.mutation(
+      api.slides.media.adoptSlide,
       {
         parent: presentationId.value,
         slide: slideJSON,
       },
+      { context: contextFor(presentationId.value) },
     )
     if (typeof slideJSON.elements === 'string') {
       slideJSON.elements = JSON.parse(slideJSON.elements)

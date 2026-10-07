@@ -3,11 +3,10 @@
 	     bottom nav's sheet on a phone. The page header's folder button and a tap
 	     on the active Mail tab open the sheet. -->
   <AreaSidebar area="mail" :title="__('Mail')">
-    <!-- The active account leads. Its menu holds what the sidebar header's
-		     menu held: the way back from the dashboard, the shortcuts list and the
-		     account switcher. -->
+    <!-- The active account leads. Its menu lists the accounts, and every account at once. With
+         one account, or on the dashboard, there is nothing to pick: it is just named. -->
     <SidebarSection class="!mt-0">
-      <Dropdown :options="menuItems" :match-trigger-width="true">
+      <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
         <SidebarItem :label="subtitle || __('Account')" icon="lucide-circle-user-round">
           <template #suffix>
             <span
@@ -17,7 +16,7 @@
           </template>
         </SidebarItem>
       </Dropdown>
-      <CommandPaletteSidebarItem v-if="!isMobile" />
+      <SidebarItem v-else :label="subtitle || __('Account')" icon="lucide-circle-user-round" />
     </SidebarSection>
     <SidebarSection
       v-for="section in sidebarItems"
@@ -37,18 +36,12 @@
         :class="
           threadDrag.overMailbox.value === item.mailboxId && 'ring-2 ring-outline-gray-3 ring-inset'
         "
+        :active="item.activeFor?.includes(activeKey)"
+        :on-click="item.onClick"
+        class="group"
         @dragover="onFolderDragOver($event, item)"
         @dragleave="onFolderDragLeave(item)"
         @drop="onFolderDrop($event, item)"
-        :active="
-          item.activeFor?.includes(
-            ['mail-mailbox', 'mail-mail'].includes(route.name as string)
-              ? route.params.mailbox
-              : route.name,
-          )
-        "
-        :on-click="item.onClick"
-        class="group"
       >
         <template #suffix>
           <div class="flex items-center">
@@ -70,10 +63,9 @@
       </SidebarItem>
     </SidebarSection>
 
-    <!-- Personal widgets (events, quota) are meaningless while administering the
+    <!-- Personal widgets (quota) are meaningless while administering the
 		     server, and the phone's sheet is a folder switcher, not a dashboard. -->
     <AreaSidebarFooter v-if="showWidgets">
-      <UpcomingEvents :is-collapsed="false" />
       <QuotaBar :is-collapsed="false" />
     </AreaSidebarFooter>
   </AreaSidebar>
@@ -85,17 +77,13 @@
 <script setup lang="ts">
 import { useStorage } from '@vueuse/core'
 import ArrowLeft from '~icons/lucide/arrow-left'
-import BookUser from '~icons/lucide/book-user'
 import CalendarClock from '~icons/lucide/calendar-clock'
 import CircleUserRound from '~icons/lucide/circle-user-round'
-import ContactRound from '~icons/lucide/contact-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
 import House from '~icons/lucide/house'
 import Lock from '~icons/lucide/lock'
-import Mailbox from '~icons/lucide/mailbox'
-import Mails from '~icons/lucide/mails'
 import Megaphone from '~icons/lucide/megaphone'
 import Plus from '~icons/lucide/plus'
 import Settings from '~icons/lucide/settings'
@@ -106,36 +94,40 @@ import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
 import { Button, Dropdown, SidebarItem, SidebarSection } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { Keyboard, User } from 'lucide-vue-next'
-import { computed, h, inject, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
-import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
-import type { MailboxData } from '@/apps/mail/types'
+import type { MailboxData, UnifiedFolder } from '@/apps/mail/types'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
-import { useAccountSwitch, useScreenSize, useShortcuts } from '@/apps/mail/utils/composables'
+import { useAccountSwitch, useScreenSize } from '@/apps/mail/utils/composables'
 import { canMoveToMailbox } from '@/apps/mail/utils/mailboxTargets'
-import { accountSubmenu } from '@/composables/accountSubmenu'
-import { AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
-import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
+import {
+  groupUnifiedFolders,
+  isUnifiedRoute,
+  mailboxIdForParam,
+  mailboxParam,
+  STARRED_FOLDER,
+  unifiedFolderIcon,
+  unifiedFolderRoute,
+} from '@/apps/mail/utils/unifiedFolders'
+import { accountSubmenu, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
 
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { switchAccount } = useAccountSwitch()
+const { switchAccount, switchToAll } = useAccountSwitch()
 
 // Per-section open/closed state for collapsible sections, keyed by the section's
-// stable `key` (labels are translated, so they can't be storage keys). More and
-// People start collapsed for new users; every toggle is remembered.
+// stable `key` (labels are translated, so they can't be storage keys). More
+// starts collapsed for new users; every toggle is remembered.
 const collapsedSections = useStorage<Record<string, boolean>>('mail-sidebar-collapsed-sections', {
   more: true,
-  people: true,
 })
 const setSectionCollapsed = (key: string | undefined, collapsed: boolean) => {
   if (key) collapsedSections.value[key] = collapsed
@@ -143,7 +135,19 @@ const setSectionCollapsed = (key: string | undefined, collapsed: boolean) => {
 const isSectionCollapsed = (section: { key?: string }) =>
   !!section.key && !!collapsedSections.value[section.key]
 const store = userStore()
-const { mailboxes, allInboxesUnread } = store
+const { mailboxes, unifiedFolders } = store
+
+// "All accounts": the folder list is every account's, merged (see utils/unifiedFolders).
+const isUnified = computed(() => isUnifiedRoute(route.name))
+
+// What an item's `activeFor` is matched against: the open mailbox in an account, the open folder
+// across all of them, and the route itself everywhere else.
+const activeKey = computed(() => {
+  if (route.name === 'mail-mailbox' || route.name === 'mail-mail')
+    return mailboxIdForParam(route.params.mailbox, mailboxes.data)
+  if (isUnified.value) return `unified:${route.params.folder}`
+  return route.name
+})
 
 // ── Threads dropped onto a folder ─────────────────────────────────────────────────────────────────
 // The rows are dragged in the view; the folders that take them are here. The move itself belongs to
@@ -156,7 +160,7 @@ const threadDrag = useThreadDrag()
  * lists cannot drift. That rules out the folders the dragged threads are already in, along with
  * Sent, Drafts and the Screener; Junk and Trash stay in, since handleMoveThreads reads those as
  * "mark as spam" and "delete", which is what dropping there means. Sidebar entries that are not
- * real mailboxes — Starred, All Inboxes, Outbox — have no id and fall out on their own.
+ * real mailboxes — Starred, Outbox, the merged folders — have no id and fall out on their own.
  */
 const canDrop = (item: { mailboxId?: string }) =>
   threadDrag.isDragging.value &&
@@ -181,24 +185,26 @@ const onFolderDrop = (e: DragEvent, item: { mailboxId?: string }) => {
   threadDrag.drop(item.mailboxId!)
 }
 
-const user = inject('$user')
+const user = store.userResource
 
 const showFolderModal = ref(false)
 const selectedMailbox = ref()
 const showDeleteMailbox = ref(false)
-const { openShortcuts } = useShortcuts()
 
-// The account row shows the active mail account, not the Suite account [T010].
-const subtitle = computed(
-  () => user.data.accounts?.find((a) => a.id === store.accountId)?._name ?? '',
+// The account row shows the active mail account, not the Suite account [T010] — or that every
+// account is showing at once.
+const subtitle = computed(() =>
+  isUnified.value
+    ? __('All accounts')
+    : (user.data?.accounts?.find((a) => a.id === store.accountId)?._name ?? ''),
 )
 
 const showWidgets = computed(
-  () => !isMobile.value && user.data.is_jmap_configured && !route.meta.isDashboard,
+  () => !isMobile.value && user.data?.is_jmap_configured && !route.meta.isDashboard,
 )
 
 // Leave the dashboard for the active account's default mailbox (or the address
-// books when no mailbox exists yet). Shared by the account menu item and the
+// books, in People, when no mailbox exists yet). Shared by the account menu item and the
 // pinned "Back to Mail" sidebar item.
 const goToMailbox = () => {
   const mailbox = mailboxes.data?.[0]?.id
@@ -209,42 +215,22 @@ const goToMailbox = () => {
     })
   else
     router.push({
-      name: 'mail-address-books',
+      name: 'people-address-books',
       params: { accountId: store.accountId },
     })
 }
 
-const menuItems = computed(() => [
-  {
-    group: '',
-    options: [
-      {
-        icon: Mailbox,
-        label: __('Mailbox'),
-        onClick: goToMailbox,
-        condition: () =>
-          user.data.is_suite_admin && user.data.is_jmap_configured && route.meta.isDashboard,
-      },
-      {
-        icon: Keyboard,
-        label: __('Shortcuts'),
-        onClick: openShortcuts,
-        condition: () => !isMobile.value,
-      },
-    ],
-  },
-  {
-    group: '',
-    options: [
-      {
-        icon: User,
-        label: __('Accounts'),
-        submenu: accountSubmenu(user.data.accounts, store.accountId, switchAccount),
-        condition: () => user.data.accounts?.length > 1 && !route.meta.isDashboard,
-      },
-    ],
-  },
-])
+// The account menu: the reader's own account first, the rest as they come, then all of them at
+// once. Empty when there is nothing to pick.
+const accountMenu = computed(() =>
+  (user.data?.accounts?.length ?? 0) > 1 && !route.meta.isDashboard
+    ? accountSubmenu(user.data?.accounts ?? [], store.accountId, switchAccount, {
+        label: __('All accounts'),
+        active: isUnified.value,
+        onSelect: switchToAll,
+      })
+    : [],
+)
 
 const dashboardItems = [
   {
@@ -311,13 +297,16 @@ const mailboxItems = computed(
           label: getMailboxName(mailbox),
           icon: h(Icon, {
             name: getIcon(mailbox),
-            class: FOLDER_ICON_COLOR_MAP[mailbox.color],
+            class: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
           }),
           to: isScreener
             ? { name: 'mail-screener', params: { accountId: store.accountId } }
             : {
                 name: 'mail-mailbox',
-                params: { accountId: store.accountId, mailbox: mailbox.id },
+                params: {
+                  accountId: store.accountId,
+                  mailbox: mailboxParam(mailbox.id, mailboxes.data),
+                },
               },
           suffix: mailbox.unread_threads ? String(mailbox.unread_threads) : '',
           activeFor: isScreener ? ['mail-screener', 'mail-screener-sender'] : [mailbox.id],
@@ -334,7 +323,7 @@ const mailboxItems = computed(
                 },
                 {
                   label: __('Delete'),
-                  theme: 'red',
+                  theme: 'red' as const,
                   icon: Trash2,
                   onClick: () => {
                     selectedMailbox.value = mailbox
@@ -351,7 +340,41 @@ const screeningEnabled = computed(
     !!store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)?.enable_screening,
 )
 
+// The folder list of "All accounts", grouped as an account's is: system folders and Starred, then the
+// custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, the Screener,
+// New Folder — has a merged form, so none of it is offered here.
+const unifiedSidebarItems = computed(() => {
+  const folders: UnifiedFolder[] = unifiedFolders.data ?? []
+  const toItem = (folder: UnifiedFolder) => ({
+    label: folder.name,
+    icon: h(Icon, {
+      name: unifiedFolderIcon(folder.slug, folders),
+      class: folder.color ? FOLDER_ICON_COLOR_MAP[folder.color] : undefined,
+    }),
+    to: unifiedFolderRoute(folder.slug),
+    activeFor: [`unified:${folder.slug}`],
+    suffix: folder.unread_threads ? String(folder.unread_threads) : '',
+  })
+  const starredItem = {
+    label: __('Starred'),
+    icon: Star,
+    to: unifiedFolderRoute(STARRED_FOLDER),
+    activeFor: [`unified:${STARRED_FOLDER}`],
+  }
+  const { primary, custom, secondary } = groupUnifiedFolders(folders)
+
+  return [
+    { label: __('Default'), items: [...primary.map(toItem), starredItem] },
+    ...(custom.length ? [{ label: __('Custom'), items: custom.map(toItem) }] : []),
+    ...(secondary.length
+      ? [{ label: __('More'), key: 'more', items: secondary.map(toItem), collapsible: true }]
+      : []),
+  ]
+})
+
 const sidebarItems = computed(() => {
+  if (isUnified.value) return unifiedSidebarItems.value
+
   if (route.meta.isDashboard) {
     // A pinned, unlabelled group at the top of the nav: the exit back to the
     // inbox (previously buried in the header dropdown) and the Overview home.
@@ -428,54 +451,25 @@ const sidebarItems = computed(() => {
   }
   const customItems = [...customMailboxes, addMailboxItem]
 
-  const contactsItems = [
-    {
-      label: __('Address Books'),
-      icon: BookUser,
-      to: { name: 'mail-address-books', params: { accountId: store.accountId } },
-      activeFor: ['mail-address-books', 'mail-address-book'],
-    },
-    {
-      label: __('Contacts'),
-      icon: ContactRound,
-      to: { name: 'mail-contacts', params: { accountId: store.accountId } },
-      activeFor: ['mail-contacts', 'mail-contact'],
-    },
-  ]
-
   const groups = [
     { label: __('Default'), items: defaultItems },
     { label: __('Custom'), items: customItems },
     ...(secondaryItems.length
       ? [{ label: __('More'), key: 'more', items: secondaryItems, collapsible: true }]
       : []),
-    { label: __('People'), key: 'people', items: contactsItems, collapsible: true },
   ]
 
-  // All Inboxes and Screener share one nameless group pinned above the folders, so they sit at
-  // item spacing (not the wider section gap two separate groups would create). All Inboxes first
-  // (broadest scope: all accounts), then Screener (active account). Each is conditional:
-  // All Inboxes only with more than one account, Screener only when screening is enabled.
+  // The Screener is pinned in a nameless group above the folders, only when screening is enabled.
   const pinnedItems = []
-  if (user.data.accounts?.length > 1)
-    pinnedItems.push({
-      label: __('All Inboxes'),
-      icon: Mails,
-      to: { name: 'mail-all-inboxes' },
-      // A thread opened from the merged list is its own route (it carries the
-      // thread's real account/mailbox params) but still belongs to this item.
-      activeFor: ['mail-all-inboxes', 'mail-all-inboxes-mail'],
-      suffix: allInboxesUnread.data ? String(allInboxesUnread.data) : '',
-    })
   if (screenerItem && screeningEnabled.value) pinnedItems.push(screenerItem)
 
   if (pinnedItems.length) groups.unshift({ label: '', items: pinnedItems })
 
   // Admins reach the dashboard from its own row, last in the sidebar.
   if (
-    user.data.is_jmap_configured &&
-    user.data.is_suite_admin &&
-    user.data.is_suite_cloud_configured &&
+    user.data?.is_jmap_configured &&
+    user.data?.is_suite_admin &&
+    user.data?.is_suite_cloud_configured &&
     !isMobile.value
   )
     groups.push({

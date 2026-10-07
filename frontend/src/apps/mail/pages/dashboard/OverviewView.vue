@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout :breadcrumbs="[{ label: __('Overview') }]" :loading="!overview.data">
+  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('Overview') }]" :loading="!overview.data">
     <!-- One glanceable number per section, each a link into it. -->
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
       <RouterLink
@@ -177,17 +177,17 @@ import UserPlus from '~icons/lucide/user-plus'
 import UserX from '~icons/lucide/user-x'
 import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
-import { Avatar, Badge, createResource, usePageMeta } from 'frappe-ui'
+import { Avatar, Badge, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
-import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
-import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import { api, useQuery } from '@/api'
 import { formatGb } from '@/apps/mail/utils'
 import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
-import { appPageMeta } from '@/utils/documentTitle'
+import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { appPageMeta } from '@/platform/page-meta'
 
 type CountWithDisabled = { total: number; disabled: number }
 type Limits = {
@@ -241,10 +241,7 @@ usePageMeta(() => appPageMeta(__('Overview'), 'Mail'))
 
 const router = useRouter()
 
-const overview = createResource({
-  url: 'suite.mail.api.admin.get_overview',
-  auto: true,
-})
+const overview = useQuery(api.mail.admin.overview.get, () => ({}))
 
 const data = computed(() => overview.data as OverviewData | undefined)
 const site = computed(() => data.value?.site || undefined)
