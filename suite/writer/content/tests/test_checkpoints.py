@@ -14,7 +14,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
-from suite.suite_core.content import admission, checkpoints, compaction, live, scheduling
+from suite.suite_core.content import admission, checkpoints, compaction, documents, live, scheduling
 from suite.suite_core.content.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
@@ -29,7 +29,7 @@ class CheckpointCase(IntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()
         ensure_user(WRITER)
-        writer_content.ensure_tables()
+        documents.ensure_tables()
         frappe.db.commit()
 
     def setUp(self):
@@ -48,7 +48,7 @@ class CheckpointCase(IntegrationTestCase):
             "writer",
             doc_id,
             writer_content.ROOTS,
-            "suite.writer.content.judge",
+            "suite.suite_core.content.documents.judge",
             writer_content.document_owner,
         )
 
@@ -127,7 +127,7 @@ class CheckpointCase(IntegrationTestCase):
         return "".join(str(child) for child in doc.get("default", type=pycrdt.XmlFragment).children)
 
     def compact(self, node: str):
-        writer_content.compact(self.doc_row(node).id)
+        documents.compact(writer_content.ADAPTER, self.doc_row(node).id)
 
 
 class TestWriterCheckpoints(CheckpointCase):
@@ -191,7 +191,7 @@ class TestWriterCheckpoints(CheckpointCase):
                 frappe.init(site)
                 frappe.connect()
                 with patch.object(compaction, "compact", kernel):
-                    writer_content.compact(doc_id)
+                    documents.compact(writer_content.ADAPTER, doc_id)
             finally:
                 os._exit(0)
         return os.waitpid(pid, 0)[1]
@@ -445,7 +445,7 @@ class TestWriterCheckpoints(CheckpointCase):
                 with patch.object(
                     checkpoints.Compaction, "install", lambda *args: os.kill(os.getpid(), signal.SIGKILL)
                 ):
-                    writer_content.compact(doc_id)
+                    documents.compact(writer_content.ADAPTER, doc_id)
             finally:
                 os._exit(0)
         os.waitpid(pid, 0)
@@ -549,7 +549,7 @@ class TestWriterCheckpoints(CheckpointCase):
             frappe.init(site=site)
             frappe.connect()
             try:
-                writer_content.compact(doc_id)
+                documents.compact(writer_content.ADAPTER, doc_id)
             finally:
                 frappe.destroy()
 
@@ -688,7 +688,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         )
         frappe.db.commit()
 
-        writer_content.sweep()
+        documents.sweep()
 
         self.assertIn(self.doc_row(waited).id, self.requested)
         self.assertNotIn(self.doc_row(fresh).id, self.requested)
@@ -893,6 +893,6 @@ class TestWriterAdmission(CheckpointCase):
         self.assertEqual(self.push(node, tab, 1, abc)[0], 200)
         self.set_doc(node, tail_bound=0)
 
-        writer_content.ensure_tables()
+        documents.ensure_tables()
 
         self.assertEqual(self.doc_row(node).tail_bound, len(abc))

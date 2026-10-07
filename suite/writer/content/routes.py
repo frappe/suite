@@ -16,7 +16,8 @@ from werkzeug.wrappers import Response
 from suite import drive
 from suite.composition.http import Route
 from suite.suite_core import content
-from suite.writer.content import ADAPTER, SCHEMA, consider_compaction, report_suspect
+from suite.suite_core.content.documents import consider_compaction, report_suspect
+from suite.writer.content import ADAPTER, SCHEMA
 
 # The Writer table resolves every handler here, the contract-only ones too
 from suite.writer.http.routes import document as document
@@ -153,7 +154,7 @@ def _open(node: str) -> Response:
         raise content.Refusal(503, "chain_break") from None
     if snapshot is None:
         return _frame({"state": "unconverted", "proto": content.PROTO})
-    consider_compaction(doc.id)
+    consider_compaction(ADAPTER, doc.id)
     return _frame(
         {
             **content.open_header(snapshot, can_write=can_write),
@@ -180,7 +181,7 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
         # The tab may hold a row now quarantined
         return _frame({"state": "rebuild", "proto": content.PROTO, "q_epoch": epoch})
     rows = content.rows_after(ADAPTER, doc.id, max(after, 0))
-    consider_compaction(doc.id)
+    consider_compaction(ADAPTER, doc.id)
     header = {
         "state": "live",
         "proto": content.PROTO,
@@ -207,9 +208,9 @@ def _push(node: str) -> Response:
         answer = content.push(ADAPTER, doc.id, header, payload, frappe.session.user, SCHEMA)
     except content.Refusal as refusal:
         if refusal.body["collab"] == "compacting":
-            consider_compaction(doc.id, refused=True)
+            consider_compaction(ADAPTER, doc.id, refused=True)
         raise
-    consider_compaction(doc.id, final_from=header["sid"] if header.get("final") is True else None)
+    consider_compaction(ADAPTER, doc.id, final_from=header["sid"] if header.get("final") is True else None)
     return _json(200, answer)
 
 
@@ -232,7 +233,7 @@ def _suspect(node: str) -> Response:
         rev = None
     if type(rev) is not int:
         raise content.Refusal(400, "malformed")
-    return _json(*report_suspect(doc.id, rev))
+    return _json(*report_suspect(ADAPTER, doc.id, rev))
 
 
 def _session(node: str) -> Response:

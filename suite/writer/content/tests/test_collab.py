@@ -18,7 +18,7 @@ from werkzeug.wrappers import Request
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.content import capacity, live, scheduling
+from suite.suite_core.content import capacity, documents, live, scheduling
 from suite.suite_core.content.log import chain_next, chain_seed
 from suite.suite_core.content.stage import PIECE_MAX
 from suite.suite_core.content.updates import encoded_string, encoded_uint
@@ -1252,7 +1252,7 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.db.commit()
 
         with patch.object(scheduling, "enqueue"):
-            writer_content.sweep()
+            documents.sweep()
 
         self.assertEqual(self.push_staged(node, sid, cid, change, old), (409, {"collab": "stage_incomplete"}))
         self.assertEqual(self.push_staged(node, sid, cid, change, recent)[0], 200)
@@ -1286,7 +1286,7 @@ class TestWriterCollab(IntegrationTestCase):
                     self.put(node, stage_id, idx, piece_body(lineage, sid, 1, change, pieces[idx]))[0], 200
                 )
         with patch.object(scheduling, "enqueue"):
-            writer_content.sweep()
+            documents.sweep()
 
         self.assertEqual(
             [

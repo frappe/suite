@@ -89,14 +89,14 @@ def sweep(
         for (doc_id,) in frappe.db.sql(
             f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `mode` = 'purged' LIMIT %s", limit
         ):
-            enqueue(purge_method, f"suite-collab-purge-{adapter}-{doc_id}", doc_id=doc_id)
+            enqueue(purge_method, f"suite-collab-purge-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
     if judge_method:
         for (doc_id,) in frappe.db.sql(
             f"""SELECT `id` FROM `{table(adapter, "doc")}` WHERE `suspect` IS NOT NULL AND `suspect_held` IS NULL
             AND `mode` != 'purged' LIMIT %s""",
             limit,
         ):
-            enqueue(judge_method, f"suite-collab-judge-{adapter}-{doc_id}", doc_id=doc_id)
+            enqueue(judge_method, f"suite-collab-judge-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
     now = now_datetime()
     for (doc_id,) in frappe.db.sql(
         f"""SELECT `d`.`id` FROM `{table(adapter, "doc")}` `d` JOIN `{table(adapter, "update")}` `u`
@@ -117,12 +117,12 @@ def enqueue(method: str, job_id: str, **kwargs) -> None:
 
 
 def request(adapter: str, doc_id: str, method: str) -> None:
-    """Enqueue `method(doc_id)` once per document; it runs the job with the product's roots."""
+    """Enqueue `method(adapter, doc_id)` once per document."""
     global paused_until
     if time.monotonic() < paused_until:
         return
     try:
-        enqueue(method, f"suite-collab-compact-{adapter}-{doc_id}", doc_id=doc_id)
+        enqueue(method, f"suite-collab-compact-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
     except Exception:
         # A request is only a hint, so the open or push that made it carries on and this process rests a while
         paused_until = time.monotonic() + QUEUE_PAUSE.total_seconds()

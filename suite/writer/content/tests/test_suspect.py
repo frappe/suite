@@ -12,7 +12,16 @@ from frappe.utils.background_jobs import get_redis_conn
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.content import admission, compaction, kernel, live, quarantine, scheduling, suspect
+from suite.suite_core.content import (
+    admission,
+    compaction,
+    documents,
+    kernel,
+    live,
+    quarantine,
+    scheduling,
+    suspect,
+)
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
 from suite.writer.content import routes
@@ -21,7 +30,7 @@ from suite.writer.content.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.content.tests.test_collab import OUTSIDER, READER, answer, call, read_frame
 from suite.writer.content.tests.test_kernel import BUNDLE, paragraph
 
-JUDGE = "suite.writer.content.judge"
+JUDGE = "suite.suite_core.content.documents.judge"
 SYSTEM_MANAGER = "collab-system-manager@example.com"
 SUITE_ADMIN = "collab-suite-admin@example.com"
 NO_ROLE = "collab-no-role@example.com"
@@ -165,14 +174,14 @@ class TestSuspect(CheckpointCase):
         self.set_doc(node, suspect="unreadable")
 
         self.job(doc_id).run()
-        writer_content.consider_compaction(doc_id)
-        writer_content.sweep()
+        documents.consider_compaction(writer_content.ADAPTER, doc_id)
+        documents.sweep()
         self.assertEqual((self.checkpoints_of(node), self.doc_row(node).compaction_failures), ([], 0))
         self.assertEqual([call for call in self.requested if call[1] == doc_id], [(JUDGE, doc_id)])
 
         self.set_doc(node, suspect_held="no_node")
         self.requested.clear()
-        writer_content.sweep()
+        documents.sweep()
         self.assertNotIn(doc_id, [doc for _method, doc in self.requested])
 
     def test_a_checkpoint_that_holds_the_bad_content_is_held(self):
@@ -222,7 +231,7 @@ class TestSuspect(CheckpointCase):
 
         self.assertEqual(self.report(node, bad), (202, {"collab": "judging", "judged": 0}))
         self.assertEqual((self.doc_row(node).suspect, self.requested), ("client", [(JUDGE, doc_id)]))
-        writer_content.judge(doc_id)
+        documents.judge(writer_content.ADAPTER, doc_id)
 
         pulled = self.pulled(node)
         self.assertEqual((pulled["judged"], pulled["verdict"], pulled["q_epoch"]), (1, "quarantined", 1))
@@ -231,7 +240,7 @@ class TestSuspect(CheckpointCase):
         fine = Pen(self, node).adds(paragraph("def"))
         self.set_doc(node, suspect_reported_at=now_datetime() - timedelta(seconds=61))
         self.assertEqual(self.report(node, fine), (202, {"collab": "judging", "judged": 1}))
-        writer_content.judge(doc_id)
+        documents.judge(writer_content.ADAPTER, doc_id)
         self.assertEqual(
             {key: self.pulled(node)[key] for key in ("judged", "verdict")}, {"judged": 2, "verdict": "clean"}
         )
@@ -310,7 +319,7 @@ class TestSuspect(CheckpointCase):
 
                 self.assertEqual(self.report(node, rev)[0], 202)
                 with stub():
-                    writer_content.judge(self.doc_row(node).id)
+                    documents.judge(writer_content.ADAPTER, self.doc_row(node).id)
 
                 doc = self.doc_row(node)
                 self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "unjudged"))
@@ -366,7 +375,7 @@ class TestSuspect(CheckpointCase):
                 logged = frappe.get_last_doc("Error Log", {"method": f"Collab document {title}"}).error
                 self.assertEqual((error.__name__ in logged, "unexpected" in logged), (True, False))
                 self.requested.clear()
-                writer_content.sweep()
+                documents.sweep()
                 self.assertNotIn((JUDGE, doc_id), self.requested)
 
     def test_a_compaction_that_fails_again_after_a_clean_verdict_holds_the_document(self):
@@ -414,7 +423,7 @@ class TestSuspect(CheckpointCase):
         for judged in range(1, 5):
             self.set_doc(node, suspect_reported_at=now_datetime() - timedelta(seconds=61))
             self.assertEqual(self.report(node, rev)[0], 202)
-            writer_content.judge(doc_id)
+            documents.judge(writer_content.ADAPTER, doc_id)
             doc = self.doc_row(node)
             self.assertEqual(
                 (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "clean", judged)
@@ -427,7 +436,7 @@ class TestSuspect(CheckpointCase):
         rev = a.adds(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         self.assertEqual(self.report(node, rev)[0], 202)
-        writer_content.judge(doc_id)
+        documents.judge(writer_content.ADAPTER, doc_id)
         self.assertEqual(self.doc_row(node).verdict, "clean")
 
         with patch.object(admission, "enough_memory", lambda: False):
@@ -492,7 +501,7 @@ class TestSuspect(CheckpointCase):
         Pen(self, clean).adds(paragraph("beta"))
 
         frappe.set_user(SYSTEM_MANAGER)
-        listed = {row.id: row for row in writer_content.suspect_documents()}
+        listed = {row.id: row for row in documents.suspect_documents(writer_content.ADAPTER)}
 
         self.assertNotIn(self.doc_row(clean).id, listed)
         row = listed[doc_id]
@@ -517,24 +526,24 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(
             (row.node, row.suspect, row.suspect_held, row.head_rev), (node, "unreadable", "no_node", 1)
         )
-        for refused in (writer_content.rejudge_suspect, writer_content.clear_suspect):
+        for refused in (documents.rejudge_suspect, documents.clear_suspect):
             with self.subTest(method=refused.__name__):
-                self.assertRaises(frappe.PermissionError, refused, doc_id)
+                self.assertRaises(frappe.PermissionError, refused, writer_content.ADAPTER, doc_id)
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held, doc.judged), ("unreadable", "no_node", 0))
         self.assertEqual(self.requested, [])
 
         frappe.set_user(NO_ROLE)
-        self.assertRaises(frappe.PermissionError, writer_content.suspect_documents)
+        self.assertRaises(frappe.PermissionError, documents.suspect_documents, writer_content.ADAPTER)
 
     def test_listing_is_open_to_system_managers_and_acting_to_suite_admins_and_administrator(self):
         node = self.new_document()
         Pen(self, node).adds(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         methods = (
-            ("list", writer_content.suspect_documents),
-            ("rejudge", lambda: writer_content.rejudge_suspect(doc_id)),
-            ("clear", lambda: writer_content.clear_suspect(doc_id)),
+            ("list", lambda: documents.suspect_documents(writer_content.ADAPTER)),
+            ("rejudge", lambda: documents.rejudge_suspect(writer_content.ADAPTER, doc_id)),
+            ("clear", lambda: documents.clear_suspect(writer_content.ADAPTER, doc_id)),
         )
         may = {
             SYSTEM_MANAGER: (True, False, False),
@@ -558,16 +567,16 @@ class TestSuspect(CheckpointCase):
         before = self.alerts("suspect re-judged")
 
         frappe.set_user(SUITE_ADMIN)
-        self.assertTrue(writer_content.rejudge_suspect(doc_id))
+        self.assertTrue(documents.rejudge_suspect(writer_content.ADAPTER, doc_id))
 
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held), ("unreadable", None))
         self.assertEqual(self.requested, [(JUDGE, doc_id)])
         self.assertEqual(self.alerts("suspect re-judged"), before + 1)
-        writer_content.judge(doc_id)
+        documents.judge(writer_content.ADAPTER, doc_id)
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.verdict), (None, "clean"))
-        self.assertFalse(writer_content.rejudge_suspect(doc_id))
+        self.assertFalse(documents.rejudge_suspect(writer_content.ADAPTER, doc_id))
         self.assertEqual(self.alerts("suspect re-judged"), before + 1)
 
     def test_a_suite_admin_clears_a_held_document_and_saving_goes_on_with_its_rows(self):
@@ -578,7 +587,7 @@ class TestSuspect(CheckpointCase):
         self.set_doc(node, next_compaction_at=backoff)
 
         frappe.set_user(SUITE_ADMIN)
-        self.assertTrue(writer_content.clear_suspect(doc_id))
+        self.assertTrue(documents.clear_suspect(writer_content.ADAPTER, doc_id))
 
         doc = self.doc_row(node)
         self.assertEqual(
@@ -587,7 +596,7 @@ class TestSuspect(CheckpointCase):
         )
         self.assertEqual(self.alerts("suspect cleared"), before + 1)
         self.assertEqual(self.requested, [])
-        self.assertFalse(writer_content.clear_suspect(doc_id))
+        self.assertFalse(documents.clear_suspect(writer_content.ADAPTER, doc_id))
         frappe.set_user(WRITER)
         self.assertNotIn("held", self.pulled(node))
         Pen(self, node).adds(paragraph("beta"))
@@ -603,9 +612,9 @@ class TestSuspect(CheckpointCase):
         with patch("frappe.publish_realtime") as publish:
             suspect.hold(writer_content.ADAPTER, doc.id, "kernel_failed", "held by the test")
             frappe.set_user(SUITE_ADMIN)
-            writer_content.rejudge_suspect(doc.id)
+            documents.rejudge_suspect(writer_content.ADAPTER, doc.id)
             suspect.hold(writer_content.ADAPTER, doc.id, "kernel_failed", "held by the test")
-            writer_content.clear_suspect(doc.id)
+            documents.clear_suspect(writer_content.ADAPTER, doc.id)
 
         self.assertEqual(
             [
@@ -647,7 +656,7 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(
             (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), ("unreadable", None, None, 0)
         )
-        writer_content.sweep()
+        documents.sweep()
         self.assertIn((JUDGE, doc_id), self.requested)
 
         self.release_places()
@@ -664,7 +673,7 @@ class TestSuspect(CheckpointCase):
             if len(calls) > 1:
                 return real(bundle, checkpoint, rows)
             frappe.set_user(SUITE_ADMIN)
-            writer_content.rejudge_suspect(doc_id)
+            documents.rejudge_suspect(writer_content.ADAPTER, doc_id)
             frappe.set_user("Administrator")
 
         with patch.object(kernel, "judge", judged_while_asked):
@@ -682,7 +691,7 @@ class TestSuspect(CheckpointCase):
 
         def cleared_meanwhile(bundle, checkpoint, rows):
             frappe.set_user(SUITE_ADMIN)
-            writer_content.clear_suspect(doc_id)
+            documents.clear_suspect(writer_content.ADAPTER, doc_id)
             frappe.set_user("Administrator")
 
         with patch.object(kernel, "judge", cleared_meanwhile):
@@ -696,7 +705,7 @@ class TestSuspect(CheckpointCase):
         node, doc_id, _a = self.held_document()
         before = self.alerts("suspect held: no_node")
         frappe.set_user(SUITE_ADMIN)
-        writer_content.rejudge_suspect(doc_id)
+        documents.rejudge_suspect(writer_content.ADAPTER, doc_id)
         frappe.set_user("Administrator")
 
         with patch.object(kernel, "usable_node", lambda: None):
@@ -754,8 +763,8 @@ class TestSuspect(CheckpointCase):
                 self.requested.clear()
 
                 with self.refusing(a.sent[1] if verdict == "quarantined" else b""):
-                    writer_content.judge(doc_id)
+                    documents.judge(writer_content.ADAPTER, doc_id)
 
                 doc = self.doc_row(node)
                 self.assertEqual((doc.verdict, doc.next_compaction_at), (verdict, None))
-                self.assertEqual(self.requested, [("suite.writer.content.compact", doc_id)])
+                self.assertEqual(self.requested, [("suite.suite_core.content.documents.compact", doc_id)])

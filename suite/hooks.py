@@ -145,6 +145,10 @@ drive_content_types = [
     "suite.sheets.drive.SPEC",
 ]
 
+# Dotted paths to `suite.suite_core.content.adapters.ContentAdapterSpec` objects,
+# one per app whose documents the content layer keeps.
+suite_content_adapters = ["suite.writer.content.SPEC"]
+
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
@@ -308,8 +312,7 @@ scheduler_events = {
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
     ],
     "all": [
-        # writer
-        "suite.writer.content.sweep",
+        "suite.suite_core.content.documents.sweep",
     ],
     "cron": {
         "* * * * *": [

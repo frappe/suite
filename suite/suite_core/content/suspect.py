@@ -74,7 +74,7 @@ def report(adapter: str, doc_id: str, rev: int, method: str) -> tuple[int, dict]
 
 
 def request(adapter: str, doc_id: str, method: str) -> None:
-    enqueue(method, f"suite-collab-judge-{adapter}-{doc_id}", doc_id=doc_id)
+    enqueue(method, f"suite-collab-judge-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
 
 
 def judge(

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import frappe
 import pycrdt
 
-from suite.suite_core.content import backfill, quarantine
+from suite.suite_core.content import backfill, documents, quarantine
 from suite.suite_core.content.log import chain_next
 from suite.suite_core.content.tests.test_compaction import crafted, number
 from suite.writer import content as writer_content
@@ -481,7 +481,7 @@ class TestQuarantine(CheckpointCase):
         ids = (self.doc_row(purged).id, self.doc_row(other).id)
         frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
         frappe.db.commit()
-        self.addCleanup(writer_content.delete_purged, ids[0])
+        self.addCleanup(documents.delete_purged, writer_content.ADAPTER, ids[0])
         real = quarantine.quarantine
 
         def purged_after(adapter, doc_id, *args):
@@ -507,7 +507,7 @@ class TestQuarantine(CheckpointCase):
         ids = (self.doc_row(purged).id, self.doc_row(other).id)
         frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
         frappe.db.commit()
-        self.addCleanup(writer_content.delete_purged, ids[0])
+        self.addCleanup(documents.delete_purged, writer_content.ADAPTER, ids[0])
         read = backfill.read
 
         def purged_first(adapter: str, doc_id: str):

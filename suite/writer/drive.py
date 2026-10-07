@@ -77,17 +77,8 @@ from frappe import _
 
 from suite import drive
 from suite.suite_core import content
-from suite.suite_core.content import compaction
-from suite.writer.content import (
-    copy_log,
-    live_checkpoint,
-    live_state,
-    log_of,
-    purge_log,
-    remap_log,
-    start_log,
-    version_payload,
-)
+from suite.suite_core.content import compaction, documents
+from suite.writer.content import ADAPTER, version_payload
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
@@ -148,7 +139,7 @@ def create_empty(node: str) -> str:
     document.settings = DEFAULT_SETTINGS
     document.collab = 1
     document.insert(ignore_permissions=True)
-    start_log(node)
+    documents.start_log(ADAPTER, node)
     return document.name
 
 
@@ -172,7 +163,7 @@ def duplicate(source_docname: str, node: str) -> str:
     document.collab = source.collab
     document.insert(ignore_permissions=True)
     try:
-        copy_log(source.node, node)
+        documents.copy_log(ADAPTER, source.node, node)
     except (content.ChainBroken, compaction.CompactionFailed) as unready:
         raise drive.DriveConflict(_("This document cannot be copied right now")) from unready
     return document.name
@@ -189,7 +180,7 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
-    if log_of(row.node):
+    if documents.log_of(ADAPTER, row.node):
         raise drive.DriveConflict(_("Open the document to download it"))
     return io.BytesIO((row.html or "").encode("utf-8")), HTML_MIME
 
@@ -203,7 +194,7 @@ def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
     try:
-        live = live_checkpoint(row.node)
+        live = documents.live_checkpoint(ADAPTER, row.node)
     except (content.ChainBroken, compaction.CompactionFailed) as unready:
         raise drive.DriveConflict(
             _("Version history is not available for this document right now")
@@ -234,7 +225,7 @@ def restore_version(docname: str, stream) -> None:
     A collab document's body is its log, so it is restored in the editor instead.
     """
     node = frappe.db.get_value(DOCTYPE, docname, "node")
-    if log_of(node):
+    if documents.log_of(ADAPTER, node):
         raise drive.DriveConflict(_("Open the document to restore this version"))
     payload = _version_payload(_read_bounded(stream))
     frappe.db.set_value(
@@ -271,7 +262,7 @@ def on_purge(docname: str) -> None:
         delete_permanently=True,
     )
     if node:
-        purge_log(node)
+        documents.purge_log(ADAPTER, node)
 
 
 def used_nodes(docname: str) -> set[str]:
@@ -285,7 +276,7 @@ def used_nodes(docname: str) -> set[str]:
         return set()
     found = _ids_in(row.html or "") | _body_ids(row.content)
     with _readable_body():
-        state = live_state(row.node)
+        state = documents.live_state(ADAPTER, row.node)
         if state is not None:
             found |= _fragment_ids(state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment))
     return found
@@ -304,9 +295,9 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
         values["content"] = body
     frappe.db.set_value(DOCTYPE, docname, values, update_modified=False)
     node = frappe.db.get_value(DOCTYPE, docname, "node")
-    if log_of(node):
+    if documents.log_of(ADAPTER, node):
         try:
-            remap_log(node, remap_rule(mapping))
+            documents.remap_log(ADAPTER, node, remap_rule(mapping))
         except (ValueError, compaction.CompactionFailed) as refused:
             raise drive.DriveConflict(_("The copy's pictures could not be moved to it")) from refused
 

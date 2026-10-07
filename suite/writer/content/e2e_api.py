@@ -7,7 +7,7 @@ import pycrdt
 from frappe.tests.utils import whitelist_for_tests
 
 from suite.suite_core import content
-from suite.suite_core.content import compaction, quarantine, scheduling, suspect
+from suite.suite_core.content import compaction, documents, quarantine, scheduling, suspect
 from suite.suite_core.content.tables import KINDS, table
 from suite.writer import content as writer_content
 
@@ -33,7 +33,7 @@ def enable_collab(node: str) -> dict:
 @whitelist_for_tests(methods=["POST"])
 def compact_now(node: str) -> dict:
     """Compact `node`'s collab log in this request, as the queued job would."""
-    writer_content.compact(collab_doc(node)["id"])
+    documents.compact(writer_content.ADAPTER, collab_doc(node)["id"])
     return state(node)
 
 
@@ -102,7 +102,7 @@ def write_newer_schema(node: str) -> dict:
 @whitelist_for_tests(methods=["POST"])
 def paragraph_change(node: str, client_id: int, length: int) -> dict:
     """What a tab writing as `client_id` sends when it adds a paragraph of `length` letters to the end of `node`."""
-    live = writer_content.live_state(node)
+    live = documents.live_state(writer_content.ADAPTER, node)
     assert live is not None
     tab: pycrdt.Doc = pycrdt.Doc(client_id=int(client_id))
     tab.apply_update(live.get_update())
