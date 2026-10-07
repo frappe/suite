@@ -55,7 +55,7 @@ const answer = (choice: 'Move to Junk' | 'Keep') => {
   const asked = prompt.value
   prompt.value = null
   if (!asked) return
-  if (remember.value) void rememberOldMailChoice(choice)
-  if (choice === 'Move to Junk') void junkOldMail(asked.emails)
+  if (remember.value) void rememberOldMailChoice(choice, asked.account)
+  if (choice === 'Move to Junk') void junkOldMail(asked.emails, asked.account)
 }
 </script>

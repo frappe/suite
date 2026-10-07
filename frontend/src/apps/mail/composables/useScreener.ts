@@ -52,6 +52,8 @@ type Destination = 'inbox' | 'archive' | 'trash'
 
 /** A thread row, or one of its messages: whatever says whose mail is waiting. */
 export type Screenable = {
+  /** The owning account, when the item says. A thread row does; a message in an open pane doesn't. */
+  account?: string
   from_email?: string
   unscreened?: 0 | 1 | boolean
   /** A thread row's: the senders of its unscreened mail, in the order they first wrote. */
@@ -63,96 +65,110 @@ let shared: ReturnType<typeof createShared> | undefined
 
 export const useScreener = () => (shared ??= effectScope(true).run(createShared)!)
 
+/**
+ * Every call acts on one account, the active one unless it is given. All Inboxes opens another
+ * account's thread without switching to it, and a decision there belongs to that account: its rules,
+ * its mail, its Undo.
+ */
 const createShared = () => {
   const store = userStore()
 
   const { prependUndoAction, setUndoAction, undo } = useUndo()
 
-  const active = computed(
-    () =>
-      !!store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)?.enable_screening,
-  )
+  const accountOf = (account?: string) =>
+    store.userResource?.data?.accounts?.find((a) => a.id === (account ?? store.accountId))
 
-  // Senders decided here, by address or by '@domain'. The list and an open thread both read a sender
-  // as decided at once, rather than when their copy of the mail is next fetched — which, for a thread
-  // already open, can be never. An undo takes the sender back out.
+  const isActive = (account?: string) => !!accountOf(account)?.enable_screening
+  const active = computed(() => isActive())
+
+  // Senders decided here, by address or by '@domain', per account. The list and an open thread both
+  // read a sender as decided at once, rather than when their copy of the mail is next fetched —
+  // which, for a thread already open, can be never. An undo takes the sender back out.
   const decided = reactive(new Set<string>())
-  const decide = (emails: string[]) => emails.forEach((email) => decided.add(email.toLowerCase()))
-  const undecide = (emails: string[]) => emails.forEach((email) => decided.delete(email.toLowerCase()))
+  const keyOf = (account: string, email: string) => `${account}\n${email.toLowerCase()}`
+  const decide = (account: string, emails: string[]) =>
+    emails.forEach((email) => decided.add(keyOf(account, email)))
+  const undecide = (account: string, emails: string[]) =>
+    emails.forEach((email) => decided.delete(keyOf(account, email)))
   watch(
     () => store.accountId,
     () => decided.clear(),
   )
-  const isDecided = (email: string) => {
-    const address = email.toLowerCase()
-    return decided.has(address) || decided.has(`@${address.split('@').pop()}`)
-  }
+  const isDecided = (account: string, email: string) =>
+    decided.has(keyOf(account, email)) || decided.has(keyOf(account, `@${email.split('@').pop()}`))
 
   /** The senders an item is still waiting on, undecided, in the order they first wrote. */
-  const waitingSenders = (item?: Screenable): string[] => {
-    if (!active.value || !item?.unscreened) return []
+  const waitingSenders = (item?: Screenable, account?: string): string[] => {
+    const owner = account ?? item?.account ?? store.accountId
+    if (!isActive(owner) || !item?.unscreened) return []
     const senders = item.unscreened_senders ?? (item.from_email ? [item.from_email] : [])
-    return senders.filter((email) => !isDecided(email))
+    return senders.filter((email) => !isDecided(owner, email))
   }
 
-  const isScreened = (item?: Screenable) => waitingSenders(item).length > 0
+  const isScreened = (item?: Screenable, account?: string) =>
+    waitingSenders(item, account).length > 0
 
   const settled = () => {
     store.mailboxes.refetch().catch(() => {})
     version.value++
   }
 
-  const undoFor = (emails: string[], decidedIds?: Record<string, string[]>) => ({
-    label: __('Undo'),
-    onClick: () => {
-      undecide(emails)
-      return client
-        .mutation(api.mail.screener.undo, {
-          account: store.accountId,
-          from_emails: emails,
-          ids: Object.values(decidedIds ?? {}).flat(),
-        })
-        .then(settled)
-    },
-  })
+  const failed = (error: unknown) =>
+    raiseToast((error as Error).message || __('Action failed.'), 'error')
+
+  // Takes a verdict back: the rules it wrote go, and `ids` — the mail it decided — wait again.
+  const reverseVerdict = (account: string, emails: string[], ids: string[]) => {
+    undecide(account, emails)
+    return client
+      .mutation(api.mail.screener.undo, { account, from_emails: emails, ids })
+      .then(settled)
+  }
 
   /** Accepts the senders, and files everything of theirs that was waiting into `destination`. */
   const allow = async (
     emails: string[],
-    destination: Destination = 'inbox',
-    message: string = emails.length === 1
-      ? __('Sender marked as trusted.')
-      : __('Senders marked as trusted.'),
+    {
+      account = store.accountId,
+      destination = 'inbox',
+      message = emails.length === 1 ? __('Sender marked as trusted.') : __('Senders marked as trusted.'),
+    }: { account?: string; destination?: Destination; message?: string } = {},
   ) => {
-    decide(emails)
+    decide(account, emails)
     try {
       const allowed = await client.mutation(api.mail.screener.allow, {
-        account: store.accountId,
+        account,
         from_emails: emails,
         destination,
       })
-      raiseToast(message, 'success', undoFor(emails, allowed))
+      raiseToast(message, 'success', {
+        label: __('Undo'),
+        onClick: () => reverseVerdict(account, emails, Object.values(allowed).flat()),
+      })
       return allowed
     } catch (error) {
-      undecide(emails)
-      raiseToast((error as Error).message || __('Action failed.'), 'error')
+      undecide(account, emails)
+      failed(error)
     } finally {
       settled()
     }
   }
 
   /** The rest of blocked senders' mail in the Inbox goes to Junk too — their other folders are left
-   * alone — with an Undo of its own. */
-  const junkOldMail = async (emails: string[]) => {
-    const account = store.accountId
+   * alone — with an Undo of its own, which also runs `alsoUndo` when there is one. */
+  const junkOldMail = async (
+    emails: string[],
+    account = store.accountId,
+    alsoUndo?: () => void,
+  ) => {
     let moved: string[]
     try {
       moved = await client.mutation(api.mail.screening.junkInbox, { account, from_emails: emails })
     } catch (error) {
-      raiseToast((error as Error).message || __('Action failed.'), 'error')
+      failed(error)
       return
     }
     setUndoAction(() => {
+      alsoUndo?.()
       void client
         .mutation(api.mail.messages.spam, { account, ids: moved, spam: false })
         .then(settled)
@@ -169,17 +185,17 @@ const createShared = () => {
 
   // The question a block asks about the senders' old mail in the Inbox, while it is open (see
   // OldMailDialog). Asked only when the account's setting says to ask.
-  const oldMailPrompt = ref<{ emails: string[]; count: number } | null>(null)
+  const oldMailPrompt = ref<{ account: string; emails: string[]; count: number } | null>(null)
 
   /** Saves what to do with a blocked sender's old mail from now on, so the question is not asked. */
-  const rememberOldMailChoice = (choice: 'Move to Junk' | 'Keep') =>
+  const rememberOldMailChoice = (choice: 'Move to Junk' | 'Keep', account = store.accountId) =>
     client
       .mutation(api.mail.settings.updateAccount, {
-        account: store.accountId,
+        account,
         changes: { on_block_old_mail: choice },
       })
       .then(() => store.userResource.refetch())
-      .catch((error) => raiseToast((error as Error).message || __('Action failed.'), 'error'))
+      .catch(failed)
 
   /**
    * What every block does after it lands — Block Sender, No on the new-sender bar, Junk on a screened
@@ -187,7 +203,12 @@ const createShared = () => {
    * `oldMail` left in the Inbox, the account's setting says what becomes of it: moved to Junk, kept,
    * or — by default — asked about.
    */
-  const raiseBlocked = (emails: string[], revert: () => void, oldMail: number) => {
+  const raiseBlocked = (
+    emails: string[],
+    revert: () => void,
+    oldMail: number,
+    account = store.accountId,
+  ) => {
     setUndoAction(revert)
     raiseToast(
       emails.length === 1
@@ -197,80 +218,112 @@ const createShared = () => {
       { label: __('Undo'), onClick: undo },
     )
     if (!oldMail) return
-    const setting = store.userResource?.data?.accounts?.find(
-      (a) => a.id === store.accountId,
-    )?.on_block_old_mail
-    if (setting === 'Move to Junk') void junkOldMail(emails)
-    else if (setting !== 'Keep') oldMailPrompt.value = { emails, count: oldMail }
+    const setting = accountOf(account)?.on_block_old_mail
+    // Done without asking, it is part of the block: one Undo takes back both.
+    if (setting === 'Move to Junk') void junkOldMail(emails, account, revert)
+    else if (setting !== 'Keep') oldMailPrompt.value = { account, emails, count: oldMail }
   }
 
-  /** Marks the senders spam and moves everything of theirs that was waiting to Junk. */
-  const deny = async (emails: string[]) => {
-    decide(emails)
-    const account = store.accountId
+  /**
+   * Marks the senders spam and moves everything of theirs that was waiting to Junk, along with `ids`
+   * — the rest of the thread being junked with them. Says whether it landed.
+   */
+  const deny = async (
+    emails: string[],
+    { account = store.accountId, ids = [] }: { account?: string; ids?: string[] } = {},
+  ) => {
+    decide(account, emails)
     try {
-      const junked = await client.mutation(api.mail.screener.reject, {
-        account,
-        from_emails: emails,
-      })
-      // What else of theirs is in the Inbox — mail from before screening, say. The rule is in place
-      // already, so this only counts.
+      const junked = Object.values(
+        await client.mutation(api.mail.screener.reject, { account, from_emails: emails }),
+      ).flat()
+      const rest = ids.filter((id) => !junked.includes(id))
+      // The rule is in place already, so this only junks the rest of the thread, and counts what
+      // else of theirs is in the Inbox — mail from before screening, say.
       const { inbox } = await client
-        .mutation(api.mail.screening.block, { account, from_emails: emails })
-        .catch(() => ({ inbox: 0 }))
-      raiseBlocked(emails, () => undoFor(emails, junked).onClick(), inbox)
+        .mutation(api.mail.screening.block, { account, from_emails: emails, ids: rest })
+        .catch((error) => {
+          failed(error)
+          return { inbox: 0 }
+        })
+      raiseBlocked(
+        emails,
+        () => {
+          void reverseVerdict(account, emails, junked)
+          if (rest.length)
+            void client
+              .mutation(api.mail.messages.spam, { account, ids: rest, spam: false })
+              .then(settled)
+        },
+        inbox,
+        account,
+      )
+      return true
     } catch (error) {
-      undecide(emails)
-      raiseToast((error as Error).message || __('Action failed.'), 'error')
+      undecide(account, emails)
+      failed(error)
+      return false
     } finally {
       settled()
     }
   }
 
-  // Accepts the senders in the background; returns what takes the acceptance back.
-  const acceptSenders = (emails: string[]) => {
-    const account = store.accountId
-    decide(emails)
-    const accepted = client
-      .mutation(api.mail.screener.allow, { account, from_emails: emails, destination: 'inbox' })
-      .then((ids) => {
-        settled()
-        return ids
-      })
-      .catch((error) => {
-        undecide(emails)
-        raiseToast((error as Error).message || __('Action failed.'), 'error')
-        return undefined
-      })
-    return () => {
-      undecide(emails)
-      return accepted
-        .then((ids) => {
-          // Nothing was accepted, so there is nothing to take back.
-          if (!ids) return
-          return client
-            .mutation(api.mail.screener.undo, {
+  // Accepts the senders in the background once `landed` — whether the action that decided them did —
+  // says it has, and not at all if it failed. Returns what takes the acceptance back.
+  const acceptSenders = (
+    emails: string[],
+    account = store.accountId,
+    landed: Promise<boolean> = Promise.resolve(true),
+  ) => {
+    decide(account, emails)
+    const accepted = landed
+      .then((ok) =>
+        ok
+          ? client.mutation(api.mail.screener.allow, {
               account,
               from_emails: emails,
-              ids: Object.values(ids).flat(),
+              destination: 'inbox',
             })
-            .then(settled)
+          : undefined,
+      )
+      .then(
+        (ids) => {
+          if (!ids) undecide(account, emails)
+          return ids
+        },
+        (error) => {
+          undecide(account, emails)
+          failed(error)
+          return undefined
+        },
+      )
+      .finally(settled)
+    return () =>
+      accepted
+        .then((ids) => {
+          undecide(account, emails)
+          // Nothing was accepted, so there is nothing to take back.
+          if (ids) return reverseVerdict(account, emails, Object.values(ids).flat())
         })
-        .catch((error) => raiseToast((error as Error).message || __('Action failed.'), 'error'))
-    }
+        .catch(failed)
   }
 
-  const sendersOf = (items: Screenable[]) => [...new Set(items.flatMap(waitingSenders))]
+  const sendersOf = (items: Screenable[], account?: string) => [
+    ...new Set(items.flatMap((item) => waitingSenders(item, account))),
+  ]
 
   /**
    * Accept every sender the threads an action just touched are waiting on — moving one anywhere but
-   * Junk, or filing it into a folder, is a decision to let its senders in. Raises no toast of its
-   * own: the action's toast says what happened, and its Undo takes the acceptance back too. Call it
-   * right after the action arms that undo.
+   * Junk, or filing it into a folder, is a decision to let its senders in. `landed` says whether the
+   * action's request went through: the senders are accepted once it has, and not if it failed. Raises no toast of its
+   * own: the action's toast says what happened, and its Undo takes the acceptance back first, then
+   * undoes the action — the other way round, the acceptance's undo would put back in the Inbox what
+   * the action's had just put back where it was. Call it right after the action arms that undo.
    */
-  const acceptOnAction = (items: Screenable[]) => {
-    const emails = sendersOf(items)
-    if (emails.length) prependUndoAction(acceptSenders(emails))
+  const acceptOnAction = (items: Screenable[], landed?: Promise<boolean>, account?: string) => {
+    const emails = sendersOf(items, account)
+    if (emails.length && landed)
+      prependUndoAction(acceptSenders(emails, account ?? items[0]?.account, landed))
   }
 
   /**
@@ -278,13 +331,13 @@ const createShared = () => {
    * senders are trusted, and its Undo (or `z`) reverts the action with `revert`, if there is one, and
    * takes the acceptance back.
    */
-  const acceptWithUndo = (items: Screenable[], revert?: () => void) => {
-    const emails = sendersOf(items)
+  const acceptWithUndo = (items: Screenable[], revert?: () => void, account?: string) => {
+    const emails = sendersOf(items, account)
     if (!emails.length) return
-    const reverse = acceptSenders(emails)
+    const reverse = acceptSenders(emails, account ?? items[0]?.account)
     setUndoAction(() => {
       revert?.()
-      reverse()
+      void reverse()
     })
     raiseToast(
       emails.length === 1 ? __('Sender marked as trusted.') : __('Senders marked as trusted.'),
@@ -295,9 +348,11 @@ const createShared = () => {
 
   return {
     active,
+    isActive,
     version,
     acceptOnAction,
     acceptWithUndo,
+    sendersOf,
     waitingSenders,
     isScreened,
     allow,

@@ -362,6 +362,10 @@ export function useThreadActions(deps: {
         ? __('Thread added to {0}.', [mailboxName])
         : __('Threads added to {0}.', [mailboxName])
     raiseOptimisticToast(forward, success, undo)
+    return forward.then(
+      () => true,
+      () => false,
+    )
   }
   const removeFromOptions = computed(() => {
     const mailboxIdsInUse = new Set(
@@ -450,7 +454,7 @@ export function useThreadActions(deps: {
     setUndoAction(
       () =>
         void forward.then(
-          () => addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true),
+          () => void addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true),
           () => {},
         ),
     )
@@ -795,7 +799,11 @@ export function useThreadActions(deps: {
             raiseOptimisticToast(restore, movedBack)
           })(),
       )
-      return raiseOptimisticToast(forwardPromise, success, undo)
+      raiseOptimisticToast(forwardPromise, success, undo)
+      return forwardPromise.then(
+        () => true,
+        () => false,
+      )
     }
     if (keptInList) {
       // The rows stay (Sent keeps its sent copy; a Starred thread keeps a non-junk/trash copy), but
@@ -836,7 +844,11 @@ export function useThreadActions(deps: {
             raiseOptimisticToast(restore, movedBack)
           })(),
       )
-      return raiseOptimisticToast(forwardPromise, success, undo)
+      raiseOptimisticToast(forwardPromise, success, undo)
+      return forwardPromise.then(
+        () => true,
+        () => false,
+      )
     }
 
     // Reconcile (Search only): membership is a server-side text query, so the list changes once the
@@ -864,9 +876,11 @@ export function useThreadActions(deps: {
       mailboxes.refetch().catch(() => {})
     }
     const loading = __('Moving to {0}...', [moveToMailboxName])
-    raisePromiseToast(action, loading, success, undo)
+    return raisePromiseToast(async () => (await action(), true), loading, success, undo).then(
+      (done) => !!done,
+    )
   }
-  const handleSetSpamStatus = (threadIDs: SetSeenParams) => {
+  const setSpamStatus = (threadIDs: SetSeenParams) => {
     const selectedThreads = Object.values(threadIDs).flat()
     const originalState = getOriginalState(selectedThreads, 'junk')
     if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
@@ -1106,18 +1120,39 @@ export function useThreadActions(deps: {
   const touchedRows = (threadIds: string[]) =>
     rows.value.filter((t: Thread) => threadIds.includes(t.thread_id))
 
+  const landedOf = (result: unknown) =>
+    result instanceof Promise ? (result as Promise<boolean>) : undefined
+
   const handleMoveThreads = (threadIDs: Record<string, string[]>) => {
     const touched = touchedRows(Object.values(threadIDs).flat())
     const result = moveThreads(threadIDs)
-    if (!(mailboxIds.junk in threadIDs)) screener.acceptOnAction(touched)
+    if (!(mailboxIds.junk in threadIDs)) screener.acceptOnAction(touched, landedOf(result))
     return result
   }
 
   const handleAddThreadsToMailbox = (mailboxId: string, threadIds: string[], isUndo = false) => {
     const touched = touchedRows(threadIds)
     const result = addThreadsToMailbox(mailboxId, threadIds, isUndo)
-    if (!isUndo) screener.acceptOnAction(touched)
+    if (!isUndo) screener.acceptOnAction(touched, landedOf(result))
     return result
+  }
+
+  // Junk is the one refusal: a screened thread junked from the list blocks the senders it waits on,
+  // as No does in the open thread, and goes to Junk whole. The rest go the ordinary way.
+  const handleSetSpamStatus = (threadIDs: SetSeenParams) => {
+    const junked = threadIDs[1]
+    if (Object.keys(threadIDs).length !== 1 || !junked?.length) return setSpamStatus(threadIDs)
+    const screened = touchedRows(junked).filter((row) => screener.isScreened(row))
+    if (!screened.length) return setSpamStatus(threadIDs)
+    const screenedIds = screened.map((row) => row.thread_id)
+    const ids = allMailIds(screenedIds)
+    closeComposeWindowHolding(screenedIds)
+    const removed = handleSuccessAndRemoveFromList(screenedIds, false)
+    void screener
+      .deny(screener.sendersOf(screened), { ids })
+      .then((done) => done || restoreThreadsToList(removed))
+    const rest = junked.filter((id) => !screenedIds.includes(id))
+    if (rest.length) return setSpamStatus({ 1: rest })
   }
 
   return {

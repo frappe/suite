@@ -399,6 +399,7 @@ const blockSender = async () => {
       raiseOptimisticToast(back, __('Sender unblocked.'))
     },
     blocked.inbox,
+    account,
   )
 }
 

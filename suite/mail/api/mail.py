@@ -1839,25 +1839,37 @@ def screen_out_senders(account: str, from_emails: list[str]) -> dict[str, list[s
 
 
 def _inbox_ids_from(account: str, from_emails: list[str], exclude: list[str] | None = None) -> list[str]:
-    """Ids of the Inbox mail from these senders (exact addresses), leaving out `exclude`."""
+    """Ids of all the Inbox mail from these senders (exact addresses), leaving out `exclude`."""
 
     inbox_id = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
     client = get_account_client(account)
+    page_size = client.capabilities.limits.max_objects_in_get
     skip = set(exclude or [])
     ids: list[str] = []
     for from_email in from_emails:
         sender = from_email.strip().lower()
-        found = _query_email_ids(
-            account,
-            {"operator": "AND", "conditions": [{"inMailbox": inbox_id}, {"from": sender}]},
-            limit=client.capabilities.limits.max_objects_in_get,
-        )["ids"]
-        found = [id for id in found if id not in skip]
-        if found:
-            # The JMAP `from` filter is a tokenized text match; keep the sender asked about.
-            ids += [
-                m["id"] for m in get_messages(account, found) if (m.get("from_email") or "").lower() == sender
-            ]
+        # The JMAP `from` filter is a tokenized text match, so a page can be all other senders sharing
+        # the tokens: read every page, keeping the sender asked about.
+        position = 0
+        while True:
+            with client.batch() as b:
+                h = b.mail.email.query(
+                    filter={"operator": "AND", "conditions": [{"inMailbox": inbox_id}, {"from": sender}]},
+                    sort=[{"property": "receivedAt", "isAscending": False}],
+                    position=position,
+                    limit=page_size,
+                )
+            page = list(h.result.ids)
+            found = [id for id in page if id not in skip]
+            if found:
+                ids += [
+                    m["id"]
+                    for m in get_messages(account, found)
+                    if (m.get("from_email") or "").lower() == sender
+                ]
+            if len(page) < page_size:
+                break
+            position += len(page)
     return list(dict.fromkeys(ids))
 
 
@@ -1884,13 +1896,9 @@ def junk_senders_inbox_mail(account: str, from_emails: list[str]) -> list[str]:
     Their mail in other folders is left alone. Returns the ids moved, for an undo."""
 
     is_jmap_account_belongs_to_user(account, raise_exception=True)
-    # A query answers a server's worth at a time, so keep going until their Inbox is clear: each
-    # round's mail has left the Inbox, so the next starts from what is left.
-    moved: list[str] = []
-    while ids := _inbox_ids_from(account, from_emails, exclude=moved):
+    if ids := _inbox_ids_from(account, from_emails):
         set_spam_status(account, ids, True)
-        moved += ids
-    return moved
+    return ids
 
 
 @frappe.whitelist()

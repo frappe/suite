@@ -1,3 +1,5 @@
+import time
+
 import frappe
 
 from suite.mail.doctype.mail_message.mail_message import (
@@ -23,6 +25,9 @@ from suite.mail.utils import log_mail_error
 # since the ones before it have left the folder.
 BATCH_SIZE = 500
 
+# Seconds to wait before each retry of the accounts that could not be moved.
+RETRY_DELAYS = (30, 120, 300)
+
 
 def execute() -> None:
     """Retire the Screener folder: mail from a sender nobody has decided on now waits in the Inbox,
@@ -47,17 +52,36 @@ def execute() -> None:
     frappe.enqueue(move_screeners, queue="long", enqueue_after_commit=True, timeout=3600)
 
 
-def move_screeners() -> None:
-    for account in frappe.get_all("JMAP Account", pluck="name"):
+def move_screeners(accounts: list[str] | None = None, attempt: int = 0, not_before: float = 0) -> None:
+    """Move every account, or `accounts`, retrying those that fail after a wait — the mail server was
+    perhaps briefly unreachable, and nothing else moves an account off the old flow. Those still
+    failing after the last retry are logged."""
+
+    if (wait := not_before - time.time()) > 0:
+        time.sleep(wait)
+
+    failures: dict[str, str] = {}
+    for account in accounts if accounts is not None else frappe.get_all("JMAP Account", pluck="name"):
         try:
             move_screener(account)
             frappe.db.commit()
         except Exception:
             frappe.db.rollback()
-            log_mail_error(
-                f"Could not move the Screener of {account} to the unscreened keyword",
-                frappe.get_traceback(with_context=True),
-            )
+            failures[account] = frappe.get_traceback(with_context=True)
+
+    if failures and attempt < len(RETRY_DELAYS):
+        frappe.enqueue(
+            move_screeners,
+            queue="long",
+            timeout=3600,
+            accounts=list(failures),
+            attempt=attempt + 1,
+            not_before=time.time() + RETRY_DELAYS[attempt],
+        )
+        return
+
+    for account, traceback in failures.items():
+        log_mail_error(f"Could not move the Screener of {account} to the unscreened keyword", traceback)
 
 
 def move_screener(account: str) -> None:

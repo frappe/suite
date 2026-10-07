@@ -334,12 +334,14 @@ export const useUndo = () => {
   }
 
   // Wrap the current undo so `step` runs first — lets a side effect (e.g. a junk-list entry) be
-  // reverted on top of the primary undo without replacing it.
-  const prependUndoAction = (step: () => void) => {
+  // reverted on top of the primary undo without replacing it. A `step` that returns a promise is
+  // waited for, so the primary undo has the last word.
+  const prependUndoAction = (step: () => unknown) => {
     const prev = undoAction.value
     undoAction.value = () => {
-      step()
-      prev?.()
+      const done = step()
+      if (done instanceof Promise) void done.finally(() => prev?.())
+      else prev?.()
     }
   }
   return {

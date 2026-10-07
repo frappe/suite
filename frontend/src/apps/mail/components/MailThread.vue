@@ -985,10 +985,10 @@ const screener = useScreener()
 // wrote. A sender decided anywhere — here, on the list, through an action — drops out at once, and an
 // Undo brings them back (see useScreener).
 const screenedSenders = computed(() => {
-  if (readonly || !screener.active.value) return []
+  if (readonly || !screener.isActive(scopeAccountId.value)) return []
   const senders = new Map<string, { email: string; name: string }>()
   for (const mail of thread.value)
-    for (const email of screener.waitingSenders(mail))
+    for (const email of screener.waitingSenders(mail, scopeAccountId.value))
       if (!senders.has(email.toLowerCase()))
         senders.set(email.toLowerCase(), { email, name: mail.from_name })
   return [...senders.values()]
@@ -996,7 +996,8 @@ const screenedSenders = computed(() => {
 
 // Remote content is withheld from senders not yet trusted, and offered back once for the whole thread
 // (see HiddenImagesBanner). A sender allowed from here is trusted at once: their images load without
-// waiting for the rules to be read again.
+// waiting for the rules to be read again. Once the rules are read again they say who is trusted —
+// an Undo, or a failed acceptance, takes the trust back.
 const imagesShown = ref(false)
 const trustedHere = ref(new Set<string>())
 watch(
@@ -1023,7 +1024,12 @@ const hiddenImages = computed(() => {
   return held.length ? held.reduce((n, assets) => n + assets.images, 0) : null
 })
 // A verdict changes who is trusted, and an accepted sender's images load: read the rules again.
-watch(screener.version, () => screenedAddresses.value.refetch().catch(() => {}))
+watch(screener.version, () =>
+  screenedAddresses.value
+    .refetch()
+    .then(() => (trustedHere.value = new Set()))
+    .catch(() => {}),
+)
 
 const asScreenable = (senders: { email: string }[]) =>
   senders.map((sender) => ({ from_email: sender.email, unscreened: 1 as const }))
@@ -1033,24 +1039,29 @@ const asScreenable = (senders: { email: string }[]) =>
 const allowSenders = async (emails = screenedSenders.value.map((sender) => sender.email)) => {
   if (!emails.length) return
   emails.forEach(trustHere)
-  await screener.allow(emails)
+  await screener.allow(emails, { account: scopeAccountId.value })
   reload()
 }
 
 // From the arrow beside Yes: trust one of the waiting senders' domains, everyone who writes from it.
 const allowDomain = async (domain: string) => {
   trustHere(domain)
-  await screener.allow([domain], 'inbox', __('{0} marked as trusted.', [domain.slice(1)]))
+  await screener.allow([domain], {
+    account: scopeAccountId.value,
+    message: __('{0} marked as trusted.', [domain.slice(1)]),
+  })
   reload()
 }
 
 // No is a move to Junk, and reads like one: the thread leaves at once rather than losing its bar
-// first and its place in the list a beat later.
+// first and its place in the list a beat later. The whole thread goes, the mail of senders already
+// known included, as it would on any other move to Junk.
 const denySenders = async () => {
   const emails = screenedSenders.value.map((sender) => sender.email)
   if (!emails.length) return
+  const ids = (sourceMessages() ?? thread.value).flatMap(mailCopyIds)
   goToMailbox()
-  await screener.deny(emails)
+  await screener.deny(emails, { account: scopeAccountId.value, ids })
   emit('reloadMails')
 }
 
@@ -1070,10 +1081,14 @@ const onSetFlagged = (ids: string[], flagged: boolean) => {
   const senders = flagged ? screenedSenders.value : []
   if (!senders.length) return
   senders.forEach((sender) => trustHere(sender.email))
-  screener.acceptWithUndo(asScreenable(senders), () => {
-    syncFlagged(ids, false)
-    emit('setFlagged', ids, false)
-  })
+  screener.acceptWithUndo(
+    asScreenable(senders),
+    () => {
+      syncFlagged(ids, false)
+      emit('setFlagged', ids, false)
+    },
+    scopeAccountId.value,
+  )
 }
 
 const onSetSpamStatus = (spam: boolean) =>
@@ -1085,7 +1100,7 @@ const allowOnReply = () => {
   const senders = screenedSenders.value
   if (!senders.length) return
   senders.forEach((sender) => trustHere(sender.email))
-  screener.acceptWithUndo(asScreenable(senders))
+  screener.acceptWithUndo(asScreenable(senders), undefined, scopeAccountId.value)
 }
 
 // Explicit refresh: ask the parent to reload `get_threads`, then re-derive once the `messages` prop
