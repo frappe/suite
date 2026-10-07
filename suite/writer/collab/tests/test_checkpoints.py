@@ -677,9 +677,10 @@ class TestWriterCompactionTriggers(CheckpointCase):
         waited, fresh = self.new_document(), self.new_document()
         self.push_bytes(waited, [100])
         self.push_bytes(fresh, [100])
+        # Older than any tail other tests left, as a sweep takes the oldest first
         frappe.db.sql(
             "UPDATE `__writer_collab_update` SET `created` = %s WHERE `doc_id` = %s",
-            (frappe.utils.now_datetime() - scheduling.SWEEP_AGE, self.doc_row(waited).id),
+            ("2000-01-01", self.doc_row(waited).id),
         )
         frappe.db.commit()
 
