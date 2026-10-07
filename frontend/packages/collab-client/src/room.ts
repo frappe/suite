@@ -356,7 +356,12 @@ export class Room implements CollabRoom {
     else if (reply.status === 423) {
       if (reply.reason === 'suspect') this.hold(this.held ?? 'change')
       this.reportAfter(reply.retry_ms ?? 1000)
-    } else if (!this.refused(reply, 'lost_read')) await this.verdict(reply.verdict ?? 'unjudged')
+    } else if (reply.status === 200 && reply.verdict) await this.verdict(reply.verdict)
+    else {
+      // Only a verdict counts against this browser; a failing server or a lapsed sign-in is asked again
+      const blocked = this.refused(reply, 'lost_read')
+      if (!blocked || recoverable(blocked)) this.reportAfter(backoff())
+    }
   }
 
   private reportAfter(ms: number) {
@@ -378,7 +383,11 @@ export class Room implements CollabRoom {
   private async verdict(verdict: string) {
     if (verdict === 'held') return
     if (verdict !== 'quarantined' && strike(this.lineage) >= STRIKES) return this.die('browser')
+    // Unsent work kept nowhere else is sent from this copy before it is rebuilt
+    this.judging = null
+    this.pause(null)
     this.outdated()
+    if (this.unsent) this.scheduleSend()
   }
 
   private capture = (update: Uint8Array, origin: unknown) => {

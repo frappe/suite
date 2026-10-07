@@ -433,6 +433,58 @@ describe('collab room', () => {
     server.judge.verdict = 'clean'
     await a.pull()
     expect([a.needsRebuild, a.stopped]).toEqual([true, null])
+    // Work held nowhere else goes out from this copy before it is rebuilt
+    await vi.waitFor(() => expect([a.unsent, a.paused, server.rows.length]).toEqual([0, null, 2]))
+  })
+
+  it('a server failing to answer the report is asked again, and never counts against this browser', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer('live', 'apply-20')
+    const failing = () => ({
+      status: 502,
+      bytes: new TextEncoder().encode('<html>Bad Gateway</html>'),
+    })
+    server.judge.answer = () =>
+      server.judge.reports.length <= 3 ? failing() : reply(202, { collab: 'judging', judged: 0 })
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+
+    await room.pull()
+    await vi.advanceTimersByTimeAsync(3 * 31_000)
+    const waiting = [server.judge.reports.length, room.needsRebuild, room.stopped, room.paused]
+    server.judge.judged++
+    server.judge.verdict = 'quarantined'
+    await room.pull()
+
+    expect([waiting, room.needsRebuild]).toEqual([[4, false, null, 'suspect'], true])
+  })
+
+  it('a report refused for a lapsed sign-in is made again once the person signs back in', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer('live', 'apply-21')
+    server.judge.answer = () =>
+      signedIn === 'Guest'
+        ? reply(401, { collab: 'signed_out' })
+        : reply(202, { collab: 'judging', judged: 0 })
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+    signedIn = 'Guest'
+
+    await room.pull()
+    const out = room.blocked
+    signedIn = 'a@x.com'
+    await vi.advanceTimersByTimeAsync(31_000)
+    server.judge.judged++
+    server.judge.verdict = 'quarantined'
+    await room.pull()
+
+    expect([out, server.judge.reports.length, room.needsRebuild]).toEqual(['signed_out', 2, true])
   })
 
   it('a verdict from before the report is not taken for this one', async () => {
