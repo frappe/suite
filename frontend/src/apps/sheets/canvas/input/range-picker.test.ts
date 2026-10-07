@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  canInsertRef,
   createRangePicker,
   refForRange,
   refReplaceStart,
@@ -28,6 +29,19 @@ describe('reference text', () => {
     expect(refReplaceStart('=SUM(A1:B', 9)).toBe(5)
     expect(refReplaceStart("=SUM('My Sheet'!A1", 18)).toBe(5)
     expect(refReplaceStart('=A1+', 4)).toBe(4)
+  })
+
+  it('allows a ref only where one can go', () => {
+    expect(canInsertRef('=', 1)).toBe(true)
+    expect(canInsertRef('=SUM(', 5)).toBe(true)
+    expect(canInsertRef('=SUM(A1, ', 9)).toBe(true)
+    expect(canInsertRef('=A1+', 4)).toBe(true)
+    expect(canInsertRef('=SUM(A1', 7)).toBe(true) // replaces A1
+    expect(canInsertRef('=SUM(A1)', 8)).toBe(false)
+    expect(canInsertRef('=COUNTIF(B1:B5,"banana")', 24)).toBe(false)
+    expect(canInsertRef('=SUM(1', 6)).toBe(false)
+    expect(canInsertRef('="abc', 5)).toBe(false)
+    expect(canInsertRef('hello', 5)).toBe(false)
   })
 })
 
@@ -104,13 +118,28 @@ describe('range picker', () => {
       expect(p.rect).toEqual({ r0: 1, c0: 1, r1: 1, c1: 1 })
     })
 
-    it('a second click extends from the first while nothing was typed between', () => {
+    it('a second plain click replaces the first ref, not extends it', () => {
       const p = make()
       typed(input, '=SUM(')
       p.pickCell(input, 0, 0, false)
       p.endDrag()
       p.pickCell(input, 2, 0, false)
+      expect(input.value).toBe('=SUM(A3')
+    })
+
+    it('Shift+click extends from the first-clicked cell', () => {
+      const p = make()
+      typed(input, '=SUM(')
+      p.pickCell(input, 0, 0, false)
+      p.endDrag()
+      p.pickCell(input, 2, 0, true)
       expect(input.value).toBe('=SUM(A1:A3')
+    })
+
+    it('has no target after a closed call, so the click commits', () => {
+      const p = make()
+      typed(input, '=SUM(A1)')
+      expect(p.target()).toBeNull()
     })
 
     it('after typing an operator, the next click starts a fresh ref', () => {

@@ -59,6 +59,18 @@ export function refReplaceStart(value: string, caret: number): number {
   return m ? caret - m[0].length : caret
 }
 
+/**
+ * Whether a reference may go at the caret: the text before it (ignoring a
+ * partial ref the pick would replace, and spaces) ends in `=`, `(`, `,` or an
+ * operator. After `)`, a number or a closed string a click or arrow commits
+ * the formula instead, as in Google Sheets.
+ */
+export function canInsertRef(value: string, caret: number): boolean {
+  if (!value.startsWith('=')) return false
+  const before = value.slice(0, refReplaceStart(value, caret)).trimEnd()
+  return /[=(,;+\-*/^&<>{]$/.test(before)
+}
+
 /** `Sheet2!` for a plain name, `'My Sheet'!` (quotes doubled) otherwise. */
 export function sheetPrefix(name: string | null): string {
   if (!name) return ''
@@ -147,8 +159,8 @@ export function createRangePicker(o: RangePickerOptions): RangePicker {
   let rect: PickRect | null = null
   let drag: Drag | null = null
   let key: KeyPick | null = null
-  // Origin for click-to-extend. Outlives `drag` (mouseup clears that), so
-  // the next click extends from the first-clicked cell.
+  // Origin for Shift+click. Outlives `drag` (mouseup clears that), so a
+  // later Shift+click extends from the first-clicked cell.
   let mouseAnchor: Cell | null = null
   // `rect` is a passive autocomplete suggestion, not a real pick.
   let suggesting = false
@@ -161,7 +173,9 @@ export function createRangePicker(o: RangePickerOptions): RangePicker {
     const ok = el instanceof HTMLInputElement || el === o.editorElement
     if (!ok) return null
     const input = el as PickInput
-    return input.value.startsWith('=') ? input : null
+    // A pick in progress owns the input even mid-reference.
+    if (key?.target === input) return input
+    return canInsertRef(input.value, caretOf(input)) ? input : null
   }
 
   function clear(): void {
@@ -202,17 +216,11 @@ export function createRangePicker(o: RangePickerOptions): RangePicker {
     )
   }
 
-  // Google Sheets style: a plain click writes a one-cell ref and remembers
-  // it; the next click extends from it (A1 → A1:A3) as long as the last ref
-  // still sits right before the caret, i.e. nothing was typed in between.
-  // Shift+click always extends.
+  // Google Sheets style: a plain click writes a one-cell ref, replacing a
+  // ref picked just before it (A1 → A3). Only Shift+click extends (A1:A3).
   function pickCell(input: PickInput, r: number, c: number, extend: boolean): void {
-    const caret = caretOf(input)
-    const start = refReplaceStart(input.value, caret)
-    const abutting = input.value.slice(start, caret)
-    const lastRef = rect && !suggesting ? ref(rect) : null
-    const continuing = !!mouseAnchor && lastRef !== null && abutting === lastRef
-    const anchor = (extend || continuing) && mouseAnchor ? mouseAnchor : { r, c }
+    const start = refReplaceStart(input.value, caretOf(input))
+    const anchor = extend && mouseAnchor ? mouseAnchor : { r, c }
     const next = span(anchor, { r, c })
     writeRef(input, ref(next), start)
     drag = { anchor, target: input }

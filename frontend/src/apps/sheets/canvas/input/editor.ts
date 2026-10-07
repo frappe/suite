@@ -14,7 +14,7 @@
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
 import type { Cell } from '../selection.js'
 import type { Autocomplete } from './autocomplete.js'
-import type { RangePicker } from './range-picker.js'
+import { canInsertRef, type RangePicker } from './range-picker.js'
 
 export type EditMode = 'enter' | 'edit'
 
@@ -186,9 +186,10 @@ export function createEditor(o: EditorOptions): Editor {
         o.picker.keyMove(dr, dc, e.shiftKey, e.ctrlKey || e.metaKey)
         return
       }
-      // In a formula, arrows always pick, even after a comma; keyStart
-      // decides whether to replace a partial ref or insert a new one.
-      if (o.overlay.getValue().startsWith('=')) {
+      // In a formula, arrows pick where a ref can go (after `=`, `(`, `,`,
+      // an operator); keyStart decides whether to replace a partial ref or
+      // insert a new one. After `)` etc. they commit and move, like Sheets.
+      if (canInsertRef(el.value, el.selectionStart ?? el.value.length)) {
         o.picker.keyStart(el, dr, dc, e.shiftKey)
         return
       }
