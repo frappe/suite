@@ -31,6 +31,7 @@ class AddGroupInput(TypedDict):
     description: NotRequired[str | None]
     members: NotRequired[list[str] | None]
     quota_gb: NotRequired[float | None]
+    disable_receiving: NotRequired[bool]
 
 
 class AddGroupEmailInput(TypedDict):
@@ -78,6 +79,7 @@ class AddMemberInput(TypedDict):
     quota_gb: NotRequired[float | None]
     locale: NotRequired[str | None]
     time_zone: NotRequired[str | None]
+    disable_receiving: NotRequired[bool]
 
 
 class AddMemberEmailInput(TypedDict):
@@ -215,6 +217,11 @@ class SetGroupEmailEnabledInput(TypedDict):
     enabled: int
 
 
+class SetGroupReceivingEnabledInput(TypedDict):
+    group_id: str
+    enabled: bool
+
+
 class SetMailingListEmailEnabledInput(TypedDict):
     list_id: str
     email: str
@@ -225,6 +232,11 @@ class SetMemberEmailEnabledInput(TypedDict):
     member_id: str
     email: str
     enabled: int
+
+
+class SetMemberReceivingEnabledInput(TypedDict):
+    member_id: str
+    enabled: bool
 
 
 class UpdateDomainInput(TypedDict):
@@ -390,6 +402,13 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
         type(None),
     ),
     (
+        admin.set_group_receiving_enabled,
+        "mutation",
+        "admin.groups.setReceivingEnabled",
+        SetGroupReceivingEnabledInput,
+        type(None),
+    ),
+    (
         admin.set_mailing_list_email_enabled,
         "mutation",
         "admin.mailingLists.setEmailEnabled",
@@ -401,6 +420,13 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
         "mutation",
         "admin.members.setEmailEnabled",
         SetMemberEmailEnabledInput,
+        type(None),
+    ),
+    (
+        admin.set_member_receiving_enabled,
+        "mutation",
+        "admin.members.setReceivingEnabled",
+        SetMemberReceivingEnabledInput,
         type(None),
     ),
     (admin.update_domain, "mutation", "admin.domains.update", UpdateDomainInput, DomainRow | Domain),

@@ -474,6 +474,7 @@ export type InviteOutput = {
   expires_at: string | null
   quota_gb: number | null
   send_invite: 0 | 1
+  disable_receiving: 0 | 1
   is_verified: 0 | 1
   groups: string | null
   mailing_lists: string | null
@@ -1284,6 +1285,7 @@ export type GetGroupsOutputGroupRow = {
   name: string
   email: string
   description: string | null
+  disable_receiving: boolean
   quota_gb: number
   used_bytes: number | null
   created_at: string | null
@@ -2906,6 +2908,7 @@ export type AddGroupInput = {
   description?: string | null
   members?: Array<string> | null
   quota_gb?: number | null
+  disable_receiving?: boolean
 }
 
 export type AddGroupOutput = string
@@ -3087,6 +3090,7 @@ export type AddMemberInput = {
   quota_gb?: number | null
   locale?: string | null
   time_zone?: string | null
+  disable_receiving?: boolean
 }
 
 export type AddMemberOutput = null
@@ -3680,6 +3684,7 @@ export type GetGroupOutput = {
   name: string
   email: string
   description: string | null
+  disable_receiving: boolean
   quota_gb: number
   used_bytes: number | null
   created_at: string | null
@@ -3792,6 +3797,7 @@ export type GetMemberOutput = {
   quota: GetMemberOutputQuota
   locale: string | null
   time_zone: string | null
+  disable_receiving: boolean
 }
 
 export type GetMemberError = 'PermissionError' | 'ValidationError'
@@ -4066,6 +4072,33 @@ const operationSetGroupEmailEnabled: MutationRef<
   loadValidators: async () => (await import('./validators')).operationSetGroupEmailEnabled,
 }
 
+export type SetGroupReceivingEnabledInput = { group_id: string; enabled: boolean }
+
+export type SetGroupReceivingEnabledOutput = null
+
+export type SetGroupReceivingEnabledError = 'PermissionError' | 'ValidationError'
+
+const operationSetGroupReceivingEnabled: MutationRef<
+  SetGroupReceivingEnabledInput,
+  SetGroupReceivingEnabledOutput,
+  SetGroupReceivingEnabledError
+> = {
+  id: 'set_group_receiving_enabled',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'admin.groups.setReceivingEnabled',
+  empty: true,
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.admin.set_group_receiving_enabled',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationSetGroupReceivingEnabled,
+}
+
 export type SetMailingListEmailEnabledInput = { list_id: string; email: string; enabled: number }
 
 export type SetMailingListEmailEnabledOutput = null
@@ -4118,6 +4151,33 @@ const operationSetMemberEmailEnabled: MutationRef<
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationSetMemberEmailEnabled,
+}
+
+export type SetMemberReceivingEnabledInput = { member_id: string; enabled: boolean }
+
+export type SetMemberReceivingEnabledOutput = null
+
+export type SetMemberReceivingEnabledError = 'PermissionError' | 'ValidationError'
+
+const operationSetMemberReceivingEnabled: MutationRef<
+  SetMemberReceivingEnabledInput,
+  SetMemberReceivingEnabledOutput,
+  SetMemberReceivingEnabledError
+> = {
+  id: 'set_member_receiving_enabled',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'admin.members.setReceivingEnabled',
+  empty: true,
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.admin.set_member_receiving_enabled',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationSetMemberReceivingEnabled,
 }
 
 export type UpdateDomainOutputDnsGroup = {
@@ -6770,6 +6830,7 @@ export const api = {
       get: operationGetMember,
       removeEmail: operationRemoveMemberEmail,
       setEmailEnabled: operationSetMemberEmailEnabled,
+      setReceivingEnabled: operationSetMemberReceivingEnabled,
       update: operationUpdateMember,
     },
     groups: {
@@ -6784,6 +6845,7 @@ export const api = {
       removeMember: operationRemoveGroupMember,
       removeMemberFromGroup: operationRemoveMemberFromGroup,
       setEmailEnabled: operationSetGroupEmailEnabled,
+      setReceivingEnabled: operationSetGroupReceivingEnabled,
       update: operationUpdateGroup,
     },
     mailingLists: {

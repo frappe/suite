@@ -83,6 +83,7 @@ class GroupRow(TypedDict):
     name: str
     email: str
     description: str | None
+    disable_receiving: bool
     quota_gb: float
     used_bytes: int | None
     created_at: str | None

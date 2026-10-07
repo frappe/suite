@@ -25,6 +25,7 @@ class Invite(TypedDict):
     expires_at: str | None
     quota_gb: float | None
     send_invite: Flag
+    disable_receiving: Flag
     is_verified: Flag
     groups: str | None
     mailing_lists: str | None

@@ -305,6 +305,8 @@ import type {
   SetFlaggedOutput,
   SetGroupEmailEnabledInput,
   SetGroupEmailEnabledOutput,
+  SetGroupReceivingEnabledInput,
+  SetGroupReceivingEnabledOutput,
   SetMailingListEmailEnabledInput,
   SetMailingListEmailEnabledOutput,
   SetMailsMailboxesInput,
@@ -315,6 +317,8 @@ import type {
   SetMailsSpamStatusOutput,
   SetMemberEmailEnabledInput,
   SetMemberEmailEnabledOutput,
+  SetMemberReceivingEnabledInput,
+  SetMemberReceivingEnabledOutput,
   SetSignatureInput,
   SetSignatureOutput,
   SignaturesInput,
@@ -986,6 +990,7 @@ export const operationInvite: Validators<InviteInput, InviteOutput> = {
           expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
           quota_gb: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Quota Gb' },
           send_invite: { enum: [0, 1], title: 'Send Invite', type: 'integer' },
+          disable_receiving: { enum: [0, 1], title: 'Disable Receiving', type: 'integer' },
           is_verified: { enum: [0, 1], title: 'Is Verified', type: 'integer' },
           groups: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Groups' },
           mailing_lists: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mailing Lists' },
@@ -1000,6 +1005,7 @@ export const operationInvite: Validators<InviteInput, InviteOutput> = {
           'expires_at',
           'quota_gb',
           'send_invite',
+          'disable_receiving',
           'is_verified',
           'groups',
           'mailing_lists',
@@ -2198,6 +2204,7 @@ export const operationGetGroups: Validators<GetGroupsInput, GetGroupsOutput> = {
               name: { title: 'Name', type: 'string' },
               email: { title: 'Email', type: 'string' },
               description: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Description' },
+              disable_receiving: { title: 'Disable Receiving', type: 'boolean' },
               quota_gb: { title: 'Quota Gb', type: 'number' },
               used_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Used Bytes' },
               created_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Created At' },
@@ -2207,6 +2214,7 @@ export const operationGetGroups: Validators<GetGroupsInput, GetGroupsOutput> = {
               'name',
               'email',
               'description',
+              'disable_receiving',
               'quota_gb',
               'used_bytes',
               'created_at',
@@ -3962,6 +3970,7 @@ export const operationAddGroup: Validators<AddGroupInput, AddGroupOutput> = {
             title: 'Members',
           },
           quota_gb: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Quota Gb' },
+          disable_receiving: { title: 'Disable Receiving', type: 'boolean' },
         },
         required: ['name', 'domain'],
         additionalProperties: false,
@@ -4129,6 +4138,7 @@ export const operationAddMember: Validators<AddMemberInput, AddMemberOutput> = {
           quota_gb: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Quota Gb' },
           locale: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Locale' },
           time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
+          disable_receiving: { title: 'Disable Receiving', type: 'boolean' },
         },
         required: ['username', 'domain', 'is_admin', 'send_invite', 'backup_email'],
         additionalProperties: false,
@@ -4768,6 +4778,7 @@ export const operationGetGroup: Validators<GetGroupInput, GetGroupOutput> = {
           name: { title: 'Name', type: 'string' },
           email: { title: 'Email', type: 'string' },
           description: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Description' },
+          disable_receiving: { title: 'Disable Receiving', type: 'boolean' },
           quota_gb: { title: 'Quota Gb', type: 'number' },
           used_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Used Bytes' },
           created_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Created At' },
@@ -4784,6 +4795,7 @@ export const operationGetGroup: Validators<GetGroupInput, GetGroupOutput> = {
           'name',
           'email',
           'description',
+          'disable_receiving',
           'quota_gb',
           'used_bytes',
           'created_at',
@@ -4967,6 +4979,7 @@ export const operationGetMember: Validators<GetMemberInput, GetMemberOutput> = {
           quota: { $ref: '#/$defs/Quota' },
           locale: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Locale' },
           time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
+          disable_receiving: { title: 'Disable Receiving', type: 'boolean' },
         },
         required: [
           'name',
@@ -4984,6 +4997,7 @@ export const operationGetMember: Validators<GetMemberInput, GetMemberOutput> = {
           'quota',
           'locale',
           'time_zone',
+          'disable_receiving',
         ],
         title: 'Member',
         type: 'object',
@@ -5255,6 +5269,31 @@ export const operationSetGroupEmailEnabled: Validators<
   },
 }
 
+export const operationSetGroupReceivingEnabled: Validators<
+  SetGroupReceivingEnabledInput,
+  SetGroupReceivingEnabledOutput
+> = {
+  validateInput(value: unknown): asserts value is SetGroupReceivingEnabledInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          group_id: { title: 'Group Id', type: 'string' },
+          enabled: { title: 'Enabled', type: 'boolean' },
+        },
+        required: ['group_id', 'enabled'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'set_group_receiving_enabled input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SetGroupReceivingEnabledOutput {
+    assertSchema(value, { type: 'null' }, 'set_group_receiving_enabled output')
+  },
+}
+
 export const operationSetMailingListEmailEnabled: Validators<
   SetMailingListEmailEnabledInput,
   SetMailingListEmailEnabledOutput
@@ -5304,6 +5343,31 @@ export const operationSetMemberEmailEnabled: Validators<
   },
   validateOutput(value: unknown): asserts value is SetMemberEmailEnabledOutput {
     assertSchema(value, { type: 'null' }, 'set_member_email_enabled output')
+  },
+}
+
+export const operationSetMemberReceivingEnabled: Validators<
+  SetMemberReceivingEnabledInput,
+  SetMemberReceivingEnabledOutput
+> = {
+  validateInput(value: unknown): asserts value is SetMemberReceivingEnabledInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          member_id: { title: 'Member Id', type: 'string' },
+          enabled: { title: 'Enabled', type: 'boolean' },
+        },
+        required: ['member_id', 'enabled'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'set_member_receiving_enabled input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SetMemberReceivingEnabledOutput {
+    assertSchema(value, { type: 'null' }, 'set_member_receiving_enabled output')
   },
 }
 

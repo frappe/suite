@@ -1251,6 +1251,14 @@
             "title": "Send Invite",
             "type": "integer"
           },
+          "disable_receiving": {
+            "enum": [
+              0,
+              1
+            ],
+            "title": "Disable Receiving",
+            "type": "integer"
+          },
           "is_verified": {
             "enum": [
               0,
@@ -1292,6 +1300,7 @@
           "expires_at",
           "quota_gb",
           "send_invite",
+          "disable_receiving",
           "is_verified",
           "groups",
           "mailing_lists"
@@ -4124,6 +4133,10 @@
                 ],
                 "title": "Description"
               },
+              "disable_receiving": {
+                "title": "Disable Receiving",
+                "type": "boolean"
+              },
               "quota_gb": {
                 "title": "Quota Gb",
                 "type": "number"
@@ -4156,6 +4169,7 @@
               "name",
               "email",
               "description",
+              "disable_receiving",
               "quota_gb",
               "used_bytes",
               "created_at"
@@ -7993,6 +8007,10 @@
               }
             ],
             "title": "Quota Gb"
+          },
+          "disable_receiving": {
+            "title": "Disable Receiving",
+            "type": "boolean"
           }
         },
         "required": [
@@ -8417,6 +8435,10 @@
               }
             ],
             "title": "Time Zone"
+          },
+          "disable_receiving": {
+            "title": "Disable Receiving",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9668,6 +9690,10 @@
             ],
             "title": "Description"
           },
+          "disable_receiving": {
+            "title": "Disable Receiving",
+            "type": "boolean"
+          },
           "quota_gb": {
             "title": "Quota Gb",
             "type": "number"
@@ -9717,6 +9743,7 @@
           "name",
           "email",
           "description",
+          "disable_receiving",
           "quota_gb",
           "used_bytes",
           "created_at",
@@ -10136,6 +10163,10 @@
               }
             ],
             "title": "Time Zone"
+          },
+          "disable_receiving": {
+            "title": "Disable Receiving",
+            "type": "boolean"
           }
         },
         "required": [
@@ -10153,7 +10184,8 @@
           "mailing_lists",
           "quota",
           "locale",
-          "time_zone"
+          "time_zone",
+          "disable_receiving"
         ],
         "title": "Member",
         "type": "object"
@@ -10612,6 +10644,46 @@
       "bytes": false
     },
     {
+      "id": "set_group_receiving_enabled",
+      "kind": "mutation",
+      "publicName": "admin.groups.setReceivingEnabled",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.admin.set_group_receiving_enabled",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "group_id": {
+            "title": "Group Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "group_id",
+          "enabled"
+        ],
+        "title": "SetGroupReceivingEnabledInput",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "set_mailing_list_email_enabled",
       "kind": "mutation",
       "publicName": "admin.mailingLists.setEmailEnabled",
@@ -10687,6 +10759,46 @@
           "enabled"
         ],
         "title": "SetMemberEmailEnabledInput",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "set_member_receiving_enabled",
+      "kind": "mutation",
+      "publicName": "admin.members.setReceivingEnabled",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.admin.set_member_receiving_enabled",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "member_id": {
+            "title": "Member Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "member_id",
+          "enabled"
+        ],
+        "title": "SetMemberReceivingEnabledInput",
         "type": "object"
       },
       "output": {

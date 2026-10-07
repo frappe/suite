@@ -87,6 +87,7 @@ class Member(TypedDict):
     quota: Quota
     locale: str | None
     time_zone: str | None
+    disable_receiving: bool
 
 
 class Group(GroupRow):
