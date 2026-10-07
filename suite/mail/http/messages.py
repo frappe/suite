@@ -13,7 +13,6 @@ from suite.mail.http.message_shapes import (
     DraftResult,
     Message,
     RecipientInput,
-    ScreeningSender,
     SearchFilter,
     SearchPage,
     SubmissionDetail,
@@ -117,10 +116,6 @@ class AllowInput(SendersInput):
 
 class UndoScreenInput(SendersInput):
     ids: list[str]
-
-
-class SenderInput(AccountInput):
-    from_email: str
 
 
 class DraftAttachment(TypedDict, total=False):
@@ -258,15 +253,6 @@ _OPERATIONS: tuple[
     ),
     (mail.get_mime_message, "query", "messages.mime", NameInput, MimeMessage, None),
     (mail.get_delivery_status, "query", "messages.deliveryStatus", BlobInput, DeliveryReport, None),
-    (
-        mail.get_screening_senders,
-        "query",
-        "screener.senders",
-        AccountInput,
-        list[ScreeningSender],
-        None,
-    ),
-    (mail.get_screening_sender_mails, "query", "screener.messages", SenderInput, list[Message], None),
     (mail.create_mail, "mutation", "messages.create", CreateInput, DraftResult, None),
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
     (mail.delete_mail, "mutation", "messages.deleteDraft", IdInput, type(None), None),

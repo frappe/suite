@@ -105,16 +105,6 @@ export const registration: OwnerRegistration = {
     if (reference.id === 'set_signature')
       return { effects: { invalidates: ['mail.get_identities'] } }
     if (reference.id === 'screen_email_address') return screeningPolicy(false)
-    if (reference.id === 'move_screening_mails_to_inbox')
-      return {
-        effects: {
-          invalidates: [
-            'mail.get_mailboxes',
-            'mail.get_unified_folders',
-            'mail.get_all_inbox_unread_count',
-          ],
-        },
-      }
     if (
       [
         'create_mail_import',
@@ -292,8 +282,6 @@ const messageReaders = [
   'get_unified_folders',
   'get_all_inbox_unread_count',
   'inbox_summary',
-  'get_screening_senders',
-  'get_screening_sender_mails',
   'get_submissions',
   'get_scheduled_mail',
 ].map((id) => `mail.${id}`)

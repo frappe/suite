@@ -4,19 +4,18 @@
 import frappe
 
 from suite.mail.api.mail import (
+    _screening_message_ids,
     allow_screening_senders,
     get_mailboxes,
     get_screened_addresses,
-    get_screening_sender_mails,
-    get_screening_senders,
     get_threads,
-    move_screening_mails_to_inbox,
     screen_email_address,
     screen_email_addresses,
     screen_out_senders,
     unscreen_email_addresses,
 )
 from suite.mail.api.mail import get_global_screened_addresses as get_global_screened
+from suite.mail.doctype.mail_message.mail_message import get_messages
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 
@@ -33,9 +32,20 @@ class TestMailScreening(StalwartIntegrationTestCase):
         with self.set_user(self.screener.email):
             return {row["email"]: row["action"] for row in get_screened_addresses(self.account)}
 
-    def _screening_senders(self) -> list[dict]:
+    def _waiting_mail(self) -> list[dict]:
+        """The mail marked unscreened — waiting on a decision about its sender."""
+
         with self.set_user(self.screener.email):
-            return get_screening_senders(self.account)
+            return get_messages(self.account, _screening_message_ids(self.account))
+
+    def _waiting_senders(self) -> set[str]:
+        return {mail["from_email"] for mail in self._waiting_mail()}
+
+    def _inbox_unscreened(self, subject: str) -> int | None:
+        """The inbox row's unscreened flag for the thread with this subject; None while it is absent."""
+
+        rows = {t["subject"]: t for t in self.get_inbox_threads(self.screener)}
+        return rows[subject]["unscreened"] if subject in rows else None
 
     def test_screening_rules_crud(self):
         stranger = f"{unique_name('stranger')}@elsewhere.example.org"
@@ -75,7 +85,7 @@ class TestMailScreening(StalwartIntegrationTestCase):
         # Sending allowlists the recipient so their replies reach the inbox.
         self.assertEqual(self._screened().get(correspondent.email), "Accepted")
 
-    def test_screener_folder_flow(self):
+    def test_screening_flow(self):
         allowed = self.create_member()
         junked = self.create_member()
 
@@ -84,29 +94,29 @@ class TestMailScreening(StalwartIntegrationTestCase):
         self.send_mail(allowed, self.screener.email, subject=subject_allowed)
         self.send_mail(junked, self.screener.email, subject=subject_junked)
 
-        # Both unknown senders land in the Screener, grouped by sender.
+        # Both unknown senders wait on a decision.
         def both_present():
-            rows = self._screening_senders()
+            rows = self._waiting_mail()
             return rows if {allowed.email, junked.email} <= {r["from_email"] for r in rows} else None
 
         senders = self.wait_until(
-            both_present, timeout=60, message="Unknown senders did not land in the Screener."
+            both_present, timeout=60, message="Unknown senders were not marked unscreened."
         )
-        allowed_row = next(r for r in senders if r["from_email"] == allowed.email)
-        self.assertEqual(allowed_row["count"], 1)
-        self.assertEqual(allowed_row["unread"], 1)
+        # They wait in the Inbox itself, marked — there is no folder of their own.
+        self.assertEqual(self._inbox_unscreened(subject_allowed), 1)
+        self.assertEqual(
+            [m["subject"] for m in senders if m["from_email"] == allowed.email], [subject_allowed]
+        )
 
         with self.set_user(self.screener.email):
-            mails = get_screening_sender_mails(self.account, allowed.email)
-            self.assertEqual([m["subject"] for m in mails], [subject_allowed])
-
-            # Allow one sender in: rule + mail moves to the inbox.
+            # Allow one sender in: rule + the mark comes off, the mail staying in the inbox.
             allow_screening_senders(self.account, [allowed.email])
         self.assertEqual(self._screened().get(allowed.email), "Accepted")
         self.wait_until(
-            lambda: subject_allowed in [t["subject"] for t in self.get_inbox_threads(self.screener)],
-            message="Allowed sender's mail did not move to the inbox.",
+            lambda: self._inbox_unscreened(subject_allowed) == 0,
+            message="Allowed sender's mail was still marked unscreened.",
         )
+        self.assertNotIn(allowed.email, self._waiting_senders())
 
         # Screen the other one out: rule Spam + mail to Junk.
         with self.set_user(self.screener.email):
@@ -121,22 +131,6 @@ class TestMailScreening(StalwartIntegrationTestCase):
             message="Screened-out sender's mail did not move to Junk.",
         )
 
-        # A third pending sender gets flushed to the inbox (the "screening turned off" path).
-        pending = self.create_member()
-        subject_pending = f"Pending {unique_name('subject')}"
-        self.send_mail(pending, self.screener.email, subject=subject_pending)
-        self.wait_until(
-            lambda: pending.email in {r["from_email"] for r in self._screening_senders()},
-            timeout=60,
-            message="Third sender did not land in the Screener.",
-        )
-        with self.set_user(self.screener.email):
-            move_screening_mails_to_inbox(self.account)
-        self.wait_until(
-            lambda: subject_pending in [t["subject"] for t in self.get_inbox_threads(self.screener)],
-            message="Screener flush did not move pending mail to the inbox.",
-        )
-
     def test_allow_sender_and_archive(self):
         """Allowing a sender can file their waiting mail straight into Archive instead of the Inbox —
         the sender is accepted either way."""
@@ -145,9 +139,9 @@ class TestMailScreening(StalwartIntegrationTestCase):
         subject = f"Allow and archive {unique_name('subject')}"
         self.send_mail(sender, self.screener.email, subject=subject)
         self.wait_until(
-            lambda: sender.email in {r["from_email"] for r in self._screening_senders()},
+            lambda: sender.email in self._waiting_senders(),
             timeout=60,
-            message="Sender did not land in the Screener.",
+            message="Sender was not marked unscreened.",
         )
 
         with self.set_user(self.screener.email):
@@ -181,16 +175,16 @@ class TestMailScreening(StalwartIntegrationTestCase):
         subject = f"Rejected {unique_name('subject')}"
         self.send_mail(rejected, self.screener.email, subject=subject)
 
-        # Discarded outright: it must reach neither the inbox nor the Screener. Deliverability of
+        # Discarded outright: it must reach the inbox neither marked nor unmarked. Deliverability of
         # a control mail is the clock - once it arrives, the rejected one would have too.
         control = self.create_member()
         control_subject = f"Control {unique_name('subject')}"
         self.send_mail(control, self.screener.email, subject=control_subject)
         self.wait_until(
-            lambda: control.email in {r["from_email"] for r in self._screening_senders()},
+            lambda: control.email in self._waiting_senders(),
             timeout=60,
             message="Control mail never arrived.",
         )
 
         self.assertNotIn(subject, [t["subject"] for t in self.get_inbox_threads(self.screener)])
-        self.assertNotIn(rejected.email, {r["from_email"] for r in self._screening_senders()})
+        self.assertNotIn(rejected.email, self._waiting_senders())

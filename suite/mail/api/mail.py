@@ -30,6 +30,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     fetch_thread,
     fetch_threads,
     get_messages,
+    is_unscreened_message,
     move_messages_to_mailbox,
     remove_messages_from_mailbox,
     search_messages,
@@ -37,6 +38,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_messages_mailboxes,
     set_seen_status,
     set_spam_status,
+    set_unscreened_status,
 )
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes, fetch_mailboxes
@@ -51,7 +53,7 @@ from suite.mail.doctype.screened_email_address.screened_email_address import (
     is_globally_accepted,
 )
 from suite.mail.doctype.sieve_script.sieve_script import (
-    SCREENER_MAILBOX_NAME,
+    UNSCREENED_KEYWORD,
     build_automation_sieve,
     pause_automation_sieve_build,
 )
@@ -77,7 +79,6 @@ from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.validation import JSONList
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
-SCREENING_FETCH_LIMIT = 500
 
 # Undo send: the composer's default Send holds delivery (FUTURERELEASE) for the sender's
 # undo window (User Settings.undo_send_period, which also times the toast in
@@ -454,17 +455,13 @@ def mailbox_slug(mailbox: dict) -> str | None:
     lowercased with every run of other characters folded into a hyphen. Worked out from the live
     name rather than stored, so a rename made in any client is picked up as soon as it is fetched.
 
-    None for the Screener, which has its own per-account view, and for a name with nothing left to
-    route by.
+    None for a name with nothing left to route by.
     """
 
     if role := (mailbox.get("role") or "").lower():
         return role
 
     name = mailbox.get("name") or ""
-    if name == SCREENER_MAILBOX_NAME:
-        return None
-
     return re.sub(r"[\W_]+", "-", name.lower()).strip("-") or None
 
 
@@ -590,7 +587,7 @@ def get_unified_folders() -> list[dict]:
             fields=["account", "mailbox_id", "icon", "color"],
         )
         by_owner = {(s.account, s.mailbox_id): s for s in settings}
-        for folder, owner in zip(folders.values(), owners):
+        for folder, owner in zip(folders.values(), owners, strict=False):
             s = by_owner.get(owner)
             folder["icon"] = s.icon if s else None
             folder["color"] = s.color if s else None
@@ -712,6 +709,8 @@ def serialize_thread(
     return {
         **{field: current[field] for field in current_fields},
         **{field: latest[field] for field in activity_fields},
+        # A thread waits on a decision while any of its mail here is from an unscreened sender.
+        "unscreened": cint(any(is_unscreened_message(message) for message in messages)),
         "subject": first["subject"],
         "attachments": serialize_attachments(latest.get("attachments", [])),
         "messages": collapse_duplicate_copies(
@@ -749,6 +748,7 @@ def serialize_mail(mail: dict) -> dict:
     return {
         **{field: mail[field] for field in mail_fields},
         "text_body": "" if html else mail.get("text_body", ""),
+        "unscreened": cint(is_unscreened_message(mail)),
         "attachments": serialize_attachments(mail.get("attachments", [])),
         "dsn_blob_id": _get_dsn_blob_id(mail),
     }
@@ -1680,25 +1680,30 @@ def unscreen_email_addresses(account: str, emails: list[str]) -> None:
     build_automation_sieve(account, activate=True)
 
 
-# --- Screener (the screening folder view) ---------------------------------------------------------
+# --- Screening (the unscreened keyword) ------------------------------------------------------------
+
+
+def _screening_filter(from_email: str | None = None) -> dict:
+    """The JMAP filter for mail waiting on a screening decision, optionally from one sender."""
+
+    unscreened = {"hasKeyword": UNSCREENED_KEYWORD}
+    if not from_email:
+        return unscreened
+    return {"operator": "AND", "conditions": [unscreened, {"from": from_email}]}
 
 
 def _screening_message_ids(account: str, from_email: str | None = None) -> list[str]:
-    """Return ids of Screening-folder messages, optionally only those from a given sender."""
-
-    screening_id = get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME)
-    if not screening_id:
-        add_mailbox(account, SCREENER_MAILBOX_NAME)
-        return []
-
-    conditions = [{"inMailbox": screening_id}]
-    if from_email:
-        conditions.append({"from": from_email})
-    filter = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
+    """Return ids of mail waiting on a screening decision, optionally only those from a given sender."""
 
     client = get_account_client(account)
+    return _query_email_ids(
+        account, _screening_filter(from_email), limit=client.capabilities.limits.max_objects_in_get
+    )["ids"]
 
-    return _query_email_ids(account, filter, limit=client.capabilities.limits.max_objects_in_get)["ids"]
+
+def _set_unscreened(account: str, ids: list[str], unscreened: bool) -> None:
+    if ids:
+        set_unscreened_status(account, ids, unscreened)
 
 
 def _query_email_ids(
@@ -1743,73 +1748,9 @@ def _query_email_ids(
     return {"ids": ids[:limit], "total": total}
 
 
-@frappe.whitelist()
-def get_screening_senders(account: str) -> list[dict]:
-    """Return one row per unique sender in the Screening folder, newest sender first.
-
-    The Screener groups by sender rather than by conversation: each row is the latest mail from that
-    sender, with a count of how many of their messages are waiting and how many are unread.
-    """
-
-    screening_id = get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME)
-    if not screening_id:
-        add_mailbox(account, SCREENER_MAILBOX_NAME)
-        return []
-
-    messages, _total = search_messages(
-        account,
-        {"inMailbox": screening_id},
-        position=0,
-        limit=SCREENING_FETCH_LIMIT,
-        sort=[{"property": "receivedAt", "isAscending": False}],
-    )
-
-    senders: dict[str, dict] = {}
-    for message in messages:  # newest first
-        email = (message.get("from_email") or "").lower()
-        if not email:
-            continue
-
-        sender = senders.get(email)
-        if not sender:
-            # The first (newest) message for this sender becomes the summary row.
-            senders[email] = {
-                "from_email": message["from_email"],
-                "from_name": message["from_name"],
-                "subject": message["subject"],
-                "preview": message["preview"],
-                "received_at": message["received_at"],
-                "count": 1,
-                "unread": 0 if message["seen"] else 1,
-            }
-        else:
-            sender["count"] += 1
-            if not message["seen"]:
-                sender["unread"] += 1
-
-    return list(senders.values())
-
-
-@frappe.whitelist()
-def get_screening_sender_mails(account: str, from_email: str) -> list[dict]:
-    """Return all Screening-folder messages from a single sender, oldest to newest (with bodies)."""
-
-    ids = _screening_message_ids(account, from_email)
-    if not ids:
-        return []
-
-    # The JMAP `from` filter is a tokenized text match, so it can also return other senders whose From
-    # header shares tokens. Keep only exact-address matches (mirrors how get_screening_senders groups).
-    target = from_email.lower()
-    mails = [serialize_mail(m) for m in get_messages(account, ids)]
-    mails = [m for m in mails if (m.get("from_email") or "").lower() == target]
-    mails.sort(key=lambda m: m["received_at"])
-    return add_user_images_to_emails(account, mails, is_thread=True)
-
-
-# Where a sender's already-screened mail is filed when you allow them in. The decision itself is the
-# same either way — future mail always reaches the inbox — this only says what happens to what's
-# waiting, so mail already read in the Screener needn't be triaged a second time in the Inbox.
+# Where a sender's waiting mail is filed when you allow them in. The decision itself is the same
+# either way — future mail always reaches the inbox — this only says what happens to what's waiting,
+# which is already in the Inbox: it stays there, or goes straight to Archive/Trash.
 ALLOW_DESTINATION_ROLES = ("inbox", "archive", "trash")
 
 
@@ -1817,13 +1758,13 @@ ALLOW_DESTINATION_ROLES = ("inbox", "archive", "trash")
 def allow_screening_senders(
     account: str, from_emails: list[str], destination: str = "inbox"
 ) -> dict[str, list[str]]:
-    """Allow senders in: accept them (future mail reaches the inbox) and file their screened mail into
-    `destination` — the inbox by default, or straight to Archive/Trash.
+    """Allow senders in: accept them (future mail reaches the inbox), take the unscreened keyword off
+    their waiting mail, and file it into `destination` — left in the inbox by default, or moved
+    straight to Archive/Trash.
 
-    Returns the ids moved, keyed by the sender they moved for. Once the mail has left the Screening
-    folder there is no finding it from the sender again — the lookup below only searches Screening —
-    so the interface holds on to these to offer refiling the same mail elsewhere ("Archive instead")
-    or undoing the verdict outright.
+    Returns the ids decided, keyed by the sender they were decided for. Once the keyword is off there
+    is no finding that mail from the sender again — the lookup below only finds unscreened mail — so
+    the interface holds on to these to undo the verdict.
     """
 
     if not from_emails:
@@ -1834,32 +1775,27 @@ def allow_screening_senders(
 
     _screen_email_addresses(account, from_emails, action="Accepted")
 
-    mailbox_id = get_mailbox_id_by_role(account, destination, create_if_not_exists=True, raise_exception=True)
-    moved: dict[str, list[str]] = {}
+    mailbox_id = (
+        None
+        if destination == "inbox"
+        else get_mailbox_id_by_role(account, destination, create_if_not_exists=True, raise_exception=True)
+    )
+    decided: dict[str, list[str]] = {}
     for from_email in from_emails:
         ids = _screening_message_ids(account, from_email)
         if ids:
-            move_mails(account, ids, mailbox_id, clear_junk=True)
-            moved[from_email] = ids
+            _set_unscreened(account, ids, False)
+            if mailbox_id:
+                move_mails(account, ids, mailbox_id, clear_junk=True)
+            decided[from_email] = ids
 
-    return moved
-
-
-@frappe.whitelist()
-def move_screening_mails_to_inbox(account: str) -> None:
-    """Move every Screening-folder message to the Inbox (offered when screening is turned off)."""
-
-    ids = _screening_message_ids(account)
-    if not ids:
-        return
-
-    inbox_id = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
-    move_mails(account, ids, inbox_id, clear_junk=True)
+    return decided
 
 
 @frappe.whitelist()
 def screen_out_senders(account: str, from_emails: list[str]) -> dict[str, list[str]]:
-    """Screen senders out: mark them Spam (future mail to Junk) and move their screened mail to Junk.
+    """Screen senders out: mark them Spam (future mail to Junk), take the unscreened keyword off their
+    waiting mail and move it to Junk.
 
     Returns the ids junked, keyed by sender — see `allow_screening_senders` for why the interface
     needs them back.
@@ -1874,6 +1810,7 @@ def screen_out_senders(account: str, from_emails: list[str]) -> dict[str, list[s
     for from_email in from_emails:
         ids = _screening_message_ids(account, from_email)
         if ids:
+            _set_unscreened(account, ids, False)
             set_mails_spam_status(account, ids, spam=True)
             junked[from_email] = ids
 
@@ -1882,12 +1819,12 @@ def screen_out_senders(account: str, from_emails: list[str]) -> dict[str, list[s
 
 @frappe.whitelist()
 def undo_screening_verdict(account: str, from_emails: list[str], ids: list[str]) -> None:
-    """Reverse a Screener verdict: drop the rules it wrote and put the mail back in the Screener.
+    """Reverse a screening verdict: drop the rules it wrote and put the mail back as waiting.
 
     `ids` are the ids the verdict returned. Restoring by id rather than by sender is the only correct
-    way round: the sender's other mail may have been in the Inbox all along and mustn't be dragged
-    back into the Screener with it. Because screened mail only ever lives in the Screening folder,
-    moving those ids back there restores exactly the membership they had.
+    way round: the sender's other mail may have been in the Inbox, decided, all along and mustn't be
+    marked waiting with it. Waiting mail only ever lives in the Inbox, so the ids go back there with
+    the keyword on — exactly where and what they were.
     """
 
     is_jmap_account_belongs_to_user(account, raise_exception=True)
@@ -1898,12 +1835,10 @@ def undo_screening_verdict(account: str, from_emails: list[str], ids: list[str])
     if not ids:
         return
 
-    screening_id = get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME)
-    if not screening_id:
-        return
-
     # clear_junk because a denied sender's mail was marked spam on the way out.
-    move_mails(account, ids, screening_id, clear_junk=True)
+    inbox_id = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
+    move_mails(account, ids, inbox_id, clear_junk=True)
+    _set_unscreened(account, ids, True)
 
 
 # B25: Mail compose attaches files through `upload_file` below. Frappe reads the

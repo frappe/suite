@@ -41,7 +41,6 @@ def render_automation_script() -> str:
         patch.object(sieve_script, "get_effective_screened_email_addresses", return_value=screened),
         patch.object(sieve_script, "get_junk_mailbox_path", return_value="Junk Mail"),
         patch.object(sieve_script, "is_screening_enabled", return_value=True),
-        patch.object(sieve_script, "get_screening_mailbox_path", return_value="Screener"),
         patch.object(sieve_script, "get_inbox_mailbox_path", return_value="INBOX"),
         patch.object(sieve_script, "get_account_emails", return_value=["me@example.org"]),
     ):
@@ -105,5 +104,5 @@ class TestAutomationSieveCompiles(IntegrationTestCase):
         self.assertIsNone(self.validate(script), script)
 
     def test_a_script_missing_a_require_does_not(self):
-        # Keeps the check above honest: `:create` needs the `mailbox` extension declared.
-        self.assertIsNotNone(self.validate('require ["fileinto"];\nfileinto :create "Screener";\n'))
+        # Keeps the check above honest: `:flags` needs the `imap4flags` extension declared.
+        self.assertIsNotNone(self.validate('require ["fileinto"];\nfileinto :flags "unscreened" "INBOX";\n'))

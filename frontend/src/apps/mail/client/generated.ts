@@ -2448,33 +2448,6 @@ const operationScreenEmailAddress: MutationRef<
   loadValidators: async () => (await import('./validators')).operationScreenEmailAddress,
 }
 
-export type MoveScreeningMailsToInboxInput = { account: string }
-
-export type MoveScreeningMailsToInboxOutput = null
-
-export type MoveScreeningMailsToInboxError = 'PermissionError' | 'ValidationError'
-
-const operationMoveScreeningMailsToInbox: MutationRef<
-  MoveScreeningMailsToInboxInput,
-  MoveScreeningMailsToInboxOutput,
-  MoveScreeningMailsToInboxError
-> = {
-  id: 'move_screening_mails_to_inbox',
-  owner: 'mail',
-  kind: 'mutation',
-  publicName: 'screening.moveToInbox',
-  empty: true,
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.mail.api.mail.move_screening_mails_to_inbox',
-  prefix: '/api/suite/mail/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError', 'ValidationError'],
-  loadValidators: async () => (await import('./validators')).operationMoveScreeningMailsToInbox,
-}
-
 export type CreateSieveScriptInput = {
   account: string
   _name: string
@@ -5110,6 +5083,7 @@ export type GetThreadsOutputCopy = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
 }
 
 export type GetThreadsOutputMailboxRef = {
@@ -5130,6 +5104,7 @@ export type GetThreadsOutputMessage = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
   message_id: string | null
   subject: string | null
   html_body: string | null
@@ -5163,6 +5138,7 @@ export type GetThreadsOutputThread = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
   account?: string
   account_name?: string
   view_mailbox?: string
@@ -5241,6 +5217,7 @@ export type GetUnifiedThreadsOutputCopy = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
 }
 
 export type GetUnifiedThreadsOutputMailboxRef = {
@@ -5261,6 +5238,7 @@ export type GetUnifiedThreadsOutputMessage = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
   message_id: string | null
   subject: string | null
   html_body: string | null
@@ -5294,6 +5272,7 @@ export type GetUnifiedThreadsOutputThread = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
   account?: string
   account_name?: string
   view_mailbox?: string
@@ -5370,6 +5349,7 @@ export type GetThreadOutputCopy = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
 }
 
 export type GetThreadOutputMailboxRef = {
@@ -5390,6 +5370,7 @@ export type GetThreadOutputMessage = {
   junk: 0 | 1
   flagged: 0 | 1
   draft: 0 | 1
+  unscreened?: 0 | 1
   message_id: string | null
   subject: string | null
   html_body: string | null
@@ -5621,138 +5602,6 @@ const operationGetDeliveryStatus: QueryRef<
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationGetDeliveryStatus,
-}
-
-export type GetScreeningSendersOutputScreeningSender = {
-  from_email: string
-  from_name: string | null
-  subject: string | null
-  preview: string
-  received_at: string
-  count: number
-  unread: number
-}
-
-export type GetScreeningSendersInput = { account: string }
-
-export type GetScreeningSendersOutput = Array<GetScreeningSendersOutputScreeningSender>
-
-export type GetScreeningSendersError = 'PermissionError' | 'ValidationError'
-
-const operationGetScreeningSenders: QueryRef<
-  GetScreeningSendersInput,
-  GetScreeningSendersOutput,
-  GetScreeningSendersError
-> = {
-  id: 'get_screening_senders',
-  owner: 'mail',
-  kind: 'query',
-  publicName: 'screener.senders',
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.mail.api.mail.get_screening_senders',
-  prefix: '/api/suite/mail/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError', 'ValidationError'],
-  loadValidators: async () => (await import('./validators')).operationGetScreeningSenders,
-}
-
-export type GetScreeningSenderMailsOutputAttachment = {
-  filename: string | null
-  type: string
-  size: number
-  blob_id: string
-  disposition: string | null
-  cid: string
-  url: string | null
-  part_id?: string | null
-  charset?: string | null
-  language?: string | null
-  location?: string | null
-}
-
-export type GetScreeningSenderMailsOutputCopy = {
-  name: string
-  id: string
-  thread_id: string
-  from_name: string | null
-  from_email: string
-  received_at: string
-  mailboxes: Array<GetScreeningSenderMailsOutputMailboxRef>
-  seen: 0 | 1
-  junk: 0 | 1
-  flagged: 0 | 1
-  draft: 0 | 1
-}
-
-export type GetScreeningSenderMailsOutputMailboxRef = {
-  mailbox: string
-  mailbox_id: string
-  mailbox_name: string | null
-}
-
-export type GetScreeningSenderMailsOutputMessage = {
-  name: string
-  id: string
-  thread_id: string
-  from_name: string | null
-  from_email: string
-  received_at: string
-  mailboxes: Array<GetScreeningSenderMailsOutputMailboxRef>
-  seen: 0 | 1
-  junk: 0 | 1
-  flagged: 0 | 1
-  draft: 0 | 1
-  message_id: string | null
-  subject: string | null
-  html_body: string | null
-  text_body: string | null
-  preview: string
-  recipients: Array<GetScreeningSenderMailsOutputRecipient>
-  reply_to: Array<GetScreeningSenderMailsOutputReplyAddress>
-  attachments: Array<GetScreeningSenderMailsOutputAttachment>
-  dsn_blob_id: string | null
-  duplicates?: Array<GetScreeningSenderMailsOutputCopy>
-  user_image?: string | null
-}
-
-export type GetScreeningSenderMailsOutputRecipient = {
-  type: 'To' | 'Cc' | 'Bcc'
-  email: string
-  display_name: string | null
-}
-
-export type GetScreeningSenderMailsOutputReplyAddress = {
-  email: string
-  display_name: string | null
-}
-
-export type GetScreeningSenderMailsInput = { account: string; from_email: string }
-
-export type GetScreeningSenderMailsOutput = Array<GetScreeningSenderMailsOutputMessage>
-
-export type GetScreeningSenderMailsError = 'PermissionError' | 'ValidationError'
-
-const operationGetScreeningSenderMails: QueryRef<
-  GetScreeningSenderMailsInput,
-  GetScreeningSenderMailsOutput,
-  GetScreeningSenderMailsError
-> = {
-  id: 'get_screening_sender_mails',
-  owner: 'mail',
-  kind: 'query',
-  publicName: 'screener.messages',
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.mail.api.mail.get_screening_sender_mails',
-  prefix: '/api/suite/mail/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError', 'ValidationError'],
-  loadValidators: async () => (await import('./validators')).operationGetScreeningSenderMails,
 }
 
 export type CreateMailInputDraftAttachment = {
@@ -6855,7 +6704,6 @@ export const api = {
     set: operationScreenEmailAddresses,
     remove: operationUnscreenEmailAddresses,
     setAddress: operationScreenEmailAddress,
-    moveToInbox: operationMoveScreeningMailsToInbox,
   },
   sieve: {
     list: operationGetSieveScripts,
@@ -6915,8 +6763,6 @@ export const api = {
     download: operationFetchMailAsEml,
   },
   screener: {
-    senders: operationGetScreeningSenders,
-    messages: operationGetScreeningSenderMails,
     allow: operationAllowScreeningSenders,
     reject: operationScreenOutSenders,
     undo: operationUndoScreeningVerdict,

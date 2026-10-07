@@ -539,7 +539,13 @@ def _check_script_upload(upload, title: str) -> None:
         frappe.throw(format_set_error(error), title=title)
 
 
+# The folder screened mail used to wait in, before it was a keyword in the Inbox. Kept for the patch
+# that moves that mail out and removes the folder.
 SCREENER_MAILBOX_NAME = "Screener"
+
+# The keyword on mail from a sender nobody has decided on yet. It is delivered to the Inbox like any
+# other mail and shown there as from a new sender; allowing or denying the sender takes it off.
+UNSCREENED_KEYWORD = "unscreened"
 AUTOMATION_SCRIPT_NAME = "frappe_mail_automation"
 AUTOMATION_SCRIPT_REQUIRE = (
     'require ["fileinto", "mailbox", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"];'
@@ -1134,12 +1140,11 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     It routes mail that no earlier block (Reject, Spam, or a mailbox automation rule) already claimed:
 
     - Accepted senders — and the account's own identity emails, which are always trusted — are
-      filed into the Inbox, skipping the Screener. Stalwart before v0.16.22 still moves mail it
-      classifies as spam out of the Inbox into Junk, so on those versions accepted mail reaches the
-      Inbox only as ham.
-    - Otherwise, mail the server has not classified as spam is filed into Screening. The Screener is
-      created on delivery if it has gone missing (`:create`, which Stalwart creates unsubscribed),
-      because Stalwart files mail for a mailbox that does not exist into the Inbox.
+      filed into the Inbox. Stalwart before v0.16.22 still moves mail it classifies as spam out of
+      the Inbox into Junk, so on those versions accepted mail reaches the Inbox only as ham.
+    - Otherwise, mail the server has not classified as spam is filed into the Inbox marked with the
+      `unscreened` keyword (`fileinto :flags`, imap4flags): it waits among the rest of the Inbox,
+      shown as from a new sender, until the sender is allowed or denied.
     - Otherwise (spam from an unrecognised sender) nothing is done, so the server's default filtering
       assigns the mailbox: Junk, unless Stalwart overrides the verdict because the sender is one of the
       user's contacts or replied to the user's own mail, and delivers it to the Inbox as ham.
@@ -1149,12 +1154,11 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     stamps the header afterwards, so the header is not visible here. `spamtest` returns 0 when the
     message was not scored, 1-4 for ham (1 at a score of about zero or below, rising towards the spam
     threshold) and 5-10 for spam, so `:value "ge" "5"` is exactly Stalwart's spam verdict. Do not lower
-    it: ham with a small positive score lands on 2-4, and a lower cut-off lets that mail skip the
-    Screener and reach the Inbox. (Stalwart before v0.16.19 only ever returned 1 or 10, which the same
-    test handles.)
+    it: ham with a small positive score lands on 2-4, and a lower cut-off lets that mail reach the
+    Inbox unmarked. (Stalwart before v0.16.19 only ever returned 1 or 10, which the same test handles.)
     """
 
-    screening_mailbox_path = get_screening_mailbox_path(account)
+    inbox_mailbox_path = _escape_sieve_string(get_inbox_mailbox_path(account))
 
     try:
         own_emails = get_account_emails(account)
@@ -1182,13 +1186,9 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
 
     lines = ["# Screening"]
     if accepted_test:
-        # Resolve the Inbox path only when there is an accepted branch to file into — accounts with no
-        # trusted senders yet never reach it, so this avoids the extra lookups (and the risk of an inbox
-        # lookup/creation failure breaking a gate that does not even need the Inbox path).
-        inbox_mailbox_path = get_inbox_mailbox_path(account)
         lines += [
             f"if {accepted_test} {{",
-            f'  fileinto "{_escape_sieve_string(inbox_mailbox_path)}";',
+            f'  fileinto "{inbox_mailbox_path}";',
             "  stop;",
             "}",
             f"elsif {not_spam_test} {{",
@@ -1198,29 +1198,10 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         lines.append(f"if {not_spam_test} {{")
 
     lines += [
-        f'  fileinto :create "{_escape_sieve_string(screening_mailbox_path)}";',
+        f'  fileinto :flags "{UNSCREENED_KEYWORD}" "{inbox_mailbox_path}";',
         "  stop;",
         "}",
         "\n",
     ]
 
     return "\n".join(lines)
-
-
-def get_screening_mailbox_path(account: str) -> str:
-    """Return the mailbox path of the account's Screening mailbox, creating it if missing.
-
-    Screening is not a standard JMAP role, so it is a plain named mailbox looked up by name.
-    """
-
-    from suite.mail.doctype.mailbox.mailbox import add_mailbox
-
-    # The mailbox list lives in a per-process TTL cache, so a negative lookup can be stale — another
-    # worker may already have created the Screener. Refresh from the server before deciding to create,
-    # so we never try to recreate an existing mailbox (which JMAP rejects with "already exists").
-    invalidate_jmap_mailboxes_cache(account)
-    if not get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME):
-        add_mailbox(account, SCREENER_MAILBOX_NAME)
-        invalidate_jmap_mailboxes_cache(account)
-
-    return get_mailbox_path(account, SCREENER_MAILBOX_NAME, raise_exception=True)

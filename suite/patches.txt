@@ -77,6 +77,7 @@ execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participan
 suite.mail.patches.remove_held_queue_statuses
 suite.mail.patches.hand_over_deployment_to_suite_cloud
 suite.mail.patches.rebuild_screening_gates
+suite.mail.patches.move_screener_to_unscreened_keyword
 execute:frappe.db.set_single_value("Mail Settings", "enable_email_classification", 1)
 # --- calendar ---
 # (no patches)

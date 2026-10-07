@@ -53,6 +53,8 @@ class Copy(TypedDict):
     junk: Flag
     flagged: Flag
     draft: Flag
+    # From a sender nobody has allowed or denied yet: the mail waits in the Inbox, marked new.
+    unscreened: NotRequired[Flag]
 
 
 class Message(Copy):
@@ -147,16 +149,6 @@ SearchFilter = TypedDict(
     },
     total=False,
 )
-
-
-class ScreeningSender(TypedDict):
-    from_email: str
-    from_name: str | None
-    subject: str | None
-    preview: str
-    received_at: str
-    count: int
-    unread: int
 
 
 class DraftResult(TypedDict):

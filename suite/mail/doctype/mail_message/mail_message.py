@@ -24,7 +24,7 @@ from frappe.utils import (
 
 from suite.mail import classification
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
-from suite.mail.doctype.sieve_script.sieve_script import SCREENER_MAILBOX_NAME
+from suite.mail.doctype.sieve_script.sieve_script import UNSCREENED_KEYWORD
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
     SuiteJMAPClient,
@@ -1179,6 +1179,48 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
         frappe.throw(_("Failed to set seen status for mail(s)."))
 
 
+def is_unscreened_message(message: dict) -> bool:
+    """Whether the message is from a sender nobody has allowed or denied yet (UNSCREENED_KEYWORD)."""
+
+    keywords = message.get("keywords") or {}
+    if isinstance(keywords, str):
+        keywords = json.loads(keywords or "{}")
+    return bool(keywords.get(UNSCREENED_KEYWORD))
+
+
+def set_unscreened_status(account: str, ids: list[str], unscreened: bool) -> None:
+    """Put the unscreened keyword on messages, or take it off (see UNSCREENED_KEYWORD)."""
+
+    if not account or not ids:
+        frappe.throw(_("Account and Mail IDs are required."))
+
+    try:
+        # A null patch removes a keyword; JMAP has no false keyword.
+        value = True if unscreened else None
+        _update_emails(account, [{"id": id, "keywords": {UNSCREENED_KEYWORD: value}} for id in ids])
+
+        messages_to_cache = {}
+        for message_id, message in _get_cached_messages(account, ids).items():
+            if message:
+                keywords = json.loads(message["keywords"])
+                if unscreened:
+                    keywords[UNSCREENED_KEYWORD] = True
+                else:
+                    keywords.pop(UNSCREENED_KEYWORD, None)
+                message["keywords"] = json.dumps(keywords, indent=4)
+                messages_to_cache[message_id] = message
+
+        if messages_to_cache:
+            _cache_messages(account, messages_to_cache)
+
+    except Exception:
+        log_mail_error(
+            _("Failed to change the screening of mail(s)"),
+            frappe.get_traceback(with_context=True),
+        )
+        frappe.throw(_("Failed to change the screening of mail(s)."))
+
+
 def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> None:
     """Set the flagged status for messages."""
 
@@ -1658,10 +1700,7 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                         pluck="mailbox_id",
                     )
                 ) | {
-                    m["id"]
-                    for m in mailboxes
-                    if m["role"] in ["sent", "drafts", "junk", "trash", "archive"]
-                    or m["name"] == SCREENER_MAILBOX_NAME
+                    m["id"] for m in mailboxes if m["role"] in ["sent", "drafts", "junk", "trash", "archive"]
                 }
                 logger.debug("resolved-disabled-mailboxes", disabled_mailboxes=disabled_mailboxes)
 
@@ -1669,7 +1708,9 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 mailboxes_to_reload = set()
 
                 for message in messages:
-                    if message["draft"] or message["seen"]:
+                    # Mail from a sender nobody has decided on yet waits quietly, as it did in the
+                    # Screener folder: no push until the sender is allowed.
+                    if message["draft"] or message["seen"] or is_unscreened_message(message):
                         continue
 
                     mailbox_id = None
