@@ -86,7 +86,6 @@
   "src/apps/sheets/components/SheetEditor/useSmartFill.js|@typescript-eslint/no-unused-vars": 3,
   "src/apps/sheets/components/SheetEditor/useSplitText.js|@typescript-eslint/no-unused-vars": 1,
   "src/apps/sheets/engine/cond-format.js|@typescript-eslint/no-unused-vars": 1,
-  "src/apps/sheets/engine/engine2.js|@typescript-eslint/no-unused-vars": 6,
   "src/apps/sheets/engine/formula.js|@typescript-eslint/no-unused-vars": 2,
   "src/apps/sheets/engine/pivot.js|@typescript-eslint/no-unused-vars": 1,
   "src/apps/slides/components/AppearanceSection.vue|vue/block-lang": 1,
