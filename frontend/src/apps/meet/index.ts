@@ -2,6 +2,8 @@ import MeetIcon from '@/apps/meet/AreaIcon.vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
 
+export { default as ScheduleMeetingDialog } from './components/ScheduleMeetingDialog.vue'
+
 export type {
   RoomsPostInput as CreateRoomInput,
   RoomsPostOutput as Room,

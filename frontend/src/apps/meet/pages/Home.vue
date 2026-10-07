@@ -62,87 +62,23 @@
       </template>
     </Dialog>
 
-    <Dialog v-model:open="showScheduleDialog" :title="__('Schedule meet')" dismissible>
-      <template #default>
-        <div class="space-y-4">
-          <FormControl
-            v-model="scheduleTitle"
-            :label="__('Title')"
-            :placeholder="__('Team meeting')"
-          />
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <FormControl
-              v-model="scheduleDate"
-              :label="__('Date')"
-              type="date"
-              format="MMM D, YYYY"
-              :placeholder="__('Select date')"
-            />
-            <FormControl
-              v-model="scheduleStartTime"
-              :label="__('Start')"
-              type="time"
-              :interval="15"
-              format="h:mm A"
-              :placeholder="__('Select time')"
-            />
-            <FormControl
-              v-model="scheduleEndTime"
-              :label="__('End')"
-              type="time"
-              :interval="15"
-              format="h:mm A"
-              :placeholder="__('Select time')"
-            />
-          </div>
-          <ParticipantSelector
-            v-model="scheduleParticipants"
-            :account="calendarStore.accountId"
-            :display-participants="scheduledParticipants"
-            :excluded-emails="currentUserEmail ? [currentUserEmail] : []"
-          />
-        </div>
-      </template>
-      <template #actions>
-        <div class="flex justify-end">
-          <Button
-            variant="solid"
-            :loading="scheduleMeeting.isPending"
-            :disabled="!isScheduleTimeValid"
-            @click="submitScheduledMeeting"
-            >{{ __('Schedule') }}</Button
-          >
-        </div>
-      </template>
-    </Dialog>
+    <ScheduleMeetingDialog ref="scheduleDialog" @scheduled="upcomingMeetingsRef?.reload()" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl, PageHeader, TextInput, toast } from 'frappe-ui'
-import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
+import { Button, Dialog, PageHeader, TextInput } from 'frappe-ui'
+import { computed, onMounted, onScopeDispose, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { api, useMutation, useQuery } from '@/api'
-import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
-import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
-import dayjs from '@/apps/calendar/utils/dayjs'
-import { adjustScheduleEndTime, adjustScheduleStartTime } from '@/apps/calendar/utils/scheduleTime'
+import { useCalendarUserStore } from '@/apps/calendar'
 import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 
+import ScheduleMeetingDialog from '../components/ScheduleMeetingDialog.vue'
 import UpcomingMeetings from '../components/UpcomingMeetings.vue'
 import { useStartMeeting } from '../composables/useStartMeeting'
 import { meetingCodeFrom } from '../utils/meetingCode'
-
-interface CalendarParticipant {
-  email: string
-  _name?: string
-  user_image?: string
-  participation_status?: string
-  expect_reply?: boolean
-  isNew?: boolean
-}
 
 const router = useRouter()
 const root = useRootStore()
@@ -163,56 +99,9 @@ const meetingCode = ref('')
 const showJoinDialog = ref(false)
 const meetingCodeError = ref('')
 const parsedMeetingCode = computed(() => meetingCodeFrom(meetingCode.value, window.location.origin))
-const showScheduleDialog = ref(false)
-const scheduleTitle = ref('')
-const scheduleDate = ref(dayjs().format('YYYY-MM-DD'))
-const scheduleStartTime = ref(dayjs().add(1, 'hour').startOf('hour').format('HH:mm'))
-const scheduleEndTime = ref(dayjs().add(2, 'hour').startOf('hour').format('HH:mm'))
-const scheduleParticipants = ref<CalendarParticipant[]>([])
+const scheduleDialog = ref<InstanceType<typeof ScheduleMeetingDialog> | null>(null)
 const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null)
 
-watch(scheduleStartTime, (startTime) => {
-  scheduleEndTime.value = adjustScheduleEndTime(startTime, scheduleEndTime.value)
-})
-watch(scheduleEndTime, (endTime) => {
-  scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime)
-})
-
-const userResource = useQuery(api.suite.account.get)
-const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`))
-const scheduleEnd = computed(() => dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`))
-const isScheduleTimeValid = computed(
-  () =>
-    Boolean(scheduleDate.value && scheduleStartTime.value && scheduleEndTime.value) &&
-    scheduleStart.value.isValid() &&
-    scheduleEnd.value.isValid() &&
-    scheduleEnd.value.isAfter(scheduleStart.value),
-)
-const scheduledDuration = computed(() => {
-  if (!isScheduleTimeValid.value) return ''
-  const diff = dayjs.duration(scheduleEnd.value.diff(scheduleStart.value))
-  return dayjs
-    .duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() })
-    .toISOString()
-})
-const currentUserEmail = computed(
-  () => calendarStore.userResource.data?.name || userResource.data?.name,
-)
-const scheduledParticipants = computed(() => {
-  const participants: CalendarParticipant[] = currentUserEmail.value
-    ? [
-        {
-          email: currentUserEmail.value,
-          _name: calendarStore.userResource.data?.full_name || userResource.data?.full_name,
-          user_image: calendarStore.userResource.data?.avatar || userResource.data?.avatar,
-          participation_status: 'ACCEPTED',
-        },
-      ]
-    : []
-  participants.push(...scheduleParticipants.value)
-  return participants
-})
-const scheduleMeeting = useMutation(api.meet.meetings.createCalendar, { silent: true })
 const startInstantMeeting = () => startMeeting('open')
 const startRestrictedMeeting = () => startMeeting('restricted')
 const meetingActions = computed(() => [
@@ -236,50 +125,7 @@ const meetingActions = computed(() => [
     run: () => (showJoinDialog.value = true),
   },
 ])
-const openScheduleDialog = async () => {
-  try {
-    await calendarStore.loadUser()
-    if (!calendarStore.accountId) {
-      toast.error(__('Set up Calendar before scheduling a Meet.'))
-      return
-    }
-    showScheduleDialog.value = true
-  } catch (error) {
-    console.error('Failed to load calendar account:', error)
-    toast.error(__('Could not load Calendar account.'))
-  }
-}
-const submitScheduledMeeting = () => {
-  if (!calendarStore.accountId) {
-    toast.error(__('Set up Calendar before scheduling a Meet.'))
-    return
-  }
-  if (!isScheduleTimeValid.value) {
-    toast.error(__('Enter a valid date and an end time after the start time.'))
-    return
-  }
-  toast.promise(
-    scheduleMeeting
-      .run({
-        account: calendarStore.accountId,
-        title: scheduleTitle.value,
-        start: scheduleStart.value.format('YYYY-MM-DD[T]HH:mm:ss'),
-        duration: scheduledDuration.value,
-        time_zone: dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone,
-        participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
-        send_scheduling_messages: scheduledParticipants.value.length > 1,
-      })
-      .then(() => {
-        showScheduleDialog.value = false
-        toast.success(__('Meeting scheduled.'))
-        upcomingMeetingsRef.value?.reload()
-      }),
-    {
-      loading: __('Scheduling meeting...'),
-      error: __('Failed to schedule meeting. Please try again.'),
-    },
-  )
-}
+const openScheduleDialog = () => scheduleDialog.value?.show()
 const joinWithCode = () => {
   meetingCodeError.value = ''
   if (!parsedMeetingCode.value) {

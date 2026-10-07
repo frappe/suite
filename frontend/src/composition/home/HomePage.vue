@@ -197,35 +197,7 @@
       </template>
     </Dialog>
 
-    <Dialog v-model:open="scheduleDialogOpen" :title="__('Schedule meeting')" size="md">
-      <div class="space-y-4">
-        <FormControl v-model="meetingTitle" :label="__('Title')" required />
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormControl
-            v-model="meetingStart"
-            :label="__('Starts')"
-            type="datetime-local"
-            required
-          />
-          <FormControl v-model="meetingEnd" :label="__('Ends')" type="datetime-local" required />
-        </div>
-        <p v-if="scheduleError" class="text-p-sm text-ink-red-7">
-          {{ scheduleError }}
-        </p>
-      </div>
-      <template #actions>
-        <div class="flex justify-end gap-2">
-          <Button :label="__('Cancel')" @click="scheduleDialogOpen = false" />
-          <Button
-            :disabled="!meetingTitle.trim()"
-            :label="__('Schedule')"
-            :loading="scheduleMeetingMutation.isPending"
-            variant="solid"
-            @click="submitScheduledMeeting"
-          />
-        </div>
-      </template>
-    </Dialog>
+    <ScheduleMeetingDialog ref="schedule-dialog" @scheduled="upcomingQuery.refetch()" />
   </div>
 </template>
 
@@ -240,7 +212,6 @@ import {
   PageHeaderTitle,
   ScrollArea,
   Skeleton,
-  toast,
 } from 'frappe-ui'
 import { computed, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
@@ -260,13 +231,9 @@ import {
   useDrivePreviewRefresh,
   type DriveNodeSummary,
 } from '@/apps/drive'
+import { ScheduleMeetingDialog } from '@/apps/meet'
 import { documentTypes } from '@/composition/documentRegistry'
-import {
-  formatEventTime,
-  groupHomeEvents,
-  homeEventWindow,
-  toLocalDateTimeInput,
-} from '@/composition/home/homeTime'
+import { formatEventTime, groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
 import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
@@ -295,7 +262,6 @@ const { query: upcomingQuery, events: cachedUpcomingEvents } = useUpcomingEvents
 )
 const createDocumentMutation = useDriveDocumentCreation()
 const createRoomMutation = useMutation(api.meet.rooms.create)
-const scheduleMeetingMutation = useMutation(api.meet.meetings.schedule)
 const recentRows = computed(() =>
   ((recentQuery.data?.rows ?? []) as DriveNodeSummary[])
     .filter((node) => node.kind !== 'folder')
@@ -326,13 +292,7 @@ const upcomingRows = computed(() =>
 const joinDialogOpen = ref(false)
 const meetingCode = ref('')
 const meetingCodeError = ref('')
-const scheduleDialogOpen = ref(false)
-const nextHour = new Date(homeNow)
-nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0)
-const meetingTitle = ref('')
-const meetingStart = ref(toLocalDateTimeInput(nextHour))
-const meetingEnd = ref(toLocalDateTimeInput(new Date(nextHour.getTime() + 60 * 60_000)))
-const scheduleError = ref('')
+const scheduleDialog = useTemplateRef<InstanceType<typeof ScheduleMeetingDialog>>('schedule-dialog')
 const newMenuItems = documentTypes.map((definition) => ({
   label: definition.newLabel(),
   icon: definition.icon,
@@ -367,10 +327,7 @@ const scheduleMenuItems = [
   {
     label: __('Meeting'),
     icon: 'lucide-video',
-    onClick: () => {
-      scheduleError.value = ''
-      scheduleDialogOpen.value = true
-    },
+    onClick: () => scheduleDialog.value?.show(),
   },
 ]
 async function createDocument(contentDoctype: string) {
@@ -394,25 +351,6 @@ function joinWithCode() {
   }
   joinDialogOpen.value = false
   void router.push(meetRoute(code))
-}
-async function submitScheduledMeeting() {
-  scheduleError.value = ''
-  const start = new Date(meetingStart.value)
-  const end = new Date(meetingEnd.value)
-  if (!meetingTitle.value.trim() || Number.isNaN(start.getTime()) || end <= start) {
-    scheduleError.value = __('Enter a title and an end time after the start time.')
-    return
-  }
-  await scheduleMeetingMutation.run({
-    title: meetingTitle.value.trim(),
-    start: start.toISOString(),
-    end: end.toISOString(),
-    attendees: [],
-  })
-  scheduleDialogOpen.value = false
-  meetingTitle.value = ''
-  toast.success(__('Meeting scheduled.'))
-  await upcomingQuery.refetch()
 }
 function meetRoute(code: string): string {
   return `/meet/${encodeURIComponent(code)}`

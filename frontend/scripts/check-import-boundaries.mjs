@@ -41,10 +41,6 @@ const boundaryDebtGroups = [
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/stores/user',
       'meet/components/UpcomingMeetings.test.ts|@/apps/calendar/stores/user',
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/utils/dayjs',
-      'meet/pages/Home.vue|@/apps/calendar/stores/user',
-      'meet/pages/Home.vue|@/apps/calendar/utils/dayjs',
-      'meet/pages/Home.vue|@/apps/calendar/components/ParticipantSelector.vue',
-      'meet/pages/Home.vue|@/apps/calendar/utils/scheduleTime',
     ],
   },
 ]

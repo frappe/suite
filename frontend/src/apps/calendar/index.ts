@@ -5,6 +5,12 @@ import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
 
+/** Calendar scheduling controls and account context used by Meet's scheduler. */
+export { default as ParticipantSelector } from './components/ParticipantSelector.vue'
+export { userStore as useCalendarUserStore } from './stores/user'
+export { default as calendarDayjs } from './utils/dayjs'
+export { adjustScheduleEndTime, adjustScheduleStartTime } from './utils/scheduleTime'
+
 export type { CalendarEvent } from '@/apps/calendar/client/events'
 export { useUpcomingEvents } from '@/apps/calendar/client/useUpcomingEvents'
 /** Shared upcoming-event presentation; callers supply their own event window and actions. */

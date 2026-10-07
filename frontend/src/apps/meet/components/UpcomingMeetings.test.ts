@@ -130,6 +130,29 @@ async function mount() {
 }
 
 describe('Meet upcoming list', () => {
+  it('shows loading while the initial Calendar request is pending', async () => {
+    state.request.mockImplementation(() => new Promise(() => {}))
+    const root = await mount()
+    expect(root.querySelector('[role="status"]')?.textContent).toContain('Loading meetings…')
+  })
+
+  it('shows a failed request and lets the user retry', async () => {
+    state.request.mockRejectedValueOnce(new Error('Calendar unavailable'))
+    const root = await mount()
+    await vi.waitFor(() =>
+      expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+        'Could not load meetings.',
+      ),
+    )
+    const retry = [...root.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Retry',
+    )
+    expect(retry).toBeDefined()
+    retry!.click()
+    await vi.waitFor(() => expect(root.textContent).toContain('Design review'))
+    expect(root.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it('shows a meeting on another Suite site and joins through its original link', async () => {
     state.events = [
       {

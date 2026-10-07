@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   upcomingPending: false,
   push: vi.fn(),
   createDocument: vi.fn(),
+  showSchedule: vi.fn(),
   events: null as
     | (Partial<Omit<CalendarEvent, 'participants'>> & {
         participants?: Partial<CalendarEvent['participants'][number]>[]
@@ -174,12 +175,12 @@ vi.mock('@/apps/calendar', async (importOriginal) => ({
   useUpcomingEvents: (await importOriginal<typeof import('@/apps/calendar')>()).useUpcomingEvents,
 }))
 vi.mock('@/apps/meet', () => ({
-  createRoom: {
-    test: 'create-room',
-  },
-  scheduleMeeting: {
-    test: 'schedule-meeting',
-  },
+  ScheduleMeetingDialog: defineComponent({
+    setup(_, { expose }) {
+      expose({ show: state.showSchedule })
+      return () => null
+    },
+  }),
 }))
 vi.mock('@/api', async () => ({
   api: (await import('@/composition/api')).api,
@@ -245,6 +246,14 @@ afterEach(() => {
   sessionStorage.clear()
 })
 describe('Home page', () => {
+  it('opens Meet’s shared scheduler from Schedule → Meeting', () => {
+    const root = mount()
+    const meeting = [...root.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Meeting',
+    )
+    meeting!.click()
+    expect(state.showSchedule).toHaveBeenCalledOnce()
+  })
   it('shows only the three earliest upcoming events', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 9, 6, 12, 0))

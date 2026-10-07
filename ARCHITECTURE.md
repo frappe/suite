@@ -332,6 +332,9 @@ the list owns the date badges and row layout without fetching events.
 `useUpcomingEvents` owns a session-storage snapshot scoped to the signed-in user
 and event window, allowing Suite Home to show cached events during refresh while
 the server-state query revalidates them.
+Meet exports `ScheduleMeetingDialog` for both home screens. Its `show()` action
+resolves the Calendar account; the dialog owns participants, time validation and
+meeting creation, and emits `scheduled` so each caller can refresh its own list.
 
 ### 9. Ownership and review
 

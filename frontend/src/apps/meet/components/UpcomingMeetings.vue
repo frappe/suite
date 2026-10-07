@@ -225,7 +225,16 @@ defineExpose({ reload })
 </script>
 
 <template>
-  <section v-if="meetings.length" :aria-label="__('Scheduled meetings')">
+  <section
+    v-if="
+      meetings.length ||
+      initializing ||
+      upcomingEvents.isFetching ||
+      accountError ||
+      upcomingEvents.error
+    "
+    :aria-label="__('Scheduled meetings')"
+  >
     <h2 class="mb-3 text-base font-medium text-ink-gray-8">{{ __('Upcoming meetings') }}</h2>
     <div
       v-if="(initializing || upcomingEvents.isFetching) && upcomingEvents.data == null"
