@@ -229,6 +229,19 @@ class TestWriterCheckpoints(CheckpointCase):
         doc = self.doc_row(node)
         self.assertEqual((doc.compaction_failures, doc.next_compaction_at, doc.checkpoint_rev), (0, None, 1))
 
+    def test_the_third_failure_in_a_row_tells_an_admin(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        logged = {"method": "Collab compaction: insufficient_memory"}
+        self.addCleanup(frappe.db.delete, "Error Log", logged)
+        counts = []
+        with patch.object(admission, "enough_memory", return_value=False):
+            for _ in range(3):
+                self.compact(node)
+                counts.append(frappe.db.count("Error Log", logged))
+
+        self.assertEqual(counts, [0, 0, 1])
+
     def test_an_older_compaction_never_replaces_a_newer_checkpoint(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two "])
