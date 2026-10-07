@@ -36,7 +36,7 @@ class Conflict(Exception):
 
 
 class Full(Exception):
-    """The document has `DOC_MAX` staged bytes already."""
+    """The principal has `DOC_MAX` bytes staged on the document already."""
 
 
 class Incomplete(Exception):
@@ -82,8 +82,11 @@ def parse_piece(body: bytes, idx: str) -> tuple[dict, int, bytes]:
     return header, index, piece
 
 
-def store(adapter: str, doc_id: str, stage_id: str, index: int, header: dict, piece: bytes) -> None:
-    """Keep one piece. The same bytes again at an index change nothing."""
+def store(
+    adapter: str, doc_id: str, stage_id: str, index: int, header: dict, piece: bytes, principal: str
+) -> None:
+    """Keep one piece. The same bytes again at an index change nothing. Each principal has its own
+    `DOC_MAX`, so one editor's pieces never block another's."""
     stage = table(adapter, "stage")
     shape = (header["sid"], header["from"], header["to"], header["total_len"], header["sha_total"])
     held = frappe.db.sql(
@@ -99,8 +102,13 @@ def store(adapter: str, doc_id: str, stage_id: str, index: int, header: dict, pi
             if not row.same:
                 raise Conflict
             return
+    # Locked, so a principal's puts take turns and each sees what the one before it kept
     staged = frappe.db.sql(
-        f"SELECT COALESCE(SUM(LENGTH(`bytes`)), 0) FROM `{stage}` WHERE `doc_id` = %s", doc_id
+        f"""SELECT COALESCE(SUM(LENGTH(`stage`.`bytes`)), 0) FROM `{stage}` `stage`
+        JOIN `{table(adapter, "session")}` `session`
+            ON `session`.`doc_id` = `stage`.`doc_id` AND `session`.`sid` = `stage`.`sid`
+        WHERE `stage`.`doc_id` = %s AND `session`.`principal` = %s FOR UPDATE""",
+        (doc_id, principal),
     )
     if int(staged[0][0]) + len(piece) > DOC_MAX:
         raise Full

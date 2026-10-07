@@ -490,7 +490,7 @@ def put_piece(
     if int(session.acked_seq) >= header["to"]:
         return {"dup": True}
     try:
-        stage.store(adapter, doc_id, stage_id, index, header, piece)
+        stage.store(adapter, doc_id, stage_id, index, header, piece, principal)
     except stage.Conflict:
         raise Refusal(409, "stage_conflict") from None
     except stage.Full:

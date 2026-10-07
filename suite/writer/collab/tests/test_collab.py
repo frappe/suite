@@ -1165,6 +1165,60 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual((status, body["collab"]), (423, "stage_full"))
         self.assertEqual(self.staged(node), 64)
 
+    def test_one_editors_full_pieces_leave_room_for_anothers(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, _cid = self.session(node)
+        change = b"x" * (4 * 2**20)
+        for _ in range(4):
+            self.stage(node, sid, change)
+        grant(node, OUTSIDER, drive.EDIT, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        frappe.db.commit()
+        frappe.set_user(OUTSIDER)
+        other, _cid = self.session(node)
+
+        status, body = self.put(
+            node,
+            uuid.uuid4().hex,
+            0,
+            piece_body(self.open(node)[0]["lineage"], other, 1, change, change[:PIECE_MAX]),
+        )
+
+        self.assertEqual((status, body), (200, {"staged": 0}))
+
+    def test_pieces_put_at_once_never_pass_the_cap_together(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, _cid = self.session(node)
+        lineage = self.open(node)[0]["lineage"]
+        change = b"x" * (4 * 2**20)
+        for _ in range(3):
+            self.stage(node, sid, change)
+        self.stage(node, sid, change[: 15 * PIECE_MAX])
+        site, answers = frappe.local.site, []
+
+        def put():
+            frappe.init(site=site)
+            frappe.connect()
+            frappe.set_user(WRITER)
+            try:
+                answers.append(
+                    self.put(
+                        node, uuid.uuid4().hex, 0, piece_body(lineage, sid, 1, change, change[:PIECE_MAX])
+                    )
+                )
+            finally:
+                frappe.destroy()
+
+        threads = [threading.Thread(target=put) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(sorted(status for status, _body in answers), [200] + [423] * 7)
+        self.assertEqual(self.staged(node), 64)
+
     def test_someone_who_cannot_edit_is_refused_before_their_piece_is_read(self):
         self.set_mode("on")
         node = self.new_document()
