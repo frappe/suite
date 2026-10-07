@@ -537,8 +537,9 @@ export class Room implements CollabRoom {
   private async die(reason: string) {
     this.writable = false
     this.failed = true
+    const kept = this.toRecovery(reason)
     this.changed()
-    await this.toRecovery(reason)
+    await kept
   }
 
   private async toRecovery(reason: string) {

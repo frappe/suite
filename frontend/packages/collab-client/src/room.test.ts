@@ -443,6 +443,25 @@ describe('collab room', () => {
     expect([third.needsRebuild, third.canWrite]).toEqual([false, false])
   })
 
+  it('a tab tells its listeners why it stopped when it stops', async () => {
+    const server = fakeServer('live', 'apply-10')
+    for (const _ of [1, 2]) await judgedOnce(server, 'clean')
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const seen: (string | null)[] = []
+    room.onChange(() => room.saveState === 'failed' && seen.push(room.stopped))
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+    await room.pull()
+    server.judge.judged++
+    server.judge.verdict = 'clean'
+
+    await room.pull()
+
+    expect(seen[0]).toBe('browser')
+  })
+
   it('a quarantine is not counted against this browser', async () => {
     const server = fakeServer('live', 'apply-9')
     await judgedOnce(server, 'clean')
