@@ -1,4 +1,9 @@
+import dayjs from 'dayjs'
+import duration from 'dayjs/plugin/duration'
+
 import type { CalendarEvent } from '@/apps/calendar'
+
+dayjs.extend(duration)
 
 export interface HomeEventGroup<Event = CalendarEvent> {
   day: 'Today' | 'Tomorrow'
@@ -11,13 +16,13 @@ export function homeEventWindow(now = new Date()): {
 } {
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2)
   end.setMilliseconds(-1)
-  return { from: now.toISOString(), to: end.toISOString() }
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return { from: start.toISOString(), to: end.toISOString() }
 }
 
-export function groupHomeEvents<Event extends Pick<CalendarEvent, 'start'>>(
-  events: readonly Event[],
-  now = new Date(),
-): HomeEventGroup<Event>[] {
+export function groupHomeEvents<
+  Event extends Pick<CalendarEvent, 'start'> & Partial<Pick<CalendarEvent, 'duration'>>,
+>(events: readonly Event[], now = new Date()): HomeEventGroup<Event>[] {
   const today = localDayKey(now)
   const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
   const tomorrow = localDayKey(tomorrowDate)
@@ -29,6 +34,15 @@ export function groupHomeEvents<Event extends Pick<CalendarEvent, 'start'>>(
   for (const event of events) {
     const start = parseDate(event.start)
     if (!start) continue
+    if (event.duration) {
+      const milliseconds = dayjs.duration(event.duration).asMilliseconds()
+      if (
+        Number.isFinite(milliseconds) &&
+        milliseconds > 0 &&
+        start.getTime() + milliseconds <= now.getTime()
+      )
+        continue
+    }
     const key = localDayKey(start)
     if (key === today) groups.Today.push(event)
     if (key === tomorrow) groups.Tomorrow.push(event)
@@ -42,14 +56,24 @@ export function groupHomeEvents<Event extends Pick<CalendarEvent, 'start'>>(
     .filter((group) => group.events.length > 0)
 }
 
-export function formatEventTime(event: CalendarEvent): string {
+export function formatEventTime(
+  event: Pick<CalendarEvent, 'start'> &
+    Partial<Pick<CalendarEvent, 'duration' | 'show_without_time'>>,
+): string {
   if (event.show_without_time) return 'All day'
   const start = parseDate(event.start)
   if (!start) return ''
-  return new Intl.DateTimeFormat(undefined, {
+  const formatter = new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
     minute: '2-digit',
-  }).format(start)
+    hour12: true,
+  })
+  const startTime = formatter.format(start)
+  if (!event.duration) return startTime
+  const milliseconds = dayjs.duration(event.duration).asMilliseconds()
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return startTime
+  const end = new Date(start.getTime() + milliseconds)
+  return `${startTime} – ${formatter.format(end)}`
 }
 
 export function toLocalDateTimeInput(date: Date): string {

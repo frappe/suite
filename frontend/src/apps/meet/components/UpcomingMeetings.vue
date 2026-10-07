@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { useMediaQuery, useNow } from '@vueuse/core'
+import { useNow } from '@vueuse/core'
 import { Button } from 'frappe-ui'
-import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
+import { UpcomingEventList, type UpcomingEventRow } from '@/apps/calendar'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 const initializing = ref(true)
@@ -76,17 +77,13 @@ const isCalendarEvent = (value: unknown): value is CalendarEvent =>
 const router = useRouter()
 const calendarStore = useCalendarUserStore()
 const now = useNow({ interval: 30_000 })
-const isMobile = useMediaQuery('(max-width: 767px)')
 
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
-// The window follows the same clock as the Today/Tomorrow groups below, so a tab
-// left open across midnight asks for the new tomorrow instead of the one it
-// fetched when it mounted. The query follows the window, so moving it refetches.
+const session = useSession()
+// Follow the clock so a tab left open across midnight fetches the new day.
 const today = computed(() => dayjs(now.value).startOf('day'))
 const fromDate = computed(() => today.value.format('YYYY-MM-DD[T]HH:mm:ss'))
-const toDate = computed(() =>
-  today.value.add(1, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-)
+const toDate = computed(() => today.value.endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'))
 const timeZone = timezone()
 
 const upcomingEvents = useQuery(api.calendar.events.window, () =>
@@ -108,26 +105,26 @@ const meetings = computed(() => {
     .filter((event) => {
       const start = dayjs(event.start)
       const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-      return (
-        getMeetingUrl(event) &&
-        end.isAfter(currentTime) &&
-        (start.isSame(currentTime, 'day') || start.isSame(currentTime.add(1, 'day'), 'day'))
-      )
+      return getMeetingUrl(event) && end.isAfter(currentTime) && start.isSame(currentTime, 'day')
     })
     .sort((left, right) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
+    .slice(0, 4)
 })
 
-const meetingGroups = computed(() =>
-  [
-    { day: 'Today', date: dayjs(now.value) },
-    { day: 'Tomorrow', date: dayjs(now.value).add(1, 'day') },
-  ]
-    .map(({ day, date }) => ({
-      day,
-      events: meetings.value.filter((event) => dayjs(event.start).isSame(date, 'day')),
-    }))
-    .filter((group) => group.events.length),
-)
+const formatMeetingMonth = (event: CalendarEvent) => dayjs(event.start).format('MMM')
+const formatMeetingDay = (event: CalendarEvent) => dayjs(event.start).format('D')
+const eventParticipants = (event: CalendarEvent) => {
+  const participants = new Map<string, { email: string; name: string; image?: string }>()
+  for (const participant of event.participants || []) {
+    if (!participant.email || participants.has(participant.email)) continue
+    participants.set(participant.email, {
+      email: participant.email,
+      name: participant._name || participant.email,
+      image: participant.user_image || undefined,
+    })
+  }
+  return [...participants.values()]
+}
 
 const isAllDayEvent = (event: CalendarEvent) => {
   const start = dayjs(event.start)
@@ -143,7 +140,7 @@ const isAllDayEvent = (event: CalendarEvent) => {
 }
 
 const formatMeetingTime = (event: CalendarEvent) => {
-  if (isAllDayEvent(event)) return 'All day'
+  if (isAllDayEvent(event)) return __('All day')
 
   const start = dayjs(event.start)
   const end = start.add(dayjs.duration(event.duration || 'PT0S'))
@@ -165,8 +162,15 @@ const getTrustedMeetUrl = (url?: string | null) => {
 
   try {
     const parsed = new URL(value, window.location.origin)
-    if (meetingCodeFrom(value, window.location.origin))
-      return parsed.pathname + parsed.search + parsed.hash
+    if (
+      (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+      !parsed.username &&
+      !parsed.password &&
+      meetingCodeFrom(parsed.href, parsed.origin)
+    )
+      return parsed.origin === window.location.origin
+        ? parsed.pathname + parsed.search + parsed.hash
+        : parsed.href
   } catch {
     return ''
   }
@@ -178,9 +182,27 @@ const getMeetingId = (event: CalendarEvent) =>
   meetingCodeFrom(getMeetingUrl(event), window.location.origin)
 
 const joinMeeting = (event: CalendarEvent) => {
+  if (getMeetingUrl(event).startsWith('http')) return
   const meetingId = getMeetingId(event)
   if (!meetingId) return
   router.push({ name: 'meet-meeting', params: { meetingId } })
+}
+
+const meetingRows = computed(() =>
+  meetings.value.map((event) => ({
+    id: event.id,
+    title: event.title || __('Scheduled meeting'),
+    month: formatMeetingMonth(event),
+    day: formatMeetingDay(event),
+    time: formatMeetingTime(event),
+    actionLabel: __('Join {0}', [event.title || __('Scheduled meeting')]),
+    href: getMeetingUrl(event).startsWith('http') ? getMeetingUrl(event) : undefined,
+    participants: eventParticipants(event),
+  })),
+)
+const joinRow = (row: UpcomingEventRow) => {
+  const event = meetings.value.find((event) => event.id === row.id)
+  if (event) joinMeeting(event)
 }
 
 const reload = async () => {
@@ -203,8 +225,8 @@ defineExpose({ reload })
 </script>
 
 <template>
-  <section :aria-label="__('Scheduled meetings')">
-    <h2 class="pb-3 text-lg font-medium text-ink-gray-9">{{ __('Upcoming') }}</h2>
+  <section v-if="meetings.length" :aria-label="__('Scheduled meetings')">
+    <h2 class="mb-3 text-base font-medium text-ink-gray-8">{{ __('Upcoming meetings') }}</h2>
     <div
       v-if="(initializing || upcomingEvents.isFetching) && upcomingEvents.data == null"
       class="py-8 text-center text-base text-ink-gray-5"
@@ -220,51 +242,11 @@ defineExpose({ reload })
       {{ __('Could not load meetings.') }}
       <Button variant="outline" :label="__('Retry')" @click="reload" />
     </div>
-    <div
-      v-else-if="!meetings.length"
-      class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
-    >
-      {{
-        !calendarStore.accountId
-          ? __('Set up Calendar to see scheduled meetings.')
-          : __('Nothing else scheduled today or tomorrow.')
-      }}
-    </div>
-    <List
+    <UpcomingEventList
       v-else
-      class="-mx-3 list-row-px-3"
-      :columns="
-        isMobile ? ['11rem', 'minmax(0,1fr)', '4.5rem'] : ['11rem', 'minmax(0,1fr)', '5rem']
-      "
-      :row-height="isMobile ? 52 : 40"
-    >
-      <ListGroup v-for="group in meetingGroups" :key="group.day" :label="__(group.day)">
-        <ListRow v-for="event in group.events" :key="event.id" :value="event.id">
-          <ListCell>
-            <span class="whitespace-nowrap text-base text-ink-gray-5">{{
-              formatMeetingTime(event)
-            }}</span>
-          </ListCell>
-          <ListCell>
-            <span class="flex min-w-0 flex-col">
-              <span class="truncate text-base text-ink-gray-8">{{
-                event.title || __('Scheduled meeting')
-              }}</span>
-              <span v-if="isMobile" class="truncate text-xs text-ink-gray-5">{{
-                getMeetingId(event)
-              }}</span>
-            </span>
-          </ListCell>
-          <ListCell class="justify-end">
-            <Button
-              :label="__('Join')"
-              variant="outline"
-              :aria-label="__('Join {0}', [event.title || __('Scheduled meeting')])"
-              @click="joinMeeting(event)"
-            />
-          </ListCell>
-        </ListRow>
-      </ListGroup>
-    </List>
+      :events="meetingRows"
+      :current-user="session.user.value?.id"
+      @select="joinRow"
+    />
   </section>
 </template>

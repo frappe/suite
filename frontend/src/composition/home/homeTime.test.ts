@@ -1,9 +1,27 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CalendarEvent } from '@/apps/calendar'
-import { groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
+import { formatEventTime, groupHomeEvents } from '@/composition/home/homeTime'
 
 describe('Home upcoming dates', () => {
+  it('filters ended events from the cached day while keeping ongoing meetings', () => {
+    const now = new Date(2026, 9, 6, 14, 30)
+    const events = [
+      { id: 'ended', start: localIso(2026, 9, 6, 12, 0), duration: 'PT1H' },
+      { id: 'ongoing', start: localIso(2026, 9, 6, 14, 0), duration: 'PT1H' },
+      { id: 'next', start: localIso(2026, 9, 6, 16, 0), duration: 'PT1H' },
+    ]
+    expect(
+      groupHomeEvents(events, now).flatMap((group) => group.events.map((event) => event.id)),
+    ).toEqual(['ongoing', 'next'])
+  })
+
+  it('shows afternoon times in 12-hour format', () => {
+    expect(formatEventTime({ start: localIso(2026, 9, 6, 14, 30), duration: 'PT1H' })).toMatch(
+      /2:30\s*PM\s*–\s*3:30\s*PM/i,
+    )
+  })
+
   it('groups Today and Tomorrow around midnight', () => {
     const now = new Date(2026, 8, 15, 23, 59, 30)
     const events: Pick<CalendarEvent, 'id' | 'title' | 'start'>[] = [
@@ -29,14 +47,6 @@ describe('Home upcoming dates', () => {
       { day: 'Today', events: [events[1]] },
       { day: 'Tomorrow', events: [events[2], events[0]] },
     ])
-  })
-
-  it('queries from now through the final millisecond of tomorrow', () => {
-    const now = new Date(2026, 8, 15, 23, 59, 30)
-    const range = homeEventWindow(now)
-
-    expect(new Date(range.from).getTime()).toBe(now.getTime())
-    expect(new Date(range.to)).toEqual(new Date(2026, 8, 16, 23, 59, 59, 999))
   })
 })
 

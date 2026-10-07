@@ -3,6 +3,10 @@ import type { AreaDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
 
 export type { CalendarEvent } from '@/apps/calendar/client/events'
+export { useUpcomingEvents } from '@/apps/calendar/client/useUpcomingEvents'
+/** Shared upcoming-event presentation; callers supply their own event window and actions. */
+export { default as UpcomingEventList } from '@/apps/calendar/components/UpcomingEventList.vue'
+export type { UpcomingEventRow } from '@/apps/calendar/components/upcomingEventRow'
 
 export const calendarArea: AreaDefinition = {
   id: 'calendar',

@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
+import type { CalendarEvent } from '@/apps/calendar'
 import HomePage from '@/composition/home/HomePage.vue'
 
 const state = vi.hoisted(() => ({
   recentFails: true,
   upcomingFails: false,
+  upcomingPending: false,
   push: vi.fn(),
   createDocument: vi.fn(),
+  events: null as
+    | (Partial<Omit<CalendarEvent, 'participants'>> & {
+        participants?: Partial<CalendarEvent['participants'][number]>[]
+      })[]
+    | null,
 }))
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
@@ -64,6 +71,10 @@ vi.mock('frappe-ui', async () => {
     },
   })
   return {
+    Avatar: defineComponent({
+      props: ['label'],
+      setup: (props) => () => h('span', { 'aria-label': props.label }),
+    }),
     Button,
     Dialog: passthrough,
     Dropdown,
@@ -118,6 +129,15 @@ vi.mock('@/shell/useIsMobile', async () => {
     isMobile: ref(false),
   }
 })
+
+vi.mock('@/platform/session', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/platform/session')>()
+  return {
+    ...original,
+    useSession: () => ({ ...original.useSession(), user: { value: { id: 'me@example.com' } } }),
+  }
+})
+
 vi.mock('@/apps/drive', async (importOriginal) => ({
   // Drive's own listing date, so the Recent meta is checked against Drive's format.
   formatDriveListingDate: (await importOriginal<typeof import('@/apps/drive')>())
@@ -149,10 +169,9 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
   }),
   driveNodeRoute: (node: { name: string }) => `/d/${node.name}/document`,
 }))
-vi.mock('@/apps/calendar', () => ({
-  upcomingEvents: () => ({
-    test: 'upcoming',
-  }),
+vi.mock('@/apps/calendar', async (importOriginal) => ({
+  UpcomingEventList: (await importOriginal<typeof import('@/apps/calendar')>()).UpcomingEventList,
+  useUpcomingEvents: (await importOriginal<typeof import('@/apps/calendar')>()).useUpcomingEvents,
 }))
 vi.mock('@/apps/meet', () => ({
   createRoom: {
@@ -190,16 +209,19 @@ vi.mock('@/api', async () => ({
             next_cursor: null,
           })
     }
+    if (state.upcomingPending) return { ...successfulData(undefined), status: 'pending' }
     return state.upcomingFails
       ? failedQuery('Upcoming failed')
-      : successfulData([
-          {
-            id: 'event-1',
-            title: 'Design review',
-            start: new Date().toISOString(),
-            conferencing: null,
-          },
-        ])
+      : successfulData(
+          state.events ?? [
+            {
+              id: 'event-1',
+              title: 'Design review',
+              start: new Date().toISOString(),
+              conferencing: null,
+            },
+          ],
+        )
   },
   useMutation: (reference: { id: string }) => ({
     isPending: false,
@@ -218,8 +240,114 @@ afterEach(() => {
   state.createDocument.mockReset()
   state.recentFails = true
   state.upcomingFails = false
+  state.upcomingPending = false
+  state.events = null
+  sessionStorage.clear()
 })
 describe('Home page', () => {
+  it('shows only the three earliest upcoming events', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 6, 12, 0))
+    state.events = [18, 14, 17, 15].map((hour) => ({
+      id: String(hour),
+      title: `Event ${hour}`,
+      start: `2026-10-06T${hour}:00:00`,
+    }))
+    const root = mount()
+    const upcoming = root.querySelector('[data-testid="upcoming-rows"]')
+    expect(
+      [...upcoming!.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Open Event 14', 'Open Event 15', 'Open Event 17'])
+    expect(upcoming?.textContent).not.toContain('Event 18')
+  })
+
+  it('announces upcoming loading and keeps its placeholders non-interactive', () => {
+    state.upcomingPending = true
+    const root = mount()
+    const loading = root.querySelector('[role="status"][aria-label="Loading upcoming events"]')
+    expect(loading).not.toBeNull()
+    expect(loading?.querySelectorAll('[aria-hidden="true"]')).toHaveLength(3)
+    expect(loading?.querySelector('button, a')).toBeNull()
+  })
+
+  it('shows five participant avatars and the remaining count', () => {
+    state.events = [
+      {
+        id: 'crowd',
+        title: 'Crowd',
+        start: new Date().toISOString(),
+        participants: Array.from({ length: 7 }, (_, index) => ({
+          email: `guest${index}@example.com`,
+          _name: `Guest ${index}`,
+        })),
+      },
+    ]
+    const root = mount()
+    const people = root.querySelector('[aria-label="Open Crowd"] [aria-label="Invited people"]')
+    expect(people?.querySelectorAll('[aria-label^="Guest "]')).toHaveLength(5)
+    expect(people?.textContent).toContain('2+')
+    expect(people?.querySelector('[title="Guest 4"]')).not.toBeNull()
+    expect(people?.querySelector('[title="Guest 5"]')).toBeNull()
+  })
+
+  it('shows invited people but hides avatars for an event with only yourself', () => {
+    state.events = [
+      {
+        id: 'solo',
+        title: 'Solo',
+        start: new Date().toISOString(),
+        participants: [{ email: 'me@example.com', _name: 'Me' }],
+      },
+      {
+        id: 'team',
+        title: 'Team',
+        start: new Date().toISOString(),
+        participants: [
+          { email: 'me@example.com', _name: 'Me' },
+          { email: 'guest@example.com', _name: 'Guest' },
+        ],
+      },
+    ]
+    const root = mount()
+    expect(root.querySelector('[aria-label="Open Solo"] [aria-label="Invited people"]')).toBeNull()
+    expect(root.querySelector('[aria-label="Open Team"] [title="Guest"]')).not.toBeNull()
+  })
+
+  it('shows ordinary events and meetings today and tomorrow using date badges', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 6, 12, 0))
+    state.events = [
+      { id: 'ordinary', title: 'Focus time', start: '2026-10-06T14:00:00', conferencing: null },
+      {
+        id: 'meeting',
+        title: 'Team sync',
+        start: '2026-10-07T10:00:00',
+        conferencing: { meeting_id: 'abcd-efgh-ijkl', url: '/meet/abcd-efgh-ijkl' },
+      },
+      {
+        id: 'all-day',
+        title: 'Holiday',
+        start: '2026-10-07T00:00:00',
+        show_without_time: 1,
+        conferencing: null,
+      },
+    ]
+    const root = mount()
+    const upcoming = root.querySelector('[data-testid="upcoming-rows"]')
+    expect(upcoming?.textContent).not.toContain('Today')
+    expect(upcoming?.textContent).not.toContain('Tomorrow')
+    expect(upcoming?.textContent).toContain('Focus time')
+    expect(upcoming?.textContent).toContain('Team sync')
+    expect(upcoming?.textContent).toContain('All day')
+    expect(upcoming?.querySelector('[aria-label="Open Focus time"]')?.getAttribute('route')).toBe(
+      '/calendar',
+    )
+    expect(upcoming?.querySelector('[aria-label="Join Team sync"]')?.getAttribute('route')).toBe(
+      '/meet/abcd-efgh-ijkl',
+    )
+    expect(upcoming?.querySelector('.capitalize')?.textContent).toMatch(/oct/i)
+  })
+
   it('keeps Upcoming rendered when Recent fails', () => {
     const root = mount()
     expect(root.querySelector('[data-testid="recent-error"]')).not.toBeNull()

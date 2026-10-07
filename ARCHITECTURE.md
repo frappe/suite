@@ -325,6 +325,14 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 9. Editors MAY pass a reusable Drive credential context through the client. Drive selects credentials and computes its opaque partition.
 10. The Drive UI MUST create Writer/Sheets/Slides documents through the generic Drive document workflow, not product-specific endpoints.
 
+Calendar's frontend interface exports `UpcomingEventList` and `UpcomingEventRow`
+for Meet and Suite Home to share upcoming-event presentation. Callers retain
+ownership of their event windows, filtering, time formatting, and navigation;
+the list owns the date badges and row layout without fetching events.
+`useUpcomingEvents` owns a session-storage snapshot scoped to the signed-in user
+and event window, allowing Suite Home to show cached events during refresh while
+the server-state query revalidates them.
+
 ### 9. Ownership and review
 
 1. Product owners own files under their product.

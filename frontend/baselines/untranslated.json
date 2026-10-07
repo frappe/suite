@@ -122,7 +122,7 @@
   "src/apps/writer/components/ToC.vue": 9,
   "src/apps/writer/surface/WriterSurface.vue": 10,
   "src/composition/DocumentHost.vue": 6,
-  "src/composition/home/HomePage.vue": 3,
+  "src/composition/home/HomePage.vue": 2,
   "src/composition/notifications/NotificationsBell.vue": 1,
   "src/shell/AppLoadErrorView.vue": 4,
   "src/shell/GuestSurface.vue": 1,

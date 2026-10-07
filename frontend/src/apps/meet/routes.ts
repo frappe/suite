@@ -34,9 +34,7 @@ export const routes: RouteRecordRaw[] = [
       },
       {
         path: 'recordings',
-        name: 'meet-recordings',
-        component: () => import('@/apps/meet/pages/Home.vue'),
-        meta: { title: 'Recordings' },
+        redirect: { name: 'meet-home' },
       },
       {
         path: '',
