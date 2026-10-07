@@ -2,7 +2,7 @@ import type { Fault } from '@suite/collab-client'
 import { getSchema } from '@tiptap/core'
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
 
-import { FIELD } from '@/apps/writer/collab'
+import { FIELD } from '@/apps/writer/collab/field'
 import { writerSchema } from '@/apps/writer/schema'
 
 const schema = getSchema(writerSchema())

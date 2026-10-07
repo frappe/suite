@@ -11,8 +11,7 @@ import { getRealtimeSocket } from '@/platform/realtime'
 import { getCookieSessionUser } from '@/platform/session'
 import { createTransport, type HttpMethod, type Operation } from '@/platform/transport'
 
-// The fragment every Writer document has always kept its body in
-export const FIELD = 'default'
+export { FIELD } from './field'
 
 // Raise with suite/writer/collab/features.json whenever the editor learns a new node, mark or attribute
 export const WRITER_SCHEMA = 1
