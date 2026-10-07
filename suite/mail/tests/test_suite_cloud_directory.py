@@ -193,7 +193,7 @@ class TestDomains(SuiteCloudTestCase):
         self.assertEqual((spf["priority"], spf["weight"], spf["port"]), (None, None, None))
         self.assertEqual(
             (srv["host"], srv["value"], srv["priority"], srv["weight"], srv["port"]),
-            ("_imaps._tcp", "mail.c1.example.test.", 0, 1, 993),
+            ("_imaps._tcp", "mail.c1.example.test", 0, 1, 993),
         )
 
         self.assertIn(

@@ -23,6 +23,7 @@ from suite.mail.directory import GB, get_account_metadata, get_active_domain_nam
 from suite.mail.directory import get_domains as get_site_domains
 from suite.mail.suite_cloud import get_client
 from suite.mail.utils import get_config
+from suite.mail.utils.dns import ZoneFileRecord
 from suite.mail.utils.dt import from_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import get_account_email
@@ -146,19 +147,6 @@ def _dns_record_row(record: dict) -> dict:
         "is_verified": bool(record.get("is_verified")),
         "last_checked_at": to_utc_z(record.get("last_checked_at")),
     }
-
-
-def _zone_rdata(record: dict) -> str:
-    """The record's data the way a zone file line carries it."""
-
-    value = record["value"]
-    if record["type"] == "MX":
-        return f"{record.get('priority') or 10} {value}"
-    if record["type"] == "SRV":
-        return f"{record.get('priority') or 0} {record.get('weight') or 0} {record.get('port') or 0} {value}"
-    if record["type"] == "TXT":
-        return json.dumps(value)
-    return value
 
 
 @frappe.whitelist()
@@ -285,12 +273,7 @@ def get_domain_dns_zone(domain_id: str) -> str:
     """The records as zone-file lines, for pasting into a provider that accepts them."""
 
     check_admin_permission("view domains")
-    lines = []
-    for record in _domain_records(domain_id):
-        lines.append(
-            f"{record['fqdn']}.\t{record.get('ttl') or ''}\tIN\t{record['type']}\t{_zone_rdata(record)}"
-        )
-    return "\n".join(lines) + "\n"
+    return "".join(f"{ZoneFileRecord(record)}\n" for record in _domain_records(domain_id))
 
 
 @frappe.whitelist()

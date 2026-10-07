@@ -110,3 +110,55 @@ def parse_dns_zone_file(zone_file: str) -> list[dict]:
         )
 
     return dns_records
+
+
+class ZoneFileRecord:
+    """A DNS record as the zone file line that Route 53's importer accepts, as BIND-style ones do."""
+
+    DEFAULT_TTL = 300  # Route 53 refuses a line without a TTL
+    TXT_STRING_LENGTH = 255  # the longest string a TXT record may carry
+
+    def __init__(self, record: dict) -> None:
+        self.record = record
+
+    def __str__(self) -> str:
+        record = self.record
+        ttl = record.get("ttl") or self.DEFAULT_TTL
+        return f"{record['fqdn']}.\t{ttl}\tIN\t{record['type']}\t{self.rdata}"
+
+    @property
+    def rdata(self) -> str:
+        record = self.record
+        if record["type"] == "MX":
+            return f"{record.get('priority') or 10} {self.target}"
+        if record["type"] == "SRV":
+            priority, weight, port = (record.get(field) or 0 for field in ("priority", "weight", "port"))
+            return f"{priority} {weight} {port} {self.target}"
+        if record["type"] == "CNAME":
+            return self.target
+        if record["type"] == "TXT":
+            return self.text
+        return record["value"]
+
+    @property
+    def target(self) -> str:
+        """The hostname with a trailing dot: importers append the zone's own name to one without."""
+
+        return f"{self.record['value'].rstrip('.')}."
+
+    @property
+    def text(self) -> str:
+        """The value as quoted strings, several when it is too long for one (an RSA DKIM key is).
+
+        The strings touch: Route 53's importer reads strings a space apart as separate values and
+        refuses the line.
+        """
+
+        value = self.record["value"]
+        length = self.TXT_STRING_LENGTH
+        strings = [value[start : start + length] for start in range(0, len(value), length)]
+        return "".join(f'"{_escape_quoted(string)}"' for string in strings)
+
+
+def _escape_quoted(string: str) -> str:
+    return string.replace("\\", "\\\\").replace('"', '\\"')

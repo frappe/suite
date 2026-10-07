@@ -374,7 +374,7 @@ class FakeSuiteCloud:
                     "type": "SRV",
                     "host": "_imaps._tcp",
                     "fqdn": f"_imaps._tcp.{name}",
-                    "value": "mail.c1.example.test.",
+                    "value": "mail.c1.example.test",
                     "priority": 0,
                     "weight": 1,
                     "port": 993,
