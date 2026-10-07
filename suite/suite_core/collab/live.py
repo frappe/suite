@@ -38,9 +38,10 @@ def room(adapter: str, doc_id: str, lineage: str, epoch: int) -> str:
     return "sc:" + base64.urlsafe_b64encode(digest).decode()[:32]
 
 
-def publish_row(adapter: str, doc_id: str, lineage: str, rev: int, payload: bytes) -> None:
+def publish_row(adapter: str, doc_id: str, lineage: str, rev: int, schema: int, payload: bytes) -> None:
     inline = base64.b64encode(payload).decode() if len(payload) <= INLINE_MAX else None
-    publish(adapter, doc_id, lineage, "suite_collab_row", {"lineage": lineage, "rev": rev, "u": inline})
+    message = {"lineage": lineage, "rev": rev, "schema": schema, "u": inline}
+    publish(adapter, doc_id, lineage, "suite_collab_row", message)
 
 
 def publish_ctl(adapter: str, doc_id: str, lineage: str, **message) -> None:

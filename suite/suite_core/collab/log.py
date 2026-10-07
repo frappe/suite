@@ -445,7 +445,7 @@ def push(
     except BaseException:
         frappe.db.rollback()
         raise
-    live.publish_row(adapter, doc_id, doc.lineage, rev, payload)
+    live.publish_row(adapter, doc_id, doc.lineage, rev, header["schema"], payload)
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
 
 

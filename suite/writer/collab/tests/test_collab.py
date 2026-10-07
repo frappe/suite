@@ -1370,11 +1370,14 @@ class TestWriterCollab(IntegrationTestCase):
                 (
                     (
                         "suite_collab_row",
-                        {"lineage": lineage, "rev": 1, "u": base64.b64encode(small).decode()},
+                        {"lineage": lineage, "rev": 1, "schema": 1, "u": base64.b64encode(small).decode()},
                     ),
                     {"room": rooms["keys"][0]},
                 ),
-                (("suite_collab_row", {"lineage": lineage, "rev": 2, "u": None}), {"room": rooms["keys"][0]}),
+                (
+                    ("suite_collab_row", {"lineage": lineage, "rev": 2, "schema": 1, "u": None}),
+                    {"room": rooms["keys"][0]},
+                ),
             ],
         )
 
