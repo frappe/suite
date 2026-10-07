@@ -19,7 +19,7 @@
   "src/apps/mail/components/DmarcBreakdownRows.vue": 1,
   "src/apps/mail/components/EmailContent.vue": 1,
   "src/apps/mail/components/EmojiPicker.vue": 6,
-  "src/apps/mail/components/MailActions.vue": 4,
+  "src/apps/mail/components/MailActions.vue": 3,
   "src/apps/mail/components/MailDate.vue": 10,
   "src/apps/mail/components/MailDetails.vue": 1,
   "src/apps/mail/components/MailListItem.vue": 2,

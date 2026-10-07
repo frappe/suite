@@ -52,7 +52,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, client, useMutation, type InputOf } from '@/api'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
-import { downloadUrlAsFile, raiseError, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import {
+  downloadUrlAsFile,
+  matchesScreenedValue,
+  raiseError,
+  raiseOptimisticToast,
+  raiseToast,
+} from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
