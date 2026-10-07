@@ -43,6 +43,33 @@ export function searchMentions(query: string): void {
   timer = setTimeout(() => void search(query), SEARCH_DELAY_MS)
 }
 
+/** Bumped when a looked-up person arrives, so names shown from `known` update. */
+const learned = shallowRef(0)
+const lookups = new Map<string, Promise<void>>()
+
+/** Look a person up once by user id, for `fullName`. */
+export function lookUp(user: string): Promise<void> {
+  let lookup = lookups.get(user)
+  if (!lookup) {
+    lookup = searchUsers(user)
+      .then((found) => {
+        for (const person of found) known.set(person.name, person)
+        learned.value++
+      })
+      .catch(() => {})
+    lookups.set(user, lookup)
+  }
+  return lookup
+}
+
+/** A person's full name; their user id until the lookup answers. */
+export function fullName(user: string): string {
+  void learned.value
+  const found = known.get(user)
+  if (!found) void lookUp(user)
+  return found?.full_name || user
+}
+
 /**
  * The people for mentions and avatars. The first page loads once per page
  * load; `searchMentions` narrows the menu as the user types after `@`.

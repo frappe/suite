@@ -21,10 +21,11 @@
 import type { CollabRoom } from '@suite/collab-client'
 import Collaboration from '@tiptap/extension-collaboration'
 import { toast } from 'frappe-ui'
-import { computed, provide, ref } from 'vue'
+import { computed, onBeforeUnmount, provide, ref, shallowRef } from 'vue'
 import * as Y from 'yjs'
 
 import { FIELD, withinTenSeconds } from '@/apps/writer/collab'
+import { Carets, peopleOf } from '@/apps/writer/collab/carets'
 import { PasteSizeGuard } from '@/apps/writer/extensions/paste-size-guard'
 
 import CoreEditor from './CoreEditor.vue'
@@ -42,12 +43,19 @@ const edited = ref(false)
 const textEditor = ref<InstanceType<typeof CoreEditor> | null>(null)
 const editor = computed(() => textEditor.value?.editor)
 provide('editor', editor)
-defineExpose({ editor })
+
+const presence = props.room.presence
+const roster = shallowRef(presence?.peers ?? [])
+const stopListening = presence?.onChange(() => (roster.value = presence.peers))
+onBeforeUnmount(() => stopListening?.())
+const peers = computed(() => peopleOf(roster.value))
+defineExpose({ editor, peers })
 
 // Collaborative documents carry no comments yet
 const comments = new Y.Doc().getMap('comments')
 const extensions = [
   Collaboration.configure({ document: props.room.doc, field: FIELD }),
+  Carets.configure({ presence }),
   PasteSizeGuard.configure({
     limits: () => props.room.limits,
     atLimit: () => props.room.atLimit,
