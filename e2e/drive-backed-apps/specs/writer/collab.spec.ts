@@ -393,11 +393,7 @@ test.describe("Writer collaboration", () => {
 		const name = bare
 			? "a bare 413 from a proxy leaves a paste unsent, says so, and saves once let through"
 			: "a paste a 200 KiB proxy refuses stays unsent, says so, and saves once the proxy lets it through";
-		test(name, async ({
-			owner,
-			testApi,
-			baseURL,
-		}) => {
+		test(name, async ({ owner, testApi, baseURL }) => {
 			test.setTimeout(90_000);
 			const proxy = await bodyLimitProxy(baseURL!, 200 * 2 ** 10, bare);
 			try {
