@@ -27,7 +27,7 @@ from pathlib import Path
 
 import frappe
 
-from suite.suite_core.collab.selftest import node_version
+from suite.suite_core.content.selftest import node_version
 
 NODE_MAJOR = 24
 HEAP_MB = 512

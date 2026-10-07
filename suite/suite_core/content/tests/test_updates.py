@@ -1,8 +1,8 @@
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab.compaction import load, serialize, snapshot, state_vector
-from suite.suite_core.collab.updates import encoded_string, encoded_uint, parse, rewrite_values
+from suite.suite_core.content.compaction import load, serialize, snapshot, state_vector
+from suite.suite_core.content.updates import encoded_string, encoded_uint, parse, rewrite_values
 
 
 def typed(text: str, client_id: int = 5) -> pycrdt.Doc:

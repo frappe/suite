@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 import frappe
 
-from suite.suite_core.collab import updates
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import updates
+from suite.suite_core.content.tables import table
 
 MAX_BYTES = 4 * 2**20
 # ContentJSON, ContentBinary and ContentDoc: no collab adapter writes them

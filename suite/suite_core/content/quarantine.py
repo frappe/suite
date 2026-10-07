@@ -16,9 +16,9 @@ import frappe
 import pycrdt
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import compaction, ingest, live, updates
-from suite.suite_core.collab.log import start_clocks
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import compaction, ingest, live, updates
+from suite.suite_core.content.log import start_clocks
+from suite.suite_core.content.tables import table
 
 
 @dataclass

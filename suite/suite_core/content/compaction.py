@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 
 import pycrdt
 
-from suite.suite_core.collab import updates
-from suite.suite_core.collab.updates import Reader
+from suite.suite_core.content import updates
+from suite.suite_core.content.updates import Reader
 
 PYCRDT = "0.14.8"
 KERNEL = f"pycrdt {PYCRDT}"

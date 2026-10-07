@@ -8,7 +8,7 @@ from pathlib import Path
 
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab import ingest, updates
+from suite.suite_core.content import ingest, updates
 
 FUZZ = Path(__file__).parent / "differential" / "fuzz.cjs"
 YJS = Path(__file__).parents[4] / "node_modules" / "yjs"

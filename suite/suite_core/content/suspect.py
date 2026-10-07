@@ -18,10 +18,10 @@ from pathlib import Path
 import frappe
 from frappe.utils.background_jobs import get_redis_conn
 
-from suite.suite_core.collab import admission, compaction, kernel, live, quarantine
-from suite.suite_core.collab.log import SUSPECT_RETRY_MS, Refusal, read
-from suite.suite_core.collab.scheduling import enqueue
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import admission, compaction, kernel, live, quarantine
+from suite.suite_core.content.log import SUSPECT_RETRY_MS, Refusal, read
+from suite.suite_core.content.scheduling import enqueue
+from suite.suite_core.content.tables import table
 
 # The compaction failures that come from the CRDT library itself, not from the rows' shape or the host
 REASONS = frozenset({"unreadable", "content_mismatch", "reencode_mismatch", "not_contained", "fallback"})

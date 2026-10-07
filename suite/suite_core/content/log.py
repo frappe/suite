@@ -19,8 +19,8 @@ from collections.abc import Sequence
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import capacity, ingest, live, scheduling, stage
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import capacity, ingest, live, scheduling, stage
+from suite.suite_core.content.tables import table
 
 PROTO = 1
 PACE_MS = 1000

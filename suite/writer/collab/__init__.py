@@ -8,8 +8,8 @@ from pathlib import Path
 import frappe
 import pycrdt
 
-from suite.suite_core import collab
-from suite.suite_core.collab import checkpoints, compaction, scheduling, suspect, updates
+from suite.suite_core import content
+from suite.suite_core.content import checkpoints, compaction, scheduling, suspect, updates
 
 ADAPTER = "writer"
 # The editor's fragment, and tab labels
@@ -20,7 +20,7 @@ DECLARED = json.loads(Path(__file__).with_name("features.json").read_text())
 # y-prosemirror writes only GC, deleted, string, format, type and any content, and only XmlElement and
 # XmlText shared types. `meta` holds only plain values; if it ever nests a Map, Array or Text,
 # `shared_types` must change in the same commit
-SCHEMA = collab.EditorSchema(
+SCHEMA = content.EditorSchema(
     DECLARED["schema"],
     DECLARED["features"],
     content_refs=frozenset({0, 1, 4, 6, 7, 8}),
@@ -31,8 +31,8 @@ SCHEMA = collab.EditorSchema(
 
 
 def ensure_tables() -> None:
-    collab.ensure_tables(ADAPTER)
-    collab.backfill_clocks(ADAPTER, document_owner)
+    content.ensure_tables(ADAPTER)
+    content.backfill_clocks(ADAPTER, document_owner)
 
 
 def document_owner(node: str) -> str | None:
@@ -41,13 +41,13 @@ def document_owner(node: str) -> str | None:
 
 def start_log(node: str) -> None:
     """Make a new document collaborative from its first edit, while collaboration is on."""
-    if collab.enabled():
-        collab.create(ADAPTER, node)
+    if content.enabled():
+        content.create(ADAPTER, node)
 
 
 def log_of(node: str) -> frappe._dict | None:
     """`node`'s log while collaboration is on: then its body lives there, not in the document row."""
-    return collab.find(ADAPTER, node) if collab.enabled() else None
+    return content.find(ADAPTER, node) if content.enabled() else None
 
 
 def live_state(node: str) -> pycrdt.Doc | None:
@@ -55,8 +55,8 @@ def live_state(node: str) -> pycrdt.Doc | None:
 
     Read whether collaboration is on or not, so the media sweep keeps what a log names.
     """
-    doc = collab.find(ADAPTER, node)
-    read = collab.read(ADAPTER, doc.id, own_snapshot=False) if doc else None
+    doc = content.find(ADAPTER, node)
+    read = content.read(ADAPTER, doc.id, own_snapshot=False) if doc else None
     if read is None:
         return None
     parts = ([read["checkpoint"]] if read["checkpoint"] else []) + [payload for _rev, payload in read["rows"]]
@@ -71,7 +71,7 @@ def live_checkpoint(node: str) -> tuple[dict, bytes] | None:
     A state or tail larger than a compaction job would take is refused.
     """
     doc = log_of(node)
-    read = collab.read(ADAPTER, doc.id, integrated=True, own_snapshot=False) if doc else None
+    read = content.read(ADAPTER, doc.id, integrated=True, own_snapshot=False) if doc else None
     if read is None:
         return None
     rows = [payload for _rev, payload in read["rows"]]
@@ -105,7 +105,7 @@ def copy_log(source_node: str, node: str) -> bool:
     live = live_checkpoint(source_node)
     if live is None:
         return False
-    collab.replace_start(ADAPTER, collab.create(ADAPTER, node), live[1], live[0]["schema"])
+    content.replace_start(ADAPTER, content.create(ADAPTER, node), live[1], live[0]["schema"])
     return True
 
 
@@ -115,10 +115,10 @@ def remap_log(node: str, rewrite) -> None:
     The result must hold the same structs, read as the copy with `rewrite` applied to every
     attribute, mark and embed value, and give nothing more to rewrite.
     """
-    doc = collab.find(ADAPTER, node)
+    doc = content.find(ADAPTER, node)
     if not doc:
         return
-    read = collab.read(ADAPTER, doc.id, own_snapshot=False)
+    read = content.read(ADAPTER, doc.id, own_snapshot=False)
     if read is None:
         return
     state = read["checkpoint"]
@@ -132,12 +132,12 @@ def remap_log(node: str, rewrite) -> None:
         or updates.rewrite_values(remapped, rewrite) != remapped
     ):
         raise compaction.CompactionFailed("remap_mismatch")
-    collab.replace_start(ADAPTER, doc.id, remapped, read["schema"])
+    content.replace_start(ADAPTER, doc.id, remapped, read["schema"])
 
 
 def purge_log(node: str) -> None:
     """Mark `node`'s log purged in Drive's transaction; a job deletes its rows once that commits."""
-    doc_id = collab.mark_purged(ADAPTER, node)
+    doc_id = content.mark_purged(ADAPTER, node)
     if doc_id:
         scheduling.enqueue(
             "suite.writer.collab.delete_purged",
@@ -148,7 +148,7 @@ def purge_log(node: str) -> None:
 
 
 def delete_purged(doc_id: str) -> None:
-    collab.delete_purged(ADAPTER, doc_id)
+    content.delete_purged(ADAPTER, doc_id)
 
 
 def compact(doc_id: str) -> None:

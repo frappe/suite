@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 
 import frappe
 
-from suite.suite_core.collab import capacity
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import capacity
+from suite.suite_core.content.tables import table
 
 PIECE_MAX = 256 * 2**10
 HEADER_MAX = 4096

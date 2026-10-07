@@ -19,9 +19,9 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import admission, compaction, ingest, live, quarantine, scheduling, suspect
-from suite.suite_core.collab.log import ChainBroken, chain_next, chain_seed, read, rows_after
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import admission, compaction, ingest, live, quarantine, scheduling, suspect
+from suite.suite_core.content.log import ChainBroken, chain_next, chain_seed, read, rows_after
+from suite.suite_core.content.tables import table
 
 PACED_FROM = 512 * 2**10
 ALERT_AT = 3

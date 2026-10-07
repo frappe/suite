@@ -15,8 +15,8 @@ import frappe
 import pycrdt
 from frappe.utils import now_datetime, sbool
 
-from suite.suite_core.collab import compaction
-from suite.suite_core.collab.scheduling import enqueue
+from suite.suite_core.content import compaction
+from suite.suite_core.content.scheduling import enqueue
 
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 # Two people edit one paragraph at once; one renames the first tab
@@ -36,7 +36,7 @@ DATABASE_VARIABLES = (
 @frappe.whitelist(methods=["POST"])
 def run_self_test() -> None:
     frappe.only_for("System Manager")
-    enqueue("suite.suite_core.collab.selftest.self_test", "suite-collab-self-test")
+    enqueue("suite.suite_core.content.selftest.self_test", "suite-collab-self-test")
 
 
 def self_test() -> dict:

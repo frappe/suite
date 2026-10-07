@@ -4,7 +4,7 @@ import struct
 
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab.log import Refusal, parse_push
+from suite.suite_core.content.log import Refusal, parse_push
 
 
 def body(header: dict, payload: bytes = b"\x01") -> bytes:

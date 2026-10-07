@@ -9,8 +9,8 @@ import sys
 
 import pycrdt
 
-from suite.suite_core.collab.compaction import compact
-from suite.suite_core.collab.updates import rewrite_values
+from suite.suite_core.content.compaction import compact
+from suite.suite_core.content.updates import rewrite_values
 from suite.writer.drive import remap_rule
 
 WRITER = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}

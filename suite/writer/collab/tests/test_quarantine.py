@@ -7,9 +7,9 @@ from unittest.mock import patch
 import frappe
 import pycrdt
 
-from suite.suite_core.collab import backfill, quarantine
-from suite.suite_core.collab.log import chain_next
-from suite.suite_core.collab.tests.test_compaction import crafted, number
+from suite.suite_core.content import backfill, quarantine
+from suite.suite_core.content.log import chain_next
+from suite.suite_core.content.tests.test_compaction import crafted, number
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
 from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
@@ -58,7 +58,7 @@ class Tab:
         return answer(response)["rev"]
 
     def catch_up(self):
-        for _rev, payload in routes.collab.read(routes.ADAPTER, self.case.doc_row(self.node).id)["rows"]:
+        for _rev, payload in routes.content.read(routes.ADAPTER, self.case.doc_row(self.node).id)["rows"]:
             self.doc.apply_update(payload)
 
 
@@ -69,7 +69,7 @@ class TestQuarantine(CheckpointCase):
         )
 
     def stored_text(self, node: str) -> str:
-        read = routes.collab.read(routes.ADAPTER, self.doc_row(node).id)
+        read = routes.content.read(routes.ADAPTER, self.doc_row(node).id)
         doc = pycrdt.Doc()
         for payload in [read["checkpoint"], *(payload for _rev, payload in read["rows"])]:
             if payload:
@@ -115,7 +115,7 @@ class TestQuarantine(CheckpointCase):
 
         self.assertEqual(self.quarantine(node, {3}, "cut_surrogate"), [3, 4])
 
-        read = routes.collab.read(routes.ADAPTER, self.doc_row(node).id)
+        read = routes.content.read(routes.ADAPTER, self.doc_row(node).id)
         self.assertEqual(([rev for rev, _ in read["rows"]], read["quarantined"]), ([1, 2], [3, 4]))
         self.assertEqual(self.stored_text(node), "beta alpha")
         self.assertEqual(
@@ -446,7 +446,7 @@ class TestQuarantine(CheckpointCase):
         frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
+        routes.content.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         self.assertEqual(
             (self.states(node), self.doc_row(node).start_clocks), (["ok", "ok", "quarantined"], "{}")
@@ -466,7 +466,7 @@ class TestQuarantine(CheckpointCase):
         frappe.db.commit()
         logged = f"Collab clocks not read for writer log {ids[0]}"
 
-        routes.collab.backfill_clocks(routes.ADAPTER, lambda node: None)
+        routes.content.backfill_clocks(routes.ADAPTER, lambda node: None)
 
         self.assertEqual((self.states(orphan), self.doc_row(orphan).start_clocks), (["ok", "ok"], None))
         self.assertEqual(frappe.db.count("Error Log", {"method": logged}), 1)
@@ -490,7 +490,7 @@ class TestQuarantine(CheckpointCase):
             return moved
 
         with patch.object(quarantine, "quarantine", purged_after):
-            routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
+            routes.content.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         clocks = dict(
             frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))
@@ -516,7 +516,7 @@ class TestQuarantine(CheckpointCase):
             return read(adapter, doc_id)
 
         with patch.object(backfill, "read", purged_first):
-            routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
+            routes.content.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         clocks = dict(
             frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))

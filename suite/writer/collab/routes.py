@@ -15,7 +15,7 @@ from werkzeug.wrappers import Response
 
 from suite import drive
 from suite.composition.http import Route
-from suite.suite_core import collab
+from suite.suite_core import content
 from suite.writer.collab import ADAPTER, SCHEMA, consider_compaction, report_suspect
 
 # The Writer table resolves every handler here, the contract-only ones too
@@ -139,34 +139,34 @@ def unknown() -> None:
 
 
 def _open(node: str) -> Response:
-    if not collab.enabled():
-        return _frame({"state": "disabled", "proto": collab.PROTO})
+    if not content.enabled():
+        return _frame({"state": "disabled", "proto": content.PROTO})
     _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
-    doc = collab.find(ADAPTER, node)
+    doc = content.find(ADAPTER, node)
     if doc is None:
-        return _frame({"state": "unconverted", "proto": collab.PROTO})
+        return _frame({"state": "unconverted", "proto": content.PROTO})
     can_write = frappe.session.user != "Guest" and _can(node, drive.EDIT)
     try:
-        snapshot = collab.read(ADAPTER, doc.id)
-    except collab.ChainBroken:
+        snapshot = content.read(ADAPTER, doc.id)
+    except content.ChainBroken:
         frappe.log_error(title="Collab open: chain_break", message=f"{ADAPTER} document {doc.id}")
-        raise collab.Refusal(503, "chain_break") from None
+        raise content.Refusal(503, "chain_break") from None
     if snapshot is None:
-        return _frame({"state": "unconverted", "proto": collab.PROTO})
+        return _frame({"state": "unconverted", "proto": content.PROTO})
     consider_compaction(doc.id)
     return _frame(
         {
-            **collab.open_header(snapshot, can_write=can_write),
-            "limits": collab.limits(doc),
-            "rooms": collab.rooms(ADAPTER, doc.id, doc.lineage),
+            **content.open_header(snapshot, can_write=can_write),
+            "limits": content.limits(doc),
+            "rooms": content.rooms(ADAPTER, doc.id, doc.lineage),
         },
-        collab.with_tombstones(snapshot),
+        content.with_tombstones(snapshot),
         snapshot["checkpoint"],
     )
 
 
 def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
-    collab.require_enabled()
+    content.require_enabled()
     _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
     # The epoch is read before the rows, so a quarantine between them shows on the next pull
     doc = _doc(node)
@@ -174,21 +174,21 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
         after = int(since or 0)
         seen_epoch = int(q_epoch) if q_epoch is not None else None
     except ValueError:
-        raise collab.Refusal(400, "malformed") from None
+        raise content.Refusal(400, "malformed") from None
     epoch = int(doc.q_epoch)
     if seen_epoch is not None and seen_epoch < epoch:
         # The tab may hold a row now quarantined
-        return _frame({"state": "rebuild", "proto": collab.PROTO, "q_epoch": epoch})
-    rows = collab.rows_after(ADAPTER, doc.id, max(after, 0))
+        return _frame({"state": "rebuild", "proto": content.PROTO, "q_epoch": epoch})
+    rows = content.rows_after(ADAPTER, doc.id, max(after, 0))
     consider_compaction(doc.id)
     header = {
         "state": "live",
-        "proto": collab.PROTO,
+        "proto": content.PROTO,
         "q_epoch": epoch,
         "judged": int(doc.judged),
         "schema": json.loads(doc.schema_steps)[-1][1],
-        "limits": collab.limits(doc),
-        "rooms": collab.rooms(ADAPTER, doc.id, doc.lineage),
+        "limits": content.limits(doc),
+        "rooms": content.rooms(ADAPTER, doc.id, doc.lineage),
     }
     if doc.verdict:
         header["verdict"] = doc.verdict
@@ -199,13 +199,13 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
 
 
 def _push(node: str) -> Response:
-    collab.require_enabled()
-    header, payload = collab.parse_push(frappe.request.get_data())
+    content.require_enabled()
+    header, payload = content.parse_push(frappe.request.get_data())
     _authorize(node, drive.EDIT, header.get("principal"))
     doc = _doc(node)
     try:
-        answer = collab.push(ADAPTER, doc.id, header, payload, frappe.session.user, SCHEMA)
-    except collab.Refusal as refusal:
+        answer = content.push(ADAPTER, doc.id, header, payload, frappe.session.user, SCHEMA)
+    except content.Refusal as refusal:
         if refusal.body["collab"] == "compacting":
             consider_compaction(doc.id, refused=True)
         raise
@@ -214,16 +214,16 @@ def _push(node: str) -> Response:
 
 
 def _stage(node: str, stage_id: str, idx: str) -> Response:
-    collab.require_enabled()
+    content.require_enabled()
     _authorize(node, drive.EDIT, frappe.get_request_header(PRINCIPAL_HEADER))
-    header, index, piece = collab.parse_piece(frappe.request.get_data(), stage_id, idx)
+    header, index, piece = content.parse_piece(frappe.request.get_data(), stage_id, idx)
     doc = _doc(node)
-    return _json(200, collab.put_piece(ADAPTER, doc.id, stage_id, header, index, piece, frappe.session.user))
+    return _json(200, content.put_piece(ADAPTER, doc.id, stage_id, header, index, piece, frappe.session.user))
 
 
 def _suspect(node: str) -> Response:
     """A tab's row threw when it applied it; anyone who can read the document may say so."""
-    collab.require_enabled()
+    content.require_enabled()
     _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
     doc = _doc(node)
     try:
@@ -231,12 +231,12 @@ def _suspect(node: str) -> Response:
     except (ValueError, AttributeError):
         rev = None
     if type(rev) is not int:
-        raise collab.Refusal(400, "malformed")
+        raise content.Refusal(400, "malformed")
     return _json(*report_suspect(doc.id, rev))
 
 
 def _session(node: str) -> Response:
-    collab.require_enabled()
+    content.require_enabled()
     _authorize(node, drive.EDIT, frappe.get_request_header(PRINCIPAL_HEADER))
     doc = _doc(node)
     try:
@@ -245,17 +245,17 @@ def _session(node: str) -> Response:
     except (ValueError, AttributeError):
         sid = claim = None
     if not isinstance(sid, str) or len(sid) != 32 or not sid.isalnum():
-        raise collab.Refusal(400, "malformed")
+        raise content.Refusal(400, "malformed")
     if claim is not None:
-        return _json(200, {"claim": collab.claim_session(ADAPTER, doc, sid, claim, frappe.session.user)})
-    client_id = collab.issue_session(ADAPTER, doc.id, sid, frappe.session.user)
+        return _json(200, {"claim": content.claim_session(ADAPTER, doc, sid, claim, frappe.session.user)})
+    client_id = content.issue_session(ADAPTER, doc.id, sid, frappe.session.user)
     return _json(200, {"client_id": client_id})
 
 
 def _doc(node: str):
-    doc = collab.find(ADAPTER, node)
+    doc = content.find(ADAPTER, node)
     if doc is None:
-        raise collab.Refusal(409, "unconverted")
+        raise content.Refusal(409, "unconverted")
     return doc
 
 
@@ -263,7 +263,7 @@ def _authorize(node: str, role: int, principal) -> None:
     """Who the tab says it is, then what Drive says it may do. Editing needs a signed-in user."""
     _require_principal(principal)
     if role == drive.EDIT and frappe.session.user == "Guest":
-        raise collab.Refusal(401, "signed_out")
+        raise content.Refusal(401, "signed_out")
     _check(node, role)
 
 
@@ -273,14 +273,14 @@ def _check(node: str, role: int) -> None:
     except drive.DriveError as error:
         for kind, status, reason in DRIVE_REFUSALS:
             if isinstance(error, kind):
-                raise collab.Refusal(status, reason) from None
+                raise content.Refusal(status, reason) from None
         raise
 
 
 def _can(node: str, role: int) -> bool:
     try:
         _check(node, role)
-    except (collab.Refusal, drive.DriveError):
+    except (content.Refusal, drive.DriveError):
         return False
     return True
 
@@ -289,19 +289,19 @@ def _require_principal(principal) -> None:
     if principal == frappe.session.user:
         return
     if frappe.session.user == "Guest":
-        raise collab.Refusal(401, "signed_out")
-    raise collab.Refusal(409, "principal_changed")
+        raise content.Refusal(401, "signed_out")
+    raise content.Refusal(409, "principal_changed")
 
 
 def _answer(handle) -> Response:
     try:
         return handle()
-    except collab.Refusal as refusal:
+    except content.Refusal as refusal:
         return _json(refusal.status, refusal.body)
 
 
 def _frame(header: dict, rows=(), checkpoint: bytes | None = None) -> Response:
-    return Response(collab.frame(header, rows, checkpoint), status=200, mimetype="application/octet-stream")
+    return Response(content.frame(header, rows, checkpoint), status=200, mimetype="application/octet-stream")
 
 
 def _json(status: int, body: dict) -> Response:

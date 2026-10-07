@@ -10,8 +10,8 @@ from datetime import datetime
 
 import frappe
 
-from suite.suite_core.collab import ingest, updates
-from suite.suite_core.collab.scheduling import STATE_MAX
+from suite.suite_core.content import ingest, updates
+from suite.suite_core.content.scheduling import STATE_MAX
 
 SPLIT_COST = 32
 # Deleting content shrinks the next compaction, so a full document still takes deletes up to this far past the cap

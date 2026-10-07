@@ -4,8 +4,8 @@ from unittest.mock import patch
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab import compaction
-from suite.suite_core.collab.compaction import CompactionFailed, compact, load, same
+from suite.suite_core.content import compaction
+from suite.suite_core.content.compaction import CompactionFailed, compact, load, same
 
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 

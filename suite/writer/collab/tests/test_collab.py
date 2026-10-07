@@ -18,10 +18,10 @@ from werkzeug.wrappers import Request
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.collab import capacity, live, scheduling
-from suite.suite_core.collab.log import chain_next, chain_seed
-from suite.suite_core.collab.stage import PIECE_MAX
-from suite.suite_core.collab.updates import encoded_string, encoded_uint
+from suite.suite_core.content import capacity, live, scheduling
+from suite.suite_core.content.log import chain_next, chain_seed
+from suite.suite_core.content.stage import PIECE_MAX
+from suite.suite_core.content.updates import encoded_string, encoded_uint
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
@@ -198,7 +198,7 @@ class TestWriterCollab(IntegrationTestCase):
         ensure_user(WRITER)
         ensure_user(OUTSIDER)
         ensure_user(READER)
-        routes.collab.ensure_tables(routes.ADAPTER)
+        routes.content.ensure_tables(routes.ADAPTER)
         frappe.db.commit()
 
     def setUp(self):
@@ -228,7 +228,7 @@ class TestWriterCollab(IntegrationTestCase):
         return node
 
     def forget(self, node: str):
-        doc = routes.collab.find(routes.ADAPTER, node)
+        doc = routes.content.find(routes.ADAPTER, node)
         if doc:
             for kind in ("update", "session", "stage"):
                 frappe.db.sql(f"DELETE FROM `__writer_content_{kind}` WHERE `doc_id` = %s", doc.id)
@@ -265,7 +265,7 @@ class TestWriterCollab(IntegrationTestCase):
     def assert_one_order(self, node: str, count: int):
         header, rows = self.open(node)
         self.assertEqual([rev for rev, _ in rows], list(range(1, count + 1)))
-        stored = routes.collab.find(routes.ADAPTER, node)
+        stored = routes.content.find(routes.ADAPTER, node)
         chain = chain_seed(stored.lineage)
         for rev, payload in rows:
             chain = chain_next(chain, rev, hashlib.sha256(payload).digest())
@@ -417,7 +417,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(self.open(node)[1], [])
         with patch.object(routes, "SCHEMA", replace(routes.SCHEMA, version=newer)):
             self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
-        doc_id = routes.collab.find(routes.ADAPTER, node).id
+        doc_id = routes.content.find(routes.ADAPTER, node).id
         self.assertEqual(
             frappe.db.sql("SELECT `schema` FROM `__writer_content_update` WHERE `doc_id` = %s", doc_id),
             ((newer,),),
@@ -647,7 +647,9 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         original, later = typed(7, ["start", "!"])
-        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, original, 1)
+        routes.content.replace_start(
+            routes.ADAPTER, routes.content.find(routes.ADAPTER, node).id, original, 1
+        )
         frappe.db.commit()
         (sid, cid), (ahead_sid, ahead) = self.session(node), self.session(node)
 
@@ -671,8 +673,8 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         start, after_start = typed(7, ["start", "!"])
-        doc_id = routes.collab.find(routes.ADAPTER, node).id
-        routes.collab.replace_start(routes.ADAPTER, doc_id, start, 1)
+        doc_id = routes.content.find(routes.ADAPTER, node).id
+        routes.content.replace_start(routes.ADAPTER, doc_id, start, 1)
         frappe.db.commit()
         sid, cid = self.session(node)
         a, b, c = typed(cid, ["a", "b", "c"])
@@ -683,7 +685,7 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
+        routes.content.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         self.assertEqual(self.push(node, sid, cid, 3, a), (409, {"collab": "clock_gap", "clock": 3}))
         self.assertEqual(self.push(node, sid, cid, 3, c)[0], 200)
@@ -882,7 +884,7 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         issued, claimed = 7, 2**30 + 7
         start = pycrdt.merge_updates(typed(issued, ["start"])[0], typed(claimed, ["start"])[0])
-        routes.collab.replace_start(routes.ADAPTER, routes.collab.find(routes.ADAPTER, node).id, start, 1)
+        routes.content.replace_start(routes.ADAPTER, routes.content.find(routes.ADAPTER, node).id, start, 1)
         frappe.db.commit()
         lineage = self.open(node)[0]["lineage"]
 
@@ -940,7 +942,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         self.push(node, *self.session(node), 1)
-        doc_id = routes.collab.find(routes.ADAPTER, node).id
+        doc_id = routes.content.find(routes.ADAPTER, node).id
         frappe.db.sql(
             "UPDATE `__writer_content_doc` SET `head_chain` = %s WHERE `id` = %s", (b"\x00" * 32, doc_id)
         )
@@ -988,7 +990,7 @@ class TestWriterCollab(IntegrationTestCase):
         return response.status_code, answer(response)
 
     def staged(self, node: str) -> int:
-        doc_id = routes.collab.find(routes.ADAPTER, node).id
+        doc_id = routes.content.find(routes.ADAPTER, node).id
         return frappe.db.sql("SELECT COUNT(*) FROM `__writer_content_stage` WHERE `doc_id` = %s", doc_id)[0][
             0
         ]
@@ -1345,10 +1347,10 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         self.open(node)
-        doc = routes.collab.find(routes.ADAPTER, node)
-        before = routes.collab.rooms(routes.ADAPTER, doc.id, doc.lineage)
+        doc = routes.content.find(routes.ADAPTER, node)
+        before = routes.content.rooms(routes.ADAPTER, doc.id, doc.lineage)
 
-        after = routes.collab.rooms(routes.ADAPTER, doc.id, uuid.uuid4().hex)
+        after = routes.content.rooms(routes.ADAPTER, doc.id, uuid.uuid4().hex)
 
         self.assertFalse({*before["keys"]} & {*after["keys"]})
 

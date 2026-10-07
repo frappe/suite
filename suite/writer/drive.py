@@ -76,8 +76,8 @@ import pycrdt
 from frappe import _
 
 from suite import drive
-from suite.suite_core import collab
-from suite.suite_core.collab import compaction
+from suite.suite_core import content
+from suite.suite_core.content import compaction
 from suite.writer.collab import (
     copy_log,
     live_checkpoint,
@@ -173,7 +173,7 @@ def duplicate(source_docname: str, node: str) -> str:
     document.insert(ignore_permissions=True)
     try:
         copy_log(source.node, node)
-    except (collab.ChainBroken, compaction.CompactionFailed) as unready:
+    except (content.ChainBroken, compaction.CompactionFailed) as unready:
         raise drive.DriveConflict(_("This document cannot be copied right now")) from unready
     return document.name
 
@@ -204,7 +204,7 @@ def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
     try:
         live = live_checkpoint(row.node)
-    except (collab.ChainBroken, compaction.CompactionFailed) as unready:
+    except (content.ChainBroken, compaction.CompactionFailed) as unready:
         raise drive.DriveConflict(
             _("Version history is not available for this document right now")
         ) from unready

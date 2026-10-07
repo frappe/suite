@@ -10,9 +10,9 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import stage
-from suite.suite_core.collab.admission import TIMEOUT
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import stage
+from suite.suite_core.content.admission import TIMEOUT
+from suite.suite_core.content.tables import table
 
 STATE_MAX = 4 * 2**20
 TAIL_MIN = 256 * 2**10

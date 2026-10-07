@@ -3,8 +3,8 @@ from unittest.mock import patch
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab import ingest, updates
-from suite.suite_core.collab.updates import encoded_string, encoded_uint
+from suite.suite_core.content import ingest, updates
+from suite.suite_core.content.updates import encoded_string, encoded_uint
 
 
 def typed(cid: int, texts: list[str]) -> list[bytes]:

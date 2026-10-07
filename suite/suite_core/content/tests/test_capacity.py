@@ -5,8 +5,8 @@ import frappe
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab import capacity
-from suite.suite_core.collab.updates import parse
+from suite.suite_core.content import capacity
+from suite.suite_core.content.updates import parse
 
 CAP = 4 * 2**20
 NOW = datetime(2026, 10, 7, 12, 0)

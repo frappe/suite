@@ -13,12 +13,12 @@ from frappe.storage.blob import put_blob
 from frappe.utils import now_datetime
 
 from suite import drive
-from suite.drive._core import content
+from suite.drive._core import content as drive_content
 from suite.drive._core.nodes import _trash, purge
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import restore_version
-from suite.suite_core import collab
-from suite.suite_core.collab import log, scheduling
+from suite.suite_core import content
+from suite.suite_core.content import log, scheduling
 from suite.writer import collab as writer_collab
 from suite.writer import drive as writer_drive
 from suite.writer.collab import routes
@@ -103,8 +103,10 @@ class TestWriterDriveCallbacks(CheckpointCase):
         named, unnamed = self.old_media(node, "named.png"), self.old_media(node, "unnamed.png")
         self.edit(node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(named)})))
 
-        spec = content.registry()[writer_drive.DOCTYPE]
-        trashed = content._sweep_document(spec, frappe._dict(name=node, content_docname=self.docname(node)))
+        spec = drive_content.registry()[writer_drive.DOCTYPE]
+        trashed = drive_content._sweep_document(
+            spec, frappe._dict(name=node, content_docname=self.docname(node))
+        )
 
         self.assertEqual(trashed, 1)
         self.assertEqual(frappe.db.get_value("Drive Node", named, "state"), "Active")
@@ -116,7 +118,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
             media = drive.create_file(
                 document, title, blob=blob.name, size=blob.file_size, mime=blob.mime_type
             )
-        aged = now_datetime() - timedelta(days=content.UNUSED_MEDIA_GRACE_DAYS + 1)
+        aged = now_datetime() - timedelta(days=drive_content.UNUSED_MEDIA_GRACE_DAYS + 1)
         frappe.db.set_value("Drive Node", media, "creation", aged, update_modified=False)
         frappe.db.commit()
         return media
@@ -202,7 +204,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
     def test_a_version_or_copy_larger_than_a_compaction_job_takes_is_refused(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two"])
-        read = collab.read("writer", self.doc_row(node).id)
+        read = content.read("writer", self.doc_row(node).id)
         size = len(read["checkpoint"] or b"") + sum(len(payload) for _rev, payload in read["rows"])
         parent = frappe.db.get_value("Drive Node", node, "parent_node")
 
@@ -364,7 +366,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         call(routes.collab_sessions_post, copied, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
 
         with self.assertRaises(ValueError):
-            collab.replace_start("writer", self.doc_row(copied).id, pycrdt.Doc().get_update(), 1)
+            content.replace_start("writer", self.doc_row(copied).id, pycrdt.Doc().get_update(), 1)
 
     def test_a_source_whose_log_cannot_be_read_is_not_copied(self):
         node = self.new_document()
@@ -504,10 +506,10 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.addCleanup(writer_collab.delete_purged, doc_id)
         doc = pycrdt.Doc(client_id=cid)
         doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText("two"))
-        header, payload = collab.parse_push(push_body(lineage, sid, cid, 1, 1, doc.get_update()))
+        header, payload = content.parse_push(push_body(lineage, sid, cid, 1, 1, doc.get_update()))
 
-        with self.assertRaises(collab.Refusal) as refused:
-            collab.push(routes.ADAPTER, doc_id, header, payload, WRITER, routes.SCHEMA)
+        with self.assertRaises(content.Refusal) as refused:
+            content.push(routes.ADAPTER, doc_id, header, payload, WRITER, routes.SCHEMA)
 
         self.assertEqual((refused.exception.status, refused.exception.body), (404, {"collab": "not_found"}))
         self.assertEqual(self.rows_of(doc_id)["update"], 1)
@@ -521,7 +523,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
     def purging_on_find(self):
         """A purge that lands after a log is found and before it is read."""
-        found = collab.find
+        found = content.find
 
         def find(adapter: str, node: str):
             doc = found(adapter, node)
@@ -530,7 +532,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 self.addCleanup(writer_collab.delete_purged, doc.id)
             return doc
 
-        return patch.object(collab, "find", find)
+        return patch.object(content, "find", find)
 
     def test_a_log_purged_between_finding_and_reading_it_reads_as_missing(self):
         reads = (

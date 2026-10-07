@@ -5,7 +5,7 @@ import frappe
 import pycrdt
 from frappe.tests import IntegrationTestCase
 
-from suite.suite_core.collab import compaction, selftest
+from suite.suite_core.content import compaction, selftest
 from suite.tests.utils import ensure_user
 
 
@@ -67,4 +67,4 @@ class TestCollabSelfTest(IntegrationTestCase):
         frappe.set_user("Administrator")
         with patch.object(frappe, "enqueue") as enqueue:
             selftest.run_self_test()
-        self.assertEqual(enqueue.call_args.args, ("suite.suite_core.collab.selftest.self_test",))
+        self.assertEqual(enqueue.call_args.args, ("suite.suite_core.content.selftest.self_test",))

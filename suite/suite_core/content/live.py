@@ -14,7 +14,7 @@ import time
 import frappe
 from frappe.utils.password import get_encryption_key
 
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content.tables import table
 
 EPOCH_SECONDS = 150
 # Larger rows go by reference: tabs pull them
@@ -69,6 +69,6 @@ def publish(adapter: str, doc_id: str, lineage: str, event: str, message: dict) 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def joinable() -> bool:
     """Whether the realtime service may let sockets into collab rooms: only while collaboration is on."""
-    from suite.suite_core.collab.log import enabled
+    from suite.suite_core.content.log import enabled
 
     return enabled()

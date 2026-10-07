@@ -14,8 +14,8 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
-from suite.suite_core.collab import admission, checkpoints, compaction, live, scheduling
-from suite.suite_core.collab.log import isolation
+from suite.suite_core.content import admission, checkpoints, compaction, live, scheduling
+from suite.suite_core.content.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
@@ -63,7 +63,7 @@ class CheckpointCase(IntegrationTestCase):
         return node
 
     def forget(self, node: str):
-        doc = routes.collab.find(routes.ADAPTER, node)
+        doc = routes.content.find(routes.ADAPTER, node)
         if doc:
             for kind in ("update", "session", "checkpoint", "recovery"):
                 frappe.db.sql(f"DELETE FROM `__writer_content_{kind}` WHERE `doc_id` = %s", doc.id)
@@ -128,7 +128,7 @@ class CheckpointCase(IntegrationTestCase):
 
 class TestWriterCheckpoints(CheckpointCase):
     def test_the_self_test_fixture_uses_the_roots_writer_writes(self):
-        from suite.suite_core.collab import selftest
+        from suite.suite_core.content import selftest
 
         self.assertEqual(selftest.ROOTS, writer_collab.ROOTS)
 
@@ -246,7 +246,7 @@ class TestWriterCheckpoints(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one ", "two "])
         doc_id = self.doc_row(node).id
-        older = routes.collab.read("writer", doc_id)
+        older = routes.content.read("writer", doc_id)
         self.type_into(node, ["three"])
         self.compact(node)
 
@@ -292,7 +292,7 @@ class TestWriterCheckpoints(CheckpointCase):
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
         state = os.urandom(packet // 2 + 2**20)
         result = compaction.Compacted(state=state, integrated=True, report={})
-        snapshot = routes.collab.read("writer", self.doc_row(node).id)
+        snapshot = routes.content.read("writer", self.doc_row(node).id)
 
         self.job(self.doc_row(node).id).store(snapshot, result)
 
@@ -317,7 +317,7 @@ class TestWriterCheckpoints(CheckpointCase):
         self.addCleanup(frappe.db.sql, "SET SESSION sql_mode = %s", mode)
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
         result = compaction.Compacted(state=os.urandom(packet + 2**20), integrated=True, report={})
-        snapshot = routes.collab.read("writer", self.doc_row(node).id)
+        snapshot = routes.content.read("writer", self.doc_row(node).id)
 
         with self.assertRaises(compaction.CompactionFailed) as failed:
             self.job(self.doc_row(node).id).store(snapshot, result)
@@ -329,7 +329,7 @@ class TestWriterCheckpoints(CheckpointCase):
     def stored(self, node: str, *, integrated: bool = True) -> tuple[dict, object, bytes]:
         """A compaction of the document through its head, stored as T2 leaves it, not yet installed."""
         doc_id = self.doc_row(node).id
-        snapshot = routes.collab.read("writer", doc_id)
+        snapshot = routes.content.read("writer", doc_id)
         rows = [payload for _rev, payload in snapshot["rows"]]
         result = compaction.compact(snapshot["checkpoint"], rows, writer_collab.ROOTS)
         if not integrated:
@@ -342,7 +342,7 @@ class TestWriterCheckpoints(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one "])
         doc_id, site = self.doc_row(node).id, frappe.local.site
-        snapshot = routes.collab.read("writer", doc_id)
+        snapshot = routes.content.read("writer", doc_id)
         result = compaction.compact(
             None, [payload for _rev, payload in snapshot["rows"]], writer_collab.ROOTS
         )
@@ -378,7 +378,7 @@ class TestWriterCheckpoints(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         doc_id, site = self.doc_row(node).id, frappe.local.site
-        snapshot = routes.collab.read("writer", doc_id)
+        snapshot = routes.content.read("writer", doc_id)
         result = compaction.compact(
             None, [payload for _rev, payload in snapshot["rows"]], writer_collab.ROOTS
         )
@@ -389,7 +389,7 @@ class TestWriterCheckpoints(CheckpointCase):
             frappe.init(site=site)
             frappe.connect()
             try:
-                purged.append(routes.collab.mark_purged("writer", node))
+                purged.append(routes.content.mark_purged("writer", node))
                 frappe.db.commit()
             finally:
                 frappe.destroy()

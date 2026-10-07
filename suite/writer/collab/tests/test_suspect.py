@@ -12,7 +12,7 @@ from frappe.utils.background_jobs import get_redis_conn
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.collab import admission, compaction, kernel, live, quarantine, scheduling, suspect
+from suite.suite_core.content import admission, compaction, kernel, live, quarantine, scheduling, suspect
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
@@ -131,7 +131,7 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(
             [reason for _rev, _owner, reason, _payload in self.recovered(node)], ["editor_schema"] * 2
         )
-        read = routes.collab.read(routes.ADAPTER, self.doc_row(node).id)
+        read = routes.content.read(routes.ADAPTER, self.doc_row(node).id)
         self.assertEqual(
             kernel.judge(BUNDLE, read["checkpoint"], [payload for _rev, payload in read["rows"]]),
             kernel.Verdict(None),

@@ -12,7 +12,7 @@ import sys
 
 import pycrdt
 
-from suite.suite_core.collab.compaction import CompactionFailed, compact, load
+from suite.suite_core.content.compaction import CompactionFailed, compact, load
 
 HERE = pathlib.Path(__file__).parent
 WRITER = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}

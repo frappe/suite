@@ -6,7 +6,7 @@ either side is dropped. Rows on both sides stop the patch rather than lose eithe
 
 import frappe
 
-from suite.suite_core.collab.tables import KINDS, table
+from suite.suite_core.content.tables import KINDS, table
 
 
 def execute() -> None:

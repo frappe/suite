@@ -5,9 +5,9 @@ from collections.abc import Callable
 
 import frappe
 
-from suite.suite_core.collab import ingest, quarantine
-from suite.suite_core.collab.log import ChainBroken, read
-from suite.suite_core.collab.tables import table
+from suite.suite_core.content import ingest, quarantine
+from suite.suite_core.content.log import ChainBroken, read
+from suite.suite_core.content.tables import table
 
 
 def backfill_clocks(adapter: str, owner_of: Callable[[str], str | None]) -> None:

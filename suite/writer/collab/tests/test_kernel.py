@@ -10,7 +10,7 @@ import frappe
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.collab import kernel
+from suite.suite_core.content import kernel
 
 BUNDLE = Path(__file__).parents[1] / "dist" / "kernel.cjs"
 

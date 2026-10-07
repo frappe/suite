@@ -6,11 +6,11 @@ state: the product supplies its table prefix and checks access through Drive
 itself, because `suite_core` never imports Drive or a product.
 """
 
-from suite.suite_core.collab.backfill import backfill_clocks
-from suite.suite_core.collab.checkpoints import replace_start
-from suite.suite_core.collab.ingest import EditorSchema
-from suite.suite_core.collab.live import rooms
-from suite.suite_core.collab.log import (
+from suite.suite_core.content.backfill import backfill_clocks
+from suite.suite_core.content.checkpoints import replace_start
+from suite.suite_core.content.ingest import EditorSchema
+from suite.suite_core.content.live import rooms
+from suite.suite_core.content.log import (
     PROTO,
     ChainBroken,
     Refusal,
@@ -33,7 +33,7 @@ from suite.suite_core.collab.log import (
     rows_after,
     with_tombstones,
 )
-from suite.suite_core.collab.tables import ensure_tables
+from suite.suite_core.content.tables import ensure_tables
 
 __all__ = [
     "PROTO",

@@ -6,14 +6,14 @@ import frappe
 import pycrdt
 from frappe.tests.utils import whitelist_for_tests
 
-from suite.suite_core import collab
-from suite.suite_core.collab import compaction, quarantine, scheduling, suspect
-from suite.suite_core.collab.tables import KINDS, table
+from suite.suite_core import content
+from suite.suite_core.content import compaction, quarantine, scheduling, suspect
+from suite.suite_core.content.tables import KINDS, table
 from suite.writer import collab as writer_collab
 
 
 def collab_doc(node: str) -> dict:
-    doc = collab.find(writer_collab.ADAPTER, node)
+    doc = content.find(writer_collab.ADAPTER, node)
     if doc is None:
         raise frappe.DoesNotExistError(f"{node} has no collab log")
     return doc
@@ -24,8 +24,8 @@ def enable_collab(node: str) -> dict:
     """Turn collaboration on for the site and make `node`'s Writer document collaborative."""
     frappe.db.set_single_value("Suite Collab Settings", "mode", "on")
     frappe.db.set_value("Writer Document", {"node": node}, "collab", 1)
-    if collab.find(writer_collab.ADAPTER, node) is None:
-        collab.create(writer_collab.ADAPTER, node)
+    if content.find(writer_collab.ADAPTER, node) is None:
+        content.create(writer_collab.ADAPTER, node)
     frappe.db.commit()
     return state(node)
 
@@ -154,7 +154,7 @@ def log_rows(log: str) -> dict:
 @whitelist_for_tests(methods=["GET", "POST"])
 def server_text(node: str) -> list[str]:
     """The text of each top-level block of `node`, read from the checkpoint and the rows after it."""
-    stored = collab.read(writer_collab.ADAPTER, collab_doc(node)["id"])
+    stored = content.read(writer_collab.ADAPTER, collab_doc(node)["id"])
     if stored is None:
         raise frappe.DoesNotExistError(f"{node} has no collab log")
     parts = ([stored["checkpoint"]] if stored["checkpoint"] else []) + [row for _rev, row in stored["rows"]]
