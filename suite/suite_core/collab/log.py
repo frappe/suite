@@ -24,7 +24,6 @@ from suite.suite_core.collab.tables import table
 
 PROTO = 1
 PACE_MS = 1000
-HEADER_MAX = 4096
 CLIENT_ID_MAX = 2**30
 PURGE_BATCH = 500
 # A push stamped by a newer build than this server waits out the deploy
@@ -244,7 +243,7 @@ def parse_push(body: bytes) -> tuple[dict, bytes]:
     if len(body) < 4:
         raise Refusal(400, "malformed")
     (length,) = struct.unpack(">I", body[:4])
-    if length > HEADER_MAX or len(body) < 4 + length:
+    if length > stage.HEADER_MAX or len(body) < 4 + length:
         raise Refusal(400, "malformed")
     try:
         header = json.loads(body[4 : 4 + length])
