@@ -470,7 +470,7 @@ test.describe("Writer collaboration", () => {
 
 		await pasteText(owner.page, "z".repeat(4.5 * 2 ** 20));
 
-		await expect(owner.page.getByText("This is too large to add in one go. Insert large images as files.")).toBeVisible();
+		await expect(owner.page.getByText("This is too large to add in one go. Add it in smaller parts.")).toBeVisible();
 		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
 		await expectSaved(owner.page);
 		const saved = (await serverText(testApi, node)).join("");
@@ -492,7 +492,7 @@ test.describe("Writer collaboration", () => {
 		]);
 		await chooser.setFiles(resolve(__dirname, "fixtures/import-too-large.docx"));
 
-		await expect(owner.page.getByText("This is too large to add in one go. Insert large images as files.")).toBeVisible();
+		await expect(owner.page.getByText("This file is too large to import.")).toBeVisible();
 		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
 		await expectSaved(owner.page);
 		const saved = (await serverText(testApi, node)).join("");
