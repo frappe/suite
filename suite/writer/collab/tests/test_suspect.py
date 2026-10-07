@@ -151,6 +151,7 @@ class TestSuspect(CheckpointCase):
 
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held), ("unreadable", "no_node"))
+        self.assertEqual(self.pulled(node)["held"], "no_node")
         self.assertEqual(self.alerts("suspect held: no_node"), before + 1)
         self.assertEqual(self.states(node), ["ok"])
         response = a.write(lambda body: body.children.append(paragraph("beta")))
@@ -185,6 +186,7 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.judge(node), "held")
 
         self.assertEqual(self.doc_row(node).suspect_held, "bad_checkpoint")
+        self.assertEqual(self.pulled(node)["held"], "bad_checkpoint")
         self.assertEqual(self.states(node), ["ok", "ok"])
 
     def test_rows_pycrdt_still_refuses_after_the_quarantine_hold_the_document_once(self):
@@ -571,6 +573,7 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.requested, [])
         self.assertFalse(writer_collab.clear_suspect(doc_id))
         frappe.set_user(WRITER)
+        self.assertNotIn("held", self.pulled(node))
         Pen(self, node).adds(paragraph("beta"))
         self.assertEqual(self.states(node), ["ok", "ok"])
 

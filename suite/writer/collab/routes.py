@@ -152,8 +152,18 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
         return _frame({"state": "rebuild", "proto": collab.PROTO, "q_epoch": epoch})
     rows = collab.rows_after(ADAPTER, doc.id, max(after, 0))
     consider_compaction(doc.id)
-    header = {"state": "live", "proto": collab.PROTO, "q_epoch": epoch, "judged": int(doc.judged)}
-    return _frame({**header, "verdict": doc.verdict} if doc.verdict else header, rows)
+    header = {
+        "state": "live",
+        "proto": collab.PROTO,
+        "q_epoch": epoch,
+        "judged": int(doc.judged),
+        "schema": json.loads(doc.schema_steps)[-1][1],
+    }
+    if doc.verdict:
+        header["verdict"] = doc.verdict
+    if doc.suspect_held:
+        header["held"] = doc.suspect_held
+    return _frame(header, rows)
 
 
 def _push(node: str) -> Response:

@@ -477,6 +477,7 @@ class TestWriterCollab(IntegrationTestCase):
             return call(routes.collab_updates_post, node, body=body).status_code
 
         self.assertEqual(steps(), [[0, 1]])
+        self.assertEqual(self.open(node)[0]["schema"], 1)
         with patch.object(routes, "SCHEMA", stepped):
             refused = [
                 stamped(newer_sid, newer, 2, element(newer, "marquee"), 2),
@@ -492,6 +493,8 @@ class TestWriterCollab(IntegrationTestCase):
             self.assertEqual(stamped(sid, cid, 2, typed(cid, ["a", "b"])[1], 1), 200)
 
         self.assertEqual(steps(), [[0, 1], [2, 2]])
+        pulled = read_frame(call(routes.collab_updates_get, node).get_data())[0]
+        self.assertEqual((self.open(node)[0]["schema"], pulled["schema"]), (2, 2))
 
     def test_a_push_that_does_not_continue_its_writers_clocks_is_refused_and_stores_nothing(self):
         self.set_mode("on")
