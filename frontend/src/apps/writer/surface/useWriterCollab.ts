@@ -1,4 +1,10 @@
-import { CollabOpenError, recoverable, type Blocked, type CollabRoom } from '@suite/collab-client'
+import {
+  CollabOpenError,
+  recoverable,
+  type Blocked,
+  type CollabRoom,
+  type LiveState,
+} from '@suite/collab-client'
 import { computed, nextTick, ref, shallowRef } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
@@ -21,6 +27,7 @@ interface RoomStatus {
   unsent: number
   onDevice: boolean
   atLimit: boolean
+  live: LiveState | null
 }
 
 const snapshot = (room: CollabRoom): RoomStatus => ({
@@ -34,6 +41,7 @@ const snapshot = (room: CollabRoom): RoomStatus => ({
   unsent: room.unsent,
   onDevice: room.onDevice,
   atLimit: room.atLimit,
+  live: room.live,
 })
 
 // A Writer document's live room: opening it, mirroring its state for the page, and closing it.
@@ -135,6 +143,7 @@ export function useWriterCollab(
       failed: now.saveState === 'failed',
       kept: kept.value,
       setAside: setAside.value,
+      polling: now.live === 'polling',
     })
   })
   const openFailure = computed(() => openFailureFor(openReason.value, openStatus.value))

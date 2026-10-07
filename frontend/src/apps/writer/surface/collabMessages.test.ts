@@ -18,6 +18,7 @@ const standing = {
   kept: false,
   setAside: false,
   unsent: 1,
+  polling: false,
 } as const
 
 describe('collab banner copy', () => {
@@ -170,6 +171,18 @@ describe('collab stop copy', () => {
   it('asks a reader to reload to see the changes, not to edit', () => {
     expect(read(bannerFor({ ...standing, newerSchema: true, editor: false, unsent: 0 }))).toBe(
       'This document was edited in a newer version of Writer. Reload to see its latest changes.',
+    )
+  })
+
+  it('says live updates are unavailable while the tab polls, unless something says more', () => {
+    expect(read(bannerFor({ ...standing, polling: true }))).toBe(
+      "Live updates are unavailable, so others' changes show up late.",
+    )
+    expect(read(bannerFor({ ...standing, polling: true, blocked: 'locked' }))).toBe(
+      "This document was locked, so changes aren't saved. Unlock it to save them.",
+    )
+    expect(read(bannerFor({ ...standing, polling: true, atLimit: true }))).toBe(
+      'This document is at its size limit. Delete content to free space.',
     )
   })
 

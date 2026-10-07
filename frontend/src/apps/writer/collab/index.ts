@@ -7,6 +7,7 @@ import {
 } from '@suite/collab-client'
 
 import type { DocumentSession } from '@/apps/drive'
+import { getRealtimeSocket } from '@/platform/realtime'
 import { getCookieSessionUser } from '@/platform/session'
 import { createTransport, type HttpMethod, type Operation } from '@/platform/transport'
 
@@ -93,5 +94,6 @@ export async function openWriterRoom(session: DocumentSession): Promise<Opened> 
     schema: WRITER_SCHEMA,
     signedIn,
     device: store && { store, doc: session.nodeId },
+    socket: getRealtimeSocket(),
   })
 }

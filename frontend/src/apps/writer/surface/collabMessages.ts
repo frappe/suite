@@ -32,6 +32,8 @@ interface Standing {
   // An earlier room of this page set its unsent work aside as a recovery copy
   setAside: boolean
   unsent: number
+  // No live updates reach this tab, so it polls
+  polling: boolean
 }
 
 const STOPS: Record<string, string> = {
@@ -71,9 +73,14 @@ export function bannerFor({
   kept,
   setAside,
   unsent,
+  polling,
 }: Standing): Banner | null {
   const waiting = paused && Object.hasOwn(PAUSES, paused) ? PAUSES[paused] : null
-  if (!(blocked || held || newerSchema || waiting || failed)) return savingBanner(atLimit, setAside)
+  if (!(blocked || held || newerSchema || waiting || failed))
+    return (
+      savingBanner(atLimit, setAside) ??
+      (polling ? { text: "Live updates are unavailable, so others' changes show up late." } : null)
+    )
   const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
