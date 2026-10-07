@@ -63,19 +63,19 @@ import HiddenImagesBanner from '@/apps/mail/components/HiddenImagesBanner.vue'
 type Sender = { email: string; name?: string }
 
 /**
- * `senders`: who the thread is waiting on, in the order they first wrote. `domain`: the '@domain'
- * they all share, or null. `hiddenImages`: how many remote images the thread is holding back, or null
- * when it holds nothing back.
+ * `senders`: who the thread is waiting on, in the order they first wrote. `domains`: the '@domain's
+ * among them worth offering to trust. `hiddenImages`: how many remote images the thread is holding
+ * back, or null when it holds nothing back.
  */
 const {
   senders,
-  domain = null,
+  domains = [],
   hiddenImages = null,
-} = defineProps<{ senders: Sender[]; domain?: string | null; hiddenImages?: number | null }>()
+} = defineProps<{ senders: Sender[]; domains?: string[]; hiddenImages?: number | null }>()
 const emit = defineEmits<{
   allow: []
   allowOne: [email: string]
-  allowDomain: []
+  allowDomain: [domain: string]
   deny: []
   loadImages: []
 }>()
@@ -83,16 +83,22 @@ const emit = defineEmits<{
 const nameOf = (sender: Sender) => sender.name || sender.email
 const emails = computed(() => senders.map((sender) => sender.email).join(', '))
 
-// Behind the arrow: each sender on their own, when there is more than one, and the domain they share.
-const moreAnswers = computed(() => [
-  ...(senders.length > 1
-    ? senders.map((sender) => ({
-        label: __('Yes to {0} only', [nameOf(sender)]),
-        onClick: () => emit('allowOne', sender.email),
-      }))
-    : []),
-  ...(domain
-    ? [{ label: __('Mark {0} as trusted', [domain.slice(1)]), onClick: () => emit('allowDomain') }]
-    : []),
-])
+// Behind the arrow: each person on their own, when there is more than one, then each organisation
+// they write from.
+const moreAnswers = computed(() =>
+  [
+    senders.length > 1
+      ? senders.map((sender) => ({
+          label: __('Yes to {0} only', [nameOf(sender)]),
+          onClick: () => emit('allowOne', sender.email),
+        }))
+      : [],
+    domains.map((domain) => ({
+      label: __('Mark {0} as trusted', [domain.slice(1)]),
+      onClick: () => emit('allowDomain', domain),
+    })),
+  ]
+    .filter((options) => options.length)
+    .map((options) => ({ group: '', options })),
+)
 </script>

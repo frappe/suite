@@ -18,6 +18,36 @@ import { useUndo } from '@/apps/mail/utils/composables'
 // Bumped after every verdict, so mounted lists refresh without each subscribing to the API calls.
 const version = ref(0)
 
+// Domains anyone can sign up to. Trusting one would trust every stranger who writes from it, so they
+// are never offered as a domain to trust.
+const SHARED_MAIL_DOMAINS = new Set([
+  'aol.com',
+  'gmail.com',
+  'gmx.com',
+  'googlemail.com',
+  'hotmail.com',
+  'icloud.com',
+  'live.com',
+  'mac.com',
+  'mail.com',
+  'me.com',
+  'msn.com',
+  'outlook.com',
+  'proton.me',
+  'protonmail.com',
+  'rediffmail.com',
+  'yahoo.co.in',
+  'yahoo.com',
+  'yandex.com',
+  'zoho.com',
+])
+
+/** The '@domain' of each address worth offering to trust, in order, leaving out shared mail domains. */
+export const trustableDomains = (emails: string[]) =>
+  [...new Set(emails.map((email) => email.split('@').pop()?.toLowerCase() ?? ''))]
+    .filter((domain) => domain && !SHARED_MAIL_DOMAINS.has(domain))
+    .map((domain) => `@${domain}`)
+
 type Destination = 'inbox' | 'archive' | 'trash'
 
 /** A thread row, or one of its messages: whatever says whose mail is waiting. */

@@ -56,11 +56,11 @@
               <ScreenerThreadBanner
                 v-if="screenedSenders.length"
                 :senders="screenedSenders"
-                :domain="sharedDomain"
+                :domains="trustableDomains(screenedSenders.map((sender) => sender.email))"
                 :hidden-images="hiddenImages"
                 @allow="allowSenders()"
                 @allow-one="(email: string) => allowSenders([email])"
-                @allow-domain="allowDomain()"
+                @allow-domain="(domain: string) => allowDomain(domain)"
                 @deny="denySenders()"
                 @load-images="imagesShown = true"
               />
@@ -577,7 +577,7 @@ import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import { useScreener } from '@/apps/mail/composables/useScreener'
+import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
 import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import {
   closeComposeWindow,
@@ -1023,11 +1023,6 @@ const hiddenImages = computed(() => {
 // A verdict changes who is trusted, and an accepted sender's images load: read the rules again.
 watch(screener.version, () => screenedAddresses.value.refetch().catch(() => {}))
 
-// The domain every waiting sender shares, as '@domain' — the bar offers to trust it — or null.
-const sharedDomain = computed(() => {
-  const domains = new Set(screenedSenders.value.map((sender) => domainOf(sender.email)))
-  return domains.size === 1 ? [...domains][0] : null
-})
 const asScreenable = (senders: { email: string }[]) =>
   senders.map((sender) => ({ from_email: sender.email, unscreened: 1 as const }))
 
@@ -1040,10 +1035,8 @@ const allowSenders = async (emails = screenedSenders.value.map((sender) => sende
   reload()
 }
 
-// The arrow beside Yes, when every waiting sender shares a domain: trust the whole domain.
-const allowDomain = async () => {
-  const domain = sharedDomain.value
-  if (!domain) return
+// From the arrow beside Yes: trust one of the waiting senders' domains, everyone who writes from it.
+const allowDomain = async (domain: string) => {
   trustHere(domain)
   await screener.allow([domain], 'inbox', __('{0} marked as trusted.', [domain.slice(1)]))
   reload()
