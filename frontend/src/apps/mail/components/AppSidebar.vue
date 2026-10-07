@@ -284,14 +284,8 @@ const dashboardItems = [
 const mailboxItems = computed(
   () =>
     mailboxes.data
-      // The Screener is listed even unsubscribed: it can't be hidden from Folder settings, and
-      // Stalwart recreates it unsubscribed when the screening Sieve script brings it back.
-      ?.filter(
-        (mailbox: MailboxData) => mailbox.subscribed || mailbox.id === store.mailboxIds.screener,
-      )
+      ?.filter((mailbox: MailboxData) => mailbox.subscribed)
       ?.map((mailbox: MailboxData) => {
-        // The Screening folder opens the dedicated Screener page, not the thread list.
-        const isScreener = mailbox.id === store.mailboxIds.screener
         return {
           mailboxId: mailbox.id,
           label: getMailboxName(mailbox),
@@ -299,50 +293,41 @@ const mailboxItems = computed(
             name: getIcon(mailbox),
             class: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
           }),
-          to: isScreener
-            ? { name: 'mail-screener', params: { accountId: store.accountId } }
-            : {
-                name: 'mail-mailbox',
-                params: {
-                  accountId: store.accountId,
-                  mailbox: mailboxParam(mailbox.id, mailboxes.data),
-                },
-              },
+          to: {
+            name: 'mail-mailbox',
+            params: {
+              accountId: store.accountId,
+              mailbox: mailboxParam(mailbox.id, mailboxes.data),
+            },
+          },
           suffix: mailbox.unread_threads ? String(mailbox.unread_threads) : '',
-          activeFor: isScreener ? ['mail-screener', 'mail-screener-sender'] : [mailbox.id],
-          menuOptions: isScreener
-            ? undefined
-            : [
-                {
-                  label: __('Configure'),
-                  icon: Settings,
-                  onClick: () => {
-                    selectedMailbox.value = mailbox
-                    showFolderModal.value = true
-                  },
-                },
-                {
-                  label: __('Delete'),
-                  theme: 'red' as const,
-                  icon: Trash2,
-                  onClick: () => {
-                    selectedMailbox.value = mailbox
-                    showDeleteMailbox.value = true
-                  },
-                },
-              ],
+          activeFor: [mailbox.id],
+          menuOptions: [
+            {
+              label: __('Configure'),
+              icon: Settings,
+              onClick: () => {
+                selectedMailbox.value = mailbox
+                showFolderModal.value = true
+              },
+            },
+            {
+              label: __('Delete'),
+              theme: 'red' as const,
+              icon: Trash2,
+              onClick: () => {
+                selectedMailbox.value = mailbox
+                showDeleteMailbox.value = true
+              },
+            },
+          ],
         }
       }) || [],
 )
 
-const screeningEnabled = computed(
-  () =>
-    !!store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)?.enable_screening,
-)
-
 // The folder list of "All accounts", grouped as an account's is: system folders and Starred, then the
-// custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, the Screener,
-// New Folder — has a merged form, so none of it is offered here.
+// custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, New Folder —
+// has a merged form, so none of it is offered here.
 const unifiedSidebarItems = computed(() => {
   const folders: UnifiedFolder[] = unifiedFolders.data ?? []
   const toItem = (folder: UnifiedFolder) => ({
@@ -400,13 +385,6 @@ const sidebarItems = computed(() => {
     return [{ label: '', items: pinned }, ...dashboardItems]
   }
 
-  // Screening is a roleless folder; it gets its own nameless group pinned to the top of the
-  // sidebar, separate from the default and custom mailboxes.
-  const isScreening = (item: { mailboxId?: string }) =>
-    !!store.mailboxIds.screener && item.mailboxId === store.mailboxIds.screener
-
-  const screenerItem = mailboxItems.value.find((item) => isScreening(item))
-
   const roleOf = (item: { mailboxId?: string }) =>
     mailboxes.data?.find((m) => m.id === item.mailboxId)?.role
 
@@ -440,7 +418,7 @@ const sidebarItems = computed(() => {
         SECONDARY_MAILBOX_ROLES.indexOf(roleOf(a)!) - SECONDARY_MAILBOX_ROLES.indexOf(roleOf(b)!),
     )
 
-  const customMailboxes = mailboxItems.value.filter((item) => !roleOf(item) && !isScreening(item))
+  const customMailboxes = mailboxItems.value.filter((item) => !roleOf(item))
   const addMailboxItem = {
     label: __('New Folder'),
     icon: Plus,
@@ -458,12 +436,6 @@ const sidebarItems = computed(() => {
       ? [{ label: __('More'), key: 'more', items: secondaryItems, collapsible: true }]
       : []),
   ]
-
-  // The Screener is pinned in a nameless group above the folders, only when screening is enabled.
-  const pinnedItems = []
-  if (screenerItem && screeningEnabled.value) pinnedItems.push(screenerItem)
-
-  if (pinnedItems.length) groups.unshift({ label: '', items: pinnedItems })
 
   // Admins reach the dashboard from its own row, last in the sidebar.
   if (

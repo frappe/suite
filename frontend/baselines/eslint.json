@@ -34,7 +34,6 @@
   "src/apps/mail/composables/useUpcomingEvents.ts|@typescript-eslint/no-explicit-any": 4,
   "src/apps/mail/pages/ComposeView.vue|@typescript-eslint/no-explicit-any": 1,
   "src/apps/mail/pages/MailboxView.vue|@typescript-eslint/no-explicit-any": 1,
-  "src/apps/mail/pages/ScreenerView.vue|@typescript-eslint/no-unused-expressions": 1,
   "src/apps/mail/types/doctypes.ts|@typescript-eslint/no-explicit-any": 5,
   "src/apps/mail/types/globals.d.ts|@typescript-eslint/no-empty-object-type": 1,
   "src/apps/meet/components/CaptionOverlay.vue|vue/block-lang": 1,

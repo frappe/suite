@@ -6,7 +6,7 @@ import AudioIcon from '@/apps/mail/components/Icons/AudioIcon.vue'
 import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
 import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
-import { FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
+import { FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
@@ -446,9 +446,6 @@ export const getIcon = (mailbox: {
   icon?: string | null
   role?: string | null
 }) => {
-  // The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
-  // stray Mailbox Settings icon (it must never render as a generic folder).
-  if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
   if (mailbox.icon === 'spam') return 'mail-warning'
   if (mailbox.icon) return mailbox.icon
   if (mailbox.role && mailbox.role in FOLDER_ICON_MAP)
@@ -456,9 +453,7 @@ export const getIcon = (mailbox: {
   return 'folder'
 }
 
-// The Screening folder is surfaced to users as the "Screener".
-export const getMailboxName = (mailbox: MailboxData) =>
-  mailbox._name === SCREENER_MAILBOX_NAME ? __('Screener') : mailbox._name
+export const getMailboxName = (mailbox: MailboxData) => mailbox._name
 
 // Safari reads the blob behind an `<a download>` asynchronously, after the click has
 // already returned, so revoking the object URL in the same tick silently cancels the

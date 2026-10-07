@@ -230,7 +230,6 @@ const moreActions = (mail: Mail): GroupedAction[] => [
         onClick: () => handleBlockAddress(true),
         icon: Ban,
         condition: () =>
-          mailbox !== mailboxIds.value.screener &&
           !(identities.value.data ?? []).some((i: Identity) => i.email === mail.from_email) &&
           !isSenderBlocked(mail.from_email),
       },
@@ -238,17 +237,13 @@ const moreActions = (mail: Mail): GroupedAction[] => [
         label: __('Unblock Sender'),
         onClick: () => handleBlockAddress(false),
         icon: LockOpen,
-        condition: () => mailbox !== mailboxIds.value.screener && isSenderBlocked(mail.from_email),
+        condition: () => isSenderBlocked(mail.from_email),
       },
       {
         label: __('Mark Domain as Trusted'),
         onClick: () => trustDomain(),
         icon: ShieldCheck,
-        condition: () =>
-          mailbox !== mailboxIds.value.screener &&
-          !mail.draft &&
-          !!mail.from_email &&
-          !isDomainTrusted(mail.from_email),
+        condition: () => !mail.draft && !!mail.from_email && !isDomainTrusted(mail.from_email),
       },
     ],
   },

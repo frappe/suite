@@ -30,17 +30,6 @@ export interface PushSubscription {
   modified: string
 }
 
-// A row in the Screener: one unique sender in the Screening folder, summarised by their latest mail.
-export interface ScreeningSender {
-  from_email: string
-  from_name: string
-  subject: string
-  preview: string
-  // UTC "...Z" wire timestamp, not an epoch.
-  received_at: string
-  count: number
-  unread: number
-}
 export type User = NonNullable<import('../client/generated').GetUserInfoOutput>
 export type UserAccount = User['accounts'][number]
 export interface UserResource {
@@ -90,6 +79,8 @@ export interface Mail {
   flagged: 0 | 1
   seen: 0 | 1
   junk: 0 | 1
+  /** From a sender nobody has allowed or denied yet: waiting in the Inbox, marked new. */
+  unscreened?: 0 | 1
   mailboxes: Mailbox[]
   recipients: Recipient[]
   groupedRecipients?: {
@@ -179,6 +170,8 @@ export interface Thread {
   draft: 0 | 1
   junk: 0 | 1
   flagged: 0 | 1
+  /** From a sender nobody has allowed or denied yet: waiting in the Inbox, marked new. */
+  unscreened?: 0 | 1
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]

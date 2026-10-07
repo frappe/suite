@@ -4,6 +4,7 @@ import { computed, h, ref, type ComputedRef, type Ref } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailCopy, Thread } from '@/apps/mail/types'
@@ -66,6 +67,7 @@ export function useThreadActions(deps: {
   const store = userStore()
   const { mailboxes, mailboxIds } = store
   const { setUndoAction, undo } = useUndo()
+  const screener = useScreener()
   const { promptBlockSenders, willJunkSenders } = useBlockSender()
 
   // The loaded rows behind the current selection. In Search each row is itself a mail rather than
@@ -217,7 +219,7 @@ export function useThreadActions(deps: {
   const addToOptions = computed(() =>
     mailboxes.data
       ?.filter(
-        (m) => (!m.role || ['inbox', 'archive'].includes(m.role)) && m.id !== mailboxIds.screener,
+        (m) => !m.role || ['inbox', 'archive'].includes(m.role),
       )
       .filter(
         (m) =>
@@ -310,7 +312,7 @@ export function useThreadActions(deps: {
     }
     return () => prev.forEach((mailboxes, item) => (item.mailboxes = mailboxes))
   }
-  const handleAddThreadsToMailbox = (mailboxId: string, threadIds: string[], isUndo = false) => {
+  const addThreadsToMailbox = (mailboxId: string, threadIds: string[], isUndo = false) => {
     const mailboxName = mailboxes.data?.find((m) => m.id === mailboxId)?._name
 
     // The threads stay in the current view (only gain another mailbox) — no list refetch; toggle the
@@ -449,7 +451,7 @@ export function useThreadActions(deps: {
     setUndoAction(
       () =>
         void forward.then(
-          () => handleAddThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true),
+          () => addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true),
           () => {},
         ),
     )
@@ -625,18 +627,24 @@ export function useThreadActions(deps: {
   }
   const setFlaggedByThreadIDs = (threadIDs: string[], flagged: boolean) => {
     setUndoAction(undefined)
-    const ids = rows.value
-      .filter((t: Thread) => threadIDs.includes(t.thread_id))
-      .flatMap(rowMailIds)
+    const touched = rows.value.filter((t: Thread) => threadIDs.includes(t.thread_id))
+    const ids = touched.flatMap(rowMailIds)
     void setFlaggedSubmit({
       ids,
       flagged,
     }).catch(() => {})
+    // Starring a screened thread accepts its sender; the toast's Undo unstars it too.
+    if (flagged)
+      screener.acceptWithUndo(
+        touched,
+        () => __('Sender marked as trusted.'),
+        () => void setFlaggedSubmit({ ids, flagged: false }).catch(() => {}),
+      )
   }
 
   // Moving: non-sent mails move to the target; sent mails keep only Sent + the target (other
   // memberships dropped) — except for junk/trash, which move everything.
-  const handleMoveThreads = (threadIDs: Record<string, string[]>) => {
+  const moveThreads = (threadIDs: Record<string, string[]>) => {
     const selectedThreads = Object.values(threadIDs).flat()
     if (!selectedThreads.length) return
 
@@ -1119,6 +1127,26 @@ export function useThreadActions(deps: {
     )
     return originalState
   }
+  // A screened thread is decided by what is done with it: moving it anywhere but Junk, or filing it
+  // into a folder, accepts its sender, and the action's own Undo takes the acceptance back (see
+  // useScreener). The rows are read before the action, which may drop them from the list.
+  const touchedRows = (threadIds: string[]) =>
+    rows.value.filter((t: Thread) => threadIds.includes(t.thread_id))
+
+  const handleMoveThreads = (threadIDs: Record<string, string[]>) => {
+    const touched = touchedRows(Object.values(threadIDs).flat())
+    const result = moveThreads(threadIDs)
+    if (!(mailboxIds.junk in threadIDs)) screener.acceptOnAction(touched)
+    return result
+  }
+
+  const handleAddThreadsToMailbox = (mailboxId: string, threadIds: string[], isUndo = false) => {
+    const touched = touchedRows(threadIds)
+    const result = addThreadsToMailbox(mailboxId, threadIds, isUndo)
+    if (!isUndo) screener.acceptOnAction(touched)
+    return result
+  }
+
   return {
     // Handlers
     handleSetSeen,

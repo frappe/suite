@@ -118,7 +118,6 @@
 
     <AddScreenedSenderModal v-model="showAddModal" />
     <Dialog v-model:open="showRemoveModal" v-bind="removeModalOptions" />
-    <Dialog v-model:open="showMoveToInbox" v-bind="moveToInboxOptions" />
   </div>
 </template>
 
@@ -136,21 +135,22 @@ import { computed, ref, useTemplateRef } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import AddScreenedSenderModal from '@/apps/mail/components/Modals/AddScreenedSenderModal.vue'
 import { userStore } from '@/apps/mail/stores/user'
-import type { MailboxData, ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
+import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 const store = userStore()
-const { screenedAddresses, mailboxes, mailboxIds } = store
+const { screenedAddresses } = store
 const search = ref('')
 const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
 const showRemoveModal = ref(false)
 
-// Read the flag from the shared user data (not a document draft) so the sidebar pin and the
-// Screener view react to a toggle here without a reload — mirroring the ScreenerView turn-off flow.
+// Read the flag from the shared user data (not a document draft) so the inbox reacts to a toggle
+// here without a reload. Turning screening off asks nothing more: mail still waiting is in the Inbox
+// already, and only shows as from a new sender while screening is on.
 const activeAccount = computed(() =>
   store.userResource?.data?.accounts?.find((a) => a.id === store.accountId),
 )
@@ -159,44 +159,14 @@ const screeningEnabled = computed(() => !!activeAccount.value?.enable_screening)
 const toggleScreening = async (val: boolean) => {
   const account = activeAccount.value
   if (!account) return
-  // Read the count before the reload below refreshes the data from the server.
-  const waiting =
-    mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.total_threads ?? 0
   await setScreening.run({
     account: store.accountId,
     changes: {
       enable_screening: val ? 1 : 0,
     },
   })
-  // Enabling screening creates the Screening folder server-side; reload so it shows up.
-  mailboxes.refetch().catch(() => {})
   raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
-  // Turning screening off leaves the already-screened mail in the Screening folder — offer to
-  // move it to the inbox (only worth asking when there's something there).
-  if (!val && waiting > 0) showMoveToInbox.value = true
 }
-const showMoveToInbox = ref(false)
-const moveScreeningToInbox = useMutation(api.mail.screening.moveToInbox)
-async function moveScreeningToInboxSubmit() {
-  const input: InputOf<typeof api.mail.screening.moveToInbox> = {
-    account: store.accountId,
-  }
-  await moveScreeningToInbox.run(input)
-  raiseToast(__('Unscreened messages moved to Inbox.'))
-  showMoveToInbox.value = false
-}
-const moveToInboxOptions = computed(() => ({
-  title: __('Move unscreened messages?'),
-  message: __('Screening is off. Move the messages currently in the Screener to your Inbox?'),
-  actions: [
-    {
-      label: __('Move to Inbox'),
-      variant: 'solid' as const,
-      onClick: () => moveScreeningToInboxSubmit(),
-      loading: moveScreeningToInbox.isPending,
-    },
-  ],
-}))
 const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
   Accepted: __('Accept'),
   Reject: __('Block'),

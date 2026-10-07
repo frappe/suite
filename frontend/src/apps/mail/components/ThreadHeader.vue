@@ -255,9 +255,7 @@ const addToOptions = computed(() =>
   (mailboxes.value.data ?? [])
     .filter(
       (m) =>
-        (!m.role || ['inbox', 'archive'].includes(m.role)) &&
-        m.id !== mailboxIds.value.screener &&
-        !threadMailboxes.value.includes(m.id),
+        (!m.role || ['inbox', 'archive'].includes(m.role)) && !threadMailboxes.value.includes(m.id),
     )
     .map((m) => getMailboxOption(m, 'addThreadToMailbox')),
 )

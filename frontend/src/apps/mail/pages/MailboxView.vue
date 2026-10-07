@@ -19,21 +19,6 @@
     <HeaderActions />
   </header>
 
-  <!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
-	     screening is on and threads are waiting to be screened. -->
-  <div v-if="showScreenerBanner" class="flex items-center space-x-1 border-b py-2.5 px-5">
-    <!-- w-4 wrapper centers the dot on the checkbox column below (checkbox is w-4) -->
-    <span class="mr-1 flex w-4 shrink-0 justify-center">
-      <span class="bg-blue-500 inline-block h-2 w-2 rounded-full" />
-    </span>
-    <span class="text-ink-gray-5"
-      >{{ screenerBanner.before
-      }}<span class="font-medium text-ink-gray-8">{{ screenerBanner.phrase }}</span
-      >{{ screenerBanner.after }}</span
-    >
-    <Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
-  </div>
-
   <!-- On mobile this banner renders below the title header instead (inside the mobile
 	     header block) — above it, it read as page chrome sitting on top of the title. -->
   <div v-if="showDeleteBanner && !isMobile" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
@@ -47,11 +32,7 @@
 	     once the bottom nav exists, making the outer container scroll too). -->
   <div
     class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
-    :class="
-      showDeleteBanner || showScreenerBanner
-        ? 'h-[calc(100dvh-6.125rem)]'
-        : 'h-[calc(100dvh-3.0625rem)]'
-    "
+    :class="showDeleteBanner ? 'h-[calc(100dvh-6.125rem)]' : 'h-[calc(100dvh-3.0625rem)]'"
   >
     <!-- Loading -->
     <div v-if="isLoading" class="flex w-full flex-col items-center justify-center">
@@ -282,6 +263,7 @@
                     :is-selected="selections.includes(row.thread.thread_id)"
                     :hide-sender="row.inStack"
                     :draggable="!isMobile && !isAllAccountsSearch"
+                    :screened="screener.active.value && screener.isScreened(row.thread)"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
@@ -479,9 +461,10 @@ import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
-import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
+import type { Thread } from '@/apps/mail/types'
 import {
   isMac,
   raiseError,
@@ -534,7 +517,6 @@ const { dropViewUndo } = useUndo()
 const socket = inject('$socket')
 // MailLayout's overlay layer; see the selection bar's Teleport.
 const overlayLayer = usePortalTarget()
-const user = inject('$user') as UserResource
 const store = userStore()
 const { mailboxes, mailboxIds } = store
 
@@ -579,6 +561,9 @@ const {
 const stackingEnabled = computed(
   () => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
 )
+
+// Mail from a sender nobody has decided on yet sits in the Inbox, marked unscreened (see useScreener).
+const screener = useScreener()
 
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
@@ -984,48 +969,6 @@ const refillPending = ref(false)
 // poll to detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
 
-// ── Screener banner ─────────────────────────────────────────────────────────────────────────────
-// An info bar mirroring the trash/junk one, shown on the inbox while Hey-style screening is on and
-// unscreened threads are waiting. The count is the Screening folder's unread count, kept fresh by the
-// periodic mailbox poll below.
-const activeAccount = computed(() => user.data?.accounts?.find((a) => a.id === accountId))
-const screeningEnabled = computed(() => !!activeAccount.value?.enable_screening)
-const screenerCount = computed(
-  () => mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.unread_threads ?? 0,
-)
-const showScreenerBanner = computed(
-  () =>
-    // On a phone the Screener row's unread count in the sidebar sheet carries this nudge; the banner is desktop-only.
-    !isMobile.value &&
-    mailbox === mailboxIds.inbox &&
-    screeningEnabled.value &&
-    screenerCount.value > 0 &&
-    (showReadingPane.value || !threadID),
-)
-// Emphasise only the count phrase ("3 new threads") while keeping the sentence a single translatable
-// unit: the full string keeps a literal {0} placeholder (no args passed) so translators control word
-// order, then we split on {0} to slot the emphasised phrase back in.
-const screenerBanner = computed(() => {
-  const one = screenerCount.value === 1
-  const phrase = one ? __('1 new thread') : __('{0} new threads', [String(screenerCount.value)])
-  const sentence = one
-    ? __('{0} is waiting to be screened.')
-    : __('{0} are waiting to be screened.')
-  const [before, after] = sentence.split('{0}')
-  return {
-    phrase,
-    before,
-    after,
-  }
-})
-const goToScreener = () =>
-  router.push({
-    name: 'mail-screener',
-    params: {
-      accountId,
-    },
-  })
-
 // Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
@@ -1176,6 +1119,8 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 // it announces a send or a draft saved instead (see useListReload). Drafts and Sent are the two lists
 // that answer: everywhere else the mail it wrote does not belong.
 watch(listReloadRequest, () => resetThreads(true, ['drafts', 'sent']))
+// A Screener verdict moves mail in or out of this list.
+watch(screener.version, () => refreshThreads(false))
 
 // Check for new mail without losing the reader's place: refetch the newest window and prepend only the
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
@@ -1462,36 +1407,37 @@ const rowSetSeen = (mail: Thread, seen: boolean) =>
     : handleSetSeen({
         [Number(seen)]: [mail.thread_id],
       })
+
 const rowSetFlagged = (mail: Thread, flagged: boolean) =>
   isAllAccountsSearch.value
     ? crossAccountSetFlagged(mail, flagged)
     : setFlaggedByThreadIDs([mail.thread_id], flagged)
-const rowArchive = (mail: Thread) =>
-  isAllAccountsSearch.value
-    ? crossAccountMoveOut(
-        mail,
-        mail.archive,
-        __('Archiving...'),
-        __('Thread archived.'),
-        __('No Archive folder for this account.'),
-      )
-    : mailbox === mailboxIds.sent
-      ? handleAddThreadsToMailbox(mailboxIds.archive, [mail.thread_id])
-      : handleMoveThreads({
-          [mailboxIds.archive]: [mail.thread_id],
-        })
-const rowTrash = (mail: Thread) =>
-  isAllAccountsSearch.value
-    ? crossAccountMoveOut(
-        mail,
-        mail.trash,
-        __('Moving to Trash...'),
-        __('Thread moved to Trash.'),
-        __('No Trash folder for this account.'),
-      )
-    : handleMoveThreads({
-        [mailboxIds.trash]: [mail.thread_id],
-      })
+
+const rowArchive = (mail: Thread) => {
+  if (isAllAccountsSearch.value)
+    return crossAccountMoveOut(
+      mail,
+      mail.archive,
+      __('Archiving...'),
+      __('Thread archived.'),
+      __('No Archive folder for this account.'),
+    )
+  return mailbox === mailboxIds.sent
+    ? handleAddThreadsToMailbox(mailboxIds.archive, [mail.thread_id])
+    : handleMoveThreads({ [mailboxIds.archive]: [mail.thread_id] })
+}
+
+const rowTrash = (mail: Thread) => {
+  if (isAllAccountsSearch.value)
+    return crossAccountMoveOut(
+      mail,
+      mail.trash,
+      __('Moving to Trash...'),
+      __('Thread moved to Trash.'),
+      __('No Trash folder for this account.'),
+    )
+  return handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
+}
 
 // A stack's hover actions apply to its whole run in one operation — one request, one toast, one undo,
 // rather than N of each. The row's own tooltips name the count. These take the same paths as the
