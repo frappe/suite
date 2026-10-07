@@ -242,7 +242,7 @@ doc_events = {
     "User": {
         # Roles are assigned before insert so they are present when Frappe's
         # User.validate runs — assigning them after insert triggers a spurious
-        # "No Roles Specified" warning and leaves user_type mis-resolved.
+        # "No Roles Specified" warning.
         "before_insert": [
             "suite.utils.user.assign_suite_role",
         ],

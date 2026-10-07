@@ -31,7 +31,7 @@ def execute() -> None:
     """
 
     if not frappe.db.exists("Role", ROLE):
-        frappe.get_doc({"doctype": "Role", "role_name": ROLE, "desk_access": 1}).insert(
+        frappe.get_doc({"doctype": "Role", "role_name": ROLE, "desk_access": 0}).insert(
             ignore_permissions=True
         )
 
@@ -51,11 +51,10 @@ def _assign_role(users: set[str]) -> None:
     """Grant ROLE to ``users`` with one bulk insert into ``Has Role``.
 
     Going through ``User.add_roles`` would fetch and save every User document (an N+1 on
-    migrate). ROLE carries desk access, and the bulk insert does not recompute
-    ``user_type``; that is fine because every enabled user already holds a desk-access role
-    (Drive/Suite) and is therefore already a System User. A single query both skips users who
-    already hold the role and finds the next ``idx`` per user; caches are cleared at the end
-    of the migrate.
+    migrate). ROLE has ``desk_access = 0``, so it never changes a user's ``user_type`` —
+    inserting the child rows directly is safe. A single query both skips users who already
+    hold the role and finds the next ``idx`` per user; caches are cleared at the end of the
+    migrate.
     """
 
     if not users:

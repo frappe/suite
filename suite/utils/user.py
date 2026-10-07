@@ -56,20 +56,19 @@ def is_user_enabled(user: str) -> bool:
     return bool(frappe.db.get_value("User", user, "enabled"))
 
 
-def assign_role(user: User, role_name: str, desk_access: bool = True) -> None:
+def assign_role(user: User, role_name: str) -> None:
     """Append `role_name` to an in-memory User doc, creating the Role if missing.
 
     Meant to be called from a `before_insert` hook so the role is part of the
     document Frappe validates. Assigning roles after insert is too late for
     `User.check_roles_added` (which warns "Newly created user X has no roles
-    enabled") and for `User.set_system_user` (which demotes a role-less user to
-    a Website User), and it costs an extra `User.save` per role.
+    enabled"), and it costs an extra `User.save` per role.
 
     When the Role does not yet exist (e.g. programmatic site setup before the
-    fixture syncs) it is created with `desk_access` so it matches its fixture.
-    Getting this wrong matters: `set_system_user` keys the new user's `user_type`
-    off whether any assigned role has desk access, so creating a desk-access role
-    without it here would silently demote the user to a Website User.
+    fixture syncs) it is created without Desk access so it matches its fixture.
+    A Role has Desk access unless told otherwise, and `User.set_system_user`
+    keys the new user's `user_type` off it, so leaving it out here would
+    silently make the user a System User.
     """
     # `before_insert` runs ahead of `set_new_name`, so `user.name` is still unset
     # on a fresh User — fall back to the email it will be named after.
@@ -78,7 +77,7 @@ def assign_role(user: User, role_name: str, desk_access: bool = True) -> None:
         return
 
     if not frappe.db.exists("Role", role_name):
-        frappe.get_doc({"doctype": "Role", "role_name": role_name, "desk_access": int(desk_access)}).insert(
+        frappe.get_doc({"doctype": "Role", "role_name": role_name, "desk_access": 0}).insert(
             ignore_permissions=True
         )
 
