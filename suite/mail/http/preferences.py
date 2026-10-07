@@ -35,6 +35,7 @@ class AccountPreferences(TypedDict):
     keep_forwarded_email_in_thread: Flag
     enable_screening: Flag
     block_remote_images: Flag
+    on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None
 
 
@@ -45,6 +46,7 @@ class AccountChanges(TypedDict, total=False):
     keep_forwarded_email_in_thread: Flag
     enable_screening: Flag
     block_remote_images: Flag
+    on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None
 
 

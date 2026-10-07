@@ -21,6 +21,7 @@
   "column_break_fnnk",
   "enable_screening",
   "block_remote_images",
+  "on_block_old_mail",
   "cache_section",
   "column_break_brmt",
   "total_cached_blobs",
@@ -101,6 +102,14 @@
    "fieldname": "block_remote_images",
    "fieldtype": "Check",
    "label": "Block Remote Images"
+  },
+  {
+   "default": "Ask",
+   "description": "When a sender is blocked, what happens to their mail already in the Inbox: ask each time, move it to Junk, or keep it where it is. Their future mail goes to Junk either way.",
+   "fieldname": "on_block_old_mail",
+   "fieldtype": "Select",
+   "label": "On Block, Old Mail",
+   "options": "Ask\nMove to Junk\nKeep"
   },
   {
    "depends_on": "eval: !doc.__islocal",

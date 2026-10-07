@@ -61,6 +61,7 @@ import {
 } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
@@ -107,6 +108,7 @@ const {
   screenedAddresses,
 } = injectAccountScope()
 const { setUndoAction, undo } = useUndo()
+const screener = useScreener()
 const { filterBySender } = useFilterBySender()
 const user = inject('$user')
 
@@ -386,52 +388,18 @@ const blockSender = async () => {
     raiseError(error)
     return
   }
-  setUndoAction(() => {
-    putBack()
-    const back = Promise.all([
-      client.mutation(api.mail.screening.remove, { account, emails: from_emails }, { silent: true }),
-      client.mutation(api.mail.messages.spam, { account, ids, spam: false }, { silent: true }),
-    ]).then(() => reloadMails(true))
-    raiseOptimisticToast(back, __('Sender unblocked.'))
-  })
-  const more = blocked.inbox
-  raiseToast(
-    __('Sender blocked. Future mail will go to Junk.'),
-    'success',
-    { label: __('Undo'), onClick: undo },
-    undefined,
-    more
-      ? {
-          label: __('Junk old mail'),
-          onClick: () => junkTheRest(account, from_emails),
-        }
-      : undefined,
+  screener.raiseBlocked(
+    from_emails,
+    () => {
+      putBack()
+      const back = Promise.all([
+        client.mutation(api.mail.screening.remove, { account, emails: from_emails }, { silent: true }),
+        client.mutation(api.mail.messages.spam, { account, ids, spam: false }, { silent: true }),
+      ]).then(() => reloadMails(true))
+      raiseOptimisticToast(back, __('Sender unblocked.'))
+    },
+    blocked.inbox,
   )
 }
 
-// The toast's offer: the blocked sender's other mail in the Inbox goes to Junk too.
-const junkTheRest = async (account: string, from_emails: string[]) => {
-  let moved: string[]
-  try {
-    moved = await client.mutation(api.mail.screening.junkInbox, { account, from_emails })
-  } catch (error) {
-    raiseError(error)
-    return
-  }
-  setUndoAction(() => {
-    const back = client.mutation(
-      api.mail.messages.spam,
-      { account, ids: moved, spam: false },
-      { silent: true },
-    )
-    raiseOptimisticToast(back, __('Mail moved back.'))
-  })
-  raiseToast(
-    moved.length === 1
-      ? __('1 more moved to Junk.')
-      : __('{0} more moved to Junk.', [String(moved.length)]),
-    'success',
-    { label: __('Undo'), onClick: undo },
-  )
-}
 </script>

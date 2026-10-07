@@ -20,6 +20,7 @@ class UserAccount(TypedDict):
     default_outgoing_email: str | None
     enable_screening: bool
     block_remote_images: bool
+    on_block_old_mail: str
 
 
 class UserInfo(TypedDict):

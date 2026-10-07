@@ -141,21 +141,84 @@ const createShared = () => {
     }
   }
 
+  /** The rest of blocked senders' mail in the Inbox goes to Junk too — their other folders are left
+   * alone — with an Undo of its own. */
+  const junkOldMail = async (emails: string[]) => {
+    const account = store.accountId
+    let moved: string[]
+    try {
+      moved = await client.mutation(api.mail.screening.junkInbox, { account, from_emails: emails })
+    } catch (error) {
+      raiseToast((error as Error).message || __('Action failed.'), 'error')
+      return
+    }
+    setUndoAction(() => {
+      void client
+        .mutation(api.mail.messages.spam, { account, ids: moved, spam: false })
+        .then(settled)
+    })
+    settled()
+    raiseToast(
+      moved.length === 1
+        ? __('1 more moved to Junk.')
+        : __('{0} more moved to Junk.', [String(moved.length)]),
+      'success',
+      { label: __('Undo'), onClick: undo },
+    )
+  }
+
+  // The question a block asks about the senders' old mail in the Inbox, while it is open (see
+  // OldMailDialog). Asked only when the account's setting says to ask.
+  const oldMailPrompt = ref<{ emails: string[]; count: number } | null>(null)
+
+  /** Saves what to do with a blocked sender's old mail from now on, so the question is not asked. */
+  const rememberOldMailChoice = (choice: 'Move to Junk' | 'Keep') =>
+    client
+      .mutation(api.mail.settings.updateAccount, {
+        account: store.accountId,
+        changes: { on_block_old_mail: choice },
+      })
+      .then(() => store.userResource.refetch())
+      .catch((error) => raiseToast((error as Error).message || __('Action failed.'), 'error'))
+
+  /**
+   * What every block does after it lands — Block Sender, No on the new-sender bar, Junk on a screened
+   * thread: the toast says the senders are blocked, with `revert` as its Undo. When they have
+   * `oldMail` left in the Inbox, the account's setting says what becomes of it: moved to Junk, kept,
+   * or — by default — asked about.
+   */
+  const raiseBlocked = (emails: string[], revert: () => void, oldMail: number) => {
+    setUndoAction(revert)
+    raiseToast(
+      emails.length === 1
+        ? __('Sender blocked. Future mail will go to Junk.')
+        : __('Senders blocked. Future mail will go to Junk.'),
+      'success',
+      { label: __('Undo'), onClick: undo },
+    )
+    if (!oldMail) return
+    const setting = store.userResource?.data?.accounts?.find(
+      (a) => a.id === store.accountId,
+    )?.on_block_old_mail
+    if (setting === 'Move to Junk') void junkOldMail(emails)
+    else if (setting !== 'Keep') oldMailPrompt.value = { emails, count: oldMail }
+  }
+
   /** Marks the senders spam and moves everything of theirs that was waiting to Junk. */
   const deny = async (emails: string[]) => {
     decide(emails)
+    const account = store.accountId
     try {
       const junked = await client.mutation(api.mail.screener.reject, {
-        account: store.accountId,
+        account,
         from_emails: emails,
       })
-      raiseToast(
-        emails.length === 1
-          ? __('Future mail from sender will go to Junk.')
-          : __('Future mail from these senders will go to Junk.'),
-        'success',
-        undoFor(emails, junked),
-      )
+      // What else of theirs is in the Inbox — mail from before screening, say. The rule is in place
+      // already, so this only counts.
+      const { inbox } = await client
+        .mutation(api.mail.screening.block, { account, from_emails: emails })
+        .catch(() => ({ inbox: 0 }))
+      raiseBlocked(emails, () => undoFor(emails, junked).onClick(), inbox)
     } catch (error) {
       undecide(emails)
       raiseToast((error as Error).message || __('Action failed.'), 'error')
@@ -239,5 +302,9 @@ const createShared = () => {
     isScreened,
     allow,
     deny,
+    raiseBlocked,
+    oldMailPrompt,
+    junkOldMail,
+    rememberOldMailChoice,
   }
 }

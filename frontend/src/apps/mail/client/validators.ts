@@ -704,6 +704,11 @@ export const operationAccountPreferences: Validators<
           },
           enable_screening: { enum: [0, 1], title: 'Enable Screening', type: 'integer' },
           block_remote_images: { enum: [0, 1], title: 'Block Remote Images', type: 'integer' },
+          on_block_old_mail: {
+            enum: ['Ask', 'Move to Junk', 'Keep'],
+            title: 'On Block Old Mail',
+            type: 'string',
+          },
           default_outgoing_email: {
             anyOf: [{ type: 'string' }, { type: 'null' }],
             title: 'Default Outgoing Email',
@@ -716,6 +721,7 @@ export const operationAccountPreferences: Validators<
           'keep_forwarded_email_in_thread',
           'enable_screening',
           'block_remote_images',
+          'on_block_old_mail',
           'default_outgoing_email',
         ],
         title: 'AccountPreferences',
@@ -766,6 +772,11 @@ export const operationUpdateAccountPreferences: Validators<
               },
               enable_screening: { enum: [0, 1], title: 'Enable Screening', type: 'integer' },
               block_remote_images: { enum: [0, 1], title: 'Block Remote Images', type: 'integer' },
+              on_block_old_mail: {
+                enum: ['Ask', 'Move to Junk', 'Keep'],
+                title: 'On Block Old Mail',
+                type: 'string',
+              },
               default_outgoing_email: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Default Outgoing Email',
@@ -1391,6 +1402,7 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
               },
               enable_screening: { title: 'Enable Screening', type: 'boolean' },
               block_remote_images: { title: 'Block Remote Images', type: 'boolean' },
+              on_block_old_mail: { title: 'On Block Old Mail', type: 'string' },
             },
             required: [
               'account',
@@ -1403,6 +1415,7 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
               'default_outgoing_email',
               'enable_screening',
               'block_remote_images',
+              'on_block_old_mail',
             ],
             title: 'UserAccount',
             type: 'object',

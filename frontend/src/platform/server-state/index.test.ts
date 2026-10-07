@@ -573,6 +573,7 @@ describe('Mail settings through the shared client', () => {
           keep_forwarded_email_in_thread: 0,
           enable_screening: 0,
           block_remote_images: 0,
+          on_block_old_mail: 'Ask',
           default_outgoing_email: null,
         },
       ]),

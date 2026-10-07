@@ -73,6 +73,13 @@
         >
           <Switch v-model="blockRemoteImages" />
         </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('When Blocking a Sender')"
+          :description="__('What to do with their mail already in your Inbox.')"
+        >
+          <Select v-model="draft.on_block_old_mail" :options="ON_BLOCK_OLD_MAIL_OPTIONS" />
+        </SettingsRow>
 
         <!-- Read-only, so it sits after the settings rather than ahead of them; the
 		     sidebar shows this meter only once the account is nearly full. -->
@@ -87,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Combobox, ErrorMessage, SettingsRow, Switch } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
@@ -155,6 +162,12 @@ const blockRemoteImages = computed({
   get: () => !!draft.value?.block_remote_images,
   set: (val: boolean) => (draft.value!.block_remote_images = val ? 1 : 0),
 })
+// Future mail from a blocked sender always goes to Junk; this is only about what is already there.
+const ON_BLOCK_OLD_MAIL_OPTIONS = [
+  { label: __('Ask each time'), value: 'Ask' },
+  { label: __('Move old mail to Junk'), value: 'Move to Junk' },
+  { label: __('Keep old mail'), value: 'Keep' },
+]
 const accountDirty = computed(
   () => JSON.stringify(draft.value) !== JSON.stringify(preferences.data),
 )

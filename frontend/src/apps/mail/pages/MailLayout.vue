@@ -7,6 +7,7 @@
     <router-view />
   </component>
   <ShortcutsModal v-model:open="showShortcuts" />
+  <OldMailDialog v-if="!mailServerUnavailable" />
 </template>
 
 <script setup lang="ts">
@@ -17,6 +18,7 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
+import OldMailDialog from '@/apps/mail/components/Screener/OldMailDialog.vue'
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'

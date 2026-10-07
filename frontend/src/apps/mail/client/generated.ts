@@ -231,6 +231,7 @@ export type AccountPreferencesOutput = {
   keep_forwarded_email_in_thread: 0 | 1
   enable_screening: 0 | 1
   block_remote_images: 0 | 1
+  on_block_old_mail: 'Ask' | 'Move to Junk' | 'Keep'
   default_outgoing_email: string | null
 }
 
@@ -262,6 +263,7 @@ export type UpdateAccountPreferencesInputAccountChanges = {
   keep_forwarded_email_in_thread?: 0 | 1
   enable_screening?: 0 | 1
   block_remote_images?: 0 | 1
+  on_block_old_mail?: 'Ask' | 'Move to Junk' | 'Keep'
   default_outgoing_email?: string | null
 }
 
@@ -756,6 +758,7 @@ export type GetUserInfoOutputUserAccount = {
   default_outgoing_email: string | null
   enable_screening: boolean
   block_remote_images: boolean
+  on_block_old_mail: string
 }
 
 export type GetUserInfoOutputUserInfo = {

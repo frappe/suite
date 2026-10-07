@@ -682,6 +682,15 @@
             "title": "Block Remote Images",
             "type": "integer"
           },
+          "on_block_old_mail": {
+            "enum": [
+              "Ask",
+              "Move to Junk",
+              "Keep"
+            ],
+            "title": "On Block Old Mail",
+            "type": "string"
+          },
           "default_outgoing_email": {
             "anyOf": [
               {
@@ -701,6 +710,7 @@
           "keep_forwarded_email_in_thread",
           "enable_screening",
           "block_remote_images",
+          "on_block_old_mail",
           "default_outgoing_email"
         ],
         "title": "AccountPreferences",
@@ -773,6 +783,15 @@
                 ],
                 "title": "Block Remote Images",
                 "type": "integer"
+              },
+              "on_block_old_mail": {
+                "enum": [
+                  "Ask",
+                  "Move to Junk",
+                  "Keep"
+                ],
+                "title": "On Block Old Mail",
+                "type": "string"
               },
               "default_outgoing_email": {
                 "anyOf": [
@@ -2440,6 +2459,10 @@
               "block_remote_images": {
                 "title": "Block Remote Images",
                 "type": "boolean"
+              },
+              "on_block_old_mail": {
+                "title": "On Block Old Mail",
+                "type": "string"
               }
             },
             "required": [
@@ -2452,7 +2475,8 @@
               "jmap_account",
               "default_outgoing_email",
               "enable_screening",
-              "block_remote_images"
+              "block_remote_images",
+              "on_block_old_mail"
             ],
             "title": "UserAccount",
             "type": "object"

@@ -53,6 +53,7 @@ class JMAPAccount(Document):
         _name: DF.Data
         account_id: DF.Data
         block_remote_images: DF.Check
+        on_block_old_mail: DF.Literal["Ask", "Move to Junk", "Keep"]
         create_contacts_after_email_submit: DF.Check
         default_outgoing_email: DF.Data | None
         destroy_email_after_submit: DF.Check
