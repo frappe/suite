@@ -240,6 +240,11 @@ function fakeServer(state = 'live', lineage = 'L') {
     epoch.now++
     publish('suite_collab_ctl', { kind: 'quarantine', q_epoch: epoch.now })
   }
+  // An admin holds the document or releases it
+  const hold = (why?: string) => {
+    judge.held = why
+    publish('suite_collab_ctl', { kind: why ? 'held' : 'released' })
+  }
   return {
     rows,
     sessions,
@@ -257,6 +262,7 @@ function fakeServer(state = 'live', lineage = 'L') {
     counted,
     compact,
     quarantine,
+    hold,
     realtime,
     socket,
     roomKeys,
@@ -2096,6 +2102,23 @@ describe('collab room live', () => {
     await vi.advanceTimersByTimeAsync(100)
 
     expect(reader.needsRebuild).toBe(true)
+  })
+
+  it('a live tab learns at once that the document is held, and when it is released, without polling', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const room = await join(server.endpoints(), { socket: server.socket() })
+    await vi.advanceTimersByTimeAsync(0)
+
+    server.hold('kernel_failed')
+    await vi.advanceTimersByTimeAsync(200)
+    const held = [room.held, room.canWrite]
+    server.hold()
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(room.live).toBe('live')
+    expect(held).toEqual(['kernel_failed', false])
+    expect([room.held, room.canWrite]).toEqual([null, true])
   })
 
   it('a socket that gave up reconnecting is asked again when the browser comes online', async () => {

@@ -195,10 +195,11 @@ export class Live {
     else this.repair()
   }
 
+  // A quarantine, a hold or its release, or room a compaction freed: the pull says what changed
   private ctl = (heard: unknown) => {
-    const message = heard as Partial<Record<'lineage' | 'kind', unknown>> | null
+    const message = heard as { lineage?: unknown } | null
     if (this.closed || message?.lineage !== this.lineage) return
-    if (message.kind === 'quarantine') this.repair()
+    this.repair()
   }
 
   // A peer's caret says it has applied a row this tab has not heard
