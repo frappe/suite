@@ -83,6 +83,7 @@ function _parseCSV(text) {
  */
 export function useExportImport({
   getSheet,
+  currentSheet,
   getCurrentTitle,
   getGrid,
   getFormats,
@@ -103,7 +104,7 @@ export function useExportImport({
 
   function exportCSV() {
     const sheet = getSheet()
-    const rows = _sheetToAoa(sheet.getCurrentSheet(), sheet)
+    const rows = _sheetToAoa(currentSheet.value, sheet)
     const csv = rows
       .map((row) =>
         row
@@ -184,7 +185,7 @@ export function useExportImport({
 
   function exportPDF() {
     const sheet = getSheet()
-    const sn = sheet.getCurrentSheet()
+    const sn = currentSheet.value
     const rows = _sheetToAoa(sn, sheet)
     if (!rows.length) return
     const thead = `<tr>${rows[0].map((c) => `<th>${_esc(c)}</th>`).join('')}</tr>`
@@ -348,7 +349,7 @@ export function useExportImport({
   async function _ingestRows(rows, fileName) {
     const sheet = getSheet()
     const grid = getGrid()
-    const currentSh = sheet.getCurrentSheet()
+    const currentSh = currentSheet.value
     const map = await _rowsToCellMap(rows)
     if (grid) grid.clearAll()
     sheet.batchSetCells(map, currentSh)

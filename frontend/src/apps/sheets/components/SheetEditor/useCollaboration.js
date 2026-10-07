@@ -280,6 +280,7 @@ export function useCollaboration({
     _binding = bindCells({
       doc: _doc,
       sheet,
+      getCurrentSheet: () => currentSheet.value,
       onRemoteSheetChange(name) {
         if (name !== currentSheet.value) repopulateGrid()
       },

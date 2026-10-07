@@ -48,7 +48,14 @@ function persistence(options: Record<string, unknown> = {}) {
     getCurrentSheet: () => 'Sheet1',
   }
   const formats = { restore: () => {}, snapshot: () => ({}) }
-  return usePersistence({ sheet, formats, currentTitle: ref('Budget'), emit: () => {}, ...options })
+  return usePersistence({
+    sheet,
+    currentSheet: ref('Sheet1'),
+    formats,
+    currentTitle: ref('Budget'),
+    emit: () => {},
+    ...options,
+  })
 }
 
 const saves = () => server.calls.filter((call) => call.method === 'suite.sheets.api.save_sheet')

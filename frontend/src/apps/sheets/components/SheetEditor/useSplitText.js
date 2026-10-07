@@ -98,7 +98,7 @@ export function useSplitText({
       return
     }
     const sheet = getSheet()
-    const subSheetName = sheet.getCurrentSheet()
+    const subSheetName = currentSheet.value
     const after = captureRange(splitText.writeRect, subSheetName)
     const before = splitText.original
     const refs = diffRefs(before, after)
@@ -138,7 +138,7 @@ export function useSplitText({
   function _revertSplitPreview() {
     if (!splitText.original) return
     const sheet = getSheet()
-    const subSheetName = sheet.getCurrentSheet()
+    const subSheetName = currentSheet.value
     for (const [id, value] of Object.entries(splitText.original)) {
       sheet.setCell(id, value == null ? '' : value, subSheetName)
     }
@@ -159,7 +159,7 @@ export function useSplitText({
   function _previewSplit(choice) {
     if (!splitText.range) return
     const sheet = getSheet()
-    const subSheetName = sheet.getCurrentSheet()
+    const subSheetName = currentSheet.value
     const selectionRange = splitText.range
 
     // Collect source values for every cell in the selection.  When a snapshot

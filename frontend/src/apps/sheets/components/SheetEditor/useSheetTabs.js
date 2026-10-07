@@ -5,6 +5,7 @@ import { ref } from 'vue'
 // extras: additional engines with renameSheet/duplicateSheet/deleteSheet/reorderSheets
 export function useSheetTabs({
   sheet,
+  currentSheet,
   formats,
   extras = [],
   getGrid,
@@ -14,7 +15,6 @@ export function useSheetTabs({
   onSwitch,
 }) {
   const sheetNames = ref(sheet.getSheetNames())
-  const currentSheet = ref(sheet.getCurrentSheet())
 
   // Per-sheet view-state cache. Freeze, hidden rows/cols, column widths, row
   // heights, total rows/cols and zoom are all sheet-local in Google Sheets —
@@ -56,7 +56,7 @@ export function useSheetTabs({
     _captureCurrentView()
     getGrid()?.clearAll()
     sheet.switchSheet(name)
-    currentSheet.value = sheet.getCurrentSheet()
+    currentSheet.value = name
     _applyViewFor(currentSheet.value)
     if (!preserveEdit) {
       activeCell.value = 'A1'
@@ -91,7 +91,7 @@ export function useSheetTabs({
     formats?.renameSheet(oldName, newName)
     extras.forEach((e) => e?.renameSheet?.(oldName, newName))
     sheetNames.value = sheet.getSheetNames()
-    currentSheet.value = sheet.getCurrentSheet()
+    if (currentSheet.value === oldName) currentSheet.value = newName
     return true
   }
 
@@ -108,7 +108,7 @@ export function useSheetTabs({
     // When srcName is the currently-active sheet, the live grid state is the
     // freshest snapshot — capture it first so the cache is up to date before
     // we clone.
-    if (srcName === sheet.getCurrentSheet()) _captureCurrentView()
+    if (srcName === currentSheet.value) _captureCurrentView()
     if (_viewBySheet[srcName]) {
       _viewBySheet[copy] = JSON.parse(JSON.stringify(_viewBySheet[srcName]))
     }
@@ -121,15 +121,15 @@ export function useSheetTabs({
 
   function deleteSheet(name) {
     if (sheet.getSheetNames().length <= 1) return false
-    const wasCurrent = sheet.getCurrentSheet() === name
+    const wasCurrent = currentSheet.value === name
     const ok = sheet.deleteSheet(name)
     if (!ok) return false
     delete _viewBySheet[name]
     formats?.deleteSheet(name)
     extras.forEach((e) => e?.deleteSheet?.(name))
     sheetNames.value = sheet.getSheetNames()
-    if (wasCurrent) switchSheet(sheet.getCurrentSheet())
-    else currentSheet.value = sheet.getCurrentSheet()
+    // Deleting the open tab opens the first one, as the engine does.
+    if (wasCurrent) switchSheet(sheet.getSheetNames()[0])
     return true
   }
 
@@ -162,7 +162,7 @@ export function useSheetTabs({
   // only — historically the only sheet whose view was preserved anyway.
   function viewRestore(snap) {
     for (const k of Object.keys(_viewBySheet)) delete _viewBySheet[k]
-    const active = sheet.getCurrentSheet()
+    const active = currentSheet.value
     if (!snap) {
       _applyViewFor(active)
       return

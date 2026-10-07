@@ -18,6 +18,7 @@ import { colLabel, parseCellId } from '../../utils/cells.js'
 
 export function useSmartFill({
   getSheet,
+  currentSheet,
   getGrid,
   queueOp,
   captureRange,
@@ -35,7 +36,7 @@ export function useSmartFill({
     if (!sel) return { ok: false, reason: 'no-selection' }
     const sheet = getSheet?.()
     if (!sheet) return { ok: false, reason: 'no-sheet' }
-    const sheetName = sheet.getCurrentSheet()
+    const sheetName = currentSheet.value
 
     // Currently support single-column selections. Multi-column requires
     // a richer "which column am I filling" UI — out of scope for v1.

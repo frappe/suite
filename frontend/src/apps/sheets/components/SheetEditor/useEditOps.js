@@ -20,10 +20,18 @@
 // flips the dirty / saved flags. Returns the op (or null when no
 // cells actually changed) so callers can chain logic off the diff.
 
-export function useEditOps({ sheet, history, queueOp, broadcastBatchChange, syncFlags, isDirty }) {
+export function useEditOps({
+  sheet,
+  currentSheet,
+  history,
+  queueOp,
+  broadcastBatchChange,
+  syncFlags,
+  isDirty,
+}) {
   function pushEditOp(sheetName, beforeMap, summary = '') {
     if (!beforeMap) return null
-    const sn = sheetName || sheet.getCurrentSheet()
+    const sn = sheetName || currentSheet.value
     const refs = []
     const before = {},
       after = {}

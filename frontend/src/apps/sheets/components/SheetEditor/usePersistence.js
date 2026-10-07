@@ -25,6 +25,7 @@ import { recordVisit } from './driveVisit'
 //     surface passes the Drive session's, which adds its link credentials.
 export function usePersistence({
   sheet,
+  currentSheet,
   formats,
   merge,
   comments,
@@ -87,6 +88,7 @@ export function usePersistence({
         },
         boundsOf(saved.sheet),
       )
+      currentSheet.value = sheet.getCurrentSheet()
       if (saved.merge && merge?.restore) merge.restore(saved.merge)
       if (saved.comments && comments?.restore) comments.restore(saved.comments)
       if (saved.validation && validation?.restore) validation.restore(saved.validation)
@@ -179,7 +181,7 @@ export function usePersistence({
       // afford to yield (the page may die first), so it packs synchronously.
       const live = {
         sheets: sheet.getAllRaw(),
-        current: sheet.getCurrentSheet(),
+        current: currentSheet.value,
       }
       const packed = keepalive ? packSheet(live) : await packSheetChunked(live)
       const sheetsData = _workbookJson(packed)
@@ -228,7 +230,7 @@ export function usePersistence({
     return _workbookJson(
       packSheet({
         sheets,
-        current: sheet.getCurrentSheet(),
+        current: currentSheet.value,
       }),
     )
   }

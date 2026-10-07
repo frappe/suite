@@ -6,6 +6,7 @@ import { detectHyperlink } from './links.js'
 
 export function createClipboard({
   sheet,
+  getCurrentSheet,
   formats,
   condFormat = null,
   validation = null,
@@ -31,14 +32,14 @@ export function createClipboard({
     _srcSel = sel
     // If the copied range overlaps a pivot, remember its config so a paste
     // can mint a new live pivot instead of dead values (Google Sheets UX).
-    _pivot = getPivotAt ? getPivotAt(sel, sheet.getCurrentSheet()) : null
+    _pivot = getPivotAt ? getPivotAt(sel, getCurrentSheet()) : null
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
         const key = `${r - r0},${c - c0}`
         const id = colLabel(c) + (r + 1)
         _data[key] = sheet.getCell(id)
-        _fmts[key] = formats ? { ...formats.get(id, sheet.getCurrentSheet()) } : {}
-        _vals[key] = validation ? validation.get(id, sheet.getCurrentSheet()) : null
+        _fmts[key] = formats ? { ...formats.get(id, getCurrentSheet()) } : {}
+        _vals[key] = validation ? validation.get(id, getCurrentSheet()) : null
       }
     }
   }
@@ -128,7 +129,7 @@ export function createClipboard({
     if (!_data) return
     const anch = parseCellId(anchorId)
     if (!anch) return
-    const sh = sheet.getCurrentSheet()
+    const sh = getCurrentSheet()
 
     // A full paste of a copied pivot mints a new live pivot at the anchor
     // instead of writing static cells — the pivot renders its own output, so
@@ -368,7 +369,7 @@ export function createClipboard({
     const anch = parseCellId(anchorId)
     if (!anch) return false
     const { srcRows, srcCols, tileable } = _gridGeometry(grid, anch, destSel)
-    const sn = sheet.getCurrentSheet()
+    const sn = getCurrentSheet()
 
     // Build the cell map first, then ship one bulk write — same reason as
     // paste() above. Big external pastes (Excel/CSV via system clipboard)

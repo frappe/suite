@@ -8,7 +8,7 @@ import { formatScope } from '../../engine/format-scope.js'
 // getScope (optional) returns { rect, totalRows, totalCols } so full-column /
 // full-row selections format at the column/row level instead of per-cell.
 export function useToolbar({
-  sheet,
+  currentSheet,
   formats,
   getGrid,
   history,
@@ -24,7 +24,7 @@ export function useToolbar({
   let lastAction = null
 
   function refreshActiveFormat() {
-    activeFormat.value = formats.get(getGrid()?.getActiveCell() ?? 'A1', sheet.getCurrentSheet())
+    activeFormat.value = formats.get(getGrid()?.getActiveCell() ?? 'A1', currentSheet.value)
   }
 
   function _captureCells(ids, sn) {
@@ -60,7 +60,7 @@ export function useToolbar({
   // Post-mutate ordering is preserved (push AFTER mutating) so one undo reverts
   // one action — reversing it was the old format+type double-undo bug.
   function _formatOp(kind, args, ops) {
-    const sn = sheet.getCurrentSheet()
+    const sn = currentSheet.value
     const scope = _scope()
     const op = { opType: 'format', subSheet: sn }
     if (scope.kind === 'cols') {

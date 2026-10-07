@@ -38,7 +38,7 @@ describe('clipboard — pasteFromText auto-links whole-cell URLs', () => {
   beforeEach(() => {
     sheet = makeSheet()
     formats = makeFormats()
-    cb = createClipboard({ sheet, formats })
+    cb = createClipboard({ sheet, getCurrentSheet: () => 'Sheet1', formats })
   })
 
   it('sets fmt.hyperlink for URL cells, leaves plain text alone', () => {
@@ -59,7 +59,7 @@ describe('clipboard — pasteFromText auto-links whole-cell URLs', () => {
   })
 
   it('does not link when no formats engine is wired (headless paste)', () => {
-    const bare = createClipboard({ sheet: makeSheet() })
+    const bare = createClipboard({ sheet: makeSheet(), getCurrentSheet: () => 'Sheet1' })
     expect(bare.pasteFromText('https://frappe.io/', 'A1', null)).toBe(true)
   })
 
@@ -80,7 +80,7 @@ describe('clipboard — pasteFromHTML keeps <a href> linkness', () => {
   it('maps anchor targets onto fmt.hyperlink with the anchor text as value', () => {
     const sheet = makeSheet()
     const formats = makeFormats()
-    const cb = createClipboard({ sheet, formats })
+    const cb = createClipboard({ sheet, getCurrentSheet: () => 'Sheet1', formats })
     const html =
       '<table><tr>' +
       '<td><a href="https://frappe.io/">Frappe</a></td>' +
@@ -94,7 +94,7 @@ describe('clipboard — pasteFromHTML keeps <a href> linkness', () => {
   it('ignores javascript: anchors but still auto-links URL-shaped text', () => {
     const sheet = makeSheet()
     const formats = makeFormats()
-    const cb = createClipboard({ sheet, formats })
+    const cb = createClipboard({ sheet, getCurrentSheet: () => 'Sheet1', formats })
     const html =
       '<table><tr>' +
       '<td><a href="javascript:alert(1)">click</a></td>' +

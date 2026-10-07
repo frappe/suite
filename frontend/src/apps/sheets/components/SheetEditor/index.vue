@@ -2348,7 +2348,7 @@ const sheet = createSheet({
       grid?.setCell(id, String(sheet.getCell(id) ?? ''))
       return
     }
-    const fmt = formats.get(id, sheet.getCurrentSheet())
+    const fmt = formats.get(id, currentSheet.value)
     const displayed = fmt.numberFormat
       ? applyNumberFmt(displayValue, fmt.numberFormat)
       : displayValue
@@ -2371,7 +2371,7 @@ const sheet = createSheet({
       _repopulateGrid()
       return
     }
-    const sn = sheet.getCurrentSheet()
+    const sn = currentSheet.value
     for (const id of affected) {
       const fmt = formats.get(id, sn)
       const displayValue = sheet.getDisplayValue(id)
@@ -2386,6 +2386,9 @@ const sheet = createSheet({
     recomputePivotsForSheet(sn)
   },
 })
+// The open tab. The editor owns it, not the engine: the old engine is told
+// through switchSheet and copied back after it restores a snapshot.
+const currentSheet = ref(sheet.getCurrentSheet())
 const formats = createFormatsEngine()
 const merge = createMergeEngine()
 const sortFilter = createSortFilter(sheet)
@@ -2396,6 +2399,7 @@ const protection = createProtectionEngine()
 const condFormat = createCondFormatEngine()
 const clipboard = createClipboard({
   sheet,
+  getCurrentSheet: () => currentSheet.value,
   formats,
   condFormat,
   validation,
@@ -2441,6 +2445,7 @@ function _onNamedRangesChanged() {
 // substring / email-part), and fills the rest.
 const { runSmartFill: _runSmartFill } = useSmartFill({
   getSheet: () => sheet,
+  currentSheet,
   getGrid: () => grid,
   queueOp: (...a) => _queueOp(...a),
   captureRange: (...a) => _captureRange(...a),
@@ -2504,6 +2509,7 @@ const history = createHistory({
       _restoreTouchedCells(snap.sheet, opts.touches)
     } else {
       sheet.restore(snap.sheet)
+      currentSheet.value = sheet.getCurrentSheet()
     }
     if (snap.merge) merge.restore(snap.merge)
     if (snap.sortFilter) sortFilter.restore(snap.sortFilter)
@@ -2600,7 +2606,7 @@ function _applyCellMap(map, sheetName) {
 // affect the display string, so its apply is just the store mutation.
 function _applyFormatMap(map, sheetName) {
   if (!map) return
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (const [id, fmt] of Object.entries(map)) {
     if (fmt && Object.keys(fmt).length) formats.set(id, fmt, sn)
     else formats.clear(id, sn)
@@ -2617,14 +2623,14 @@ function _applyFormatMap(map, sheetName) {
 // restores the captured layer precisely. One render covers the whole axis.
 function _applyAxisFormatMap(axis, map, sheetName) {
   if (!map) return
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   const replace = axis === 'col' ? formats.replaceCol : formats.replaceRow
   for (const [k, fmt] of Object.entries(map)) replace(+k, fmt || {}, sn)
   grid?.render?.()
 }
 function _applyValidationMap(map, sheetName) {
   if (!map) return
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (const [id, rule] of Object.entries(map)) {
     if (rule) validation.set(id, rule, sn)
     else validation.clear(id, sn)
@@ -2638,7 +2644,7 @@ function _applyValidationMap(map, sheetName) {
 // canvas view state scoped to the current sheet, so cross-sheet undo skips
 // them rather than resizing the wrong sheet's rows.
 function _applyRowHeightMap(map, sheetName) {
-  if ((sheetName || sheet.getCurrentSheet()) !== sheet.getCurrentSheet()) return
+  if ((sheetName || currentSheet.value) !== currentSheet.value) return
   for (const [r, h] of Object.entries(map)) grid?.setRowHeight?.(+r, h)
 }
 
@@ -3242,7 +3248,7 @@ async function onAskSubmit(promptText) {
       c1: 0,
     }
     const selection = JSON.stringify({
-      sheet: sheet.getCurrentSheet(),
+      sheet: currentSheet.value,
       r0: sel.r0,
       c0: sel.c0,
       r1: sel.r1,
@@ -3273,7 +3279,7 @@ async function onAskSubmit(promptText) {
 // Apply setCell actions as ONE undoable op (mirrors the fill/paste path).
 // Returns the number of cells written.
 function _applyAiActions(actions) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   let setCells = actions.filter((a) => a.type === 'setCell')
   // Drop writes that land on protected cells (rest still apply).
   const allowed = setCells.filter((a) => !_cellSilentlyProtected(a.cell, sn))
@@ -3370,6 +3376,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
 onScopeDispose(unregisterPaletteGroups)
 const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
   getSheet: () => sheet,
+  currentSheet,
   getCurrentTitle: () => currentTitle.value,
   getGrid: () => grid,
   getFormats: () => formats,
@@ -3507,7 +3514,7 @@ async function _computeSelectionStatsAsync(token) {
     selectionStats.value = null
     return
   }
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // Precompute column labels once instead of rebuilding each cell id's prefix
   // 2M times (colLabel walks characters per call).
   const labels = []
@@ -3564,7 +3571,7 @@ function formatStat(n) {
 // were previously set.
 function adjustDecimals(delta) {
   const ids = selectionIds()
-  const sh = sheet.getCurrentSheet()
+  const sh = currentSheet.value
   _recordFormatOp(ids, sh, () => {
     for (const id of ids) {
       const cur = formats.get(id, sh).numberFormat || ''
@@ -3608,7 +3615,7 @@ const {
   getLastAction,
   recordAction,
 } = useToolbar({
-  sheet,
+  currentSheet,
   formats,
   getGrid: () => grid,
   history,
@@ -3777,7 +3784,7 @@ function setTextWrap(mode) {
     {
       textWrap: mode,
     },
-    sheet.getCurrentSheet(),
+    currentSheet.value,
   )
   refreshActiveFormat()
   isDirty.value = true
@@ -3839,6 +3846,7 @@ const {
   workbookJson,
 } = usePersistence({
   sheet,
+  currentSheet,
   formats,
   merge,
   comments,
@@ -3904,6 +3912,7 @@ if (props.embedded) {
 }
 _sheetTabs = useSheetTabs({
   sheet,
+  currentSheet,
   formats,
   extras: [merge, comments, validation, protection, condFormat, sortFilter, slicers],
   getGrid: () => grid,
@@ -3924,7 +3933,6 @@ _sheetTabs = useSheetTabs({
 })
 const {
   sheetNames,
-  currentSheet,
   switchSheet,
   addSheet: _addSheet,
   renameSheet: _renameSheet,
@@ -4160,7 +4168,7 @@ function onTabMousedown(e, _name) {
 function onTabClick(name) {
   if (_isEditingFormula()) {
     if (!editingHomeSheet.value) {
-      editingHomeSheet.value = sheet.getCurrentSheet()
+      editingHomeSheet.value = currentSheet.value
       editingHomeCell.value = activeCell.value
     }
     switchSheet(name, {
@@ -4418,7 +4426,7 @@ function _fillValidation(src, total, sn) {
 
 // _runFill modes: 'auto' | 'series' | 'copy' | 'format-only' | 'without-format'
 function _runFill(src, total, mode) {
-  const sheetName = sheet.getCurrentSheet()
+  const sheetName = currentSheet.value
   const fillBefore = _captureRange(total, sheetName)
   const beforeFmt = _captureFormatsRange(total, sheetName)
   const beforeVal = _captureValidationRange(total, sheetName)
@@ -4684,7 +4692,7 @@ function _clearFormats(src, total, sn) {
   }
 }
 function _previewSeriesKind(src) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const sel = grid?.getSelection()
   const goingDown = sel ? sel.r1 > src.r1 : false
   const goingRight = sel ? sel.c1 > src.c1 : false
@@ -4705,7 +4713,7 @@ function _setupGridInstance() {
   grid = createGrid(canvasRef.value, {
     // What the grid reads about cells (CellProvider).
     cells: {
-      getStyle: (id) => formats.get(id, sheet.getCurrentSheet()),
+      getStyle: (id) => formats.get(id, currentSheet.value),
       // Lazy render value source (Phase 1, off by default). Mirrors exactly what
       // _repopulateGrid / onCellChanged bake into the grid's eager `data` cache,
       // so the lazy and eager render paths produce identical pixels. When enabled
@@ -4719,29 +4727,29 @@ function _setupGridInstance() {
       // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
       // own `data` keys.
       getCellIds: () => Object.keys(sheet.getRawData()),
-      getMergeInfo: (id) => merge.getMasterInfo(id, sheet.getCurrentSheet()),
-      isSlave: (id) => merge.isSlave(id, sheet.getCurrentSheet()),
-      getMasterId: (id) => merge.getMasterId(id, sheet.getCurrentSheet()),
-      getComment: (id) => comments.hasOpenComment(id, sheet.getCurrentSheet()),
-      getValidation: (id) => validation.get(id, sheet.getCurrentSheet()),
+      getMergeInfo: (id) => merge.getMasterInfo(id, currentSheet.value),
+      isSlave: (id) => merge.isSlave(id, currentSheet.value),
+      getMasterId: (id) => merge.getMasterId(id, currentSheet.value),
+      getComment: (id) => comments.hasOpenComment(id, currentSheet.value),
+      getValidation: (id) => validation.get(id, currentSheet.value),
       getCondFormat: (id, val) =>
-        condFormat.getFormatOverride(id, val, sheet.getCurrentSheet(), (cid) => _displayValue(cid)),
+        condFormat.getFormatOverride(id, val, currentSheet.value, (cid) => _displayValue(cid)),
       // A SPARKLINE formula evaluates to a spec object; the painter draws it.
       // In show-formulas mode the cell shows its =SPARKLINE(...) text instead.
       getSparkline: (id) => {
         if (showFormulas.value) return null
-        const v = sheet.getCellValue(id, sheet.getCurrentSheet())
+        const v = sheet.getCellValue(id, currentSheet.value)
         return v && v.__spark ? v : null
       },
       getRightInset: (id) => {
-        const range = sortFilter.getRange(sheet.getCurrentSheet())
+        const range = sortFilter.getRange(currentSheet.value)
         if (!range) return 0
         const p = parseCellId(id)
         if (!p) return 0
         // Reserve 19px right-padding in the filter header row inside the active range.
         return p.row === range.r0 && p.col >= range.c0 && p.col <= range.c1 ? 19 : 0
       },
-      isCellEditable: (r, c) => !protection.isProtected(r, c, sheet.getCurrentSheet()),
+      isCellEditable: (r, c) => !protection.isProtected(r, c, currentSheet.value),
     },
     // What the grid reports, and the app state it asks for (GridHost).
     host: {
@@ -4766,7 +4774,7 @@ function _setupGridInstance() {
                 c1: sel.c1,
               }
             : null
-          broadcastCursor(p.row, p.col, sheet.getCurrentSheet(), range)
+          broadcastCursor(p.row, p.col, currentSheet.value, range)
         }
       },
       onCommit(id, value) {
@@ -4776,7 +4784,7 @@ function _setupGridInstance() {
         // so the next-row move-down on Enter lands on the home sheet too.
         const homeSheet = editingHomeSheet.value
         const writeSheet =
-          homeSheet && homeSheet !== sheet.getCurrentSheet() ? homeSheet : sheet.getCurrentSheet()
+          homeSheet && homeSheet !== currentSheet.value ? homeSheet : currentSheet.value
 
         // Protection first — blocks writes AND clears (empty value) on a locked
         // cell. Nothing was written, so repaint the pre-edit value and bail.
@@ -4824,7 +4832,7 @@ function _setupGridInstance() {
         }
         const before = sheet.getCell(id, writeSheet)
         sheet.setCell(id, value, writeSheet)
-        if (writeSheet !== sheet.getCurrentSheet()) {
+        if (writeSheet !== currentSheet.value) {
           switchSheet(writeSheet, {
             preserveEdit: true,
           })
@@ -4850,7 +4858,7 @@ function _setupGridInstance() {
           // _queueOp destructures only the known keys, so server sync is
           // unaffected. Row heights live in the current sheet's canvas view,
           // hence the writeSheet guard.
-          if (writeSheet === sheet.getCurrentSheet()) {
+          if (writeSheet === currentSheet.value) {
             const p = parseCellId(id)
             const grow = p && grid?.autoGrowRowFor?.(p.row, p.col, value)
             if (grow) {
@@ -4888,13 +4896,13 @@ function _setupGridInstance() {
       onInput(id, value) {
         formulaValue.value = value
         _typedCell = {
-          sheet: sheet.getCurrentSheet(),
+          sheet: currentSheet.value,
           cell: id,
         }
       },
       onCancel(id) {
         const homeSheet = editingHomeSheet.value
-        if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
+        if (homeSheet && homeSheet !== currentSheet.value) {
           switchSheet(homeSheet) // full reset so canvas snaps back to home cell
         }
         editingHomeSheet.value = null
@@ -4922,12 +4930,12 @@ function _setupGridInstance() {
       // when it differs from the edit's home sheet. Home is null outside of an
       // active cross-sheet edit, in which case the prefix is omitted.
       getCurrentSheet() {
-        return sheet.getCurrentSheet()
+        return currentSheet.value
       },
       getEditingHomeSheet() {
         return editingHomeSheet.value
       },
-      onBlockedEdit: () => _flashProtected(sheet.getCurrentSheet()),
+      onBlockedEdit: () => _flashProtected(currentSheet.value),
       onFill(src, total, { withModifier = false } = {}) {
         if (_fillDestBlocked(src, total)) return // only the destination cells, not the source
         const series = _previewSeriesKind(src)
@@ -4942,7 +4950,7 @@ function _setupGridInstance() {
         if (refs.length) {
           const op = {
             opType: 'edit',
-            subSheet: sheet.getCurrentSheet(),
+            subSheet: currentSheet.value,
             cellRefs: refs,
             before,
             after,
@@ -4951,7 +4959,7 @@ function _setupGridInstance() {
           _queueOp(op)
           history.pushOp(op)
           broadcastBatchChange(
-            sheet.getCurrentSheet(),
+            currentSheet.value,
             refs.map((id) => ({
               id,
               value: after[id],
@@ -4964,11 +4972,11 @@ function _setupGridInstance() {
             value,
             before: before[id] !== undefined ? before[id] : value,
           })),
-          sheet.getCurrentSheet(),
+          currentSheet.value,
         )
         syncFlags()
         isDirty.value = true
-        recomputePivotsForSheet(sheet.getCurrentSheet())
+        recomputePivotsForSheet(currentSheet.value)
       },
       onResizeEnd() {
         history.push()
@@ -5048,7 +5056,7 @@ async function _loadInitialData() {
       // baked the active sheet's filter rows into hiddenRows. Strip the
       // sheet's current filter rows so they aren't mistaken for manual hides
       // and re-applied to every sheet. Harmless for clean docs.
-      const filterHidden = new Set(sortFilter.computeHiddenRows(sheet.getCurrentSheet()))
+      const filterHidden = new Set(sortFilter.computeHiddenRows(currentSheet.value))
       manualHiddenRows.clear()
       for (const r of restored.hiddenRows || []) if (!filterHidden.has(r)) manualHiddenRows.add(r)
       manualHiddenCols.clear()
@@ -5176,7 +5184,7 @@ function _queueOp({
 function _captureRange(rect, sheetName) {
   const out = {}
   if (!rect) return out
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const id = cellId(r, c)
@@ -5193,7 +5201,7 @@ function _captureRange(rect, sheetName) {
 function _captureFormatsRange(rect, sheetName) {
   const out = {}
   if (!rect) return out
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const id = cellId(r, c)
@@ -5229,7 +5237,7 @@ function _recordFormatOp(ids, sn, mutate) {
 // "set font on the whole sheet" stays tiny and instant. `ops` supplies the
 // three mutation variants: { cols, rows, cells }.
 function _recordScopedFormatOp(ops) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const info = _selectionScope()
   const scope = info
     ? formatScope(info.rect, info.totalRows, info.totalCols)
@@ -5267,7 +5275,7 @@ function _captureAxis(axis, keys, sn) {
 function _captureValidationRange(rect, sheetName) {
   const out = {}
   if (!rect) return out
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const id = cellId(r, c)
@@ -5321,23 +5329,23 @@ function _flashProtected(sn) {
     if (protectionNotice.value === msg) protectionNotice.value = ''
   }, 3500)
 }
-function _rectBlocked(rect, sn = sheet.getCurrentSheet()) {
+function _rectBlocked(rect, sn = currentSheet.value) {
   if (!rect || !protection.isAnyProtected(rect, sn)) return false
   _flashProtected(sn)
   return true
 }
-function _cellBlocked(id, sn = sheet.getCurrentSheet()) {
+function _cellBlocked(id, sn = currentSheet.value) {
   const p = parseCellId(id)
   if (!p || !protection.isProtected(p.row, p.col, sn)) return false
   _flashProtected(sn)
   return true
 }
-function _cellsBlocked(ids, sn = sheet.getCurrentSheet()) {
+function _cellsBlocked(ids, sn = currentSheet.value) {
   const hit = ids.some((id) => _cellSilentlyProtected(id, sn))
   if (hit) _flashProtected(sn)
   return hit
 }
-function _cellSilentlyProtected(id, sn = sheet.getCurrentSheet()) {
+function _cellSilentlyProtected(id, sn = currentSheet.value) {
   const p = parseCellId(id)
   return !!(p && protection.isProtected(p.row, p.col, sn))
 }
@@ -5345,7 +5353,7 @@ function _cellSilentlyProtected(id, sn = sheet.getCurrentSheet()) {
 // Checking the whole extent would wrongly block a fill that merely *starts*
 // from a protected cell (reading a protected source is fine; only writes are
 // guarded). A fill extends in one direction, so at most one strip is non-empty.
-function _fillDestBlocked(src, total, sn = sheet.getCurrentSheet()) {
+function _fillDestBlocked(src, total, sn = currentSheet.value) {
   const strips = []
   if (total.r1 > src.r1)
     strips.push({
@@ -5385,7 +5393,7 @@ function protectSelection() {
   contextMenu.open = false
   const sel = grid?.getSelection?.()
   if (!sel) return
-  protection.addRange(sel, '', sheet.getCurrentSheet())
+  protection.addRange(sel, '', currentSheet.value)
   history.push()
   isDirty.value = true
   grid?.render?.()
@@ -5394,7 +5402,7 @@ function unprotectSelection() {
   contextMenu.open = false
   const sel = grid?.getSelection?.()
   if (!sel) return
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // Drop every protected range that overlaps the selection.
   for (const r of [...protection.getRanges(sn)]) {
     if (sel.r0 <= r.r1 && sel.r1 >= r.r0 && sel.c0 <= r.c1 && sel.c1 >= r.c0) {
@@ -5421,7 +5429,7 @@ function toggleSheetProtection(name) {
 function selectionHasProtectedRange() {
   const sel = grid?.getSelection?.()
   if (!sel) return false
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   return protection
     .getRanges(sn)
     .some((r) => sel.r0 <= r.r1 && sel.r1 >= r.r0 && sel.c0 <= r.c1 && sel.c1 >= r.c0)
@@ -5613,7 +5621,7 @@ function onSave() {
 function onFormulaInput(e) {
   formulaValue.value = e.target.value
   _typedCell = {
-    sheet: sheet.getCurrentSheet(),
+    sheet: currentSheet.value,
     cell: activeCell.value,
   }
   updateAc(e.target.value, e.target.selectionStart)
@@ -5667,7 +5675,7 @@ function onFormulaKey(e) {
 function _commitFormulaBar() {
   const homeSheet = editingHomeSheet.value
   const homeCell = editingHomeCell.value
-  const targetSheet = homeSheet || sheet.getCurrentSheet()
+  const targetSheet = homeSheet || currentSheet.value
   const targetId = homeCell || activeCell.value
   // Protected target — discard the edit and restore the bar to the cell value.
   if (_cellBlocked(targetId, targetSheet)) {
@@ -5680,7 +5688,7 @@ function _commitFormulaBar() {
   const before = {
     [targetId]: sheet.getCell(targetId, targetSheet),
   }
-  if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
+  if (homeSheet && homeSheet !== currentSheet.value) {
     switchSheet(homeSheet, {
       preserveEdit: true,
     })
@@ -5706,7 +5714,7 @@ function _commitFormulaBar() {
 function _cancelFormulaBar() {
   const homeSheet = editingHomeSheet.value
   const homeCell = editingHomeCell.value
-  if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
+  if (homeSheet && homeSheet !== currentSheet.value) {
     // Return to the home sheet *without* preserveEdit so activeCell snaps
     // back to where the user started and formulaValue reflects the cell's
     // committed contents (i.e. the edit is discarded cleanly).
@@ -5727,7 +5735,7 @@ function fillDown() {
   if (!grid) return
   const { r0, c0, r1, c1 } = grid.getSelection()
   if (r1 <= r0) return
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   if (
     _rectBlocked(
       {
@@ -5763,7 +5771,7 @@ function fillRight() {
   if (!grid) return
   const { r0, c0, r1, c1 } = grid.getSelection()
   if (c1 <= c0) return
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   if (
     _rectBlocked(
       {
@@ -5901,7 +5909,7 @@ function onDocCut(e) {
 
   e.preventDefault()
   const src = grid.getSelection()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // Cut moves content out of the source — block it when the source is protected.
   if (_rectBlocked(src, sn)) return
   const before = _captureRange(src, sn)
@@ -5915,7 +5923,7 @@ async function onDocPaste(e) {
   if (readOnly.value) return // viewers can't write pasted cells
   e.preventDefault()
   const destSel = grid.getSelection()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
 
   // Pasting a copied pivot mints a new live pivot at the anchor rather than
   // writing cells, so the op-based cell-diff undo below can't capture it (it
@@ -6042,7 +6050,7 @@ function doPasteSpecial(kind) {
   contextMenu.open = false
   if (!clipboard.hasData()) return
   const destSel = grid.getSelection()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const rects = _pasteAffectedRects(destSel)
   const before = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
   const beforeFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
@@ -6107,7 +6115,7 @@ function _pushPasteHistory(op) {
 // but the wrong format-applied display.
 function _refreshDisplayForRange(rect, sheetName) {
   if (!rect || !grid) return
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const id = cellId(r, c)
@@ -6163,7 +6171,7 @@ function redo() {
 // ── Number format ─────────────────────────────────────────────────────────────
 
 function _syncNumberFormat(id) {
-  const fmt = formats.get(id, sheet.getCurrentSheet())
+  const fmt = formats.get(id, currentSheet.value)
   activeNumberFormat.value = fmt.numberFormat || ''
 }
 function toggleNumberFmt(type) {
@@ -6181,7 +6189,7 @@ function toggleFormatPainter() {
   }
   const srcId = activeCell.value
   _copiedFormat = {
-    ...formats.get(srcId, sheet.getCurrentSheet()),
+    ...formats.get(srcId, currentSheet.value),
   }
   isPaintingFormat.value = true
 }
@@ -6195,7 +6203,7 @@ function _applyPaintedFormat() {
   refreshActiveFormat()
 }
 function onNumberFormatChange(value) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const ids = selectionIds()
   _recordFormatOp(ids, sn, () =>
     formats.applyToRange(
@@ -6255,7 +6263,7 @@ function openCommentPanel() {
 
 // Mirror the engine's thread for `commentPanel.id` into the reactive panel.
 function _loadCommentThread() {
-  const t = comments.getThread(commentPanel.id, sheet.getCurrentSheet())
+  const t = comments.getThread(commentPanel.id, currentSheet.value)
   commentPanel.thread = t ? t.thread : []
   commentPanel.resolved = t ? t.resolved : false
 }
@@ -6279,22 +6287,22 @@ function addCommentReply() {
       name: userFullName.value || userEmail.value,
       text,
     },
-    sheet.getCurrentSheet(),
+    currentSheet.value,
   )
   commentPanel.draft = ''
   _afterCommentChange()
 }
 function toggleResolveComment() {
-  comments.resolve(commentPanel.id, !commentPanel.resolved, sheet.getCurrentSheet())
+  comments.resolve(commentPanel.id, !commentPanel.resolved, currentSheet.value)
   _afterCommentChange()
 }
 function deleteCommentReply(i) {
-  comments.removeReply(commentPanel.id, i, sheet.getCurrentSheet())
+  comments.removeReply(commentPanel.id, i, currentSheet.value)
   _afterCommentChange()
   if (!commentPanel.thread.length) commentPanel.open = false
 }
 function deleteComment() {
-  comments.clear(commentPanel.id, sheet.getCurrentSheet())
+  comments.clear(commentPanel.id, currentSheet.value)
   commentPanel.open = false
   notesPanel.rev++
   grid?.render()
@@ -6321,7 +6329,7 @@ function commentTime(ts) {
 // itself isn't reactive.
 const allNotes = computed(() => {
   notesPanel.rev // dep for re-run
-  const cur = sheet.getCurrentSheet()
+  const cur = currentSheet.value
   const list = []
   for (const name of sheetNames.value) {
     const map = comments.getAll(name) || {}
@@ -6375,7 +6383,7 @@ function jumpToNote(n) {
   if (!grid) return
   const p = parseCellId(n.id)
   if (!p) return
-  if (n.sheet !== sheet.getCurrentSheet()) switchSheet(n.sheet)
+  if (n.sheet !== currentSheet.value) switchSheet(n.sheet)
   nextTick(() => {
     grid.moveTo(p.row, p.col)
     activeCell.value = n.id
@@ -6389,7 +6397,7 @@ function goToCell(sheetName, id) {
   if (!grid || !sheetNames.value.includes(sheetName)) return false
   const p = parseCellId(id)
   if (!p) return false
-  if (sheetName !== sheet.getCurrentSheet()) switchSheet(sheetName)
+  if (sheetName !== currentSheet.value) switchSheet(sheetName)
   nextTick(() => {
     grid.moveTo(p.row, p.col)
     activeCell.value = id
@@ -6442,7 +6450,7 @@ function fromContextMenu(action) {
 // ── Data validation ───────────────────────────────────────────────────────────
 
 function openValidationDialog() {
-  const e = validation.get(activeCell.value, sheet.getCurrentSheet())
+  const e = validation.get(activeCell.value, currentSheet.value)
   validationDialog.type = e?.type || 'list'
   validationDialog.operator = e?.operator || 'between'
   validationDialog.val1 = String(e?.min ?? '')
@@ -6515,7 +6523,7 @@ async function focusListItem(i) {
 }
 function confirmValidation() {
   const ids = selectionIds()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const msg = validationDialog.message.trim() || undefined
   // 'warn' only differs from the default when the value fails, and a checkbox
   // is TRUE/FALSE-only where "allow anyway" makes no sense — so scope it out.
@@ -6593,7 +6601,7 @@ function confirmValidation() {
 }
 function removeValidation() {
   const ids = selectionIds()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   for (const id of ids) validation.clear(id, sn)
   validationDialog.open = false
   grid?.render()
@@ -6605,7 +6613,7 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.id = id
   dropdownPanel.options = rule.options
   dropdownPanel.rule = rule
-  dropdownPanel.value = String(sheet.getCell(id, sheet.getCurrentSheet()) ?? '')
+  dropdownPanel.value = String(sheet.getCell(id, currentSheet.value) ?? '')
   dropdownPanel.x = pos.x ?? 0
   dropdownPanel.y = pos.y ?? 0
   dropdownPanel.w = pos.w ?? 120
@@ -6613,7 +6621,7 @@ function openDropdown(id, rule, pos = {}) {
 }
 function pickDropdownOption(opt) {
   const id = dropdownPanel.id
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   if (_cellBlocked(id, sn)) {
     dropdownPanel.open = false
     return
@@ -6630,7 +6638,7 @@ function pickDropdownOption(opt) {
 // Clicking a checkbox cell's tickbox flips TRUE ↔ FALSE (empty → TRUE). Routed
 // through the same edit-op path as a dropdown pick so undo + collab match.
 function toggleCheckbox(id) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const before = {
     [id]: sheet.getCell(id, sn),
   }
@@ -6772,7 +6780,7 @@ function openCfDialog(existingId) {
   // If we're editing an existing rule, hydrate the dialog state from it so
   // the user sees their previous selections instead of the blank defaults.
   if (existingId !== null) {
-    const existing = condFormat.getRules(sheet.getCurrentSheet()).find((r) => r.id === existingId)
+    const existing = condFormat.getRules(currentSheet.value).find((r) => r.id === existingId)
     if (existing) {
       cfDialog.range = {
         ...existing.range,
@@ -6865,7 +6873,7 @@ function _buildCfRule() {
   }
 }
 function saveCfRule() {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const rule = _buildCfRule()
   history.push()
   if (cfDialog.editId !== null) condFormat.updateRule(cfDialog.editId, rule, sn)
@@ -6878,7 +6886,7 @@ function saveCfRule() {
 }
 function deleteCfRule() {
   history.push()
-  condFormat.removeRule(cfDialog.editId, sheet.getCurrentSheet())
+  condFormat.removeRule(cfDialog.editId, currentSheet.value)
   history.push()
   syncFlags()
   cfDialog.open = false
@@ -6890,7 +6898,7 @@ function deleteCfRule() {
 // in edit mode first. Same history bracketing as deleteCfRule.
 function deleteCfRuleById(id) {
   history.push()
-  condFormat.removeRule(id, sheet.getCurrentSheet())
+  condFormat.removeRule(id, currentSheet.value)
   history.push()
   syncFlags()
   grid?.render()
@@ -6919,7 +6927,7 @@ function cfRuleLabel(rule) {
 const cfRulesForSheet = computed(() => {
   // Touch renderVersion so the list re-evaluates when rules are mutated.
   renderVersion.value
-  return condFormat.getRules(sheet.getCurrentSheet())
+  return condFormat.getRules(currentSheet.value)
 })
 
 // ── Cell edit history ─────────────────────────────────────────────────────────
@@ -6934,7 +6942,7 @@ async function openCellHistory() {
   cellHistory.error = ''
   cellHistory.entries = []
   try {
-    cellHistory.entries = await fetchCellHistory(props.id, id, sheet.getCurrentSheet(), {
+    cellHistory.entries = await fetchCellHistory(props.id, id, currentSheet.value, {
       context: props.requestContext,
     })
   } catch (err) {
@@ -7025,7 +7033,7 @@ function _createFilterOnSelection() {
         r1: sel.r1,
         c1: sel.c1,
       }
-  sortFilter.setRange(range, sheet.getCurrentSheet())
+  sortFilter.setRange(range, currentSheet.value)
   filterPanel.open = false
   _applyHiddenRows()
   grid?.render?.()
@@ -7033,7 +7041,7 @@ function _createFilterOnSelection() {
   isDirty.value = true
 }
 function _removeFilter() {
-  sortFilter.clearRange(sheet.getCurrentSheet())
+  sortFilter.clearRange(currentSheet.value)
   filterPanel.open = false
   _applyHiddenRows()
   grid?.render?.()
@@ -7102,16 +7110,16 @@ function slicerColMenu(sl) {
   }))
 }
 function slicerValues(sl) {
-  return sortFilter.getColumnValues(sl.col, sheet.getCurrentSheet())
+  return sortFilter.getColumnValues(sl.col, currentSheet.value)
 }
-function slicerLabel(sl, sn = sheet.getCurrentSheet()) {
+function slicerLabel(sl, sn = currentSheet.value) {
   const range = sortFilter.getRange(sn)
   const header = range ? sheet.getDisplayValue(colLabel(sl.col) + (range.r0 + 1), sn) : ''
   return header || colLabel(sl.col)
 }
 // The set of values currently kept visible, or null when the column is unfiltered.
 function _slicerCheckedSet(sl) {
-  const spec = sortFilter.getFilterConfig(sheet.getCurrentSheet())[sl.col]
+  const spec = sortFilter.getFilterConfig(currentSheet.value)[sl.col]
   return spec?.operator === 'inSet' ? new Set(spec.values) : null
 }
 function toggleSlicerValue(sl, v) {
@@ -7123,7 +7131,7 @@ function toggleSlicerValue(sl, v) {
 // "Select all" always shows everything — it clears the column's filter outright
 // rather than toggling, so it can never surprise-hide the data.
 function selectAllSlicer(sl) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   sortFilter.clearFilter(sl.col, sn)
   _repopulateGrid()
   _applyHiddenRows()
@@ -7133,7 +7141,7 @@ function selectAllSlicer(sl) {
 // "Clear" empties the selection (an inSet with no values) so the user can then
 // pick just the values they want — the Google-Sheets filter idiom.
 function clearSlicerValues(sl) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   sortFilter.setFilter(
     sl.col,
     {
@@ -7150,7 +7158,7 @@ function clearSlicerValues(sl) {
 // Re-point a slicer at a different column of the filter range; the old column's
 // filter is released so it stops hiding rows with no visible control.
 function changeSlicerColumn(sl, value) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const newCol = Number(value)
   if (Number.isNaN(newCol) || newCol === sl.col) return
   // Bail before touching anything if another slicer already owns the target —
@@ -7164,7 +7172,7 @@ function changeSlicerColumn(sl, value) {
   isDirty.value = true
 }
 function _applySlicerFilter(sl, set, all) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // All-checked is identical to no filter — clear the column instead of storing
   // every value (mirrors applyFilter).
   if (set.size === all.length) sortFilter.clearFilter(sl.col, sn)
@@ -7185,7 +7193,7 @@ function _applySlicerFilter(sl, set, all) {
 }
 function insertSlicer() {
   contextMenu.open = false
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const p = parseCellId(activeCell.value)
   const col = p ? p.col : 0
   if (slicers.list(sn).some((s) => s.col === col)) return // column already has a slicer
@@ -7208,7 +7216,7 @@ function insertSlicer() {
   isDirty.value = true
 }
 function removeSlicer(sl) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   slicers.remove(sl.id, sn)
   // The slicer IS the filter control for its column — clear the filter it
   // applied so removing it doesn't strand hidden rows with no visible control.
@@ -7236,7 +7244,7 @@ function _onSlicerDrag(e) {
     id,
     Math.max(0, ox + e.clientX - sx),
     Math.max(0, oy + e.clientY - sy),
-    sheet.getCurrentSheet(),
+    currentSheet.value,
   )
   slicerVersion.value++
 }
@@ -7250,7 +7258,7 @@ function _endSlicerDrag() {
   window.removeEventListener('mouseup', _endSlicerDrag)
 }
 function openFilterPanel(colIdx) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const cfg = sortFilter.getFilterConfig(sn)
   const existing = cfg[colIdx]
   const allValues = sortFilter.getColumnValues(colIdx, sn)
@@ -7297,15 +7305,15 @@ function openQuickFilterForActive() {
   const id = activeCell.value
   const p = parseCellId(id)
   if (!p) return
-  if (!sortFilter.hasFilter(sheet.getCurrentSheet())) _createFilterOnSelection()
+  if (!sortFilter.hasFilter(currentSheet.value)) _createFilterOnSelection()
   nextTick(() => {
-    const range = sortFilter.getRange(sheet.getCurrentSheet())
+    const range = sortFilter.getRange(currentSheet.value)
     if (!range || p.col < range.c0 || p.col > range.c1) return
     const rects = grid?.getColumnHeaderRects?.() || []
     const colRect = rects.find((r) => r.c === p.col)
     const rowRect = grid?.getRowRect?.(range.r0)
     if (!colRect || !rowRect) return
-    const cfg = sortFilter.getFilterConfig(sheet.getCurrentSheet())
+    const cfg = sortFilter.getFilterConfig(currentSheet.value)
     filterPanel.open = true
     filterPanel.col = p.col
     filterPanel.operator = cfg[p.col]?.operator || 'contains'
@@ -7315,7 +7323,7 @@ function openQuickFilterForActive() {
   })
 }
 function applyFilter() {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   if (filterPanel.mode === 'values') {
     // No-op safety: an all-checked selection is identical to no filter at
     // all, so clear the column entry instead of saving every value.
@@ -7348,7 +7356,7 @@ function applyFilter() {
   isDirty.value = true
 }
 function clearFilterCol() {
-  sortFilter.clearFilter(filterPanel.col, sheet.getCurrentSheet())
+  sortFilter.clearFilter(filterPanel.col, currentSheet.value)
   filterPanel.open = false
   _repopulateGrid()
   _applyHiddenRows()
@@ -7356,7 +7364,7 @@ function clearFilterCol() {
   isDirty.value = true
 }
 function doSort(colIdx, dir) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // Sorting permutes values across the filter range — refuse if it overlaps
   // protection, matching Google Sheets (a protected range blocks the sort).
   const range = sortFilter.getRange(sn)
@@ -7457,7 +7465,7 @@ function _onDocMouseDown(e) {
 // Row twin of _applyColStructural — same reference-correct path for row ops.
 // Slicers are column-bound only, so they take no row remap.
 function _applyRowStructural(mapRow) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   sheet.remapRows(mapRow, sn)
   formats.remapRows(mapRow, sn)
   merge.remapRows(mapRow, sn)
@@ -7637,7 +7645,7 @@ function _maybeAutoLink(cells, sn) {
 function openHyperlinkDialog() {
   const id = activeCell.value
   const cur = sheet.getCell(id)
-  const fmt = formats.get(id, sheet.getCurrentSheet())
+  const fmt = formats.get(id, currentSheet.value)
   hyperlinkText.value = String(cur ?? '')
   hyperlinkUrl.value = fmt.hyperlink || ''
   showHyperlinkDialog.value = true
@@ -7649,7 +7657,7 @@ function confirmHyperlink() {
     return
   }
   const id = activeCell.value
-  const sh = sheet.getCurrentSheet()
+  const sh = currentSheet.value
   if (_cellBlocked(id, sh)) {
     showHyperlinkDialog.value = false
     return
@@ -7671,7 +7679,7 @@ function confirmHyperlink() {
 }
 function removeHyperlink() {
   const id = activeCell.value
-  const sh = sheet.getCurrentSheet()
+  const sh = currentSheet.value
   formats.applyToRange(
     [id],
     {
@@ -7785,7 +7793,7 @@ function editLinkCardCell() {
   openHyperlinkDialog()
 }
 function unlinkLinkCardCell() {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const id = linkCard.id
   linkCard.open = false
   if (!id || readOnly.value || _cellBlocked(id, sn)) return
@@ -7804,7 +7812,7 @@ function unlinkLinkCardCell() {
   isDirty.value = true
 }
 function replaceLinkWithTitle() {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const id = linkCard.id
   const title = linkCard.preview?.title
   linkCard.open = false
@@ -7849,7 +7857,7 @@ function doDeleteRow() {
 // formulas workbook-wide. The workbook-level engines (merge/charts/pivot/named)
 // filter internally to the op sheet, so passing `sn` is safe.
 function _applyColStructural(mapCol) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   sheet.remapCols(mapCol, sn)
   formats.remapCols(mapCol, sn)
   merge.remapCols(mapCol, sn)
@@ -7934,7 +7942,7 @@ function doAutoFitRow() {
 function applyBorder(preset) {
   if (!grid) return
   const { r0, c0, r1, c1 } = grid.getSelection()
-  const sheetName = sheet.getCurrentSheet()
+  const sheetName = currentSheet.value
   const b = {
     style: borderStyle.value,
     color: borderColor.value,
@@ -7991,7 +7999,7 @@ function applyBorder(preset) {
 
 function toggleMerge() {
   if (!grid) return
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const { r0, c0, r1, c1 } = grid.getSelection()
   // Resolve the anchor cell to its master — clicking inside the merged
   // region (slave or master) should target the existing merge so the
@@ -8076,7 +8084,7 @@ function doUnfreezeCols() {
 const manualHiddenRows = reactive(new Set())
 const manualHiddenCols = reactive(new Set())
 function _applyHiddenRows() {
-  const filterHidden = sortFilter.computeHiddenRows(sheet.getCurrentSheet())
+  const filterHidden = sortFilter.computeHiddenRows(currentSheet.value)
   const union = new Set([...filterHidden, ...manualHiddenRows])
   grid?.setHiddenRows(union)
   // Tag the filter subset so grid-painter can render those gaps with the
@@ -8157,6 +8165,7 @@ function markEdited() {
 // see that file for the rationale on op-based vs snapshot history.
 const { pushEditOp: _pushEditOp } = useEditOps({
   sheet,
+  currentSheet,
   history,
   queueOp: _queueOp,
   broadcastBatchChange: (sn, cells) => broadcastBatchChange(sn, cells),
@@ -8187,7 +8196,7 @@ function _lazyValuesEnabled() {
 // three render identical pixels. showFormulas mode paints raw formula text.
 function _cellDisplay(id) {
   if (showFormulas.value) return String(sheet.getCell(id) ?? '')
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const fmt = formats.get(id, sn)
   const dv = _displayValue(id, sn)
   return fmt.numberFormat ? applyNumberFmt(dv, fmt.numberFormat) : dv
@@ -8196,7 +8205,7 @@ function _cellDisplay(id) {
 // A cell's computed display string, from whichever engine is active: IronCalc
 // in the preview, else the old engine. Readers that run during a paint use
 // this, so values and conditional formats come from the same engine.
-function _displayValue(id, sn = sheet.getCurrentSheet()) {
+function _displayValue(id, sn = currentSheet.value) {
   return _ironcalc ? _ironcalcDisplay(id, sn) : sheet.getDisplayValue(id, sn)
 }
 
@@ -8256,12 +8265,12 @@ async function _startIronCalc() {
 // the object.
 function _mirrorOldEngineWrites() {
   const setCell = sheet.setCell
-  sheet.setCell = (id, value, sn = sheet.getCurrentSheet()) => {
+  sheet.setCell = (id, value, sn = currentSheet.value) => {
     setCell(id, value, sn)
     _ironcalcMirrorInput(id, value, sn)
   }
   const batchSetCells = sheet.batchSetCells
-  sheet.batchSetCells = (map, sn = sheet.getCurrentSheet(), opts) => {
+  sheet.batchSetCells = (map, sn = currentSheet.value, opts) => {
     const diff = batchSetCells(map, sn, opts)
     // `after` holds every cell the batch changed, '' for cleared ones.
     for (const [id, value] of Object.entries(diff?.after ?? {})) _ironcalcMirrorInput(id, value, sn)
@@ -8346,7 +8355,7 @@ function _scanBounds(sheetSn) {
 }
 function _repopulateGrid() {
   if (!grid) return
-  const sheetSn = sheet.getCurrentSheet()
+  const sheetSn = currentSheet.value
 
   // Lazy path: the grid pulls each visible cell's display string on demand, so
   // we materialise nothing here — switch/load no longer scale with cell count.
