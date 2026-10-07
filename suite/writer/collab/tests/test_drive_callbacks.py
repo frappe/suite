@@ -91,7 +91,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         self.edit(node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed("pic")})))
         frappe.db.sql(
-            "UPDATE `__writer_collab_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
+            "UPDATE `__writer_content_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
         )
         frappe.db.commit()
 
@@ -160,7 +160,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         fallback = pycrdt.Doc()
         fallback.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText("deleted words"))
         frappe.db.sql(
-            """INSERT INTO `__writer_collab_checkpoint`
+            """INSERT INTO `__writer_content_checkpoint`
             (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `created`)
             VALUES (%s, %s, UNHEX(%s), UNHEX(%s), 0, UNHEX(%s), 0, 'test', NOW())""",
             (
@@ -192,7 +192,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         frappe.db.sql(
-            "UPDATE `__writer_collab_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
+            "UPDATE `__writer_content_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
         )
         frappe.db.commit()
 
@@ -370,7 +370,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         frappe.db.sql(
-            "UPDATE `__writer_collab_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
+            "UPDATE `__writer_content_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
         )
         frappe.db.commit()
         parent = frappe.db.get_value("Drive Node", node, "parent_node")
@@ -397,7 +397,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
     def rows_of(self, doc_id: str) -> dict:
         return {
             kind: frappe.db.sql(
-                f"SELECT COUNT(*) FROM `__writer_collab_{kind}` WHERE `{'id' if kind == 'doc' else 'doc_id'}` = %s",
+                f"SELECT COUNT(*) FROM `__writer_content_{kind}` WHERE `{'id' if kind == 'doc' else 'doc_id'}` = %s",
                 doc_id,
             )[0][0]
             for kind in ("doc", "update", "checkpoint", "session", "stage")
@@ -409,7 +409,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.compact(node)
         self.type_into(node, [" four"])
         frappe.db.sql(
-            """INSERT INTO `__writer_collab_stage` (`doc_id`, `stage_id`, `idx`, `purpose`, `sid`, `total_len`,
+            """INSERT INTO `__writer_content_stage` (`doc_id`, `stage_id`, `idx`, `purpose`, `sid`, `total_len`,
             `sha_total`, `bytes`, `created`) VALUES (%s, %s, 0, 'save', %s, 1, UNHEX(%s), 'x', NOW())""",
             (self.doc_row(node).id, "a" * 32, "b" * 32, "00" * 32),
         )
@@ -418,7 +418,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         self.assertEqual(frappe.db.get_value("Drive Node", node, "name"), None, "Drive purged the node")
         self.assertEqual(
-            frappe.db.sql("SELECT `mode` FROM `__writer_collab_doc` WHERE `id` = %s", doc_id)[0][0], "purged"
+            frappe.db.sql("SELECT `mode` FROM `__writer_content_doc` WHERE `id` = %s", doc_id)[0][0], "purged"
         )
         with patch.object(log, "PURGE_BATCH", 2):
             writer_collab.delete_purged(doc_id)
@@ -448,7 +448,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         doc_id = self.doc_row(node).id
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
         writer_collab.compact(doc_id)
@@ -461,7 +461,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.type_into(node, ["one ", "two ", "three"])
         doc_id = self.purged(node)
         # The purge job has deleted the first rows and not yet the rest
-        frappe.db.sql("DELETE FROM `__writer_collab_update` WHERE `doc_id` = %s AND `rev` = 1", doc_id)
+        frappe.db.sql("DELETE FROM `__writer_content_update` WHERE `doc_id` = %s AND `rev` = 1", doc_id)
         frappe.db.commit()
         alerts = frappe.db.count("Error Log", {"method": "Collab compaction: chain_break"})
 
@@ -475,7 +475,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.type_into(node, ["one"])
         doc_id = self.doc_row(node).id
         sid = uuid.uuid4().hex
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
         self.addCleanup(writer_collab.delete_purged, doc_id)
 
@@ -499,7 +499,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
             "client_id"
         ]
         lineage = self.doc_row(node).lineage
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
         self.addCleanup(writer_collab.delete_purged, doc_id)
         doc = pycrdt.Doc(client_id=cid)
@@ -526,7 +526,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         def find(adapter: str, node: str):
             doc = found(adapter, node)
             if doc:
-                frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc.id)
+                frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc.id)
                 self.addCleanup(writer_collab.delete_purged, doc.id)
             return doc
 

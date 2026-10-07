@@ -66,8 +66,8 @@ class CheckpointCase(IntegrationTestCase):
         doc = routes.collab.find(routes.ADAPTER, node)
         if doc:
             for kind in ("update", "session", "checkpoint", "recovery"):
-                frappe.db.sql(f"DELETE FROM `__writer_collab_{kind}` WHERE `doc_id` = %s", doc.id)
-            frappe.db.sql("DELETE FROM `__writer_collab_doc` WHERE `id` = %s", doc.id)
+                frappe.db.sql(f"DELETE FROM `__writer_content_{kind}` WHERE `doc_id` = %s", doc.id)
+            frappe.db.sql("DELETE FROM `__writer_content_doc` WHERE `id` = %s", doc.id)
             frappe.db.commit()
 
     def type_into(self, node: str, words: list[str]) -> str:
@@ -93,13 +93,13 @@ class CheckpointCase(IntegrationTestCase):
         return str(text)
 
     def doc_row(self, node: str):
-        return frappe.db.sql("SELECT * FROM `__writer_collab_doc` WHERE `node` = %s", node, as_dict=True)[0]
+        return frappe.db.sql("SELECT * FROM `__writer_content_doc` WHERE `node` = %s", node, as_dict=True)[0]
 
     def checkpoints_of(self, node: str) -> list[tuple[int, bytes, int]]:
         return [
             (int(rev), gzip.decompress(bytes(gz)), int(integrated))
             for rev, gz, integrated in frappe.db.sql(
-                """SELECT `through_rev`, `gz`, `integrated` FROM `__writer_collab_checkpoint`
+                """SELECT `through_rev`, `gz`, `integrated` FROM `__writer_content_checkpoint`
                 WHERE `doc_id` = %s ORDER BY `through_rev`""",
                 self.doc_row(node).id,
             )
@@ -107,13 +107,13 @@ class CheckpointCase(IntegrationTestCase):
 
     def row_count(self, node: str) -> int:
         return frappe.db.sql(
-            "SELECT COUNT(*) FROM `__writer_collab_update` WHERE `doc_id` = %s", self.doc_row(node).id
+            "SELECT COUNT(*) FROM `__writer_content_update` WHERE `doc_id` = %s", self.doc_row(node).id
         )[0][0]
 
     def set_doc(self, node: str, **values):
         assignments = ", ".join(f"`{key}` = %({key})s" for key in values)
         frappe.db.sql(
-            f"UPDATE `__writer_collab_doc` SET {assignments} WHERE `node` = %(node)s",
+            f"UPDATE `__writer_content_doc` SET {assignments} WHERE `node` = %(node)s",
             {**values, "node": node},
         )
         frappe.db.commit()
@@ -418,7 +418,7 @@ class TestWriterCheckpoints(CheckpointCase):
         self.type_into(node, ["one ", "two"])
         snapshot, result, sha = self.stored(node)
         # Another job's failure clears the row it thinks is its own
-        frappe.db.sql("DELETE FROM `__writer_collab_checkpoint` WHERE `doc_id` = %s", self.doc_row(node).id)
+        frappe.db.sql("DELETE FROM `__writer_content_checkpoint` WHERE `doc_id` = %s", self.doc_row(node).id)
         frappe.db.commit()
 
         self.job(self.doc_row(node).id).install(snapshot, sha, result)
@@ -553,7 +553,7 @@ class TestWriterCheckpoints(CheckpointCase):
 
         def install_first(query, *args, **kwargs):
             # The install lands after the open read the control row and before it reads the checkpoint
-            if "_collab_checkpoint` WHERE" in str(query) and not installed:
+            if "_content_checkpoint` WHERE" in str(query) and not installed:
                 installed.append(True)
                 thread = threading.Thread(target=compact_elsewhere)
                 thread.start()
@@ -656,7 +656,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         call(routes.collab_get, node)
         self.assertEqual(self.requested, [])
         frappe.db.sql(
-            "UPDATE `__writer_collab_update` SET `created` = %s WHERE `doc_id` = %s",
+            "UPDATE `__writer_content_update` SET `created` = %s WHERE `doc_id` = %s",
             (frappe.utils.now_datetime() - scheduling.AGE, self.doc_row(node).id),
         )
         frappe.db.commit()
@@ -679,7 +679,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.push_bytes(fresh, [100])
         # Older than any tail other tests left, as a sweep takes the oldest first
         frappe.db.sql(
-            "UPDATE `__writer_collab_update` SET `created` = %s WHERE `doc_id` = %s",
+            "UPDATE `__writer_content_update` SET `created` = %s WHERE `doc_id` = %s",
             ("2000-01-01", self.doc_row(waited).id),
         )
         frappe.db.commit()

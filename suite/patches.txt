@@ -16,6 +16,7 @@ suite.drive.patches.rename_entity_log_to_recent
 # --- writer ---
 suite.writer.patches.remove_frappe_writer_module
 suite.writer.patches.delete_search_index
+suite.writer.patches.rename_collab_tables
 
 suite.mail.patches.delete_server_module
 suite.mail.patches.delete_client_module

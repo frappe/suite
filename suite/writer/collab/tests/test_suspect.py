@@ -620,7 +620,7 @@ class TestSuspect(CheckpointCase):
         node = self.new_document()
         a = Pen(self, node)
         a.adds(paragraph("alpha"))
-        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        frappe.db.sql("DELETE FROM `__writer_content_session` WHERE `sid` = %s", a.sid)
         self.set_doc(node, suspect="unreadable")
         frappe.set_user("Administrator")
 

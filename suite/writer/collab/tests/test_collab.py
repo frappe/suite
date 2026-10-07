@@ -231,12 +231,12 @@ class TestWriterCollab(IntegrationTestCase):
         doc = routes.collab.find(routes.ADAPTER, node)
         if doc:
             for kind in ("update", "session", "stage"):
-                frappe.db.sql(f"DELETE FROM `__writer_collab_{kind}` WHERE `doc_id` = %s", doc.id)
-            frappe.db.sql("DELETE FROM `__writer_collab_doc` WHERE `id` = %s", doc.id)
+                frappe.db.sql(f"DELETE FROM `__writer_content_{kind}` WHERE `doc_id` = %s", doc.id)
+            frappe.db.sql("DELETE FROM `__writer_content_doc` WHERE `id` = %s", doc.id)
             frappe.db.commit()
 
     def count(self, kind: str) -> int:
-        return frappe.db.sql(f"SELECT COUNT(*) FROM `__writer_collab_{kind}`")[0][0]
+        return frappe.db.sql(f"SELECT COUNT(*) FROM `__writer_content_{kind}`")[0][0]
 
     def open(self, node: str):
         return read_frame(call(routes.collab_get, node).get_data())
@@ -419,7 +419,7 @@ class TestWriterCollab(IntegrationTestCase):
             self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
         doc_id = routes.collab.find(routes.ADAPTER, node).id
         self.assertEqual(
-            frappe.db.sql("SELECT `schema` FROM `__writer_collab_update` WHERE `doc_id` = %s", doc_id),
+            frappe.db.sql("SELECT `schema` FROM `__writer_content_update` WHERE `doc_id` = %s", doc_id),
             ((newer,),),
         )
 
@@ -515,7 +515,7 @@ class TestWriterCollab(IntegrationTestCase):
 
         def steps():
             [(value,)] = frappe.db.sql(
-                "SELECT `schema_steps` FROM `__writer_collab_doc` WHERE `node` = %s", node
+                "SELECT `schema_steps` FROM `__writer_content_doc` WHERE `node` = %s", node
             )
             return json.loads(value)
 
@@ -679,8 +679,8 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(
             [self.push(node, sid, cid, seq, each)[0] for seq, each in ((1, a), (2, b))], [200, 200]
         )
-        frappe.db.sql("UPDATE `__writer_collab_session` SET `next_clock` = NULL WHERE `doc_id` = %s", doc_id)
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_content_session` SET `next_clock` = NULL WHERE `doc_id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
         routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
@@ -942,7 +942,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.push(node, *self.session(node), 1)
         doc_id = routes.collab.find(routes.ADAPTER, node).id
         frappe.db.sql(
-            "UPDATE `__writer_collab_doc` SET `head_chain` = %s WHERE `id` = %s", (b"\x00" * 32, doc_id)
+            "UPDATE `__writer_content_doc` SET `head_chain` = %s WHERE `id` = %s", (b"\x00" * 32, doc_id)
         )
         frappe.db.commit()
         self.addCleanup(frappe.db.commit)
@@ -989,7 +989,9 @@ class TestWriterCollab(IntegrationTestCase):
 
     def staged(self, node: str) -> int:
         doc_id = routes.collab.find(routes.ADAPTER, node).id
-        return frappe.db.sql("SELECT COUNT(*) FROM `__writer_collab_stage` WHERE `doc_id` = %s", doc_id)[0][0]
+        return frappe.db.sql("SELECT COUNT(*) FROM `__writer_content_stage` WHERE `doc_id` = %s", doc_id)[0][
+            0
+        ]
 
     def test_a_four_mebibyte_change_sent_in_pieces_in_any_order_commits_once_and_leaves_no_pieces(self):
         self.set_mode("on")
@@ -1242,7 +1244,7 @@ class TestWriterCollab(IntegrationTestCase):
         now = frappe.utils.now_datetime()
         for stage_id, minutes in ((old, 16), (recent, 14)):
             frappe.db.sql(
-                "UPDATE `__writer_collab_stage` SET `created` = %s WHERE `stage_id` = %s",
+                "UPDATE `__writer_content_stage` SET `created` = %s WHERE `stage_id` = %s",
                 (now - timedelta(minutes=minutes), stage_id),
             )
         frappe.db.commit()
@@ -1268,7 +1270,7 @@ class TestWriterCollab(IntegrationTestCase):
             self.stage(node, resent_sid, resent_change),
         )
         frappe.db.sql(
-            "UPDATE `__writer_collab_stage` SET `created` = %s WHERE `stage_id` IN %s",
+            "UPDATE `__writer_content_stage` SET `created` = %s WHERE `stage_id` IN %s",
             (frappe.utils.now_datetime() - timedelta(minutes=16), (slow, resent)),
         )
         frappe.db.commit()
@@ -1308,7 +1310,7 @@ class TestWriterCollab(IntegrationTestCase):
                 frappe.set_user(WRITER)
 
         outsider, reader = put(OUTSIDER), put(READER)
-        frappe.db.sql("UPDATE `__writer_collab_session` SET `closed` = 1 WHERE `sid` = %s", sid)
+        frappe.db.sql("UPDATE `__writer_content_session` SET `closed` = 1 WHERE `sid` = %s", sid)
         frappe.db.commit()
         closed = put(WRITER)
 

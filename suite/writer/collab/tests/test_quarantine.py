@@ -80,7 +80,7 @@ class TestQuarantine(CheckpointCase):
         return [
             (int(rev), owner, reason, bytes(payload))
             for rev, owner, reason, payload in frappe.db.sql(
-                """SELECT `context_rev`, `owner`, `reason`, `payload` FROM `__writer_collab_recovery`
+                """SELECT `context_rev`, `owner`, `reason`, `payload` FROM `__writer_content_recovery`
                 WHERE `doc_id` = %s ORDER BY `context_rev`""",
                 self.doc_row(node).id,
             )
@@ -90,7 +90,7 @@ class TestQuarantine(CheckpointCase):
         return [
             state
             for (state,) in frappe.db.sql(
-                "SELECT `state` FROM `__writer_collab_update` WHERE `doc_id` = %s ORDER BY `rev`",
+                "SELECT `state` FROM `__writer_content_update` WHERE `doc_id` = %s ORDER BY `rev`",
                 self.doc_row(node).id,
             )
         ]
@@ -98,7 +98,7 @@ class TestQuarantine(CheckpointCase):
     def closed(self, node: str, tab: Tab) -> bool:
         return bool(
             frappe.db.sql(
-                "SELECT `closed` FROM `__writer_collab_session` WHERE `doc_id` = %s AND `sid` = %s",
+                "SELECT `closed` FROM `__writer_content_session` WHERE `doc_id` = %s AND `sid` = %s",
                 (self.doc_row(node).id, tab.sid),
             )[0][0]
         )
@@ -227,7 +227,7 @@ class TestQuarantine(CheckpointCase):
         sha = hashlib.sha256(payload).digest()
         chain = chain_next(bytes(doc.head_chain), rev, sha)
         frappe.db.sql(
-            """INSERT INTO `__writer_collab_update` (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`,
+            """INSERT INTO `__writer_content_update` (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`,
             `payload`, `sha256`, `seq_shas`, `chain`, `created`)
             VALUES (%s, %s, %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), UNHEX(%s), NOW())""",
             (
@@ -244,7 +244,7 @@ class TestQuarantine(CheckpointCase):
             ),
         )
         frappe.db.sql(
-            "UPDATE `__writer_collab_doc` SET `head_rev` = %s, `head_chain` = UNHEX(%s) WHERE `id` = %s",
+            "UPDATE `__writer_content_doc` SET `head_rev` = %s, `head_chain` = UNHEX(%s) WHERE `id` = %s",
             (rev, chain.hex(), doc.id),
         )
         frappe.db.commit()
@@ -317,7 +317,7 @@ class TestQuarantine(CheckpointCase):
         a = Tab(self, node)
         a.typed(0, "alpha")
         a.typed(5, " beta")
-        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        frappe.db.sql("DELETE FROM `__writer_content_session` WHERE `sid` = %s", a.sid)
         frappe.db.commit()
         frappe.set_user("Administrator")
         logged = frappe.db.count(
@@ -339,7 +339,7 @@ class TestQuarantine(CheckpointCase):
         node = self.new_document()
         a = Tab(self, node)
         a.typed(0, "alpha")
-        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        frappe.db.sql("DELETE FROM `__writer_content_session` WHERE `sid` = %s", a.sid)
         frappe.db.commit()
 
         with self.assertRaises(RuntimeError):
@@ -442,8 +442,8 @@ class TestQuarantine(CheckpointCase):
         b.typed(0, "beta ")
         self.store_raw(node, a, b"\x01\x01garbage")
         doc_id = self.doc_row(node).id
-        frappe.db.sql("UPDATE `__writer_collab_session` SET `next_clock` = NULL WHERE `doc_id` = %s", doc_id)
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_content_session` SET `next_clock` = NULL WHERE `doc_id` = %s", doc_id)
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
         routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
@@ -459,10 +459,10 @@ class TestQuarantine(CheckpointCase):
         a = Tab(self, orphan)
         a.typed(0, "alpha")
         self.store_raw(orphan, a, b"\x01\x01garbage")
-        frappe.db.sql("DELETE FROM `__writer_collab_session` WHERE `sid` = %s", a.sid)
+        frappe.db.sql("DELETE FROM `__writer_content_session` WHERE `sid` = %s", a.sid)
         Tab(self, other).typed(0, "beta")
         ids = (self.doc_row(orphan).id, self.doc_row(other).id)
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
         frappe.db.commit()
         logged = f"Collab clocks not read for writer log {ids[0]}"
 
@@ -479,21 +479,21 @@ class TestQuarantine(CheckpointCase):
         self.store_raw(purged, a, b"\x01\x01garbage")
         Tab(self, other).typed(0, "beta")
         ids = (self.doc_row(purged).id, self.doc_row(other).id)
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
         frappe.db.commit()
         self.addCleanup(writer_collab.delete_purged, ids[0])
         real = quarantine.quarantine
 
         def purged_after(adapter, doc_id, *args):
             moved = real(adapter, doc_id, *args)
-            frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+            frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
             return moved
 
         with patch.object(quarantine, "quarantine", purged_after):
             routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         clocks = dict(
-            frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_collab_doc` WHERE `id` IN %s", (ids,))
+            frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))
         )
         self.assertEqual((clocks[ids[0]], clocks[ids[1]] is not None), (None, True))
         self.assertEqual(
@@ -505,21 +505,21 @@ class TestQuarantine(CheckpointCase):
         Tab(self, purged).typed(0, "alpha")
         Tab(self, other).typed(0, "beta")
         ids = (self.doc_row(purged).id, self.doc_row(other).id)
-        frappe.db.sql("UPDATE `__writer_collab_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
+        frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` IN %s", (ids,))
         frappe.db.commit()
         self.addCleanup(writer_collab.delete_purged, ids[0])
         read = backfill.read
 
         def purged_first(adapter: str, doc_id: str):
             if doc_id == ids[0]:
-                frappe.db.sql("UPDATE `__writer_collab_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
+                frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
             return read(adapter, doc_id)
 
         with patch.object(backfill, "read", purged_first):
             routes.collab.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
 
         clocks = dict(
-            frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_collab_doc` WHERE `id` IN %s", (ids,))
+            frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))
         )
         self.assertEqual((clocks[ids[0]], clocks[ids[1]] is not None), (None, True))
         self.assertEqual(

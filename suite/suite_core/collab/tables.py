@@ -11,8 +11,8 @@ KINDS = ("doc", "update", "session", "checkpoint", "stage", "recovery")
 
 def table(adapter: str, kind: str) -> str:
     if kind not in KINDS or not adapter.isidentifier():
-        raise ValueError(f"Unknown collab table {adapter} {kind}")
-    return f"__{adapter}_collab_{kind}"
+        raise ValueError(f"Unknown content table {adapter} {kind}")
+    return f"__{adapter}_content_{kind}"
 
 
 def ensure_tables(adapter: str) -> None:
