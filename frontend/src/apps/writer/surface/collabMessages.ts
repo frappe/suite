@@ -12,13 +12,19 @@ export interface Banner {
 
 interface Standing {
   blocked: Blocked | null
+  // Why the room will never save this tab's work
+  stopped: string | null
   onDevice: boolean
   // The editor's HTML was kept in this browser as a recovery copy
   kept: boolean
   unsent: number
 }
 
-export function bannerFor({ blocked, onDevice, kept, unsent }: Standing): Banner {
+const STOPS: Record<string, string> = {
+  poison: "This document can't hold a change made in this tab, so saving stopped.",
+}
+
+export function bannerFor({ blocked, stopped, onDevice, kept, unsent }: Standing): Banner {
   const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
@@ -54,7 +60,9 @@ export function bannerFor({ blocked, onDevice, kept, unsent }: Standing): Banner
     case 'lost_read':
       return { text: `You can no longer open this document.${copy}` }
     default:
-      return { text: `Saving stopped in this tab.${copy} Reload to keep editing.` }
+      return {
+        text: `${STOPS[stopped ?? ''] ?? 'Saving stopped in this tab.'}${copy} Reload to keep editing.`,
+      }
   }
 }
 

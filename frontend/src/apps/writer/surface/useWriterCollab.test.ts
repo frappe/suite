@@ -8,6 +8,7 @@ const fake = vi.hoisted(() => ({
   room: {
     canWrite: true,
     blocked: null as string | null,
+    stopped: null as string | null,
     paused: null,
     saveState: 'clean',
     unsent: 0,
@@ -54,6 +55,12 @@ describe('writer collab editing state', () => {
 
     becomes({ blocked: null, saveState: 'failed', canWrite: true })
     expect(collab.editingPaused.value).toBe(true)
+  })
+
+  it('tells why the room stopped saving', async () => {
+    const collab = await opened()
+    becomes({ blocked: null, stopped: 'poison', saveState: 'failed', unsent: 1, canWrite: false })
+    expect(collab.banner.value?.text).toMatch(/can't hold a change made in this tab/)
   })
 
   it('leaves a lost right or a read-only room as view only', async () => {

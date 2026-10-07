@@ -53,6 +53,8 @@ export interface CollabRoom {
   readonly blocked: Blocked | null
   // Why the server asked this tab to wait before saving again, until a push is committed
   readonly paused: string | null
+  // Why this tab's work can never be committed; its unsent work went to recovery
+  readonly stopped: string | null
   readonly saveState: SaveState
   readonly unsent: number
   // Whether unsent work outlives this tab

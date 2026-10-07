@@ -97,6 +97,10 @@ export class Room implements CollabRoom {
     return this.writable
   }
 
+  get stopped() {
+    return this.dead
+  }
+
   get onDevice() {
     return !!this.device
   }

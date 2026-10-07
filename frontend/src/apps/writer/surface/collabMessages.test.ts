@@ -5,7 +5,7 @@ import { bannerFor, openFailureFor, type Banner } from './collabMessages'
 // What the banner reads on the page, with the link standing for its words
 const read = (banner: Banner) =>
   `${banner.text}${banner.link ? `[${banner.link.label}]` : ''}${banner.after ?? ''}`
-const standing = { blocked: null, onDevice: true, kept: false, unsent: 1 } as const
+const standing = { blocked: null, stopped: null, onDevice: true, kept: false, unsent: 1 } as const
 
 describe('collab banner copy', () => {
   it("says a signed-out tab isn't saving and asks to sign in", () => {
@@ -74,6 +74,20 @@ describe('collab banner copy', () => {
     )
     expect(read(bannerFor({ ...standing, kept: true }))).toBe(
       'Saving stopped in this tab. Unsent changes were kept as a recovery copy. Reload to keep editing.',
+    )
+  })
+})
+
+describe('collab stop copy', () => {
+  it('says why the server will never save a change', () => {
+    expect(read(bannerFor({ ...standing, stopped: 'poison', kept: true }))).toBe(
+      "This document can't hold a change made in this tab, so saving stopped. Unsent changes were kept as a recovery copy. Reload to keep editing.",
+    )
+  })
+
+  it('keeps the general copy for a stop it has no words for', () => {
+    expect(read(bannerFor({ ...standing, stopped: 'seq_conflict' }))).toBe(
+      'Saving stopped in this tab. Reload to keep editing.',
     )
   })
 })

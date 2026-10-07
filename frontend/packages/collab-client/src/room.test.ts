@@ -649,6 +649,18 @@ describe('collab room', () => {
     expect([room.blocked, room.canWrite, room.saveState]).toEqual(['lost_edit', false, 'failed'])
   })
 
+  it('a change the server refuses for good says why saving stopped', async () => {
+    const server = fakeServer()
+    const room = await join(server.endpoints())
+    expect(room.stopped).toBe(null)
+    server.access.refuse = reply(409, { collab: 'poison' })
+
+    room.doc.getText('t').insert(0, 'bad')
+    await room.flush()
+
+    expect([room.stopped, room.saveState, room.blocked]).toEqual(['poison', 'failed', null])
+  })
+
   it('a refusal that turns out to be a sign-out is not taken as lost access', async () => {
     const server = fakeServer()
     const room = await join(server.endpoints())

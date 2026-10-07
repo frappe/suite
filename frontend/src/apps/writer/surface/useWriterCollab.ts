@@ -15,6 +15,7 @@ interface RoomStatus {
   canWrite: boolean
   blocked: Blocked | null
   paused: string | null
+  stopped: string | null
   unsent: number
   onDevice: boolean
 }
@@ -24,6 +25,7 @@ const snapshot = (room: CollabRoom): RoomStatus => ({
   canWrite: room.canWrite,
   blocked: room.blocked,
   paused: room.paused,
+  stopped: room.stopped,
   unsent: room.unsent,
   onDevice: room.onDevice,
 })
@@ -99,6 +101,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
     if (!live.value || !now || !(now.blocked || now.saveState === 'failed')) return null
     return bannerFor({
       blocked: now.blocked,
+      stopped: now.stopped,
       onDevice: now.onDevice,
       kept: kept.value,
       unsent: now.unsent,
