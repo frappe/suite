@@ -23,6 +23,8 @@ export {
   type LiveState,
   type Opened,
   type OpenOptions,
+  type Peer,
+  type RoomPresence,
   type SaveState,
 } from './types'
 export {

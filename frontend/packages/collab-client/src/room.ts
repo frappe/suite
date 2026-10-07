@@ -137,6 +137,8 @@ export class Room implements CollabRoom {
         rows: this.heardRows,
         pull: () => void this.pull(),
         changed: () => this.changed(),
+        at: () => this.appliedThrough,
+        sends: () => this.canWrite && this.bound && !this.closed,
       })
       if (opening.rooms) this.realtime.refresh(opening.rooms)
     }
@@ -151,6 +153,10 @@ export class Room implements CollabRoom {
 
   get live(): LiveState | null {
     return this.realtime?.state ?? null
+  }
+
+  get presence() {
+    return this.realtime?.presence ?? null
   }
 
   get stopped() {

@@ -1,4 +1,5 @@
 import type { RoomKeys, Row } from './frames'
+import { Presence } from './presence'
 import type { LiveSocket, LiveState } from './types'
 
 // A key stays in use this long past its epoch, for clocks a little behind the server's
@@ -16,12 +17,16 @@ export interface LiveHooks {
   rows(rows: Row[], schema?: number): void
   pull(): void
   changed(): void
+  // This tab's applied_through, and whether it shows its caret
+  at(): number
+  sends(): boolean
 }
 
 // Rows reach the room over the realtime socket as they commit. Anything missed is pulled after a jittered
 // delay, so a realtime restart doesn't send every tab to the server at once
 export class Live {
   state: LiveState = 'joining'
+  readonly presence: Presence
   private keys: RoomKeys | null = null
   // Server seconds minus this browser's
   private offset = 0
@@ -43,6 +48,12 @@ export class Live {
     private readonly lineage: string,
     private readonly hooks: LiveHooks,
   ) {
+    this.presence = new Presence(socket, {
+      mine: (room) => this.current().includes(room),
+      at: () => hooks.at(),
+      sends: () => hooks.sends(),
+      ahead: (at) => this.ahead(at),
+    })
     this.hub = Hub.of(socket)
     this.hub.members.add(this)
     socket.on('suite_collab_row', this.row)
@@ -125,6 +136,8 @@ export class Live {
     const joined = !!ack && typeof (ack as { pid?: unknown }).pid === 'number'
     this.acked = joined && mine.length > 0 && mine.every((key) => rooms.includes(key))
     if (this.acked) this.members = 1 + ((ack as { count?: number }).count ?? 0)
+    if (joined) this.presence.answered(ack, rooms)
+    else this.presence.clear()
     this.update()
   }
 
@@ -138,6 +151,7 @@ export class Live {
 
   dropped() {
     this.acked = false
+    this.presence.clear()
     this.joinUntil = Date.now() + JOIN_MS
     this.after(JOIN_MS, () => this.update())
     this.update()
@@ -154,6 +168,7 @@ export class Live {
     for (const timer of [...this.timers, ...this.awaiting.values()]) clearTimeout(timer)
     for (const timer of [this.refreshTimer, this.repairTimer, this.holeTimer])
       if (timer) clearTimeout(timer)
+    this.presence.close()
     this.hub.leave(this)
   }
 
@@ -184,6 +199,11 @@ export class Live {
     const message = heard as Partial<Record<'lineage' | 'kind', unknown>> | null
     if (this.closed || message?.lineage !== this.lineage) return
     if (message.kind === 'quarantine') this.repair()
+  }
+
+  // A peer's caret says it has applied a row this tab has not heard
+  private ahead(at: number) {
+    this.hole(() => this.hooks.at() < at)
   }
 
   private hit() {

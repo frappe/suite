@@ -1,3 +1,4 @@
+import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 
 import type { Limits, OpenState } from './frames'
@@ -55,6 +56,19 @@ export interface LiveSocket {
 // `polling`: no answer from the realtime service, or this tab's own rows stopped coming back over it
 export type LiveState = 'joining' | 'live' | 'polling'
 
+// Another tab in the document, named by the user the realtime service verified
+export interface Peer {
+  pid: number
+  user: string
+}
+
+export interface RoomPresence {
+  // Carets for the cursor plugin; this tab's own state is client 0
+  readonly awareness: Awareness
+  readonly peers: Peer[]
+  onChange(listener: () => void): () => void
+}
+
 export type SaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 
 // Why the server stopped hearing this tab. `offline` is only for a tab with no device store to keep work in.
@@ -86,6 +100,7 @@ export interface CollabRoom {
   readonly appliedThrough: number
   // Null when the room was opened without a socket
   readonly live: LiveState | null
+  readonly presence: RoomPresence | null
   // The sizes the server last published; null until it has, as in a tab opened offline
   readonly limits: Limits | null
   // The document holds all it may until a compaction shrinks it, so only deleting content saves

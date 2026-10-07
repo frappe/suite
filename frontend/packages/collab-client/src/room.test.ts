@@ -2127,4 +2127,30 @@ describe('collab room live', () => {
     expect(moved).toEqual([now, 'live'])
     expect([...socket.joined]).toEqual([])
   })
+
+  it('a peer’s caret saying it has applied a row this tab never heard makes the tab pull it', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const socket = server.socket()
+    const reader = await join(server.endpoints(), { socket })
+    const writer = await join(server.endpoints(), { socket: server.socket() })
+    await vi.advanceTimersByTimeAsync(0)
+    server.realtime.publishing = false
+    await type(writer, 'unheard')
+    const [key] = server.roomKeys().keys
+    const pid = 2 ** 31 + 5
+
+    socket.hear('suite_collab_presence_join', { room: key, pid, user: 'b@x.com' })
+    socket.hear('suite_collab_presence', {
+      room: key,
+      states: [{ pid, user: 'b@x.com', n: 1, state: { at: 1 } }],
+    })
+    await vi.advanceTimersByTimeAsync(1100)
+
+    expect([reader.live, text(reader), reader.presence?.peers]).toEqual([
+      'live',
+      'unheard',
+      [{ pid, user: 'b@x.com' }],
+    ])
+  })
 })
