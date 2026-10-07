@@ -1,6 +1,6 @@
 import { computed, effectScope, reactive, ref, watch } from 'vue'
 
-import { api, client } from '@/api'
+import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
@@ -49,6 +49,9 @@ export const trustableDomains = (emails: string[]) =>
     .map((domain) => `@${domain}`)
 
 type Destination = 'inbox' | 'archive' | 'trash'
+
+/** A mail as it was before a Junk took it: its folders and junk state, for an Undo to put back. */
+export type SavedMail = InputOf<typeof api.mail.messages.setFolders>['mails'][number]
 
 /** A thread row, or one of its messages: whatever says whose mail is waiting. */
 export type Screenable = {
@@ -225,23 +228,28 @@ const createShared = () => {
   }
 
   /**
-   * Marks the senders spam and moves everything of theirs that was waiting to Junk, along with `ids`
-   * — the rest of the thread being junked with them. Says whether it landed.
+   * Marks the senders spam and moves everything of theirs that was waiting to Junk, along with
+   * `mails` — the rest of what is being junked with them, saved as it was so Undo puts it back
+   * exactly. Says whether it landed.
    */
   const deny = async (
     emails: string[],
-    { account = store.accountId, ids = [] }: { account?: string; ids?: string[] } = {},
+    { account = store.accountId, mails = [] }: { account?: string; mails?: SavedMail[] } = {},
   ) => {
     decide(account, emails)
     try {
       const junked = Object.values(
         await client.mutation(api.mail.screener.reject, { account, from_emails: emails }),
       ).flat()
-      const rest = ids.filter((id) => !junked.includes(id))
+      const rest = mails.filter((mail) => !junked.includes(mail.id))
       // The rule is in place already, so this only junks the rest of the thread, and counts what
       // else of theirs is in the Inbox — mail from before screening, say.
       const { inbox } = await client
-        .mutation(api.mail.screening.block, { account, from_emails: emails, ids: rest })
+        .mutation(api.mail.screening.block, {
+          account,
+          from_emails: emails,
+          ids: rest.map((mail) => mail.id),
+        })
         .catch((error) => {
           failed(error)
           return { inbox: 0 }
@@ -252,7 +260,7 @@ const createShared = () => {
           void reverseVerdict(account, emails, junked)
           if (rest.length)
             void client
-              .mutation(api.mail.messages.spam, { account, ids: rest, spam: false })
+              .mutation(api.mail.messages.setFolders, { account, mails: rest })
               .then(settled)
         },
         inbox,

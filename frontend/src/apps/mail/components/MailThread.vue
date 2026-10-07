@@ -620,7 +620,7 @@ import {
   useTheme,
 } from '@/apps/mail/utils/composables'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
-import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { isCollapsed as isCollapsedIn, lastMessageOf } from '@/apps/mail/utils/threadFolding'
 import { mailRow } from '@/apps/mail/utils/threadRows'
@@ -1059,9 +1059,13 @@ const allowDomain = async (domain: string) => {
 const denySenders = async () => {
   const emails = screenedSenders.value.map((sender) => sender.email)
   if (!emails.length) return
-  const ids = (sourceMessages() ?? thread.value).flatMap(mailCopyIds)
+  const mails = (sourceMessages() ?? thread.value).flatMap(mailCopies).map((copy) => ({
+    id: copy.id,
+    mailbox_ids: copy.mailboxes.map((mailbox) => mailbox.mailbox_id),
+    junk: copy.junk,
+  }))
   goToMailbox()
-  await screener.deny(emails, { account: scopeAccountId.value, ids })
+  await screener.deny(emails, { account: scopeAccountId.value, mails })
   emit('reloadMails')
 }
 

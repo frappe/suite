@@ -1137,22 +1137,22 @@ export function useThreadActions(deps: {
     return result
   }
 
-  // Junk is the one refusal: a screened thread junked from the list blocks the senders it waits on,
-  // as No does in the open thread, and goes to Junk whole. The rest go the ordinary way.
+  // Junk is the one refusal: a selection holding a screened thread blocks the senders it waits on,
+  // as No does in the open thread, and goes to Junk whole — the ordinary threads in it too, so one
+  // Undo puts everything back where it was.
   const handleSetSpamStatus = (threadIDs: SetSeenParams) => {
     const junked = threadIDs[1]
     if (Object.keys(threadIDs).length !== 1 || !junked?.length) return setSpamStatus(threadIDs)
-    const screened = touchedRows(junked).filter((row) => screener.isScreened(row))
-    if (!screened.length) return setSpamStatus(threadIDs)
-    const screenedIds = screened.map((row) => row.thread_id)
-    const ids = allMailIds(screenedIds)
-    closeComposeWindowHolding(screenedIds)
-    const removed = handleSuccessAndRemoveFromList(screenedIds, false)
-    void screener
-      .deny(screener.sendersOf(screened), { ids })
-      .then((done) => done || restoreThreadsToList(removed))
-    const rest = junked.filter((id) => !screenedIds.includes(id))
-    if (rest.length) return setSpamStatus({ 1: rest })
+    const senders = screener.sendersOf(touchedRows(junked))
+    if (!senders.length) return setSpamStatus(threadIDs)
+    const mails = threadMails(junked).map((m) => ({
+      id: m.id,
+      mailbox_ids: m.mailboxes.map((mb) => mb.mailbox_id),
+      junk: m.junk,
+    }))
+    closeComposeWindowHolding(junked)
+    const removed = handleSuccessAndRemoveFromList(junked, false)
+    void screener.deny(senders, { mails }).then((done) => done || restoreThreadsToList(removed))
   }
 
   return {
