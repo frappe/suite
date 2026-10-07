@@ -23,7 +23,7 @@
   "src/apps/mail/components/MailDate.vue": 10,
   "src/apps/mail/components/MailDetails.vue": 1,
   "src/apps/mail/components/MailListItem.vue": 2,
-  "src/apps/mail/components/MailThread.vue": 23,
+  "src/apps/mail/components/MailThread.vue": 22,
   "src/apps/mail/components/Modals/AddAccountEmailModal.vue": 1,
   "src/apps/mail/components/Modals/AddAccountGroupsModal.vue": 1,
   "src/apps/mail/components/Modals/AddAccountMailingListsModal.vue": 1,

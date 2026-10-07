@@ -364,40 +364,33 @@
                       </div>
 
                       <div v-show="!isCollapsed(mail)">
-                        <Alert
+                        <!-- Styled as the new-sender bar is: a blocked sender's mail is the
+										     other side of the same decision. -->
+                        <div
                           v-if="!readonly && isSenderBlocked(mail.from_email)"
-                          :title="__('This sender is blocked')"
-                          class="mb-4"
-                          :dismissable="false"
+                          class="bg-surface-gray-1 mb-4 flex items-center gap-3 rounded-6 px-3 py-2"
+                          role="region"
+                          :aria-label="__('Blocked sender')"
                         >
-                          <template #description>
-                            <p class="text-ink-gray-6 prose-sm">
-                              {{
-                                __('{0} is currently on your', [mail.from_name || mail.from_email])
-                              }}
-                              <button
-                                type="button"
-                                class="hover:text-ink-gray-8 underline"
-                                @click="openSettings('mail.screener')"
-                              >
-                                {{ __('block list') }}</button
-                              >{{
-                                __(
-                                  '. Their new messages go to Junk until you unblock them.',
-                                )
-                              }}
-                            </p>
-                          </template>
-                          <template #footer>
-                            <div class="col-span-full">
-                              <Button
-                                :label="__('Unblock')"
-                                variant="outline"
-                                @click="unblockEmailAddressSubmit(mail.from_email)"
-                              />
-                            </div>
-                          </template>
-                        </Alert>
+                          <Ban class="text-ink-gray-5 size-4 shrink-0" />
+                          <div class="text-p-sm text-ink-gray-8 min-w-0 flex-1">
+                            <span class="!font-medium">{{ mail.from_name || mail.from_email }}</span>
+                            {{ __('is on your') }}
+                            <button
+                              type="button"
+                              class="underline underline-offset-2"
+                              @click="openSettings('mail.screener')"
+                            >
+                              {{ __('block list') }}</button
+                            >{{ __('. Their mail goes to Junk.') }}
+                          </div>
+                          <Button
+                            class="shrink-0"
+                            variant="outline"
+                            :label="__('Unblock')"
+                            @click="unblockEmailAddressSubmit(mail.from_email)"
+                          />
+                        </div>
                         <CalendarInviteBanner
                           v-if="!readonly && !isCollapsed(mail) && icsAttachment(mail)"
                           :key="`invite-${mail.name}`"
@@ -551,8 +544,8 @@
 </template>
 
 <script setup lang="ts">
-import { Alert, Avatar, Badge, Button, Tooltip } from 'frappe-ui'
-import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
+import { Avatar, Badge, Button, Tooltip } from 'frappe-ui'
+import { Ban, ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
 import {
   computed,
   inject,
@@ -1161,7 +1154,7 @@ async function unblockEmailAddressSubmit(email) {
   }
   await unblockEmailAddress.run(input)
   raiseToast(__('Sender unblocked.'))
-  screenedAddresses.value.reload()
+  screenedAddresses.value.refetch().catch(() => {})
 }
 
 const handleReload = (isUndo = false) => {
