@@ -151,7 +151,7 @@ class TestSuspect(CheckpointCase):
 
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held), ("unreadable", "no_node"))
-        self.assertEqual(self.pulled(node)["held"], "no_node")
+        self.assertEqual(self.pulled(node)["held"], "change")
         self.assertEqual(self.alerts("suspect held: no_node"), before + 1)
         self.assertEqual(self.states(node), ["ok"])
         response = a.write(lambda body: body.children.append(paragraph("beta")))
@@ -277,6 +277,22 @@ class TestSuspect(CheckpointCase):
         self.assertIsNone(self.doc_row(node).suspect)
         frappe.set_user(READER)
         self.assertEqual(self.report(node, rev)[0], 202)
+
+    def test_a_reader_learns_only_whether_one_change_or_the_document_is_held(self):
+        ensure_user(READER)
+        node = self.new_document()
+        Pen(self, node).adds(paragraph("alpha"))
+        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        frappe.db.commit()
+        frappe.set_user(READER)
+
+        for held, shown in (
+            ("kernel_failed", "change"),
+            ("still_refused", "change"),
+            ("bad_checkpoint", "bad_checkpoint"),
+        ):
+            self.set_doc(node, suspect="unreadable", suspect_held=held)
+            self.assertEqual(self.pulled(node)["held"], shown)
 
     def test_a_report_the_judge_cannot_settle_clears_and_saving_goes_on(self):
         def fails(*args):

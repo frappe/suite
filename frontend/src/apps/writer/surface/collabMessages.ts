@@ -61,7 +61,7 @@ export function bannerFor({ blocked, stopped, onDevice, kept, unsent }: Standing
       return { text: `You can no longer open this document.${copy}` }
     default:
       return {
-        text: `${STOPS[stopped ?? ''] ?? 'Saving stopped in this tab.'}${copy} Reload to keep editing.`,
+        text: `${stopped && Object.hasOwn(STOPS, stopped) ? STOPS[stopped] : 'Saving stopped in this tab.'}${copy} Reload to keep editing.`,
       }
   }
 }

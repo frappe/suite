@@ -162,7 +162,8 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
     if doc.verdict:
         header["verdict"] = doc.verdict
     if doc.suspect_held:
-        header["held"] = doc.suspect_held
+        # Readers learn only whether one change or the document is in question; the cause is for admins
+        header["held"] = "bad_checkpoint" if doc.suspect_held == "bad_checkpoint" else "change"
     return _frame(header, rows)
 
 

@@ -86,9 +86,10 @@ describe('collab stop copy', () => {
   })
 
   it('keeps the general copy for a stop it has no words for', () => {
-    expect(read(bannerFor({ ...standing, stopped: 'seq_conflict' }))).toBe(
-      'Saving stopped in this tab. Reload to keep editing.',
-    )
+    for (const stopped of ['seq_conflict', 'constructor'])
+      expect(read(bannerFor({ ...standing, stopped }))).toBe(
+        'Saving stopped in this tab. Reload to keep editing.',
+      )
   })
 })
 
