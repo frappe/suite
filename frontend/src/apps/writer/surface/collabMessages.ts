@@ -22,7 +22,10 @@ interface Standing {
 
 const STOPS: Record<string, string> = {
   poison: "This document can't hold a change made in this tab, so saving stopped.",
+  browser: "This document can't be edited in this browser version.",
 }
+// Stops a reload would only repeat
+const LASTING = new Set(['browser'])
 
 // Shown in a rebuilt room once the stopped room's unsent work went to a recovery copy
 export const SET_ASIDE: Banner = {
@@ -64,10 +67,11 @@ export function bannerFor({ blocked, stopped, onDevice, kept, unsent }: Standing
       return { text: `You can no longer edit this document.${copy}` }
     case 'lost_read':
       return { text: `You can no longer open this document.${copy}` }
-    default:
-      return {
-        text: `${stopped && Object.hasOwn(STOPS, stopped) ? STOPS[stopped] : 'Saving stopped in this tab.'}${copy} Reload to keep editing.`,
-      }
+    default: {
+      const known = stopped && Object.hasOwn(STOPS, stopped) ? stopped : null
+      const reload = known && LASTING.has(known) ? '' : ' Reload to keep editing.'
+      return { text: `${known ? STOPS[known] : 'Saving stopped in this tab.'}${copy}${reload}` }
+    }
   }
 }
 

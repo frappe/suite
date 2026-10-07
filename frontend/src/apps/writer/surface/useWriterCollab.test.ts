@@ -10,7 +10,7 @@ const fake = vi.hoisted(() => {
     canWrite: true,
     blocked: null as string | null,
     stopped: null as string | null,
-    paused: null,
+    paused: null as string | null,
     needsRebuild: false,
     saveState: 'clean',
     unsent: 0,
@@ -82,6 +82,17 @@ describe('writer collab editing state', () => {
     becomes({ blocked: null, saveState: 'clean', canWrite: false })
     expect(collab.allowsEditing.value).toBe(false)
     expect(collab.editingPaused.value).toBe(false)
+  })
+
+  it('pauses editing while the server judges a change this tab could not apply', async () => {
+    fake.room = fake.make()
+    const collab = await opened()
+    becomes({ blocked: null, saveState: 'unsaved', unsent: 1, canWrite: false, paused: 'suspect' })
+    expect([collab.allowsEditing.value, collab.editingPaused.value, collab.banner.value]).toEqual([
+      false,
+      true,
+      null,
+    ])
   })
 })
 

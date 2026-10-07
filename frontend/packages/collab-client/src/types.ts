@@ -22,6 +22,8 @@ export interface CollabEndpoints {
   pull(since: number, epoch: number): Promise<Answer>
   push(body: Uint8Array<ArrayBuffer>, options?: { keepalive?: boolean }): Promise<Answer>
   session(sid: string, claim?: Claim): Promise<Answer>
+  // Rev `rev` failed to apply in this tab
+  suspect(rev: number): Promise<Answer>
 }
 
 export interface OpenOptions {

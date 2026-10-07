@@ -11,6 +11,8 @@ export interface Body {
   head?: number
   reason?: string
   retry_ms?: number
+  judged?: number
+  verdict?: string
 }
 
 export type Reply = Body & { status: number }

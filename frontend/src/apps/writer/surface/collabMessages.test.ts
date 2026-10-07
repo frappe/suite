@@ -85,6 +85,12 @@ describe('collab stop copy', () => {
     )
   })
 
+  it('does not offer a reload for a stop a reload would only repeat', () => {
+    expect(read(bannerFor({ ...standing, stopped: 'browser', kept: true }))).toBe(
+      "This document can't be edited in this browser version. Unsent changes were kept as a recovery copy.",
+    )
+  })
+
   it('keeps the general copy for a stop it has no words for', () => {
     for (const stopped of ['seq_conflict', 'constructor'])
       expect(read(bannerFor({ ...standing, stopped }))).toBe(

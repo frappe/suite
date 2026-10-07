@@ -17,6 +17,9 @@ export interface PullHeader {
   state: 'live' | 'rebuild'
   proto: number
   q_epoch?: number
+  // Rises with every verdict on a suspect document; `verdict` is the last one
+  judged?: number
+  verdict?: string
 }
 
 export interface Row {

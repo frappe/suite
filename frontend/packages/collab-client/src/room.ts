@@ -19,6 +19,11 @@ export const REMOTE = Symbol('collab-remote')
 const ADOPT = Symbol('collab-adopt')
 
 const PERSIST_AFTER_MS = 60_000
+const STRIKE_WINDOW_MS = 10 * 60_000
+const STRIKES = 3
+
+// When rows were judged clean and still failed to apply in this page, per lineage
+const strikes = new Map<string, number[]>()
 
 export interface RoomInit {
   doc: Y.Doc
@@ -69,6 +74,9 @@ export class Room implements CollabRoom {
   private unheard = false
   private persisted = false
   private device: { store: DeviceStore; doc: string } | null
+  // A row failed to apply here: the rev reported, and the `judged` count its verdict comes after
+  private judging: { rev: number; seen: number | null } | null = null
+  private reportTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     init: RoomInit,
@@ -99,7 +107,7 @@ export class Room implements CollabRoom {
   }
 
   get canWrite() {
-    return this.writable
+    return this.writable && !this.judging
   }
 
   get stopped() {
@@ -150,6 +158,7 @@ export class Room implements CollabRoom {
         const { header, rows } = decodeFrame<PullHeader>(answer.bytes)
         this.heard()
         if (header.state === 'rebuild') return this.outdated()
+        if (this.judging) return this.judged(header)
         this.apply(rows)
       })
       .catch(() => this.unreachable())
@@ -162,6 +171,7 @@ export class Room implements CollabRoom {
     while (
       !this.closed &&
       this.bound &&
+      !this.judging &&
       (this.inFlight || this.unsent) &&
       this.saveState !== 'failed'
     ) {
@@ -293,8 +303,14 @@ export class Room implements CollabRoom {
       ...(opening?.checkpoint ? [opening.checkpoint] : []),
       ...run.filter((row) => row.bytes.length).map((row) => row.bytes),
     ]
-    const bytes = parts.length ? Y.mergeUpdates(parts) : null
-    if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)
+    let bytes: Uint8Array | null = null
+    try {
+      bytes = parts.length ? Y.mergeUpdates(parts) : null
+      if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)
+    } catch {
+      // Yjs keeps what it applied, so this copy follows nothing more until the server judges the rows
+      return this.suspect(run.at(-1)?.rev ?? this.appliedThrough)
+    }
     if (run.length) this.appliedThrough = run[run.length - 1].rev
     if (this.device) {
       const copy = {
@@ -306,6 +322,49 @@ export class Room implements CollabRoom {
       void this.device.store.commit(this.device.doc, copy, bytes).catch(() => {})
     }
     if (bytes) this.changed()
+  }
+
+  private suspect(rev: number) {
+    this.judging = { rev, seen: null }
+    this.pause('suspect')
+    void this.report()
+  }
+
+  private async report() {
+    const judging = this.judging
+    if (!judging || this.closed) return
+    let reply: Reply
+    try {
+      reply = readReply(await this.options.endpoints.suspect(judging.rev))
+    } catch {
+      this.unreachable()
+      return this.reportAfter(backoff())
+    }
+    if (reply.status === 202 && typeof reply.judged === 'number') judging.seen = reply.judged
+    else if (reply.status === 423) this.reportAfter(reply.retry_ms ?? 1000)
+    else if (!this.refused(reply, 'lost_read')) await this.verdict(reply.verdict ?? 'unjudged')
+  }
+
+  private reportAfter(ms: number) {
+    if (this.closed) return
+    this.reportTimer = setTimeout(() => {
+      this.reportTimer = null
+      void this.report()
+    }, ms)
+  }
+
+  private async judged(header: PullHeader) {
+    const judging = this.judging!
+    if (judging.seen === null || (header.judged ?? 0) <= judging.seen) return
+    judging.seen = header.judged!
+    await this.verdict(header.verdict ?? 'unjudged')
+  }
+
+  // A held document waits for an admin. Anything but a quarantine means this browser failed on rows the server takes
+  private async verdict(verdict: string) {
+    if (verdict === 'held') return
+    if (verdict !== 'quarantined' && strike(this.lineage) >= STRIKES) return this.die('browser')
+    this.outdated()
   }
 
   private capture = (update: Uint8Array, origin: unknown) => {
@@ -372,8 +431,8 @@ export class Room implements CollabRoom {
 
   private batch(keepalive?: boolean) {
     const box = this.boxes.find((other) => other.pending.length) ?? this.own
-    if (!box.pending.length || this.closed || !this.bound || this.saveState === 'failed')
-      return null
+    const held = this.closed || !this.bound || this.judging || this.saveState === 'failed'
+    if (!box.pending.length || held) return null
     const batch = box.batch(keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES)
     const header = {
       proto: 1,
@@ -595,7 +654,8 @@ export class Room implements CollabRoom {
 
   private clearTimers() {
     if (this.sendTimer) clearTimeout(this.sendTimer)
-    this.sendTimer = null
+    if (this.reportTimer) clearTimeout(this.reportTimer)
+    this.sendTimer = this.reportTimer = null
     this.endRetry?.()
   }
 
@@ -613,5 +673,13 @@ function replaces(next: Blocked, current: Blocked) {
 }
 
 const lost = (verdict: string) => (verdict === 'clash' ? 'id_clash' : verdict)
+
+function strike(lineage: string) {
+  const now = Date.now()
+  const recent = (strikes.get(lineage) ?? []).filter((at) => now - at < STRIKE_WINDOW_MS)
+  recent.push(now)
+  strikes.set(lineage, recent)
+  return recent.length
+}
 
 const backoff = () => 1000 + Math.random() * 29_000

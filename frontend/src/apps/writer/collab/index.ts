@@ -29,6 +29,7 @@ const OPEN = route('collab_get', 'GET', 'documents/{node}/collab')
 const PULL = route('collab_updates_get', 'GET', 'documents/{node}/collab/updates')
 const PUSH = route('collab_updates_post', 'POST', 'documents/{node}/collab/updates')
 const SESSION = route('collab_sessions_post', 'POST', 'documents/{node}/collab/sessions')
+const SUSPECT = route('collab_suspect_post', 'POST', 'documents/{node}/collab/suspect')
 
 // Every request names who the tab expects to be, so the server can tell a lapsed sign-in from lost access
 export function writerEndpoints(session: DocumentSession, principal: string): CollabEndpoints {
@@ -51,6 +52,12 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
           body: new TextEncoder().encode(JSON.stringify(claim ? { sid, claim } : { sid })),
           headers,
         },
+      ),
+    suspect: (rev) =>
+      transport.requestBytes(
+        SUSPECT,
+        { node },
+        { body: new TextEncoder().encode(JSON.stringify({ rev })), headers },
       ),
   }
 }

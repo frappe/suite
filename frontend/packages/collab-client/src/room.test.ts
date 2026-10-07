@@ -3,6 +3,7 @@ import * as Y from 'yjs'
 
 import { CollabOpenError } from './answers'
 import { openCollabRoom } from './open'
+import { REMOTE } from './room'
 import { openDeviceStore, type DeviceStore } from './store'
 import type { Answer, CollabEndpoints, CollabRoom, OpenOptions } from './types'
 
@@ -45,7 +46,7 @@ function frame(
 
 // The server's rules: one gap-free order, a seq range must continue the session's ack.
 // `refuse` answers every request the way the server would for a tab it no longer hears
-function fakeServer(state = 'live') {
+function fakeServer(state = 'live', lineage = 'L') {
   const rows: { rev: number; bytes: Uint8Array }[] = []
   const sessions = new Map<string, { cid: number; acked: number; shas: string[] }>()
   const access = { refuse: null as Answer | null, canWrite: true, online: true }
@@ -57,6 +58,13 @@ function fakeServer(state = 'live') {
   const epoch = { now: 0, sent: [] as (number | undefined)[] }
   // Rows through `base` folded into one state, as a compaction leaves them
   const checkpoint = { base: 0, bytes: new Uint8Array() }
+  // The judge's count and last verdict; `answer` is what a report of a rev gets back
+  const judge = {
+    judged: 0,
+    verdict: undefined as string | undefined,
+    reports: [] as number[],
+    answer: (): Answer => reply(202, { collab: 'judging', judged: judge.judged }),
+  }
   let nextClient = 1
   const reach = (call: string) => {
     if (!access.online) throw new TypeError('Failed to fetch')
@@ -69,7 +77,7 @@ function fakeServer(state = 'live') {
       const header = {
         state,
         proto: 1,
-        lineage: 'L',
+        lineage,
         can_write: access.canWrite,
         base: checkpoint.base,
         q_epoch: epoch.now,
@@ -84,7 +92,7 @@ function fakeServer(state = 'live') {
       if (seen !== undefined && seen < epoch.now)
         return frame({ state: 'rebuild', proto: 1, q_epoch: epoch.now })
       return frame(
-        { state, proto: 1, q_epoch: epoch.now },
+        { state, proto: 1, q_epoch: epoch.now, judged: judge.judged, verdict: judge.verdict },
         rows.filter((row) => row.rev > since),
       )
     },
@@ -92,7 +100,7 @@ function fakeServer(state = 'live') {
       reach(claim ? 'claim' : 'session')
       if (!access.canWrite) return reply(403, { collab: 'forbidden' })
       if (claim) {
-        if (claim.lineage !== 'L') return reply(200, { claim: 'lineage' })
+        if (claim.lineage !== lineage) return reply(200, { claim: 'lineage' })
         const taken = [...sessions.entries()].some(
           ([other, session]) => other !== sid && session.cid === claim.cid,
         )
@@ -103,6 +111,11 @@ function fakeServer(state = 'live') {
       }
       if (!sessions.has(sid)) sessions.set(sid, { cid: nextClient++, acked: 0, shas: [] })
       return reply(200, { client_id: sessions.get(sid)!.cid })
+    },
+    async suspect(rev) {
+      reach('suspect')
+      judge.reports.push(rev)
+      return judge.answer()
     },
     async push(body) {
       reach('push')
@@ -149,6 +162,7 @@ function fakeServer(state = 'live') {
     finals,
     schemas,
     epoch,
+    judge,
     compact,
     quarantine,
   }
@@ -179,6 +193,27 @@ async function join(endpoints: CollabEndpoints, extra: Partial<OpenOptions> = {}
 }
 
 const text = (room: CollabRoom) => room.doc.getText('t').toString()
+
+// Stands in for an editor binding that throws on content this browser can't place
+function breaksOn(room: CollabRoom, word: string) {
+  room.doc.getText('t').observe((_, transaction) => {
+    if (transaction.origin === REMOTE && text(room).includes(word)) throw new Error('cannot place')
+  })
+}
+
+// One row that throws here, reported and judged `verdict`
+async function judgedOnce(server: ReturnType<typeof fakeServer>, verdict: string) {
+  const room = await join(server.endpoints())
+  breaksOn(room, 'boom')
+  const writer = await join(server.endpoints())
+  writer.doc.getText('t').insert(0, 'boom')
+  await writer.flush()
+  await room.pull()
+  server.judge.judged++
+  server.judge.verdict = verdict
+  await room.pull()
+  return room
+}
 
 const stores: DeviceStore[] = []
 afterEach(() => stores.splice(0).forEach((store) => store.close()))
@@ -303,6 +338,137 @@ describe('collab room', () => {
       false,
       1,
     ])
+  })
+
+  it('a row that fails to apply is reported, and the tab sends nothing until the verdict', async () => {
+    const server = fakeServer('live', 'apply-1')
+    const a = await join(server.endpoints())
+    breaksOn(a, 'boom')
+    const b = await join(server.endpoints())
+    b.doc.getText('t').insert(0, 'boom')
+    await b.flush()
+
+    await a.pull()
+
+    expect([server.judge.reports, a.canWrite, a.paused, a.appliedThrough]).toEqual([
+      [1],
+      false,
+      'suspect',
+      0,
+    ])
+    a.doc.getText('t').insert(0, 'mine ')
+    server.calls.length = 0
+    await a.flush()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await a.pull()
+    expect([server.calls, a.unsent, a.needsRebuild]).toEqual([['pull'], 1, false])
+    server.judge.judged++
+    server.judge.verdict = 'clean'
+    await a.pull()
+    expect([a.needsRebuild, a.stopped]).toEqual([true, null])
+  })
+
+  it('a verdict from before the report is not taken for this one', async () => {
+    const server = fakeServer('live', 'apply-2')
+    server.judge.judged = 4
+    server.judge.verdict = 'clean'
+    // Another tab reported a moment ago, so this report waits and learns no count
+    server.judge.answer = () => reply(423, { collab: 'busy', retry_ms: 60_000 })
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+
+    await room.pull()
+    await room.pull()
+
+    expect([room.needsRebuild, room.canWrite]).toEqual([false, false])
+  })
+
+  it('a quarantined row rebuilds the tab', async () => {
+    const server = fakeServer('live', 'apply-3')
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+    await room.pull()
+    server.quarantine(1)
+    server.judge.judged++
+    server.judge.verdict = 'quarantined'
+
+    await room.pull()
+
+    expect([room.needsRebuild, room.stopped]).toEqual([true, null])
+  })
+
+  it('a held verdict keeps the tab locked and waiting', async () => {
+    const room = await judgedOnce(fakeServer('live', 'apply-4'), 'held')
+    expect([room.needsRebuild, room.canWrite, room.stopped]).toEqual([false, false, null])
+  })
+
+  it('a row the server already compacted is clean at once', async () => {
+    const server = fakeServer('live', 'apply-5')
+    server.judge.answer = () => reply(200, { verdict: 'clean', judged: 0 })
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+
+    await room.pull()
+    await vi.waitFor(() => expect(room.needsRebuild).toBe(true))
+  })
+
+  it('a report another tab made a moment ago is made again after the wait', async () => {
+    const server = fakeServer('live', 'apply-6')
+    server.judge.answer = () =>
+      server.judge.reports.length < 2
+        ? reply(423, { collab: 'busy', retry_ms: 5 })
+        : reply(202, { collab: 'judging', judged: 0 })
+    const room = await judgedOnce(server, 'clean')
+    expect(server.judge.reports).toEqual([1])
+    await vi.waitFor(() => expect(server.judge.reports).toEqual([1, 1]))
+    server.judge.judged++
+    await room.pull()
+    expect(room.needsRebuild).toBe(true)
+  })
+
+  it('a third clean verdict in ten minutes stops editing in this browser', async () => {
+    const server = fakeServer('live', 'apply-7')
+    for (const _ of [1, 2]) expect((await judgedOnce(server, 'clean')).needsRebuild).toBe(true)
+    const third = await judgedOnce(server, 'clean')
+    await vi.waitFor(() => expect(third.stopped).toBe('browser'))
+    expect([third.needsRebuild, third.canWrite]).toEqual([false, false])
+  })
+
+  it('a quarantine is not counted against this browser', async () => {
+    const server = fakeServer('live', 'apply-9')
+    await judgedOnce(server, 'clean')
+    await judgedOnce(server, 'clean')
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+    await room.pull()
+    server.judge.judged++
+    server.judge.verdict = 'quarantined'
+
+    await room.pull()
+
+    expect([room.needsRebuild, room.stopped]).toEqual([true, null])
+  })
+
+  it('clean verdicts older than ten minutes are not counted', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const server = fakeServer('live', 'apply-8')
+    await judgedOnce(server, 'clean')
+    await judgedOnce(server, 'clean')
+    vi.setSystemTime(Date.now() + 10 * 60_000 + 1)
+    const third = await judgedOnce(server, 'clean')
+    expect([third.needsRebuild, third.stopped]).toEqual([true, null])
   })
 
   it('two writers converge on the server order after a poll', async () => {

@@ -107,7 +107,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
     if (now.blocked === 'lost_edit' || now.blocked === 'lost_read') return 'closed'
     const stopped = now.saveState === 'failed' || now.blocked === 'offline'
     if (now.canWrite) return stopped ? 'paused' : 'editing'
-    return stopped || now.blocked ? 'paused' : 'closed'
+    return stopped || now.blocked || now.paused ? 'paused' : 'closed'
   })
   const allowsEditing = computed(() => standing.value === 'editing')
   const editingPaused = computed(() => standing.value === 'paused')
