@@ -58,6 +58,7 @@
                 :email="screenedSender.email"
                 :hidden-images="hiddenImages"
                 @allow="allowSender()"
+                @allow-domain="allowDomain()"
                 @deny="denySender()"
                 @load-images="imagesShown = true"
               />
@@ -1006,9 +1007,11 @@ watch(
 )
 const trustHere = (email: string) =>
   (trustedHere.value = new Set([...trustedHere.value, email.toLowerCase()]))
+const domainOf = (email?: string) => `@${(email ?? '').split('@').pop()?.toLowerCase()}`
 const isBlocked = (mail: Mail) =>
   !imagesShown.value &&
   !trustedHere.value.has(mail.from_email?.toLowerCase()) &&
+  !trustedHere.value.has(domainOf(mail.from_email)) &&
   shouldBlockImages(mail)
 // How many remote images the thread holds back, or null when it holds nothing back.
 const hiddenImages = computed(() => {
@@ -1034,6 +1037,16 @@ const allowSender = async () => {
 
 // No is a move to Junk, and reads like one: the thread leaves at once rather than losing its bar
 // first and its place in the list a beat later.
+// The arrow beside Yes: everyone at the sender's domain, not just them.
+const allowDomain = async () => {
+  const sender = decide()
+  if (!sender) return
+  const domain = domainOf(sender.email)
+  trustHere(domain)
+  await screener.allow(domain, 'inbox', __('{0} marked as trusted.', [domain.slice(1)]))
+  reload()
+}
+
 const denySender = async (message?: (name: string) => string) => {
   const sender = decide()
   if (!sender) return

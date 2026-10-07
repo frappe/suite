@@ -1693,12 +1693,25 @@ def _screening_filter(from_email: str | None = None) -> dict:
 
 
 def _screening_message_ids(account: str, from_email: str | None = None) -> list[str]:
-    """Return ids of mail waiting on a screening decision, optionally only those from a given sender."""
+    """Return ids of mail waiting on a screening decision, optionally only those from a given sender —
+    an address, or everyone at a domain given as '@domain' (exactly that domain, as the screening
+    rules match it: not its subdomains)."""
 
     client = get_account_client(account)
-    return _query_email_ids(
-        account, _screening_filter(from_email), limit=client.capabilities.limits.max_objects_in_get
+    sender = (from_email or "").strip().lower()
+    query = sender[1:] if sender.startswith("@") else sender
+    ids = _query_email_ids(
+        account, _screening_filter(query or None), limit=client.capabilities.limits.max_objects_in_get
     )["ids"]
+    if not sender or not ids:
+        return ids
+
+    # The JMAP `from` filter is a tokenized text match, so it can also return other senders whose From
+    # header shares tokens. Keep only the sender asked about.
+    def matches(address: str) -> bool:
+        return address.endswith(sender) if sender.startswith("@") else address == sender
+
+    return [m["id"] for m in get_messages(account, ids) if matches((m.get("from_email") or "").lower())]
 
 
 def _set_unscreened(account: str, ids: list[str], unscreened: bool) -> None:

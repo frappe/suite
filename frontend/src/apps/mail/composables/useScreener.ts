@@ -44,8 +44,12 @@ const createShared = () => {
     () => decided.clear(),
   )
 
-  const isScreened = (item?: { from_email?: string; unscreened?: 0 | 1 | boolean }) =>
-    !!item?.unscreened && !decided.has((item.from_email ?? '').toLowerCase())
+  // A sender is decided by their address, or by their whole domain ('@example.com').
+  const isScreened = (item?: { from_email?: string; unscreened?: 0 | 1 | boolean }) => {
+    if (!item?.unscreened) return false
+    const email = (item.from_email ?? '').toLowerCase()
+    return !decided.has(email) && !decided.has(`@${email.split('@').pop()}`)
+  }
 
   const settled = () => {
     store.mailboxes.refetch().catch(() => {})

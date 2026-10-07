@@ -12,7 +12,33 @@
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <Button variant="outline" :label="__('No')" @click="emit('deny')" />
-        <Button variant="solid" :label="__('Yes')" @click="emit('allow')" />
+        <!-- Yes, split: the arrow trusts everyone at the sender's domain instead. -->
+        <div class="flex items-center">
+          <Button
+            variant="solid"
+            class="!rounded-r-none"
+            :label="__('Yes')"
+            @click="emit('allow')"
+          />
+          <Dropdown
+            :options="[
+              {
+                label: __('Mark {0} as trusted', [domain]),
+                onClick: () => emit('allowDomain'),
+              },
+            ]"
+            align="end"
+          >
+            <Button
+              variant="solid"
+              class="!rounded-l-none !px-1.5"
+              style="border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent)"
+              :aria-label="__('More ways to say yes')"
+            >
+              <template #icon><ChevronDown class="size-4" /></template>
+            </Button>
+          </Dropdown>
+        </div>
       </div>
     </div>
 
@@ -25,12 +51,15 @@
 </template>
 
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
-import { UserRoundSearch } from 'lucide-vue-next'
+import { Button, Dropdown } from 'frappe-ui'
+import { ChevronDown, UserRoundSearch } from 'lucide-vue-next'
+import { computed } from 'vue'
 
 import HiddenImagesBanner from '@/apps/mail/components/HiddenImagesBanner.vue'
 
 /** `hiddenImages`: how many remote images the thread is holding back, or null when nothing is. */
 const { email, hiddenImages = null } = defineProps<{ email: string; hiddenImages?: number | null }>()
-const emit = defineEmits<{ allow: []; deny: []; loadImages: [] }>()
+const emit = defineEmits<{ allow: []; allowDomain: []; deny: []; loadImages: [] }>()
+
+const domain = computed(() => email.split('@').pop() ?? '')
 </script>
