@@ -20,7 +20,7 @@ import { guessShapeColorsFromBackground, guessTextColorFromBackground } from '..
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { cloneObj, generateUniqueId } from '../utils/helpers'
-import { fileUploadHandler, getAttachmentUrl } from '../utils/mediaUploads'
+import { fileUploadHandler, getAttachmentUrl, MEDIA_UPLOAD_ENDPOINT } from '../utils/mediaUploads'
 import { getMinSizeForElement } from '../utils/resize'
 import { shareTableWidth } from '../utils/tableWidths'
 import { getElementDiv } from './elementRegistry'
@@ -546,6 +546,7 @@ const savePoster = async (posterDataUrl) => {
       doctype: 'Presentation',
       docname: presentationId.value,
       private: true,
+      upload_endpoint: MEDIA_UPLOAD_ENDPOINT,
     })
     return fileDoc.file_url
   } catch (error) {

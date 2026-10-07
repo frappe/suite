@@ -17,6 +17,7 @@
         :fileTypes="allowedImageFileTypes"
         doctype="Presentation"
         :docname="presentationId"
+        :uploadEndpoint="MEDIA_UPLOAD_ENDPOINT"
         private
         @success="replaceTemplateImage"
       >
@@ -40,7 +41,7 @@ import { startCrop } from '@/apps/slides/stores/imageCrop'
 import { presentationId } from '@/apps/slides/stores/presentation'
 import { allowedImageFileTypes, defaultBorderColor } from '@/apps/slides/utils/constants'
 import { getCroppedImageBox } from '@/apps/slides/utils/cropGeometry'
-import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
+import { getAttachmentUrl, MEDIA_UPLOAD_ENDPOINT } from '@/apps/slides/utils/mediaUploads'
 
 const props = defineProps({
   mode: {
