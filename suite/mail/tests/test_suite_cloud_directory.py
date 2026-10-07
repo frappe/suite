@@ -294,6 +294,75 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         admin.delete_groups([group])
         self.assertEqual(admin.get_groups(), {"items": [], "total": 0})
 
+    def test_a_group_can_be_kept_from_receiving_and_let_receive_again(self) -> None:
+        quiet = admin.add_group("noreply", DOMAIN, disable_receiving=True)
+        self.assertTrue(self.fake.groups[quiet]["disable_receiving"])
+        self.assertTrue(admin.get_group(quiet)["disable_receiving"])
+        # Nobody's group stops receiving unasked.
+        sales = admin.add_group("sales", DOMAIN)
+        self.assertFalse(self.fake.groups[sales]["disable_receiving"])
+        self.assertFalse(admin.get_group(sales)["disable_receiving"])
+
+        admin.set_group_receiving_enabled(sales, False)
+        self.assertTrue(self.fake.groups[sales]["disable_receiving"])
+        self.assertTrue(admin.get_group(sales)["disable_receiving"])
+        admin.set_group_receiving_enabled(sales, True)
+        self.assertFalse(self.fake.groups[sales]["disable_receiving"])
+        self.assertFalse(admin.get_group(sales)["disable_receiving"])
+
+    def test_only_an_admin_changes_a_groups_receiving(self) -> None:
+        sales = admin.add_group("sales", DOMAIN)
+        email = "suite-user@backup.test"
+        frappe.delete_doc("User", email, force=True, ignore_permissions=True, ignore_missing=True)
+        self.addCleanup(
+            frappe.delete_doc, "User", email, force=True, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": "Suite",
+                "send_welcome_email": 0,
+                "roles": [{"role": "Suite User"}],
+            }
+        ).insert(ignore_permissions=True)
+        frappe.set_user(email)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        self.assertRaises(frappe.PermissionError, admin.set_group_receiving_enabled, sales, False)
+        self.assertFalse(self.fake.groups[sales]["disable_receiving"])
+
+    def test_a_suite_cloud_that_ignores_the_option_leaves_no_receiving_group(self) -> None:
+        create_group, update_group = self.fake.groups__create_group, self.fake.groups__update_group
+
+        def create_as_before_the_option(email, disable_receiving=None, **params):
+            return create_group(email, **params)
+
+        def update_as_before_the_option(email, disable_receiving=None, **changes):
+            return update_group(email, **changes)
+
+        with patch.object(self.fake, "groups__create_group", create_as_before_the_option):
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Suite Cloud cannot create",
+                admin.add_group,
+                "noreply",
+                DOMAIN,
+                disable_receiving=True,
+            )
+        # The admin asked for an address that takes no mail; an ordinary group is not that.
+        self.assertNotIn(f"noreply@{DOMAIN}", self.fake.groups)
+
+        sales = admin.add_group("sales", DOMAIN)
+        with patch.object(self.fake, "groups__update_group", update_as_before_the_option):
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Suite Cloud cannot change",
+                admin.set_group_receiving_enabled,
+                sales,
+                False,
+            )
+
     def test_member_endpoints_refuse_targets_that_are_not_members(self) -> None:
         # Administrator is never a mail member; the alias and membership endpoints must say so
         # before doing anything, like the rest of the member API.

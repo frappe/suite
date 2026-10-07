@@ -514,7 +514,7 @@ class FakeSuiteCloud:
         return self._group(self._require(self.groups, email)["email"])
 
     def groups__create_group(
-        self, email, description=None, aliases=None, members=None, disk_quota_gb=None
+        self, email, description=None, aliases=None, members=None, disk_quota_gb=None, disable_receiving=None
     ) -> dict:
         self._require_active_domain(email)
         if email in self.groups:
@@ -522,6 +522,7 @@ class FakeSuiteCloud:
         self.groups[email] = {
             "email": email,
             "description": description,
+            "disable_receiving": bool(disable_receiving),
             "aliases": self._alias_rows(aliases),
             "members": list(members or []),
             "disk_quota_gb": disk_quota_gb or DEFAULT_QUOTA_GB,
