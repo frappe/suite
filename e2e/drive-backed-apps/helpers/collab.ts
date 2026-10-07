@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createServer, request as forward } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { frappeData } from "../../shared/frappe";
 import { writerEditor } from "./writer";
@@ -25,6 +27,9 @@ export const compactNow = (api: APIRequestContext, node: string) =>
 
 export const collabState = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "state", node);
+
+/** How big a document's compacted state is counted. */
+export const stateBytes = (api: APIRequestContext, node: string) => hook<number>(api, "state_bytes", node);
 
 export const logId = (api: APIRequestContext, node: string) => hook<string>(api, "log_id", node);
 
@@ -215,4 +220,43 @@ export async function pushInPieces(
 	});
 	if (push.ok()) return { pieces, status: push.status() };
 	return { pieces, status: push.status(), collab: ((await push.json()) as { collab: string }).collab };
+}
+
+/** A proxy in front of `target` that refuses request bodies over `limit` bytes with 413, as nginx's `client_max_body_size 1m` does. */
+export async function bodyLimitProxy(target: string, limit = 2 ** 20) {
+	const upstream = new URL(target);
+	const seen = { largest: 0, refused: 0 };
+	const server = createServer((incoming, outgoing) => {
+		const chunks: Buffer[] = [];
+		incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+		incoming.on("end", () => {
+			const body = Buffer.concat(chunks);
+			seen.largest = Math.max(seen.largest, body.length);
+			if (body.length > limit) {
+				seen.refused++;
+				outgoing.writeHead(413, { "content-type": "text/html" }).end("<h1>413 Request Entity Too Large</h1>");
+				return;
+			}
+			const sent = forward(
+				{ host: upstream.hostname, port: upstream.port, method: incoming.method, path: incoming.url, headers: incoming.headers },
+				(answer) => {
+					outgoing.writeHead(answer.statusCode ?? 502, answer.headers);
+					answer.pipe(outgoing);
+				},
+			);
+			sent.on("error", () => outgoing.writeHead(502).end());
+			sent.end(body);
+		});
+	});
+	await new Promise<void>((listening) => server.listen(0, listening));
+	const { port } = server.address() as AddressInfo;
+	return {
+		origin: `${upstream.protocol}//${upstream.hostname}:${port}`,
+		seen,
+		close: () =>
+			new Promise<void>((closed) => {
+				server.close(() => closed());
+				server.closeAllConnections();
+			}),
+	};
 }

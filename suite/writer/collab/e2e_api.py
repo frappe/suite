@@ -117,6 +117,12 @@ def paragraph_change(node: str, client_id: int, length: int) -> dict:
 
 
 @whitelist_for_tests(methods=["GET", "POST"])
+def state_bytes(node: str) -> int:
+    """How big `node`'s compacted state is counted."""
+    return int(collab_doc(node)["state_bytes"])
+
+
+@whitelist_for_tests(methods=["GET", "POST"])
 def state(node: str) -> dict:
     """Where `node`'s collab log stands: its checkpoint, its head and the rows between."""
     row = frappe.db.sql(

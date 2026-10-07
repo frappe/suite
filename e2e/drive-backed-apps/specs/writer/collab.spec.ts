@@ -1,5 +1,6 @@
 import { expect, test } from "../../fixtures/test";
 import {
+	bodyLimitProxy,
 	collabState,
 	compactNow,
 	editorBlocks,
@@ -18,6 +19,7 @@ import {
 	quarantineLast,
 	releaseDocument,
 	serverText,
+	stateBytes,
 	takeVersion,
 	typeParagraph,
 	writeNewerSchema,
@@ -363,6 +365,45 @@ test.describe("Writer collaboration", () => {
 			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), { timeout: 15_000 })
 			.toContain(700_000);
 		expect((await serverText(testApi, node)).at(-1)).toBe("x".repeat(700_000));
+	});
+
+	test("a big paste through a proxy with a 1 MiB body limit is saved whole", async ({ owner, testApi, baseURL }) => {
+		const proxy = await bodyLimitProxy(baseURL!);
+		try {
+			await owner.page.goto(`${proxy.origin}/d/${node}`);
+			await expect(writerEditor(owner.page)).toBeVisible();
+			const big = "v".repeat(2.5 * 2 ** 20);
+
+			await pasteText(owner.page, big);
+
+			await expectSaved(owner.page);
+			const saved = await serverText(testApi, node);
+			expect(saved.map((block) => block.length)).toContain(big.length);
+			expect(saved.includes(big)).toBe(true);
+			expect([proxy.seen.refused, proxy.seen.largest <= 2 ** 20]).toEqual([0, true]);
+		} finally {
+			await proxy.close();
+		}
+	});
+
+	test("a document at the cap opens in under three seconds", async ({ owner, testApi }) => {
+		test.setTimeout(120_000);
+		const length = 4 * 2 ** 20 - 64 * 2 ** 10;
+		expect(await pushInPieces(owner.page.request, testApi, node, owner.user.user, length)).toEqual({
+			pieces: 16,
+			status: 200,
+		});
+		expect((await compactNow(testApi, node)).tail_rows).toBe(0);
+		expect(await stateBytes(testApi, node)).toBeGreaterThanOrEqual(length);
+
+		const started = Date.now();
+		await owner.page.goto(`/d/${node}`);
+		await expect
+			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), { intervals: [50] })
+			.toContain(length);
+		const took = Date.now() - started;
+
+		expect(took).toBeLessThan(3000);
 	});
 
 	test("a change over a quarter mebibyte sent whole is refused and saves nothing", async ({ owner, testApi }) => {
