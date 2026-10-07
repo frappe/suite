@@ -18,7 +18,8 @@ export interface Claim {
 // a network failure throws
 export interface CollabEndpoints {
   open(): Promise<Answer>
-  pull(since: number): Promise<Answer>
+  // `epoch`: the last quarantine this tab heard of, so the server can tell it to rebuild
+  pull(since: number, epoch: number): Promise<Answer>
   push(body: Uint8Array<ArrayBuffer>, options?: { keepalive?: boolean }): Promise<Answer>
   session(sid: string, claim?: Claim): Promise<Answer>
 }
@@ -55,6 +56,8 @@ export interface CollabRoom {
   readonly paused: string | null
   // Why this tab's work can never be committed; its unsent work went to recovery
   readonly stopped: string | null
+  // This copy may hold a change the server has since quarantined; it follows nothing more and is to be opened again
+  readonly stale: boolean
   readonly saveState: SaveState
   readonly unsent: number
   // Whether unsent work outlives this tab

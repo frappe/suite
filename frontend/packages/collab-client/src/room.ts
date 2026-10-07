@@ -23,6 +23,8 @@ const PERSIST_AFTER_MS = 60_000
 export interface RoomInit {
   doc: Y.Doc
   lineage: string
+  // The last quarantine this copy was built after
+  epoch: number
   canWrite: boolean
   sid: string
   // False while a clientID chosen offline waits for the server to accept it
@@ -41,7 +43,9 @@ export class Room implements CollabRoom {
   blocked: Blocked | null = null
   paused: string | null = null
   appliedThrough = 0
+  stale = false
   private readonly lineage: string
+  private readonly epoch: number
   private writable: boolean
   private bound: boolean
   private readonly own: Outbox
@@ -72,6 +76,7 @@ export class Room implements CollabRoom {
   ) {
     this.doc = init.doc
     this.lineage = init.lineage
+    this.epoch = init.epoch
     this.writable = init.canWrite
     this.bound = init.bound
     this.device = options.device ?? null
@@ -122,7 +127,7 @@ export class Room implements CollabRoom {
   }
 
   pull(): Promise<void> {
-    if (this.closed || this.blocked === 'other_user' || this.blocked === 'lost_read')
+    if (this.closed || this.stale || this.blocked === 'other_user' || this.blocked === 'lost_read')
       return Promise.resolve()
     if (!this.bound) return this.dead ? Promise.resolve() : this.connect()
     return this.connecting ?? this.fetch()
@@ -131,14 +136,16 @@ export class Room implements CollabRoom {
   private fetch(): Promise<void> {
     if (this.closed) return Promise.resolve()
     this.pulling ??= this.options.endpoints
-      .pull(this.appliedThrough)
+      .pull(this.appliedThrough, this.epoch)
       .then((answer) => {
         if (answer.status !== 200) {
           this.refused(readReply(answer), 'lost_read')
           return
         }
-        this.apply(decodeFrame(answer.bytes).rows)
+        const { header, rows } = decodeFrame(answer.bytes)
         this.heard()
+        if (header.state === 'rebuild') return this.outdated()
+        this.apply(rows)
       })
       .catch(() => this.unreachable())
       .finally(() => (this.pulling = null))
@@ -289,6 +296,7 @@ export class Room implements CollabRoom {
         lineage: this.lineage,
         rev: this.appliedThrough,
         canWrite: this.writable,
+        epoch: this.epoch,
       }
       void this.device.store.commit(this.device.doc, copy, bytes).catch(() => {})
     }
@@ -427,6 +435,8 @@ export class Room implements CollabRoom {
     if (blocked) return
     if (!reply.collab) return this.retryAfter(backoff())
     await this.die(reply.collab)
+    // The server quarantined a change of this session, which this copy still holds
+    if (reply.collab === 'client_closed') this.outdated()
   }
 
   // A refusal about who is asking, or a lost right once the signed-in person is confirmed unchanged
@@ -484,6 +494,12 @@ export class Room implements CollabRoom {
     } else if (!this.blocked) {
       this.block('offline')
     }
+  }
+
+  private outdated() {
+    if (this.stale) return
+    this.stale = true
+    this.changed()
   }
 
   private lostStore() {

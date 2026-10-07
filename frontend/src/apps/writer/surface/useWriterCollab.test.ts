@@ -4,12 +4,13 @@ import type { DocumentSession } from '@/apps/drive'
 
 import { useWriterCollab } from './useWriterCollab'
 
-const fake = vi.hoisted(() => ({
-  room: {
+const fake = vi.hoisted(() => {
+  const make = () => ({
     canWrite: true,
     blocked: null as string | null,
     stopped: null as string | null,
     paused: null,
+    stale: false,
     saveState: 'clean',
     unsent: 0,
     onDevice: true,
@@ -19,15 +20,19 @@ const fake = vi.hoisted(() => ({
       return () => {}
     },
     close: async () => {},
+  })
+  return { room: make(), opens: 0, make }
+})
+
+vi.mock('@/apps/writer/collab', () => ({
+  openWriterRoom: async () => {
+    fake.opens++
+    return { state: 'live', room: fake.room }
   },
 }))
 
-vi.mock('@/apps/writer/collab', () => ({
-  openWriterRoom: async () => ({ state: 'live', room: fake.room }),
-}))
-
-async function opened() {
-  const collab = useWriterCollab({ nodeId: 'node-1' } as DocumentSession, () => false)
+async function opened(retainRecovery = () => false) {
+  const collab = useWriterCollab({ nodeId: 'node-1' } as DocumentSession, retainRecovery)
   await collab.open()
   return collab
 }
@@ -72,5 +77,42 @@ describe('writer collab editing state', () => {
     becomes({ blocked: null, saveState: 'clean', canWrite: false })
     expect(collab.allowsEditing.value).toBe(false)
     expect(collab.editingPaused.value).toBe(false)
+  })
+})
+
+describe('writer collab rebuild', () => {
+  it('opens the document again when the room may hold a quarantined change', async () => {
+    fake.room = fake.make()
+    const collab = await opened()
+    const old = fake.room
+    const closed = vi.spyOn(old, 'close')
+    fake.room = fake.make()
+    const opens = fake.opens
+
+    Object.assign(old, { stale: true })
+    old.listeners.forEach((listener) => listener())
+
+    expect([collab.mode.value, collab.room.value]).toEqual(['opening', null])
+    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    expect([collab.mode.value, closed.mock.calls.length, fake.opens - opens]).toEqual([
+      'live',
+      1,
+      1,
+    ])
+  })
+
+  it('without a device copy, keeps unsent work before the old room goes', async () => {
+    const order: string[] = []
+    fake.room = fake.make()
+    const collab = await opened(() => (order.push('kept'), true))
+    const old = fake.room
+    old.close = async () => void order.push('closed')
+    fake.room = fake.make()
+
+    Object.assign(old, { stale: true, unsent: 2, onDevice: false })
+    old.listeners.forEach((listener) => listener())
+
+    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    expect(order).toEqual(['kept', 'closed'])
   })
 })

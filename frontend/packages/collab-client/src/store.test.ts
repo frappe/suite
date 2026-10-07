@@ -37,6 +37,17 @@ const entry = (sid: string, seq: number, bytes: Uint8Array) => ({
 })
 
 describe('device store', () => {
+  it('a quarantine replaces the copy, and a copy from before it is not written over the new one', async () => {
+    const store = await fresh()
+    const copy = (rev: number, epoch: number) => ({ lineage: 'L', rev, canWrite: true, epoch })
+    await store.commit('D', copy(2, 0), typed('quarantined').update)
+    await store.commit('D', copy(1, 1), typed('rebuilt').update)
+    await store.commit('D', copy(3, 0), typed('late').update)
+
+    const kept = (await store.copy('D'))!
+    expect([read(kept.bytes), kept.rev, kept.epoch]).toEqual(['rebuilt', 1, 1])
+  })
+
   it('releases a session only once it holds no entries', async () => {
     const store = await fresh()
     const one = typed('one')

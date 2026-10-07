@@ -39,7 +39,8 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
   const headers = { 'X-Collab-Principal': principal }
   return {
     open: () => transport.requestBytes(OPEN, { node }, { headers }),
-    pull: (since) => transport.requestBytes(PULL, { node, since }, { headers }),
+    pull: (since, epoch) =>
+      transport.requestBytes(PULL, { node, since, q_epoch: epoch }, { headers }),
     push: (body, options) =>
       transport.requestBytes(PUSH, { node }, { body, keepalive: options?.keepalive, headers }),
     session: (sid, claim) =>

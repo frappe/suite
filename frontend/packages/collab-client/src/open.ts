@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 
-import { openError, readReply } from './answers'
+import { CollabOpenError, openError, readReply } from './answers'
 import { decodeFrame } from './frames'
 import { randomHex } from './outbox'
 import { REMOTE, Room } from './room'
@@ -22,6 +22,8 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
   }
   if (opened.status !== 200) throw openError(opened, options)
   const { header, checkpoint, rows } = decodeFrame(opened.bytes)
+  // Only a pull names an epoch, so only a pull is told to rebuild
+  if (header.state === 'rebuild') throw new CollabOpenError(opened.status, 'rebuild')
   if (header.state !== 'live') return { state: header.state }
 
   const doc = new Y.Doc()
@@ -34,7 +36,10 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     else if (answer.status === 403 || answer.status === 404) canWrite = false
     else throw openError(answer, options)
   }
-  const room = new Room({ doc, lineage: header.lineage!, canWrite, sid, bound: true }, options)
+  const room = new Room(
+    { doc, lineage: header.lineage!, epoch: header.q_epoch ?? 0, canWrite, sid, bound: true },
+    options,
+  )
   await room.start({ base: header.base ?? 0, checkpoint, rows })
   return { state: 'live', room }
 }
@@ -71,6 +76,7 @@ async function openOffline(copy: DeviceCopy, options: OpenOptions, unreachable: 
     {
       doc,
       lineage: copy.lineage,
+      epoch: copy.epoch ?? 0,
       canWrite: copy.canWrite,
       sid,
       bound: !copy.canWrite,

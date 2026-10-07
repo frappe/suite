@@ -24,6 +24,8 @@ export interface DeviceCopy {
   lineage: string
   rev: number
   canWrite: boolean
+  // The last quarantine the copy was built after; older copies have none
+  epoch?: number
   bytes: Uint8Array
 }
 
@@ -133,14 +135,18 @@ class IndexedDeviceStore implements DeviceStore {
   async copy(doc: string): Promise<DeviceCopy | null> {
     const tx = this.db.transaction(['meta', 'copies'])
     const [meta, pieces] = await Promise.all([
-      done<{ lineage: string; rev: number; canWrite: boolean } | undefined>(
-        tx.objectStore('meta').get(doc),
-      ),
+      done<Omit<DeviceCopy, 'bytes'> | undefined>(tx.objectStore('meta').get(doc)),
       done<{ bytes: Uint8Array }[]>(tx.objectStore('copies').index('doc').getAll(doc)),
     ])
     if (!meta) return null
     const bytes = pieces.length ? Y.mergeUpdates(pieces.map((piece) => piece.bytes)) : EMPTY_UPDATE
-    return { lineage: meta.lineage, rev: meta.rev, canWrite: meta.canWrite, bytes }
+    return {
+      lineage: meta.lineage,
+      rev: meta.rev,
+      canWrite: meta.canWrite,
+      epoch: meta.epoch,
+      bytes,
+    }
   }
 
   saveSession(session: StoredSession) {
@@ -169,7 +175,11 @@ class IndexedDeviceStore implements DeviceStore {
       const meta = tx.objectStore('meta')
       const stored = meta.get(doc)
       stored.onsuccess = () => {
-        if (stored.result && stored.result.lineage !== copy.lineage) {
+        const was = stored.result
+        const sameLineage = was?.lineage === copy.lineage
+        // A tab that has not heard of a quarantine yet may still hold the quarantined change
+        if (sameLineage && (was.epoch ?? 0) > (copy.epoch ?? 0)) return
+        if (was && (!sameLineage || (was.epoch ?? 0) < (copy.epoch ?? 0))) {
           const pieces = tx.objectStore('copies')
           const keys = pieces.index('doc').getAllKeys(doc)
           keys.onsuccess = () => keys.result.forEach((key) => pieces.delete(key))

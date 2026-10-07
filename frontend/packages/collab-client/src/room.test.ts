@@ -53,6 +53,8 @@ function fakeServer(state = 'live') {
   const pulls: number[] = []
   const finals: boolean[] = []
   const schemas: number[] = []
+  // Rises with every quarantine; a pull from a tab that heard an older one answers `rebuild`
+  const epoch = { now: 0, sent: [] as (number | undefined)[] }
   // Rows through `base` folded into one state, as a compaction leaves them
   const checkpoint = { base: 0, bytes: new Uint8Array() }
   let nextClient = 1
@@ -70,15 +72,19 @@ function fakeServer(state = 'live') {
         lineage: 'L',
         can_write: access.canWrite,
         base: checkpoint.base,
+        q_epoch: epoch.now,
       }
       return frame(header, tail, checkpoint.bytes)
     },
-    async pull(since) {
+    async pull(since, seen) {
       reach('pull')
       pulls.push(since)
+      epoch.sent.push(seen)
       if (access.refuse) return access.refuse
+      if (seen !== undefined && seen < epoch.now)
+        return frame({ state: 'rebuild', proto: 1, q_epoch: epoch.now })
       return frame(
-        { state, proto: 1 },
+        { state, proto: 1, q_epoch: epoch.now },
         rows.filter((row) => row.rev > since),
       )
     },
@@ -129,7 +135,23 @@ function fakeServer(state = 'live') {
     checkpoint.bytes = Y.mergeUpdates(rows.map((row) => row.bytes))
     checkpoint.base = rows.length
   }
-  return { rows, sessions, endpoints, access, calls, pulls, finals, schemas, compact }
+  const quarantine = (rev: number) => {
+    rows[rev - 1].bytes = new Uint8Array()
+    epoch.now++
+  }
+  return {
+    rows,
+    sessions,
+    endpoints,
+    access,
+    calls,
+    pulls,
+    finals,
+    schemas,
+    epoch,
+    compact,
+    quarantine,
+  }
 }
 
 const rooms: CollabRoom[] = []
@@ -247,6 +269,36 @@ describe('collab room', () => {
 
     await behind.pull()
     expect([text(behind), behind.appliedThrough]).toEqual(['zero one ', 3])
+  })
+
+  it('a tab that may hold a quarantined change stops following and asks to be rebuilt', async () => {
+    const server = fakeServer()
+    const a = await join(server.endpoints())
+    const b = await join(server.endpoints())
+    a.doc.getText('t').insert(0, 'bad')
+    await a.flush()
+    await b.pull()
+    expect([text(b), b.stale]).toEqual(['bad', false])
+    server.quarantine(1)
+    const heard = vi.fn()
+    b.onChange(heard)
+
+    await b.pull()
+
+    expect([b.stale, heard.mock.calls.length > 0, server.epoch.sent.at(-1)]).toEqual([
+      true,
+      true,
+      0,
+    ])
+    server.calls.length = 0
+    await b.pull()
+    expect(server.calls).toEqual([])
+    const rebuilt = await join(server.endpoints())
+    const later = await join(server.endpoints())
+    later.doc.getText('t').insert(0, 'ok ')
+    await later.flush()
+    await rebuilt.pull()
+    expect([text(rebuilt), rebuilt.stale, server.epoch.sent.at(-1)]).toEqual(['ok ', false, 1])
   })
 
   it('two writers converge on the server order after a poll', async () => {
@@ -1046,6 +1098,39 @@ describe('collab room on a device', () => {
       'seq_conflict',
     ])
     expect(text(await join(server.endpoints(), { device: kept }))).toBe('')
+  })
+
+  it('a change from a session the server closed is kept aside and the tab asks to be rebuilt', async () => {
+    const server = fakeServer()
+    const kept = await device()
+    const room = await join(server.endpoints(), { device: kept })
+    server.access.refuse = reply(409, { collab: 'client_closed' })
+
+    room.doc.getText('t').insert(0, 'after the quarantine')
+    await room.flush()
+
+    expect([room.stopped, room.stale, room.saveState]).toEqual(['client_closed', true, 'failed'])
+    expect((await kept.store.recovery('D')).map((copy) => copy.reason)).toEqual(['client_closed'])
+  })
+
+  it('a rebuild leaves no quarantined change in the device copy', async () => {
+    const server = fakeServer()
+    const kept = await device()
+    const a = await join(server.endpoints())
+    a.doc.getText('t').insert(0, 'one ')
+    await a.flush()
+    const b = await join(server.endpoints(), { device: kept })
+    a.doc.getText('t').insert(4, 'bad')
+    await a.flush()
+    await b.pull()
+    expect(text(b)).toBe('one bad')
+    server.quarantine(2)
+    await b.pull()
+    await b.close()
+
+    expect(text(await join(server.endpoints(), { device: kept }))).toBe('one ')
+    server.access.online = false
+    expect(text(await join(server.endpoints(), { device: kept }))).toBe('one ')
   })
 
   it('work left from before the document was replaced is kept as a recovery copy, not applied', async () => {

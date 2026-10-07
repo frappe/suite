@@ -1,5 +1,5 @@
 import { CollabOpenError, recoverable, type Blocked, type CollabRoom } from '@suite/collab-client'
-import { computed, ref, shallowRef } from 'vue'
+import { computed, nextTick, ref, shallowRef } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import { openWriterRoom } from '@/apps/writer/collab'
@@ -59,6 +59,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
       const live = opened.room
       room.value = live
       const sync = () => {
+        if (live.stale) return void rebuild(live)
         const stopped = live.saveState === 'failed' || (live.blocked && !recoverable(live.blocked))
         if (stopped && live.unsent && !kept.value) kept.value = retainRecovery()
         status.value = snapshot(live)
@@ -72,6 +73,18 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
         error instanceof CollabOpenError || error instanceof TransportError ? error.status : null
       mode.value = 'failed'
     }
+  }
+
+  // The editor goes before the old room, so nothing typed lands in a room that no longer sends.
+  // The old room sends what it can; the new one takes the rest over from the device
+  async function rebuild(old: CollabRoom) {
+    stopWatching()
+    if (old.unsent && !old.onDevice && !kept.value) kept.value = retainRecovery()
+    room.value = null
+    mode.value = 'opening'
+    await nextTick()
+    await old.close()
+    if (!closed) await open()
   }
 
   function close() {

@@ -2,13 +2,15 @@
 export type OpenState = 'live' | 'disabled' | 'unconverted'
 
 export interface FrameHeader {
-  state: OpenState
+  // `rebuild`: a pull from a tab that may hold a change quarantined since
+  state: OpenState | 'rebuild'
   proto: number
   lineage?: string
   can_write?: boolean
   pace_ms?: number
   // The rev the checkpoint covers; rows follow it
   base?: number
+  q_epoch?: number
 }
 
 export interface Row {
