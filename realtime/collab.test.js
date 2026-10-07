@@ -232,6 +232,34 @@ test("a room shows at most fifty carets, ten of them guests", async () => {
 	[watcher, ...tabs].forEach((tab) => tab.close());
 });
 
+test("a room named over and over or a huge state is turned away before any work, and a room named twice counts once", async () => {
+	const nsp = site();
+	const flooder = connect(nsp);
+	const watcher = connect(nsp, "watcher@example.com");
+	await flooder.rooms([A]);
+	await watcher.rooms([A]);
+	const repeated = Array(26000).fill(A);
+	const huge = { cursor: { at: "huge" }, padding: Array(100000).fill("x".repeat(10)) };
+
+	const start = process.hrtime.bigint();
+	for (let at = 0; at < 24; at++) {
+		flooder.handlers.get("suite_collab_presence")({ rooms: repeated, state: { cursor: { at } } });
+		flooder.presence([A], huge);
+	}
+	const spent = Number(process.hrtime.bigint() - start) / 1e6;
+	flooder.presence([A, A], { cursor: { at: "twice" } });
+	await tick();
+
+	const states = watcher.heard("suite_collab_presence").flatMap((batch) => batch.states);
+	assert.ok(spent < 20, `${spent} ms for 48 hostile messages`);
+	assert.deepEqual(
+		states.map((state) => [state.n, state.state.cursor.at]),
+		[[1, "twice"]],
+	);
+	flooder.close();
+	watcher.close();
+});
+
 test("presence held stays bounded over a thousand reconnects and is gone when everyone leaves", async () => {
 	const nsp = site();
 	const empty = held();

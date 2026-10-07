@@ -58,16 +58,16 @@ const collab_handlers = (socket) => {
 
 	socket.on("suite_collab_presence", (payload) => {
 		try {
-			const now = Math.floor(Date.now() / 1000);
-			if (rate.second !== now) Object.assign(rate, { second: now, count: 0 });
-			if (++rate.count > RATE_PER_SECOND) return;
+			if (!spend()) return;
 			const rooms = payload?.rooms;
+			if (!Array.isArray(rooms) || !rooms.length || rooms.length > ROOMS_MAX) return;
+			const named = new Set(rooms);
+			if (![...named].every((room) => joined.has(room))) return;
 			const state = payload?.state;
-			if (!Array.isArray(rooms) || !rooms.length || !rooms.every((room) => joined.has(room))) return;
 			if (!state || typeof state !== "object" || Array.isArray(state)) return;
-			if (Buffer.byteLength(JSON.stringify(state)) > STATE_MAX) return;
+			if (!fits(state, STATE_MAX) || Buffer.byteLength(JSON.stringify(state)) > STATE_MAX) return;
 			const site = site_of(socket);
-			for (const room of rooms) {
+			for (const room of named) {
 				const entry = site.rooms.get(room)?.get(pid);
 				if (!entry) continue;
 				const caret = state.cursor != null && has_caret_slot(site.rooms.get(room), entry);
@@ -80,6 +80,13 @@ const collab_handlers = (socket) => {
 			schedule();
 		} catch {}
 	});
+
+	// Presence messages a socket may send this second
+	function spend() {
+		const now = Math.floor(Date.now() / 1000);
+		if (rate.second !== now) Object.assign(rate, { second: now, count: 0 });
+		return ++rate.count <= RATE_PER_SECOND;
+	}
 
 	socket.on("disconnect", () => {
 		try {
@@ -139,6 +146,26 @@ function has_caret_slot(members, entry) {
 		if (other.guest) guests++;
 	}
 	return carets < CARETS_MAX && (!entry.guest || guests < GUEST_CARETS_MAX);
+}
+
+// Whether a value's JSON can fit in `budget` bytes, reading no further than that
+function fits(value, budget) {
+	const pending = [value];
+	while (pending.length && budget >= 0) {
+		const item = pending.pop();
+		budget -= 2;
+		if (typeof item === "string") budget -= item.length > budget ? item.length : Buffer.byteLength(item);
+		else if (Array.isArray(item)) {
+			for (let at = 0; at < item.length && budget >= 0; at++, budget--) pending.push(item[at]);
+		} else if (item && typeof item === "object") {
+			for (const key in item) {
+				budget -= key.length + 4;
+				pending.push(item[key]);
+				if (budget < 0) break;
+			}
+		}
+	}
+	return budget >= 0;
 }
 
 function joinable(socket) {
