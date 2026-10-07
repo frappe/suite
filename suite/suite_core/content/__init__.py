@@ -1,9 +1,10 @@
-"""Product-neutral collaboration library.
+"""Product-neutral content layer.
 
-A product (Writer first) keeps each collaborative document as an append-only
-log of Yjs updates in its own tables. This package holds the mechanism and no
-state: the product supplies its table prefix and checks access through Drive
-itself, because `suite_core` never imports Drive or a product.
+Each app's collaborative documents are append-only logs of Yjs updates in
+tables named for the app. This package holds that plumbing; an app plugs in
+with a `ContentAdapterSpec` through the `suite_content_adapters` hook, and
+`suite.composition.content` serves the routes and checks access through Drive,
+because `suite_core` never imports Drive or a product.
 """
 
 from suite.suite_core.content.backfill import backfill_clocks
