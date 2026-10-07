@@ -106,11 +106,15 @@ class TestAdmit(UnitTestCase):
         )
 
     def test_a_full_document_still_takes_deletes_up_to_half_a_mebibyte_past_the_cap(self):
-        capacity.admit(doc_row(state=CAP, tail=0, rows=0), self.deletes, 512 * 2**10, NOW)
+        capacity.admit(doc_row(state=CAP, tail=200, rows=1), self.deletes, 512 * 2**10 - 200, NOW)
 
         self.assertEqual(
-            self.refusal(doc_row(state=CAP, tail=0, rows=0), self.deletes, 512 * 2**10 + 1)[0], "doc_full"
+            self.refusal(doc_row(state=CAP, tail=200, rows=1), self.deletes, 512 * 2**10 - 199)[0],
+            "compacting",
         )
+
+    def test_a_delete_is_never_full_for_good_however_far_past_the_cap(self):
+        capacity.admit(doc_row(state=CAP + 2**20, tail=0, rows=0), self.deletes, 2**20, NOW)
 
     def test_a_tail_of_twenty_thousand_rows_waits_for_a_compaction_however_small(self):
         capacity.admit(doc_row(rows=19_999), self.adds, 1, NOW)

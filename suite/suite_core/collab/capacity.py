@@ -50,7 +50,8 @@ def admit(doc, update: updates.Update, row_bound: int, now: datetime) -> None:
     """Raise `Full` unless the locked control row `doc` has room for a row of `row_bound`.
 
     A push that only deletes gets `DELETE_ROOM` past the cap. With no tail left
-    to compact, nothing can make room, so a push that doesn't fit is full for good.
+    to compact, nothing can make room, so a push that adds and doesn't fit is full
+    for good; one that only deletes is taken, as it can name only structs the state holds.
     """
     state, tail = int(doc.state_bytes), int(doc.tail_bound)
     tail_rows = int(doc.tail_rows)
@@ -61,6 +62,8 @@ def admit(doc, update: updates.Update, row_bound: int, now: datetime) -> None:
     if state + tail + row_bound <= cap and tail_rows < TAIL_ROWS_MAX:
         return
     if not tail_rows:
+        if not adds:
+            return
         raise Full("doc_full", FULL_RETRY_MS)
     wait = max(0, (doc.next_compaction_at - now).total_seconds() * 1000) if doc.next_compaction_at else 0
     raise Full("compacting", int(wait) + int(doc.last_compaction_ms or COMPACTION_MS))
