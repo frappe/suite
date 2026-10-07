@@ -172,7 +172,12 @@ def _push(node: str) -> Response:
     header, payload = collab.parse_push(frappe.request.get_data())
     _authorize(node, drive.EDIT, header.get("principal"))
     doc = _doc(node)
-    answer = collab.push(ADAPTER, doc.id, header, payload, frappe.session.user, SCHEMA)
+    try:
+        answer = collab.push(ADAPTER, doc.id, header, payload, frappe.session.user, SCHEMA)
+    except collab.Refusal as refusal:
+        if refusal.body["collab"] == "compacting":
+            consider_compaction(doc.id, refused=True)
+        raise
     consider_compaction(doc.id, final_from=header["sid"] if header.get("final") is True else None)
     return _json(200, answer)
 

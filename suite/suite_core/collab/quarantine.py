@@ -98,7 +98,7 @@ def quarantine(
                 if not frappe.db.is_duplicate_entry(error):
                     raise
         frappe.db.sql(
-            f"""UPDATE `{table(adapter, "update")}` SET `state` = 'quarantined', `payload` = ''
+            f"""UPDATE `{table(adapter, "update")}` SET `state` = 'quarantined', `payload` = '', `bound` = 0
             WHERE `doc_id` = %s AND `rev` IN %s""",
             (doc_id, tuple(picked)),
         )
@@ -112,6 +112,8 @@ def quarantine(
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "doc")}` SET `q_epoch` = `q_epoch` + 1,
             `tail_bytes` = (SELECT COALESCE(SUM(LENGTH(`payload`)), 0) FROM `{table(adapter, "update")}`
+                WHERE `doc_id` = %(doc)s AND `rev` > %(base)s),
+            `tail_bound` = (SELECT COALESCE(SUM(COALESCE(`bound`, LENGTH(`payload`))), 0) FROM `{table(adapter, "update")}`
                 WHERE `doc_id` = %(doc)s AND `rev` > %(base)s)
             WHERE `id` = %(doc)s""",
             {"doc": doc_id, "base": doc.checkpoint_rev},

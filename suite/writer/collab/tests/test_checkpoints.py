@@ -615,6 +615,18 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.push_bytes(node, [128 * 1024])
         self.assertEqual(self.requested, [self.doc_row(node).id])
 
+    def test_a_tail_that_could_fill_half_the_room_left_asks_even_while_its_bytes_are_few(self):
+        node = self.new_document()
+        self.push_bytes(node, [100])
+        self.set_doc(node, state_bytes=scheduling.STATE_MAX - 512 * 1024, tail_bound=256 * 1024 - 200)
+        self.requested.clear()
+
+        self.push_bytes(node, [100])
+        self.assertEqual(self.requested, [])
+
+        self.push_bytes(node, [100])
+        self.assertEqual(self.requested, [self.doc_row(node).id])
+
     def test_a_closing_tab_asks_for_a_compaction_unless_someone_else_is_typing(self):
         node = self.new_document()
         self.push_bytes(node, [100, 100], final=True)
@@ -739,3 +751,96 @@ class TestWriterCompactionTriggers(CheckpointCase):
         errors = frappe.get_all("Error Log", logged, pluck="error")
         self.assertEqual(len(errors), 1)
         self.assertTrue(errors[0].startswith(f"writer document {doc_id}\n"), errors[0])
+
+
+class TestWriterAdmission(CheckpointCase):
+    """A push waits while it could take the next compaction past the cap (I19)."""
+
+    def setUp(self):
+        super().setUp()
+        self.requested = []
+        enqueue = patch.object(
+            frappe, "enqueue", lambda method, **kwargs: self.requested.append(kwargs["doc_id"])
+        )
+        enqueue.start()
+        self.addCleanup(enqueue.stop)
+
+    def tab(self, node: str) -> tuple[str, int]:
+        sid = uuid.uuid4().hex
+        return sid, answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
+            "client_id"
+        ]
+
+    def push(self, node: str, tab: tuple[str, int], seq: int, update: bytes):
+        response = call(
+            routes.collab_updates_post, node, body=push_body(self.doc_row(node).lineage, *tab, seq, 0, update)
+        )
+        return response.status_code, answer(response)
+
+    def editing(self, cid: int, rows: list[bytes], edit) -> bytes:
+        doc = pycrdt.Doc(client_id=cid)
+        for row in rows:
+            doc.apply_update(row)
+        before = doc.get_state()
+        edit(doc.get("default", type=pycrdt.XmlFragment).children[0])
+        return doc.get_update(before)
+
+    def test_each_row_adds_its_bytes_and_each_word_it_splits_to_the_tail(self):
+        node = self.new_document()
+        first, second = self.tab(node), self.tab(node)
+        abc, de = typed(first[1], ["abc", "de"])
+        inside = self.editing(second[1], [abc, de], lambda text: text.insert(1, "x"))
+
+        for tab, seq, update in ((first, 1, abc), (first, 2, de), (second, 1, inside)):
+            self.assertEqual(self.push(node, tab, seq, update)[0], 200)
+
+        self.assertEqual(self.doc_row(node).tail_bound, len(abc) + len(de) + len(inside) + 32)
+        self.compact(node)
+        self.assertEqual(self.doc_row(node).tail_bound, 0)
+
+    def test_a_push_that_could_take_the_state_past_the_cap_waits_for_a_compaction(self):
+        node = self.new_document()
+        tab = self.tab(node)
+        abc, de = typed(tab[1], ["abc", "de"])
+        self.assertEqual(self.push(node, tab, 1, abc)[0], 200)
+        self.set_doc(node, state_bytes=scheduling.STATE_MAX - len(abc) - len(de) + 1)
+        self.requested.clear()
+
+        self.assertEqual(self.push(node, tab, 2, de), (423, {"collab": "compacting", "retry_ms": 2000}))
+        self.assertEqual((self.row_count(node), self.doc_row(node).tail_bound), (1, len(abc)))
+        self.assertEqual(self.requested, [self.doc_row(node).id])
+
+        self.set_doc(node, state_bytes=scheduling.STATE_MAX - len(abc) - len(de))
+        self.assertEqual(self.push(node, tab, 2, de)[0], 200)
+
+    def test_a_document_at_the_cap_takes_deletes_and_nothing_that_adds(self):
+        node = self.new_document()
+        writing, deleting = self.tab(node), self.tab(node)
+        abc, de = typed(writing[1], ["abc", "de"])
+        self.assertEqual(self.push(node, writing, 1, abc)[0], 200)
+        self.set_doc(node, state_bytes=scheduling.STATE_MAX)
+
+        self.assertEqual(self.push(node, writing, 2, de), (423, {"collab": "doc_full", "retry_ms": 300_000}))
+        removal = self.editing(deleting[1], [abc], lambda text: text.__delitem__(slice(1, 2)))
+        self.assertEqual(self.push(node, deleting, 1, removal)[0], 200)
+        self.assertEqual(self.row_count(node), 2)
+
+    def test_with_no_tail_to_compact_a_push_that_does_not_fit_is_full(self):
+        node = self.new_document()
+        tab = self.tab(node)
+        [abc] = typed(tab[1], ["abc"])
+        self.set_doc(node, state_bytes=scheduling.STATE_MAX - len(abc) + 1)
+
+        self.assertEqual(self.push(node, tab, 1, abc), (423, {"collab": "doc_full", "retry_ms": 300_000}))
+        self.assertEqual((self.row_count(node), self.requested), (0, []))
+
+    def test_tails_stored_before_bounds_were_kept_count_their_bytes(self):
+        node = self.new_document()
+        tab = self.tab(node)
+        [abc] = typed(tab[1], ["abc"])
+        self.assertEqual(self.push(node, tab, 1, abc)[0], 200)
+        self.set_doc(node, tail_bound=0)
+
+        writer_collab.ensure_tables()
+
+        self.assertEqual(self.doc_row(node).tail_bound, len(abc))

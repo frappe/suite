@@ -7,6 +7,7 @@ import {
 	expectConverged,
 	expectSaved,
 	holdDocument,
+	leaveNoRoom,
 	logId,
 	logRows,
 	pastePicture,
@@ -327,6 +328,26 @@ test.describe("Writer collaboration", () => {
 		letPullsThrough();
 		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "true");
 		await expectConverged(testApi, node, [owner.page, collaborator.page], ["Kept line"]);
+	});
+
+	test("an edit that waits for room is saved once a compaction makes it", async ({ owner, testApi }) => {
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Before the cap");
+		await expectSaved(owner.page);
+		const waited: string[] = [];
+		owner.page.on("response", async (response) => {
+			const pushed = response.request().method() === "POST" && response.url().includes("/collab/updates");
+			if (pushed && response.status() === 423)
+				waited.push(((await response.json()) as { collab: string }).collab);
+		});
+
+		await leaveNoRoom(testApi, node);
+		await typeParagraph(owner.page, "After the wait");
+
+		await expect.poll(() => waited, { timeout: 15_000 }).toContain("compacting");
+		await expectConverged(testApi, node, [owner.page], ["Before the cap", "After the wait"], 30_000);
+		const state = await collabState(testApi, node);
+		expect(state.checkpoint_rev).toBeGreaterThan(0);
 	});
 
 	test("a document a newer Writer edited is read-only here and asks for a reload", async ({

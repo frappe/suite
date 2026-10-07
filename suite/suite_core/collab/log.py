@@ -19,7 +19,7 @@ from collections.abc import Sequence
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import ingest
+from suite.suite_core.collab import capacity, ingest
 from suite.suite_core.collab.tables import table
 
 PROTO = 1
@@ -334,10 +334,13 @@ def push(
         raise Refusal(400, "malformed") from None
     if not schema.allows(row.update.names, header["schema"]) or not schema.could_write(row.update):
         raise Refusal(409, "poison")
+    row_bound = capacity.bound(row.update, len(payload))
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
-        f"SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps`, `suspect_held` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE SKIP LOCKED",
+        f"""SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps`, `suspect_held`,
+        `state_bytes`, `tail_rows`, `tail_bound`, `next_compaction_at`, `last_compaction_ms`
+        FROM `{table(adapter, "doc")}` WHERE `id` = %s FOR UPDATE SKIP LOCKED""",
         doc_id,
         as_dict=True,
     )
@@ -359,6 +362,10 @@ def push(
         if answer:
             frappe.db.rollback()
             return answer
+        try:
+            capacity.admit(doc, row.update, row_bound, now_datetime())
+        except capacity.Full as full:
+            raise Refusal(423, full.reason, retry_ms=full.retry_ms) from None
         if header["from"] != acked + 1:
             raise Refusal(409, "seq", acked=acked)
         if header["seen_rev"] > head:
@@ -377,8 +384,8 @@ def push(
         now = now_datetime()
         frappe.db.sql(
             f"""INSERT INTO `{table(adapter, "update")}`
-            (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`, `schema`, `payload`, `sha256`, `seq_shas`, `chain`, `created`)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), UNHEX(%s), %s)""",
+            (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`, `schema`, `payload`, `bound`, `sha256`, `seq_shas`, `chain`, `created`)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, UNHEX(%s), %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), %s)""",
             (
                 doc_id,
                 rev,
@@ -388,6 +395,7 @@ def push(
                 header["cid"],
                 header["schema"],
                 payload.hex(),
+                row_bound,
                 payload_sha.hex(),
                 b"".join(header["shas"]).hex(),
                 chain.hex(),
@@ -396,9 +404,9 @@ def push(
         )
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = %s, `head_chain` = UNHEX(%s),
-            `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s, `schema_steps` = %s
-            WHERE `id` = %s""",
-            (rev, chain.hex(), len(payload), json.dumps(steps), doc_id),
+            `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s, `tail_bound` = `tail_bound` + %s,
+            `schema_steps` = %s WHERE `id` = %s""",
+            (rev, chain.hex(), len(payload), row_bound, json.dumps(steps), doc_id),
         )
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "session")}` SET `acked_seq` = %s, `next_clock` = %s, `last_push_at` = %s

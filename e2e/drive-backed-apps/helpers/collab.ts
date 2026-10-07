@@ -41,6 +41,10 @@ export async function quarantineLast(api: APIRequestContext, node: string, why: 
 	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.quarantine_last", { form: { node, why } }));
 }
 
+/** Count a document's state as big as its tail leaves room for, so its next adding push waits for a compaction. */
+export const leaveNoRoom = (api: APIRequestContext, node: string) =>
+	hook<CollabState>(api, "leave_no_room", node);
+
 /** Mark a document as written from here on by a Writer one schema newer than this site's. */
 export const writeNewerSchema = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "write_newer_schema", node);

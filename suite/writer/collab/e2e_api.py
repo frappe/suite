@@ -7,7 +7,7 @@ import pycrdt
 from frappe.tests.utils import whitelist_for_tests
 
 from suite.suite_core import collab
-from suite.suite_core.collab import compaction, quarantine, suspect
+from suite.suite_core.collab import compaction, quarantine, scheduling, suspect
 from suite.suite_core.collab.tables import KINDS, table
 from suite.writer import collab as writer_collab
 
@@ -61,6 +61,16 @@ def quarantine_last(node: str, why: str) -> dict:
     doc = collab_doc(node)
     quarantine.quarantine(
         writer_collab.ADAPTER, doc["id"], {int(doc["head_rev"])}, why, writer_collab.document_owner
+    )
+    return state(node)
+
+
+@whitelist_for_tests(methods=["POST"])
+def leave_no_room(node: str) -> dict:
+    """Count `node`'s state as big as the tail leaves room for, so its next adding push waits for a compaction."""
+    frappe.db.sql(
+        f"""UPDATE `{table(writer_collab.ADAPTER, "doc")}` SET `state_bytes` = %s - `tail_bound` WHERE `id` = %s""",
+        (scheduling.STATE_MAX, collab_doc(node)["id"]),
     )
     return state(node)
 

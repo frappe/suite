@@ -24,10 +24,13 @@ QUEUE_PAUSE = timedelta(minutes=1)
 paused_until = 0.0
 
 
-def consider(adapter: str, doc_id: str, method: str, *, final_from: str | None = None) -> None:
-    """Request a compaction if the document is due. `final_from` names a tab's session that is hiding or closing."""
+def consider(
+    adapter: str, doc_id: str, method: str, *, final_from: str | None = None, refused: bool = False
+) -> None:
+    """Request a compaction if the document is due. `final_from` names a tab's session that is hiding or closing;
+    `refused`: a push was just refused for want of room, which only a compaction makes."""
     doc = frappe.db.sql(
-        f"""SELECT `d`.`head_rev`, `d`.`checkpoint_rev`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`,
+        f"""SELECT `d`.`head_rev`, `d`.`checkpoint_rev`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`, `d`.`tail_bound`,
         `d`.`next_compaction_at`, `d`.`suspect`, `u`.`created` AS `oldest`
         FROM `{table(adapter, "doc")}` `d` LEFT JOIN `{table(adapter, "update")}` `u`
         ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
@@ -37,8 +40,8 @@ def consider(adapter: str, doc_id: str, method: str, *, final_from: str | None =
     )
     if not doc:
         return
-    closing = False
-    if final_from:
+    closing = refused
+    if final_from and not closing:
         closing = not frappe.db.sql(
             f"""SELECT 1 FROM `{table(adapter, "session")}` WHERE `doc_id` = %s AND `sid` != %s
             AND `last_push_at` > %s LIMIT 1""",
@@ -49,7 +52,8 @@ def consider(adapter: str, doc_id: str, method: str, *, final_from: str | None =
 
 
 def due(doc, now, *, closing: bool = False) -> bool:
-    """Whether a document's tail calls for a compaction now. `closing`: the tab that closed was the last one typing.
+    """Whether a document's tail calls for a compaction now. `closing`: the tab that closed was the last one typing,
+    or a push waits for room.
 
     A tail is big once it passes a quarter of the state or half the room left
     under the cap, whichever is less. The room term is hysteresis: a document
@@ -63,6 +67,7 @@ def due(doc, now, *, closing: bool = False) -> bool:
     return (
         closing
         or int(doc.tail_bytes) >= max(TAIL_MIN, min(state // 4, (STATE_MAX - state) // 2))
+        or int(doc.tail_bound) >= max(TAIL_MIN, (STATE_MAX - state) // 2)
         or int(doc.tail_rows) >= TAIL_ROWS
         or (doc.oldest is not None and doc.oldest <= now - AGE)
     )

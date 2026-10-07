@@ -108,6 +108,7 @@ class TestQuarantine(CheckpointCase):
         a.typed(0, "alpha")
         b = Tab(self, node)
         b.typed(0, "beta ")
+        kept = self.doc_row(node).tail_bound
         a.typed(5, " gamma")
         a.typed(11, " delta")
 
@@ -123,7 +124,7 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual((self.closed(node, a), self.closed(node, b)), (True, False))
         doc = self.doc_row(node)
         self.assertEqual((doc.q_epoch, doc.head_rev), (1, 4))
-        self.assertEqual(doc.tail_bytes, len(a.sent[0]) + len(b.sent[0]))
+        self.assertEqual((doc.tail_bytes, doc.tail_bound), (len(a.sent[0]) + len(b.sent[0]), kept))
 
         self.compact(node)
         [(through, state, _integrated)] = self.checkpoints_of(node)

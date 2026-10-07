@@ -38,6 +38,8 @@ def ensure_tables(adapter: str) -> None:
         "`state_bytes` bigint unsigned NOT NULL DEFAULT 0",
         "`tail_rows` bigint unsigned NOT NULL DEFAULT 0",
         "`tail_bytes` bigint unsigned NOT NULL DEFAULT 0",
+        # The most the tail can add to the next compaction: the sum of its rows' bounds (capacity.bound)
+        "`tail_bound` bigint unsigned NOT NULL DEFAULT 0",
         "`compaction_failures` int unsigned NOT NULL DEFAULT 0",
         "`next_compaction_at` datetime(6) NULL",
         "`last_compaction_ms` int unsigned NULL",
@@ -67,6 +69,10 @@ def ensure_tables(adapter: str) -> None:
     frappe.db.sql_ddl(
         f"ALTER TABLE `{table(adapter, 'doc')}` ADD INDEX IF NOT EXISTS `next_compaction_at` (`next_compaction_at`)"
     )
+    # A bound is never below its row's bytes, so this only meets tails stored before bounds were kept
+    frappe.db.sql(
+        f"UPDATE `{table(adapter, 'doc')}` SET `tail_bound` = `tail_bytes` WHERE `tail_bound` < `tail_bytes`"
+    )
     frappe.db.sql_ddl(
         f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "update")}` (
             `doc_id` varchar(20) NOT NULL,
@@ -95,6 +101,10 @@ def ensure_tables(adapter: str) -> None:
     # A quarantined row keeps its rev, sha and chain; its payload is emptied and kept as a recovery row
     frappe.db.sql_ddl(
         f"ALTER TABLE `{table(adapter, 'update')}` ADD COLUMN IF NOT EXISTS `state` varchar(20) NOT NULL DEFAULT 'ok'"
+    )
+    # What the row can add to a compaction; rows stored before it count their bytes
+    frappe.db.sql_ddl(
+        f"ALTER TABLE `{table(adapter, 'update')}` ADD COLUMN IF NOT EXISTS `bound` bigint unsigned NULL AFTER `payload`"
     )
     frappe.db.sql_ddl(
         f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "session")}` (
