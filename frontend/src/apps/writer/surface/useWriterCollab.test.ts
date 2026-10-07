@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 
@@ -38,8 +39,12 @@ async function opened(retainRecovery = () => false) {
 }
 
 function becomes(change: Partial<typeof fake.room>) {
-  Object.assign(fake.room, change)
-  for (const listener of fake.room.listeners) listener()
+  becomesOn(fake.room, change)
+}
+
+function becomesOn(room: typeof fake.room, change: Partial<typeof fake.room>) {
+  Object.assign(room, change)
+  for (const listener of room.listeners) listener()
 }
 
 describe('writer collab editing state', () => {
@@ -114,5 +119,26 @@ describe('writer collab rebuild', () => {
 
     await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
     expect(order).toEqual(['kept', 'closed'])
+  })
+
+  it('without a device copy or a kept copy, leaves the unsent work on screen until it is sent', async () => {
+    fake.room = fake.make()
+    const collab = await opened(() => false)
+    const old = fake.room
+    const closed = vi.spyOn(old, 'close')
+    fake.room = fake.make()
+    const opens = fake.opens
+
+    becomesOn(old, { stale: true, unsent: 2, onDevice: false })
+    await nextTick()
+    expect([collab.mode.value, collab.room.value, closed.mock.calls.length]).toEqual([
+      'live',
+      old,
+      0,
+    ])
+
+    becomesOn(old, { unsent: 0 })
+    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    expect(fake.opens - opens).toBe(1)
   })
 })

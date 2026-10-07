@@ -59,7 +59,11 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
       const live = opened.room
       room.value = live
       const sync = () => {
-        if (live.stale) return void rebuild(live)
+        if (live.stale) {
+          if (live.unsent && !live.onDevice && !kept.value) kept.value = retainRecovery()
+          // Unsent work held nowhere else stays on screen in the old room until it is sent
+          if (!live.unsent || live.onDevice || kept.value) return void rebuild(live)
+        }
         const stopped = live.saveState === 'failed' || (live.blocked && !recoverable(live.blocked))
         if (stopped && live.unsent && !kept.value) kept.value = retainRecovery()
         status.value = snapshot(live)
@@ -79,7 +83,6 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   // The old room sends what it can; the new one takes the rest over from the device
   async function rebuild(old: CollabRoom) {
     stopWatching()
-    if (old.unsent && !old.onDevice && !kept.value) kept.value = retainRecovery()
     room.value = null
     mode.value = 'opening'
     await nextTick()
