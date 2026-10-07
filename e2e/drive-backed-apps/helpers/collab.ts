@@ -36,6 +36,11 @@ export async function holdDocument(api: APIRequestContext, node: string, why: st
 export const releaseDocument = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "release", node);
 
+/** Quarantine a document's last row, as a judge that finds it bad does. */
+export async function quarantineLast(api: APIRequestContext, node: string, why: string): Promise<CollabState> {
+	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.quarantine_last", { form: { node, why } }));
+}
+
 /** Mark a document as written from here on by a Writer one schema newer than this site's. */
 export const writeNewerSchema = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "write_newer_schema", node);

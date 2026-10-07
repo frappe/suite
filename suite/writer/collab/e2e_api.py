@@ -7,7 +7,7 @@ import pycrdt
 from frappe.tests.utils import whitelist_for_tests
 
 from suite.suite_core import collab
-from suite.suite_core.collab import compaction, suspect
+from suite.suite_core.collab import compaction, quarantine, suspect
 from suite.suite_core.collab.tables import KINDS, table
 from suite.writer import collab as writer_collab
 
@@ -52,6 +52,16 @@ def hold(node: str, why: str) -> dict:
 def release(node: str) -> dict:
     """Clear `node`'s hold as an admin does from the suspect list."""
     suspect.release(writer_collab.ADAPTER, collab_doc(node)["id"])
+    return state(node)
+
+
+@whitelist_for_tests(methods=["POST"])
+def quarantine_last(node: str, why: str) -> dict:
+    """Quarantine `node`'s last row, as a judge that finds it bad does."""
+    doc = collab_doc(node)
+    quarantine.quarantine(
+        writer_collab.ADAPTER, doc["id"], {int(doc["head_rev"])}, why, writer_collab.document_owner
+    )
     return state(node)
 
 

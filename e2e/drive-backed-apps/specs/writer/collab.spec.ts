@@ -11,6 +11,7 @@ import {
 	logRows,
 	pastePicture,
 	picturesLoaded,
+	quarantineLast,
 	releaseDocument,
 	serverText,
 	takeVersion,
@@ -292,6 +293,40 @@ test.describe("Writer collaboration", () => {
 			"Before the hold",
 			"After the release",
 		]);
+	});
+
+	test("a quarantined change leaves every tab, and the writer's typing after it is kept aside", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		await openWriterDocument(owner.page, node);
+		await openWriterDocument(collaborator.page, node);
+		await typeParagraph(owner.page, "Kept line");
+		await expectSaved(owner.page);
+		await typeParagraph(collaborator.page, "Bad line");
+		await expectSaved(collaborator.page);
+		await expect(writerEditor(owner.page)).toContainText("Bad line");
+
+		// Held pulls let the collaborator's next push be the one that learns its session was closed
+		let letPullsThrough = () => {};
+		const pullsHeld = new Promise<void>((resolve) => {
+			letPullsThrough = resolve;
+		});
+		await collaborator.page.route("**/collab/updates**", async (route) => {
+			if (route.request().method() === "GET") await pullsHeld;
+			await route.fallback();
+		});
+		await quarantineLast(testApi, node, "kernel_failed");
+		await expect(writerEditor(owner.page)).not.toContainText("Bad line");
+
+		await typeParagraph(collaborator.page, "After the cut");
+		await expect(
+			collaborator.page.getByText("Your last edits couldn't be saved here and were kept as a recovery copy."),
+		).toBeVisible();
+		letPullsThrough();
+		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "true");
+		await expectConverged(testApi, node, [owner.page, collaborator.page], ["Kept line"]);
 	});
 
 	test("a document a newer Writer edited is read-only here and asks for a reload", async ({
