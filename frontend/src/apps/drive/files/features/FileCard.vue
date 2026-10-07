@@ -32,7 +32,7 @@
           aria-hidden="true"
         />
       </span>
-      <span class="relative flex w-full min-w-0 flex-col gap-1.5">
+      <span class="relative flex w-full min-w-0 flex-col gap-0.5">
         <span class="flex w-full min-w-0 items-center">
           <span class="truncate text-base font-medium text-ink-gray-8" :title="node.title">{{
             node.title

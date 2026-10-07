@@ -266,10 +266,11 @@
                 <Dropdown v-if="!selectionMode" :options="menuOptions(row)" align="end">
                   <!-- Over a thumbnail the button gets a dark backdrop, so it reads on any image. -->
                   <Button
-                    class="absolute end-2 top-2"
-                    :class="
-                      onImage && '!bg-black/30 !text-white backdrop-blur-sm hover:!bg-black/50'
-                    "
+                    class="absolute end-2 top-2 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/card:opacity-100 [@media(hover:hover)]:group-focus-within/card:opacity-100 [@media(hover:hover)]:data-[state=open]:opacity-100"
+                    :class="[
+                      onImage && '!bg-black/30 !text-white backdrop-blur-sm hover:!bg-black/50',
+                      isHighlighted(row) && '[@media(hover:hover)]:opacity-100',
+                    ]"
                     icon="lucide-ellipsis"
                     variant="ghost"
                     :aria-label="`Actions for ${row.title}`"
