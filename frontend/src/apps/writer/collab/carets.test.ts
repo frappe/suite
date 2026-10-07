@@ -15,7 +15,10 @@ vi.mock('@/apps/writer/drive', () => ({ searchUsers }))
 
 const PEER = 2 ** 31 + 7
 const editors: Editor[] = []
-afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
+afterEach(() => {
+  editors.splice(0).forEach((editor) => editor.destroy())
+  vi.useRealTimers()
+})
 
 function open() {
   const doc = new Y.Doc()
@@ -40,10 +43,10 @@ function open() {
   return { editor, awareness, doc }
 }
 
-function caretAt(editor: Editor, at: number) {
+function caretAt(editor: Editor, at: number, to = at) {
   const { type, binding } = ySyncPluginKey.getState(editor.state)
-  const position = absolutePositionToRelativePosition(at, type, binding.mapping)
-  return { anchor: position, head: position }
+  const place = (pos: number) => absolutePositionToRelativePosition(pos, type, binding.mapping)
+  return { anchor: place(at), head: place(to) }
 }
 
 function peer(awareness: Awareness) {
@@ -67,6 +70,16 @@ function caretAfter(editor: Editor) {
   range.setEndBefore(caret)
   return range.toString()
 }
+
+const shades = (editor: Editor) =>
+  [...editor.view.dom.querySelectorAll<HTMLElement>('.collaboration-carets__selection')].map(
+    (shade) => [shade.textContent, shade.style.backgroundColor],
+  )
+
+const idle = (editor: Editor) =>
+  editor.view.dom
+    .querySelector('.collaboration-carets__label')
+    ?.classList.contains('collaboration-carets__label--idle')
 
 const labels = (editor: Editor) =>
   [...editor.view.dom.querySelectorAll('.collaboration-carets__label')].map(
@@ -124,6 +137,40 @@ describe('Writer carets', () => {
 
     expect([placed, waiting, arrived, cleared]).toEqual(['he', 'he', 'hello wo', null])
     expect(caretAfter(editor)).toBeNull()
+  })
+
+  it('shades what another person selected in their colour, and nothing for a caret alone', async () => {
+    searchUsers.mockResolvedValue([])
+    const { editor, awareness } = open()
+    const peerSays = peer(awareness)
+    const user = { id: 'bea@x.com', color: '#3E63DD' }
+
+    peerSays({ user, cursor: caretAt(editor, 2, 5) })
+    await tick()
+    const selected = shades(editor)
+    peerSays({ user, cursor: caretAt(editor, 3) })
+    await tick()
+
+    expect(selected).toEqual([['ell', 'rgba(62, 99, 221, 0.2)']])
+    expect(shades(editor)).toEqual([])
+  })
+
+  it('fades a name a few seconds after its person stops, and shows it again when they move', async () => {
+    vi.useFakeTimers()
+    searchUsers.mockResolvedValue([])
+    const { editor, awareness } = open()
+    const peerSays = peer(awareness)
+    const user = { id: 'bea@x.com', color: '#3E63DD' }
+
+    peerSays({ user, cursor: caretAt(editor, 3) })
+    await vi.advanceTimersByTimeAsync(2000)
+    const typing = idle(editor)
+    await vi.advanceTimersByTimeAsync(1500)
+    const still = idle(editor)
+    peerSays({ user, cursor: caretAt(editor, 4) })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect([typing, still, idle(editor)]).toEqual([false, true, false])
   })
 
   it('lists each signed-in person once and every guest tab apart', () => {

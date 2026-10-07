@@ -1,5 +1,6 @@
 import type { Peer, RoomPresence } from '@suite/collab-client'
 import { Extension } from '@tiptap/core'
+import { Plugin } from '@tiptap/pm/state'
 import { relativePositionToAbsolutePosition, yCursorPlugin, ySyncPluginKey } from '@tiptap/y-tiptap'
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
@@ -45,6 +46,7 @@ export const Carets = Extension.create<{ presence: RoomPresence | null }>({
         ) !== null
       )
     }
+    const names = naming(this.options.presence.awareness)
     return [
       yCursorPlugin(holding(this.options.presence.awareness, placed), {
         awarenessStateFilter: (_: number, id: number) => id !== 0,
@@ -56,17 +58,67 @@ export const Carets = Extension.create<{ presence: RoomPresence | null }>({
           label.classList.add('collaboration-carets__label')
           label.style.backgroundColor = user.color
           label.textContent = peerName(user.id, pid)
+          names.track(pid, label)
           // The plugin keeps a caret's element while the pid stays, so a name that arrives later is filled in
           if (user.id !== 'Guest')
             void lookUp(user.id).then(() => (label.textContent = peerName(user.id, pid)))
           caret.append(label)
           return caret
         },
-        selectionBuilder: () => ({}),
+        selectionBuilder: (user: { color: string }) => ({
+          class: 'collaboration-carets__selection',
+          style: `background-color: ${user.color}${SHADE}`,
+        }),
       }),
+      new Plugin({ view: () => ({ destroy: names.destroy }) }),
     ]
   },
 })
+
+// Alpha appended to a peer's #rrggbb colour, light enough to read the text through two overlapping shades
+const SHADE = '33'
+const NAME_SHOWN_MS = 3000
+
+// A caret's name shows while its peer moves or types, and fades once they have been still a while
+function naming(awareness: Awareness) {
+  const labels = new Map<number, HTMLElement>()
+  const timers = new Map<number, ReturnType<typeof setTimeout>>()
+  const carets = new Map<number, string>()
+  const idle = (pid: number, still: boolean) =>
+    labels.get(pid)?.classList.toggle('collaboration-carets__label--idle', still)
+  const forget = (pid: number) => {
+    clearTimeout(timers.get(pid))
+    for (const map of [labels, timers, carets]) map.delete(pid)
+  }
+  const changed = ({ added, updated, removed }: Record<string, number[]>) => {
+    removed.forEach(forget)
+    for (const pid of [...added, ...updated]) {
+      const caret = JSON.stringify(awareness.getStates().get(pid)?.cursor ?? null)
+      if (carets.get(pid) === caret) continue
+      carets.set(pid, caret)
+      idle(pid, false)
+      clearTimeout(timers.get(pid))
+      timers.set(
+        pid,
+        setTimeout(() => {
+          timers.delete(pid)
+          idle(pid, true)
+        }, NAME_SHOWN_MS),
+      )
+    }
+  }
+  awareness.on('change', changed)
+  return {
+    track(pid: number, label: HTMLElement) {
+      labels.set(pid, label)
+      idle(pid, carets.has(pid) && !timers.has(pid))
+    },
+    destroy() {
+      awareness.off('change', changed)
+      for (const pid of [...timers.keys()]) forget(pid)
+    },
+  }
+}
 
 type Caret = { anchor: unknown; head: unknown }
 
