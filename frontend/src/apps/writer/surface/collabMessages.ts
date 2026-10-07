@@ -18,6 +18,8 @@ interface Standing {
   held: string | null
   // A newer editor wrote to the document, so this tab only shows it
   newerSchema: boolean
+  // Why saving waits; `doc_full` lasts until the document gets smaller
+  paused: string | null
   onDevice: boolean
   // The editor's HTML was kept in this browser as a recovery copy
   kept: boolean
@@ -27,6 +29,7 @@ interface Standing {
 const STOPS: Record<string, string> = {
   poison: "This document can't hold a change made in this tab, so saving stopped.",
   browser: "This document can't be edited in this browser version.",
+  too_large: 'A change in this tab is too large to save. Insert large images as files.',
 }
 // Stops a reload would only repeat
 const LASTING = new Set(['browser'])
@@ -41,6 +44,7 @@ export function bannerFor({
   stopped,
   held,
   newerSchema,
+  paused,
   onDevice,
   kept,
   unsent,
@@ -62,6 +66,12 @@ export function bannerFor({
         : `${text} Your unsent changes save once it is released.${keepOpen}`,
     }
   }
+  if (paused === 'doc_full' && !blocked && !stopped)
+    return {
+      text: onDevice
+        ? "This document has reached its size limit, so your latest changes aren't saved. They're kept on this device."
+        : `This document has reached its size limit, so your latest changes aren't saved.${keepOpen}`,
+    }
   switch (blocked) {
     case 'signed_out':
       return {

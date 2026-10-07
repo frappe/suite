@@ -76,6 +76,16 @@ def leave_no_room(node: str) -> dict:
 
 
 @whitelist_for_tests(methods=["POST"])
+def fill_up(node: str) -> dict:
+    """Count `node`'s state as big as a document may be, so nothing that adds is taken again."""
+    frappe.db.sql(
+        f"""UPDATE `{table(writer_collab.ADAPTER, "doc")}` SET `state_bytes` = %s WHERE `id` = %s""",
+        (scheduling.STATE_MAX, collab_doc(node)["id"]),
+    )
+    return state(node)
+
+
+@whitelist_for_tests(methods=["POST"])
 def write_newer_schema(node: str) -> dict:
     """Mark `node`'s rows as written from here on by an editor one schema newer, as its pushes would."""
     doc = collab_doc(node)

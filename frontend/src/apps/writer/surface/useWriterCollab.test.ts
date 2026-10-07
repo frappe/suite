@@ -118,6 +118,18 @@ describe('writer collab editing state', () => {
       { text: 'This document was edited in a newer version of Writer. Reload to edit it.' },
     ])
   })
+
+  it('tells a writer their changes wait on a full document, and not on a busy one', async () => {
+    fake.room = fake.make()
+    const collab = await opened()
+    becomes({ saveState: 'unsaved', unsent: 1, paused: 'compacting' })
+    const busy = collab.banner.value
+    becomes({ paused: 'doc_full' })
+    expect([busy, collab.banner.value?.text]).toEqual([
+      null,
+      "This document has reached its size limit, so your latest changes aren't saved. They're kept on this device.",
+    ])
+  })
 })
 
 describe('writer collab rebuild', () => {

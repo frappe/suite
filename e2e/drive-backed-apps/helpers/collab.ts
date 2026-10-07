@@ -46,6 +46,9 @@ export async function quarantineLast(api: APIRequestContext, node: string, why: 
 export const leaveNoRoom = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "leave_no_room", node);
 
+/** Count a document as big as one may be, so the server takes no more adding changes. */
+export const fillUp = (api: APIRequestContext, node: string) => hook<CollabState>(api, "fill_up", node);
+
 /** Mark a document as written from here on by a Writer one schema newer than this site's. */
 export const writeNewerSchema = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "write_newer_schema", node);

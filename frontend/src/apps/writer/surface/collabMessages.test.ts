@@ -10,6 +10,7 @@ const standing = {
   stopped: null,
   held: null,
   newerSchema: false,
+  paused: null,
   onDevice: true,
   kept: false,
   unsent: 1,
@@ -90,6 +91,21 @@ describe('collab stop copy', () => {
   it('says why the server will never save a change', () => {
     expect(read(bannerFor({ ...standing, stopped: 'poison', kept: true }))).toBe(
       "This document can't hold a change made in this tab, so saving stopped. Unsent changes were kept as a recovery copy. Reload to keep editing.",
+    )
+  })
+
+  it('says a change too large to save should go in as files', () => {
+    expect(read(bannerFor({ ...standing, stopped: 'too_large', kept: true }))).toBe(
+      'A change in this tab is too large to save. Insert large images as files. Unsent changes were kept as a recovery copy. Reload to keep editing.',
+    )
+  })
+
+  it('says a full document is not saving the latest changes, and where they are', () => {
+    expect(read(bannerFor({ ...standing, paused: 'doc_full' }))).toBe(
+      "This document has reached its size limit, so your latest changes aren't saved. They're kept on this device.",
+    )
+    expect(read(bannerFor({ ...standing, paused: 'doc_full', onDevice: false }))).toBe(
+      "This document has reached its size limit, so your latest changes aren't saved. Keep this tab open.",
     )
   })
 

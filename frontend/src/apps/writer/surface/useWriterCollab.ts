@@ -121,13 +121,15 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const banner = computed(() => {
     const now = status.value
     if (!live.value || !now) return null
-    if (!(now.blocked || now.held || now.newerSchema || now.saveState === 'failed'))
+    const full = now.paused === 'doc_full'
+    if (!(now.blocked || now.held || now.newerSchema || full || now.saveState === 'failed'))
       return setAside.value ? SET_ASIDE : null
     return bannerFor({
       blocked: now.blocked,
       stopped: now.stopped,
       held: now.held,
       newerSchema: now.newerSchema,
+      paused: now.paused,
       onDevice: now.onDevice,
       kept: kept.value,
       unsent: now.unsent,

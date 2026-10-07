@@ -6,6 +6,7 @@ import {
 	enableCollab,
 	expectConverged,
 	expectSaved,
+	fillUp,
 	holdDocument,
 	leaveNoRoom,
 	logId,
@@ -401,6 +402,36 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 		const saved = (await serverText(testApi, node)).join("");
 		expect([saved.includes("Before the huge paste"), saved.includes("zzzz")]).toEqual([true, false]);
+	});
+
+	test("a full document keeps the latest typing and says it isn't saved", async ({ owner, testApi }) => {
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Before the document filled");
+		await expectSaved(owner.page);
+
+		await fillUp(testApi, node);
+		await typeParagraph(owner.page, "After it filled");
+
+		await expect(
+			owner.page.getByText("This document has reached its size limit, so your latest changes aren't saved."),
+		).toBeVisible();
+		await expect(writerEditor(owner.page)).toContainText("After it filled");
+		const saved = (await serverText(testApi, node)).join("");
+		expect([saved.includes("Before the document filled"), saved.includes("After it filled")]).toEqual([true, false]);
+	});
+
+	test("a change the server finds too large stops saving and says to insert images as files", async ({ owner }) => {
+		// The paste guard keeps real changes under the cap, so the server's answer to a bigger one is played here
+		await owner.page.route("**/collab/stage/**", (route) =>
+			route.fulfill({ status: 413, contentType: "application/json", body: JSON.stringify({ collab: "too_large" }) }),
+		);
+		await openWriterDocument(owner.page, node);
+
+		await pasteText(owner.page, "w".repeat(700_000));
+
+		await expect(
+			owner.page.getByText("A change in this tab is too large to save. Insert large images as files."),
+		).toBeVisible();
 	});
 
 	test("a document a newer Writer edited is read-only here and asks for a reload", async ({
