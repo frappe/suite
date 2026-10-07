@@ -35,8 +35,8 @@ vi.mock('@/apps/writer/collab', () => ({
   },
 }))
 
-async function opened(retainRecovery = () => false) {
-  const collab = useWriterCollab({ nodeId: 'node-1' } as DocumentSession, retainRecovery)
+async function opened(retainRecovery = () => false, mayEdit = () => true) {
+  const collab = useWriterCollab({ nodeId: 'node-1' } as DocumentSession, retainRecovery, mayEdit)
   await collab.open()
   return collab
 }
@@ -118,6 +118,15 @@ describe('writer collab editing state', () => {
       false,
       { text: 'This document was edited in a newer version of Writer. Reload to edit it.' },
     ])
+  })
+
+  it('tells a reader of a document a newer Writer edited to reload to see it', async () => {
+    fake.room = fake.make()
+    const collab = await opened(undefined, () => false)
+    becomes({ canWrite: false, newerSchema: true })
+    expect(collab.banner.value).toEqual({
+      text: 'This document was edited in a newer version of Writer. Reload to see its latest changes.',
+    })
   })
 
   it('tells a writer their changes wait on a refusing network, and not on a busy one', async () => {

@@ -18,6 +18,8 @@ interface Standing {
   held: string | null
   // A newer editor wrote to the document, so this tab only shows it
   newerSchema: boolean
+  // The person may edit the document in an editor that can show it
+  editor: boolean
   // Why saving waits
   paused: string | null
   // Saving stopped with work unsent
@@ -61,6 +63,7 @@ export function bannerFor({
   stopped,
   held,
   newerSchema,
+  editor,
   paused,
   failed,
   atLimit,
@@ -75,7 +78,9 @@ export function bannerFor({
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
   if (newerSchema && !blocked && !stopped)
-    return { text: 'This document was edited in a newer version of Writer. Reload to edit it.' }
+    return {
+      text: `This document was edited in a newer version of Writer. Reload to ${editor ? 'edit it' : 'see its latest changes'}.`,
+    }
   if (held && !blocked && !stopped) {
     const text =
       held === 'bad_checkpoint'

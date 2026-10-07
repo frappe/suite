@@ -10,6 +10,7 @@ const standing = {
   stopped: null,
   held: null,
   newerSchema: false,
+  editor: true,
   paused: null,
   failed: false,
   atLimit: false,
@@ -163,6 +164,12 @@ describe('collab stop copy', () => {
   it('asks for a reload when a newer Writer edited the document', () => {
     expect(read(bannerFor({ ...standing, newerSchema: true }))).toBe(
       'This document was edited in a newer version of Writer. Reload to edit it.',
+    )
+  })
+
+  it('asks a reader to reload to see the changes, not to edit', () => {
+    expect(read(bannerFor({ ...standing, newerSchema: true, editor: false, unsent: 0 }))).toBe(
+      'This document was edited in a newer version of Writer. Reload to see its latest changes.',
     )
   })
 

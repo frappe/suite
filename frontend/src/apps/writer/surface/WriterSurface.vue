@@ -122,7 +122,7 @@ const {
   openFailure,
   open: openCollab,
   close: closeCollab,
-} = useWriterCollab(props.session, retainRecovery)
+} = useWriterCollab(props.session, retainRecovery, () => writes.writable.value)
 
 const writes = createWriteGate(props.session, () => {
   const unsaved = dirty.value || (collabLive.value && saveState.value !== 'clean')

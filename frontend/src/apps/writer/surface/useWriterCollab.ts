@@ -37,8 +37,13 @@ const snapshot = (room: CollabRoom): RoomStatus => ({
 })
 
 // A Writer document's live room: opening it, mirroring its state for the page, and closing it.
-// `retainRecovery` keeps the editor's HTML in this browser when the room stops holding unsent work
-export function useWriterCollab(session: DocumentSession, retainRecovery: () => boolean) {
+// `retainRecovery` keeps the editor's HTML in this browser when the room stops holding unsent work.
+// `mayEdit` is whether the person may edit the document
+export function useWriterCollab(
+  session: DocumentSession,
+  retainRecovery: () => boolean,
+  mayEdit: () => boolean,
+) {
   const mode = shallowRef<CollabMode>('opening')
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
@@ -126,6 +131,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
     if (!live.value || !now) return null
     return bannerFor({
       ...now,
+      editor: mayEdit(),
       failed: now.saveState === 'failed',
       kept: kept.value,
       setAside: setAside.value,
