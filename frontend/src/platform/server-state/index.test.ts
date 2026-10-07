@@ -233,7 +233,7 @@ describe('Suite API references and shared client', () => {
       .mutation(api.mail.screening.set, {
         account: 'alice',
         emails: ['sender@example.com'],
-        action: 'Reject',
+        action: 'Spam',
       })
       .catch((cause) => cause)
     await vi.waitFor(() =>
@@ -574,7 +574,6 @@ describe('Mail settings through the shared client', () => {
           enable_screening: 0,
           block_remote_images: 0,
           default_outgoing_email: null,
-          on_mark_as_junk: 'Ask to Block Sender',
         },
       ]),
     )

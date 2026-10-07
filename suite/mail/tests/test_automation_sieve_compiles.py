@@ -20,9 +20,8 @@ def render_automation_script() -> str:
     from suite.mail.doctype.sieve_script import sieve_script
 
     screened = [
-        frappe._dict(email="rejected@example.org", action="Reject"),
-        frappe._dict(email="@rejected.example.org", action="Reject"),
         frappe._dict(email="spammer@example.org", action="Spam"),
+        frappe._dict(email="@spammers.example.org", action="Spam"),
         frappe._dict(email="boss@example.org", action="Accepted"),
         frappe._dict(email="@partner.example.org", action="Accepted"),
     ]

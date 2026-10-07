@@ -71,7 +71,7 @@ class TestMailScreening(StalwartIntegrationTestCase):
                 "Nuke",
             )
             self.assertRaises(
-                frappe.ValidationError, screen_email_address, self.account, "not-an-email", "Reject"
+                frappe.ValidationError, screen_email_address, self.account, "not-an-email", "Spam"
             )
 
             unscreen_email_addresses(self.account, [stranger])
@@ -167,24 +167,32 @@ class TestMailScreening(StalwartIntegrationTestCase):
         )
         self.assertNotIn(subject, [t["subject"] for t in self.get_inbox_threads(self.screener)])
 
-    def test_rejected_sender_is_discarded(self):
-        rejected = self.create_member()
+    def test_blocked_sender_goes_to_junk(self):
+        """Blocking a sender files their future mail into Junk, never discards it."""
+
+        blocked = self.create_member()
         with self.set_user(self.screener.email):
-            screen_email_address(self.account, rejected.email, "Reject")
+            screen_email_address(self.account, blocked.email, "Spam")
+            junk_id = {(m["role"] or "").lower(): m["id"] for m in get_mailboxes(self.account)}["junk"]
 
-        subject = f"Rejected {unique_name('subject')}"
-        self.send_mail(rejected, self.screener.email, subject=subject)
-
-        # Discarded outright: it must reach the inbox neither marked nor unmarked. Deliverability of
-        # a control mail is the clock - once it arrives, the rejected one would have too.
-        control = self.create_member()
-        control_subject = f"Control {unique_name('subject')}"
-        self.send_mail(control, self.screener.email, subject=control_subject)
+        subject = f"Blocked {unique_name('subject')}"
+        self.send_mail(blocked, self.screener.email, subject=subject)
         self.wait_until(
-            lambda: control.email in self._waiting_senders(),
+            lambda: subject in [t["subject"] for t in get_threads(self.account, junk_id, limit=20)["rows"]],
             timeout=60,
-            message="Control mail never arrived.",
+            message="Blocked sender's mail did not reach Junk.",
         )
 
         self.assertNotIn(subject, [t["subject"] for t in self.get_inbox_threads(self.screener)])
-        self.assertNotIn(rejected.email, self._waiting_senders())
+        self.assertNotIn(blocked.email, self._waiting_senders())
+
+    def test_reject_is_no_longer_an_action(self):
+        with self.set_user(self.screener.email):
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Invalid screening action",
+                screen_email_address,
+                self.account,
+                f"{unique_name('someone')}@elsewhere.example.org",
+                "Reject",
+            )

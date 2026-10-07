@@ -704,11 +704,6 @@ export const operationAccountPreferences: Validators<
             anyOf: [{ type: 'string' }, { type: 'null' }],
             title: 'Default Outgoing Email',
           },
-          on_mark_as_junk: {
-            enum: ["Junk Sender's Mail", 'Ask to Block Sender'],
-            title: 'On Mark As Junk',
-            type: 'string',
-          },
         },
         required: [
           'create_contacts_after_email_submit',
@@ -718,7 +713,6 @@ export const operationAccountPreferences: Validators<
           'enable_screening',
           'block_remote_images',
           'default_outgoing_email',
-          'on_mark_as_junk',
         ],
         title: 'AccountPreferences',
         type: 'object',
@@ -771,11 +765,6 @@ export const operationUpdateAccountPreferences: Validators<
               default_outgoing_email: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Default Outgoing Email',
-              },
-              on_mark_as_junk: {
-                enum: ["Junk Sender's Mail", 'Ask to Block Sender'],
-                title: 'On Mark As Junk',
-                type: 'string',
               },
             },
             title: 'AccountChanges',
@@ -1396,10 +1385,6 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Default Outgoing Email',
               },
-              on_mark_as_junk: {
-                anyOf: [{ type: 'string' }, { type: 'null' }],
-                title: 'On Mark As Junk',
-              },
               enable_screening: { title: 'Enable Screening', type: 'boolean' },
               block_remote_images: { title: 'Block Remote Images', type: 'boolean' },
             },
@@ -1412,7 +1397,6 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
               'in_calendar',
               'jmap_account',
               'default_outgoing_email',
-              'on_mark_as_junk',
               'enable_screening',
               'block_remote_images',
             ],
@@ -1838,7 +1822,7 @@ export const operationGetScreenedAddresses: Validators<
           ScreenedAddress: {
             properties: {
               email: { title: 'Email', type: 'string' },
-              action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+              action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
               creation: { title: 'Creation', type: 'string' },
               modified: { title: 'Modified', type: 'string' },
             },
@@ -1874,7 +1858,7 @@ export const operationGetGlobalScreenedAddresses: Validators<
           ScreenedAddress: {
             properties: {
               email: { title: 'Email', type: 'string' },
-              action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+              action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
               creation: { title: 'Creation', type: 'string' },
               modified: { title: 'Modified', type: 'string' },
             },
@@ -2539,7 +2523,7 @@ export const operationScreenEmailAddresses: Validators<
         properties: {
           account: { title: 'Account', type: 'string' },
           emails: { items: { type: 'string' }, title: 'Emails', type: 'array' },
-          action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+          action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
           override: { title: 'Override', type: 'boolean' },
         },
         required: ['account', 'emails'],
@@ -3455,7 +3439,7 @@ export const operationScreenEmailAddress: Validators<
         properties: {
           account: { title: 'Account', type: 'string' },
           email: { title: 'Email', type: 'string' },
-          action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+          action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
         },
         required: ['account', 'email'],
         additionalProperties: false,

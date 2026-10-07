@@ -1117,7 +1117,7 @@ def remove_mails_from_mailbox(account: str, ids: list[str], mailbox_id: str) -> 
 
 
 def _screen_senders(account: str, ids: list[str], action: str | None) -> None:
-    """Screen the senders of the given mails with `action` (Spam/Accepted/Reject), in the same request as
+    """Screen the senders of the given mails with `action` (Spam/Accepted), in the same request as
     the mail change — so marking junk/not-junk (and undoing it) updates the sender's rule atomically."""
 
     if not action:
@@ -1522,10 +1522,10 @@ def get_global_screened_addresses() -> list[dict]:
 
 
 @frappe.whitelist()
-def screen_email_address(account: str, email: str, action: str = "Reject") -> None:
+def screen_email_address(account: str, email: str, action: str = "Spam") -> None:
     """Screens a single email address for the given account with the given action.
 
-    `action` is Reject, Spam, or Accepted. Used by explicit user actions, so it overrides any
+    `action` is Spam (block: future mail to Junk) or Accepted. Used by explicit user actions, so it overrides any
     existing rule for the sender.
     """
 
@@ -1536,12 +1536,12 @@ def screen_email_address(account: str, email: str, action: str = "Reject") -> No
 
 @frappe.whitelist()
 def screen_email_addresses(
-    account: str, emails: list[str], action: str = "Reject", override: bool = True
+    account: str, emails: list[str], action: str = "Spam", override: bool = True
 ) -> None:
     """Screens multiple email addresses for the given account in a single request.
 
-    `action` is Reject (discard incoming mail silently), Spam (file into Junk), or Accepted (let it
-    reach the inbox; used by screening). New addresses are inserted in one batched query via
+    `action` is Spam (block: file future mail into Junk) or Accepted (let it reach the inbox; used by
+    screening). New addresses are inserted in one batched query via
     `bulk_insert` (no per-document hooks); the sieve script is regenerated once at the end.
 
     A sender has at most one screening rule (uniqueness is on the address). `override` controls what
@@ -1555,12 +1555,12 @@ def screen_email_addresses(
 
 
 def _screen_email_addresses(
-    account: str, emails: list[str], action: str = "Reject", override: bool = True
+    account: str, emails: list[str], action: str = "Spam", override: bool = True
 ) -> None:
     """Core screening logic on the resolved account handle. Also called internally (the mark-as-junk
     flow and auto-accept already hold the handle), so it isn't whitelisted."""
 
-    if action not in ("Spam", "Reject", "Accepted"):
+    if action not in ("Spam", "Accepted"):
         frappe.throw(_("Invalid screening action: {0}").format(action))
 
     # Normalise + validate here too: bulk_insert below bypasses the doctype's validate hook, and this

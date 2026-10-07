@@ -52,10 +52,9 @@ const show = defineModel<boolean>()
 const store = userStore()
 const { screenedAddresses } = store
 const email = ref('')
-const action = ref<ScreeningAction>('Reject')
+const action = ref<ScreeningAction>('Spam')
 
-// 'Accepted' lets the sender's mail reach the inbox; 'Reject' discards it silently; 'Spam' files it
-// into the Spam folder.
+// 'Accepted' lets the sender's mail reach the inbox; 'Spam' blocks them, filing it into Junk.
 const ACTION_OPTIONS = [
   {
     label: __('Accept'),
@@ -63,10 +62,6 @@ const ACTION_OPTIONS = [
   },
   {
     label: __('Block'),
-    value: 'Reject',
-  },
-  {
-    label: __('Move to Junk'),
     value: 'Spam',
   },
 ]
@@ -99,7 +94,7 @@ async function screenEmailAddressSubmit() {
 watch(show, (open) => {
   if (open) {
     email.value = ''
-    action.value = 'Reject'
+    action.value = 'Spam'
   }
 })
 </script>

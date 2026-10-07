@@ -73,13 +73,6 @@
         >
           <Switch v-model="blockRemoteImages" />
         </SettingsRow>
-        <SettingsRow
-          class="!py-0"
-          :title="__('When Marking as Junk')"
-          :description="__('Choose how to handle future messages from this sender.')"
-        >
-          <Select v-model="draft.on_mark_as_junk" :options="ON_MARK_AS_JUNK_OPTIONS" />
-        </SettingsRow>
 
         <!-- Read-only, so it sits after the settings rather than ahead of them; the
 		     sidebar shows this meter only once the account is nearly full. -->
@@ -94,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Combobox, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, SettingsRow, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
@@ -162,16 +155,6 @@ const blockRemoteImages = computed({
   get: () => !!draft.value?.block_remote_images,
   set: (val: boolean) => (draft.value!.block_remote_images = val ? 1 : 0),
 })
-const ON_MARK_AS_JUNK_OPTIONS = [
-  {
-    label: __('Move future emails to Junk'),
-    value: "Junk Sender's Mail",
-  },
-  {
-    label: __('Ask whether to block the sender'),
-    value: 'Ask to Block Sender',
-  },
-]
 const accountDirty = computed(
   () => JSON.stringify(draft.value) !== JSON.stringify(preferences.data),
 )

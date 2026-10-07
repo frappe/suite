@@ -824,7 +824,7 @@ def _build_automation_content(account: str) -> str:
         if block:
             content = append_sieve_block(content, f"Mailbox: {mailbox['_name']}", block)
 
-    # Reject / Spam / Screening sections, layered on top of the mailbox rules.
+    # Spam / Screening sections, layered on top of the mailbox rules.
     content = _apply_screening_blocks(account, content)
 
     return content.rstrip() + "\n"
@@ -981,43 +981,32 @@ def append_sieve_block(script: str, block_name: str, sieve_block: str) -> str:
 
 
 def _apply_screening_blocks(account: str, content: str) -> str:
-    """Layer the Reject/Spam/Screening sieve blocks onto `content` and return the result.
+    """Layer the Spam/Screening sieve blocks onto `content` and return the result.
 
-    Rebuilt from the Screened Email Address list (+ JMAP Account) in one pass. The blocks are
-    ordered by precedence: Reject (discard) sits at the very top, right after `require`, so it wins
-    outright. The mailbox automation rules come next, so an explicit mailbox rule can still route mail.
-    Spam (file to Junk) and the Screening gate are fallbacks below the mailbox rules — Spam first, then
-    the catch-all Screening gate at the very bottom. The Screening gate routes accepted senders to the
-    Inbox, screens the rest unless the mail is classified as spam, and otherwise lets the server's
-    default filtering assign the mailbox (see `build_screening_gate`). The final order is
-    Reject → Mailbox → Spam → Screening. A sender has at most one screening rule — global rules
-    (Screened Email Address without an account) are overlaid by the account's own rule for the same
-    value — so the blocks never conflict.
+    Rebuilt from the Screened Email Address list (+ JMAP Account) in one pass. The mailbox automation
+    rules come first, so an explicit mailbox rule can still route mail. Spam (a blocked sender: file to
+    Junk) and the Screening gate are fallbacks below them — Spam first, then the catch-all Screening
+    gate at the very bottom. The Screening gate routes accepted senders to the Inbox, screens the rest
+    unless the mail is classified as spam, and otherwise lets the server's default filtering assign the
+    mailbox (see `build_screening_gate`). The final order is Mailbox → Spam → Screening. A sender has
+    at most one screening rule — global rules (Screened Email Address without an account) are overlaid
+    by the account's own rule for the same value — so the blocks never conflict.
+
+    Nothing is discarded: blocking a sender files their mail into Junk. A "Rejected Emails" block left
+    by an older script — which discarded it — is removed with the rest.
     """
 
     content = (content or "").lstrip()
 
-    # Remove any existing screening blocks, including the legacy block names from the pre-merge
-    # "Blocked Email Address" / "Junk Email Address" doctypes, so old scripts get cleaned up.
+    # Remove any existing screening blocks, including legacy ones — the discarding "Rejected Emails"
+    # block, and the names from the pre-merge "Blocked Email Address" / "Junk Email Address"
+    # doctypes — so old scripts get cleaned up.
     for name in ("Rejected Emails", "Spam Senders", "Screening", "Blocked Emails", "Junk Senders"):
         content = remove_sieve_block(content, name)
 
     screened = get_effective_screened_email_addresses(account)
-    reject_emails = [s.email for s in screened if s.action == "Reject"]
     spam_emails = [s.email for s in screened if s.action == "Spam"]
     accepted_emails = [s.email for s in screened if s.action == "Accepted"]
-
-    # Reject is the most aggressive action and must win outright, so it sits at the very top — right
-    # after the require statement(s), above the mailbox rules.
-    reject_block = _build_screening_block("Rejected Emails", reject_emails, ["  discard;", "  stop;"])
-    if reject_block:
-        require_pattern = r"^(require\s+\[.*?\];\s*)+"
-        match = re.match(require_pattern, content, flags=re.DOTALL)
-        if match:
-            insert_pos = match.end()
-            content = content[:insert_pos] + "\n" + reject_block + content[insert_pos:]
-        else:
-            content = reject_block + content
 
     # Spam goes below the mailbox rules (so an explicit mailbox rule can still claim the mail) but above
     # the Screening gate.
@@ -1137,7 +1126,7 @@ def is_screening_enabled(account: str) -> bool:
 def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     """Build the screening gate — the catch-all fallback that is the last block in the script.
 
-    It routes mail that no earlier block (Reject, Spam, or a mailbox automation rule) already claimed:
+    It routes mail that no earlier block (Spam, or a mailbox automation rule) already claimed:
 
     - Accepted senders — and the account's own identity emails, which are always trusted — are
       filed into the Inbox. Stalwart before v0.16.22 still moves mail it classifies as spam out of
@@ -1199,7 +1188,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
             f"elsif {not_spam_test} {{",
         ]
     else:
-        # Nothing trusted yet → screen every non-spam sender (only reached after the Reject/Spam blocks).
+        # Nothing trusted yet → screen every non-spam sender (only reached after the Spam block).
         lines.append(f"if {not_spam_test} {{")
 
     lines += [

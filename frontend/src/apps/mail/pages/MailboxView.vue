@@ -358,7 +358,6 @@
 
   <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
   <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
-  <ScreenedEmailAddressModal />
   <!-- Selection action bar (design: 5·Selection) — covers the shell's bottom nav
 	     while selecting: thumb reach, Delete last and red. -->
   <!-- Fixed over the nav with safe-area padding, so entering/leaving selection mode
@@ -455,7 +454,6 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
-import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'

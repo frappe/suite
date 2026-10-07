@@ -36,7 +36,6 @@ class AccountPreferences(TypedDict):
     enable_screening: Flag
     block_remote_images: Flag
     default_outgoing_email: str | None
-    on_mark_as_junk: Literal["Junk Sender's Mail", "Ask to Block Sender"]
 
 
 class AccountChanges(TypedDict, total=False):
@@ -47,7 +46,6 @@ class AccountChanges(TypedDict, total=False):
     enable_screening: Flag
     block_remote_images: Flag
     default_outgoing_email: str | None
-    on_mark_as_junk: Literal["Junk Sender's Mail", "Ask to Block Sender"]
 
 
 class UpdateAccount(AccountInput):

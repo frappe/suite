@@ -46,7 +46,6 @@
   "src/apps/mail/components/Modals/EditMailingListModal.vue": 1,
   "src/apps/mail/components/Modals/FolderModal.vue": 2,
   "src/apps/mail/components/Modals/ScheduleSendModal.vue": 1,
-  "src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue": 1,
   "src/apps/mail/components/Modals/SetSieveScriptStateModal.vue": 1,
   "src/apps/mail/components/Modals/ShortcutsModal.vue": 5,
   "src/apps/mail/components/SendMail.vue": 4,

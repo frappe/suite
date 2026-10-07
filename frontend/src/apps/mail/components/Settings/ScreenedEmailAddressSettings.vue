@@ -167,10 +167,10 @@ const toggleScreening = async (val: boolean) => {
   })
   raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
 }
+// Blocking a sender files their mail into Junk (the Spam action); nothing is discarded unseen.
 const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
   Accepted: __('Accept'),
-  Reject: __('Block'),
-  Spam: __('Move to Junk'),
+  Spam: __('Block'),
 }
 
 // Sort by when a rule was added ('creation'), last changed ('modified'), or alphabetically ('email').
@@ -230,7 +230,7 @@ async function editScreenedAddressesSubmit({ action }: { action: ScreeningAction
   raiseToast(__('Action updated.'))
   listViewRef.value?.toggleAllRows()
 }
-const bulkActionOptions = (['Accepted', 'Reject', 'Spam'] as ScreeningAction[]).map((action) => ({
+const bulkActionOptions = (['Accepted', 'Spam'] as ScreeningAction[]).map((action) => ({
   label: ACTION_LABELS[action] ?? action,
   onClick: () =>
     editScreenedAddressesSubmit({

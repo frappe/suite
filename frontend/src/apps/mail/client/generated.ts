@@ -232,7 +232,6 @@ export type AccountPreferencesOutput = {
   enable_screening: 0 | 1
   block_remote_images: 0 | 1
   default_outgoing_email: string | null
-  on_mark_as_junk: "Junk Sender's Mail" | 'Ask to Block Sender'
 }
 
 export type AccountPreferencesError = never
@@ -264,7 +263,6 @@ export type UpdateAccountPreferencesInputAccountChanges = {
   enable_screening?: 0 | 1
   block_remote_images?: 0 | 1
   default_outgoing_email?: string | null
-  on_mark_as_junk?: "Junk Sender's Mail" | 'Ask to Block Sender'
 }
 
 export type UpdateAccountPreferencesInput = {
@@ -756,7 +754,6 @@ export type GetUserInfoOutputUserAccount = {
   in_calendar: boolean
   jmap_account: string | null
   default_outgoing_email: string | null
-  on_mark_as_junk: string | null
   enable_screening: boolean
   block_remote_images: boolean
 }
@@ -1036,7 +1033,7 @@ const operationGetAddressBooks: QueryRef<
 
 export type GetScreenedAddressesOutputScreenedAddress = {
   email: string
-  action: 'Reject' | 'Spam' | 'Accepted'
+  action: 'Spam' | 'Accepted'
   creation: string
   modified: string
 }
@@ -1069,7 +1066,7 @@ const operationGetScreenedAddresses: QueryRef<
 
 export type GetGlobalScreenedAddressesOutputScreenedAddress = {
   email: string
-  action: 'Reject' | 'Spam' | 'Accepted'
+  action: 'Spam' | 'Accepted'
   creation: string
   modified: string
 }
@@ -1519,7 +1516,7 @@ const operationGetTlsReports: PageRef<
 export type ScreenEmailAddressesInput = {
   account: string
   emails: Array<string>
-  action?: 'Reject' | 'Spam' | 'Accepted'
+  action?: 'Spam' | 'Accepted'
   override?: boolean
 }
 
@@ -2420,7 +2417,7 @@ const operationDeleteMailbox: MutationRef<
 export type ScreenEmailAddressInput = {
   account: string
   email: string
-  action?: 'Reject' | 'Spam' | 'Accepted'
+  action?: 'Spam' | 'Accepted'
 }
 
 export type ScreenEmailAddressOutput = null

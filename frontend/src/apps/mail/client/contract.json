@@ -692,14 +692,6 @@
               }
             ],
             "title": "Default Outgoing Email"
-          },
-          "on_mark_as_junk": {
-            "enum": [
-              "Junk Sender's Mail",
-              "Ask to Block Sender"
-            ],
-            "title": "On Mark As Junk",
-            "type": "string"
           }
         },
         "required": [
@@ -709,8 +701,7 @@
           "keep_forwarded_email_in_thread",
           "enable_screening",
           "block_remote_images",
-          "default_outgoing_email",
-          "on_mark_as_junk"
+          "default_outgoing_email"
         ],
         "title": "AccountPreferences",
         "type": "object"
@@ -793,14 +784,6 @@
                   }
                 ],
                 "title": "Default Outgoing Email"
-              },
-              "on_mark_as_junk": {
-                "enum": [
-                  "Junk Sender's Mail",
-                  "Ask to Block Sender"
-                ],
-                "title": "On Mark As Junk",
-                "type": "string"
               }
             },
             "title": "AccountChanges",
@@ -2450,17 +2433,6 @@
                 ],
                 "title": "Default Outgoing Email"
               },
-              "on_mark_as_junk": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "On Mark As Junk"
-              },
               "enable_screening": {
                 "title": "Enable Screening",
                 "type": "boolean"
@@ -2479,7 +2451,6 @@
               "in_calendar",
               "jmap_account",
               "default_outgoing_email",
-              "on_mark_as_junk",
               "enable_screening",
               "block_remote_images"
             ],
@@ -3368,7 +3339,6 @@
               },
               "action": {
                 "enum": [
-                  "Reject",
                   "Spam",
                   "Accepted"
                 ],
@@ -3429,7 +3399,6 @@
               },
               "action": {
                 "enum": [
-                  "Reject",
                   "Spam",
                   "Accepted"
                 ],
@@ -5019,7 +4988,6 @@
           },
           "action": {
             "enum": [
-              "Reject",
               "Spam",
               "Accepted"
             ],
@@ -6891,7 +6859,6 @@
           },
           "action": {
             "enum": [
-              "Reject",
               "Spam",
               "Accepted"
             ],

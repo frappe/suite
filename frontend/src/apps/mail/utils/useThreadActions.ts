@@ -9,7 +9,7 @@ import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailCopy, Thread } from '@/apps/mail/types'
 import { getIcon, raiseOptimisticToast, raisePromiseToast } from '@/apps/mail/utils'
-import { useBlockSender, useUndo } from '@/apps/mail/utils/composables'
+import { useUndo } from '@/apps/mail/utils/composables'
 import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { mailCopies, mailCopyIds, mailCopyNames, rowMailIds } from '@/apps/mail/utils/mailCopies'
 
@@ -68,7 +68,6 @@ export function useThreadActions(deps: {
   const { mailboxes, mailboxIds } = store
   const { setUndoAction, undo } = useUndo()
   const screener = useScreener()
-  const { promptBlockSenders, willJunkSenders } = useBlockSender()
 
   // The loaded rows behind the current selection. In Search each row is itself a mail rather than
   // a thread summary, but it carries its mailboxes all the same (that's the folder tag on the
@@ -882,16 +881,12 @@ export function useThreadActions(deps: {
       mailbox_ids: m.mailboxes.map((mb) => mb.mailbox_id),
       junk: m.junk,
     }))
-    const senders = mails.map((m) => ({
-      name: m.from_name,
-      email: m.from_email,
-    }))
     const ids = snapshot.map((m) => m.id)
 
-    // Screen the senders in the SAME call as the mail change (no second request, no undo race): Junk
-    // → Spam (unless the account prompts to block instead), Not Junk → Accept. Undo flips it, also in
-    // the same call as the mailbox restore.
-    const screenForward = spam ? (willJunkSenders(senders) ? 'Spam' : null) : 'Accepted'
+    // Marking as Junk only marks the mail: blocking the sender is its own action. Not Junk still
+    // accepts the sender, in the SAME call as the mail change (no second request, no undo race); undo
+    // flips it, also in the same call as the mailbox restore.
+    const screenForward = spam ? null : 'Accepted'
 
     // Only Search stays server-reconciled. Starred is computable: junking removes the last non-junk copy
     // (→ the thread leaves), so junk there is optimistic; the rare Not-Junk-in-Starred keeps a non-junk
@@ -911,16 +906,10 @@ export function useThreadActions(deps: {
       selectedThreads.length === 1
         ? __('Thread marked as {0}.', [spam ? __('Not Junk') : __('Junk')])
         : __('Threads marked as {0}.', [spam ? __('Not Junk') : __('Junk')])
-    // When the account auto-junks the sender, surface that as the single toast for the whole action.
     const success =
-      spam && willJunkSenders(senders)
-        ? __('Mails from sender will go to Junk.')
-        : selectedThreads.length === 1
-          ? __('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
-          : __('Threads marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
-
-    // 'Ask to Block Sender' mode: junking still prompts to fully block the sender (Reject).
-    const maybePromptBlock = () => spam && !screenForward && promptBlockSenders(senders)
+      selectedThreads.length === 1
+        ? __('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
+        : __('Threads marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
 
     // Drop any prior undo so it isn't triggerable while this action is in flight.
     setUndoAction(undefined)
@@ -937,7 +926,6 @@ export function useThreadActions(deps: {
           forwardOk = true
           mailboxes.refetch().catch(() => {})
           refillIfEmpty()
-          maybePromptBlock()
         } catch (error) {
           // Single request: the server is unchanged on failure, so just restore the UI.
           restoreThreadsToList(removedThreads)
@@ -981,7 +969,6 @@ export function useThreadActions(deps: {
         raisePromiseToast(undoAction, __('Undoing...'), restored)
       })
       mailboxes.refetch().catch(() => {})
-      maybePromptBlock()
     }
     const loading = spam ? __('Marking as Junk...') : __('Marking as Not Junk...')
     raisePromiseToast(action, loading, success, undo)
@@ -1064,21 +1051,10 @@ export function useThreadActions(deps: {
   }
   const handleMailSpam = (mail: Mail, spam: boolean) => {
     const snapshot = mailSnapshot(mail)
-    const senders = [
-      {
-        name: mail.from_name,
-        email: mail.from_email,
-      },
-    ]
-    // Screen the sender in the same call (see handleSetSpamStatus): Junk → Spam (unless the account
-    // prompts to block instead), Not Junk → Accept.
-    const screenForward = spam ? (willJunkSenders(senders) ? 'Spam' : null) : 'Accepted'
-    const success =
-      spam && willJunkSenders(senders)
-        ? __('Mails from sender will go to Junk.')
-        : spam
-          ? __('Mail marked as Junk.')
-          : __('Mail marked as Not Junk.')
+    // Junk only marks the mail; Not Junk accepts the sender, in the same call (see
+    // handleSetSpamStatus).
+    const screenForward = spam ? null : 'Accepted'
+    const success = spam ? __('Mail marked as Junk.') : __('Mail marked as Not Junk.')
     runMailRemoval(
       mail,
       () =>
@@ -1095,8 +1071,6 @@ export function useThreadActions(deps: {
             screen_action: screenForward ? (spam ? 'Accepted' : 'Spam') : null,
           }),
         undoSuccess: __('Mail marked as {0}.', [spam ? __('Not Junk') : __('Junk')]),
-        // 'Ask to Block Sender' mode: junking still prompts to fully block the sender (Reject).
-        afterSuccess: () => spam && !screenForward && promptBlockSenders(senders),
       },
     )
   }

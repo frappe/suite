@@ -29,7 +29,7 @@ function screeningPolicy(remove: boolean) {
               !addresses.has(row.email.toLowerCase()),
           )
           if (remove) return kept
-          const action = typeof input.action === 'string' ? input.action : 'Reject'
+          const action = typeof input.action === 'string' ? input.action : 'Spam'
           return [
             ...kept,
             ...input.emails.map((email) => ({ email, action, creation: '', modified: '' })),

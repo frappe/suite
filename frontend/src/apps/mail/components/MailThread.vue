@@ -381,7 +381,7 @@
                                 {{ __('block list') }}</button
                               >{{
                                 __(
-                                  ". You won't receive new messages from this source until you unblock them.",
+                                  '. Their new messages go to Junk until you unblock them.',
                                 )
                               }}
                             </p>
@@ -694,11 +694,11 @@ const { accountId: scopeAccountId, identities, screenedAddresses, mailboxIds } =
 // they come from the store rather than the pane's scope.
 const { globalScreenedAddresses } = userStore()
 
-// A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
-// exact address or by an accepted/blocked '@domain' entry covering them.
+// A sender is "blocked" when screened with the Spam action (their mail goes to Junk) — either by their
+// exact address or by a blocked '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
   !!screenedAddresses.value.data?.some(
-    (a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
+    (a: ScreenedAddress) => a.action === 'Spam' && matchesScreenedValue(email, a.email),
   )
 
 // Trusted senders — you, or anyone you've accepted — load images normally. For everyone else, the

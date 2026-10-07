@@ -6,9 +6,9 @@ export type SieveScript = import('../client/generated').GetSieveScriptsOutput[nu
 
 // What happens to a sender when one of their messages is marked as Junk (JMAP Account).
 
-// A screened sender: how their future mail is handled. 'Reject' discards it silently; 'Spam' files
-// it into the Spam (Junk) folder; 'Accepted' lets it reach the inbox. (Doctype: Screened Email Address.)
-export type ScreeningAction = 'Reject' | 'Spam' | 'Accepted'
+// A screened sender: how their future mail is handled. 'Spam' blocks them, filing it into Junk;
+// 'Accepted' lets it reach the inbox. (Doctype: Screened Email Address.)
+export type ScreeningAction = 'Spam' | 'Accepted'
 export interface ScreenedAddress {
   email: string
   action: ScreeningAction

@@ -106,11 +106,11 @@ const { setUndoAction, undo } = useUndo()
 const { filterBySender } = useFilterBySender()
 const user = inject('$user')
 
-// A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
+// A sender is "blocked" when screened with the Spam action (their mail goes to Junk) — either by their
 // exact address or by a '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
   screenedAddresses.value.data?.some(
-    (a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
+    (a: ScreenedAddress) => a.action === 'Spam' && matchesScreenedValue(email, a.email),
   )
 const primaryActions = (mail: Mail): MailAction[] => [
   {
@@ -355,7 +355,7 @@ const handleBlockAddress = (block: boolean, isUndo = false) => {
         api.mail.screening.set,
         {
           ...input,
-          action: 'Reject',
+          action: 'Spam',
         },
         {
           silent: true,
@@ -364,7 +364,9 @@ const handleBlockAddress = (block: boolean, isUndo = false) => {
     : client.mutation(api.mail.screening.remove, input, {
         silent: true,
       })
-  const successMessage = block ? __('Sender blocked.') : __('Sender unblocked.')
+  const successMessage = block
+    ? __('Future mail from sender will go to Junk.')
+    : __('Sender unblocked.')
   if (isUndo) return raiseOptimisticToast(forward, successMessage)
   setUndoAction(() => handleBlockAddress(!block, true))
   raiseOptimisticToast(forward, successMessage, undo)

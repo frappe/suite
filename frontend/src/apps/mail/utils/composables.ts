@@ -6,8 +6,7 @@ import { api, client } from '@/api'
 import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
-import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
-import { matchesScreenedValue, raiseOptimisticToast } from '@/apps/mail/utils'
+import type { ComposeMailData, Identity } from '@/apps/mail/types'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 import {
   INBOX_FOLDER,
@@ -373,15 +372,6 @@ export const useListReload = () => ({
   requestListReload: () => listReloadRequest.value++,
 })
 
-// Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
-// <ScreenedEmailAddressModal> (rendered in MailboxView) reacts to this, so any view can open it.
-interface BlockableSender {
-  name?: string
-  email: string
-}
-const showBlockSender = ref(false)
-const sendersToBlock = ref<BlockableSender[]>([])
-
 // The account's own addresses, lowercased — what a thread's senders are matched against to decide
 // which of them the row calls "me" (see utils/participants). Identities are per account, so a row
 // merged in from another account (All Inboxes, cross-account search) is resolved against the active
@@ -392,139 +382,6 @@ export const useOwnEmails = () => {
     () => new Set((identities.data ?? []).map((i: Identity) => i.email.toLowerCase())),
   )
 }
-export const useBlockSender = () => {
-  const store = userStore()
-  const { userResource, identities, screenedAddresses } = store
-  const { setUndoAction, undo, prependUndoAction } = useUndo()
-
-  // Read account/accountId off the store at call time — destructuring would snapshot the unwrapped
-  // values and miss account switches while a component stays mounted.
-  const activeAccount = computed(() =>
-    userResource.data?.accounts?.find((a) => a.id === store.accountId),
-  )
-
-  // Senders worth offering to block: drop the user's own identities and addresses already blocked,
-  // and de-duplicate by email (keeping the first occurrence's display name).
-  const blockableSenders = (
-    senders: {
-      name?: string
-      email?: string
-    }[],
-  ) => {
-    const own = new Set((identities.data ?? []).map((i: Identity) => i.email))
-    // "Already blocked" = screened with the Reject action (their mail is discarded), whether by their
-    // exact address or by a '@domain' entry covering them.
-    const blockedValues = (screenedAddresses.data ?? [])
-      .filter((a: ScreenedAddress) => a.action === 'Reject')
-      .map((a: ScreenedAddress) => a.email)
-    const isBlocked = (email: string) => blockedValues.some((v) => matchesScreenedValue(email, v))
-    const seen = new Set<string>()
-    const result: BlockableSender[] = []
-    for (const { name, email } of senders) {
-      if (!email || own.has(email) || isBlocked(email) || seen.has(email)) continue
-      seen.add(email)
-      result.push({
-        name,
-        email,
-      })
-    }
-    return result
-  }
-
-  // Block the senders chosen in the prompt ('Ask to Block Sender' confirm). Blocking becomes the new
-  // undo action: Cmd+Z unblocks (it does not also reverse the junk move, which stays).
-  const blockSenders = (senders: BlockableSender[]) => {
-    const emails = senders.map((sender) => sender.email)
-    if (!emails.length) return
-    const account = store.accountId
-    setUndoAction(() => {
-      const forward = client.mutation(
-        api.mail.screening.remove,
-        {
-          account,
-          emails,
-        },
-        {
-          silent: true,
-        },
-      )
-      const restored = emails.length === 1 ? __('Sender unblocked.') : __('Senders unblocked.')
-      raiseOptimisticToast(forward, restored)
-    })
-    const forward = client.mutation(
-      api.mail.screening.set,
-      {
-        account,
-        emails,
-        action: 'Reject',
-      },
-      {
-        silent: true,
-      },
-    )
-    const success = emails.length === 1 ? __('Sender blocked.') : __('Senders blocked.')
-    raiseOptimisticToast(forward, success, undo)
-  }
-
-  // File the senders' future mail into Junk (the default 'Junk Sender's Mail'). Side effect only — the
-  // caller renders the toast (see willJunkSenders) so the junk action shows a single toast, not two.
-  // Undoing the junk move also drops them from the junk list (composed onto that move's undo).
-  const junkSenders = (senders: BlockableSender[]) => {
-    const emails = senders.map((sender) => sender.email)
-    if (!emails.length) return
-    const account = store.accountId
-    void client
-      .mutation(api.mail.screening.set, {
-        account,
-        emails,
-        action: 'Spam',
-      })
-      .catch(() => {})
-    prependUndoAction(() =>
-      client.mutation(api.mail.screening.remove, {
-        account,
-        emails,
-      }),
-    )
-  }
-
-  // Whether marking these senders as junk will auto-file their future mail into Junk (vs prompting
-  // to block, or doing nothing when there's nothing blockable). Lets the caller show one accurate toast.
-  const willJunkSenders = (
-    senders: {
-      name?: string
-      email?: string
-    }[],
-  ) =>
-    blockableSenders(senders).length > 0 &&
-    activeAccount.value?.on_mark_as_junk !== 'Ask to Block Sender'
-
-  // Apply the account's 'on mark as junk' behaviour to the senders of a just-junked message:
-  // 'Ask to Block Sender' opens the prompt; otherwise silently junk their future mail.
-  const promptBlockSenders = (
-    senders: {
-      name?: string
-      email?: string
-    }[],
-  ) => {
-    const list = blockableSenders(senders)
-    if (!list.length) return
-    if (activeAccount.value?.on_mark_as_junk === 'Ask to Block Sender') {
-      sendersToBlock.value = list
-      showBlockSender.value = true
-      return
-    }
-    junkSenders(list)
-  }
-  return {
-    showBlockSender,
-    sendersToBlock,
-    willJunkSenders,
-    promptBlockSenders,
-    blockSenders,
-  }
-}
-
 // Navigate to the search results scoped to a sender — Gmail's "Filter messages like this". Lands on the
 // filtered view (mailbox 'search') with a "From" chip the user can refine further. Shared by the message
 // more-actions menu and the clickable sender address in a thread.

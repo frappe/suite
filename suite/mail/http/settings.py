@@ -59,7 +59,7 @@ class DeleteMailbox(AccountInput):
 
 class ScreenAddress(AccountInput):
     email: str
-    action: NotRequired[Literal["Reject", "Spam", "Accepted"]]
+    action: NotRequired[Literal["Spam", "Accepted"]]
 
 
 class CreateScript(AccountInput):

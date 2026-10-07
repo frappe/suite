@@ -62,7 +62,6 @@ class JMAPAccount(Document):
         is_readonly: DF.Check
         keep_forwarded_email_in_thread: DF.Check
         last_active_sieve_script_id: DF.Data | None
-        on_mark_as_junk: DF.Literal["Junk Sender's Mail", "Ask to Block Sender"]
     # end: auto-generated types
 
     """Per-account settings shared across every user that has JMAP access to the account.
