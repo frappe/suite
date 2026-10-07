@@ -1165,6 +1165,18 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual((status, body["collab"]), (423, "stage_full"))
         self.assertEqual(self.staged(node), 64)
 
+    def test_someone_who_cannot_edit_is_refused_before_their_piece_is_read(self):
+        self.set_mode("on")
+        node = self.new_document()
+        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        frappe.db.commit()
+        frappe.set_user(READER)
+
+        with patch.object(capacity, "edit_max", side_effect=AssertionError("read the piece")):
+            status, body = self.put(node, uuid.uuid4().hex, 0, b"not a piece")
+
+        self.assertEqual((status, body["collab"]), (403, "forbidden"))
+
     def test_the_sweeper_drops_pieces_older_than_a_quarter_hour(self):
         self.set_mode("on")
         node = self.new_document()

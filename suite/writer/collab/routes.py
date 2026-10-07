@@ -199,8 +199,8 @@ def _push(node: str) -> Response:
 
 def _stage(node: str, stage_id: str, idx: str) -> Response:
     collab.require_enabled()
+    _authorize(node, drive.EDIT, frappe.get_request_header(PRINCIPAL_HEADER))
     header, index, piece = collab.parse_piece(frappe.request.get_data(), stage_id, idx)
-    _authorize(node, drive.EDIT, header.get("principal"))
     doc = _doc(node)
     return _json(200, collab.put_piece(ADAPTER, doc.id, stage_id, header, index, piece, frappe.session.user))
 
