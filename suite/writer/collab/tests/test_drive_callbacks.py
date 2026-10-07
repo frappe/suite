@@ -400,7 +400,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 f"SELECT COUNT(*) FROM `__writer_collab_{kind}` WHERE `{'id' if kind == 'doc' else 'doc_id'}` = %s",
                 doc_id,
             )[0][0]
-            for kind in ("doc", "update", "checkpoint", "session")
+            for kind in ("doc", "update", "checkpoint", "session", "stage")
         }
 
     def test_a_purge_marks_the_log_and_its_job_deletes_every_row_in_batches(self):
@@ -408,6 +408,11 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.type_into(node, ["one ", "two ", "three"])
         self.compact(node)
         self.type_into(node, [" four"])
+        frappe.db.sql(
+            """INSERT INTO `__writer_collab_stage` (`doc_id`, `stage_id`, `idx`, `purpose`, `sid`, `total_len`,
+            `sha_total`, `bytes`, `created`) VALUES (%s, %s, 0, 'save', %s, 1, UNHEX(%s), 'x', NOW())""",
+            (self.doc_row(node).id, "a" * 32, "b" * 32, "00" * 32),
+        )
 
         doc_id = self.purged(node)
 
@@ -417,7 +422,9 @@ class TestWriterDriveCallbacks(CheckpointCase):
         )
         with patch.object(log, "PURGE_BATCH", 2):
             writer_collab.delete_purged(doc_id)
-        self.assertEqual(self.rows_of(doc_id), {"doc": 0, "update": 0, "checkpoint": 0, "session": 0})
+        self.assertEqual(
+            self.rows_of(doc_id), {"doc": 0, "update": 0, "checkpoint": 0, "session": 0, "stage": 0}
+        )
 
     def test_the_sweeper_finishes_a_purge_whose_job_never_ran(self):
         node = self.new_document()

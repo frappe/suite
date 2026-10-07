@@ -62,6 +62,27 @@ const operationCollabUpdatesPost: Operation<CollabUpdatesPostInput, CollabUpdate
   validateOutput(value): asserts value is CollabUpdatesPostOutput { assertSchema(value, {"additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}]},"type":"object"}, 'collab_updates_post output') },
 }
 
+export type CollabStagePutInput = { "node": string; "stage_id": string; "idx": string; "chunk": unknown } & { chunk: Blob }
+
+export type CollabStagePutOutput = { [key: string]: (number) | (string) }
+
+export type CollabStagePutError = "DriveNotFound" | "DriveForbidden" | "DriveLocked"
+
+const operationCollabStagePut: Operation<CollabStagePutInput, CollabStagePutOutput, CollabStagePutError> = {
+  id: "collab_stage_put",
+  owner: "writer",
+  method: "PUT",
+  path: "documents/{node}/collab/stage/{stage_id}/{idx}",
+  prefix: "/api/suite/writer/",
+  pathParams: ["node","stage_id","idx"],
+  nodeParams: ["node"],
+  entity: null,
+  errors: ["DriveNotFound","DriveForbidden","DriveLocked"],
+  body: 'chunk',
+  validateInput(value): asserts value is CollabStagePutInput { assertSchema(value, {"type":"object","properties":{"node":{"type":"string"},"stage_id":{"type":"string"},"idx":{"type":"string"},"chunk":{}},"required":["node","stage_id","idx","chunk"],"additionalProperties":false,"$defs":{}}, 'collab_stage_put input') },
+  validateOutput(value): asserts value is CollabStagePutOutput { assertSchema(value, {"additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}]},"type":"object"}, 'collab_stage_put output') },
+}
+
 export type CollabSessionsPostInput = { "node": string; "chunk": unknown } & { chunk: Blob }
 
 export type CollabSessionsPostOutput = { [key: string]: (number) | (string) }
@@ -108,6 +129,7 @@ export const api = {
   "collab_get": operationCollabGet,
   "collab_updates_get": operationCollabUpdatesGet,
   "collab_updates_post": operationCollabUpdatesPost,
+  "collab_stage_put": operationCollabStagePut,
   "collab_sessions_post": operationCollabSessionsPost,
   "collab_suspect_post": operationCollabSuspectPost
 } as const

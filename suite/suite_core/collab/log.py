@@ -19,7 +19,7 @@ from collections.abc import Sequence
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import capacity, ingest
+from suite.suite_core.collab import capacity, ingest, stage
 from suite.suite_core.collab.tables import table
 
 PROTO = 1
@@ -99,7 +99,7 @@ def delete_purged(adapter: str, doc_id: str) -> None:
     doc = table(adapter, "doc")
     if not frappe.db.sql(f"SELECT 1 FROM `{doc}` WHERE `id` = %s AND `mode` = 'purged'", doc_id):
         return
-    for kind in ("update", "checkpoint", "session", "recovery"):
+    for kind in ("update", "checkpoint", "session", "stage", "recovery"):
         while True:
             frappe.db.sql(
                 f"DELETE FROM `{table(adapter, kind)}` WHERE `doc_id` = %s LIMIT %s", (doc_id, PURGE_BATCH)
@@ -255,7 +255,12 @@ def parse_push(body: bytes) -> tuple[dict, bytes]:
         for key, kind in required.items()
     ):
         raise Refusal(400, "malformed")
-    if header["from"] < 1 or header["to"] < header["from"] or header["schema"] < 1 or not payload:
+    if header["from"] < 1 or header["to"] < header["from"] or header["schema"] < 1:
+        raise Refusal(400, "malformed")
+    # A staged change comes with no bytes of its own
+    if ("stage_id" in header and (payload or not stage.valid_id(header["stage_id"]))) or not (
+        payload or "stage_id" in header
+    ):
         raise Refusal(400, "malformed")
     if len(header["shas"]) != header["to"] - header["from"] + 1:
         raise Refusal(400, "malformed")
@@ -328,6 +333,8 @@ def push(
         return answer
     if header["schema"] > schema.version:
         raise Refusal(423, "upgrading", retry_ms=UPGRADING_RETRY_MS)
+    if "stage_id" in header:
+        payload = assembled(adapter, doc_id, header)
     try:
         row = ingest.check(payload, header["cid"])
     except ValueError:
@@ -408,6 +415,8 @@ def push(
             `schema_steps` = %s WHERE `id` = %s""",
             (rev, chain.hex(), len(payload), row_bound, json.dumps(steps), doc_id),
         )
+        if "stage_id" in header:
+            stage.drop(adapter, doc_id, header["stage_id"])
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "session")}` SET `acked_seq` = %s, `next_clock` = %s, `last_push_at` = %s
             WHERE `doc_id` = %s AND `sid` = %s""",
@@ -424,6 +433,55 @@ def push(
         frappe.db.rollback()
         raise
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
+
+
+def assembled(adapter: str, doc_id: str, header: dict) -> bytes:
+    try:
+        return stage.assemble(adapter, doc_id, header["stage_id"], header)
+    except stage.Conflict:
+        raise Refusal(409, "stage_conflict") from None
+    except stage.Incomplete:
+        raise Refusal(409, "stage_incomplete") from None
+
+
+def parse_piece(body: bytes, stage_id: str, idx: str) -> tuple[dict, int, bytes]:
+    """Split `u32 hlen | header JSON | piece`; the header names the change the piece belongs to."""
+    if not stage.valid_id(stage_id):
+        raise Refusal(400, "malformed")
+    try:
+        return stage.parse_piece(body, idx)
+    except stage.Malformed:
+        raise Refusal(400, "malformed") from None
+    except stage.TooLarge:
+        raise Refusal(413, "too_large") from None
+
+
+def put_piece(
+    adapter: str, doc_id: str, stage_id: str, header: dict, index: int, piece: bytes, principal: str
+) -> dict:
+    """Stage one piece of a big change for this principal's session. A piece of a change the
+    session already committed is answered as a duplicate and not kept."""
+    doc = frappe.db.sql(
+        f"SELECT `lineage`, `mode` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id, as_dict=True
+    )[0]
+    if doc.mode == "purged":
+        raise Refusal(404, "not_found")
+    if header["lineage"] != doc.lineage:
+        raise Refusal(409, "lineage")
+    session = load_session(adapter, doc_id, header["sid"], principal)
+    if session is None:
+        raise Refusal(409, "session_unknown")
+    if session.closed:
+        raise Refusal(409, "client_closed")
+    if int(session.acked_seq) >= header["to"]:
+        return {"dup": True}
+    try:
+        stage.store(adapter, doc_id, stage_id, index, header, piece)
+    except stage.Conflict:
+        raise Refusal(409, "stage_conflict") from None
+    except stage.Full:
+        raise Refusal(423, "stage_full", retry_ms=stage.FULL_RETRY_MS) from None
+    return {"staged": index}
 
 
 def start_clocks(doc: frappe._dict) -> dict[int, int]:

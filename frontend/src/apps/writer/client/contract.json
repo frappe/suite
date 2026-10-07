@@ -78,6 +78,41 @@
       "stream": true
     },
     {
+      "id": "collab_stage_put",
+      "method": "PUT",
+      "path": "documents/{node}/collab/stage/{stage_id}/{idx}",
+      "pathParams": [
+        "node",
+        "stage_id",
+        "idx"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": true
+    },
+    {
       "id": "collab_sessions_post",
       "method": "POST",
       "path": "documents/{node}/collab/sessions",

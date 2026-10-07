@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { frappeData } from "../../shared/frappe";
 import { writerEditor } from "./writer";
@@ -135,4 +136,65 @@ export function picturesLoaded(page: Page): Promise<boolean[]> {
 		.evaluateAll((images) =>
 			(images as HTMLImageElement[]).map((image) => image.complete && image.naturalWidth > 0),
 		);
+}
+
+function framed(header: object, bytes: Buffer): Buffer {
+	const json = Buffer.from(JSON.stringify(header));
+	const length = Buffer.alloc(4);
+	length.writeUInt32BE(json.length);
+	return Buffer.concat([length, json, bytes]);
+}
+
+/** Add a paragraph of `length` letters to `node` as `user`, staged over the piece route in reverse order and then pushed. */
+export async function pushInPieces(
+	request: APIRequestContext,
+	api: APIRequestContext,
+	node: string,
+	user: string,
+	length: number,
+): Promise<{ pieces: number; status: number }> {
+	const base = `/api/suite/writer/documents/${encodeURIComponent(node)}/collab`;
+	const headers = { "X-Collab-Principal": user };
+	const sid = randomUUID().replaceAll("-", "");
+	const session = await request.post(`${base}/sessions`, {
+		headers: { ...headers, "Content-Type": "application/octet-stream" },
+		data: Buffer.from(JSON.stringify({ sid })),
+	});
+	expect(session.ok(), await session.text()).toBe(true);
+	const cid = ((await session.json()) as { client_id: number }).client_id;
+	const made = await frappeData<{ change: string; lineage: string; head_rev: number }>(
+		await api.post("/api/method/suite.writer.collab.e2e_api.paragraph_change", {
+			form: { node, client_id: String(cid), length: String(length) },
+		}),
+	);
+	const change = Buffer.from(made.change, "hex");
+	const sha = createHash("sha256").update(change).digest("hex");
+	const stage = randomUUID().replaceAll("-", "");
+	const size = 256 * 1024;
+	const pieces = Math.ceil(change.length / size);
+	for (let idx = pieces - 1; idx >= 0; idx--) {
+		const header = { lineage: made.lineage, principal: user, sid, from: 1, to: 1, total_len: change.length, sha_total: sha };
+		const put = await request.put(`${base}/stage/${stage}/${idx}`, {
+			headers: { ...headers, "Content-Type": "application/octet-stream" },
+			data: framed(header, change.subarray(idx * size, (idx + 1) * size)),
+		});
+		expect(put.status(), await put.text()).toBe(200);
+	}
+	const header = {
+		lineage: made.lineage,
+		principal: user,
+		sid,
+		from: 1,
+		to: 1,
+		cid,
+		seen_rev: made.head_rev,
+		schema: 1,
+		shas: [sha],
+		stage_id: stage,
+	};
+	const push = await request.post(`${base}/updates`, {
+		headers: { ...headers, "Content-Type": "application/octet-stream" },
+		data: framed(header, Buffer.alloc(0)),
+	});
+	return { pieces, status: push.status() };
 }

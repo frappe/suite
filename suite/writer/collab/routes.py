@@ -46,6 +46,15 @@ ROUTES = (
         stream=True,
     ),
     Route(
+        "PUT",
+        "documents/{node}/collab/stage/{stage_id}/{idx}",
+        "collab_stage_put",
+        allow_guest=True,
+        errors=(drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
+        output=dict[str, int | str],
+        stream=True,
+    ),
+    Route(
         "POST",
         "documents/{node}/collab/sessions",
         "collab_sessions_post",
@@ -96,6 +105,11 @@ def collab_updates_get(node: str, since: str | None = None, q_epoch: str | None 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def collab_updates_post(node: str):
     return _answer(lambda: _push(node))
+
+
+@frappe.whitelist(allow_guest=True, methods=["PUT"])
+def collab_stage_put(node: str, stage_id: str, idx: str):
+    return _answer(lambda: _stage(node, stage_id, idx))
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -180,6 +194,14 @@ def _push(node: str) -> Response:
         raise
     consider_compaction(doc.id, final_from=header["sid"] if header.get("final") is True else None)
     return _json(200, answer)
+
+
+def _stage(node: str, stage_id: str, idx: str) -> Response:
+    collab.require_enabled()
+    header, index, piece = collab.parse_piece(frappe.request.get_data(), stage_id, idx)
+    _authorize(node, drive.EDIT, header.get("principal"))
+    doc = _doc(node)
+    return _json(200, collab.put_piece(ADAPTER, doc.id, stage_id, header, index, piece, frappe.session.user))
 
 
 def _suspect(node: str) -> Response:

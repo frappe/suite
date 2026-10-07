@@ -10,6 +10,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
+from suite.suite_core.collab import stage
 from suite.suite_core.collab.admission import TIMEOUT
 from suite.suite_core.collab.tables import table
 
@@ -82,7 +83,8 @@ def sweep(
     judge_method: str | None = None,
 ) -> None:
     """Request compactions for documents whose tail has waited too long, whatever their traffic,
-    the deletion of purged logs and the judging of suspect documents a job has not finished."""
+    the deletion of purged logs and expired staged pieces and the judging of suspect documents a job has not finished."""
+    stage.expire(adapter, now_datetime())
     if purge_method:
         for (doc_id,) in frappe.db.sql(
             f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `mode` = 'purged' LIMIT %s", limit

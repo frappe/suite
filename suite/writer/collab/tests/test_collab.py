@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 from dataclasses import replace
+from datetime import timedelta
 from unittest.mock import patch
 
 import frappe
@@ -16,7 +17,9 @@ from werkzeug.wrappers import Request
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
+from suite.suite_core.collab import scheduling
 from suite.suite_core.collab.log import chain_next, chain_seed
+from suite.suite_core.collab.stage import PIECE_MAX
 from suite.suite_core.collab.updates import encoded_string, encoded_uint
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
@@ -126,11 +129,13 @@ def push_body(
     *,
     entries: list[bytes] | None = None,
     schema: int = 1,
+    stage_id: str | None = None,
 ) -> bytes:
     """One push of `entries` (or `payload` alone) as seqs from `seq`; the body sent is `payload`."""
     entries = entries or [payload]
     header = json.dumps(
         {
+            **({"stage_id": stage_id} if stage_id else {}),
             "lineage": lineage,
             "principal": principal or frappe.session.user,
             "sid": sid,
@@ -143,6 +148,32 @@ def push_body(
         }
     ).encode()
     return struct.pack(">I", len(header)) + header + payload
+
+
+def pieces_of(change: bytes) -> list[bytes]:
+    return [change[at : at + PIECE_MAX] for at in range(0, len(change), PIECE_MAX)]
+
+
+def piece_body(lineage: str, sid: str, seq: int, change: bytes, piece: bytes, /, **header) -> bytes:
+    """One piece of `change`, staged as `seq` of session `sid`; `header` overrides what it says."""
+    data = json.dumps(
+        {
+            "lineage": lineage,
+            "principal": frappe.session.user,
+            "sid": sid,
+            "from": seq,
+            "to": seq,
+            "total_len": len(change),
+            "sha_total": hashlib.sha256(change).hexdigest(),
+            **header,
+        }
+    ).encode()
+    return struct.pack(">I", len(data)) + data + piece
+
+
+def big_change(cid: int, nbytes: int) -> bytes:
+    """A first change by `cid` of about `nbytes` bytes of typing."""
+    return typed(cid, ["x" * (nbytes - 64)])[0]
 
 
 class TestWriterCollab(IntegrationTestCase):
@@ -184,7 +215,7 @@ class TestWriterCollab(IntegrationTestCase):
     def forget(self, node: str):
         doc = routes.collab.find(routes.ADAPTER, node)
         if doc:
-            for kind in ("update", "session"):
+            for kind in ("update", "session", "stage"):
                 frappe.db.sql(f"DELETE FROM `__writer_collab_{kind}` WHERE `doc_id` = %s", doc.id)
             frappe.db.sql("DELETE FROM `__writer_collab_doc` WHERE `id` = %s", doc.id)
             frappe.db.commit()
@@ -764,6 +795,10 @@ class TestWriterCollab(IntegrationTestCase):
             (routes.collab_sessions_post, session_body),
             (routes.collab_updates_post, body),
             (routes.collab_suspect_post, b'{"rev": 1}'),
+            (
+                lambda node: routes.collab_stage_put(node, uuid.uuid4().hex, "0"),
+                piece_body(lineage, sid, 1, b"x", b"x", principal=WRITER),
+            ),
         )
 
         for user, expected in (("Guest", (401, "signed_out")), (OUTSIDER, (409, "principal_changed"))):
@@ -904,3 +939,215 @@ class TestWriterCollab(IntegrationTestCase):
 
         self.assertEqual((response.status_code, answer(response)), (503, {"collab": "chain_break"}))
         self.assertEqual(frappe.db.count("Error Log", logged), 1)
+
+    def put(self, node: str, stage_id: str, idx: int, body: bytes):
+        response = call(lambda node: routes.collab_stage_put(node, stage_id, str(idx)), node, body=body)
+        return response.status_code, answer(response)
+
+    def stage(self, node: str, sid: str, change: bytes, *, seq: int = 1, order=None, **header) -> str:
+        """Put every piece of `change` (in `order`) under a new stage id, and answer the id."""
+        stage_id = uuid.uuid4().hex
+        lineage = self.open(node)[0]["lineage"]
+        pieces = pieces_of(change)
+        for idx in order if order is not None else range(len(pieces)):
+            status, _body = self.put(
+                node, stage_id, idx, piece_body(lineage, sid, seq, change, pieces[idx], **header)
+            )
+            self.assertEqual(status, 200)
+        return stage_id
+
+    def push_staged(self, node: str, sid: str, cid: int, change: bytes, stage_id: str, seq: int = 1):
+        header, rows = self.open(node)
+        body = push_body(
+            header["lineage"],
+            sid,
+            cid,
+            seq,
+            rows[-1][0] if rows else 0,
+            b"",
+            entries=[change],
+            stage_id=stage_id,
+        )
+        response = call(routes.collab_updates_post, node, body=body)
+        return response.status_code, answer(response)
+
+    def staged(self, node: str) -> int:
+        doc_id = routes.collab.find(routes.ADAPTER, node).id
+        return frappe.db.sql("SELECT COUNT(*) FROM `__writer_collab_stage` WHERE `doc_id` = %s", doc_id)[0][0]
+
+    def test_a_four_mebibyte_change_sent_in_pieces_in_any_order_commits_once_and_leaves_no_pieces(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        change = big_change(cid, 4 * 2**20)
+        order = [5, 0, 15, 3, 3, 9, 1, 2, 14, 4, 6, 7, 8, 10, 11, 12, 13]
+
+        stage_id = self.stage(node, sid, change, order=order)
+        first = self.push_staged(node, sid, cid, change, stage_id)
+        again = self.push_staged(node, sid, cid, change, stage_id)
+        late = self.put(
+            node, stage_id, 2, piece_body(self.open(node)[0]["lineage"], sid, 1, change, pieces_of(change)[2])
+        )
+
+        self.assertEqual((len(pieces_of(change)), first[0]), (16, 200))
+        self.assertEqual((again[0], again[1]["dup"], again[1]["rev"]), (200, True, first[1]["rev"]))
+        self.assertEqual(late, (200, {"dup": True}))
+        self.assertEqual(self.open(node)[1], [(1, change)])
+        self.assertEqual(self.staged(node), 0)
+        self.assert_one_order(node, 1)
+
+    def test_a_push_naming_a_stage_that_lacks_a_piece_stores_nothing_until_the_piece_arrives(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        change = big_change(cid, 600_000)
+
+        stage_id = self.stage(node, sid, change, order=[0, 2])
+        waiting = self.push_staged(node, sid, cid, change, stage_id)
+        unknown = self.push_staged(node, sid, cid, change, uuid.uuid4().hex)
+        self.assertEqual(self.open(node)[1], [])
+        lineage = self.open(node)[0]["lineage"]
+        self.put(node, stage_id, 1, piece_body(lineage, sid, 1, change, pieces_of(change)[1]))
+        done = self.push_staged(node, sid, cid, change, stage_id)
+
+        self.assertEqual(waiting, (409, {"collab": "stage_incomplete"}))
+        self.assertEqual(unknown, (409, {"collab": "stage_incomplete"}))
+        self.assertEqual(done[0], 200)
+        self.assertEqual(self.open(node)[1], [(1, change)])
+        self.assertEqual(self.staged(node), 0)
+
+    def test_a_corrupt_piece_drops_its_stage_and_the_change_staged_again_commits(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        change = big_change(cid, 600_000)
+        lineage = self.open(node)[0]["lineage"]
+        stage_id = uuid.uuid4().hex
+        pieces = pieces_of(change)
+        flipped = bytes([pieces[1][0] ^ 1]) + pieces[1][1:]
+
+        for idx, piece in enumerate([pieces[0], flipped, pieces[2]]):
+            self.put(node, stage_id, idx, piece_body(lineage, sid, 1, change, piece))
+        refused = self.push_staged(node, sid, cid, change, stage_id)
+        dropped = self.staged(node)
+        for idx, piece in enumerate(pieces):
+            self.put(node, stage_id, idx, piece_body(lineage, sid, 1, change, piece))
+        done = self.push_staged(node, sid, cid, change, stage_id)
+
+        self.assertEqual((refused, dropped), ((409, {"collab": "stage_incomplete"}), 0))
+        self.assertEqual(done[0], 200)
+        self.assertEqual(self.open(node)[1], [(1, change)])
+
+    def test_a_piece_that_disagrees_with_its_stage_or_another_sessions_stage_is_refused(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        other_sid, other_cid = self.session(node)
+        change = big_change(cid, 600_000)
+        lineage = self.open(node)[0]["lineage"]
+        stage_id = self.stage(node, sid, change, order=[0])
+        pieces = pieces_of(change)
+
+        def put(idx, piece, tab_sid=sid, **header):
+            return self.put(node, stage_id, idx, piece_body(lineage, tab_sid, 1, change, piece, **header))
+
+        refusals = [
+            put(0, pieces[1]),
+            put(1, pieces[1], sha_total="00" * 32),
+            put(1, pieces[1], **{"to": 2}),
+            put(1, pieces[1], tab_sid=other_sid),
+        ]
+        theirs = self.push_staged(node, other_sid, other_cid, change, stage_id)
+
+        self.assertEqual(refusals, [(409, {"collab": "stage_conflict"})] * 4)
+        self.assertEqual(theirs, (409, {"collab": "stage_conflict"}))
+        self.assertEqual(self.staged(node), 1)
+        put(1, pieces[1])
+        put(2, pieces[2])
+        self.assertEqual(self.push_staged(node, sid, cid, change, stage_id)[0], 200)
+
+    def test_pieces_are_cut_where_their_change_says_and_no_change_is_over_four_mebibytes(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, _cid = self.session(node)
+        change = big_change(_cid, 600_000)
+        lineage = self.open(node)[0]["lineage"]
+        pieces = pieces_of(change)
+
+        def put(idx, piece, stage_id=None, **header):
+            stage_id = stage_id or uuid.uuid4().hex
+            return self.put(node, stage_id, idx, piece_body(lineage, sid, 1, change, piece, **header))
+
+        self.assertEqual(put(0, pieces[0][:-1])[0], 400)
+        self.assertEqual(put(2, pieces[2] + b"x")[0], 400)
+        self.assertEqual(put(3, b"x")[0], 400)
+        self.assertEqual(put(0, pieces[0], stage_id="not-an-id")[0], 400)
+        self.assertEqual(put(0, pieces[0], total_len=4 * 2**20 + 1), (413, {"collab": "too_large"}))
+        self.assertEqual(put(0, pieces[0], lineage="0" * 32), (409, {"collab": "lineage"}))
+        self.assertEqual(put(0, pieces[0], sid=uuid.uuid4().hex), (409, {"collab": "session_unknown"}))
+        self.assertEqual(put(2, pieces[2])[0], 200)
+        self.assertEqual(self.staged(node), 1)
+
+    def test_a_document_holds_at_most_sixteen_mebibytes_of_pieces(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, _cid = self.session(node)
+        change = b"x" * (4 * 2**20)
+
+        for _ in range(4):
+            self.stage(node, sid, change)
+        status, body = self.put(
+            node,
+            uuid.uuid4().hex,
+            0,
+            piece_body(self.open(node)[0]["lineage"], sid, 1, change, change[:PIECE_MAX]),
+        )
+
+        self.assertEqual((status, body["collab"]), (423, "stage_full"))
+        self.assertEqual(self.staged(node), 64)
+
+    def test_the_sweeper_drops_pieces_older_than_a_quarter_hour(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        change = big_change(cid, 600_000)
+        old = self.stage(node, sid, change)
+        recent = self.stage(node, sid, change)
+        now = frappe.utils.now_datetime()
+        for stage_id, minutes in ((old, 16), (recent, 14)):
+            frappe.db.sql(
+                "UPDATE `__writer_collab_stage` SET `created` = %s WHERE `stage_id` = %s",
+                (now - timedelta(minutes=minutes), stage_id),
+            )
+        frappe.db.commit()
+
+        with patch.object(scheduling, "enqueue"):
+            writer_collab.sweep()
+
+        self.assertEqual(self.push_staged(node, sid, cid, change, old), (409, {"collab": "stage_incomplete"}))
+        self.assertEqual(self.push_staged(node, sid, cid, change, recent)[0], 200)
+
+    def test_only_an_editor_signed_in_as_the_sessions_owner_stages_a_piece_on_an_open_session(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, _cid = self.session(node)
+        lineage = self.open(node)[0]["lineage"]
+        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        frappe.db.commit()
+
+        def put(user):
+            frappe.set_user(user)
+            try:
+                return self.put(node, uuid.uuid4().hex, 0, piece_body(lineage, sid, 1, b"x", b"x"))
+            finally:
+                frappe.set_user(WRITER)
+
+        outsider, reader = put(OUTSIDER), put(READER)
+        frappe.db.sql("UPDATE `__writer_collab_session` SET `closed` = 1 WHERE `sid` = %s", sid)
+        frappe.db.commit()
+        closed = put(WRITER)
+
+        self.assertIn(outsider[0], (403, 404))
+        self.assertEqual(reader[0], 403)
+        self.assertEqual(closed, (409, {"collab": "client_closed"}))
+        self.assertEqual(self.staged(node), 0)

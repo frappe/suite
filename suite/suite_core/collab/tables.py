@@ -6,7 +6,7 @@ keyed on the control row's id, never on the Drive node.
 
 import frappe
 
-KINDS = ("doc", "update", "session", "checkpoint", "recovery")
+KINDS = ("doc", "update", "session", "checkpoint", "stage", "recovery")
 
 
 def table(adapter: str, kind: str) -> str:
@@ -140,6 +140,23 @@ def ensure_tables(adapter: str) -> None:
             `report` json NULL,
             `created` datetime(6) NOT NULL,
             PRIMARY KEY (`doc_id`, `through_rev`)
+        ) {options}"""
+    )
+    frappe.db.sql_ddl(
+        f"""CREATE TABLE IF NOT EXISTS `{table(adapter, "stage")}` (
+            `doc_id` varchar(20) NOT NULL,
+            `stage_id` char(32) NOT NULL,
+            `idx` tinyint unsigned NOT NULL,
+            `purpose` varchar(20) NOT NULL,
+            `sid` char(32) NOT NULL,
+            `seq_from` bigint unsigned NULL,
+            `seq_to` bigint unsigned NULL,
+            `total_len` int unsigned NOT NULL,
+            `sha_total` binary(32) NOT NULL,
+            `bytes` mediumblob NOT NULL,
+            `created` datetime(6) NOT NULL,
+            PRIMARY KEY (`doc_id`, `stage_id`, `idx`),
+            KEY `created` (`created`)
         ) {options}"""
     )
     frappe.db.sql_ddl(

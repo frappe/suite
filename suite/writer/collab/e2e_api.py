@@ -88,6 +88,24 @@ def write_newer_schema(node: str) -> dict:
     return state(node)
 
 
+@whitelist_for_tests(methods=["POST"])
+def paragraph_change(node: str, client_id: int, length: int) -> dict:
+    """What a tab writing as `client_id` sends when it adds a paragraph of `length` letters to the end of `node`."""
+    live = writer_collab.live_state(node)
+    assert live is not None
+    tab: pycrdt.Doc = pycrdt.Doc(client_id=int(client_id))
+    tab.apply_update(live.get_update())
+    before = tab.get_state()
+    paragraph = tab.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlElement("paragraph"))
+    paragraph.children.append(pycrdt.XmlText()).insert(0, "x" * int(length))
+    doc = collab_doc(node)
+    return {
+        "change": tab.get_update(before).hex(),
+        "lineage": doc["lineage"],
+        "head_rev": int(doc["head_rev"]),
+    }
+
+
 @whitelist_for_tests(methods=["GET", "POST"])
 def state(node: str) -> dict:
     """Where `node`'s collab log stands: its checkpoint, its head and the rows between."""

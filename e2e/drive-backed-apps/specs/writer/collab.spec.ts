@@ -12,6 +12,7 @@ import {
 	logRows,
 	pastePicture,
 	picturesLoaded,
+	pushInPieces,
 	quarantineLast,
 	releaseDocument,
 	serverText,
@@ -350,6 +351,18 @@ test.describe("Writer collaboration", () => {
 		expect(state.checkpoint_rev).toBeGreaterThan(0);
 	});
 
+	test("a change sent in pieces is saved whole and opens in the editor", async ({ owner, testApi }) => {
+		const answer = await pushInPieces(owner.page.request, testApi, node, owner.user.user, 700_000);
+
+		expect(answer).toEqual({ pieces: 3, status: 200 });
+		expect((await logRows(testApi, await logId(testApi, node))).stage).toBe(0);
+		await openWriterDocument(owner.page, node);
+		await expect
+			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), { timeout: 15_000 })
+			.toContain(700_000);
+		expect((await serverText(testApi, node)).at(-1)).toBe("x".repeat(700_000));
+	});
+
 	test("a document a newer Writer edited is read-only here and asks for a reload", async ({
 		owner,
 		collaborator,
@@ -606,7 +619,7 @@ test.describe("Writer collaboration", () => {
 		await expect.poll(() => canReadNode(page.request, node)).toBe(false);
 		await expect
 			.poll(() => logRows(testApi, log))
-			.toEqual({ doc: 0, update: 0, session: 0, checkpoint: 0, recovery: 0 });
+			.toEqual({ doc: 0, update: 0, session: 0, checkpoint: 0, stage: 0, recovery: 0 });
 	});
 
 	test("Drive refuses to restore a version over a collab document", async ({ owner, testApi }) => {
