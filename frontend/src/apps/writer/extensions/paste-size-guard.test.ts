@@ -24,7 +24,7 @@ const paste = (view: Editor['view'], text: string) =>
   view.pasteText(text, new Event('paste') as ClipboardEvent)
 afterEach(() => editor?.destroy())
 
-function guarded(limits: Limits | null) {
+function guarded(limits: Limits | null, atLimit = false) {
   const said: string[] = []
   editor = new Editor({
     extensions: [
@@ -33,6 +33,7 @@ function guarded(limits: Limits | null) {
       Text,
       PasteSizeGuard.configure({
         limits: () => limits,
+        atLimit: () => atLimit,
         tooLarge: () => said.push('too large'),
         nearFull: () => said.push('nearly full'),
       }),
@@ -64,6 +65,14 @@ describe('paste size guard', () => {
     paste(view, 'y'.repeat(2000))
 
     expect([text().length, said]).toEqual([2000, ['nearly full']])
+  })
+
+  it('a paste into a full document is not also warned about, as the banner says so', () => {
+    const { view, said } = guarded({ ...empty, state_bytes: 4 * MiB }, true)
+
+    paste(view, 'y'.repeat(10))
+
+    expect(said).toEqual([])
   })
 
   it('a tab that has not heard the sizes yet takes the paste', () => {

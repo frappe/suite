@@ -1,9 +1,8 @@
-import { generateJSON } from '@tiptap/core'
+import { createNodeFromContent } from '@tiptap/core'
 import { toast as nToast, useFileUpload } from 'frappe-ui'
 import { v4 as uuidv4 } from 'uuid'
 
 import { purgeNodes } from '@/apps/writer/drive'
-import { contentBytes } from '@/apps/writer/extensions/paste-size-guard'
 import { findTab } from '@/apps/writer/extensions/tabs'
 
 const IMAGE_EXTENSIONS = {
@@ -132,19 +131,22 @@ export async function _convertDocxToHtml(file, fileId, uploaded) {
   return { html: html ? _normaliseHtml(html) : html, messages }
 }
 
-function _insertAtEnd(editor, html) {
-  editor.chain().focus().insertContentAt(editor.state.doc.content.size, html).run()
+function _insertAtEnd(editor, content) {
+  editor.chain().focus().insertContentAt(editor.state.doc.content.size, content).run()
 }
 
 // Put the imported content in a new tab; the current content stays as the
 // first tab. createTab() focuses the new tab by itself.
-function _insertInNewTab(editor, html, label) {
+function _insertInNewTab(editor, content, label) {
   const id = uuidv4()
   editor.commands.createTab({ id, label })
   const tab = findTab(editor.state.doc, id)
-  if (!tab) return _insertAtEnd(editor, html) // shouldn't happen; don't lose content
+  if (!tab) return _insertAtEnd(editor, content) // shouldn't happen; don't lose content
   // createTab() adds an empty paragraph — swap it for the imported content.
-  editor.commands.insertContentAt({ from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 }, html)
+  editor.commands.insertContentAt(
+    { from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 },
+    content,
+  )
 }
 
 /**
@@ -164,13 +166,18 @@ export async function importDocx(file, { editor, currentFileId }) {
       nToast.error('The document appears to be empty.')
       return
     }
-    const guard = ed.storage.pasteSizeGuard
-    if (guard?.refuses(contentBytes(generateJSON(html, ed.extensionManager.extensions).content))) {
+    // Parsed as the insert would, so what is measured is what goes in
+    const content = createNodeFromContent(html, ed.schema, {
+      parseOptions: { preserveWhitespace: 'full', ...ed.options.parseOptions },
+    })
+    const tooLarge = () => nToast.error('This file is too large to import.')
+    // Only a collaborative document has a size limit
+    if (ed.storage.pasteSizeGuard?.refuses(content, tooLarge)) {
       await _discardUploads(uploaded)
       return
     }
-    if (ed.isEmpty) _insertAtEnd(ed, html)
-    else _insertInNewTab(ed, html, file.name.replace(/\.docx$/i, ''))
+    if (ed.isEmpty) _insertAtEnd(ed, content)
+    else _insertInNewTab(ed, content, file.name.replace(/\.docx$/i, ''))
 
     if (messages?.some((m) => m.type === 'error')) {
       nToast.error('Document imported, but some content could not be converted.')

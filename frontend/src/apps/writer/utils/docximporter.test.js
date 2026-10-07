@@ -444,13 +444,26 @@ describe('importDocx into a document with a size limit', () => {
     await importDocx(fakeFile('huge.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
 
     expect([editor.getText(), tabsIn(editor.state.doc).length, tooLarge.mock.calls.length]).toEqual(
-      ['Original text', 0, 1],
+      ['Original text', 0, 0],
     )
+    expect(toastMock.error).toHaveBeenCalledWith('This file is too large to import.')
     expect(driveRequests).toEqual([
       'POST /api/suite/drive/nodes/batch',
       'POST /api/suite/drive/nodes/batch/purge',
     ])
     expect(toastMock.success).not.toHaveBeenCalled()
+  })
+
+  it('keeps the runs of spaces it measured', async () => {
+    convertToHtmlMock.mockResolvedValue({ value: '<p>a   b</p>', messages: [] })
+    const { editor } = guarded('')
+
+    await importDocx(fakeFile('spaces.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
+
+    expect(editor.getText().trim()).toBe('a   b')
   })
 
   it('imports a document that fits in one save', async () => {
