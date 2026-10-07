@@ -15,42 +15,61 @@
 
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { describe, it, expect, beforeAll } from 'vitest'
 import { initSync, Model } from '@ironcalc/wasm'
+import { beforeAll, describe, expect, it } from 'vitest'
+
 import { evaluate } from '../formula.js'
-import { rng, genFormula, CURATED } from './corpus.js'
+import { CURATED, genFormula, rng } from './corpus.js'
 
 // ── Fixture grid + canon/compare, replicated from grid.js ────────────────────
 // grid.js imports the optional 'hyperformula' devDependency at module scope,
 // so this always-on gate carries its own copy of the fixture and comparison.
 const GRID = [
   //  A      B      C      D       E
-  [   1,     10,   -1,    2.5,    'apple'  ],
-  [   2,     null, null,  0,      'banana' ],
-  [   3,     30,   -5,   -2.5,    'apple'  ],
-  [   4,     null, 7,     100,    ''       ],
-  [   5,     50,   0,    -0.5,    'cherry' ],
-  [   -6,    60,   12,    1000,   'apple'  ],
-  [   'x',   70,   -3,    3.14159,'date'   ],
-  [   8,     null, 4,     -1000,  ''       ],
-  [   9,     90,   -9,    0.001,  'banana' ],
-  [   10,    100,  100,   -12345, 'apple'  ],
+  [1, 10, -1, 2.5, 'apple'],
+  [2, null, null, 0, 'banana'],
+  [3, 30, -5, -2.5, 'apple'],
+  [4, null, 7, 100, ''],
+  [5, 50, 0, -0.5, 'cherry'],
+  [-6, 60, 12, 1000, 'apple'],
+  ['x', 70, -3, 3.14159, 'date'],
+  [8, null, 4, -1000, ''],
+  [9, 90, -9, 0.001, 'banana'],
+  [10, 100, 100, -12345, 'apple'],
 ]
 const COLS = 5
-const colIdx = (l) => { let n = 0; for (const c of l) n = n * 26 + (c.charCodeAt(0) - 64); return n - 1 }
-const colLbl = (i) => { let s = '', n = i + 1; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26) } return s }
+const colIdx = (l) => {
+  let n = 0
+  for (const c of l) n = n * 26 + (c.charCodeAt(0) - 64)
+  return n - 1
+}
+const colLbl = (i) => {
+  let s = '',
+    n = i + 1
+  while (n > 0) {
+    const r = (n - 1) % 26
+    s = String.fromCharCode(65 + r) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
+}
 function cellAt(id) {
   const m = String(id).match(/^([A-Z]+)(\d+)$/)
   if (!m) return ''
-  const c = colIdx(m[1]), r = parseInt(m[2], 10) - 1
+  const c = colIdx(m[1]),
+    r = parseInt(m[2], 10) - 1
   if (r < 0 || r >= GRID.length || c < 0 || c >= COLS) return ''
   const v = GRID[r][c]
   return v === null || v === undefined ? '' : v
 }
 const getRangeValues = (a, b) => {
-  const m1 = String(a).match(/^([A-Z]+)(\d+)$/), m2 = String(b).match(/^([A-Z]+)(\d+)$/)
+  const m1 = String(a).match(/^([A-Z]+)(\d+)$/),
+    m2 = String(b).match(/^([A-Z]+)(\d+)$/)
   if (!m1 || !m2) return []
-  const c1 = colIdx(m1[1]), r1 = +m1[2], c2 = colIdx(m2[1]), r2 = +m2[2]
+  const c1 = colIdx(m1[1]),
+    r1 = +m1[2],
+    c2 = colIdx(m2[1]),
+    r2 = +m2[2]
   const rows = []
   const rEnd = Math.min(Math.max(r1, r2), 100000)
   for (let r = Math.min(r1, r2); r <= rEnd; r++) {
@@ -68,11 +87,13 @@ function canon(raw) {
   if (typeof raw === 'boolean') return { kind: 'bool', v: raw }
   if (isErrTok(raw)) return { kind: 'err', v: raw }
   if (typeof raw === 'number') return { kind: 'num', v: raw }
-  if (typeof raw === 'string' && raw.trim() !== '' && !isNaN(Number(raw))) return { kind: 'num', v: Number(raw) }
+  if (typeof raw === 'string' && raw.trim() !== '' && !isNaN(Number(raw)))
+    return { kind: 'num', v: Number(raw) }
   return { kind: 'text', v: String(raw) }
 }
 function compare(a, b, eps = 1e-9) {
-  const ca = canon(a), cb = canon(b)
+  const ca = canon(a),
+    cb = canon(b)
   // Both errors: match on the class even if the code differs (a silent wrong
   // number is the failure mode this harness exists to catch).
   if (ca.kind === 'err' && cb.kind === 'err') {
@@ -92,8 +113,18 @@ function compare(a, b, eps = 1e-9) {
 
 // ── Old-engine adapter (same shape as grid.js sheetsEval) ────────────────────
 function oldEval(f) {
-  try { return evaluate(f.replace(/^=/, ''), cellAt, getRangeValues, () => '', () => [], () => null) }
-  catch (e) { return { __throw: e.message } }
+  try {
+    return evaluate(
+      f.replace(/^=/, ''),
+      cellAt,
+      getRangeValues,
+      () => '',
+      () => [],
+      () => null,
+    )
+  } catch (e) {
+    return { __throw: e.message }
+  }
 }
 
 // ── IronCalc adapter ─────────────────────────────────────────────────────────
@@ -118,7 +149,8 @@ beforeAll(() => {
       model.setUserInput(0, r + 1, c + 1, String(v))
     }
   }
-  const SCRATCH_ROW = 1, SCRATCH_COL = 8 // H1, outside the data region
+  const SCRATCH_ROW = 1,
+    SCRATCH_COL = 8 // H1, outside the data region
   const st = model.getCellStyle(0, SCRATCH_ROW, SCRATCH_COL).style
   st.num_fmt = '0.###############E+000'
   model.setSelectedSheet(0)
@@ -129,11 +161,11 @@ beforeAll(() => {
       model.setUserInput(0, SCRATCH_ROW, SCRATCH_COL, f.startsWith('=') ? f : '=' + f)
       const t = model.getCellType(0, SCRATCH_ROW, SCRATCH_COL)
       const s = model.getFormattedCellValue(0, SCRATCH_ROW, SCRATCH_COL)
-      if (t === 16) return s           // error token, e.g. "#VALUE!"
+      if (t === 16) return s // error token, e.g. "#VALUE!"
       if (t === 4) return s === 'TRUE' // logical
-      if (t === 1) return Number(s)    // formatted number -> numeric
-      if (s === '') return ''          // blank
-      return s                         // text
+      if (t === 1) return Number(s) // formatted number -> numeric
+      if (s === '') return '' // blank
+      return s // text
     } catch (e) {
       return { __throw: e.message }
     }
@@ -149,7 +181,8 @@ describe('IronCalc differential gate (seeded, always on)', () => {
   const RANDOM_FLOOR = 0.9
 
   it(`matches at least ${CURATED_FLOOR}/16 curated Excel-verified answers`, () => {
-    let scored = 0, right = 0
+    let scored = 0,
+      right = 0
     const misses = []
     for (const { f, excel } of CURATED) {
       if (excel === null || excel === undefined) continue
@@ -166,7 +199,8 @@ describe('IronCalc differential gate (seeded, always on)', () => {
   it(`agrees with formula.js on >= ${RANDOM_FLOOR * 100}% of ${N} seeded random formulas`, () => {
     const r = rng(SEED)
     const seen = new Set()
-    let ran = 0, agree = 0
+    let ran = 0,
+      agree = 0
     while (ran < N) {
       const f = genFormula(r)
       if (seen.has(f)) continue
@@ -176,7 +210,9 @@ describe('IronCalc differential gate (seeded, always on)', () => {
     }
     const rate = agree / ran
     // eslint-disable-next-line no-console
-    console.log(`  ironcalc random: ${(rate * 100).toFixed(2)}% agreement with formula.js (${agree}/${ran}, seed ${SEED})`)
+    console.log(
+      `  ironcalc random: ${(rate * 100).toFixed(2)}% agreement with formula.js (${agree}/${ran}, seed ${SEED})`,
+    )
     expect(rate).toBeGreaterThanOrEqual(RANDOM_FLOOR)
   })
 })

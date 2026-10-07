@@ -4877,9 +4877,7 @@ function _setupGridInstance() {
     getComment: (id) => comments.hasOpenComment(id, sheet.getCurrentSheet()),
     getValidation: (id) => validation.get(id, sheet.getCurrentSheet()),
     getCondFormat: (id, val) =>
-      condFormat.getFormatOverride(id, val, sheet.getCurrentSheet(), (cid) =>
-        _displayValue(cid),
-      ),
+      condFormat.getFormatOverride(id, val, sheet.getCurrentSheet(), (cid) => _displayValue(cid)),
     // A SPARKLINE formula evaluates to a spec object; the painter draws it.
     // In show-formulas mode the cell shows its =SPARKLINE(...) text instead.
     getSparkline: (id) => {
@@ -5083,7 +5081,11 @@ onMounted(async () => {
     isInitialLoad.value = false
   }
   if (_ironcalcEnabled() && grid?.isLazyValues?.()) {
-    try { await _startIronCalc() } catch (e) { console.error('[sheets] IronCalc preview failed to start', e) }
+    try {
+      await _startIronCalc()
+    } catch (e) {
+      console.error('[sheets] IronCalc preview failed to start', e)
+    }
   }
   // Focus the grid on open so arrow-key nav and Cmd+V work immediately, without
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
@@ -8204,27 +8206,34 @@ let _ironcalc = null // { client, provider } once started
 function _ironcalcEnabled() {
   try {
     return new URLSearchParams(window.location.search).get('engine') === 'ironcalc'
-  } catch { return false }
+  } catch {
+    return false
+  }
 }
 
 async function _startIronCalc() {
   // Dynamic imports: without the flag, none of the core is downloaded.
-  const [{ createWorkbookClient }, { createDisplayCache }, { createCellProvider }, { importV1 }] = await Promise.all([
-    import('../../core/client'),
-    import('../../core/display-cache'),
-    import('../../core/cell-provider'),
-    import('../../core/import-v1'),
-  ])
-  const cache  = createDisplayCache()
+  const [{ createWorkbookClient }, { createDisplayCache }, { createCellProvider }, { importV1 }] =
+    await Promise.all([
+      import('../../core/client'),
+      import('../../core/display-cache'),
+      import('../../core/cell-provider'),
+      import('../../core/import-v1'),
+    ])
+  const cache = createDisplayCache()
   const client = await createWorkbookClient({ echo: cache })
-  client.onCommandError(f => console.error('[sheets] IronCalc rejected', f.command.type, f.error))
+  client.onCommandError((f) => console.error('[sheets] IronCalc rejected', f.command.type, f.error))
 
   const t0 = performance.now()
   const names = sheet.getSheetNames()
-  const { command, skipped } = importV1(names.map(name => ({ name, cells: sheet.getRawData(name) })))
+  const { command, skipped } = importV1(
+    names.map((name) => ({ name, cells: sheet.getRawData(name) })),
+  )
   client.dispatch(command)
   await client.idle()
-  console.info(`[sheets] IronCalc loaded ${command.payload.commands.length} commands in ${Math.round(performance.now() - t0)} ms`)
+  console.info(
+    `[sheets] IronCalc loaded ${command.payload.commands.length} commands in ${Math.round(performance.now() - t0)} ms`,
+  )
   if (Object.keys(skipped).length) console.warn('[sheets] IronCalc skipped cells', skipped)
 
   const provider = createCellProvider({ client, cache, requestRender: () => grid?.render?.() })
@@ -8257,14 +8266,18 @@ function _ironcalcMirrorInput(id, value, sn) {
   if (!_ironcalc) return
   const p = parseCellId(id)
   if (!p) return
-  const row = p.row + 1, col = p.col + 1
+  const row = p.row + 1,
+    col = p.col + 1
   const input = value == null ? '' : String(value)
   _ironcalc.client.dispatch({
     id: `ui-${Date.now()}-${_ironcalcSeq++}`,
     actor: 'local',
     ts: Date.now(),
     ...(input === ''
-      ? { type: 'clearContents', payload: { sheet: sn, range: { r1: row, c1: col, r2: row, c2: col } } }
+      ? {
+          type: 'clearContents',
+          payload: { sheet: sn, range: { r1: row, c1: col, r2: row, c2: col } },
+        }
       : { type: 'setInput', payload: { sheet: sn, row, col, input } }),
   })
 }
