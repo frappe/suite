@@ -2,7 +2,7 @@
 <template>
   <Dialog v-model:open="open" :title="__('Schedule meet')" dismissible>
     <template #default>
-      <div class="space-y-4">
+      <div class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
         <FormControl v-model="title" :label="__('Title')" :placeholder="__('Team meeting')" />
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
           <FormControl
@@ -141,6 +141,7 @@ async function show() {
 }
 
 function submit() {
+  if (scheduleMeeting.isPending) return
   if (!calendarStore.accountId) {
     toast.error(__('Set up Calendar before scheduling a Meet.'))
     return

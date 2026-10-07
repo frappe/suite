@@ -33,9 +33,8 @@ const effects = {
       'calendar.search_calendar_events_with_shared',
     ],
   },
-  // Connecting records the visit in the user's recent rooms.
-  room_connection: { invalidates: ['recent_rooms'] },
-  room_join: { invalidates: ['room_access', 'room_preview', 'recent_rooms'] },
+  room_connection: 'none',
+  room_join: { invalidates: ['room_access', 'room_preview'] },
   guest_room_join: { invalidates: ['room_access', 'room_preview'] },
   guest_room_connection: 'none',
   guest_room_token: 'none',

@@ -25,8 +25,6 @@ import type {
   GuestRoomTokenOutput,
   PromoteToCohostInput,
   PromoteToCohostOutput,
-  RecentRoomsInput,
-  RecentRoomsOutput,
   RecordingListInput,
   RecordingListOutput,
   RecordingPreflightInput,
@@ -741,39 +739,6 @@ export const operationRoomLink: Validators<RoomLinkInput, RoomLinkOutput> = {
         type: 'object',
       },
       'room_link output',
-    )
-  },
-}
-
-export const operationRecentRooms: Validators<RecentRoomsInput, RecentRoomsOutput> = {
-  validateInput(value: unknown): asserts value is RecentRoomsInput {
-    assertSchema(
-      value,
-      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
-      'recent_rooms input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is RecentRoomsOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          RecentRoom: {
-            properties: {
-              id: { title: 'Id', type: 'string' },
-              title: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Title' },
-              last_joined: { title: 'Last Joined', type: 'string' },
-              recording: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Recording' },
-            },
-            required: ['id', 'title', 'last_joined', 'recording'],
-            title: 'RecentRoom',
-            type: 'object',
-          },
-        },
-        items: { $ref: '#/$defs/RecentRoom' },
-        type: 'array',
-      },
-      'recent_rooms output',
     )
   },
 }

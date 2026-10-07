@@ -61,13 +61,6 @@ class RecordingSummary(TypedDict):
     status: Literal["Ready", "Partial"]
 
 
-class RecentRoom(TypedDict):
-    id: str
-    title: str | None
-    last_joined: str
-    recording: str | None
-
-
 class RejectedRecording(TypedDict):
     status: Literal["Rejected"]
 

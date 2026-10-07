@@ -544,34 +544,6 @@ const operationRoomLink: MutationRef<RoomLinkInput, RoomLinkOutput, RoomLinkErro
   loadValidators: async () => (await import('./validators')).operationRoomLink,
 }
 
-export type RecentRoomsOutputRecentRoom = {
-  id: string
-  title: string | null
-  last_joined: string
-  recording: string | null
-}
-
-export type RecentRoomsInput = Record<string, never>
-
-export type RecentRoomsOutput = Array<RecentRoomsOutputRecentRoom>
-
-export type RecentRoomsError = never
-
-const operationRecentRooms: QueryRef<RecentRoomsInput, RecentRoomsOutput, RecentRoomsError> = {
-  id: 'recent_rooms',
-  owner: 'meet',
-  kind: 'query',
-  publicName: 'rooms.recent',
-  method: 'GET',
-  path: 'rooms/recent',
-  prefix: '/api/suite/meet/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationRecentRooms,
-}
-
 export type RecordingListOutputRecordingSummary = {
   name: string
   meet_room: string
@@ -884,7 +856,6 @@ export const api = {
     join: operationRoomJoin,
     refreshToken: operationRoomToken,
     createLink: operationRoomLink,
-    recent: operationRecentRooms,
     search: operationRoomSearch,
     get: operationRoomDocument,
     approve: operationApproveJoinRequest,

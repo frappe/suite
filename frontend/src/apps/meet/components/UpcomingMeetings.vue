@@ -12,7 +12,6 @@ import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
-const initializing = ref(true)
 const accountError = ref(false)
 
 interface CalendarEventParticipant {
@@ -206,7 +205,6 @@ const joinRow = (row: UpcomingEventRow) => {
 }
 
 const reload = async () => {
-  initializing.value = true
   try {
     await calendarStore.loadUser()
     accountError.value = false
@@ -214,8 +212,6 @@ const reload = async () => {
   } catch (error) {
     accountError.value = true
     console.warn('Could not load upcoming calendar meetings:', error)
-  } finally {
-    initializing.value = false
   }
 }
 
@@ -226,25 +222,12 @@ defineExpose({ reload })
 
 <template>
   <section
-    v-if="
-      meetings.length ||
-      initializing ||
-      upcomingEvents.isFetching ||
-      accountError ||
-      upcomingEvents.error
-    "
+    v-if="meetings.length || accountError || upcomingEvents.error"
     :aria-label="__('Scheduled meetings')"
   >
     <h2 class="mb-3 text-base font-medium text-ink-gray-8">{{ __('Upcoming meetings') }}</h2>
     <div
-      v-if="(initializing || upcomingEvents.isFetching) && upcomingEvents.data == null"
-      class="py-8 text-center text-base text-ink-gray-5"
-      role="status"
-    >
-      {{ __('Loading meetings…') }}
-    </div>
-    <div
-      v-else-if="accountError || upcomingEvents.error"
+      v-if="accountError || upcomingEvents.error"
       class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
       role="alert"
     >

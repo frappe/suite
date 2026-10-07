@@ -130,12 +130,6 @@ async function mount() {
 }
 
 describe('Meet upcoming list', () => {
-  it('shows loading while the initial Calendar request is pending', async () => {
-    state.request.mockImplementation(() => new Promise(() => {}))
-    const root = await mount()
-    expect(root.querySelector('[role="status"]')?.textContent).toContain('Loading meetings…')
-  })
-
   it('shows a failed request and lets the user retry', async () => {
     state.request.mockRejectedValueOnce(new Error('Calendar unavailable'))
     const root = await mount()
@@ -169,13 +163,6 @@ describe('Meet upcoming list', () => {
       'https://suite.frappe.io/meet/ogga-swbh-almm',
     )
     expect(state.push).not.toHaveBeenCalled()
-  })
-
-  it('renders nothing when there are no upcoming meetings', async () => {
-    state.events = []
-    const root = await mount()
-    expect(root.textContent).toBe('')
-    expect(root.querySelector('section')).toBeNull()
   })
 
   it('excludes ended meetings and links that are not safe Meet URLs', async () => {

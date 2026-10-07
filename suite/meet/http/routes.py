@@ -11,7 +11,7 @@ from frappe.utils import get_system_timezone, get_url
 
 from suite.composition.http import BadRequest, Route
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
-from suite.meet.api import meeting, recents, recording, recordings, schedule
+from suite.meet.api import meeting, recording, recordings, schedule
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.http import shapes
 
@@ -283,14 +283,6 @@ ROUTES: tuple[Route, ...] = (
     ),
     Route(
         "GET",
-        "rooms/recent",
-        "recent_rooms",
-        output=list[shapes.RecentRoom],
-        kind="query",
-        public_name="rooms.recent",
-    ),
-    Route(
-        "GET",
         "recordings",
         "recording_list",
         output=list[shapes.RecordingSummary],
@@ -317,7 +309,6 @@ recording_start = recording.start
 recording_stop = recording.stop
 calendar_meeting = schedule.create_scheduled_meeting
 room_link = schedule.create_meet_link
-recent_rooms = recents.get_recent_meetings
 recording_list = recordings.get_recordings
 
 

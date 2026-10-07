@@ -96,7 +96,7 @@ async function mount() {
 }
 
 describe('Shared meeting scheduler', () => {
-  it('schedules an untitled meeting with the organizer and invited people', async () => {
+  it('schedules with ⌘Enter, including the organizer and invited people', async () => {
     const { root, scheduled } = await mount()
     for (const [label, value] of [
       ['Date', '2026-10-08'],
@@ -113,9 +113,14 @@ describe('Shared meeting scheduler', () => {
       .find((button) => button.textContent === 'Invite guest')!
       .click()
     await nextTick()
-    buttons()
-      .find((button) => button.textContent === 'Schedule')!
-      .click()
+    root.querySelector('input')!.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
     await vi.waitFor(() => expect(scheduled).toHaveBeenCalledOnce())
     expect(state.run).toHaveBeenCalledWith(
       expect.objectContaining({
