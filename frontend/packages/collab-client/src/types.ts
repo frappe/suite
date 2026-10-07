@@ -60,6 +60,7 @@ export type LiveState = 'joining' | 'live' | 'polling'
 export interface Peer {
   pid: number
   user: string
+  color: string
 }
 
 export interface RoomPresence {

@@ -47,7 +47,9 @@ describe('collab presence', () => {
       { room: 'sc:other-document', pid: PEER + 1, user: 'c@x.com' },
     ])
 
-    expect(presence.peers).toEqual([{ pid: PEER, user: 'b@x.com' }])
+    expect(presence.peers).toEqual([
+      { pid: PEER, user: 'b@x.com', color: expect.stringMatching(/^#/) },
+    ])
   })
 
   it('keeps a peer until it has left every room this tab shares with it', () => {

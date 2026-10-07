@@ -55,7 +55,7 @@ export class Presence {
 
   // Everyone else in the document now, one entry per tab
   get peers(): Peer[] {
-    return [...this.members].map(([pid, { user }]) => ({ pid, user }))
+    return [...this.members].map(([pid, { user }]) => ({ pid, user, color: color(pid) }))
   }
 
   onChange(listener: () => void) {
@@ -143,7 +143,7 @@ export class Presence {
       if (typeof pid !== 'number' || typeof n !== 'number' || !this.members.has(pid)) continue
       const { cursor, at } = (state ?? {}) as { cursor?: unknown; at?: unknown }
       if (typeof at === 'number') this.hooks.ahead(at)
-      const user = { id: this.members.get(pid)!.user, color: COLORS[pid % COLORS.length] }
+      const user = { id: this.members.get(pid)!.user, color: color(pid) }
       accepted.push([pid, n, { user, cursor: caret(cursor) }])
     }
     if (!accepted.length) return
@@ -189,6 +189,8 @@ export class Presence {
     for (const listener of this.listeners) listener()
   }
 }
+
+const color = (pid: number) => COLORS[pid % COLORS.length]
 
 function list(value: unknown): object[] {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : []
