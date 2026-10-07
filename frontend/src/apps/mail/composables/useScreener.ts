@@ -242,30 +242,28 @@ const createShared = () => {
         await client.mutation(api.mail.screener.reject, { account, from_emails: emails }),
       ).flat()
       const rest = mails.filter((mail) => !junked.includes(mail.id))
-      // The rule is in place already, so this only junks the rest of the thread, and counts what
-      // else of theirs is in the Inbox — mail from before screening, say.
-      const { inbox } = await client
-        .mutation(api.mail.screening.block, {
+      // Puts back all of it: the senders' rule and waiting mail, and the rest as it was saved.
+      const putBack = () =>
+        Promise.all([
+          reverseVerdict(account, emails, junked),
+          rest.length && client.mutation(api.mail.messages.setFolders, { account, mails: rest }),
+        ]).then(settled)
+      // The rule is in place already, so this only junks the rest of what is being junked, and
+      // counts what else of theirs is in the Inbox — mail from before screening, say. Should it fail,
+      // the Junk did only half its work: it is taken back whole, and fails as a whole.
+      let inbox: number
+      try {
+        const blocked = await client.mutation(api.mail.screening.block, {
           account,
           from_emails: emails,
           ids: rest.map((mail) => mail.id),
         })
-        .catch((error) => {
-          failed(error)
-          return { inbox: 0 }
-        })
-      raiseBlocked(
-        emails,
-        () => {
-          void reverseVerdict(account, emails, junked)
-          if (rest.length)
-            void client
-              .mutation(api.mail.messages.setFolders, { account, mails: rest })
-              .then(settled)
-        },
-        inbox,
-        account,
-      )
+        inbox = blocked.inbox
+      } catch (error) {
+        await putBack().catch(() => {})
+        throw error
+      }
+      raiseBlocked(emails, () => void putBack().catch(failed), inbox, account)
       return true
     } catch (error) {
       undecide(account, emails)
