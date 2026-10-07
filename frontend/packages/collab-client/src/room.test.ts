@@ -1,8 +1,10 @@
+import { digest } from 'lib0/hash/sha256'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { CollabOpenError } from './answers'
 import { openCollabRoom } from './open'
+import { hex } from './outbox'
 import { REMOTE } from './room'
 import { openDeviceStore, type DeviceStore } from './store'
 import type { Answer, CollabEndpoints, CollabRoom, OpenOptions } from './types'
@@ -69,7 +71,16 @@ function fakeServer(state = 'live', lineage = 'L') {
     reports: [] as number[],
     answer: (): Answer => reply(202, { collab: 'judging', judged: judge.judged }),
   }
+  // Pieces of big changes by stage, as the server keeps them until a push names the stage
+  const stages = new Map<string, Map<number, Uint8Array>>()
+  const pieces: { stage: string; idx: number }[] = []
+  const shas = new Map<string, string>()
   let nextClient = 1
+  const split = (body: Uint8Array) => {
+    const length = new DataView(body.buffer, body.byteOffset).getUint32(0)
+    const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
+    return { length, header, bytes: body.slice(4 + length) }
+  }
   const reach = (call: string) => {
     if (!access.online) throw new TypeError('Failed to fetch')
     calls.push(call)
@@ -130,13 +141,22 @@ function fakeServer(state = 'live', lineage = 'L') {
       judge.reports.push(rev)
       return judge.answer()
     },
+    async stage(stage, idx, body) {
+      reach('stage')
+      if (access.refuse) return access.refuse
+      const { header, bytes } = split(body)
+      pieces.push({ stage, idx })
+      if ((sessions.get(header.sid)?.acked ?? 0) >= header.to) return reply(200, { dup: true })
+      if (!stages.has(stage)) stages.set(stage, new Map())
+      shas.set(stage, header.sha_total)
+      stages.get(stage)!.set(idx, bytes)
+      return reply(200, { staged: idx })
+    },
     async push(body) {
       reach('push')
       if (access.refuse) return access.refuse
       if (judge.held) return reply(423, { collab: 'paused', reason: 'suspect', retry_ms: 300_000 })
-      const view = new DataView(body.buffer, body.byteOffset)
-      const length = view.getUint32(0)
-      const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
+      const { length, header, bytes: inline } = split(body)
       finals.push(header.final)
       schemas.push(header.schema)
       const session = sessions.get(header.sid)
@@ -152,8 +172,24 @@ function fakeServer(state = 'live', lineage = 'L') {
       }
       if (header.from !== session.acked + 1)
         return reply(409, { collab: 'seq', acked: session.acked })
+      let bytes = inline
+      if (header.stage_id) {
+        const staged = stages.get(header.stage_id) ?? new Map<number, Uint8Array>()
+        const ordered = [...staged.keys()].sort((a, b) => a - b)
+        if (!ordered.length || ordered.some((idx, at) => idx !== at))
+          return reply(409, { collab: 'stage_incomplete' })
+        bytes = new Uint8Array(ordered.reduce((sum, idx) => sum + staged.get(idx)!.length, 0))
+        let at = 0
+        for (const idx of ordered) {
+          bytes.set(staged.get(idx)!, at)
+          at += staged.get(idx)!.length
+        }
+        const whole = hex(digest(bytes)) === shas.get(header.stage_id)
+        stages.delete(header.stage_id)
+        if (!whole) return reply(409, { collab: 'stage_incomplete' })
+      }
       header.shas.forEach((sha: string, index: number) => (session.shas[header.from + index] = sha))
-      rows.push({ rev: rows.length + 1, bytes: body.slice(4 + length) })
+      rows.push({ rev: rows.length + 1, bytes })
       session.acked = header.to
       return reply(200, { rev: rows.length, head: rows.length, acked: header.to })
     },
@@ -169,6 +205,8 @@ function fakeServer(state = 'live', lineage = 'L') {
   return {
     rows,
     sessions,
+    stages,
+    pieces,
     endpoints,
     access,
     calls,
@@ -208,6 +246,8 @@ async function join(endpoints: CollabEndpoints, extra: Partial<OpenOptions> = {}
 }
 
 const text = (room: CollabRoom) => room.doc.getText('t').toString()
+// Three pieces' worth of typing
+const BIG = 'x'.repeat(600_000)
 
 // Stands in for an editor binding that throws on content this browser can't place
 function breaksOn(room: CollabRoom, word: string) {
@@ -820,6 +860,139 @@ describe('collab room', () => {
     await flushed
 
     expect([calls, server.rows.length, room.saveState, room.paused]).toEqual([3, 1, 'clean', null])
+  })
+
+  it('a change too big for one push is staged in pieces and committed once', async () => {
+    const server = fakeServer()
+    const room = await join(server.endpoints())
+    room.doc.getText('t').insert(0, BIG)
+
+    await room.flush()
+
+    expect(server.pieces.map((piece) => piece.idx)).toEqual([0, 1, 2])
+    expect([server.rows.length, server.stages.size, room.saveState, room.unsent]).toEqual([
+      1,
+      0,
+      'clean',
+      0,
+    ])
+    expect(text(await join(server.endpoints()))).toBe(BIG)
+  })
+
+  it('pieces the server lost are staged again into the same stage, and the change commits', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let lose = true
+    endpoints.push = async (body, options) => {
+      if (lose) server.stages.forEach((staged) => staged.delete(1))
+      lose = false
+      return push(body, options)
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, BIG)
+
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    expect(server.pieces).toHaveLength(6)
+    expect(new Set(server.pieces.map((piece) => piece.stage)).size).toBe(1)
+    expect([server.rows.length, room.saveState]).toEqual([1, 'clean'])
+  })
+
+  it('a stage the server refuses is replaced by a new one', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const stage = endpoints.stage
+    const ids: string[] = []
+    endpoints.stage = async (id, idx, body) => {
+      ids.push(id)
+      if (ids.length > 1) return stage(id, idx, body)
+      return reply(409, { collab: 'stage_conflict' })
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, BIG)
+
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    const [refused, ...rest] = ids
+    expect([rest.length, rest.includes(refused), new Set(rest).size]).toEqual([3, false, 1])
+    expect([server.rows.length, room.saveState]).toEqual([1, 'clean'])
+  })
+
+  it('a document with too many pieces staged is pushed to again after the wait it asks for', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const stage = endpoints.stage
+    let full = true
+    endpoints.stage = async (id, idx, body) => {
+      if (!full) return stage(id, idx, body)
+      full = false
+      return reply(423, { collab: 'stage_full', retry_ms: 60_000 })
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, BIG)
+
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect([room.paused, server.rows.length]).toEqual(['stage_full', 0])
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    expect([room.paused, server.rows.length, room.saveState]).toEqual([null, 1, 'clean'])
+  })
+
+  it('a change the server finds too large stops saving and says why', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    endpoints.stage = async () => reply(413, { collab: 'too_large' })
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, BIG)
+
+    await room.flush()
+
+    expect([room.stopped, room.saveState, server.rows.length]).toEqual(['too_large', 'failed', 0])
+  })
+
+  it('a staged change whose answer was lost is acknowledged without staging it again', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const push = endpoints.push
+    let drop = true
+    endpoints.push = async (body, options) => {
+      const answer = await push(body, options)
+      if (drop) {
+        drop = false
+        throw new TypeError('connection reset')
+      }
+      return answer
+    }
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, BIG)
+
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    expect(server.pieces).toHaveLength(4)
+    expect([server.rows.length, room.saveState, room.unsent]).toEqual([1, 'clean', 0])
+  })
+
+  it('leaving the page with a big change unsent stages it without keepalive', async () => {
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const sent: (boolean | undefined)[] = []
+    const push = endpoints.push
+    endpoints.push = (body, options) => {
+      sent.push(options?.keepalive)
+      return push(body, options)
+    }
+    const room = await join(endpoints, { sendDelayMs: 60_000, sendMaxDelayMs: 60_000 })
+    room.doc.getText('t').insert(0, BIG)
+
+    window.dispatchEvent(new Event('pagehide'))
+    await vi.waitFor(() => expect(room.unsent).toBe(0))
+
+    expect([sent, server.pieces.length]).toEqual([[undefined], 3])
   })
 
   it('typing after a lost answer is sent from where the server stopped', async () => {

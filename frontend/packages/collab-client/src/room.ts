@@ -3,6 +3,7 @@ import * as Y from 'yjs'
 import { readReply, staleSession, type Reply } from './answers'
 import { decodeFrame, encodePush, type PullHeader, type Row } from './frames'
 import { holdLock, MAX_KEEPALIVE_BYTES, MAX_PUSH_BYTES, Outbox } from './outbox'
+import { PIECE_BYTES, putPieces, stageFor, type Staging } from './pieces'
 import type { DeviceStore, StoredSession } from './store'
 import {
   recoverable,
@@ -80,6 +81,7 @@ export class Room implements CollabRoom {
   // A row failed to apply here: the rev reported, and the `judged` count its verdict comes after
   private judging: { rev: number; seen: number | null } | null = null
   private reportTimer: ReturnType<typeof setTimeout> | null = null
+  private staging: Staging | null = null
 
   constructor(
     init: RoomInit,
@@ -413,7 +415,8 @@ export class Room implements CollabRoom {
     this.sendTimer = null
     if (this.inFlight) {
       const copy = this.batch(true)
-      if (copy) void this.options.endpoints.push(copy.body, { keepalive: true }).catch(() => {})
+      if (copy && !copy.pieces)
+        void this.options.endpoints.push(copy.body, { keepalive: true }).catch(() => {})
       return
     }
     this.endRetry?.()
@@ -456,19 +459,28 @@ export class Room implements CollabRoom {
       // The tab is hiding or closing, so the server may compact now
       final: !!keepalive,
     }
-    const body = encodePush(header, Y.mergeUpdates(batch.map((entry) => entry.bytes)))
-    return { box, header, body }
+    const update = Y.mergeUpdates(batch.map((entry) => entry.bytes))
+    if (update.byteLength <= PIECE_BYTES) return { box, header, body: encodePush(header, update) }
+    // Staged pieces take several requests, which a departing page can't count on
+    this.staging = stageFor(this.staging, header)
+    const staged = { ...header, final: false, stage_id: this.staging.id }
+    const pieces = { stage: this.staging.id, update }
+    return { box, header: staged, body: encodePush(staged, new Uint8Array()), pieces }
   }
 
   private send(request: { keepalive?: boolean } = {}): Promise<void> {
     if (this.inFlight || this.retrying) return this.inFlight ?? this.retrying!
     const next = this.batch(request.keepalive)
     if (!next) return Promise.resolve()
-    const { box, header, body } = next
+    const { box, header, body, pieces } = next
+    const { endpoints } = this.options
     this.inFlight = Promise.resolve()
-      .then(() => this.options.endpoints.push(body, request))
+      .then(async () => {
+        const refused = pieces && (await putPieces(endpoints, pieces.stage, header, pieces.update))
+        return refused || readReply(await endpoints.push(body, pieces ? {} : request))
+      })
       .then(
-        (answer) => this.settle(readReply(answer), box, header.to),
+        (reply) => this.settle(reply, box, header.to),
         () => {
           this.unreachable()
           this.retryAfter(backoff())
@@ -497,6 +509,14 @@ export class Room implements CollabRoom {
       this.ack(box, reply.acked)
       if (box.gap) return this.die('seq')
       return this.retryAfter(0)
+    }
+    // Pieces the server dropped or never got are staged again; a stage it refused is replaced
+    if (
+      reply.status === 409 &&
+      (reply.collab === 'stage_conflict' || reply.collab === 'stage_incomplete')
+    ) {
+      if (reply.collab === 'stage_conflict') this.staging = null
+      return this.retryAfter(backoff())
     }
     if (reply.status === 423) {
       if (reply.reason === 'suspect') this.hold(this.held ?? 'change')

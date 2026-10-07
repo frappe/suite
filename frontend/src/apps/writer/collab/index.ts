@@ -30,6 +30,10 @@ const PULL = route('collab_updates_get', 'GET', 'documents/{node}/collab/updates
 const PUSH = route('collab_updates_post', 'POST', 'documents/{node}/collab/updates')
 const SESSION = route('collab_sessions_post', 'POST', 'documents/{node}/collab/sessions')
 const SUSPECT = route('collab_suspect_post', 'POST', 'documents/{node}/collab/suspect')
+const STAGE: Operation = {
+  ...route('collab_stage_put', 'PUT', 'documents/{node}/collab/stage/{stage_id}/{idx}'),
+  pathParams: ['node', 'stage_id', 'idx'],
+}
 
 // Every request names who the tab expects to be, so the server can tell a lapsed sign-in from lost access
 export function writerEndpoints(session: DocumentSession, principal: string): CollabEndpoints {
@@ -44,6 +48,8 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
       transport.requestBytes(PULL, { node, since, q_epoch: epoch }, { headers }),
     push: (body, options) =>
       transport.requestBytes(PUSH, { node }, { body, keepalive: options?.keepalive, headers }),
+    stage: (stage, idx, body) =>
+      transport.requestBytes(STAGE, { node, stage_id: stage, idx }, { body, headers }),
     session: (sid, claim) =>
       transport.requestBytes(
         SESSION,

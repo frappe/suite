@@ -129,6 +129,19 @@ export async function pastePicture(page: Page): Promise<void> {
 	});
 }
 
+/** Paste plain text at the end of the document, as text copied from another app would be. */
+export async function pasteText(page: Page, text: string): Promise<void> {
+	await writerEditor(page).click();
+	await page.keyboard.press("ControlOrMeta+End");
+	await writerEditor(page).evaluate((editor, text) => {
+		const data = new DataTransfer();
+		data.setData("text/plain", text);
+		editor.dispatchEvent(
+			new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+		);
+	}, text);
+}
+
 /** Whether each picture the editor shows has loaded. */
 export function picturesLoaded(page: Page): Promise<boolean[]> {
 	return writerEditor(page)

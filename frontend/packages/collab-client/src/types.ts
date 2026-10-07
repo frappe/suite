@@ -21,6 +21,8 @@ export interface CollabEndpoints {
   // `epoch`: the last quarantine this tab heard of, so the server can tell it to rebuild
   pull(since: number, epoch: number): Promise<Answer>
   push(body: Uint8Array<ArrayBuffer>, options?: { keepalive?: boolean }): Promise<Answer>
+  // One piece of a change too big for one push, kept under `stage` until a push names it
+  stage(stage: string, idx: number, body: Uint8Array<ArrayBuffer>): Promise<Answer>
   session(sid: string, claim?: Claim): Promise<Answer>
   // Rev `rev` failed to apply in this tab
   suspect(rev: number): Promise<Answer>

@@ -12,6 +12,7 @@ import {
 	logRows,
 	pastePicture,
 	picturesLoaded,
+	pasteText,
 	pushInPieces,
 	quarantineLast,
 	releaseDocument,
@@ -361,6 +362,22 @@ test.describe("Writer collaboration", () => {
 			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), { timeout: 15_000 })
 			.toContain(700_000);
 		expect((await serverText(testApi, node)).at(-1)).toBe("x".repeat(700_000));
+	});
+
+	test("a big paste is saved in pieces and reads back whole", async ({ owner, testApi }) => {
+		const pieces: string[] = [];
+		owner.page.on("request", (request) => {
+			if (request.method() === "PUT" && request.url().includes("/collab/stage/")) pieces.push(request.url());
+		});
+		await openWriterDocument(owner.page, node);
+		const big = "y".repeat(700_000);
+
+		await pasteText(owner.page, big);
+
+		await expect.poll(() => serverText(testApi, node), { timeout: 30_000 }).toContainEqual(expect.stringContaining(big));
+		await expectSaved(owner.page);
+		expect(pieces.length).toBeGreaterThanOrEqual(3);
+		expect((await logRows(testApi, await logId(testApi, node))).stage).toBe(0);
 	});
 
 	test("a document a newer Writer edited is read-only here and asks for a reload", async ({
