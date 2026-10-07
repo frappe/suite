@@ -1,6 +1,7 @@
 export {
   decodeFrame,
   encodePush,
+  type Limits,
   type OpenHeader,
   type OpenState,
   type PullHeader,
@@ -8,6 +9,7 @@ export {
 } from './frames'
 export { CollabOpenError } from './answers'
 export { judge, type Fault, type Verdict } from './judge'
+export { sizeCheck } from './limits'
 export { openCollabRoom } from './open'
 export { REMOTE } from './room'
 export {

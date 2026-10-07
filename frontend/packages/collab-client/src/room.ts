@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 
 import { readReply, staleSession, type Reply } from './answers'
-import { decodeFrame, encodePush, type PullHeader, type Row } from './frames'
+import { decodeFrame, encodePush, type Limits, type PullHeader, type Row } from './frames'
 import { holdLock, MAX_KEEPALIVE_BYTES, MAX_PUSH_BYTES, Outbox } from './outbox'
 import { PIECE_BYTES, putPieces, stageFor, type Staging } from './pieces'
 import type { DeviceStore, StoredSession } from './store'
@@ -43,6 +43,7 @@ export interface Opening {
   schema?: number
   checkpoint: Uint8Array | null
   rows: Row[]
+  limits?: Limits
 }
 
 export class Room implements CollabRoom {
@@ -52,6 +53,7 @@ export class Room implements CollabRoom {
   held: string | null = null
   newerSchema = false
   appliedThrough = 0
+  limits: Limits | null = null
   needsRebuild = false
   private readonly lineage: string
   private readonly epoch: number
@@ -104,6 +106,7 @@ export class Room implements CollabRoom {
     }
     this.own.release = (await holdLock(this.lockName(this.own.sid))) ?? (() => {})
     this.appliedThrough = opening.base
+    this.limits = opening.limits ?? null
     this.follow(opening.schema)
     this.apply(opening.rows, opening)
     if (this.writable) await this.adopt()
@@ -163,6 +166,7 @@ export class Room implements CollabRoom {
         }
         const { header, rows } = decodeFrame<PullHeader>(answer.bytes)
         this.heard()
+        if (header.limits) this.limits = header.limits
         if (header.state === 'rebuild') return this.outdated()
         this.hold(header.held ?? null)
         if (!this.follow(header.schema)) return

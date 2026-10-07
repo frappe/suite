@@ -25,6 +25,7 @@ import { computed, provide, ref } from 'vue'
 import * as Y from 'yjs'
 
 import { FIELD, withinTenSeconds } from '@/apps/writer/collab'
+import { PasteSizeGuard } from '@/apps/writer/extensions/paste-size-guard'
 
 import CoreEditor from './CoreEditor.vue'
 
@@ -45,7 +46,15 @@ defineExpose({ editor })
 
 // Collaborative documents carry no comments yet
 const comments = new Y.Doc().getMap('comments')
-const extensions = [Collaboration.configure({ document: props.room.doc, field: FIELD })]
+const extensions = [
+  Collaboration.configure({ document: props.room.doc, field: FIELD }),
+  PasteSizeGuard.configure({
+    limits: () => props.room.limits,
+    tooLarge: () =>
+      toast.error('This is too large to add in one go. Insert large images as files.'),
+    nearFull: () => toast.warning('This document is nearly full. Some changes may not save.'),
+  }),
+]
 
 async function save(_manual: boolean, _html: string | null, done?: () => void) {
   await withinTenSeconds(props.room.flush())

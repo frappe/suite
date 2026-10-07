@@ -76,6 +76,16 @@ function fakeServer(state = 'live', lineage = 'L') {
   const pieces: { stage: string; idx: number }[] = []
   const shas = new Map<string, string>()
   let nextClient = 1
+  // What the server publishes about sizes: the caps, and how full the document is now
+  const limits = () => ({
+    fragment: 256 * 1024,
+    edit_max: 4 * 2 ** 20,
+    state_max: 4 * 2 ** 20,
+    state_bytes: checkpoint.bytes.byteLength,
+    tail_bound: rows
+      .filter((row) => row.rev > checkpoint.base)
+      .reduce((sum, row) => sum + row.bytes.byteLength, 0),
+  })
   const split = (body: Uint8Array) => {
     const length = new DataView(body.buffer, body.byteOffset).getUint32(0)
     const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
@@ -97,6 +107,7 @@ function fakeServer(state = 'live', lineage = 'L') {
         base: checkpoint.base,
         q_epoch: epoch.now,
         schema: schema.now,
+        limits: limits(),
       }
       return frame(header, tail, checkpoint.bytes)
     },
@@ -116,6 +127,7 @@ function fakeServer(state = 'live', lineage = 'L') {
           verdict: judge.verdict,
           held: judge.held,
           schema: schema.now,
+          limits: limits(),
         },
         rows.filter((row) => row.rev > since),
       )
@@ -685,6 +697,23 @@ describe('collab room', () => {
     expect(text(a)).toContain('beta ')
     expect(server.rows.map((row) => row.rev)).toEqual([1, 2])
     expect([a.saveState, b.saveState, a.appliedThrough]).toEqual(['clean', 'clean', 2])
+  })
+
+  it('a tab learns how full the document is when it opens, and again on every pull', async () => {
+    const server = fakeServer()
+    const [a, b] = [await join(server.endpoints()), await join(server.endpoints())]
+    a.doc.getText('t').insert(0, 'alpha ')
+    await a.flush()
+    const opened = (await join(server.endpoints())).limits
+
+    await b.pull()
+
+    const row = server.rows[0].bytes.byteLength
+    expect([opened?.tail_bound, b.limits?.tail_bound, b.limits?.edit_max]).toEqual([
+      row,
+      row,
+      4 * 2 ** 20,
+    ])
   })
 
   it('a tab opened later sees everything typed before', async () => {

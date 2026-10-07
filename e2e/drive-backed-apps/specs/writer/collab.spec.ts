@@ -389,6 +389,20 @@ test.describe("Writer collaboration", () => {
 		expect((await logRows(testApi, await logId(testApi, node))).stage).toBe(0);
 	});
 
+	test("a paste too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Before the huge paste");
+		await expectSaved(owner.page);
+
+		await pasteText(owner.page, "z".repeat(4.5 * 2 ** 20));
+
+		await expect(owner.page.getByText("This is too large to add in one go. Insert large images as files.")).toBeVisible();
+		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
+		await expectSaved(owner.page);
+		const saved = (await serverText(testApi, node)).join("");
+		expect([saved.includes("Before the huge paste"), saved.includes("zzzz")]).toEqual([true, false]);
+	});
+
 	test("a document a newer Writer edited is read-only here and asks for a reload", async ({
 		owner,
 		collaborator,

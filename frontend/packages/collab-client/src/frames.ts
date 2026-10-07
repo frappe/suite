@@ -1,6 +1,15 @@
 // `disabled`: collaboration is off on this site. `unconverted`: the document is not collaborative
 export type OpenState = 'live' | 'disabled' | 'unconverted'
 
+// The sizes the server checks a change against: the most one change may be, and how full the document is
+export interface Limits {
+  fragment: number
+  edit_max: number
+  state_max: number
+  state_bytes: number
+  tail_bound: number
+}
+
 export interface OpenHeader {
   state: OpenState
   proto: number
@@ -12,6 +21,7 @@ export interface OpenHeader {
   q_epoch?: number
   // The highest editor schema the document's rows were written with
   schema?: number
+  limits?: Limits
 }
 
 export interface PullHeader {
@@ -25,6 +35,7 @@ export interface PullHeader {
   // The document waits for an admin: `change` for one change, `bad_checkpoint` for its saved content
   held?: string
   schema?: number
+  limits?: Limits
 }
 
 export interface Row {

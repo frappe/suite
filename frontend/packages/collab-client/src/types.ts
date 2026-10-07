@@ -1,6 +1,6 @@
 import type * as Y from 'yjs'
 
-import type { OpenState } from './frames'
+import type { Limits, OpenState } from './frames'
 import type { DeviceStore } from './store'
 
 export interface Answer {
@@ -71,6 +71,8 @@ export interface CollabRoom {
   // Whether unsent work outlives this tab
   readonly onDevice: boolean
   readonly appliedThrough: number
+  // The sizes the server last published; null until it has, as in a tab opened offline
+  readonly limits: Limits | null
   onChange(listener: () => void): () => void
   pull(): Promise<void>
   flush(): Promise<void>
