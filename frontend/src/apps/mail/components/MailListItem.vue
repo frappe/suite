@@ -21,14 +21,6 @@
     <template #sender><HighlightedText :text="header" :term="searchTerm" /></template>
 
     <template #badges>
-      <!-- The banner's icon, so an unknown sender reads the same in the row and in the thread. The
-		       trigger is kept out of the focus order and drawn without an outline: a focusable one put a
-		       focus ring on the row. First, beside the name it is about. -->
-      <Tooltip v-if="screened" :text="unknownSendersLabel">
-        <span class="flex shrink-0 outline-none" tabindex="-1">
-          <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="unknownSendersLabel" />
-        </span>
-      </Tooltip>
       <!-- How many messages the thread holds — only worth saying once it holds more than one. -->
       <span
         v-if="messageCount > 1"
@@ -37,6 +29,14 @@
       >
         {{ messageCount }}
       </span>
+      <!-- The banner's icon, so an unknown sender reads the same in the row and in the thread. The
+		       trigger is kept out of the focus order and drawn without an outline: a focusable one put a
+		       focus ring on the row. After the message count. -->
+      <Tooltip v-if="screened" :text="unknownSendersLabel">
+        <span class="flex shrink-0 outline-none" tabindex="-1">
+          <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="unknownSendersLabel" />
+        </span>
+      </Tooltip>
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
     </template>
 
@@ -239,15 +239,10 @@ const route = useRoute()
 const { mailboxes, mailboxIds } = userStore()
 const screener = useScreener()
 
-// Who the thread is waiting on, by the names they wrote as: a row with several people says which.
-const unknownSendersLabel = computed(() => {
-  const names = screener
-    .waitingSenders(mail)
-    .map((email) => mail.messages?.find((m) => m.from_email === email)?.from_name || email)
-  return names.length === 1
-    ? __('Unknown sender: {0}', [names[0]])
-    : __('Unknown senders: {0}', [names.join(', ')])
-})
+// One sender or several: the row says which, the open thread says who.
+const unknownSendersLabel = computed(() =>
+  screener.waitingSenders(mail).length > 1 ? __('Unknown senders') : __('Unknown sender'),
+)
 const ownEmails = useOwnEmails()
 
 // An account's thread route names its folder by slug (see utils/unifiedFolders); the merged
