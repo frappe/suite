@@ -28,11 +28,16 @@ RELATIONS = {
 
 
 # One branch of the gate: `if|elsif <test> { fileinto [tags] "<mailbox>"; stop; }`, the mailbox an
-# RFC 5228 quoted string and a tag optionally carrying a quoted argument (`:flags "unscreened"`).
+# RFC 5228 quoted string — or `keep [tags];`, delivery where the server would put it anyway. A tag
+# may carry a quoted argument (`:flags "unscreened"`).
 GATE_BRANCH = re.compile(
-    r'\s*(?:if|elsif) (.+?) \{\s*fileinto ((?::\w+(?: "[^"]*")? )*)"((?:[^"\\]|\\.)*)";\s*stop;\s*\}',
+    r'\s*(?:if|elsif) (.+?) \{\s*(?:fileinto ((?::\w+(?: "[^"]*")? )*)"((?:[^"\\]|\\.)*)"'
+    r'|keep((?: :\w+(?: "[^"]*")?)*));\s*stop;\s*\}',
     re.DOTALL,
 )
+
+# What `route_through_gate` calls a `keep`: the server's own choice of mailbox, the Inbox for ham.
+KEEP = "<keep>"
 
 
 def render_screening_gate(
@@ -61,8 +66,11 @@ def parse_gate(gate: str) -> list[tuple[str, list[str], str]]:
 
     branches, pos = [], 0
     while match := GATE_BRANCH.match(body, pos):
-        test, tags, mailbox = match.groups()
-        branches.append((test, tags.split(), re.sub(r"\\(.)", r"\1", mailbox)))
+        test, tags, mailbox, keep_tags = match.groups()
+        if mailbox is None:
+            branches.append((test, (keep_tags or "").split(), KEEP))
+        else:
+            branches.append((test, tags.split(), re.sub(r"\\(.)", r"\1", mailbox)))
         pos = match.end()
 
     assert branches and not body[pos:].strip(), f"Unparsed Sieve in the gate:\n{body[pos:]}"
@@ -182,7 +190,7 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         for shape, gate in gates.items():
             for spamtest in range(11):
                 with self.subTest(shape=shape, spamtest=spamtest):
-                    expected = ("INBOX", True) if spamtest < 5 else None
+                    expected = (KEEP, True) if spamtest < 5 else None
                     self.assertEqual(route_through_gate(gate, "stranger@else.example", spamtest), expected)
 
     def test_screening_gate_delivers_trusted_senders_to_the_inbox(self):
@@ -196,7 +204,7 @@ class IntegrationTestSieveScript(IntegrationTestCase):
                     self.assertEqual(route_through_gate(gate, sender, spamtest), ("INBOX", False))
 
         # A subdomain of an accepted domain is a different domain.
-        self.assertEqual(route_through_gate(gate, "someone@info.partner.example", 1), ("INBOX", True))
+        self.assertEqual(route_through_gate(gate, "someone@info.partner.example", 1), (KEEP, True))
 
     def test_screening_gate_requires_what_it_uses(self):
         """RFC 5228: a script using an extension it does not require fails to compile, and the account
@@ -342,8 +350,8 @@ class IntegrationTestSieveScript(IntegrationTestCase):
 
         path = 'Clients/"VIP" \\ Gold'
 
-        gate = render_screening_gate([], inbox=path)
-        self.assertEqual(route_through_gate(gate, "stranger@else.example", 1), (path, True))
+        gate = render_screening_gate(["boss@work.example"], inbox=path)
+        self.assertEqual(route_through_gate(gate, "boss@work.example", 1), (path, False))
 
         rule = rule_object_to_sieve({"emails_from": "boss@work.example"}, path)
         self.assertIn('fileinto "Clients/\\"VIP\\" \\\\ Gold";', rule)

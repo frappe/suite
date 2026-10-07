@@ -105,4 +105,4 @@ class TestAutomationSieveCompiles(IntegrationTestCase):
 
     def test_a_script_missing_a_require_does_not(self):
         # Keeps the check above honest: `:flags` needs the `imap4flags` extension declared.
-        self.assertIsNotNone(self.validate('require ["fileinto"];\nfileinto :flags "unscreened" "INBOX";\n'))
+        self.assertIsNotNone(self.validate('require ["fileinto"];\nkeep :flags "unscreened";\n'))

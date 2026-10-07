@@ -1142,9 +1142,13 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     - Accepted senders — and the account's own identity emails, which are always trusted — are
       filed into the Inbox. Stalwart before v0.16.22 still moves mail it classifies as spam out of
       the Inbox into Junk, so on those versions accepted mail reaches the Inbox only as ham.
-    - Otherwise, mail the server has not classified as spam is filed into the Inbox marked with the
-      `unscreened` keyword (`fileinto :flags`, imap4flags): it waits among the rest of the Inbox,
-      shown as from a new sender, until the sender is allowed or denied.
+    - Otherwise, mail the server has not classified as spam is kept — delivered where it would have
+      gone anyway, the Inbox — marked with the `unscreened` keyword (`keep :flags`, imap4flags): it
+      waits among the rest of the Inbox, shown as from a new sender, until the sender is allowed or
+      denied. A plain keep, not a `fileinto` the Inbox: this branch only sees ham, which the server
+      files into the Inbox itself, so naming it would only add a lookup. The accepted branch above
+      does name it, because it is reached by spam too, and an explicit `fileinto` is what keeps a
+      trusted sender's mail out of Junk.
     - Otherwise (spam from an unrecognised sender) nothing is done, so the server's default filtering
       assigns the mailbox: Junk, unless Stalwart overrides the verdict because the sender is one of the
       user's contacts or replied to the user's own mail, and delivers it to the Inbox as ham.
@@ -1157,8 +1161,6 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     it: ham with a small positive score lands on 2-4, and a lower cut-off lets that mail reach the
     Inbox unmarked. (Stalwart before v0.16.19 only ever returned 1 or 10, which the same test handles.)
     """
-
-    inbox_mailbox_path = _escape_sieve_string(get_inbox_mailbox_path(account))
 
     try:
         own_emails = get_account_emails(account)
@@ -1186,6 +1188,9 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
 
     lines = ["# Screening"]
     if accepted_test:
+        # Resolve the Inbox path only when there is an accepted branch to file into — an account with
+        # no trusted senders yet never reaches it.
+        inbox_mailbox_path = _escape_sieve_string(get_inbox_mailbox_path(account))
         lines += [
             f"if {accepted_test} {{",
             f'  fileinto "{inbox_mailbox_path}";',
@@ -1198,7 +1203,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         lines.append(f"if {not_spam_test} {{")
 
     lines += [
-        f'  fileinto :flags "{UNSCREENED_KEYWORD}" "{inbox_mailbox_path}";',
+        f'  keep :flags "{UNSCREENED_KEYWORD}";',
         "  stop;",
         "}",
         "\n",
