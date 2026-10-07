@@ -56,8 +56,15 @@
         />
         <hr />
 
-        <!-- Send Invite, the aliases and the memberships are fixed when the request is created
-				(set_only_once on the doctype), so they are all shown read-only. -->
+        <!-- Disable Receiving, Send Invite, the aliases and the memberships are fixed when the
+				request is created (set_only_once on the doctype), so they are all shown read-only. -->
+        <Switch
+          :model-value="Boolean(draft.disable_receiving)"
+          :label="__('Disable Receiving')"
+          :description="__('The account can send emails but cannot receive them.')"
+          disabled
+          class="hover:!bg-surface-base !cursor-default !p-0"
+        />
         <Switch
           :model-value="Boolean(draft.send_invite)"
           :label="__('Send Invite')"

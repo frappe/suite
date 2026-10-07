@@ -100,6 +100,16 @@
           <hr />
 
           <Switch
+            v-model="accountRequest.disable_receiving"
+            :label="__('Disable Receiving')"
+            :description="
+              __(
+                'The account can send emails but cannot receive them. Mail addressed to it bounces back to the sender.',
+              )
+            "
+            class="hover:!bg-surface-base !cursor-default !p-0"
+          />
+          <Switch
             v-model="accountRequest.send_invite"
             :label="__('Send Invite')"
             class="hover:!bg-surface-base !cursor-default !p-0"
@@ -202,6 +212,7 @@ const defaultAccountRequest = {
   backup_email: '',
   // Blank hands the choice to the server, which falls back to the configured default.
   quota_gb: '',
+  disable_receiving: false,
   first_name: '',
   last_name: '',
   password: '',
