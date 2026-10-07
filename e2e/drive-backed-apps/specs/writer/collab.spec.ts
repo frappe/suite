@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { expect, test } from "../../fixtures/test";
 import {
 	bodyLimitProxy,
@@ -34,6 +35,7 @@ import {
 } from "../../helpers/drive";
 import {
 	createWriterDocument,
+	documentMenuButton,
 	openWriterDocument,
 	shareWriterDocument,
 	uniqueWriterTitle,
@@ -473,6 +475,28 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 		const saved = (await serverText(testApi, node)).join("");
 		expect([saved.includes("Before the huge paste"), saved.includes("zzzz")]).toEqual([true, false]);
+	});
+
+	test("a .docx too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Before the huge import");
+		await expectSaved(owner.page);
+
+		// One paragraph of 4.5 MiB of text, which zips to a few kilobytes
+		const [chooser] = await Promise.all([
+			owner.page.waitForEvent("filechooser"),
+			(async () => {
+				await documentMenuButton(owner.page).click();
+				await owner.page.getByRole("menuitem", { name: "Import DOCX" }).click();
+			})(),
+		]);
+		await chooser.setFiles(resolve(__dirname, "fixtures/import-too-large.docx"));
+
+		await expect(owner.page.getByText("This is too large to add in one go. Insert large images as files.")).toBeVisible();
+		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
+		await expectSaved(owner.page);
+		const saved = (await serverText(testApi, node)).join("");
+		expect([saved.includes("Before the huge import"), saved.includes("zzzz")]).toEqual([true, false]);
 	});
 
 	test("a full document keeps the latest typing and says it isn't saved", async ({ owner, testApi }) => {

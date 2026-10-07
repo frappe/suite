@@ -1,7 +1,9 @@
+import { generateJSON } from '@tiptap/core'
 import { toast as nToast, useFileUpload } from 'frappe-ui'
 import { v4 as uuidv4 } from 'uuid'
 
 import { purgeNodes } from '@/apps/writer/drive'
+import { contentBytes } from '@/apps/writer/extensions/paste-size-guard'
 import { findTab } from '@/apps/writer/extensions/tabs'
 
 const IMAGE_EXTENSIONS = {
@@ -160,6 +162,11 @@ export async function importDocx(file, { editor, currentFileId }) {
     if (!html) {
       await _discardUploads(uploaded)
       nToast.error('The document appears to be empty.')
+      return
+    }
+    const guard = ed.storage.pasteSizeGuard
+    if (guard?.refuses(contentBytes(generateJSON(html, ed.extensionManager.extensions).content))) {
+      await _discardUploads(uploaded)
       return
     }
     if (ed.isEmpty) _insertAtEnd(ed, html)
