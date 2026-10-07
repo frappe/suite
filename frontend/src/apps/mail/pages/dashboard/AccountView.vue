@@ -21,6 +21,10 @@
               :label="__('Role')"
               :value="member.data.is_admin ? __('Admin') : __('User')"
             />
+            <InformationField
+              :label="__('Receiving')"
+              :value="member.data.disable_receiving ? __('Disabled') : __('Enabled')"
+            />
             <InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
             <InformationField
               :label="__('Time Zone')"
@@ -171,6 +175,7 @@
   </DashboardLayout>
   <Dialog v-model:open="showResetPassword" v-bind="RESET_PASSWORD_OPTIONS" />
   <Dialog v-model:open="showToggleEnabled" v-bind="TOGGLE_ENABLED_OPTIONS" />
+  <Dialog v-model:open="showToggleReceiving" v-bind="TOGGLE_RECEIVING_OPTIONS" />
   <Dialog v-model:open="showDeleteMember" v-bind="DELETE_MEMBER_OPTIONS" />
   <ChangeAccountPasswordModal v-model="showChangePassword" :member-id="accountId" />
   <EditAccountModal
@@ -234,6 +239,7 @@ type MemberData = {
   joined_on: string
   enabled: boolean
   is_admin: boolean
+  disable_receiving: boolean
   email_addresses: {
     email: string
     description?: string
@@ -262,6 +268,7 @@ const showDeleteMember = ref(false)
 const showResetPassword = ref(false)
 const showChangePassword = ref(false)
 const showToggleEnabled = ref(false)
+const showToggleReceiving = ref(false)
 const showEdit = ref(false)
 const showEditQuota = ref(false)
 const showAddEmail = ref(false)
@@ -373,6 +380,34 @@ const TOGGLE_ENABLED_OPTIONS = computed(() => {
     ],
   }
 })
+async function setReceiving(enabled: boolean) {
+  await client.mutation(api.mail.admin.members.setReceivingEnabled, {
+    member_id: accountId,
+    enabled,
+  })
+  showToggleReceiving.value = false
+  raiseToast(enabled ? __('Receiving enabled.') : __('Receiving disabled.'))
+}
+const TOGGLE_RECEIVING_OPTIONS = computed(() => {
+  const enabling = Boolean(data.value?.disable_receiving)
+  return {
+    title: enabling ? __('Enable Receiving') : __('Disable Receiving'),
+    message: enabling
+      ? __(
+          'Are you sure you want to enable receiving for this account? Mail addressed to it will be delivered again.',
+        )
+      : __(
+          'Are you sure you want to disable receiving for this account? It can still send emails, but mail addressed to it will bounce back to the sender.',
+        ),
+    actions: [
+      {
+        label: __('Confirm'),
+        variant: 'solid' as const,
+        onClick: () => setReceiving(enabling),
+      },
+    ],
+  }
+})
 const resetPassword = useMutation(api.mail.public.sendResetLink)
 async function resetPasswordSubmit() {
   const input: InputOf<typeof api.mail.public.sendResetLink> = {
@@ -442,6 +477,17 @@ const dropdownOptions = computed(() => [
   {
     group: '',
     options: [
+      data.value?.disable_receiving
+        ? {
+            label: __('Enable Receiving'),
+            icon: 'lucide-mail-check',
+            onClick: () => (showToggleReceiving.value = true),
+          }
+        : {
+            label: __('Disable Receiving'),
+            icon: 'lucide-mail-x',
+            onClick: () => (showToggleReceiving.value = true),
+          },
       data.value?.enabled
         ? {
             label: __('Disable'),
