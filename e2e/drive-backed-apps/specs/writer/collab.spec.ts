@@ -542,6 +542,37 @@ test.describe("Writer collaboration", () => {
 		expect((await serverText(testApi, node)).join("")).toContain("Room again");
 	});
 
+	test("a tab opened on a full document takes only deletes until there is room", async ({ owner, testApi }) => {
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Before the document filled");
+		await typeParagraph(owner.page, "Delete me");
+		await expectSaved(owner.page);
+		await fillUp(testApi, node);
+
+		const tab = await owner.page.context().newPage();
+		await openWriterDocument(tab, node);
+		const banner = "This document is at its size limit. Delete content to free space.";
+		await expect(tab.getByText(banner)).toBeVisible();
+		await placeCaretIn(tab, "Before the document filled");
+		await tab.keyboard.press("End");
+		await tab.keyboard.type(" typed while full");
+		expect(await writerEditor(tab).innerText()).not.toContain("typed while full");
+
+		await placeCaretIn(tab, "Delete me");
+		await tab.keyboard.press("End");
+		for (let i = 0; i < 3; i++) await tab.keyboard.press("Backspace");
+		await expect.poll(async () => (await serverText(testApi, node)).join("")).not.toContain("Delete me");
+		// Pushes go out in order, so typing the tab had taken would be saved by now
+		expect((await serverText(testApi, node)).join("")).not.toContain("typed while full");
+
+		await compactNow(testApi, node);
+		await expect(tab.getByText(banner)).toBeHidden();
+		await typeParagraph(tab, "Room again");
+		await expectSaved(tab);
+		expect((await serverText(testApi, node)).join("")).toContain("Room again");
+		await tab.close();
+	});
+
 	test("a change the server finds too large stops saving and says to insert images as files", async ({ owner }) => {
 		// The paste guard keeps real changes under the cap, so the server's answer to a bigger one is played here
 		await owner.page.route("**/collab/stage/**", (route) =>
