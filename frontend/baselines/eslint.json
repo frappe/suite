@@ -30,7 +30,6 @@
   "src/apps/mail/components/DeliveryStatusBanner.vue|@typescript-eslint/no-explicit-any": 1,
   "src/apps/mail/components/EmailContent.vue|import/no-unresolved": 1,
   "src/apps/mail/components/OutboxFilters.vue|vue/no-mutating-props": 7,
-  "src/apps/mail/components/UpcomingEvents.vue|@typescript-eslint/no-explicit-any": 5,
   "src/apps/mail/composables/useComposeMail.ts|@typescript-eslint/no-explicit-any": 1,
   "src/apps/mail/composables/useUpcomingEvents.ts|@typescript-eslint/no-explicit-any": 4,
   "src/apps/mail/pages/ComposeView.vue|@typescript-eslint/no-explicit-any": 1,

@@ -225,10 +225,9 @@ async function respond(response: 'accepted' | 'tentative' | 'declined') {
       },
     }
   raiseToast(__('Response sent.'))
-  if (isOpen.value)
-    openEvent(event, {
-      tracked: false,
-    })
+  // The open card holds its own copy, so hand it the fresh one or it would keep showing the
+  // previous answer.
+  if (isOpen.value) openEvent(event)
 }
 
 // An RSVP is a state, so the control shows the answer as soon as it's tapped, and falls back to
@@ -257,10 +256,9 @@ const isOpen = computed(
 )
 
 // Reading an invite and leaving the thread to read the event are different things: the strip
-// opens the same detail card the sidebar's Upcoming events widget uses, hosted by DefaultLayout
-// and hung beneath this strip, so the message stays where it is. Mobile has no room for that
-// card (DefaultLayout only opens it on desktop), so there it still hands over to the calendar
-// app's day view.
+// opens the calendar app's detail card, hosted by DefaultLayout and hung beneath this strip, so
+// the message stays where it is. Mobile has no room for that card (DefaultLayout only opens it
+// on desktop), so there it still hands over to the calendar app's day view.
 const openEventDetail = (e: MouseEvent) => {
   const event = invite.value?.event
   if (!canViewEvent.value || !event) return
@@ -268,7 +266,6 @@ const openEventDetail = (e: MouseEvent) => {
   else if (isOpen.value) selectedEvent.value = null
   else if (e.currentTarget instanceof Element)
     openEvent(event, {
-      tracked: false,
       anchor: {
         element: e.currentTarget,
         side: 'bottom',

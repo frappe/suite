@@ -63,10 +63,9 @@
       </SidebarItem>
     </SidebarSection>
 
-    <!-- Personal widgets (events, quota) are meaningless while administering the
+    <!-- Personal widgets (quota) are meaningless while administering the
 		     server, and the phone's sheet is a folder switcher, not a dashboard. -->
     <AreaSidebarFooter v-if="showWidgets">
-      <UpcomingEvents :is-collapsed="false" />
       <QuotaBar :is-collapsed="false" />
     </AreaSidebarFooter>
   </AreaSidebar>
@@ -101,7 +100,6 @@ import { useRoute, useRouter } from 'vue-router'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
-import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
