@@ -21,6 +21,14 @@
     <template #sender><HighlightedText :text="header" :term="searchTerm" /></template>
 
     <template #badges>
+      <!-- The banner's icon, so an unknown sender reads the same in the row and in the thread. The
+		       trigger is kept out of the focus order and drawn without an outline: a focusable one put a
+		       focus ring on the row. First, beside the name it is about. -->
+      <Tooltip v-if="screened" :text="__('Unknown sender')">
+        <span class="flex shrink-0 outline-none" tabindex="-1">
+          <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="__('Unknown sender')" />
+        </span>
+      </Tooltip>
       <!-- How many messages the thread holds — only worth saying once it holds more than one. -->
       <span
         v-if="messageCount > 1"
@@ -30,14 +38,6 @@
         {{ messageCount }}
       </span>
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
-      <!-- The banner's icon, so an unknown sender reads the same in the row and in the thread. The
-		       trigger is kept out of the focus order and drawn without an outline: a focusable one put a
-		       focus ring on the row. -->
-      <Tooltip v-if="screened" :text="__('Unknown sender')">
-        <span class="flex shrink-0 outline-none" tabindex="-1">
-          <ShieldQuestionMark class="text-ink-gray-5 size-3.5" :aria-label="__('Unknown sender')" />
-        </span>
-      </Tooltip>
     </template>
 
     <template #subject>
@@ -158,7 +158,7 @@
 
 <script setup lang="ts">
 import { Badge, Popover, Tooltip } from 'frappe-ui'
-import { Download, Loader, ShieldQuestionMark } from 'lucide-vue-next'
+import { Download, Loader, UserRoundSearch } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 

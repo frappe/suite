@@ -5,7 +5,7 @@
 	     two full-bleed rows. -->
   <div class="sm:space-y-2" role="region" :aria-label="__('New sender')">
     <div class="bg-surface-gray-1 flex items-center gap-3 px-3 py-2 max-sm:border-b sm:rounded-6">
-      <ShieldQuestionMark class="text-ink-gray-5 size-4 shrink-0" />
+      <UserRoundSearch class="text-ink-gray-5 size-4 shrink-0" />
       <div class="text-p-sm text-ink-gray-8 min-w-0 flex-1 truncate">
         {{ __('Do you want mail from') }}
         <span class="!font-medium">{{ email }}</span>?
@@ -26,7 +26,7 @@
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { ShieldQuestionMark } from 'lucide-vue-next'
+import { UserRoundSearch } from 'lucide-vue-next'
 
 import HiddenImagesBanner from '@/apps/mail/components/HiddenImagesBanner.vue'
 
