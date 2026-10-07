@@ -260,6 +260,24 @@ test("a room named over and over or a huge state is turned away before any work,
 	watcher.close();
 });
 
+test("a tab that keeps changing its room set is held to the presence budget", async () => {
+	const nsp = site();
+	const toggler = connect(nsp);
+	const watcher = connect(nsp, "watcher@example.com");
+	await watcher.rooms([A]);
+
+	const start = Date.now();
+	const settled = [];
+	for (let round = 0; round < 200; round++) settled.push(await toggler.rooms(round % 2 ? [] : [A]));
+	const within = Date.now() - start < 1000;
+
+	const churn = watcher.heard("suite_collab_presence_join").length + watcher.heard("suite_collab_presence_gone").length;
+	assert.ok(!within || churn <= 50, `${churn} joins and leaves heard`);
+	assert.ok(settled.filter((answer) => answer.error === "rate_limited").length >= 150);
+	toggler.close();
+	watcher.close();
+});
+
 test("presence held stays bounded over a thousand reconnects and is gone when everyone leaves", async () => {
 	const nsp = site();
 	const empty = held();

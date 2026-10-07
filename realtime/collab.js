@@ -29,6 +29,10 @@ const collab_handlers = (socket) => {
 
 	socket.on("suite_collab_rooms", (payload, acknowledge) => {
 		try {
+			if (!spend()) {
+				answer(acknowledge, { error: "rate_limited" });
+				return;
+			}
 			const rooms = payload?.rooms;
 			if (
 				!Array.isArray(rooms) ||
@@ -81,7 +85,7 @@ const collab_handlers = (socket) => {
 		} catch {}
 	});
 
-	// Presence messages a socket may send this second
+	// Room sets and presence share one budget per socket
 	function spend() {
 		const now = Math.floor(Date.now() / 1000);
 		if (rate.second !== now) Object.assign(rate, { second: now, count: 0 });
