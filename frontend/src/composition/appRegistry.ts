@@ -1,7 +1,7 @@
 import { computed, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { calendarArea } from '@/apps/calendar'
+import { calendarArea, useUpcomingSummary } from '@/apps/calendar'
 import { driveUploadProgress, filesArea } from '@/apps/drive'
 import { mailArea, useInboxSummary } from '@/apps/mail'
 import { meetArea } from '@/apps/meet'
@@ -37,10 +37,11 @@ export interface AppRegistry {
 
 export function useAppRegistry(session: Session = useSession()): AppRegistry {
   const inbox = useInboxSummary(() => session.capabilities.value.jmap)
+  const upcoming = useUpcomingSummary(() => session.capabilities.value.jmap)
 
   return {
     areas: areaDefinitions,
-    badges: computed(() => deriveAreaBadges(inbox.data)),
+    badges: computed(() => deriveAreaBadges(inbox.data, upcoming.data)),
   }
 }
 
@@ -72,8 +73,12 @@ export function useAreaWork(): AreaWork {
 
 export function deriveAreaBadges(
   inbox: { unread: number } | undefined,
+  upcoming?: { upcoming: number },
 ): Readonly<Record<string, number>> {
-  return { mail: Math.max(0, inbox?.unread ?? 0) }
+  return {
+    mail: Math.max(0, inbox?.unread ?? 0),
+    calendar: Math.max(0, upcoming?.upcoming ?? 0),
+  }
 }
 
 export function areaIsAvailable(area: AreaDefinition, session: Session = useSession()): boolean {

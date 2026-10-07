@@ -50,6 +50,8 @@ const props = withDefaults(
     variant?: 'subtle' | 'ghost'
     /** Background work of this item's area, drawn as a dot on the icon. */
     progress?: AreaProgress | null
+    /** What the dot counts, in its tooltip: "3 unread", "2 upcoming". */
+    badgeNoun?: string
   }>(),
   {
     active: undefined,
@@ -70,7 +72,7 @@ const progressDescription = computed(() => progressDetail(props.progress))
 // as frappe-ui does for its own. Progress takes the corner when there is some.
 const unreadDot = computed(() => props.badgeStyle === 'dot' && props.badge > 0 && !props.progress)
 const unreadDescription = computed(() =>
-  unreadDot.value ? `${props.badge} ${__('unread')}` : undefined,
+  unreadDot.value ? `${props.badge} ${props.badgeNoun ?? __('unread')}` : undefined,
 )
 // The item is active on every route its area's route group holds, also on a
 // child that clears `area` to skip the capability gate (Mail's admin dashboard).

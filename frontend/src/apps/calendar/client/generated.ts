@@ -95,6 +95,31 @@ const operationEventsGet: QueryRef<EventsGetInput, EventsGetOutput, EventsGetErr
   loadValidators: async () => (await import('./validators')).operationEventsGet,
 }
 
+export type UpcomingSummaryInput = { from: string; to: string }
+
+export type UpcomingSummaryOutput = { upcoming: number }
+
+export type UpcomingSummaryError = 'BadRequest'
+
+const operationUpcomingSummary: QueryRef<
+  UpcomingSummaryInput,
+  UpcomingSummaryOutput,
+  UpcomingSummaryError
+> = {
+  id: 'upcoming_summary',
+  owner: 'calendar',
+  kind: 'query',
+  publicName: 'events.upcoming',
+  method: 'GET',
+  path: 'upcoming-summary',
+  prefix: '/api/suite/calendar/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['BadRequest'],
+  loadValidators: async () => (await import('./validators')).operationUpcomingSummary,
+}
+
 export type CalendarGetCalendarEventsOutputCalendarEvent = {
   name: string
   account: string
@@ -1188,6 +1213,7 @@ const operationRsvpToInvite: MutationRef<RsvpToInviteInput, RsvpToInviteOutput, 
 export const api = {
   events: {
     list: operationEventsGet,
+    upcoming: operationUpcomingSummary,
     window: operationCalendarGetCalendarEvents,
     sharedWindow: operationGetCalendarEventsWithShared,
     density: operationGetCalendarEventDensityWithShared,

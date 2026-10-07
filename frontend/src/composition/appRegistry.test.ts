@@ -6,6 +6,7 @@ import type { Session } from '@/platform/session'
 
 const registryState = vi.hoisted(() => ({
   inbox: { data: { unread: 7 } },
+  upcoming: { data: { upcoming: 2 } },
 }))
 
 vi.mock('@/apps/drive', () => ({
@@ -39,6 +40,7 @@ vi.mock('@/apps/calendar', () => ({
     requires: ['jmap'],
     loadRoutes: vi.fn(),
   },
+  useUpcomingSummary: () => registryState.upcoming,
 }))
 
 vi.mock('@/apps/people', () => ({
@@ -90,16 +92,21 @@ describe('app registry', () => {
   })
 
   it('derives the Mail badge from the inbox unread summary', () => {
-    expect(deriveAreaBadges({ unread: 7 })).toEqual({ mail: 7 })
-    expect(deriveAreaBadges(undefined)).toEqual({ mail: 0 })
-    expect(deriveAreaBadges({ unread: -1 })).toEqual({ mail: 0 })
+    expect(deriveAreaBadges({ unread: 7 })).toEqual({ mail: 7, calendar: 0 })
+    expect(deriveAreaBadges(undefined)).toEqual({ mail: 0, calendar: 0 })
+    expect(deriveAreaBadges({ unread: -1 })).toEqual({ mail: 0, calendar: 0 })
   })
 
-  it('uses the Mail inbox summary as the registry badge source', () => {
+  it('derives the Calendar badge from what is left of the day', () => {
+    expect(deriveAreaBadges(undefined, { upcoming: 3 })).toEqual({ mail: 0, calendar: 3 })
+    expect(deriveAreaBadges(undefined, undefined)).toEqual({ mail: 0, calendar: 0 })
+  })
+
+  it('uses the Mail inbox and Calendar upcoming summaries as the badge sources', () => {
     const session = {
       capabilities: ref({ jmap: true, systemManager: false }),
     } as unknown as Session
 
-    expect(useAppRegistry(session).badges.value).toEqual({ mail: 7 })
+    expect(useAppRegistry(session).badges.value).toEqual({ mail: 7, calendar: 2 })
   })
 })

@@ -40,6 +40,7 @@
             :to="area.to"
             :badge="badges[area.id] ?? 0"
             badge-style="dot"
+            :badge-noun="area.badgeNoun?.()"
             :progress="areaProgress?.progress(area.id) ?? null"
             @click="openProgress(area.id)"
           />

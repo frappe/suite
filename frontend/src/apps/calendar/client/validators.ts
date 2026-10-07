@@ -39,6 +39,8 @@ import type {
   SearchCalendarEventsWithSharedOutput,
   SplitCalendarEventSeriesInput,
   SplitCalendarEventSeriesOutput,
+  UpcomingSummaryInput,
+  UpcomingSummaryOutput,
   UpdateCalendarEventInput,
   UpdateCalendarEventInstanceInput,
   UpdateCalendarEventInstanceOutput,
@@ -260,6 +262,37 @@ export const operationEventsGet: Validators<EventsGetInput, EventsGetOutput> = {
         type: 'array',
       },
       'events_get output',
+    )
+  },
+}
+
+export const operationUpcomingSummary: Validators<UpcomingSummaryInput, UpcomingSummaryOutput> = {
+  validateInput(value: unknown): asserts value is UpcomingSummaryInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          from: { title: 'From', type: 'string' },
+          to: { title: 'To', type: 'string' },
+        },
+        required: ['from', 'to'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'upcoming_summary input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UpcomingSummaryOutput {
+    assertSchema(
+      value,
+      {
+        properties: { upcoming: { title: 'Upcoming', type: 'integer' } },
+        required: ['upcoming'],
+        title: 'UpcomingSummary',
+        type: 'object',
+      },
+      'upcoming_summary output',
     )
   },
 }

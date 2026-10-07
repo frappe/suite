@@ -12,6 +12,8 @@ from frappe.utils import get_system_timezone, get_url
 from pydantic import BaseModel
 
 from suite.calendar.api import (
+    _declined_by_viewer,
+    _own_emails,
     create_calendar,
     delete_calendar,
     delete_calendar_event_series_from,
@@ -122,6 +124,12 @@ EventsQuery = TypedDict(
     "EventsQuery",
     {"from": str, "to": str, "account": NotRequired[str]},
 )
+
+UpcomingQuery = TypedDict("UpcomingQuery", {"from": str, "to": str})
+
+
+class UpcomingSummary(TypedDict):
+    upcoming: int
 
 
 class CalendarWindow(TypedDict):
@@ -462,6 +470,16 @@ ROUTES = (
         kind="query",
         public_name="events.list",
     ),
+    Route(
+        "GET",
+        "upcoming-summary",
+        "upcoming_summary",
+        errors=(BadRequest,),
+        query=UpcomingQuery,
+        output=UpcomingSummary,
+        kind="query",
+        public_name="events.upcoming",
+    ),
 )
 
 
@@ -492,6 +510,27 @@ def events_get(to: Given = None, account: Given = None, **kwargs: Given) -> list
         )
     )
     return events
+
+
+@frappe.whitelist(methods=["GET"])
+def upcoming_summary(to: Given = None, **kwargs: Given) -> UpcomingSummary:
+    """How many events are still to come in the window, across the user's accounts — for the
+    rail's dot on Calendar. The window is the caller's (now to the end of their day); an event
+    counts while any of it is left. A cancelled event is not to come, and nor is one the viewer
+    declined: the same events the Upcoming events lists show."""
+
+    from_value = _required_text(kwargs.get("from"), "from")
+    to_value = _required_text(to, "to")
+    upcoming = 0
+    for account in get_user_jmap_accounts():
+        own_emails = _own_emails(account)
+        for event in get_calendar_events(account, from_value, to_value, get_system_timezone()):
+            if (event.get("status") or "").lower() == "cancelled":
+                continue
+            if _declined_by_viewer(event, own_emails):
+                continue
+            upcoming += 1
+    return {"upcoming": upcoming}
 
 
 def _conferencing(links: list[dict]) -> Conferencing | None:

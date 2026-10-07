@@ -547,6 +547,55 @@
       "bytes": false
     },
     {
+      "id": "upcoming_summary",
+      "kind": "query",
+      "publicName": "events.upcoming",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "upcoming-summary",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "UpcomingQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "upcoming": {
+            "title": "Upcoming",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "upcoming"
+        ],
+        "title": "UpcomingSummary",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "calendar.get_calendar_events",
       "kind": "query",
       "publicName": "events.window",
