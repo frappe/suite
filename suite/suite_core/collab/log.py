@@ -383,14 +383,14 @@ def push(
         if answer:
             frappe.db.rollback()
             return answer
-        try:
-            capacity.admit(doc, row.update, row_bound, now_datetime())
-        except capacity.Full as full:
-            raise Refusal(423, full.reason, retry_ms=full.retry_ms) from None
         if header["from"] != acked + 1:
             raise Refusal(409, "seq", acked=acked)
         if header["seen_rev"] > head:
             raise Refusal(409, "diverged")
+        try:
+            capacity.admit(doc, row.update, row_bound, now_datetime())
+        except capacity.Full as full:
+            raise Refusal(423, full.reason, retry_ms=full.retry_ms) from None
         try:
             ingest.close(adapter, doc_id, row, header["cid"], start_clocks(doc))
         except ingest.Unclosed as unclosed:

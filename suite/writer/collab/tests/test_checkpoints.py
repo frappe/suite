@@ -839,6 +839,17 @@ class TestWriterAdmission(CheckpointCase):
         self.assertEqual(self.push(node, deleting, 1, removal)[0], 200)
         self.assertEqual(self.row_count(node), 2)
 
+    def test_a_stale_push_to_a_full_document_is_told_it_is_stale(self):
+        node = self.new_document()
+        tab = self.tab(node)
+        abc, de = typed(tab[1], ["abc", "de"])
+        self.set_doc(node, state_bytes=scheduling.STATE_MAX)
+        ahead = push_body(self.doc_row(node).lineage, *tab, 1, 1, abc)
+
+        self.assertEqual(self.push(node, tab, 2, de), (409, {"collab": "seq", "acked": 0}))
+        response = call(routes.collab_updates_post, node, body=ahead)
+        self.assertEqual((response.status_code, answer(response)), (409, {"collab": "diverged"}))
+
     def test_with_no_tail_to_compact_a_push_that_does_not_fit_is_full(self):
         node = self.new_document()
         tab = self.tab(node)
