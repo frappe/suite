@@ -314,7 +314,7 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         )
 
     @classmethod
-    def create_group(cls, domain: str | None = None, description: str | None = None) -> str:
+    def create_group(cls, domain: str | None = None, description: str | None = None, **kwargs) -> str:
         """Creates a group on Stalwart and returns its id."""
 
         from suite.mail.api.admin import add_group
@@ -325,6 +325,7 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
                 name=name,
                 domain=domain or cls.domain,
                 description=description or f"Test group {name}",
+                **kwargs,
             )
 
         cls._stalwart_cleanups.append(lambda group_id=group_id: _delete_directory("groups", group_id))
