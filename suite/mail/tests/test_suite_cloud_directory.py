@@ -471,6 +471,66 @@ class TestMembers(SuiteCloudTestCase):
         frappe.local.request_cache.clear()
         self.assertEqual(self.fake.accounts[f"dave@{DOMAIN}"]["disk_quota_gb"], 7)
 
+    def test_an_account_can_be_created_unable_to_receive(self) -> None:
+        for username, disable_receiving in (("noreply", True), ("heidi", False)):
+            admin.add_member(
+                username,
+                DOMAIN,
+                is_admin=False,
+                send_invite=False,
+                backup_email=f"{username}@backup.test",
+                first_name=username.title(),
+                password="a-strong-password-9",
+                disable_receiving=disable_receiving,
+            )
+        self.assertTrue(self.fake.accounts[f"noreply@{DOMAIN}"]["disable_receiving"])
+        # Nobody loses their incoming mail unasked.
+        self.assertFalse(self.fake.accounts[f"heidi@{DOMAIN}"]["disable_receiving"])
+
+    def test_an_invited_account_is_still_unable_to_receive_once_the_invite_is_accepted(self) -> None:
+        from suite.mail.api import account as account_api
+
+        email = f"ivan@{DOMAIN}"
+        with patch("frappe.sendmail"):
+            admin.add_member(
+                "ivan",
+                DOMAIN,
+                is_admin=False,
+                send_invite=True,
+                backup_email="ivan@backup.test",
+                disable_receiving=True,
+            )
+        self.assertNotIn(email, self.fake.accounts)  # nothing exists until the invite is accepted
+
+        request_key = frappe.db.get_value("Mail Account Request", {"account": email}, "request_key")
+        account_api.create_account(request_key, "Ivan", "Doe", "a-strong-password-9")
+        self.assertTrue(self.fake.accounts[email]["disable_receiving"])
+
+    def test_a_suite_cloud_that_ignores_the_option_does_not_leave_a_receiving_mailbox(self) -> None:
+        def create_as_before_the_option(email, password, disable_receiving=None, **kwargs):
+            return self.fake.accounts__create_account(email, password, **kwargs)
+
+        with patch(
+            "suite.mail.doctype.mail_account_request.mail_account_request.create_account",
+            side_effect=create_as_before_the_option,
+        ):
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Failed to create the mail account",
+                admin.add_member,
+                "judy",
+                DOMAIN,
+                is_admin=False,
+                send_invite=False,
+                backup_email="judy@backup.test",
+                first_name="Judy",
+                password="a-strong-password-9",
+                disable_receiving=True,
+            )
+        # The admin asked for an address that takes no mail; an ordinary mailbox is not that.
+        self.assertNotIn(f"judy@{DOMAIN}", self.fake.accounts)
+        self.assertFalse(frappe.db.exists("User", f"judy@{DOMAIN}"))
+
     def test_member_lifecycle_through_suite_cloud(self) -> None:
         admin.add_member(
             "carol",

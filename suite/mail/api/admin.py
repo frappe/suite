@@ -606,6 +606,7 @@ def add_member(
     quota_gb: float | None = None,
     locale: str | None = None,
     time_zone: str | None = None,
+    disable_receiving: bool = False,
 ) -> None:
     """Creates a member, right away or by invitation.
 
@@ -613,6 +614,7 @@ def add_member(
     full email addresses attached to the same account. ``groups`` and ``mailing_lists`` are the
     addresses of groups and lists the account joins once it is created — right away when invites
     are off, on verification otherwise. ``quota_gb`` unset means Suite Cloud's default for the site.
+    ``disable_receiving`` makes the account send-only: mail addressed to it bounces back.
 
     ``locale`` and ``time_zone``, like the name and password, only apply when the account is created
     right away; an invited member picks their own on the setup form.
@@ -627,6 +629,7 @@ def add_member(
     if quota_gb is not None and flt(quota_gb) > 0:
         account_request.quota_gb = flt(quota_gb)
     account_request.is_admin = cint(is_admin)
+    account_request.disable_receiving = cint(disable_receiving)
     account_request.invited_by = frappe.session.user
     account_request.backup_email = backup_email
     account_request.send_invite = cint(send_invite)

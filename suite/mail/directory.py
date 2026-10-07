@@ -105,8 +105,12 @@ def create_account(
     disk_quota_gb: float | None = None,
     locale: str | None = None,
     time_zone: str | None = None,
+    disable_receiving: bool = False,
 ) -> dict:
-    """Creates the account and returns its payload, including the app password (shown once)."""
+    """Creates the account and returns its payload, including the app password (shown once).
+
+    ``disable_receiving`` makes it send-only: mail addressed to it bounces back to the sender.
+    """
 
     return get_client().call(
         "mail.accounts.create_account",
@@ -119,6 +123,7 @@ def create_account(
         disk_quota_gb=disk_quota_gb,
         locale=locale,
         time_zone=time_zone,
+        disable_receiving=disable_receiving or None,
     )
 
 

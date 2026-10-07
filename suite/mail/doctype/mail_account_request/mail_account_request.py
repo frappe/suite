@@ -58,6 +58,7 @@ class MailAccountRequest(Document):
         account: DF.Data
         aliases: DF.SmallText | None
         backup_email: DF.Data
+        disable_receiving: DF.Check
         expires_at: DF.Datetime | None
         groups: DF.SmallText | None
         invited_by: DF.Link | None
@@ -421,7 +422,7 @@ class MailAccountRequest(Document):
                 frappe.throw(_("A mail account {0} already exists.").format(frappe.bold(self.account)))
 
             try:
-                return create_account(
+                account = create_account(
                     email=self.account,
                     password=password,
                     display_name=f"{first_name} {last_name}" if last_name else first_name,
@@ -431,6 +432,7 @@ class MailAccountRequest(Document):
                     disk_quota_gb=self._quota_gb,
                     locale=locale,
                     time_zone=time_zone,
+                    disable_receiving=bool(self.disable_receiving),
                 )
             except SuiteCloudUnavailableError:
                 # A timeout after Suite Cloud created the account would leave a mailbox nobody owns
@@ -438,6 +440,13 @@ class MailAccountRequest(Document):
                 # Caught in here: execute_with_logging rethrows everything as a plain validation error.
                 self._discard_cluster_account()
                 raise
+
+            if self.disable_receiving and not account.get("disable_receiving"):
+                # A Suite Cloud older than the option drops it unseen and hands back an ordinary
+                # mailbox, which would take the very mail this account was asked not to receive.
+                self._discard_cluster_account()
+                frappe.throw(_("Suite Cloud cannot create accounts with receiving disabled yet."))
+            return account
 
         return execute_with_logging(
             func=create,

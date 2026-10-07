@@ -424,6 +424,7 @@ class FakeSuiteCloud:
         disk_quota_gb=None,
         locale=None,
         time_zone=None,
+        disable_receiving=None,
         **_,
     ) -> dict:
         self._require_active_domain(email)
@@ -434,6 +435,7 @@ class FakeSuiteCloud:
         self.accounts[email] = {
             "email": email,
             "enabled": 1,
+            "disable_receiving": bool(disable_receiving),
             "display_name": display_name,
             "disk_quota_gb": disk_quota_gb or DEFAULT_QUOTA_GB,
             "used_disk_bytes": 0,

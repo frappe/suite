@@ -12,6 +12,7 @@
   "backup_email",
   "roles",
   "is_admin",
+  "disable_receiving",
   "account_details_column_break",
   "invited_by",
   "account",
@@ -216,12 +217,21 @@
    "no_copy": 1,
    "search_index": 1,
    "set_only_once": 1
+  },
+  {
+   "default": "0",
+   "description": "If enabled, the account is created send-only: it can send emails, but mail addressed to it bounces back to the sender.",
+   "fieldname": "disable_receiving",
+   "fieldtype": "Check",
+   "label": "Disable Receiving",
+   "no_copy": 1,
+   "set_only_once": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-05 13:12:57.666618",
+ "modified": "2026-10-07 13:20:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Account Request",
