@@ -389,35 +389,40 @@ test.describe("Writer collaboration", () => {
 		}
 	});
 
-	test("a paste a 200 KiB proxy refuses stays unsent, says so, and saves once the proxy lets it through", async ({
-		owner,
-		testApi,
-		baseURL,
-	}) => {
-		test.setTimeout(90_000);
-		const proxy = await bodyLimitProxy(baseURL!, 200 * 2 ** 10);
-		try {
-			await owner.page.goto(`${proxy.origin}/d/${node}`);
-			await expect(writerEditor(owner.page)).toBeVisible();
-			const big = "p".repeat(300 * 2 ** 10);
+	for (const bare of [false, true]) {
+		const name = bare
+			? "a bare 413 from a proxy leaves a paste unsent, says so, and saves once let through"
+			: "a paste a 200 KiB proxy refuses stays unsent, says so, and saves once the proxy lets it through";
+		test(name, async ({
+			owner,
+			testApi,
+			baseURL,
+		}) => {
+			test.setTimeout(90_000);
+			const proxy = await bodyLimitProxy(baseURL!, 200 * 2 ** 10, bare);
+			try {
+				await owner.page.goto(`${proxy.origin}/d/${node}`);
+				await expect(writerEditor(owner.page)).toBeVisible();
+				const big = "p".repeat(300 * 2 ** 10);
 
-			await pasteText(owner.page, big);
+				await pasteText(owner.page, big);
 
-			const refusing = owner.page.getByText("Your network is refusing uploads, so your latest changes aren't saved.");
-			await expect(refusing).toBeVisible();
-			expect(proxy.seen.refused).toBeGreaterThan(0);
-			expect((await serverText(testApi, node)).includes(big)).toBe(false);
+				const refusing = owner.page.getByText("Your network is refusing uploads, so your latest changes aren't saved.");
+				await expect(refusing).toBeVisible();
+				expect(proxy.seen.refused).toBeGreaterThan(0);
+				expect((await serverText(testApi, node)).includes(big)).toBe(false);
 
-			proxy.lift();
+				proxy.lift();
 
-			// The tab retries on its own backoff, up to half a minute
-			await expect(owner.page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 45_000 });
-			await expect(refusing).toBeHidden();
-			expect((await serverText(testApi, node)).includes(big)).toBe(true);
-		} finally {
-			await proxy.close();
-		}
-	});
+				// The tab retries on its own backoff, up to half a minute
+				await expect(owner.page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 45_000 });
+				await expect(refusing).toBeHidden();
+				expect((await serverText(testApi, node)).includes(big)).toBe(true);
+			} finally {
+				await proxy.close();
+			}
+		});
+	}
 
 	test("a document at the cap opens in under three seconds", async ({ owner, testApi }) => {
 		test.setTimeout(120_000);

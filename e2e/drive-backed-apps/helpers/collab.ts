@@ -222,8 +222,9 @@ export async function pushInPieces(
 	return { pieces, status: push.status(), collab: ((await push.json()) as { collab: string }).collab };
 }
 
-/** A proxy in front of `target` that refuses request bodies over `limit` bytes with 413, as nginx's `client_max_body_size 1m` does. */
-export async function bodyLimitProxy(target: string, limit = 2 ** 20) {
+/** A proxy in front of `target` that refuses request bodies over `limit` bytes with 413, as nginx's `client_max_body_size 1m` does.
+ * A `bare` refusal has no body, as some load balancers send. */
+export async function bodyLimitProxy(target: string, limit = 2 ** 20, bare = false) {
 	const upstream = new URL(target);
 	const seen = { largest: 0, refused: 0 };
 	const server = createServer((incoming, outgoing) => {
@@ -234,7 +235,8 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20) {
 			seen.largest = Math.max(seen.largest, body.length);
 			if (body.length > limit) {
 				seen.refused++;
-				outgoing.writeHead(413, { "content-type": "text/html" }).end("<h1>413 Request Entity Too Large</h1>");
+				if (bare) outgoing.writeHead(413).end();
+				else outgoing.writeHead(413, { "content-type": "text/html" }).end("<h1>413 Request Entity Too Large</h1>");
 				return;
 			}
 			const sent = forward(
