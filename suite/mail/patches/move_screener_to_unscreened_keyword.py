@@ -28,8 +28,10 @@ def execute() -> None:
     """Retire the Screener folder: mail from a sender nobody has decided on now waits in the Inbox,
     marked with the `unscreened` keyword, instead of in a folder of its own.
 
-    For each account this rebuilds the automation Sieve first, so new mail stops landing in the folder,
-    then moves what is still there into the Inbox with the keyword on, and deletes the emptied folder.
+    Every account screening mail has its automation Sieve rebuilt — whether or not it has the folder,
+    since the old gate would make one for the next new sender. Where the folder exists, the rebuild
+    comes first, so new mail stops landing in it, then what is still there moves into the Inbox with
+    the keyword on, and the emptied folder is deleted.
     In that order nothing is missed: mail that arrives before the rebuild is in the folder when it is
     emptied, and mail after it never goes there.
 
@@ -38,7 +40,8 @@ def execute() -> None:
     again offers the same decisions it left behind.
 
     Deferred to a background job: it needs a live JMAP session per account, which is not reliably
-    reachable during ``bench migrate``. A re-run is a no-op for an account whose folder is gone.
+    reachable during ``bench migrate``. A re-run rebuilds the screening accounts again, which is
+    idempotent, and finds no folder to move.
     """
 
     frappe.enqueue(move_screeners, queue="long", enqueue_after_commit=True, timeout=3600)
@@ -58,13 +61,17 @@ def move_screeners() -> None:
 
 
 def move_screener(account: str) -> None:
+    # Every screening account gets the new gate, folder or not: one whose Screener had gone, or had
+    # never been made, still carries the old gate, whose `fileinto :create` would make it again for
+    # the next new sender. The rebuild comes first, so a folder that does exist stops filling up
+    # before it is emptied.
+    if is_screening_enabled(account):
+        build_automation_sieve(account, raise_exception=True)
+
     invalidate_jmap_mailboxes_cache(account)
     screener_id = get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME)
     if not screener_id:
         return
-
-    if is_screening_enabled(account):
-        build_automation_sieve(account, raise_exception=True)
 
     inbox_id = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
     client = get_account_client(account)
