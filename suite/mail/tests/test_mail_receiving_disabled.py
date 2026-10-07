@@ -10,6 +10,8 @@ class TestAccountWithReceivingDisabled(StalwartIntegrationTestCase):
         super().setUpClass()
         cls.send_only = cls.create_member(disable_receiving=True)
         cls.colleague = cls.create_member()
+        # On both: mail that did get through must show in the inbox, not sit unseen in Screening.
+        cls.disable_screening(cls.send_only)
         cls.disable_screening(cls.colleague)
 
     def test_it_sends_like_any_other_account(self):
