@@ -48,6 +48,21 @@ export function writerEditor(page: Page): Locator {
 	return page.getByRole("textbox", { name: "Document editor" });
 }
 
+/** Click into the block that shows `text`, and wait until the editor has its caret there. */
+export async function placeCaretIn(page: Page, text: string): Promise<void> {
+	await writerEditor(page).getByText(text).click();
+	// The editor reads a click's caret on the browser's next selection event, which can come after the next keys
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(document.querySelector(".ProseMirror") as { editor?: { state: { selection: { $from: { parent: { textContent: string } } } } } } | null)
+						?.editor?.state.selection.$from.parent.textContent,
+			),
+		)
+		.toBe(text);
+}
+
 /** The document title field in the header; renames on Enter, reverts on Escape. */
 export function documentTitle(page: Page): Locator {
 	return page.getByRole("textbox", { name: "Document title" });

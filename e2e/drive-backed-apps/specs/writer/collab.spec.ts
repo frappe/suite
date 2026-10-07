@@ -37,6 +37,7 @@ import {
 	createWriterDocument,
 	documentMenuButton,
 	openWriterDocument,
+	placeCaretIn,
 	shareWriterDocument,
 	uniqueWriterTitle,
 	writerEditor,
@@ -524,7 +525,7 @@ test.describe("Writer collaboration", () => {
 		await expect(writerEditor(owner.page)).not.toContainText("Pasted after it filled");
 		expect((await serverText(testApi, node)).join("")).not.toContain("Pasted after it filled");
 
-		await writerEditor(owner.page).getByText("Delete me").click();
+		await placeCaretIn(owner.page, "Delete me");
 		await owner.page.keyboard.press("End");
 		for (let i = 0; i < 3; i++) await owner.page.keyboard.press("Backspace");
 		await expect(writerEditor(owner.page)).not.toContainText("Delete me");
