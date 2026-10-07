@@ -24,7 +24,7 @@ from suite.suite_core.utils import (
 )
 
 API_PREFIX = "/api/method/suite_cloud.api."
-DEFAULT_TIMEOUT = (5, 60)
+DEFAULT_TIMEOUT = (30, 60)
 
 
 class SuiteCloudUnavailableError(frappe.ValidationError):
