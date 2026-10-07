@@ -141,4 +141,32 @@ describe('writer collab rebuild', () => {
     await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
     expect(fake.opens - opens).toBe(1)
   })
+
+  it('still says the last edits were set aside once the room is rebuilt', async () => {
+    fake.room = fake.make()
+    const collab = await opened(() => true)
+    const old = fake.room
+    fake.room = fake.make()
+
+    becomesOn(old, { stale: false, stopped: 'client_closed', saveState: 'failed', unsent: 2 })
+    expect(collab.banner.value).not.toBeNull()
+    becomesOn(old, { stale: true })
+
+    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    expect(collab.banner.value?.text).toBe(
+      "Your last edits couldn't be saved here and were kept as a recovery copy.",
+    )
+  })
+
+  it('says nothing was set aside when the rebuilt room takes the unsent work over', async () => {
+    fake.room = fake.make()
+    const collab = await opened()
+    const old = fake.room
+    fake.room = fake.make()
+
+    becomesOn(old, { stale: true, unsent: 2, onDevice: true })
+
+    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    expect(collab.banner.value).toBeNull()
+  })
 })

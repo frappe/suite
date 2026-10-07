@@ -5,7 +5,7 @@ import type { DocumentSession } from '@/apps/drive'
 import { openWriterRoom } from '@/apps/writer/collab'
 import { TransportError } from '@/platform/transport'
 
-import { bannerFor, openFailureFor } from './collabMessages'
+import { bannerFor, openFailureFor, SET_ASIDE } from './collabMessages'
 import type { DocumentSaveState } from './navigation'
 
 export type CollabMode = 'opening' | 'legacy' | 'live' | 'failed'
@@ -39,6 +39,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const openReason = ref<string | null>(null)
   const openStatus = ref<number | null>(null)
   const kept = ref(false)
+  const setAside = ref(false)
   let stopWatching = () => {}
   let closed = false
 
@@ -83,6 +84,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   // The old room sends what it can; the new one takes the rest over from the device
   async function rebuild(old: CollabRoom) {
     stopWatching()
+    if (old.stopped && old.unsent) setAside.value = true
     room.value = null
     mode.value = 'opening'
     await nextTick()
@@ -114,7 +116,8 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const paused = computed(() => (live.value ? (status.value?.paused ?? null) : null))
   const banner = computed(() => {
     const now = status.value
-    if (!live.value || !now || !(now.blocked || now.saveState === 'failed')) return null
+    if (!live.value || !now) return null
+    if (!(now.blocked || now.saveState === 'failed')) return setAside.value ? SET_ASIDE : null
     return bannerFor({
       blocked: now.blocked,
       stopped: now.stopped,

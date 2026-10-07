@@ -24,6 +24,11 @@ const STOPS: Record<string, string> = {
   poison: "This document can't hold a change made in this tab, so saving stopped.",
 }
 
+// Shown in a rebuilt room once the stopped room's unsent work went to a recovery copy
+export const SET_ASIDE: Banner = {
+  text: "Your last edits couldn't be saved here and were kept as a recovery copy.",
+}
+
 export function bannerFor({ blocked, stopped, onDevice, kept, unsent }: Standing): Banner {
   const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
