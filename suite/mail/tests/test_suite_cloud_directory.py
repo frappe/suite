@@ -531,6 +531,53 @@ class TestMembers(SuiteCloudTestCase):
         self.assertNotIn(f"judy@{DOMAIN}", self.fake.accounts)
         self.assertFalse(frappe.db.exists("User", f"judy@{DOMAIN}"))
 
+    def _add_carol(self) -> None:
+        admin.add_member(
+            "carol",
+            DOMAIN,
+            is_admin=False,
+            send_invite=False,
+            backup_email="carol@backup.test",
+            first_name="Carol",
+            password="a-strong-password-9",
+        )
+
+    def test_an_admin_stops_and_restores_a_members_receiving(self) -> None:
+        self._add_carol()
+        self.assertFalse(admin.get_member(self.email)["disable_receiving"])
+
+        admin.set_member_receiving_enabled(self.email, False)
+        self.assertTrue(self.fake.accounts[self.email]["disable_receiving"])
+        self.assertTrue(admin.get_member(self.email)["disable_receiving"])
+
+        admin.set_member_receiving_enabled(self.email, True)
+        self.assertFalse(self.fake.accounts[self.email]["disable_receiving"])
+        self.assertFalse(admin.get_member(self.email)["disable_receiving"])
+
+    def test_a_member_cannot_change_their_own_receiving(self) -> None:
+        self._add_carol()
+        frappe.set_user(self.email)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        self.assertRaises(frappe.PermissionError, admin.set_member_receiving_enabled, self.email, False)
+        self.assertFalse(self.fake.accounts[self.email]["disable_receiving"])
+
+    def test_a_suite_cloud_that_ignores_the_option_is_not_reported_as_changed(self) -> None:
+        self._add_carol()
+        update_account = self.fake.accounts__update_account
+
+        def update_as_before_the_option(email, disable_receiving=None, **changes):
+            return update_account(email, **changes)
+
+        with patch.object(self.fake, "accounts__update_account", update_as_before_the_option):
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Suite Cloud cannot change",
+                admin.set_member_receiving_enabled,
+                self.email,
+                False,
+            )
+
     def test_member_lifecycle_through_suite_cloud(self) -> None:
         admin.add_member(
             "carol",

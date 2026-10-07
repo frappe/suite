@@ -820,6 +820,7 @@ def get_member(member_id: str) -> dict:
         "quota": _build_quota_usage(0, 0),
         "locale": None,
         "time_zone": None,
+        "disable_receiving": False,
     }
 
     email = get_account_email(member_id)
@@ -831,6 +832,7 @@ def get_member(member_id: str) -> dict:
         account = get_client().call("mail.accounts.get_account", email=email)
         result["locale"] = account.get("locale")
         result["time_zone"] = account.get("time_zone")
+        result["disable_receiving"] = bool(account.get("disable_receiving"))
         result["email_addresses"] = _email_addresses(
             account["email"], account.get("display_name"), account.get("aliases") or []
         )
@@ -998,6 +1000,22 @@ def update_member(
         changes["time_zone"] = time_zone or ""
     if changes:
         get_client().call("mail.accounts.update_account", email=email, **changes)
+
+
+@frappe.whitelist(methods=["POST"])
+def set_member_receiving_enabled(member_id: str, enabled: bool) -> None:
+    """Lets the member's mailbox receive mail again, or makes it send-only: mail addressed to it
+    then bounces back to the sender, while the member still logs in and sends."""
+
+    enabled = bool(enabled)
+    check_admin_permission(
+        "enable receiving for members" if enabled else "disable receiving for members", member_id
+    )
+    email = _require_member_account(member_id)
+    account = get_client().call("mail.accounts.update_account", email=email, disable_receiving=not enabled)
+    if bool(account.get("disable_receiving")) == enabled:
+        # A Suite Cloud older than the option drops it unseen and answers as if all went well.
+        frappe.throw(_("Suite Cloud cannot change whether an account receives mail yet."))
 
 
 # --- aliases (accounts, groups and lists alike) ------------------------------------------------------
