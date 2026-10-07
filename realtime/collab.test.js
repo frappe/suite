@@ -193,6 +193,24 @@ test("presence past fifty messages a second, over 2 KiB or for a room not joined
 	watcher.close();
 });
 
+test("a tab that joins late is answered with the carets already in its rooms, each naming its room", async () => {
+	const nsp = site();
+	const writer = connect(nsp, "writer@example.com");
+	await writer.rooms([A, B]);
+	writer.presence([A], { cursor: { at: 1 } });
+	await tick();
+
+	const late = connect(nsp, "late@example.com");
+	const ack = await late.rooms([A, B]);
+
+	assert.deepEqual(
+		ack.carets.map((caret) => [caret.room, caret.user, caret.state.cursor.at]),
+		[[A, "writer@example.com", 1]],
+	);
+	writer.close();
+	late.close();
+});
+
 test("a room shows at most fifty carets, ten of them guests", async () => {
 	const nsp = site();
 	const watcher = connect(nsp, "watcher@example.com");

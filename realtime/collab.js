@@ -122,7 +122,7 @@ const collab_handlers = (socket) => {
 				if (entry.pid === pid) continue;
 				count++;
 				if (roster.length < ROSTER_MAX) roster.push({ room, pid: entry.pid, user: entry.user });
-				if (entry.state) carets.push(sent(entry));
+				if (entry.state) carets.push({ room, ...sent(entry) });
 			}
 		}
 		return { rooms, pid, roster, count, carets };
