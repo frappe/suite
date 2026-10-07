@@ -1,6 +1,8 @@
 import type { Peer, RoomPresence } from '@suite/collab-client'
 import { Extension } from '@tiptap/core'
-import { yCursorPlugin } from '@tiptap/y-tiptap'
+import { relativePositionToAbsolutePosition, yCursorPlugin, ySyncPluginKey } from '@tiptap/y-tiptap'
+import type { Awareness } from 'y-protocols/awareness'
+import * as Y from 'yjs'
 
 import { fullName, lookUp } from '@/apps/writer/composables/useUsers'
 
@@ -30,8 +32,21 @@ export const Carets = Extension.create<{ presence: RoomPresence | null }>({
   addOptions: () => ({ presence: null }),
   addProseMirrorPlugins() {
     if (!this.options.presence) return []
+    const editor = this.editor
+    const placed = (position: unknown) => {
+      const sync = ySyncPluginKey.getState(editor.state)
+      return (
+        !!sync?.binding &&
+        relativePositionToAbsolutePosition(
+          sync.doc,
+          sync.type,
+          Y.createRelativePositionFromJSON(position),
+          sync.binding.mapping,
+        ) !== null
+      )
+    }
     return [
-      yCursorPlugin(this.options.presence.awareness, {
+      yCursorPlugin(holding(this.options.presence.awareness, placed), {
         awarenessStateFilter: (_: number, id: number) => id !== 0,
         cursorBuilder: (user: { id: string; color: string }, pid: number) => {
           const caret = document.createElement('span')
@@ -52,3 +67,30 @@ export const Carets = Extension.create<{ presence: RoomPresence | null }>({
     ]
   },
 })
+
+type Caret = { anchor: unknown; head: unknown }
+
+// A peer's caret can point into text whose row hasn't reached this tab, and the plugin draws no caret it can't
+// place. Until it can, the caret stays where it last was placed, which this tab's own edits keep valid
+function holding(awareness: Awareness, placed: (position: unknown) => boolean) {
+  const held = new Map<number, Caret>()
+  return {
+    getStates() {
+      const states = awareness.getStates()
+      for (const id of held.keys()) if (!states.get(id)?.cursor) held.delete(id)
+      const shown = new Map<number, object>()
+      for (const [id, state] of states) {
+        const cursor = state.cursor as Caret | null | undefined
+        if (cursor && placed(cursor.anchor) && placed(cursor.head)) held.set(id, cursor)
+        shown.set(id, held.has(id) ? { ...state, cursor: held.get(id) } : state)
+      }
+      return shown
+    },
+    getLocalState: () => awareness.getLocalState(),
+    setLocalStateField: (field: string, value: unknown) =>
+      awareness.setLocalStateField(field, value),
+    on: (event: 'change', listener: (...args: unknown[]) => void) => awareness.on(event, listener),
+    off: (event: 'change', listener: (...args: unknown[]) => void) =>
+      awareness.off(event, listener),
+  } as unknown as Awareness
+}

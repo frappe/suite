@@ -18,6 +18,7 @@ const editors: Editor[] = []
 afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 
 function open() {
+  const doc = new Y.Doc()
   const scratch = new Y.Doc()
   scratch.clientID = 0
   const awareness = new Awareness(scratch)
@@ -30,13 +31,13 @@ function open() {
       Document,
       Paragraph,
       Text,
-      Collaboration.configure({ document: new Y.Doc() }),
+      Collaboration.configure({ document: doc }),
       Carets.configure({ presence }),
     ],
   })
   editors.push(editor)
   editor.commands.insertContent('hello')
-  return { editor, awareness }
+  return { editor, awareness, doc }
 }
 
 function caretAt(editor: Editor, at: number) {
@@ -49,13 +50,23 @@ function peer(awareness: Awareness) {
   const doc = new Y.Doc()
   doc.clientID = PEER
   const own = new Awareness(doc)
-  return (state: object) => {
+  return (state: object | null) => {
     own.setLocalState(state)
     applyAwarenessUpdate(awareness, encodeAwarenessUpdate(own, [PEER]), 'remote')
   }
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+// The text in front of the drawn caret, or null when none is drawn
+function caretAfter(editor: Editor) {
+  const caret = editor.view.dom.querySelector('.collaboration-carets__caret')
+  if (!caret) return null
+  const range = document.createRange()
+  range.setStart(editor.view.dom, 0)
+  range.setEndBefore(caret)
+  return range.toString()
+}
 
 const labels = (editor: Editor) =>
   [...editor.view.dom.querySelectorAll('.collaboration-carets__label')].map(
@@ -81,6 +92,38 @@ describe('Writer carets', () => {
     expect(awareness.getLocalState()?.cursor).toHaveProperty('head')
     expect(before).toEqual(['bea@x.com'])
     expect(labels(editor)).toEqual(['Bea Writer'])
+  })
+
+  it('keeps a peer’s caret where it was while their text is on its way, and drops it when they clear or leave', async () => {
+    searchUsers.mockResolvedValue([])
+    const { editor, awareness, doc } = open()
+    const say = peer(awareness)
+    const peerSays = async (state: object | null) => {
+      say(state)
+      await tick()
+    }
+    const user = { id: 'bea@x.com', color: '#3E63DD' }
+    const theirs = new Y.Doc()
+    Y.applyUpdate(theirs, Y.encodeStateAsUpdate(doc))
+    const before = Y.encodeStateVector(theirs)
+    const words = (theirs.getXmlFragment('default').get(0) as Y.XmlElement).get(0) as Y.XmlText
+    words.insert(5, ' world')
+    const within = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(words, 8))
+    const ahead = { anchor: within, head: within }
+
+    await peerSays({ user, cursor: caretAt(editor, 3) })
+    const placed = caretAfter(editor)
+    await peerSays({ user, cursor: ahead })
+    const waiting = caretAfter(editor)
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(theirs, before))
+    const arrived = caretAfter(editor)
+    await peerSays({ user, cursor: null })
+    const cleared = caretAfter(editor)
+    await peerSays({ user, cursor: caretAt(editor, 3) })
+    await peerSays(null)
+
+    expect([placed, waiting, arrived, cleared]).toEqual(['he', 'he', 'hello wo', null])
+    expect(caretAfter(editor)).toBeNull()
   })
 
   it('lists each signed-in person once and every guest tab apart', () => {
