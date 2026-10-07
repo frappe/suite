@@ -20,6 +20,10 @@
               :label="__('Description')"
               :value="member.data.description ?? undefined"
             />
+            <InformationField
+              :label="__('Receiving')"
+              :value="member.data.disable_receiving ? __('Disabled') : __('Enabled')"
+            />
             <InformationField :label="__('Created At')" :value="createdAt" />
           </div>
         </DashboardCard>
@@ -157,6 +161,7 @@
     :current-ids="currentMemberIds"
     @reload="member.refetch().catch(() => {})"
   />
+  <Dialog v-model:open="showToggleReceiving" v-bind="toggleReceivingDialogOptions" />
   <Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
@@ -184,6 +189,7 @@ type GroupData = {
   name: string
   email: string
   description?: string
+  disable_receiving: boolean
   created_at?: string
   email_addresses: {
     email: string
@@ -207,6 +213,7 @@ const showEdit = ref(false)
 const showEditQuota = ref(false)
 const showAddEmail = ref(false)
 const showAddMembers = ref(false)
+const showToggleReceiving = ref(false)
 const showDelete = ref(false)
 const memberSearch = ref('')
 
@@ -275,6 +282,34 @@ const removeMember = async (accountId: string) => {
   member.refetch().catch(() => {})
   raiseToast(__('Member removed.'))
 }
+async function setReceiving(enabled: boolean) {
+  await client.mutation(api.mail.admin.groups.setReceivingEnabled, {
+    group_id: groupId,
+    enabled,
+  })
+  showToggleReceiving.value = false
+  raiseToast(enabled ? __('Receiving enabled.') : __('Receiving disabled.'))
+}
+const toggleReceivingDialogOptions = computed(() => {
+  const enabling = Boolean(data.value?.disable_receiving)
+  return {
+    title: enabling ? __('Enable Receiving') : __('Disable Receiving'),
+    message: enabling
+      ? __(
+          'Are you sure you want to enable receiving for this group? Mail addressed to it will be delivered again.',
+        )
+      : __(
+          'Are you sure you want to disable receiving for this group? Mail addressed to it will bounce back to the sender.',
+        ),
+    actions: [
+      {
+        label: __('Confirm'),
+        variant: 'solid' as const,
+        onClick: () => setReceiving(enabling),
+      },
+    ],
+  }
+})
 const deleteGroup = useMutation(api.mail.admin.groups.delete)
 async function deleteGroupSubmit() {
   const input: InputOf<typeof api.mail.admin.groups.delete> = {
@@ -306,6 +341,17 @@ const dropdownOptions = computed(() => [
   {
     group: '',
     options: [
+      data.value?.disable_receiving
+        ? {
+            label: __('Enable Receiving'),
+            icon: 'lucide-mail-check',
+            onClick: () => (showToggleReceiving.value = true),
+          }
+        : {
+            label: __('Disable Receiving'),
+            icon: 'lucide-mail-x',
+            onClick: () => (showToggleReceiving.value = true),
+          },
       {
         label: __('Delete'),
         icon: 'lucide-trash-2',
