@@ -206,6 +206,52 @@ describe('keys', () => {
   })
 })
 
+describe('switching modes', () => {
+  let h: ReturnType<typeof setup>
+  beforeEach(() => {
+    h = setup()
+  })
+
+  it('F2 in enter mode hands the arrows to the caret', () => {
+    h.editor.open('=')
+    h.press('F2')
+    h.press('ArrowDown')
+    expect(h.picker.keyStart).not.toHaveBeenCalled()
+    expect(h.editor.isOpen()).toBe(true)
+  })
+
+  it('F2 again goes back to picking references', () => {
+    h.editor.open('=', 'edit')
+    h.press('F2')
+    h.press('ArrowDown')
+    expect(h.picker.keyStart).toHaveBeenCalledWith(h.el, 1, 0, false)
+  })
+
+  it('F2 while picking keeps the reference and ends the pick', () => {
+    h.editor.open('=')
+    h.press('ArrowDown')
+    h.press('F2')
+    expect(h.picker.keyCommit).toHaveBeenCalled()
+    h.press('ArrowDown')
+    expect(h.picker.keyMove).not.toHaveBeenCalled()
+  })
+
+  it('Shift+F2 does not switch modes', () => {
+    h.editor.open('5')
+    h.press('F2', { shiftKey: true })
+    h.press('ArrowRight')
+    expect(h.commits).toEqual(['5'])
+  })
+
+  it('a click in the text switches to edit mode', () => {
+    h.editor.open('5')
+    h.el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    h.press('ArrowRight')
+    expect(h.commits).toEqual([])
+    expect(h.editor.isOpen()).toBe(true)
+  })
+})
+
 describe('blur', () => {
   it('commits what was typed', () => {
     const h = setup()

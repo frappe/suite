@@ -4,6 +4,7 @@
 // Two modes, as in Excel / Google Sheets:
 //   'enter' (typing straight into a cell): arrow keys commit and move;
 //   'edit'  (F2, double-click, Enter on a filled cell): arrows move the caret.
+// While editing, F2 switches between the two and a click in the text picks 'edit'.
 // Inside a formula, arrows pick cell references instead (range-picker.ts).
 //
 // Keys the editor owns: Enter commits (Ctrl/Cmd/Alt+Enter inserts a newline),
@@ -161,6 +162,13 @@ export function createEditor(o: EditorOptions): Editor {
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
+  // Leaving 'enter' mode ends a pick in progress, so the reference stays and
+  // the next arrow moves the caret.
+  function setMode(m: EditMode): void {
+    if (m === 'edit' && o.picker.isKeyPicking()) o.picker.keyCommit()
+    mode = m
+  }
+
   function onKeyDown(e: KeyboardEvent): void {
     if (o.autocomplete.handleKey(e)) return
     // Auto-close parens inside a formula, before the picker or navigation
@@ -170,6 +178,13 @@ export function createEditor(o: EditorOptions): Editor {
       e.preventDefault()
       if (o.picker.isKeyPicking()) o.picker.keyCommit()
       setText(closed.value, closed.caret)
+      return
+    }
+    // F2 switches between picking references and moving the caret, as in
+    // Sheets. Shift+F2 is the notes shortcut, so only a bare F2 counts.
+    if (e.key === 'F2' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      setMode(mode === 'enter' ? 'edit' : 'enter')
       return
     }
     // A printable key (e.g. '+' after picking C1) ends the current pick, so
@@ -234,6 +249,11 @@ export function createEditor(o: EditorOptions): Editor {
   })
 
   el.addEventListener('keydown', onKeyDown)
+
+  // Clicking inside the text means the user wants the caret there.
+  el.addEventListener('mousedown', () => {
+    if (open) setMode('edit')
+  })
 
   // Losing focus commits. Unlike commit(), this repaints and leaves the
   // picker state alone (unchanged from before the split).
