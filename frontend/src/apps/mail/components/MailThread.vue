@@ -164,6 +164,7 @@
                           :reply-all
                           :forward
                           :reload-mails="handleReload"
+                          :drop-mail
                           :thread="thread"
                           @set-flagged="onSetFlagged"
                           @sync-unseen="handleSyncUnseen"
@@ -337,6 +338,7 @@
                                 :reply-all
                                 :forward
                                 :reload-mails="handleReload"
+                                :drop-mail
                                 :thread="thread"
                                 @set-flagged="onSetFlagged"
                                 @sync-unseen="handleSyncUnseen"
@@ -1392,6 +1394,13 @@ const removeMailFromView = (
       if (removed.thread_id === threadID) thread.value.splice(idx, 0, removed)
     },
   }
+}
+// Takes a message out of the pane ahead of the server — a block sends it to Junk — and leaves the
+// thread if it was the last one. Returns what puts it back.
+const dropMail = (mailId: string) => {
+  const { emptied, rollback } = removeMailFromView(mailId)
+  if (emptied) goToMailbox()
+  return rollback
 }
 defineExpose({
   syncFlagged,

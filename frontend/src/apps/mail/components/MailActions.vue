@@ -75,6 +75,8 @@ const {
   reply,
   replyAll,
   forward,
+  reloadMails,
+  dropMail,
   thread,
 } = defineProps<{
   mailbox: string
@@ -87,6 +89,8 @@ const {
   replyAll: (mail: Mail) => void
   forward: (mail: Mail) => void
   reloadMails: (isUndo?: boolean) => void
+  /** Takes the message out of the pane ahead of the server; returns what puts it back. */
+  dropMail: (mailId: string) => () => void
   thread: Mail[]
 }>()
 const emit = defineEmits(['setFlagged', 'syncUnseen', 'moveMail', 'markMailSpam', 'deleteMail'])
@@ -345,30 +349,89 @@ const trustDomain = async () => {
   })
   raiseToast(__('Domain marked as trusted.'))
 }
-const handleBlockAddress = (block: boolean, isUndo = false) => {
-  const input = {
-    account: scopeAccountId.value,
-    emails: [mail.from_email],
+const handleBlockAddress = (block: boolean) => (block ? blockSender() : unblockSender())
+
+const unblockSender = (isUndo = false) => {
+  const forward = client.mutation(
+    api.mail.screening.remove,
+    { account: scopeAccountId.value, emails: [mail.from_email] },
+    { silent: true },
+  )
+  if (isUndo) return raiseOptimisticToast(forward, __('Sender blocked.'))
+  setUndoAction(() => {
+    const back = client.mutation(
+      api.mail.screening.set,
+      { account: scopeAccountId.value, emails: [mail.from_email], action: 'Spam' },
+      { silent: true },
+    )
+    raiseOptimisticToast(back, __('Sender blocked.'))
+  })
+  raiseOptimisticToast(forward, __('Sender unblocked.'), undo)
+}
+
+// Blocking sends the sender's future mail to Junk, and this message with it — they were blocked while
+// it was being read. The rest of their mail stays put; the toast offers to move what is in the Inbox.
+const blockSender = async () => {
+  const account = scopeAccountId.value
+  const from_emails = [mail.from_email]
+  const ids = mailCopyIds(mail)
+  // The message leaves at once, as a junked one does: waiting for the server let the refreshed block
+  // list mark it blocked while it was still on screen.
+  const putBack = dropMail(mail.id)
+  let blocked: { inbox: number }
+  try {
+    blocked = await client.mutation(api.mail.screening.block, { account, from_emails, ids })
+  } catch (error) {
+    putBack()
+    raiseError(error)
+    return
   }
-  const forward = block
-    ? client.mutation(
-        api.mail.screening.set,
-        {
-          ...input,
-          action: 'Spam',
-        },
-        {
-          silent: true,
-        },
-      )
-    : client.mutation(api.mail.screening.remove, input, {
-        silent: true,
-      })
-  const successMessage = block
-    ? __('Future mail from sender will go to Junk.')
-    : __('Sender unblocked.')
-  if (isUndo) return raiseOptimisticToast(forward, successMessage)
-  setUndoAction(() => handleBlockAddress(!block, true))
-  raiseOptimisticToast(forward, successMessage, undo)
+  setUndoAction(() => {
+    putBack()
+    const back = Promise.all([
+      client.mutation(api.mail.screening.remove, { account, emails: from_emails }, { silent: true }),
+      client.mutation(api.mail.messages.spam, { account, ids, spam: false }, { silent: true }),
+    ]).then(() => reloadMails(true))
+    raiseOptimisticToast(back, __('Sender unblocked.'))
+  })
+  const more = blocked.inbox
+  raiseToast(
+    __('Sender blocked. Future mail will go to Junk.'),
+    'success',
+    { label: __('Undo'), onClick: undo },
+    undefined,
+    more
+      ? {
+          label: __('Junk old mail'),
+          onClick: () => junkTheRest(account, from_emails),
+        }
+      : undefined,
+  )
+}
+
+// The toast's offer: the blocked sender's other mail in the Inbox goes to Junk too.
+const junkTheRest = async (account: string, from_emails: string[]) => {
+  let moved: string[]
+  try {
+    moved = await client.mutation(api.mail.screening.junkInbox, { account, from_emails })
+  } catch (error) {
+    raiseError(error)
+    return
+  }
+  setUndoAction(() => {
+    const back = client.mutation(
+      api.mail.messages.spam,
+      { account, ids: moved, spam: false },
+      { silent: true },
+    )
+    raiseOptimisticToast(back, __('Mail moved back.'))
+  })
+  raiseToast(
+    moved.length === 1
+      ? __('1 more moved to Junk.')
+      : __('{0} more moved to Junk.', [String(moved.length)]),
+    'success',
+    { label: __('Undo'), onClick: undo },
+  )
 }
 </script>

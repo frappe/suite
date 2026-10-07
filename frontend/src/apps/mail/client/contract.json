@@ -18473,6 +18473,112 @@
       "bytes": false
     },
     {
+      "id": "block_senders",
+      "kind": "mutation",
+      "publicName": "screening.block",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.block_senders",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "from_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "From Emails",
+            "type": "array"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "from_emails"
+        ],
+        "title": "BlockInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "inbox": {
+            "title": "Inbox",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inbox"
+        ],
+        "title": "BlockResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "junk_senders_inbox_mail",
+      "kind": "mutation",
+      "publicName": "screening.junkInbox",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.junk_senders_inbox_mail",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "from_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "From Emails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "from_emails"
+        ],
+        "title": "SendersInput",
+        "type": "object"
+      },
+      "output": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "get_submissions",
       "kind": "query",
       "publicName": "scheduled.list",

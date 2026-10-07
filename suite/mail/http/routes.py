@@ -89,6 +89,7 @@ from suite.mail.api.contacts import (
 from suite.mail.api.mail import (
     add_mails_to_mailbox,
     allow_screening_senders,
+    block_senders,
     create_mail,
     create_mailbox,
     delete_mail,
@@ -108,6 +109,7 @@ from suite.mail.api.mail import (
     get_threads,
     get_unified_folders,
     get_unified_threads,
+    junk_senders_inbox_mail,
     move_mails,
     remove_mails_from_mailbox,
     screen_email_address,

@@ -6059,6 +6059,55 @@ const operationUndoScreeningVerdict: MutationRef<
   loadValidators: async () => (await import('./validators')).operationUndoScreeningVerdict,
 }
 
+export type BlockSendersInput = { account: string; from_emails: Array<string>; ids?: Array<string> }
+
+export type BlockSendersOutput = { inbox: number }
+
+export type BlockSendersError = 'PermissionError' | 'ValidationError'
+
+const operationBlockSenders: MutationRef<BlockSendersInput, BlockSendersOutput, BlockSendersError> =
+  {
+    id: 'block_senders',
+    owner: 'mail',
+    kind: 'mutation',
+    publicName: 'screening.block',
+    envelope: 'message',
+    method: 'POST',
+    path: '/api/method/suite.mail.api.mail.block_senders',
+    prefix: '/api/suite/mail/',
+    pathParams: [],
+    nodeParams: [],
+    entity: null,
+    errors: ['PermissionError', 'ValidationError'],
+    loadValidators: async () => (await import('./validators')).operationBlockSenders,
+  }
+
+export type JunkSendersInboxMailInput = { account: string; from_emails: Array<string> }
+
+export type JunkSendersInboxMailOutput = Array<string>
+
+export type JunkSendersInboxMailError = 'PermissionError' | 'ValidationError'
+
+const operationJunkSendersInboxMail: MutationRef<
+  JunkSendersInboxMailInput,
+  JunkSendersInboxMailOutput,
+  JunkSendersInboxMailError
+> = {
+  id: 'junk_senders_inbox_mail',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'screening.junkInbox',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.junk_senders_inbox_mail',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationJunkSendersInboxMail,
+}
+
 export type GetSubmissionsOutputDeliveryError = { email: string | null; reason: string }
 
 export type GetSubmissionsOutputRecipient = {
@@ -6703,6 +6752,8 @@ export const api = {
     set: operationScreenEmailAddresses,
     remove: operationUnscreenEmailAddresses,
     setAddress: operationScreenEmailAddress,
+    block: operationBlockSenders,
+    junkInbox: operationJunkSendersInboxMail,
   },
   sieve: {
     list: operationGetSieveScripts,

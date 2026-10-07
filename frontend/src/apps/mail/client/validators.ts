@@ -41,6 +41,8 @@ import type {
   AddPushSubscriptionOutput,
   AllowScreeningSendersInput,
   AllowScreeningSendersOutput,
+  BlockSendersInput,
+  BlockSendersOutput,
   BookInput,
   BookOutput,
   CancelScheduledMailInput,
@@ -245,6 +247,8 @@ import type {
   InboxSummaryOutput,
   InviteInput,
   InviteOutput,
+  JunkSendersInboxMailInput,
+  JunkSendersInboxMailOutput,
   MoveMailsInput,
   MoveMailsOutput,
   OngoingCalendarExchangeInput,
@@ -8232,6 +8236,67 @@ export const operationUndoScreeningVerdict: Validators<
   },
   validateOutput(value: unknown): asserts value is UndoScreeningVerdictOutput {
     assertSchema(value, { type: 'null' }, 'undo_screening_verdict output')
+  },
+}
+
+export const operationBlockSenders: Validators<BlockSendersInput, BlockSendersOutput> = {
+  validateInput(value: unknown): asserts value is BlockSendersInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          from_emails: { items: { type: 'string' }, title: 'From Emails', type: 'array' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+        },
+        required: ['account', 'from_emails'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'block_senders input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is BlockSendersOutput {
+    assertSchema(
+      value,
+      {
+        properties: { inbox: { title: 'Inbox', type: 'integer' } },
+        required: ['inbox'],
+        title: 'BlockResult',
+        type: 'object',
+      },
+      'block_senders output',
+    )
+  },
+}
+
+export const operationJunkSendersInboxMail: Validators<
+  JunkSendersInboxMailInput,
+  JunkSendersInboxMailOutput
+> = {
+  validateInput(value: unknown): asserts value is JunkSendersInboxMailInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          from_emails: { items: { type: 'string' }, title: 'From Emails', type: 'array' },
+        },
+        required: ['account', 'from_emails'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'junk_senders_inbox_mail input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is JunkSendersInboxMailOutput {
+    assertSchema(
+      value,
+      { items: { type: 'string' }, type: 'array' },
+      'junk_senders_inbox_mail output',
+    )
   },
 }
 

@@ -48,6 +48,9 @@ export const registration: OwnerRegistration = {
   }): Policy<I, O> {
     if (reference.id === 'screen_email_addresses') return screeningPolicy(false)
     if (reference.id === 'unscreen_email_addresses') return screeningPolicy(true)
+    // Blocking moves mail to Junk as well as writing the rule, so it reads as a message change.
+    if (['block_senders', 'junk_senders_inbox_mail'].includes(reference.id))
+      return messagePolicy<I, O>(reference.id)
     if (reference.id === 'create_calendar_import' || reference.id === 'create_calendar_export')
       return { effects: { invalidates: ['mail.ongoing_calendar_exchange'] } }
     if (

@@ -118,6 +118,15 @@ class UndoScreenInput(SendersInput):
     ids: list[str]
 
 
+class BlockInput(SendersInput):
+    ids: NotRequired[list[str]]
+
+
+class BlockResult(TypedDict):
+    # How many more of the blocked senders' messages are in the Inbox.
+    inbox: int
+
+
 class DraftAttachment(TypedDict, total=False):
     filename: str
     file_url: str
@@ -288,6 +297,8 @@ _OPERATIONS: tuple[
         None,
     ),
     (mail.undo_screening_verdict, "mutation", "screener.undo", UndoScreenInput, type(None), None),
+    (mail.block_senders, "mutation", "screening.block", BlockInput, BlockResult, None),
+    (mail.junk_senders_inbox_mail, "mutation", "screening.junkInbox", SendersInput, list[str], None),
     (
         scheduled.get_submissions,
         "query",
