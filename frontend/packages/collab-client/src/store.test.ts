@@ -48,6 +48,22 @@ describe('device store', () => {
     expect([read(kept.bytes), kept.rev, kept.epoch]).toEqual(['rebuilt', 1, 1])
   })
 
+  it('a save acknowledged to a tab from before a quarantine is not added to the copy rebuilt after it', async () => {
+    const store = await fresh()
+    const late = typed('late')
+    await store.capture(session('s'), [entry('s', 1, late.update)])
+    await store.commit(
+      'D',
+      { lineage: 'L', rev: 1, canWrite: true, epoch: 1 },
+      typed('rebuilt').update,
+    )
+
+    await store.ack('D', 's', 1, late.update, 'L', 0)
+
+    expect(read((await store.copy('D'))!.bytes)).toBe('rebuilt')
+    expect(await store.entries('D', 's')).toEqual([])
+  })
+
   it('releases a session only once it holds no entries', async () => {
     const store = await fresh()
     const one = typed('one')
@@ -55,7 +71,7 @@ describe('device store', () => {
     expect(await store.release('D', 's')).toBe(false)
     expect(await store.sessions('D')).toHaveLength(1)
 
-    await store.ack('D', 's', 1, one.update, 'L')
+    await store.ack('D', 's', 1, one.update, 'L', 0)
     expect(await store.release('D', 's')).toBe(true)
     expect(await store.sessions('D')).toHaveLength(0)
   })
@@ -67,7 +83,7 @@ describe('device store', () => {
     await store.commit('D', { lineage: 'L', rev: 0, canWrite: true }, null)
     await store.capture(session('s'), [entry('s', 1, one.update), entry('s', 2, two.update)])
 
-    await store.ack('D', 's', 1, one.update, 'L')
+    await store.ack('D', 's', 1, one.update, 'L', 0)
 
     expect((await store.entries('D', 's')).map((stored) => stored.seq)).toEqual([2])
     expect(read((await store.copy('D'))!.bytes)).toBe('one ')
@@ -88,7 +104,7 @@ describe('device store', () => {
     await store.commit('D', { lineage: 'M', rev: 1, canWrite: true }, typed('new').update)
     await store.capture(session('s'), [entry('s', 1, typed('old').update)])
 
-    await store.ack('D', 's', 1, typed('old').update, 'L')
+    await store.ack('D', 's', 1, typed('old').update, 'L', 0)
 
     expect([read((await store.copy('D'))!.bytes), await store.entries('D', 's')]).toEqual([
       'new',

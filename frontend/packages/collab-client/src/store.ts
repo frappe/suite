@@ -47,8 +47,15 @@ export interface DeviceStore {
   // Puts the session back too, in case another tab forgot it while this one was idle
   capture(session: StoredSession, entries: StoredEntry[]): Promise<void>
   // Drops entries up to `through` and keeps their bytes in the device copy, in one transaction,
-  // unless the copy has moved to another lineage
-  ack(doc: string, sid: string, through: number, bytes: Uint8Array, lineage: string): Promise<void>
+  // unless the copy has moved to another lineage or was rebuilt after a later quarantine
+  ack(
+    doc: string,
+    sid: string,
+    through: number,
+    bytes: Uint8Array,
+    lineage: string,
+    epoch: number,
+  ): Promise<void>
   // Adds rows up to `rev` to the device copy; a new lineage replaces it
   commit(doc: string, copy: Omit<DeviceCopy, 'bytes'>, bytes: Uint8Array | null): Promise<void>
   copy(doc: string): Promise<DeviceCopy | null>
@@ -160,12 +167,22 @@ class IndexedDeviceStore implements DeviceStore {
     })
   }
 
-  ack(doc: string, sid: string, through: number, bytes: Uint8Array, lineage: string) {
+  ack(
+    doc: string,
+    sid: string,
+    through: number,
+    bytes: Uint8Array,
+    lineage: string,
+    epoch: number,
+  ) {
     return this.write(['entries', 'meta', 'copies'], (tx) => {
       tx.objectStore('entries').delete(IDBKeyRange.bound([doc, sid, 0], [doc, sid, through]))
       const meta = tx.objectStore('meta').get(doc)
       meta.onsuccess = () => {
-        if (bytes.byteLength && meta.result?.lineage === lineage) addPiece(tx, doc, bytes)
+        const was = meta.result
+        // As in `commit`: a tab from before a quarantine may build on the quarantined change
+        if (bytes.byteLength && was?.lineage === lineage && (was.epoch ?? 0) <= epoch)
+          addPiece(tx, doc, bytes)
       }
     })
   }

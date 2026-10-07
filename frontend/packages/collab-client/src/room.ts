@@ -541,7 +541,7 @@ export class Room implements CollabRoom {
     if (!committed) return
     if (this.device) {
       void this.device.store
-        .ack(this.device.doc, box.sid, box.acked, committed, this.lineage)
+        .ack(this.device.doc, box.sid, box.acked, committed, this.lineage, this.epoch)
         .catch(() => {})
       if (box.adopted && !box.pending.length) {
         void this.device.store.release(this.device.doc, box.sid).catch(() => {})
