@@ -54,3 +54,11 @@ def publish(adapter: str, doc_id: str, lineage: str, event: str, message: dict) 
     except Exception:
         # The change is committed; tabs that miss it pull
         pass
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def joinable() -> bool:
+    """Whether the realtime service may let sockets into collab rooms: only while collaboration is on."""
+    from suite.suite_core.collab.log import enabled
+
+    return enabled()

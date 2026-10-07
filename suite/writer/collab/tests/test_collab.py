@@ -1388,3 +1388,12 @@ class TestWriterCollab(IntegrationTestCase):
 
         self.assertEqual((status, body["rev"]), (200, 1))
         self.assert_one_order(node, 1)
+
+    def test_the_realtime_service_may_let_sockets_into_rooms_only_while_collaboration_is_on(self):
+        frappe.set_user("Guest")
+        answers = {}
+        for mode in ("off", "draining", "on"):
+            self.set_mode(mode)
+            answers[mode] = live.joinable()
+
+        self.assertEqual(answers, {"off": False, "draining": False, "on": True})

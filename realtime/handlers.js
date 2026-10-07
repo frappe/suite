@@ -38,6 +38,11 @@ const suite_handlers = (socket) => {
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
+
+	// A fault in collab must not keep Meet's handlers from loading
+	try {
+		require("./collab")(socket);
+	} catch {}
 };
 
 const GUEST_STATUSES = new Set([
