@@ -85,8 +85,8 @@ def parse_piece(body: bytes, idx: str) -> tuple[dict, int, bytes]:
 def store(
     adapter: str, doc_id: str, stage_id: str, index: int, header: dict, piece: bytes, principal: str
 ) -> None:
-    """Keep one piece. The same bytes again at an index change nothing. Each principal has its own
-    `DOC_MAX`, so one editor's pieces never block another's."""
+    """Keep one piece. The same bytes again at an index change nothing but the stage's age. Each
+    principal has its own `DOC_MAX`, so one editor's pieces never block another's."""
     stage = table(adapter, "stage")
     shape = (header["sid"], header["from"], header["to"], header["total_len"], header["sha_total"])
     held = frappe.db.sql(
@@ -101,7 +101,7 @@ def store(
         if row.idx == index:
             if not row.same:
                 raise Conflict
-            return
+            return touch(adapter, doc_id, stage_id)
     # Locked, so a principal's puts take turns and each sees what the one before it kept
     staged = frappe.db.sql(
         f"""SELECT COALESCE(SUM(LENGTH(`stage`.`bytes`)), 0) FROM `{stage}` `stage`
@@ -117,6 +117,15 @@ def store(
         (`doc_id`, `stage_id`, `idx`, `purpose`, `sid`, `seq_from`, `seq_to`, `total_len`, `sha_total`, `bytes`, `created`)
         VALUES (%s, %s, %s, 'save', %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), %s)""",
         (doc_id, stage_id, index, *shape[:4], shape[4].hex(), piece.hex(), frappe.utils.now_datetime()),
+    )
+    touch(adapter, doc_id, stage_id)
+
+
+def touch(adapter: str, doc_id: str, stage_id: str) -> None:
+    """Restart the expiry of every piece of the stage, so a slow upload loses none of its early pieces."""
+    frappe.db.sql(
+        f"UPDATE `{table(adapter, 'stage')}` SET `created` = %s WHERE `doc_id` = %s AND `stage_id` = %s",
+        (frappe.utils.now_datetime(), doc_id, stage_id),
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 

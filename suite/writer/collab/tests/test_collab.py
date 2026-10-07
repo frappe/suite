@@ -1252,6 +1252,45 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(self.push_staged(node, sid, cid, change, old), (409, {"collab": "stage_incomplete"}))
         self.assertEqual(self.push_staged(node, sid, cid, change, recent)[0], 200)
 
+    def test_a_stage_whose_pieces_keep_arriving_outlives_a_quarter_hour(self):
+        self.set_mode("on")
+        node = self.new_document()
+        lineage = self.open(node)[0]["lineage"]
+        tabs = []
+        for _ in range(2):
+            sid, cid = self.session(node)
+            change = big_change(cid, 600_000)
+            tabs.append((sid, cid, change, pieces_of(change)))
+        (slow_sid, _, slow_change, slow_pieces), (resent_sid, _, resent_change, resent_pieces) = tabs
+        slow, resent = (
+            self.stage(node, slow_sid, slow_change, order=[0]),
+            self.stage(node, resent_sid, resent_change),
+        )
+        frappe.db.sql(
+            "UPDATE `__writer_collab_stage` SET `created` = %s WHERE `stage_id` IN %s",
+            (frappe.utils.now_datetime() - timedelta(minutes=16), (slow, resent)),
+        )
+        frappe.db.commit()
+
+        for stage_id, sid, change, pieces, order in (
+            (slow, slow_sid, slow_change, slow_pieces, range(1, len(slow_pieces))),
+            (resent, resent_sid, resent_change, resent_pieces, [0]),
+        ):
+            for idx in order:
+                self.assertEqual(
+                    self.put(node, stage_id, idx, piece_body(lineage, sid, 1, change, pieces[idx]))[0], 200
+                )
+        with patch.object(scheduling, "enqueue"):
+            writer_collab.sweep()
+
+        self.assertEqual(
+            [
+                self.push_staged(node, sid, cid, change, stage_id)[0]
+                for stage_id, (sid, cid, change, _pieces) in zip((slow, resent), tabs, strict=True)
+            ],
+            [200, 200],
+        )
+
     def test_only_an_editor_signed_in_as_the_sessions_owner_stages_a_piece_on_an_open_session(self):
         self.set_mode("on")
         node = self.new_document()
