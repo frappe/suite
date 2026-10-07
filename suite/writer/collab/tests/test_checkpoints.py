@@ -14,7 +14,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
-from suite.suite_core.collab import admission, checkpoints, compaction, scheduling
+from suite.suite_core.collab import admission, checkpoints, compaction, live, scheduling
 from suite.suite_core.collab.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
@@ -838,6 +838,29 @@ class TestWriterAdmission(CheckpointCase):
         removal = self.editing(deleting[1], [abc], lambda text: text.__delitem__(slice(1, 2)))
         self.assertEqual(self.push(node, deleting, 1, removal)[0], 200)
         self.assertEqual(self.row_count(node), 2)
+
+    def test_a_compaction_that_frees_a_full_document_tells_its_live_room(self):
+        node = self.new_document()
+        tab = self.tab(node)
+        abc, de = typed(tab[1], ["abc", "de"])
+        self.assertEqual(self.push(node, tab, 1, abc)[0], 200)
+        doc = self.doc_row(node)
+        room = live.rooms(writer_collab.ADAPTER, doc.id, doc.lineage)["keys"][0]
+        self.set_doc(node, state_bytes=scheduling.STATE_MAX)
+
+        with patch("frappe.publish_realtime") as publish:
+            self.compact(node)
+            self.assertEqual(self.push(node, tab, 2, de)[0], 200)
+            self.compact(node)
+
+        self.assertEqual(
+            [
+                (call.args[1]["kind"], call.kwargs["room"])
+                for call in publish.call_args_list
+                if call.args[0] == "suite_collab_ctl"
+            ],
+            [("room", room)],
+        )
 
     def test_a_stale_push_to_a_full_document_is_told_it_is_stale(self):
         node = self.new_document()

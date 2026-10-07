@@ -12,7 +12,7 @@ from frappe.utils.background_jobs import get_redis_conn
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.collab import admission, compaction, kernel, quarantine, scheduling, suspect
+from suite.suite_core.collab import admission, compaction, kernel, live, quarantine, scheduling, suspect
 from suite.tests.utils import ensure_user
 from suite.writer import collab as writer_collab
 from suite.writer.collab import routes
@@ -592,6 +592,29 @@ class TestSuspect(CheckpointCase):
         self.assertNotIn("held", self.pulled(node))
         Pen(self, node).adds(paragraph("beta"))
         self.assertEqual(self.states(node), ["ok", "ok"])
+
+    def test_a_hold_and_each_way_out_of_it_tell_the_documents_live_room(self):
+        node = self.new_document()
+        Pen(self, node).adds(paragraph("alpha"))
+        doc = self.doc_row(node)
+        room = live.rooms(writer_collab.ADAPTER, doc.id, doc.lineage)["keys"][0]
+        self.set_doc(node, suspect="unreadable")
+
+        with patch("frappe.publish_realtime") as publish:
+            suspect.hold(writer_collab.ADAPTER, doc.id, "kernel_failed", "held by the test")
+            frappe.set_user(SUITE_ADMIN)
+            writer_collab.rejudge_suspect(doc.id)
+            suspect.hold(writer_collab.ADAPTER, doc.id, "kernel_failed", "held by the test")
+            writer_collab.clear_suspect(doc.id)
+
+        self.assertEqual(
+            [
+                (call.args[1]["kind"], call.kwargs["room"])
+                for call in publish.call_args_list
+                if call.args[0] == "suite_collab_ctl"
+            ],
+            [("held", room), ("released", room), ("held", room), ("released", room)],
+        )
 
     def test_a_refused_row_whose_session_is_gone_is_quarantined_for_the_document_owner(self):
         node = self.new_document()

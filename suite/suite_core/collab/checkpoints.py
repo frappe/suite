@@ -19,7 +19,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import admission, compaction, ingest, quarantine, suspect
+from suite.suite_core.collab import admission, compaction, ingest, live, quarantine, scheduling, suspect
 from suite.suite_core.collab.log import ChainBroken, chain_next, chain_seed, read, rows_after
 from suite.suite_core.collab.tables import table
 
@@ -182,7 +182,9 @@ class Compaction:
     def point_at(self, snapshot: dict, sha: bytes, result: compaction.Compacted) -> bool:
         doc, through = self.doc_id, snapshot["head_rev"]
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
-        frappe.db.sql(f"SELECT `id` FROM `{self.table('doc')}` WHERE `id` = %s FOR UPDATE", doc)
+        before = frappe.db.sql(
+            f"SELECT `state_bytes` + `tail_bound` FROM `{self.table('doc')}` WHERE `id` = %s FOR UPDATE", doc
+        )
         paced = len(result.state) >= PACED_FROM
         pause = timedelta(seconds=max(60, 10 * result.ms / 1000))
         updates = self.table("update")
@@ -226,6 +228,9 @@ class Compaction:
             doc,
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
+        # Tabs measured a full document from what it held before
+        if installed and before and before[0][0] >= scheduling.STATE_MAX:
+            live.publish_change(self.adapter, doc, "room")
         return bool(installed)
 
     def count_attempt(self) -> None:

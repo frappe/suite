@@ -14,6 +14,8 @@ import time
 import frappe
 from frappe.utils.password import get_encryption_key
 
+from suite.suite_core.collab.tables import table
+
 EPOCH_SECONDS = 150
 # Larger rows go by reference: tabs pull them
 INLINE_MAX = 32 * 1024
@@ -46,6 +48,13 @@ def publish_row(adapter: str, doc_id: str, lineage: str, rev: int, schema: int, 
 
 def publish_ctl(adapter: str, doc_id: str, lineage: str, **message) -> None:
     publish(adapter, doc_id, lineage, "suite_collab_ctl", {"lineage": lineage, **message})
+
+
+def publish_change(adapter: str, doc_id: str, kind: str) -> None:
+    """A hold, a release or room freed by a compaction: live tabs pull, as a polling tab would have."""
+    found = frappe.db.sql(f"SELECT `lineage` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id)
+    if found:
+        publish_ctl(adapter, doc_id, found[0][0], kind=kind)
 
 
 def publish(adapter: str, doc_id: str, lineage: str, event: str, message: dict) -> None:

@@ -18,7 +18,7 @@ from pathlib import Path
 import frappe
 from frappe.utils.background_jobs import get_redis_conn
 
-from suite.suite_core.collab import admission, compaction, kernel, quarantine
+from suite.suite_core.collab import admission, compaction, kernel, live, quarantine
 from suite.suite_core.collab.log import SUSPECT_RETRY_MS, Refusal, read
 from suite.suite_core.collab.scheduling import enqueue
 from suite.suite_core.collab.tables import table
@@ -198,6 +198,7 @@ def rejudge(adapter: str, doc_id: str, method: str) -> bool:
         return False
     frappe.db.sql(f"UPDATE `{table(adapter, 'doc')}` SET `suspect_held` = NULL WHERE `id` = %s", doc_id)
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    live.publish_change(adapter, doc_id, "released")
     get_redis_conn().set(rejudge_asked(adapter, doc_id), 1, ex=admission.LEASE)
     alert(adapter, doc_id, "suspect re-judged", f"{frappe.session.user} asked for a new verdict")
     request(adapter, doc_id, method)
@@ -209,6 +210,7 @@ def release(adapter: str, doc_id: str) -> bool:
     if not suspect_of(adapter, doc_id):
         return False
     clear(adapter, doc_id, "unjudged")
+    live.publish_change(adapter, doc_id, "released")
     alert(adapter, doc_id, "suspect cleared", f"{frappe.session.user} cleared it without a verdict")
     return True
 
@@ -276,6 +278,7 @@ def hold(adapter: str, doc_id: str, why: str, detail: str) -> str | None:
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     if not held:
         return None
+    live.publish_change(adapter, doc_id, "held")
     alert(adapter, doc_id, f"suspect held: {why}", f"Saving is paused until an admin reviews it. {detail}")
     return "held"
 
