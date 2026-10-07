@@ -1,6 +1,7 @@
 import hashlib
 import json
 import uuid
+from unittest import mock
 from unittest.mock import patch
 
 import frappe
@@ -129,6 +130,28 @@ class TestQuarantine(CheckpointCase):
         self.compact(node)
         [(through, state, _integrated)] = self.checkpoints_of(node)
         self.assertEqual((through, self.text_of(state)), (4, "beta alpha"))
+
+    def test_a_quarantine_tells_the_documents_live_room_its_new_epoch(self):
+        node = self.new_document()
+        a = Tab(self, node)
+        a.typed(0, "alpha")
+        a.typed(5, " beta")
+        room = a.header["rooms"]["keys"][0]
+
+        with patch("frappe.publish_realtime") as publish:
+            self.quarantine(node, {9})
+            self.quarantine(node, {2})
+
+        self.assertEqual(
+            [call for call in publish.call_args_list if call.args[0].startswith("suite_collab")],
+            [
+                mock.call(
+                    "suite_collab_ctl",
+                    {"lineage": a.header["lineage"], "kind": "quarantine", "q_epoch": 1},
+                    room=room,
+                )
+            ],
+        )
 
     def test_rows_typed_into_quarantined_text_go_with_it(self):
         node = self.new_document()

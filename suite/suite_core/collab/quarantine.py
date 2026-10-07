@@ -16,7 +16,7 @@ import frappe
 import pycrdt
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import compaction, ingest, updates
+from suite.suite_core.collab import compaction, ingest, live, updates
 from suite.suite_core.collab.log import start_clocks
 from suite.suite_core.collab.tables import table
 
@@ -40,7 +40,7 @@ def quarantine(
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
-        f"""SELECT `node`, `lineage`, `checkpoint_rev`, `start_clocks`, `mode` FROM `{table(adapter, "doc")}`
+        f"""SELECT `node`, `lineage`, `checkpoint_rev`, `start_clocks`, `mode`, `q_epoch` FROM `{table(adapter, "doc")}`
         WHERE `id` = %s FOR UPDATE""",
         doc_id,
         as_dict=True,
@@ -133,6 +133,7 @@ def quarantine(
     except BaseException:
         frappe.db.rollback()
         raise
+    live.publish_ctl(adapter, doc_id, doc.lineage, kind="quarantine", q_epoch=int(doc.q_epoch) + 1)
     return sorted(picked)
 
 

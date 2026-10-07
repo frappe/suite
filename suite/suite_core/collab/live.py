@@ -43,6 +43,10 @@ def publish_row(adapter: str, doc_id: str, lineage: str, rev: int, payload: byte
     publish(adapter, doc_id, lineage, "suite_collab_row", {"lineage": lineage, "rev": rev, "u": inline})
 
 
+def publish_ctl(adapter: str, doc_id: str, lineage: str, **message) -> None:
+    publish(adapter, doc_id, lineage, "suite_collab_ctl", {"lineage": lineage, **message})
+
+
 def publish(adapter: str, doc_id: str, lineage: str, event: str, message: dict) -> None:
     epoch = int(time.time() // EPOCH_SECONDS)
     try:
