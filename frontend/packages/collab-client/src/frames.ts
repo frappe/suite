@@ -64,6 +64,7 @@ export function decodeFrame<Header>(bytes: Uint8Array): {
     at += length
     return bytes.slice(at - length, at)
   }
+  // Trusted as the collab server's own reply, not checked field by field
   const header = JSON.parse(new TextDecoder().decode(take(u32()))) as Header
   const checkpoint = take(u32())
   const rows: Row[] = []

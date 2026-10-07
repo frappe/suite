@@ -13,6 +13,7 @@ for (const name of ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']) {
 const chunks: Buffer[] = []
 process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk))
 process.stdin.on('end', () => {
+  // Trusted as kernel.py's own request; anything else throws, and the server sees the child fail
   const input = JSON.parse(Buffer.concat(chunks).toString()) as {
     checkpoint: string | null
     rows: string[]
