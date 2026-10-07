@@ -67,7 +67,8 @@ export function createSession(client: Transport = defaultTransport): Session {
   const status = ref<SessionStatus>(cookieId ? 'loading' : 'guest')
   const user = ref<SessionUser | null>(cookieId ? cookieUser(cookieId, cookies) : null)
   // The account route is the only source of capabilities [T021]. The
-  // `system_user` cookie marks nearly every invited user, so boot grants none.
+  // `system_user` cookie marks anyone with a Desk role, System Manager or not,
+  // so boot grants none.
   const capabilities = ref<SessionCapabilities>({ jmap: false, systemManager: false })
   let refreshPromise: Promise<void> | null = null
   let generation = 0

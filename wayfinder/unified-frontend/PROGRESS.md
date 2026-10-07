@@ -91,7 +91,7 @@ is [`unified-frontend-plan.md`](unified-frontend-plan.md).
 8. **Sheets cell Notes next to Drive Comments.** Both now show, with
    similar icons. Interim: both stay.
 9. **Who a non-admin sees in `/api/suite/people` (S1).** Interim: any
-   `Suite User` sees all enabled System Users and all User Groups, and
+   `Suite User` sees all enabled Suite Users and all User Groups, and
    the caller is listed. `member_count` counts disabled members, as legacy
    did.
 10. **Deny plus `notify` (Drive 44).** A deny grant with `notify: true`

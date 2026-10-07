@@ -34,7 +34,7 @@ def make_user(email: str, first_name: str, *, enabled: bool = True) -> None:
 
 
 def make_website_user(email: str, first_name: str) -> None:
-    """A signed-up visitor: no desk role, so not a Suite user."""
+    """A signed-up visitor: no Suite role, so not a Suite user."""
     make_user(email, first_name)
     frappe.db.delete("Has Role", {"parent": email, "parenttype": "User"})
     frappe.db.set_value("User", email, "user_type", "Website User")

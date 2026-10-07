@@ -1972,9 +1972,9 @@ There is one Settings group per product, named after the product. Order
 - The Desk item moves from `apps/registry.ts` into `shell/accountMenu.ts`.
   The registry's Desk item is deleted [T016].
 - Open Desk and Upgrade plan both key on the `systemManager` capability
-  (section 3.8). There is no `systemUser` capability: Suite creates every
-  invited user as a System User, so "system users" would be nearly everyone
-  [T016, T021].
+  (section 3.8). There is no `systemUser` capability: Desk is the admin
+  console, and the Suite roles do not open it, so a "system user" is whoever
+  holds some other Desk role [T016, T021].
 - Open Desk is a plain `<a href="/app">`: a full page load in the same tab,
   placed after Settings and before Upgrade plan [T021].
 - Upgrade plan stays disabled with the tooltip "Not available yet" until
