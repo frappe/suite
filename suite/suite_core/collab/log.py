@@ -19,7 +19,7 @@ from collections.abc import Sequence
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import capacity, ingest, scheduling, stage
+from suite.suite_core.collab import capacity, ingest, live, scheduling, stage
 from suite.suite_core.collab.tables import table
 
 PROTO = 1
@@ -445,6 +445,7 @@ def push(
     except BaseException:
         frappe.db.rollback()
         raise
+    live.publish_row(adapter, doc_id, doc.lineage, rev, payload)
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": header["to"], "pace_ms": PACE_MS}
 
 

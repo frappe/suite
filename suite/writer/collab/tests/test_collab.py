@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import struct
@@ -6,7 +7,7 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 import pycrdt
@@ -17,7 +18,7 @@ from werkzeug.wrappers import Request
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.collab import capacity, scheduling
+from suite.suite_core.collab import capacity, live, scheduling
 from suite.suite_core.collab.log import chain_next, chain_seed
 from suite.suite_core.collab.stage import PIECE_MAX
 from suite.suite_core.collab.updates import encoded_string, encoded_uint
@@ -1315,3 +1316,75 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(reader[0], 403)
         self.assertEqual(closed, (409, {"collab": "client_closed"}))
         self.assertEqual(self.staged(node), 0)
+
+    def test_open_and_pull_name_this_epochs_room_and_the_next_and_no_other_documents(self):
+        self.set_mode("on")
+        node, other = self.new_document(), self.new_document()
+        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        frappe.db.commit()
+
+        frappe.set_user(READER)
+        with patch.object(live, "time", Mock(time=Mock(return_value=150 * 1000 + 149))):
+            opened = self.open(node)[0]["rooms"]
+            pulled = read_frame(call(routes.collab_updates_get, node).get_data())[0]["rooms"]
+        frappe.set_user(WRITER)
+        with patch.object(live, "time", Mock(time=Mock(return_value=150 * 1001))):
+            later = self.open(node)[0]["rooms"]
+            elsewhere = self.open(other)[0]["rooms"]
+
+        self.assertEqual(opened, pulled)
+        self.assertEqual((opened["epoch"], opened["epoch_seconds"]), (1000, 150))
+        self.assertEqual(later["keys"][0], opened["keys"][1])
+        self.assertEqual(len({*opened["keys"], *later["keys"], *elsewhere["keys"]}), 5)
+        for key in opened["keys"]:
+            self.assertRegex(key, r"^sc:[A-Za-z0-9_-]{32}$")
+
+    def test_a_document_copied_to_a_new_lineage_gets_new_rooms(self):
+        self.set_mode("on")
+        node = self.new_document()
+        self.open(node)
+        doc = routes.collab.find(routes.ADAPTER, node)
+        before = routes.collab.rooms(routes.ADAPTER, doc.id, doc.lineage)
+
+        after = routes.collab.rooms(routes.ADAPTER, doc.id, uuid.uuid4().hex)
+
+        self.assertFalse({*before["keys"]} & {*after["keys"]})
+
+    def test_a_committed_push_publishes_its_row_to_this_epochs_room(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        rooms = self.open(node)[0]["rooms"]
+        small, large = self.typed(cid, 1, "small"), self.typed(cid, 2, "x" * 40_000)
+
+        with patch("frappe.publish_realtime") as publish:
+            self.push(node, sid, cid, 1, small)
+            self.push(node, sid, cid, 1, small)
+            self.push(node, sid, cid, 2, large)
+            self.push(node, sid, cid, 5)
+
+        lineage = self.open(node)[0]["lineage"]
+        self.assertEqual(
+            [(event.args, event.kwargs) for event in publish.call_args_list],
+            [
+                (
+                    (
+                        "suite_collab_row",
+                        {"lineage": lineage, "rev": 1, "u": base64.b64encode(small).decode()},
+                    ),
+                    {"room": rooms["keys"][0]},
+                ),
+                (("suite_collab_row", {"lineage": lineage, "rev": 2, "u": None}), {"room": rooms["keys"][0]}),
+            ],
+        )
+
+    def test_a_push_is_saved_and_answered_when_realtime_cannot_be_reached(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+
+        with patch("frappe.publish_realtime", side_effect=TimeoutError):
+            status, body = self.push(node, sid, cid, 1)
+
+        self.assertEqual((status, body["rev"]), (200, 1))
+        self.assert_one_order(node, 1)

@@ -9,6 +9,7 @@ itself, because `suite_core` never imports Drive or a product.
 from suite.suite_core.collab.backfill import backfill_clocks
 from suite.suite_core.collab.checkpoints import replace_start
 from suite.suite_core.collab.ingest import EditorSchema
+from suite.suite_core.collab.live import rooms
 from suite.suite_core.collab.log import (
     PROTO,
     ChainBroken,
@@ -58,6 +59,7 @@ __all__ = [
     "read",
     "replace_start",
     "require_enabled",
+    "rooms",
     "rows_after",
     "with_tombstones",
 ]
