@@ -81,6 +81,8 @@ class AccountTag(TypedDict, total=False):
 
 
 class Thread(Copy, AccountTag):
+    # The senders of this thread's unscreened mail, in the order they first wrote.
+    unscreened_senders: NotRequired[list[str]]
     subject: str | None
     preview: str
     recipients: list[Recipient]

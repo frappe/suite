@@ -172,6 +172,8 @@ export interface Thread {
   flagged: 0 | 1
   /** From a sender nobody has allowed or denied yet: waiting in the Inbox, marked new. */
   unscreened?: 0 | 1
+  /** The senders of the thread's unscreened mail, in the order they first wrote. */
+  unscreened_senders?: string[]
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]

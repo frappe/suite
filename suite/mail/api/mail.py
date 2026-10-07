@@ -709,8 +709,16 @@ def serialize_thread(
     return {
         **{field: current[field] for field in current_fields},
         **{field: latest[field] for field in activity_fields},
-        # A thread waits on a decision while any of its mail here is from an unscreened sender.
+        # A thread waits on a decision while any of its mail here is from an unscreened sender; these are
+        # those senders, in the order they first wrote, so deciding the thread can decide them all.
         "unscreened": cint(any(is_unscreened_message(message) for message in messages)),
+        "unscreened_senders": list(
+            dict.fromkeys(
+                message["from_email"]
+                for message in messages
+                if is_unscreened_message(message) and message.get("from_email")
+            )
+        ),
         "subject": first["subject"],
         "attachments": serialize_attachments(latest.get("attachments", [])),
         "messages": collapse_duplicate_copies(

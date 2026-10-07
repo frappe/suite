@@ -5142,6 +5142,7 @@ export type GetThreadsOutputThread = {
   inbox?: string | null
   archive?: string | null
   trash?: string | null
+  unscreened_senders?: Array<string>
   subject: string | null
   preview: string
   recipients: Array<GetThreadsOutputRecipient>
@@ -5276,6 +5277,7 @@ export type GetUnifiedThreadsOutputThread = {
   inbox?: string | null
   archive?: string | null
   trash?: string | null
+  unscreened_senders?: Array<string>
   subject: string | null
   preview: string
   recipients: Array<GetUnifiedThreadsOutputRecipient>

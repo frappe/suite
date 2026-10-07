@@ -6900,6 +6900,11 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               inbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Inbox' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
+              unscreened_senders: {
+                items: { type: 'string' },
+                title: 'Unscreened Senders',
+                type: 'array',
+              },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7160,6 +7165,11 @@ export const operationGetUnifiedThreads: Validators<
               inbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Inbox' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
+              unscreened_senders: {
+                items: { type: 'string' },
+                title: 'Unscreened Senders',
+                type: 'array',
+              },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {

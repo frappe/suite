@@ -15029,6 +15029,13 @@
                 ],
                 "title": "Trash"
               },
+              "unscreened_senders": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Unscreened Senders",
+                "type": "array"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -15805,6 +15812,13 @@
                   }
                 ],
                 "title": "Trash"
+              },
+              "unscreened_senders": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Unscreened Senders",
+                "type": "array"
               },
               "subject": {
                 "anyOf": [

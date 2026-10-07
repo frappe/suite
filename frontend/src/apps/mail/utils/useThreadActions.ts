@@ -636,7 +636,6 @@ export function useThreadActions(deps: {
     if (flagged)
       screener.acceptWithUndo(
         touched,
-        () => __('Sender marked as trusted.'),
         () => void setFlaggedSubmit({ ids, flagged: false }).catch(() => {}),
       )
   }

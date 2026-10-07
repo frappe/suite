@@ -54,12 +54,14 @@
               }"
             >
               <ScreenerThreadBanner
-                v-if="screenedSender"
-                :email="screenedSender.email"
+                v-if="screenedSenders.length"
+                :senders="screenedSenders"
+                :domain="sharedDomain"
                 :hidden-images="hiddenImages"
-                @allow="allowSender()"
+                @allow="allowSenders()"
+                @allow-one="(email: string) => allowSenders([email])"
                 @allow-domain="allowDomain()"
-                @deny="denySender()"
+                @deny="denySenders()"
                 @load-images="imagesShown = true"
               />
               <HiddenImagesBanner
@@ -984,13 +986,17 @@ const filterRelevantMails = (mail: Mail) => {
 // Junk (Trash included) allows the sender; Junk denies them. Off, the Screener page owns all of this.
 const screener = useScreener()
 // Senders decided from this pane: the banner drops at once, before the moved messages come back.
-const screenedSender = computed(() => {
-  if (readonly || !screener.active.value) return
-  // A sender decided anywhere — here, on the list, through an action — reads as decided at once, and
-  // an Undo brings them back (see useScreener).
-  const mail = thread.value.find((m) => screener.isScreened(m))
-  if (!mail) return
-  return { email: mail.from_email, name: mail.from_name }
+// The senders this thread is waiting on, each with the name they wrote as, in the order they first
+// wrote. A sender decided anywhere — here, on the list, through an action — drops out at once, and an
+// Undo brings them back (see useScreener).
+const screenedSenders = computed(() => {
+  if (readonly || !screener.active.value) return []
+  const senders = new Map<string, { email: string; name: string }>()
+  for (const mail of thread.value)
+    for (const email of screener.waitingSenders(mail))
+      if (!senders.has(email.toLowerCase()))
+        senders.set(email.toLowerCase(), { email, name: mail.from_name })
+  return [...senders.values()]
 })
 
 // Remote content is withheld from senders not yet trusted, and offered back once for the whole thread
@@ -1024,72 +1030,74 @@ const hiddenImages = computed(() => {
 // A verdict changes who is trusted, and an accepted sender's images load: read the rules again.
 watch(screener.version, () => screenedAddresses.value.refetch().catch(() => {}))
 
-const decide = () => screenedSender.value
+// The domain every waiting sender shares, as '@domain' — the bar offers to trust it — or null.
+const sharedDomain = computed(() => {
+  const domains = new Set(screenedSenders.value.map((sender) => domainOf(sender.email)))
+  return domains.size === 1 ? [...domains][0] : null
+})
+const asScreenable = (senders: { email: string }[]) =>
+  senders.map((sender) => ({ from_email: sender.email, unscreened: 1 as const }))
 
+// Yes: every waiting sender, or the one picked from the arrow beside it. They are trusted here at
+// once, so their images load without waiting for the rules to be read again.
+const allowSenders = async (emails = screenedSenders.value.map((sender) => sender.email)) => {
+  if (!emails.length) return
+  emails.forEach(trustHere)
+  await screener.allow(emails)
+  reload()
+}
 
-const allowSender = async () => {
-  const sender = decide()
-  if (!sender) return
-  trustHere(sender.email)
-  await screener.allow(sender.email, 'inbox', __('Sender marked as trusted.'))
+// The arrow beside Yes, when every waiting sender shares a domain: trust the whole domain.
+const allowDomain = async () => {
+  const domain = sharedDomain.value
+  if (!domain) return
+  trustHere(domain)
+  await screener.allow([domain], 'inbox', __('{0} marked as trusted.', [domain.slice(1)]))
   reload()
 }
 
 // No is a move to Junk, and reads like one: the thread leaves at once rather than losing its bar
 // first and its place in the list a beat later.
-// The arrow beside Yes: everyone at the sender's domain, not just them.
-const allowDomain = async () => {
-  const sender = decide()
-  if (!sender) return
-  const domain = domainOf(sender.email)
-  trustHere(domain)
-  await screener.allow(domain, 'inbox', __('{0} marked as trusted.', [domain.slice(1)]))
-  reload()
-}
-
-const denySender = async (message?: (name: string) => string) => {
-  const sender = decide()
-  if (!sender) return
+const denySenders = async () => {
+  const emails = screenedSenders.value.map((sender) => sender.email)
+  if (!emails.length) return
   goToMailbox()
-  await screener.deny(sender.email, message?.(sender.name || sender.email))
+  await screener.deny(emails)
   emit('reloadMails')
 }
 
 // Junk is the one refusal. A move anywhere else, Trash included, is an ordinary move: the move
-// itself accepts the sender, and its Undo takes that back (see useThreadActions).
+// itself accepts the thread's senders, and its Undo takes that back (see useThreadActions).
 const onMoveThread = (to: string) => {
-  if (screenedSender.value && to === mailboxIds.value.junk) return denySender()
+  if (screenedSenders.value.length && to === mailboxIds.value.junk) return denySenders()
   emit('moveThread', to)
 }
 
 // Every star in the pane — the thread's and each message's — lands here. The pane shows it at once
-// rather than when the list next comes back, and starring a screened thread accepts its sender; the
+// rather than when the list next comes back, and starring a screened thread accepts its senders; the
 // toast's Undo unstars it again, here and on the server (see useScreener).
 const onSetFlagged = (ids: string[], flagged: boolean) => {
   syncFlagged(ids, flagged)
   emit('setFlagged', ids, flagged)
-  const sender = flagged && decide()
-  if (!sender) return
-  trustHere(sender.email)
-  screener.acceptWithUndo(
-    [{ from_email: sender.email, from_name: sender.name, unscreened: 1 }],
-    () => __('Sender marked as trusted.'),
-    () => {
-      syncFlagged(ids, false)
-      emit('setFlagged', ids, false)
-    },
-  )
+  const senders = flagged ? screenedSenders.value : []
+  if (!senders.length) return
+  senders.forEach((sender) => trustHere(sender.email))
+  screener.acceptWithUndo(asScreenable(senders), () => {
+    syncFlagged(ids, false)
+    emit('setFlagged', ids, false)
+  })
 }
 
 const onSetSpamStatus = (spam: boolean) =>
-  spam && screenedSender.value ? denySender() : emit('setSpamStatus', spam)
+  spam && screenedSenders.value.length ? denySenders() : emit('setSpamStatus', spam)
 
-// Replying is accepting. The draft lives in this pane, so nothing here reloads it away: the thread
-// only follows into the Inbox when it was open in the Screener folder.
+// Replying is accepting the thread's senders, with an Undo. The draft lives in this pane, so nothing
+// here reloads it away.
 const allowOnReply = () => {
-  const sender = decide()
-  if (!sender) return
-  screener.allow(sender.email, 'inbox', __('Sender marked as trusted.'))
+  const senders = screenedSenders.value
+  if (!senders.length) return
+  senders.forEach((sender) => trustHere(sender.email))
+  screener.acceptWithUndo(asScreenable(senders))
 }
 
 // Explicit refresh: ask the parent to reload `get_threads`, then re-derive once the `messages` prop
