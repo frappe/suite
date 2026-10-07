@@ -227,6 +227,36 @@ test.describe("Writer collaboration", () => {
 		expect(blocks.join("\n")).not.toContain("Typed in the old tab");
 	});
 
+	test("a tab that can't apply a change the server judges clean stops editing, and the others go on", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		test.setTimeout(300_000);
+		// Only this browser fails to read one character, as an older browser might
+		await owner.page.addInitScript(() => {
+			const decode = TextDecoder.prototype.decode;
+			TextDecoder.prototype.decode = function (this: TextDecoder, ...args: Parameters<TextDecoder["decode"]>) {
+				const text = decode.apply(this, args);
+				if (text.includes("\u00a7")) throw new TypeError("This browser can't read the text");
+				return text;
+			};
+		});
+		await openWriterDocument(owner.page, node);
+		await openWriterDocument(collaborator.page, node);
+
+		await typeParagraph(collaborator.page, "Marked \u00a7 here");
+		await expectSaved(collaborator.page);
+
+		// Each failed open asks again, a minute apart, until three clean verdicts stop this tab
+		await expect(
+			owner.page.getByText("This document can't be edited in this browser version."),
+		).toBeVisible({ timeout: 240_000 });
+		await expect(writerEditor(owner.page)).toHaveAttribute("contenteditable", "false");
+		await typeParagraph(collaborator.page, "Still saving");
+		await expectConverged(testApi, node, [collaborator.page], ["Marked \u00a7 here", "Still saving"]);
+	});
+
 	test("an edit made while another tab previews a version shows after Back to current", async ({
 		owner,
 		collaborator,
