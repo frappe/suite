@@ -5,6 +5,7 @@ export {
   type OpenHeader,
   type OpenState,
   type PullHeader,
+  type RoomKeys,
   type Row,
 } from './frames'
 export { CollabOpenError } from './answers'
@@ -18,6 +19,8 @@ export {
   type Blocked,
   type CollabEndpoints,
   type CollabRoom,
+  type LiveSocket,
+  type LiveState,
   type Opened,
   type OpenOptions,
   type SaveState,

@@ -37,10 +37,23 @@ export interface OpenOptions {
   signedIn: () => string
   // Where unsent work and the last committed copy survive the tab; without it they live only in memory
   device?: { store: DeviceStore; doc: string } | null
+  // The realtime socket rows and presence arrive on; without one the room polls
+  socket?: LiveSocket | null
   pollMs?: number
   sendDelayMs?: number
   sendMaxDelayMs?: number
 }
+
+export interface LiveSocket {
+  connected?: boolean
+  on(event: string, handler: (message: unknown) => void): unknown
+  off(event: string, handler?: (message: unknown) => void): unknown
+  emit(event: string, ...args: unknown[]): unknown
+  connect?(): unknown
+}
+
+// `polling`: no answer from the realtime service, or this tab's own rows stopped coming back over it
+export type LiveState = 'joining' | 'live' | 'polling'
 
 export type SaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 
@@ -71,6 +84,8 @@ export interface CollabRoom {
   // Whether unsent work outlives this tab
   readonly onDevice: boolean
   readonly appliedThrough: number
+  // Null when the room was opened without a socket
+  readonly live: LiveState | null
   // The sizes the server last published; null until it has, as in a tab opened offline
   readonly limits: Limits | null
   // The document holds all it may until a compaction shrinks it, so only deleting content saves

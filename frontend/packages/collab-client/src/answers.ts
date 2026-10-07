@@ -8,6 +8,8 @@ export interface Body {
   claim?: string
   dup?: boolean
   acked?: number
+  // The rev a push was committed as
+  rev?: number
   head?: number
   reason?: string
   retry_ms?: number

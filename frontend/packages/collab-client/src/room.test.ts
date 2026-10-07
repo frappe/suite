@@ -93,6 +93,25 @@ function fakeServer(state = 'live', lineage = 'L') {
     const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
     return { length, header, bytes: body.slice(4 + length) }
   }
+  // The realtime service: whether it answers a room set and carries rows, and the tabs' sockets
+  const realtime = { answers: true, publishing: true, sockets: [] as FakeSocket[] }
+  const roomKeys = () => {
+    const now = Date.now() / 1000
+    const at = Math.floor(now / 150)
+    const keys = [`sc:${lineage}:${at}`, `sc:${lineage}:${at + 1}`]
+    return { epoch: at, keys, epoch_seconds: 150, server_time: now }
+  }
+  const publish = (event: string, message: object) => {
+    if (!realtime.publishing) return
+    const room = roomKeys().keys[0]
+    for (const socket of realtime.sockets)
+      if (socket.connected && socket.joined.has(room)) socket.hear(event, { lineage, ...message })
+  }
+  const socket = () => {
+    const created = fakeSocket(realtime)
+    realtime.sockets.push(created)
+    return created
+  }
   const reach = (call: string) => {
     if (!access.online) throw new TypeError('Failed to fetch')
     calls.push(call)
@@ -110,6 +129,7 @@ function fakeServer(state = 'live', lineage = 'L') {
         q_epoch: epoch.now,
         schema: schema.now,
         limits: limits(),
+        rooms: roomKeys(),
       }
       return frame(header, tail, checkpoint.bytes)
     },
@@ -130,6 +150,7 @@ function fakeServer(state = 'live', lineage = 'L') {
           held: judge.held,
           schema: schema.now,
           limits: limits(),
+          rooms: roomKeys(),
         },
         rows.filter((row) => row.rev > since),
       )
@@ -205,6 +226,8 @@ function fakeServer(state = 'live', lineage = 'L') {
       header.shas.forEach((sha: string, index: number) => (session.shas[header.from + index] = sha))
       rows.push({ rev: rows.length + 1, bytes })
       session.acked = header.to
+      const u = bytes.byteLength <= 32 * 1024 ? base64(bytes) : null
+      publish('suite_collab_row', { rev: rows.length, schema: header.schema, u })
       return reply(200, { rev: rows.length, head: rows.length, acked: header.to })
     },
   })
@@ -215,6 +238,7 @@ function fakeServer(state = 'live', lineage = 'L') {
   const quarantine = (rev: number) => {
     rows[rev - 1].bytes = new Uint8Array()
     epoch.now++
+    publish('suite_collab_ctl', { kind: 'quarantine', q_epoch: epoch.now })
   }
   return {
     rows,
@@ -233,7 +257,55 @@ function fakeServer(state = 'live', lineage = 'L') {
     counted,
     compact,
     quarantine,
+    realtime,
+    socket,
+    roomKeys,
   }
+}
+
+const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes))
+
+type FakeSocket = ReturnType<typeof fakeSocket>
+
+// A tab's socket to the realtime service: it joins what the room set names and acks only if the service answers
+function fakeSocket(realtime: { answers: boolean }) {
+  type Handler = (message: unknown) => void
+  const handlers = new Map<string, Set<Handler>>()
+  const socket = {
+    connected: true,
+    joined: new Set<string>(),
+    connects: 0,
+    on(event: string, handler: Handler) {
+      if (!handlers.has(event)) handlers.set(event, new Set())
+      handlers.get(event)!.add(handler)
+    },
+    off(event: string, handler?: Handler) {
+      if (handler) handlers.get(event)?.delete(handler)
+    },
+    emit(event: string, payload: { rooms: string[] }, ack: (answer: object) => void) {
+      if (event !== 'suite_collab_rooms' || !socket.connected || !realtime.answers) return
+      socket.joined = new Set(payload.rooms)
+      queueMicrotask(() =>
+        ack({ rooms: payload.rooms, pid: 2 ** 31, roster: [], count: 0, carets: [] }),
+      )
+    },
+    connect() {
+      socket.connects++
+    },
+    hear(event: string, message?: object) {
+      for (const handler of handlers.get(event) ?? []) handler(message)
+    },
+    drop() {
+      socket.connected = false
+      socket.joined.clear()
+      socket.hear('disconnect')
+    },
+    back() {
+      socket.connected = true
+      socket.hear('connect')
+    },
+  }
+  return socket
 }
 
 const rooms: CollabRoom[] = []
@@ -1865,5 +1937,194 @@ describe('collab room on a device', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('collab room live', () => {
+  const type = (room: CollabRoom, word: string) => {
+    const t = room.doc.getText('t')
+    t.insert(t.length, word)
+    return room.flush()
+  }
+  const row = (server: ReturnType<typeof fakeServer>, rev: number, extra: object = {}) => ({
+    lineage: 'L',
+    rev,
+    schema: 1,
+    u: base64(server.rows[rev - 1].bytes),
+    ...extra,
+  })
+
+  it('two tabs see each other’s edits without waiting for a poll', async () => {
+    const server = fakeServer()
+    const reader = await join(server.endpoints(), { socket: server.socket() })
+    const writer = await join(server.endpoints(), { socket: server.socket() })
+    await idle()
+    const pulls = server.pulls.length
+
+    await type(writer, 'hello')
+
+    expect([reader.live, text(reader), reader.appliedThrough]).toEqual(['live', 'hello', 1])
+    expect(server.pulls.length).toBe(pulls)
+  })
+
+  it('a realtime service that never answers the room set leaves the tab collaborating by polling', async () => {
+    fakeTime()
+    const server = fakeServer()
+    server.realtime.answers = false
+    const reader = await join(server.endpoints(), { socket: server.socket(), pollMs: 1000 })
+    const writer = await join(server.endpoints(), { socket: server.socket(), pollMs: 1000 })
+    const before = reader.live
+    await vi.advanceTimersByTimeAsync(5000)
+
+    await type(writer, 'polled')
+    await vi.advanceTimersByTimeAsync(6000)
+
+    expect([before, reader.live, text(reader)]).toEqual(['joining', 'polling', 'polled'])
+  })
+
+  it('a realtime restart drops tabs to polling and they catch up once it is back', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const reader = await join(server.endpoints(), { socket: server.socket() })
+    const writer = await join(server.endpoints(), { socket: server.socket() })
+    await vi.advanceTimersByTimeAsync(0)
+
+    server.realtime.sockets.forEach((socket) => socket.drop())
+    await type(writer, 'missed')
+    await vi.advanceTimersByTimeAsync(5000)
+    const down = [reader.live, text(reader)]
+    server.realtime.sockets.forEach((socket) => socket.back())
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(down).toEqual(['polling', ''])
+    expect([reader.live, text(reader)]).toEqual(['live', 'missed'])
+  })
+
+  it('a writer whose own rows stop coming back three times falls back to polling until one does', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const writer = await join(server.endpoints(), { socket: server.socket() })
+    await vi.advanceTimersByTimeAsync(0)
+    server.realtime.publishing = false
+
+    const states = []
+    for (const word of ['a', 'b', 'c']) {
+      await type(writer, word)
+      await vi.advanceTimersByTimeAsync(2000)
+      states.push(writer.live)
+    }
+    server.realtime.publishing = true
+    await type(writer, 'd')
+
+    expect(states).toEqual(['live', 'live', 'polling'])
+    expect([writer.live, text(writer), writer.appliedThrough]).toEqual(['live', 'abcd', 4])
+  })
+
+  it('rows heard out of order wait for the missing one, and a hole that stays open is pulled', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const socket = server.socket()
+    const reader = await join(server.endpoints(), { socket })
+    const writer = await join(server.endpoints())
+    await vi.advanceTimersByTimeAsync(0)
+    server.realtime.publishing = false
+    for (const word of ['a', 'b', 'c', 'd']) await type(writer, word)
+    const pulls = server.pulls.length
+
+    socket.hear('suite_collab_row', row(server, 2))
+    const waiting = text(reader)
+    socket.hear('suite_collab_row', row(server, 1))
+    const ordered = text(reader)
+    socket.hear('suite_collab_row', row(server, 4))
+    await vi.advanceTimersByTimeAsync(900)
+    const held = [text(reader), server.pulls.length - pulls]
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect([waiting, ordered, held]).toEqual(['', 'ab', ['ab', 0]])
+    expect([text(reader), server.pulls.length - pulls]).toEqual(['abcd', 1])
+  })
+
+  it('a row too big to carry inline is pulled', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const reader = await join(server.endpoints(), { socket: server.socket() })
+    const writer = await join(server.endpoints(), { socket: server.socket() })
+    await vi.advanceTimersByTimeAsync(0)
+
+    await type(writer, 'x'.repeat(40_000))
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(text(reader).length).toBe(40_000)
+  })
+
+  it('a row of another lineage of the document is ignored', async () => {
+    const server = fakeServer()
+    const socket = server.socket()
+    const reader = await join(server.endpoints(), { socket })
+    const writer = await join(server.endpoints())
+    server.realtime.publishing = false
+    await type(writer, 'old copy')
+
+    socket.hear('suite_collab_row', row(server, 1, { lineage: 'other' }))
+
+    expect([text(reader), reader.appliedThrough]).toEqual(['', 0])
+  })
+
+  it('a row written by a newer editor is not applied live and the tab follows as an older editor', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const reader = await join(server.endpoints(), { socket: server.socket() })
+    const writer = await join(server.endpoints(), { socket: server.socket(), schema: 2 })
+    await vi.advanceTimersByTimeAsync(0)
+    server.schema.now = 2
+
+    await type(writer, 'newer')
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect([text(reader), reader.newerSchema]).toEqual(['', true])
+  })
+
+  it('a quarantine heard live sends the tab to be opened again', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const reader = await join(server.endpoints(), { socket: server.socket() })
+    const writer = await join(server.endpoints())
+    await type(writer, 'bad')
+    await vi.advanceTimersByTimeAsync(0)
+
+    server.quarantine(1)
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(reader.needsRebuild).toBe(true)
+  })
+
+  it('a socket that gave up reconnecting is asked again when the browser comes online', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const socket = server.socket()
+    await join(server.endpoints(), { socket })
+    socket.connected = false
+
+    window.dispatchEvent(new Event('online'))
+
+    expect(socket.connects).toBe(1)
+  })
+
+  it('a tab moves to the next epoch’s rooms early in it and leaves its rooms when closed', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const socket = server.socket()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const room = await join(server.endpoints(), { socket })
+    await vi.advanceTimersByTimeAsync(0)
+
+    await vi.advanceTimersByTimeAsync(300_000)
+    const moved = [[...socket.joined], room.live]
+    const now = server.roomKeys().keys
+    vi.mocked(Math.random).mockRestore()
+    await room.close()
+
+    expect(moved).toEqual([now, 'live'])
+    expect([...socket.joined]).toEqual([])
   })
 })

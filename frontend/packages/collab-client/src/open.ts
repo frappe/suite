@@ -44,6 +44,7 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     checkpoint,
     rows,
     limits: header.limits,
+    rooms: header.rooms,
   })
   return { state: 'live', room }
 }
@@ -87,6 +88,6 @@ async function openOffline(copy: DeviceCopy, options: OpenOptions, unreachable: 
     },
     options,
   )
-  await room.start({ base: copy.rev, checkpoint: null, rows: [] })
+  await room.start({ base: copy.rev, checkpoint: null, rows: [], offline: true })
   return room
 }

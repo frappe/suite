@@ -10,6 +10,14 @@ export interface Limits {
   tail_bound: number
 }
 
+// The realtime rooms a document's rows go out on: this epoch's and the next
+export interface RoomKeys {
+  epoch: number
+  keys: string[]
+  epoch_seconds: number
+  server_time: number
+}
+
 export interface OpenHeader {
   state: OpenState
   proto: number
@@ -22,6 +30,7 @@ export interface OpenHeader {
   // The highest editor schema the document's rows were written with
   schema?: number
   limits?: Limits
+  rooms?: RoomKeys
 }
 
 export interface PullHeader {
@@ -36,6 +45,7 @@ export interface PullHeader {
   held?: string
   schema?: number
   limits?: Limits
+  rooms?: RoomKeys
 }
 
 export interface Row {

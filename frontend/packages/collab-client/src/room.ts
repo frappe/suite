@@ -1,7 +1,15 @@
 import * as Y from 'yjs'
 
 import { readReply, staleSession, type Reply } from './answers'
-import { decodeFrame, encodePush, type Limits, type PullHeader, type Row } from './frames'
+import {
+  decodeFrame,
+  encodePush,
+  type Limits,
+  type PullHeader,
+  type RoomKeys,
+  type Row,
+} from './frames'
+import { Live } from './live'
 import { holdLock, MAX_KEEPALIVE_BYTES, MAX_PUSH_BYTES, Outbox } from './outbox'
 import { PIECE_BYTES, putPieces, stageFor, type Staging } from './pieces'
 import type { DeviceStore, StoredSession } from './store'
@@ -10,6 +18,7 @@ import {
   type Answer,
   type Blocked,
   type CollabRoom,
+  type LiveState,
   type OpenOptions,
   type SaveState,
 } from './types'
@@ -22,6 +31,11 @@ const ADOPT = Symbol('collab-adopt')
 const PERSIST_AFTER_MS = 60_000
 const STRIKE_WINDOW_MS = 10 * 60_000
 const STRIKES = 3
+// Without live updates a tab pulls every tick while others are editing or work waits, and every sixth tick otherwise
+const QUIET_TICKS = 6
+const CO_EDITING_MS = 60_000
+// Rows heard ahead of a missing one wait for it, up to this many
+const WAITING_MAX = 256
 
 // When rows were judged clean and still failed to apply in this page, per lineage
 const strikes = new Map<string, number[]>()
@@ -44,6 +58,9 @@ export interface Opening {
   checkpoint: Uint8Array | null
   rows: Row[]
   limits?: Limits
+  rooms?: RoomKeys
+  // Opened from the device copy, so the server hasn't answered yet
+  offline?: boolean
 }
 
 export class Room implements CollabRoom {
@@ -84,6 +101,10 @@ export class Room implements CollabRoom {
   private judging: { rev: number; seen: number | null } | null = null
   private reportTimer: ReturnType<typeof setTimeout> | null = null
   private staging: Staging | null = null
+  private realtime: Live | null = null
+  private readonly waiting = new Map<number, Row>()
+  private ticks = 0
+  private othersAt = 0
 
   constructor(
     init: RoomInit,
@@ -106,17 +127,30 @@ export class Room implements CollabRoom {
     }
     this.own.release = (await holdLock(this.lockName(this.own.sid))) ?? (() => {})
     this.appliedThrough = opening.base
+    this.unheard = !!opening.offline
     this.limits = opening.limits ?? null
     this.follow(opening.schema)
     this.apply(opening.rows, opening)
     if (this.writable) await this.adopt()
-    this.pollTimer = setInterval(() => void this.tick(), this.options.pollMs ?? 2000)
+    if (this.options.socket && !this.closed) {
+      this.realtime = new Live(this.options.socket, this.lineage, {
+        rows: this.heardRows,
+        pull: () => void this.pull(),
+        changed: () => this.changed(),
+      })
+      if (opening.rooms) this.realtime.refresh(opening.rooms)
+    }
+    this.pollTimer = setInterval(() => void this.tick(), this.options.pollMs ?? 5000)
     document.addEventListener('visibilitychange', this.hidden)
     window.addEventListener('pagehide', this.sendNow)
   }
 
   get canWrite() {
     return this.writable && !this.judging && !this.held
+  }
+
+  get live(): LiveState | null {
+    return this.realtime?.state ?? null
   }
 
   get stopped() {
@@ -171,6 +205,7 @@ export class Room implements CollabRoom {
         }
         const { header, rows } = decodeFrame<PullHeader>(answer.bytes)
         this.heard()
+        if (header.rooms) this.realtime?.refresh(header.rooms)
         if (header.limits) this.measure(header.limits)
         if (header.state === 'rebuild') return this.outdated()
         this.hold(header.held ?? null)
@@ -207,6 +242,7 @@ export class Room implements CollabRoom {
     document.removeEventListener('visibilitychange', this.hidden)
     window.removeEventListener('pagehide', this.sendNow)
     if (this.pollTimer) clearInterval(this.pollTimer)
+    this.realtime?.close()
     this.clearTimers()
     this.doc.off('update', this.capture)
     this.listeners.clear()
@@ -219,7 +255,32 @@ export class Room implements CollabRoom {
   private tick() {
     if (this.unsent && this.unsentSince && Date.now() - this.unsentSince > PERSIST_AFTER_MS)
       this.persist()
-    void this.pull()
+    if (this.realtime?.live) return
+    const coEditing =
+      document.visibilityState === 'visible' && Date.now() - this.othersAt < CO_EDITING_MS
+    // Work held while the server is out of reach goes out on the first tick that reaches it
+    const waiting = this.unsent || this.unheard || !this.bound
+    if (coEditing || waiting || ++this.ticks % QUIET_TICKS === 0) void this.pull()
+  }
+
+  // A row from the realtime service; one written by a newer editor is pulled, so the schema gate sees it
+  private heardRows = (rows: Row[], schema = 0) => {
+    if (
+      this.closed ||
+      !this.bound ||
+      this.needsRebuild ||
+      this.judging ||
+      this.newerSchema ||
+      this.blocked === 'other_user' ||
+      this.blocked === 'lost_read'
+    )
+      return
+    if (schema > this.options.schema) return void this.pull()
+    for (const row of rows)
+      if (row.rev > this.appliedThrough && this.waiting.size < WAITING_MAX)
+        this.waiting.set(row.rev, row)
+    this.apply([])
+    if (this.waiting.size) this.realtime?.hole(() => this.waiting.size > 0)
   }
 
   // Claim the clientID chosen offline, send what was typed, and only then take anyone else's rows
@@ -306,14 +367,13 @@ export class Room implements CollabRoom {
     if (this.unsent && this.bound) this.scheduleSend()
   }
 
-  // Rows are applied strictly in rev order; a hole waits for the next pull
+  // Rows are applied strictly in rev order; rows heard past a hole wait for it
   private apply(rows: Row[], opening?: Opening) {
-    const next = rows.filter((row) => row.rev > this.appliedThrough).sort((a, b) => a.rev - b.rev)
+    const byRev = new Map(this.waiting)
+    for (const row of rows) byRev.set(row.rev, row)
     const run: Row[] = []
-    for (const row of next) {
-      if (row.rev !== this.appliedThrough + run.length + 1) break
-      run.push(row)
-    }
+    for (let rev = this.appliedThrough + 1; byRev.has(rev); rev++) run.push(byRev.get(rev)!)
+    for (const row of run) this.waiting.delete(row.rev)
     if (!run.length && !opening) return
     // An empty row is a quarantined rev: it holds its place in the order and applies nothing
     const parts = [
@@ -329,6 +389,7 @@ export class Room implements CollabRoom {
       return this.suspect(run.at(-1)?.rev ?? this.appliedThrough)
     }
     if (run.length) this.appliedThrough = run[run.length - 1].rev
+    for (const rev of this.waiting.keys()) if (rev <= this.appliedThrough) this.waiting.delete(rev)
     if (this.device) {
       const copy = {
         lineage: this.lineage,
@@ -396,6 +457,7 @@ export class Room implements CollabRoom {
   }
 
   private capture = (update: Uint8Array, origin: unknown) => {
+    if (origin === REMOTE) this.othersAt = Date.now()
     if (origin === REMOTE || origin === ADOPT || this.closed) return
     // The editor turns read-only a moment after the verdict, so typing can still arrive
     if (this.dead) {
@@ -517,7 +579,12 @@ export class Room implements CollabRoom {
     if (reply.status === 200) {
       this.heard()
       this.ack(box, reply.dup ? (reply.acked ?? to) : to)
-      if ((reply.head ?? 0) > this.appliedThrough) void this.pull()
+      if (!reply.dup && typeof reply.rev === 'number') this.realtime?.pushed(reply.rev)
+      const head = reply.head ?? 0
+      // Live, the rows come over the socket; one still missing in a second is pulled
+      if (head > this.appliedThrough && this.realtime?.live)
+        this.realtime.hole(() => this.appliedThrough < head)
+      else if (head > this.appliedThrough) void this.pull()
       if (this.unsent) this.scheduleSend()
       return
     }
