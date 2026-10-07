@@ -261,6 +261,8 @@ export default defineConfig(({ mode }) => ({
       '@codemirror/lang-xml',
       '@codemirror/lang-yaml',
     ],
-    exclude: mode === 'production' ? [] : ['frappe-ui'],
+    // @ironcalc/wasm loads its .wasm via new URL(..., import.meta.url);
+    // pre-bundling moves the JS but not the .wasm, so the fetch would 404.
+    exclude: mode === 'production' ? [] : ['frappe-ui', '@ironcalc/wasm'],
   },
 }))

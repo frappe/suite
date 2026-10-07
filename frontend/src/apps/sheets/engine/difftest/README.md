@@ -1,5 +1,12 @@
 # Formula-engine differential harness
 
+> **Status (2026-09):** IronCalc superseded `engine2.js` and `sheet2.js` per
+> [ADR 0001](../../../../../../docs/adr/0001-sheets-ironcalc-calculation-core.md).
+> Those files and their tests are removed. The harness now gates IronCalc:
+> `ironcalc.test.ts` runs the curated cases and a seeded random corpus on every
+> test run. See `IRONCALC-REPORT.md` for the measured baseline. The historical
+> engine2 results below remain for the record.
+
 Turns "the formula engine feels buggy" into a **number you can track and beat**.
 
 It feeds the *same* formula, over the *same* grid, to two engines and diffs the
