@@ -213,6 +213,38 @@ describe('writer collab rebuild', () => {
     )
   })
 
+  it("keeps a later room's unsent work on screen when this time no copy could be kept", async () => {
+    let keeps = 1
+    fake.room = fake.make()
+    const collab = await opened(() => keeps-- > 0)
+    const first = fake.room
+    const second = (fake.room = fake.make())
+    becomesOn(first, { needsRebuild: true, unsent: 2, onDevice: false })
+    await vi.waitFor(() => expect(collab.room.value).toBe(second))
+    fake.room = fake.make()
+
+    becomesOn(second, { needsRebuild: true, unsent: 1, onDevice: false })
+    await nextTick()
+
+    expect(collab.room.value).toBe(second)
+  })
+
+  it('stops saying edits were set aside after a later rebuild sets nothing aside', async () => {
+    fake.room = fake.make()
+    const collab = await opened(() => true)
+    const first = fake.room
+    const second = (fake.room = fake.make())
+    becomesOn(first, { stopped: 'client_closed', saveState: 'failed', unsent: 2 })
+    becomesOn(first, { needsRebuild: true })
+    await vi.waitFor(() => expect(collab.room.value).toBe(second))
+    const third = (fake.room = fake.make())
+
+    becomesOn(second, { needsRebuild: true })
+    await vi.waitFor(() => expect(collab.room.value).toBe(third))
+
+    expect(collab.banner.value).toBeNull()
+  })
+
   it('says nothing was set aside when the rebuilt room takes the unsent work over', async () => {
     fake.room = fake.make()
     const collab = await opened()
