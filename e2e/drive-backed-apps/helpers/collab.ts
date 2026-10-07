@@ -179,7 +179,7 @@ export async function pushInPieces(
 	length: number,
 	whole = false,
 ): Promise<{ pieces: number; status: number; collab?: string }> {
-	const base = `/api/suite/writer/documents/${encodeURIComponent(node)}/collab`;
+	const base = `/api/suite/content/${encodeURIComponent(node)}`;
 	const headers = { "X-Collab-Principal": user };
 	const sid = randomUUID().replaceAll("-", "");
 	const session = await request.post(`${base}/sessions`, {

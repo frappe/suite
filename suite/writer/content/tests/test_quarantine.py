@@ -7,11 +7,11 @@ from unittest.mock import patch
 import frappe
 import pycrdt
 
+from suite.composition import content as routes
 from suite.suite_core.content import backfill, documents, quarantine
 from suite.suite_core.content.log import chain_next
 from suite.suite_core.content.tests.test_compaction import crafted, number
 from suite.writer import content as writer_content
-from suite.writer.content import routes
 from suite.writer.content.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.content.tests.test_collab import answer, call, push_body, read_frame, read_open
 
@@ -22,10 +22,10 @@ class Tab:
     def __init__(self, case: TestQuarantine, node: str):
         self.case, self.node = case, node
         self.sid = uuid.uuid4().hex
-        self.cid = answer(
-            call(routes.collab_sessions_post, node, body=json.dumps({"sid": self.sid}).encode())
-        )["client_id"]
-        self.header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        self.cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": self.sid}).encode()))[
+            "client_id"
+        ]
+        self.header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         self.doc = pycrdt.Doc(client_id=self.cid)
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
@@ -49,7 +49,7 @@ class Tab:
         self.seq += 1
         self.sent.append(update)
         body = push_body(self.header["lineage"], self.sid, self.cid, self.seq, 0, update)
-        return call(routes.collab_updates_post, self.node, body=body)
+        return call(routes.updates_post, self.node, body=body)
 
     def typed(self, at: int, words: str) -> int:
         """Push `words` typed at `at`; answers the rev."""
@@ -58,18 +58,20 @@ class Tab:
         return answer(response)["rev"]
 
     def catch_up(self):
-        for _rev, payload in routes.content.read(routes.ADAPTER, self.case.doc_row(self.node).id)["rows"]:
+        for _rev, payload in routes.content.read(writer_content.ADAPTER, self.case.doc_row(self.node).id)[
+            "rows"
+        ]:
             self.doc.apply_update(payload)
 
 
 class TestQuarantine(CheckpointCase):
     def quarantine(self, node: str, revs: set[int], reason: str = "test") -> list[int]:
         return quarantine.quarantine(
-            routes.ADAPTER, self.doc_row(node).id, revs, reason, writer_content.document_owner
+            writer_content.ADAPTER, self.doc_row(node).id, revs, reason, writer_content.document_owner
         )
 
     def stored_text(self, node: str) -> str:
-        read = routes.content.read(routes.ADAPTER, self.doc_row(node).id)
+        read = routes.content.read(writer_content.ADAPTER, self.doc_row(node).id)
         doc = pycrdt.Doc()
         for payload in [read["checkpoint"], *(payload for _rev, payload in read["rows"])]:
             if payload:
@@ -115,7 +117,7 @@ class TestQuarantine(CheckpointCase):
 
         self.assertEqual(self.quarantine(node, {3}, "cut_surrogate"), [3, 4])
 
-        read = routes.content.read(routes.ADAPTER, self.doc_row(node).id)
+        read = routes.content.read(writer_content.ADAPTER, self.doc_row(node).id)
         self.assertEqual(([rev for rev, _ in read["rows"]], read["quarantined"]), ([1, 2], [3, 4]))
         self.assertEqual(self.stored_text(node), "beta alpha")
         self.assertEqual(
@@ -262,7 +264,7 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual((doc.q_epoch, self.recovered(node), self.closed(node, a)), (0, [], False))
 
     def pull(self, node: str, since: str = "0", q_epoch: str | None = None):
-        return call(lambda node: routes.collab_updates_get(node, since=since, q_epoch=q_epoch), node)
+        return call(lambda node: routes.updates_get(node, since=since, q_epoch=q_epoch), node)
 
     def test_a_tab_reads_a_quarantined_rev_as_an_empty_row(self):
         node = self.new_document()
@@ -273,7 +275,7 @@ class TestQuarantine(CheckpointCase):
         a.typed(5, " gamma")
         self.quarantine(node, {3})
 
-        header, _checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        header, _checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         self.assertEqual((header["q_epoch"], rows), (1, [(1, a.sent[0]), (2, b.sent[0]), (3, b"")]))
         header, rows = read_frame(self.pull(node, q_epoch="1").get_data())
         self.assertEqual(
@@ -306,7 +308,7 @@ class TestQuarantine(CheckpointCase):
 
         # The tab never heard the answer to its second push and sends it again
         body = push_body(a.header["lineage"], a.sid, a.cid, 2, 0, a.sent[1])
-        retried = call(routes.collab_updates_post, node, body=body)
+        retried = call(routes.updates_post, node, body=body)
         self.assertEqual((retried.status_code, answer(retried)["collab"]), (409, "client_closed"))
         typed = a.write(lambda text: text.insert(0, "zero "))
         self.assertEqual((typed.status_code, answer(typed)["collab"]), (409, "client_closed"))
@@ -343,7 +345,9 @@ class TestQuarantine(CheckpointCase):
         frappe.db.commit()
 
         with self.assertRaises(RuntimeError):
-            quarantine.quarantine(routes.ADAPTER, self.doc_row(node).id, {1}, "test", lambda node: None)
+            quarantine.quarantine(
+                writer_content.ADAPTER, self.doc_row(node).id, {1}, "test", lambda node: None
+            )
 
         doc = self.doc_row(node)
         self.assertEqual((doc.q_epoch, self.recovered(node), self.stored_text(node)), (0, [], "alpha"))
@@ -446,7 +450,7 @@ class TestQuarantine(CheckpointCase):
         frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        routes.content.backfill_clocks(routes.ADAPTER, writer_content.document_owner)
+        routes.content.backfill_clocks(writer_content.ADAPTER, writer_content.document_owner)
 
         self.assertEqual(
             (self.states(node), self.doc_row(node).start_clocks), (["ok", "ok", "quarantined"], "{}")
@@ -466,7 +470,7 @@ class TestQuarantine(CheckpointCase):
         frappe.db.commit()
         logged = f"Collab clocks not read for writer log {ids[0]}"
 
-        routes.content.backfill_clocks(routes.ADAPTER, lambda node: None)
+        routes.content.backfill_clocks(writer_content.ADAPTER, lambda node: None)
 
         self.assertEqual((self.states(orphan), self.doc_row(orphan).start_clocks), (["ok", "ok"], None))
         self.assertEqual(frappe.db.count("Error Log", {"method": logged}), 1)
@@ -490,7 +494,7 @@ class TestQuarantine(CheckpointCase):
             return moved
 
         with patch.object(quarantine, "quarantine", purged_after):
-            routes.content.backfill_clocks(routes.ADAPTER, writer_content.document_owner)
+            routes.content.backfill_clocks(writer_content.ADAPTER, writer_content.document_owner)
 
         clocks = dict(
             frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))
@@ -516,7 +520,7 @@ class TestQuarantine(CheckpointCase):
             return read(adapter, doc_id)
 
         with patch.object(backfill, "read", purged_first):
-            routes.content.backfill_clocks(routes.ADAPTER, writer_content.document_owner)
+            routes.content.backfill_clocks(writer_content.ADAPTER, writer_content.document_owner)
 
         clocks = dict(
             frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))

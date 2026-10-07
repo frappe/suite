@@ -13,6 +13,7 @@ from frappe.storage.blob import put_blob
 from frappe.utils import now_datetime
 
 from suite import drive
+from suite.composition import content as routes
 from suite.drive._core import content as drive_content
 from suite.drive._core.nodes import _trash, purge
 from suite.drive._core.principals import Principals
@@ -21,7 +22,6 @@ from suite.suite_core import content
 from suite.suite_core.content import documents, log, scheduling
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
-from suite.writer.content import routes
 from suite.writer.content.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.content.tests.test_collab import answer, call, push_body, read_open
 
@@ -35,10 +35,15 @@ def version_of(docname: str) -> dict:
 def declaring(*names: str):
     """Writer's schema with `names` declared and Arrays, Maps and Texts allowed, so a row may hold a shape the
     editor does not write today."""
-    features = {**routes.SCHEMA.features, **dict.fromkeys(names, 1)}
-    shared_types = routes.SCHEMA.shared_types | {0, 1, 2}
+    features = {**writer_content.SCHEMA.features, **dict.fromkeys(names, 1)}
+    shared_types = writer_content.SCHEMA.shared_types | {0, 1, 2}
     return patch.object(
-        routes, "SCHEMA", replace(routes.SCHEMA, features=features, shared_types=shared_types)
+        writer_content,
+        "SPEC",
+        replace(
+            writer_content.SPEC,
+            schema=replace(writer_content.SCHEMA, features=features, shared_types=shared_types),
+        ),
     )
 
 
@@ -50,10 +55,8 @@ class TestWriterDriveCallbacks(CheckpointCase):
     def edit(self, node: str, change, schema: int = 1) -> None:
         """A tab opened on the document makes `change` to its fragment and pushes it as one row stamped `schema`."""
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
-            "client_id"
-        ]
-        header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
+        header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         doc = pycrdt.Doc(client_id=cid)
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
@@ -61,7 +64,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         seen = doc.get_state()
         change(doc.get("default", type=pycrdt.XmlFragment))
         body = push_body(header["lineage"], sid, cid, 1, 0, doc.get_update(seen), schema=schema)
-        self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
+        self.assertEqual(call(routes.updates_post, node, body=body).status_code, 200)
 
     def docname(self, node: str) -> str:
         return frappe.db.get_value("Drive Node", node, "content_docname")
@@ -266,7 +269,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         return copied
 
     def opened(self, node: str) -> pycrdt.Doc:
-        _header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        _header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         doc = pycrdt.Doc()
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
@@ -311,7 +314,11 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         picture = self.old_media(node, "picture.png")
         self.type_into(node, ["one"])
-        with patch.object(routes, "SCHEMA", replace(routes.SCHEMA, version=2)):
+        with patch.object(
+            writer_content,
+            "SPEC",
+            replace(writer_content.SPEC, schema=replace(writer_content.SCHEMA, version=2)),
+        ):
             self.edit(
                 node,
                 lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)})),
@@ -363,7 +370,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         copied = self.copy_of(node)
-        call(routes.collab_sessions_post, copied, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
+        call(routes.sessions_post, copied, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
 
         with self.assertRaises(ValueError):
             content.replace_start("writer", self.doc_row(copied).id, pycrdt.Doc().get_update(), 1)
@@ -481,12 +488,12 @@ class TestWriterDriveCallbacks(CheckpointCase):
         frappe.db.commit()
         self.addCleanup(documents.delete_purged, writer_content.ADAPTER, doc_id)
 
-        header, _checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        header, _checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         self.assertEqual((header["state"], rows), ("unconverted", []))
         for handler, body in (
-            (routes.collab_updates_get, b""),
-            (routes.collab_sessions_post, json.dumps({"sid": sid}).encode()),
-            (routes.collab_updates_post, push_body("x", sid, 1, 1, 0, b"\x00")),
+            (routes.updates_get, b""),
+            (routes.sessions_post, json.dumps({"sid": sid}).encode()),
+            (routes.updates_post, push_body("x", sid, 1, 1, 0, b"\x00")),
         ):
             self.assertEqual(answer(call(handler, node, body=body)), {"collab": "unconverted"})
         self.assertEqual(self.rows_of(doc_id)["update"], 1)
@@ -497,9 +504,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.type_into(node, ["one"])
         doc_id = self.doc_row(node).id
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
-            "client_id"
-        ]
+        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
         lineage = self.doc_row(node).lineage
         frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
@@ -509,7 +514,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         header, payload = content.parse_push(push_body(lineage, sid, cid, 1, 1, doc.get_update()))
 
         with self.assertRaises(content.Refusal) as refused:
-            content.push(routes.ADAPTER, doc_id, header, payload, WRITER, routes.SCHEMA)
+            content.push(writer_content.ADAPTER, doc_id, header, payload, WRITER, writer_content.SCHEMA)
 
         self.assertEqual((refused.exception.status, refused.exception.body), (404, {"collab": "not_found"}))
         self.assertEqual(self.rows_of(doc_id)["update"], 1)
@@ -538,7 +543,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         reads = (
             (
                 "open",
-                lambda node: read_open(call(routes.collab_get, node).get_data())[0]["state"],
+                lambda node: read_open(call(routes.document_get, node).get_data())[0]["state"],
                 "unconverted",
             ),
             ("live state", lambda node: documents.live_state(writer_content.ADAPTER, node), None),

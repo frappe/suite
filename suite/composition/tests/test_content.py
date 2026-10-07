@@ -1,8 +1,8 @@
 import frappe
 from frappe.tests import UnitTestCase
 
+from suite.composition.content import HTTP
 from suite.composition.tests.http_conformance import HttpConformanceMixin
-from suite.writer.http.framework import HTTP
 
 
 def setUpModule():

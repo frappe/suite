@@ -14,11 +14,11 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
+from suite.composition import content as routes
 from suite.suite_core.content import admission, checkpoints, compaction, documents, live, scheduling
 from suite.suite_core.content.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
-from suite.writer.content import routes
 from suite.writer.content.tests.test_collab import answer, body_for, call, push_body, read_open, typed
 
 WRITER = "writer-collab-writer@example.com"
@@ -67,7 +67,7 @@ class CheckpointCase(IntegrationTestCase):
         return node
 
     def forget(self, node: str):
-        doc = routes.content.find(routes.ADAPTER, node)
+        doc = routes.content.find(writer_content.ADAPTER, node)
         if doc:
             for kind in ("update", "session", "checkpoint", "recovery"):
                 frappe.db.sql(f"DELETE FROM `__writer_content_{kind}` WHERE `doc_id` = %s", doc.id)
@@ -77,10 +77,8 @@ class CheckpointCase(IntegrationTestCase):
     def type_into(self, node: str, words: list[str]) -> str:
         """A tab opened on the document types each word as its own row; returns the whole text."""
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
-            "client_id"
-        ]
-        header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
+        header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         doc = pycrdt.Doc(client_id=cid)
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
@@ -93,7 +91,7 @@ class CheckpointCase(IntegrationTestCase):
             update = doc.get_update(seen)
             seen = doc.get_state()
             body = body_for(node, header["lineage"], sid, cid, seq, update)
-            self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
+            self.assertEqual(call(routes.updates_post, node, body=body).status_code, 200)
         return str(text)
 
     def doc_row(self, node: str):
@@ -518,7 +516,7 @@ class TestWriterCheckpoints(CheckpointCase):
 
     def opened(self, node: str) -> tuple[dict, list[int], str]:
         """What a tab opening now gets: the header, the revs sent as rows, and the text it shows."""
-        header, checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
+        header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         parts = [checkpoint] if checkpoint else []
         return (
             header,
@@ -593,9 +591,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
 
     def push_bytes(self, node: str, sizes: list[int], *, final: bool = False) -> None:
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
-            "client_id"
-        ]
+        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
         lineage = self.doc_row(node).lineage
         for seq, update in enumerate(typed(cid, ["x" * size for size in sizes]), start=1):
             body = body_for(node, lineage, sid, cid, seq, update)
@@ -604,7 +600,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
                 header = json.loads(body[4 : 4 + length]) | {"final": True}
                 encoded = json.dumps(header).encode()
                 body = len(encoded).to_bytes(4, "big") + encoded + body[4 + length :]
-            self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
+            self.assertEqual(call(routes.updates_post, node, body=body).status_code, 200)
 
     def test_a_small_tail_asks_for_nothing_and_a_large_one_asks_once_it_is_large(self):
         node = self.new_document()
@@ -657,7 +653,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
     def test_a_tail_ten_minutes_old_asks_on_the_next_open(self):
         node = self.new_document()
         self.push_bytes(node, [100])
-        call(routes.collab_get, node)
+        call(routes.document_get, node)
         self.assertEqual(self.requested, [])
         frappe.db.sql(
             "UPDATE `__writer_content_update` SET `created` = %s WHERE `doc_id` = %s",
@@ -665,7 +661,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         )
         frappe.db.commit()
 
-        call(routes.collab_get, node)
+        call(routes.document_get, node)
 
         self.assertEqual(self.requested, [self.doc_row(node).id])
 
@@ -717,7 +713,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
             for _ in range(50):
                 # Each request starts with an empty local cache
                 frappe.local.cache = {}
-                scheduling.request(routes.ADAPTER, "outage", "unused")
+                scheduling.request(writer_content.ADAPTER, "outage", "unused")
 
         self.assertEqual(frappe.db.count("Error Log", logged), 1)
 
@@ -735,11 +731,11 @@ class TestWriterCompactionTriggers(CheckpointCase):
             raise ConnectionError("queue down")
 
         with patch.object(frappe, "enqueue", down):
-            scheduling.request(routes.ADAPTER, "outage", "unused")
-            scheduling.request(routes.ADAPTER, "outage", "unused")
+            scheduling.request(writer_content.ADAPTER, "outage", "unused")
+            scheduling.request(writer_content.ADAPTER, "outage", "unused")
             later = scheduling.time.monotonic() + scheduling.QUEUE_PAUSE.total_seconds() + 1
             with patch.object(scheduling.time, "monotonic", lambda: later):
-                scheduling.request(routes.ADAPTER, "outage", "unused")
+                scheduling.request(writer_content.ADAPTER, "outage", "unused")
 
         self.assertEqual(tried, ["outage", "outage"])
 
@@ -759,8 +755,8 @@ class TestWriterCompactionTriggers(CheckpointCase):
 
         with patch.object(frappe, "enqueue", down):
             self.push_bytes(node, [300 * 1024], final=True)
-            self.assertEqual(call(routes.collab_get, node).status_code, 200)
-            self.assertEqual(call(routes.collab_updates_get, node).status_code, 200)
+            self.assertEqual(call(routes.document_get, node).status_code, 200)
+            self.assertEqual(call(routes.updates_get, node).status_code, 200)
             self.push_bytes(other, [300 * 1024], final=True)
 
         doc_id = self.doc_row(node).id
@@ -785,13 +781,13 @@ class TestWriterAdmission(CheckpointCase):
 
     def tab(self, node: str) -> tuple[str, int]:
         sid = uuid.uuid4().hex
-        return sid, answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
+        return sid, answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
             "client_id"
         ]
 
     def push(self, node: str, tab: tuple[str, int], seq: int, update: bytes):
         response = call(
-            routes.collab_updates_post, node, body=push_body(self.doc_row(node).lineage, *tab, seq, 0, update)
+            routes.updates_post, node, body=push_body(self.doc_row(node).lineage, *tab, seq, 0, update)
         )
         return response.status_code, answer(response)
 
@@ -874,7 +870,7 @@ class TestWriterAdmission(CheckpointCase):
         ahead = push_body(self.doc_row(node).lineage, *tab, 1, 1, abc)
 
         self.assertEqual(self.push(node, tab, 2, de), (409, {"collab": "seq", "acked": 0}))
-        response = call(routes.collab_updates_post, node, body=ahead)
+        response = call(routes.updates_post, node, body=ahead)
         self.assertEqual((response.status_code, answer(response)), (409, {"collab": "diverged"}))
 
     def test_with_no_tail_to_compact_a_push_that_does_not_fit_is_full(self):

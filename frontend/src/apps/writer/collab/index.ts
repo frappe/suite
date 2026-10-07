@@ -18,20 +18,20 @@ export const WRITER_SCHEMA = 1
 
 const route = (id: string, method: HttpMethod, path: string): Operation => ({
   id,
-  owner: 'writer',
+  owner: 'content',
   method,
   path,
   pathParams: ['node'],
   nodeParams: ['node'],
 })
 
-const OPEN = route('collab_get', 'GET', 'documents/{node}/collab')
-const PULL = route('collab_updates_get', 'GET', 'documents/{node}/collab/updates')
-const PUSH = route('collab_updates_post', 'POST', 'documents/{node}/collab/updates')
-const SESSION = route('collab_sessions_post', 'POST', 'documents/{node}/collab/sessions')
-const SUSPECT = route('collab_suspect_post', 'POST', 'documents/{node}/collab/suspect')
+const OPEN = route('document_get', 'GET', '{node}/log')
+const PULL = route('updates_get', 'GET', '{node}/updates')
+const PUSH = route('updates_post', 'POST', '{node}/updates')
+const SESSION = route('sessions_post', 'POST', '{node}/sessions')
+const SUSPECT = route('suspect_post', 'POST', '{node}/suspect')
 const STAGE: Operation = {
-  ...route('collab_stage_put', 'PUT', 'documents/{node}/collab/stage/{stage_id}/{idx}'),
+  ...route('stage_put', 'PUT', '{node}/stage/{stage_id}/{idx}'),
   pathParams: ['node', 'stage_id', 'idx'],
 }
 

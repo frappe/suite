@@ -10,6 +10,7 @@ from frappe.utils import now_datetime
 from frappe.utils.background_jobs import get_redis_conn
 
 from suite import drive
+from suite.composition import content as routes
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
 from suite.suite_core.content import (
@@ -24,7 +25,6 @@ from suite.suite_core.content import (
 )
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
-from suite.writer.content import routes
 from suite.writer.content.tests import test_checkpoints, test_quarantine
 from suite.writer.content.tests.test_checkpoints import WRITER, CheckpointCase
 from suite.writer.content.tests.test_collab import OUTSIDER, READER, answer, call, read_frame
@@ -93,7 +93,7 @@ class TestSuspect(CheckpointCase):
 
     def judge(self, node: str) -> str | None:
         return suspect.judge(
-            routes.ADAPTER,
+            writer_content.ADAPTER,
             self.doc_row(node).id,
             writer_content.ROOTS,
             writer_content.KERNEL,
@@ -140,7 +140,7 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(
             [reason for _rev, _owner, reason, _payload in self.recovered(node)], ["editor_schema"] * 2
         )
-        read = routes.content.read(routes.ADAPTER, self.doc_row(node).id)
+        read = routes.content.read(writer_content.ADAPTER, self.doc_row(node).id)
         self.assertEqual(
             kernel.judge(BUNDLE, read["checkpoint"], [payload for _rev, payload in read["rows"]]),
             kernel.Verdict(None),
@@ -215,11 +215,11 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.requested, [])
 
     def report(self, node: str, rev) -> tuple[int, dict]:
-        response = call(routes.collab_suspect_post, node, body=json.dumps({"rev": rev}).encode())
+        response = call(routes.suspect_post, node, body=json.dumps({"rev": rev}).encode())
         return response.status_code, answer(response)
 
     def pulled(self, node: str) -> dict:
-        return read_frame(call(routes.collab_updates_get, node).get_data())[0]
+        return read_frame(call(routes.updates_get, node).get_data())[0]
 
     def test_a_tab_that_cannot_apply_a_row_reads_the_verdict_on_its_pull(self):
         node = self.new_document()

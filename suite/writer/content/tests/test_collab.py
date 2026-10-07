@@ -16,6 +16,7 @@ from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from suite import drive
+from suite.composition import content as routes
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
 from suite.suite_core.content import capacity, documents, live, scheduling
@@ -24,7 +25,6 @@ from suite.suite_core.content.stage import PIECE_MAX
 from suite.suite_core.content.updates import encoded_string, encoded_uint
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
-from suite.writer.content import routes
 
 WRITER = "writer-collab-writer@example.com"
 OUTSIDER = "writer-collab-outsider@example.com"
@@ -179,9 +179,7 @@ def body_for(node: str, lineage: str, sid: str, cid: int, seq: int, update: byte
     stage_id = uuid.uuid4().hex
     for idx, piece in enumerate(pieces_of(update)):
         body = piece_body(lineage, sid, seq, update, piece)
-        response = call(
-            lambda node, idx=idx: routes.collab_stage_put(node, stage_id, str(idx)), node, body=body
-        )
+        response = call(lambda node, idx=idx: routes.stage_put(node, stage_id, str(idx)), node, body=body)
         assert response.status_code == 200, answer(response)
     return push_body(lineage, sid, cid, seq, 0, b"", entries=[update], stage_id=stage_id)
 
@@ -198,7 +196,7 @@ class TestWriterCollab(IntegrationTestCase):
         ensure_user(WRITER)
         ensure_user(OUTSIDER)
         ensure_user(READER)
-        routes.content.ensure_tables(routes.ADAPTER)
+        routes.content.ensure_tables(writer_content.ADAPTER)
         frappe.db.commit()
 
     def setUp(self):
@@ -228,7 +226,7 @@ class TestWriterCollab(IntegrationTestCase):
         return node
 
     def forget(self, node: str):
-        doc = routes.content.find(routes.ADAPTER, node)
+        doc = routes.content.find(writer_content.ADAPTER, node)
         if doc:
             for kind in ("update", "session", "stage"):
                 frappe.db.sql(f"DELETE FROM `__writer_content_{kind}` WHERE `doc_id` = %s", doc.id)
@@ -239,11 +237,11 @@ class TestWriterCollab(IntegrationTestCase):
         return frappe.db.sql(f"SELECT COUNT(*) FROM `__writer_content_{kind}`")[0][0]
 
     def open(self, node: str):
-        return read_frame(call(routes.collab_get, node).get_data())
+        return read_frame(call(routes.document_get, node).get_data())
 
     def session(self, node: str) -> tuple[str, int]:
         sid = uuid.uuid4().hex
-        return sid, answer(call(routes.collab_sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
+        return sid, answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
             "client_id"
         ]
 
@@ -259,13 +257,13 @@ class TestWriterCollab(IntegrationTestCase):
         body = push_body(
             header["lineage"], sid, cid, seq, rows[-1][0] if rows else 0, payload, entries=entries
         )
-        response = call(routes.collab_updates_post, node, body=body)
+        response = call(routes.updates_post, node, body=body)
         return response.status_code, answer(response)
 
     def assert_one_order(self, node: str, count: int):
         header, rows = self.open(node)
         self.assertEqual([rev for rev, _ in rows], list(range(1, count + 1)))
-        stored = routes.content.find(routes.ADAPTER, node)
+        stored = routes.content.find(writer_content.ADAPTER, node)
         chain = chain_seed(stored.lineage)
         for rev, payload in rows:
             chain = chain_next(chain, rev, hashlib.sha256(payload).digest())
@@ -279,10 +277,10 @@ class TestWriterCollab(IntegrationTestCase):
         header, rows = self.open(node)
         self.assertEqual((header["state"], rows), ("disabled", []))
         for handler in (
-            routes.collab_sessions_post,
-            routes.collab_updates_post,
-            routes.collab_updates_get,
-            routes.collab_suspect_post,
+            routes.sessions_post,
+            routes.updates_post,
+            routes.updates_get,
+            routes.suspect_post,
         ):
             response = call(handler, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
             self.assertEqual((response.status_code, answer(response)), (409, {"collab": "disabled"}))
@@ -372,7 +370,7 @@ class TestWriterCollab(IntegrationTestCase):
             (push_body(lineage, sid, cid, 1, 1, first), {"collab": "diverged"}),
         ):
             with self.subTest(refusal=refusal):
-                response = call(routes.collab_updates_post, node, body=body)
+                response = call(routes.updates_post, node, body=body)
                 self.assertEqual((response.status_code, answer(response)), (409, refusal))
 
         self.assertEqual(self.open(node)[1], [])
@@ -393,9 +391,7 @@ class TestWriterCollab(IntegrationTestCase):
         )
         for case, payload in cases:
             with self.subTest(case):
-                response = call(
-                    routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, payload)
-                )
+                response = call(routes.updates_post, node, body=push_body(lineage, sid, cid, 1, 0, payload))
                 self.assertEqual((response.status_code, answer(response)), (400, {"collab": "malformed"}))
 
         self.assertEqual(self.open(node)[1], [])
@@ -406,18 +402,22 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         sid, cid = self.session(node)
         lineage = self.open(node)[0]["lineage"]
-        newer = routes.SCHEMA.version + 1
+        newer = writer_content.SCHEMA.version + 1
         body = push_body(lineage, sid, cid, 1, 0, typed(cid, ["a"])[0], schema=newer)
 
-        response = call(routes.collab_updates_post, node, body=body)
+        response = call(routes.updates_post, node, body=body)
 
         self.assertEqual(
             (response.status_code, answer(response)), (423, {"collab": "upgrading", "retry_ms": 30_000})
         )
         self.assertEqual(self.open(node)[1], [])
-        with patch.object(routes, "SCHEMA", replace(routes.SCHEMA, version=newer)):
-            self.assertEqual(call(routes.collab_updates_post, node, body=body).status_code, 200)
-        doc_id = routes.content.find(routes.ADAPTER, node).id
+        with patch.object(
+            writer_content,
+            "SPEC",
+            replace(writer_content.SPEC, schema=replace(writer_content.SCHEMA, version=newer)),
+        ):
+            self.assertEqual(call(routes.updates_post, node, body=body).status_code, 200)
+        doc_id = routes.content.find(writer_content.ADAPTER, node).id
         self.assertEqual(
             frappe.db.sql("SELECT `schema` FROM `__writer_content_update` WHERE `doc_id` = %s", doc_id),
             ((newer,),),
@@ -430,22 +430,22 @@ class TestWriterCollab(IntegrationTestCase):
         (sid, cid), (other_sid, other_cid) = self.session(node), self.session(node)
         marquee = push_body(lineage, sid, cid, 1, 0, element(cid, "marquee"))
         stepped = replace(
-            routes.SCHEMA,
+            writer_content.SCHEMA,
             version=2,
-            features={**routes.SCHEMA.features, "marquee": 2},
-            nodes=routes.SCHEMA.nodes | {"marquee"},
+            features={**writer_content.SCHEMA.features, "marquee": 2},
+            nodes=writer_content.SCHEMA.nodes | {"marquee"},
         )
 
-        undeclared = call(routes.collab_updates_post, node, body=marquee)
-        with patch.object(routes, "SCHEMA", stepped):
-            too_early = call(routes.collab_updates_post, node, body=marquee)
+        undeclared = call(routes.updates_post, node, body=marquee)
+        with patch.object(writer_content, "SPEC", replace(writer_content.SPEC, schema=stepped)):
+            too_early = call(routes.updates_post, node, body=marquee)
             other = call(
-                routes.collab_updates_post,
+                routes.updates_post,
                 node,
                 body=push_body(lineage, other_sid, other_cid, 1, 0, typed(other_cid, ["b"])[0]),
             )
             stamped = call(
-                routes.collab_updates_post,
+                routes.updates_post,
                 node,
                 body=push_body(lineage, sid, cid, 1, 0, element(cid, "marquee"), schema=2),
             )
@@ -465,7 +465,7 @@ class TestWriterCollab(IntegrationTestCase):
 
         refused = [
             call(
-                routes.collab_updates_post,
+                routes.updates_post,
                 node,
                 body=push_body(lineage, sid, cid, 1, 0, in_body(cid, 7, encoded_uint(shared))),
             )
@@ -494,9 +494,7 @@ class TestWriterCollab(IntegrationTestCase):
 
         for case, row in rows.items():
             with self.subTest(case):
-                response = call(
-                    routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, row)
-                )
+                response = call(routes.updates_post, node, body=push_body(lineage, sid, cid, 1, 0, row))
                 self.assertEqual((response.status_code, answer(response)), (409, {"collab": "poison"}))
         self.assertEqual(self.open(node)[1], [])
         self.assertEqual(self.push(node, sid, cid, 1, formatted(cid, "bold"))[0], 200)
@@ -507,10 +505,10 @@ class TestWriterCollab(IntegrationTestCase):
         lineage = self.open(node)[0]["lineage"]
         (sid, cid), (newer_sid, newer), (later_sid, later) = (self.session(node) for _tab in range(3))
         stepped = replace(
-            routes.SCHEMA,
+            writer_content.SCHEMA,
             version=2,
-            features={**routes.SCHEMA.features, "marquee": 2},
-            nodes=routes.SCHEMA.nodes | {"marquee"},
+            features={**writer_content.SCHEMA.features, "marquee": 2},
+            nodes=writer_content.SCHEMA.nodes | {"marquee"},
         )
 
         def steps():
@@ -521,11 +519,11 @@ class TestWriterCollab(IntegrationTestCase):
 
         def stamped(tab_sid, tab_cid, seq, payload, schema):
             body = push_body(lineage, tab_sid, tab_cid, seq, 0, payload, schema=schema)
-            return call(routes.collab_updates_post, node, body=body).status_code
+            return call(routes.updates_post, node, body=body).status_code
 
         self.assertEqual(steps(), [[0, 1]])
         self.assertEqual(self.open(node)[0]["schema"], 1)
-        with patch.object(routes, "SCHEMA", stepped):
+        with patch.object(writer_content, "SPEC", replace(writer_content.SPEC, schema=stepped)):
             refused = [
                 stamped(newer_sid, newer, 2, element(newer, "marquee"), 2),
                 stamped(newer_sid, newer, 1, b"\x00", 2),
@@ -540,7 +538,7 @@ class TestWriterCollab(IntegrationTestCase):
             self.assertEqual(stamped(sid, cid, 2, typed(cid, ["a", "b"])[1], 1), 200)
 
         self.assertEqual(steps(), [[0, 1], [2, 2]])
-        pulled = read_frame(call(routes.collab_updates_get, node).get_data())[0]
+        pulled = read_frame(call(routes.updates_get, node).get_data())[0]
         self.assertEqual((self.open(node)[0]["schema"], pulled["schema"]), (2, 2))
 
     def test_a_push_that_does_not_continue_its_writers_clocks_is_refused_and_stores_nothing(self):
@@ -648,7 +646,7 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         original, later = typed(7, ["start", "!"])
         routes.content.replace_start(
-            routes.ADAPTER, routes.content.find(routes.ADAPTER, node).id, original, 1
+            writer_content.ADAPTER, routes.content.find(writer_content.ADAPTER, node).id, original, 1
         )
         frappe.db.commit()
         (sid, cid), (ahead_sid, ahead) = self.session(node), self.session(node)
@@ -673,8 +671,8 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         start, after_start = typed(7, ["start", "!"])
-        doc_id = routes.content.find(routes.ADAPTER, node).id
-        routes.content.replace_start(routes.ADAPTER, doc_id, start, 1)
+        doc_id = routes.content.find(writer_content.ADAPTER, node).id
+        routes.content.replace_start(writer_content.ADAPTER, doc_id, start, 1)
         frappe.db.commit()
         sid, cid = self.session(node)
         a, b, c = typed(cid, ["a", "b", "c"])
@@ -685,7 +683,7 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        routes.content.backfill_clocks(routes.ADAPTER, writer_content.document_owner)
+        routes.content.backfill_clocks(writer_content.ADAPTER, writer_content.document_owner)
 
         self.assertEqual(self.push(node, sid, cid, 3, a), (409, {"collab": "clock_gap", "clock": 3}))
         self.assertEqual(self.push(node, sid, cid, 3, c)[0], 200)
@@ -775,7 +773,7 @@ class TestWriterCollab(IntegrationTestCase):
         lineage = self.open(node)[0]["lineage"]
 
         frappe.set_user(OUTSIDER)
-        response = call(routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, b"x"))
+        response = call(routes.updates_post, node, body=push_body(lineage, sid, cid, 1, 0, b"x"))
 
         self.assertIn(response.status_code, (403, 404))
         frappe.set_user(WRITER)
@@ -790,10 +788,8 @@ class TestWriterCollab(IntegrationTestCase):
 
         frappe.set_user(READER)
         header, _rows = self.open(node)
-        own_session = call(
-            routes.collab_sessions_post, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode()
-        )
-        push = call(routes.collab_updates_post, node, body=push_body(header["lineage"], sid, cid, 1, 0, b"x"))
+        own_session = call(routes.sessions_post, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
+        push = call(routes.updates_post, node, body=push_body(header["lineage"], sid, cid, 1, 0, b"x"))
 
         self.assertEqual((header["state"], header["can_write"]), ("live", False))
         self.assertEqual((own_session.status_code, push.status_code), (403, 403))
@@ -808,13 +804,13 @@ class TestWriterCollab(IntegrationTestCase):
         body = push_body(lineage, sid, cid, 1, 0, b"x", principal=WRITER)
         session_body = json.dumps({"sid": uuid.uuid4().hex}).encode()
         handlers = (
-            (routes.collab_get, b""),
-            (routes.collab_updates_get, b""),
-            (routes.collab_sessions_post, session_body),
-            (routes.collab_updates_post, body),
-            (routes.collab_suspect_post, b'{"rev": 1}'),
+            (routes.document_get, b""),
+            (routes.updates_get, b""),
+            (routes.sessions_post, session_body),
+            (routes.updates_post, body),
+            (routes.suspect_post, b'{"rev": 1}'),
             (
-                lambda node: routes.collab_stage_put(node, uuid.uuid4().hex, "0"),
+                lambda node: routes.stage_put(node, uuid.uuid4().hex, "0"),
                 piece_body(lineage, sid, 1, b"x", b"x", principal=WRITER),
             ),
         )
@@ -837,10 +833,8 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.set_user("Guest")
         with patch.object(routes.drive, "check"):
             header, _rows = self.open(node)
-            session = call(
-                routes.collab_sessions_post, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode()
-            )
-            push = call(routes.collab_updates_post, node, body=push_body(lineage, sid, cid, 1, 0, b"x"))
+            session = call(routes.sessions_post, node, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
+            push = call(routes.updates_post, node, body=push_body(lineage, sid, cid, 1, 0, b"x"))
 
         self.assertEqual((header["state"], header["can_write"]), ("live", False))
         for response in (session, push):
@@ -850,8 +844,32 @@ class TestWriterCollab(IntegrationTestCase):
 
     def claim(self, node: str, sid: str, cid: int, lineage: str):
         body = json.dumps({"sid": sid, "claim": {"cid": cid, "lineage": lineage}}).encode()
-        response = call(routes.collab_sessions_post, node, body=body)
+        response = call(routes.sessions_post, node, body=body)
         return response.status_code, answer(response)
+
+    def test_a_node_no_app_keeps_here_is_not_found_as_a_missing_one_is(self):
+        self.set_mode("on")
+        root = drive.ensure_personal_root(WRITER)
+        parent = frappe.db.get_value("Drive Root", root, "node")
+        presentation = drive.create_document(
+            parent, f"Not here {uuid.uuid4().hex[:8]}", content_doctype="Presentation"
+        )
+        frappe.db.commit()
+        session_body = json.dumps({"sid": uuid.uuid4().hex}).encode()
+        handlers = (
+            (routes.document_get, b""),
+            (routes.updates_get, b""),
+            (routes.sessions_post, session_body),
+            (routes.updates_post, push_body(uuid.uuid4().hex, uuid.uuid4().hex, 7, 1, 0, b"x")),
+            (routes.suspect_post, b'{"rev": 1}'),
+            (lambda node: routes.stage_put(node, uuid.uuid4().hex, "0"), b"x"),
+        )
+
+        for node in (presentation, "no-such-node"):
+            for handler, data in handlers:
+                response = call(handler, node, body=data)
+                self.assertEqual((response.status_code, answer(response)), (404, {"collab": "not_found"}))
+        self.assertIsNone(routes.content.find(writer_content.ADAPTER, presentation))
 
     def test_an_offline_tab_claims_its_own_client_id_and_then_pushes(self):
         self.set_mode("on")
@@ -884,7 +902,9 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         issued, claimed = 7, 2**30 + 7
         start = pycrdt.merge_updates(typed(issued, ["start"])[0], typed(claimed, ["start"])[0])
-        routes.content.replace_start(routes.ADAPTER, routes.content.find(routes.ADAPTER, node).id, start, 1)
+        routes.content.replace_start(
+            writer_content.ADAPTER, routes.content.find(writer_content.ADAPTER, node).id, start, 1
+        )
         frappe.db.commit()
         lineage = self.open(node)[0]["lineage"]
 
@@ -918,7 +938,7 @@ class TestWriterCollab(IntegrationTestCase):
                 seq = 1
                 while seq <= pushes:
                     body = push_body(lineage, sid, cid, seq, 0, sent[seq - 1])
-                    response = call(routes.collab_updates_post, node, body=body)
+                    response = call(routes.updates_post, node, body=body)
                     if response.status_code == 200:
                         seq += 1
                     elif response.status_code == 423:
@@ -942,16 +962,19 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         self.push(node, *self.session(node), 1)
-        doc_id = routes.content.find(routes.ADAPTER, node).id
+        doc_id = routes.content.find(writer_content.ADAPTER, node).id
         frappe.db.sql(
             "UPDATE `__writer_content_doc` SET `head_chain` = %s WHERE `id` = %s", (b"\x00" * 32, doc_id)
         )
         frappe.db.commit()
         self.addCleanup(frappe.db.commit)
-        logged = {"method": "Collab open: chain_break", "error": f"{routes.ADAPTER} document {doc_id}"}
+        logged = {
+            "method": "Collab open: chain_break",
+            "error": f"{writer_content.ADAPTER} document {doc_id}",
+        }
         self.addCleanup(frappe.db.delete, "Error Log", logged)
 
-        response = call(routes.collab_get, node)
+        response = call(routes.document_get, node)
         # The request is a GET, so frappe rolls back what it wrote
         frappe.db.rollback()
 
@@ -959,7 +982,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(frappe.db.count("Error Log", logged), 1)
 
     def put(self, node: str, stage_id: str, idx: int, body: bytes):
-        response = call(lambda node: routes.collab_stage_put(node, stage_id, str(idx)), node, body=body)
+        response = call(lambda node: routes.stage_put(node, stage_id, str(idx)), node, body=body)
         return response.status_code, answer(response)
 
     def stage(self, node: str, sid: str, change: bytes, *, seq: int = 1, order=None, **header) -> str:
@@ -986,11 +1009,11 @@ class TestWriterCollab(IntegrationTestCase):
             entries=[change],
             stage_id=stage_id,
         )
-        response = call(routes.collab_updates_post, node, body=body)
+        response = call(routes.updates_post, node, body=body)
         return response.status_code, answer(response)
 
     def staged(self, node: str) -> int:
-        doc_id = routes.content.find(routes.ADAPTER, node).id
+        doc_id = routes.content.find(writer_content.ADAPTER, node).id
         return frappe.db.sql("SELECT COUNT(*) FROM `__writer_content_stage` WHERE `doc_id` = %s", doc_id)[0][
             0
         ]
@@ -1144,7 +1167,7 @@ class TestWriterCollab(IntegrationTestCase):
         self.push(node, sid, cid, 1, big_change(cid, 10_000))
 
         opened = self.open(node)[0]["limits"]
-        pulled = read_frame(call(routes.collab_updates_get, node).get_data())[0]["limits"]
+        pulled = read_frame(call(routes.updates_get, node).get_data())[0]["limits"]
 
         self.assertEqual(opened, pulled)
         self.assertEqual(
@@ -1330,7 +1353,7 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.set_user(READER)
         with patch.object(live, "time", Mock(time=Mock(return_value=150 * 1000 + 149))):
             opened = self.open(node)[0]["rooms"]
-            pulled = read_frame(call(routes.collab_updates_get, node).get_data())[0]["rooms"]
+            pulled = read_frame(call(routes.updates_get, node).get_data())[0]["rooms"]
         frappe.set_user(WRITER)
         with patch.object(live, "time", Mock(time=Mock(return_value=150 * 1001))):
             later = self.open(node)[0]["rooms"]
@@ -1347,10 +1370,10 @@ class TestWriterCollab(IntegrationTestCase):
         self.set_mode("on")
         node = self.new_document()
         self.open(node)
-        doc = routes.content.find(routes.ADAPTER, node)
-        before = routes.content.rooms(routes.ADAPTER, doc.id, doc.lineage)
+        doc = routes.content.find(writer_content.ADAPTER, node)
+        before = routes.content.rooms(writer_content.ADAPTER, doc.id, doc.lineage)
 
-        after = routes.content.rooms(routes.ADAPTER, doc.id, uuid.uuid4().hex)
+        after = routes.content.rooms(writer_content.ADAPTER, doc.id, uuid.uuid4().hex)
 
         self.assertFalse({*before["keys"]} & {*after["keys"]})
 

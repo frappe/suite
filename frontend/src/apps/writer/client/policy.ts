@@ -5,10 +5,6 @@ const effects = {
   save_html: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
   save_comments: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
   update_settings: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
-  collab_updates_post: 'none',
-  collab_stage_put: 'none',
-  collab_sessions_post: 'none',
-  collab_suspect_post: 'none',
 } as const
 
 export const registration: OwnerRegistration = {

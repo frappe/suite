@@ -115,7 +115,7 @@ test.describe("Writer collaboration", () => {
 		);
 		const polls: string[] = [];
 		collaborator.page.on("request", (request) => {
-			if (request.url().includes("/collab/updates")) polls.push(request.url());
+			if (/\/api\/suite\/content\/[^/]+\/updates/.test(request.url())) polls.push(request.url());
 		});
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
@@ -369,7 +369,7 @@ test.describe("Writer collaboration", () => {
 		const pullsHeld = new Promise<void>((resolve) => {
 			letPullsThrough = resolve;
 		});
-		await collaborator.page.route("**/collab/updates**", async (route) => {
+		await collaborator.page.route("**/api/suite/content/*/updates**", async (route) => {
 			if (route.request().method() === "GET") await pullsHeld;
 			await route.fallback();
 		});
@@ -391,7 +391,7 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 		const waited: string[] = [];
 		owner.page.on("response", async (response) => {
-			const pushed = response.request().method() === "POST" && response.url().includes("/collab/updates");
+			const pushed = response.request().method() === "POST" && /\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
 			if (pushed && response.status() === 423)
 				waited.push(((await response.json()) as { collab: string }).collab);
 		});
@@ -499,7 +499,7 @@ test.describe("Writer collaboration", () => {
 	test("a big paste is saved in pieces and reads back whole", async ({ owner, testApi }) => {
 		const pieces: string[] = [];
 		owner.page.on("request", (request) => {
-			if (request.method() === "PUT" && request.url().includes("/collab/stage/")) pieces.push(request.url());
+			if (request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url())) pieces.push(request.url());
 		});
 		await openWriterDocument(owner.page, node);
 		const big = "y".repeat(700_000);
@@ -559,7 +559,7 @@ test.describe("Writer collaboration", () => {
 		const pullsHeld = new Promise<void>((resolve) => {
 			letPullsThrough = resolve;
 		});
-		await owner.page.route("**/collab/updates**", async (route) => {
+		await owner.page.route("**/api/suite/content/*/updates**", async (route) => {
 			if (route.request().method() === "GET") await pullsHeld;
 			await route.fallback();
 		});
@@ -623,7 +623,7 @@ test.describe("Writer collaboration", () => {
 
 	test("a change the server finds too large stops saving and says to insert images as files", async ({ owner }) => {
 		// The paste guard keeps real changes under the cap, so the server's answer to a bigger one is played here
-		await owner.page.route("**/collab/stage/**", (route) =>
+		await owner.page.route("**/api/suite/content/*/stage/**", (route) =>
 			route.fulfill({ status: 413, contentType: "application/json", body: JSON.stringify({ collab: "too_large" }) }),
 		);
 		await openWriterDocument(owner.page, node);
