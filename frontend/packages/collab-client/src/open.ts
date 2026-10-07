@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 
-import { CollabOpenError, openError, readReply } from './answers'
-import { decodeFrame } from './frames'
+import { openError, readReply } from './answers'
+import { decodeFrame, type OpenHeader } from './frames'
 import { randomHex } from './outbox'
 import { REMOTE, Room } from './room'
 import type { DeviceCopy, StoredSession } from './store'
@@ -21,9 +21,7 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     return { state: 'live', room: await openOffline(copy, options, error) }
   }
   if (opened.status !== 200) throw openError(opened, options)
-  const { header, checkpoint, rows } = decodeFrame(opened.bytes)
-  // Only a pull names an epoch, so only a pull is told to rebuild
-  if (header.state === 'rebuild') throw new CollabOpenError(opened.status, 'rebuild')
+  const { header, checkpoint, rows } = decodeFrame<OpenHeader>(opened.bytes)
   if (header.state !== 'live') return { state: header.state }
 
   const doc = new Y.Doc()

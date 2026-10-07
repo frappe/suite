@@ -60,7 +60,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
       const live = opened.room
       room.value = live
       const sync = () => {
-        if (live.stale) {
+        if (live.needsRebuild) {
           if (live.unsent && !live.onDevice && !kept.value) kept.value = retainRecovery()
           // Unsent work held nowhere else stays on screen in the old room until it is sent
           if (!live.unsent || live.onDevice || kept.value) return void rebuild(live)

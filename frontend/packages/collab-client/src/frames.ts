@@ -1,9 +1,8 @@
 // `disabled`: collaboration is off on this site. `unconverted`: the document is not collaborative
 export type OpenState = 'live' | 'disabled' | 'unconverted'
 
-export interface FrameHeader {
-  // `rebuild`: a pull from a tab that may hold a change quarantined since
-  state: OpenState | 'rebuild'
+export interface OpenHeader {
+  state: OpenState
   proto: number
   lineage?: string
   can_write?: boolean
@@ -13,14 +12,21 @@ export interface FrameHeader {
   q_epoch?: number
 }
 
+export interface PullHeader {
+  // `rebuild`: the tab may hold a change quarantined since
+  state: 'live' | 'rebuild'
+  proto: number
+  q_epoch?: number
+}
+
 export interface Row {
   rev: number
   bytes: Uint8Array
 }
 
 // `u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`
-export function decodeFrame(bytes: Uint8Array): {
-  header: FrameHeader
+export function decodeFrame<Header>(bytes: Uint8Array): {
+  header: Header
   checkpoint: Uint8Array | null
   rows: Row[]
 } {
@@ -39,7 +45,7 @@ export function decodeFrame(bytes: Uint8Array): {
     at += length
     return bytes.slice(at - length, at)
   }
-  const header = JSON.parse(new TextDecoder().decode(take(u32()))) as FrameHeader
+  const header = JSON.parse(new TextDecoder().decode(take(u32()))) as Header
   const checkpoint = take(u32())
   const rows: Row[] = []
   for (let count = u32(); count > 0; count--) {

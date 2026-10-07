@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 
 import { readReply, staleSession, type Reply } from './answers'
-import { decodeFrame, encodePush, type Row } from './frames'
+import { decodeFrame, encodePush, type PullHeader, type Row } from './frames'
 import { holdLock, MAX_KEEPALIVE_BYTES, MAX_PUSH_BYTES, Outbox } from './outbox'
 import type { DeviceStore, StoredSession } from './store'
 import {
@@ -43,7 +43,7 @@ export class Room implements CollabRoom {
   blocked: Blocked | null = null
   paused: string | null = null
   appliedThrough = 0
-  stale = false
+  needsRebuild = false
   private readonly lineage: string
   private readonly epoch: number
   private writable: boolean
@@ -127,7 +127,12 @@ export class Room implements CollabRoom {
   }
 
   pull(): Promise<void> {
-    if (this.closed || this.stale || this.blocked === 'other_user' || this.blocked === 'lost_read')
+    if (
+      this.closed ||
+      this.needsRebuild ||
+      this.blocked === 'other_user' ||
+      this.blocked === 'lost_read'
+    )
       return Promise.resolve()
     if (!this.bound) return this.dead ? Promise.resolve() : this.connect()
     return this.connecting ?? this.fetch()
@@ -142,7 +147,7 @@ export class Room implements CollabRoom {
           this.refused(readReply(answer), 'lost_read')
           return
         }
-        const { header, rows } = decodeFrame(answer.bytes)
+        const { header, rows } = decodeFrame<PullHeader>(answer.bytes)
         this.heard()
         if (header.state === 'rebuild') return this.outdated()
         this.apply(rows)
@@ -497,8 +502,8 @@ export class Room implements CollabRoom {
   }
 
   private outdated() {
-    if (this.stale) return
-    this.stale = true
+    if (this.needsRebuild) return
+    this.needsRebuild = true
     this.changed()
   }
 

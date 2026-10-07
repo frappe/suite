@@ -278,14 +278,14 @@ describe('collab room', () => {
     a.doc.getText('t').insert(0, 'bad')
     await a.flush()
     await b.pull()
-    expect([text(b), b.stale]).toEqual(['bad', false])
+    expect([text(b), b.needsRebuild]).toEqual(['bad', false])
     server.quarantine(1)
     const heard = vi.fn()
     b.onChange(heard)
 
     await b.pull()
 
-    expect([b.stale, heard.mock.calls.length > 0, server.epoch.sent.at(-1)]).toEqual([
+    expect([b.needsRebuild, heard.mock.calls.length > 0, server.epoch.sent.at(-1)]).toEqual([
       true,
       true,
       0,
@@ -298,7 +298,11 @@ describe('collab room', () => {
     later.doc.getText('t').insert(0, 'ok ')
     await later.flush()
     await rebuilt.pull()
-    expect([text(rebuilt), rebuilt.stale, server.epoch.sent.at(-1)]).toEqual(['ok ', false, 1])
+    expect([text(rebuilt), rebuilt.needsRebuild, server.epoch.sent.at(-1)]).toEqual([
+      'ok ',
+      false,
+      1,
+    ])
   })
 
   it('two writers converge on the server order after a poll', async () => {
@@ -1109,7 +1113,11 @@ describe('collab room on a device', () => {
     room.doc.getText('t').insert(0, 'after the quarantine')
     await room.flush()
 
-    expect([room.stopped, room.stale, room.saveState]).toEqual(['client_closed', true, 'failed'])
+    expect([room.stopped, room.needsRebuild, room.saveState]).toEqual([
+      'client_closed',
+      true,
+      'failed',
+    ])
     expect((await kept.store.recovery('D')).map((copy) => copy.reason)).toEqual(['client_closed'])
   })
 

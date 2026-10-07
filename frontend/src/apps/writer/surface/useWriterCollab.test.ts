@@ -11,7 +11,7 @@ const fake = vi.hoisted(() => {
     blocked: null as string | null,
     stopped: null as string | null,
     paused: null,
-    stale: false,
+    needsRebuild: false,
     saveState: 'clean',
     unsent: 0,
     onDevice: true,
@@ -94,7 +94,7 @@ describe('writer collab rebuild', () => {
     fake.room = fake.make()
     const opens = fake.opens
 
-    Object.assign(old, { stale: true })
+    Object.assign(old, { needsRebuild: true })
     old.listeners.forEach((listener) => listener())
 
     expect([collab.mode.value, collab.room.value]).toEqual(['opening', null])
@@ -114,7 +114,7 @@ describe('writer collab rebuild', () => {
     old.close = async () => void order.push('closed')
     fake.room = fake.make()
 
-    Object.assign(old, { stale: true, unsent: 2, onDevice: false })
+    Object.assign(old, { needsRebuild: true, unsent: 2, onDevice: false })
     old.listeners.forEach((listener) => listener())
 
     await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
@@ -129,7 +129,7 @@ describe('writer collab rebuild', () => {
     fake.room = fake.make()
     const opens = fake.opens
 
-    becomesOn(old, { stale: true, unsent: 2, onDevice: false })
+    becomesOn(old, { needsRebuild: true, unsent: 2, onDevice: false })
     await nextTick()
     expect([collab.mode.value, collab.room.value, closed.mock.calls.length]).toEqual([
       'live',
@@ -148,9 +148,14 @@ describe('writer collab rebuild', () => {
     const old = fake.room
     fake.room = fake.make()
 
-    becomesOn(old, { stale: false, stopped: 'client_closed', saveState: 'failed', unsent: 2 })
+    becomesOn(old, {
+      needsRebuild: false,
+      stopped: 'client_closed',
+      saveState: 'failed',
+      unsent: 2,
+    })
     expect(collab.banner.value).not.toBeNull()
-    becomesOn(old, { stale: true })
+    becomesOn(old, { needsRebuild: true })
 
     await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
     expect(collab.banner.value?.text).toBe(
@@ -164,7 +169,7 @@ describe('writer collab rebuild', () => {
     const old = fake.room
     fake.room = fake.make()
 
-    becomesOn(old, { stale: true, unsent: 2, onDevice: true })
+    becomesOn(old, { needsRebuild: true, unsent: 2, onDevice: true })
 
     await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
     expect(collab.banner.value).toBeNull()

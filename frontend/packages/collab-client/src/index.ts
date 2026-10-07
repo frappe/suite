@@ -1,4 +1,11 @@
-export { decodeFrame, encodePush, type FrameHeader, type OpenState, type Row } from './frames'
+export {
+  decodeFrame,
+  encodePush,
+  type OpenHeader,
+  type OpenState,
+  type PullHeader,
+  type Row,
+} from './frames'
 export { CollabOpenError } from './answers'
 export { judge, type Fault, type Verdict } from './judge'
 export { openCollabRoom } from './open'
