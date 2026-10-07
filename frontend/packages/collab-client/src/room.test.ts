@@ -2176,4 +2176,33 @@ describe('collab room live', () => {
       [{ pid, user: 'b@x.com', color: expect.stringMatching(/^#/) }],
     ])
   })
+
+  it('a peer’s caret claiming rows that don’t exist makes the tab pull at most once in ten seconds', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const socket = server.socket()
+    const reader = await join(server.endpoints(), { socket })
+    await vi.advanceTimersByTimeAsync(0)
+    const [key] = server.roomKeys().keys
+    const pid = 2 ** 31 + 5
+    socket.hear('suite_collab_presence_join', { room: key, pid, user: 'b@x.com' })
+    const claim = (n: number, at: unknown) =>
+      socket.hear('suite_collab_presence', {
+        room: key,
+        states: [{ pid, user: 'b@x.com', n, state: { at } }],
+      })
+
+    server.pulls.length = 0
+    for (let n = 1; n <= 20; n++) {
+      claim(n, [2.5, -3, 2 ** 60][n % 3])
+      await vi.advanceTimersByTimeAsync(100)
+    }
+    const odd = server.pulls.length
+    for (let n = 21; n <= 270; n++) {
+      claim(n, 1e9)
+      await vi.advanceTimersByTimeAsync(100)
+    }
+
+    expect([reader.live, odd, server.pulls.length]).toEqual(['live', 0, 3])
+  })
 })

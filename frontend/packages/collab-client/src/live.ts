@@ -9,6 +9,8 @@ const JOIN_MS = 5000
 const OWN_ROW_MS = 2000
 const MISSES = 3
 const HOLE_MS = 1000
+// A peer's caret can ask for a pull this often at most
+const CARET_PULL_MS = 10_000
 const ROOMS_MAX = 8
 const HEARD_MAX = 256
 
@@ -40,6 +42,7 @@ export class Live {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
   private repairTimer: ReturnType<typeof setTimeout> | null = null
   private holeTimer: ReturnType<typeof setTimeout> | null = null
+  private caretPulled = -Infinity
   private readonly hub: Hub
   private closed = false
 
@@ -204,6 +207,9 @@ export class Live {
 
   // A peer's caret says it has applied a row this tab has not heard
   private ahead(at: number) {
+    if (!Number.isSafeInteger(at) || at <= this.hooks.at()) return
+    if (Date.now() - this.caretPulled < CARET_PULL_MS) return
+    this.caretPulled = Date.now()
     this.hole(() => this.hooks.at() < at)
   }
 
