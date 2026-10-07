@@ -262,6 +262,7 @@ export class Room implements CollabRoom {
     if (this.unsent && this.unsentSince && Date.now() - this.unsentSince > PERSIST_AFTER_MS)
       this.persist()
     if (this.realtime?.live) return
+    this.realtime?.retry()
     const coEditing =
       document.visibilityState === 'visible' && Date.now() - this.othersAt < CO_EDITING_MS
     // Work held while the server is out of reach goes out on the first tick that reaches it

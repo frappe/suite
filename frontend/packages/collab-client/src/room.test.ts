@@ -2006,6 +2006,23 @@ describe('collab room live', () => {
     expect([reader.live, text(reader)]).toEqual(['live', 'missed'])
   })
 
+  it('a tab left alone through a long realtime outage goes live again once it is back', async () => {
+    fakeTime()
+    const server = fakeServer()
+    const reader = await join(server.endpoints(), { socket: server.socket(), pollMs: 5000 })
+    const writer = await join(server.endpoints(), { socket: server.socket(), pollMs: 5000 })
+    await vi.advanceTimersByTimeAsync(0)
+
+    server.realtime.sockets.forEach((socket) => socket.drop())
+    await vi.advanceTimersByTimeAsync(120_000)
+    for (const socket of server.realtime.sockets) socket.connect = () => socket.back()
+    await vi.advanceTimersByTimeAsync(6000)
+    await type(writer, 'back')
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect([reader.live, writer.live, text(reader)]).toEqual(['live', 'live', 'back'])
+  })
+
   it('a writer whose own rows stop coming back three times falls back to polling until one does', async () => {
     fakeTime()
     const server = fakeServer()

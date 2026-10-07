@@ -218,9 +218,14 @@ export class Live {
     this.update()
   }
 
+  // Socket.io stops reconnecting after a few tries, so the poll loop asks again while live updates are down
+  retry() {
+    if (!this.closed && !this.socket.connected) this.socket.connect?.()
+  }
+
   private wake = () => {
     if (this.closed) return
-    if (!this.socket.connected) this.socket.connect?.()
+    this.retry()
     this.repair()
   }
 
