@@ -3,9 +3,9 @@
 export type WrapMode = 'overflow' | 'clip' | 'wrap'
 
 interface WrapFormat {
-	textWrap?: string
-	wrapText?: boolean
-	fontSize?: number
+  textWrap?: string
+  wrapText?: boolean
+  fontSize?: number
 }
 
 export const WRAP_MODES: readonly WrapMode[]

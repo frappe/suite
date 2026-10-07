@@ -60,8 +60,6 @@
   "src/apps/meet/utils/sfu/SFUMediaManager.ts|prefer-const": 2,
   "src/apps/meet/utils/webglShaders.ts|prefer-const": 2,
   "src/apps/sheets/canvas/cell-ink.test.ts|@typescript-eslint/no-unused-vars": 1,
-  "src/apps/sheets/canvas/index.js|@typescript-eslint/no-unused-expressions": 2,
-  "src/apps/sheets/canvas/painters/cell-painter.js|@typescript-eslint/no-unused-vars": 1,
   "src/apps/sheets/components/SheetEditor/AISettingsDialog.vue|vue/block-lang": 1,
   "src/apps/sheets/components/SheetEditor/AskBar.vue|vue/block-lang": 1,
   "src/apps/sheets/components/SheetEditor/ChartDialog.vue|vue/block-lang": 1,

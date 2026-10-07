@@ -6,8 +6,8 @@
  * key should be left to the browser.
  */
 export function autoCloseKey(
-	key: string,
-	value: string,
-	selStart: number,
-	selEnd: number,
+  key: string,
+  value: string,
+  selStart: number,
+  selEnd: number,
 ): { value: string; caret: number } | null

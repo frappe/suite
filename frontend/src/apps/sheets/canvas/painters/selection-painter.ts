@@ -1,31 +1,55 @@
-import { COLORS, COL_HEADER_H, ROW_HEADER_W } from '../constants.js'
 import { cellId } from '../../utils/cells.js'
+import { COL_HEADER_H, COLORS, ROW_HEADER_W } from '../constants.js'
 import type { Geometry } from '../geometry.js'
 import type { Cell } from '../selection.js'
 import type { CellBlock, CellProvider } from '../types.js'
 
 export interface SelectionPainter {
   drawSelFill(range: CellBlock): void
-  drawSelectionBorder(sel: Cell, range: CellBlock, fc: number, fr: number, mainX: number, mainY: number, cssW: number, cssH: number, getMergeInfo: CellProvider['getMergeInfo']): void
+  drawSelectionBorder(
+    sel: Cell,
+    range: CellBlock,
+    fc: number,
+    fr: number,
+    mainX: number,
+    mainY: number,
+    cssW: number,
+    cssH: number,
+    getMergeInfo: CellProvider['getMergeInfo'],
+  ): void
   drawMarchingAnts(rect: CellBlock, phase: number): void
   drawPickerRect(rect: CellBlock): void
 }
 
-export function createSelectionPainter(ctx: CanvasRenderingContext2D, { cw, rh, colX, rowY }: Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY'>): SelectionPainter {
-
+export function createSelectionPainter(
+  ctx: CanvasRenderingContext2D,
+  { cw, rh, colX, rowY }: Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY'>,
+): SelectionPainter {
   function drawSelFill({ r0, c0, r1, c1 }: CellBlock): void {
-    const x = colX(c0), y = rowY(r0)
+    const x = colX(c0),
+      y = rowY(r0)
     const w = colX(c1) + cw(c1) - x
     const h = rowY(r1) + rh(r1) - y
     ctx.fillStyle = COLORS.selFill
     ctx.fillRect(x, y, w, h)
   }
 
-  function drawSelectionBorder(sel: Cell, range: CellBlock, fc: number, fr: number, mainX: number, mainY: number, cssW: number, cssH: number, getMergeInfo: CellProvider['getMergeInfo']): void {
+  function drawSelectionBorder(
+    sel: Cell,
+    range: CellBlock,
+    fc: number,
+    fr: number,
+    mainX: number,
+    mainY: number,
+    cssW: number,
+    cssH: number,
+    getMergeInfo: CellProvider['getMergeInfo'],
+  ): void {
     const activeMerge = getMergeInfo ? getMergeInfo(cellId(sel.r, sel.c)) : null
     const spanC = activeMerge ? activeMerge.colSpan : 1
     const spanR = activeMerge ? activeMerge.rowSpan : 1
-    let mergedW = 0, mergedH = 0
+    let mergedW = 0,
+      mergedH = 0
     for (let i = 0; i < spanC; i++) mergedW += cw(sel.c + i)
     for (let i = 0; i < spanR; i++) mergedH += rh(sel.r + i)
 
@@ -46,7 +70,8 @@ export function createSelectionPainter(ctx: CanvasRenderingContext2D, { cw, rh, 
     // we extend r1/c1 to the merge's far corner — otherwise the dot sits
     // in the middle of the merged block instead of at its bottom-right.
     const handleRange = {
-      r0: range.r0, c0: range.c0,
+      r0: range.r0,
+      c0: range.c0,
       r1: Math.max(range.r1, sel.r + spanR - 1),
       c1: Math.max(range.c1, sel.c + spanC - 1),
     }
@@ -71,7 +96,8 @@ export function createSelectionPainter(ctx: CanvasRenderingContext2D, { cw, rh, 
   }
 
   function drawMarchingAnts({ r0, c0, r1, c1 }: CellBlock, phase: number): void {
-    const x = colX(c0) + 1, y = rowY(r0) + 1
+    const x = colX(c0) + 1,
+      y = rowY(r0) + 1
     const w = colX(c1) + cw(c1) - x - 1
     const h = rowY(r1) + rh(r1) - y - 1
     ctx.save()
@@ -84,7 +110,8 @@ export function createSelectionPainter(ctx: CanvasRenderingContext2D, { cw, rh, 
   }
 
   function drawPickerRect({ r0, c0, r1, c1 }: CellBlock): void {
-    const x = colX(c0), y = rowY(r0)
+    const x = colX(c0),
+      y = rowY(r0)
     const w = colX(c1) + cw(c1) - x
     const h = rowY(r1) + rh(r1) - y
     ctx.save()
