@@ -22,7 +22,10 @@ function mount() {
   vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
   parent.appendChild(canvas)
   document.body.appendChild(parent)
-  const grid = createGrid(canvas, { getFormat: () => ({}), canEdit: () => true })
+  const grid = createGrid(canvas, {
+    cells: { getStyle: () => ({}) },
+    host: { canEdit: () => true },
+  })
   grid.resize(800, 600)
   const editor = () => parent.querySelector('textarea')
   const openA1 = () =>

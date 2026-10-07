@@ -1,48 +1,63 @@
-import {
-  COL_HEADER_H,
-  DEFAULT_COL_W,
-  DEFAULT_ROW_H,
-  ROW_HEADER_W,
-  TOTAL_COLS,
-  TOTAL_ROWS,
-} from './constants.js'
+import type { Cell, ViewModel } from '../core/view-model.js'
+import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
+import type { CanvasRect } from './input/hit-test.js'
 
-export function createGeometry(
-  colW,
-  rowH,
-  scroll,
-  freeze = { rows: 0, cols: 0 },
-  hiddenRows = null,
-  hiddenCols = null,
-  getZoom = () => 1,
-  filterHiddenRows = null,
-) {
-  const cw = (c) => (hiddenCols && hiddenCols.has(c) ? 0 : (colW[c] ?? DEFAULT_COL_W))
-  const rh = (r) => (hiddenRows && hiddenRows.has(r) ? 0 : (rowH[r] ?? DEFAULT_ROW_H))
+export interface Geometry {
+  /** Column width; 0 when hidden. */
+  cw(c: number): number
+  /** Row height; 0 when hidden. */
+  rh(r: number): number
+  colX(c: number): number
+  rowY(r: number): number
+  frozenW(): number
+  frozenH(): number
+  isFilterHidden(r: number): boolean
+  firstVisCol(): number
+  firstVisRow(): number
+  lastVisCol(c0: number, cssW: number): number
+  lastVisRow(r0: number, cssH: number): number
+  totalRows(): number
+  totalCols(): number
+  hitTest(ex: number, ey: number, rect: CanvasRect): Cell | null
+  clamp(r: number, c: number): Cell
+  hitTestCorner(ex: number, ey: number, rect: CanvasRect): boolean
+  hitTestColResize(ex: number, ey: number, rect: CanvasRect): number | null
+  hitTestColHeader(ex: number, ey: number, rect: CanvasRect): number | null
+  hitTestRowHeader(ex: number, ey: number, rect: CanvasRect): number | null
+  hitTestRowResize(ex: number, ey: number, rect: CanvasRect): number | null
+  colInsertIndex(ex: number, rect: CanvasRect): number
+}
+
+export function createGeometry(vm: ViewModel): Geometry {
+  const { scroll, freeze } = vm
+  const cw = (c: number): number => (vm.hiddenCols.has(c) ? 0 : vm.colWidth(c))
+  const rh = (r: number): number => (vm.hiddenRows.has(r) ? 0 : vm.rowHeight(r))
   // Distinguishes filter-hidden rows (transient, many small gaps) from
   // manually-hidden rows so the grid painter can draw the bold "there's
   // something hidden here" boundary only for the manual variety.
-  const isFilterHidden = (r) => !!(filterHiddenRows && filterHiddenRows.has(r))
+  const isFilterHidden = (r: number): boolean => vm.filterHiddenRows.has(r)
   // Convert page coordinates into the renderer's *logical* coordinate system.
   // Renderer scales ctx by zoom; mouse coords come in physical CSS pixels.
-  const _logical = (ex, ey, canvasRect) => {
-    const z = getZoom() || 1
+  const _logical = (ex: number, ey: number, canvasRect: CanvasRect): { x: number; y: number } => {
+    const z = vm.zoom || 1
     return { x: (ex - canvasRect.left) / z, y: (ey - canvasRect.top) / z }
   }
+  const totalRows = (): number => vm.totalRows
+  const totalCols = (): number => vm.totalCols
 
-  function frozenW() {
+  function frozenW(): number {
     let w = 0
     for (let i = 0; i < (freeze.cols || 0); i++) w += cw(i)
     return w
   }
 
-  function frozenH() {
+  function frozenH(): number {
     let h = 0
     for (let i = 0; i < (freeze.rows || 0); i++) h += rh(i)
     return h
   }
 
-  function colX(c) {
+  function colX(c: number): number {
     const fc = freeze.cols || 0
     if (c < fc) {
       let x = ROW_HEADER_W
@@ -54,7 +69,7 @@ export function createGeometry(
     return x - scroll.x
   }
 
-  function rowY(r) {
+  function rowY(r: number): number {
     const fr = freeze.rows || 0
     if (r < fr) {
       let y = COL_HEADER_H
@@ -66,41 +81,41 @@ export function createGeometry(
     return y - scroll.y
   }
 
-  function firstVisCol() {
+  function firstVisCol(): number {
     const fc = freeze.cols || 0
     let c = fc,
       x = 0
-    while (c < TOTAL_COLS - 1 && x + cw(c) <= scroll.x) {
+    while (c < totalCols() - 1 && x + cw(c) <= scroll.x) {
       x += cw(c)
       c++
     }
     return c
   }
 
-  function firstVisRow() {
+  function firstVisRow(): number {
     const fr = freeze.rows || 0
     let r = fr,
       y = 0
-    while (r < TOTAL_ROWS - 1 && y + rh(r) <= scroll.y) {
+    while (r < totalRows() - 1 && y + rh(r) <= scroll.y) {
       y += rh(r)
       r++
     }
     return r
   }
 
-  function lastVisCol(c0, cssW) {
+  function lastVisCol(c0: number, cssW: number): number {
     let c = c0
-    while (c < TOTAL_COLS - 1 && colX(c) < cssW) c++
+    while (c < totalCols() - 1 && colX(c) < cssW) c++
     return c
   }
 
-  function lastVisRow(r0, cssH) {
+  function lastVisRow(r0: number, cssH: number): number {
     let r = r0
-    while (r < TOTAL_ROWS - 1 && rowY(r) < cssH) r++
+    while (r < totalRows() - 1 && rowY(r) < cssH) r++
     return r
   }
 
-  function hitTest(ex, ey, canvasRect) {
+  function hitTest(ex: number, ey: number, canvasRect: CanvasRect): Cell | null {
     const { x, y } = _logical(ex, ey, canvasRect)
     if (x < ROW_HEADER_W || y < COL_HEADER_H) return null
 
@@ -122,7 +137,7 @@ export function createGeometry(
     if (!found) {
       cx = ROW_HEADER_W + frozenW() - scroll.x
       c = fc
-      while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) {
+      while (c < totalCols() - 1 && cx + cw(c) <= x) {
         cx += cw(c)
         c++
       }
@@ -143,7 +158,7 @@ export function createGeometry(
     if (!found) {
       ry = COL_HEADER_H + frozenH() - scroll.y
       r = fr
-      while (r < TOTAL_ROWS - 1 && ry + rh(r) <= y) {
+      while (r < totalRows() - 1 && ry + rh(r) <= y) {
         ry += rh(r)
         r++
       }
@@ -152,14 +167,14 @@ export function createGeometry(
     return { r, c }
   }
 
-  function clamp(r, c) {
+  function clamp(r: number, c: number): Cell {
     return {
-      r: Math.max(0, Math.min(r, TOTAL_ROWS - 1)),
-      c: Math.max(0, Math.min(c, TOTAL_COLS - 1)),
+      r: Math.max(0, Math.min(r, totalRows() - 1)),
+      c: Math.max(0, Math.min(c, totalCols() - 1)),
     }
   }
 
-  function hitTestCorner(ex, ey, canvasRect) {
+  function hitTestCorner(ex: number, ey: number, canvasRect: CanvasRect): boolean {
     const { x, y } = _logical(ex, ey, canvasRect)
     return x < ROW_HEADER_W && y < COL_HEADER_H
   }
@@ -167,19 +182,19 @@ export function createGeometry(
   // mainX/Y: left/top edge of the scrollable region (= ROW_HEADER_W+frozenW,
   // COL_HEADER_H+frozenH). Scrollable cells whose visible position is left/
   // above these are occluded by the frozen pane and must not be hittable.
-  function _mainX() {
+  function _mainX(): number {
     return ROW_HEADER_W + frozenW()
   }
-  function _mainY() {
+  function _mainY(): number {
     return COL_HEADER_H + frozenH()
   }
 
-  function hitTestColResize(ex, ey, canvasRect) {
+  function hitTestColResize(ex: number, ey: number, canvasRect: CanvasRect): number | null {
     const { x, y } = _logical(ex, ey, canvasRect)
     if (y >= COL_HEADER_H) return null
     const fc = freeze.cols || 0
     const mainX = _mainX()
-    for (let c = 0; c < TOTAL_COLS; c++) {
+    for (let c = 0; c < totalCols(); c++) {
       const right = colX(c) + cw(c)
       // Frozen cols only matter inside [ROW_HEADER_W, mainX]; scrollable cols
       // only matter when their right edge is visible past mainX. Otherwise
@@ -194,7 +209,7 @@ export function createGeometry(
     return null
   }
 
-  function hitTestColHeader(ex, ey, canvasRect) {
+  function hitTestColHeader(ex: number, ey: number, canvasRect: CanvasRect): number | null {
     const { x, y } = _logical(ex, ey, canvasRect)
     if (y >= COL_HEADER_H || x < ROW_HEADER_W) return null
     const fc = freeze.cols || 0
@@ -211,7 +226,7 @@ export function createGeometry(
     // Outside the frozen strip: walk scrollable cols starting at mainX.
     let cx = mainX - scroll.x
     let c = fc
-    while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) {
+    while (c < totalCols() - 1 && cx + cw(c) <= x) {
       cx += cw(c)
       c++
     }
@@ -219,13 +234,13 @@ export function createGeometry(
   }
 
   // Insertion boundary for a column drag: the index a dropped column would sit
-  // *before* (0..TOTAL_COLS), decided by which side of the hovered column's
+  // *before* (0..totalCols), decided by which side of the hovered column's
   // midpoint the cursor sits on. Ignores the y coordinate so it tracks anywhere.
-  function colInsertIndex(ex, canvasRect) {
+  function colInsertIndex(ex: number, canvasRect: CanvasRect): number {
     const { x } = _logical(ex, 0, canvasRect)
     const fc = freeze.cols || 0
     const mainX = _mainX()
-    let c, cx
+    let c: number, cx: number
     if (x < mainX) {
       cx = ROW_HEADER_W
       c = 0
@@ -240,7 +255,7 @@ export function createGeometry(
     } else {
       cx = mainX - scroll.x
       c = fc
-      while (c < TOTAL_COLS - 1 && cx + cw(c) <= x) {
+      while (c < totalCols() - 1 && cx + cw(c) <= x) {
         cx += cw(c)
         c++
       }
@@ -248,7 +263,7 @@ export function createGeometry(
     return x < cx + cw(c) / 2 ? c : c + 1
   }
 
-  function hitTestRowHeader(ex, ey, canvasRect) {
+  function hitTestRowHeader(ex: number, ey: number, canvasRect: CanvasRect): number | null {
     const { x, y } = _logical(ex, ey, canvasRect)
     if (x >= ROW_HEADER_W || y < COL_HEADER_H) return null
     const fr = freeze.rows || 0
@@ -263,23 +278,19 @@ export function createGeometry(
     }
     let ry = mainY - scroll.y
     let r = fr
-    while (r < TOTAL_ROWS - 1 && ry + rh(r) <= y) {
+    while (r < totalRows() - 1 && ry + rh(r) <= y) {
       ry += rh(r)
       r++
     }
     return r
   }
 
-  function setColWidth(c, w) {
-    colW[c] = Math.max(30, w)
-  }
-
-  function hitTestRowResize(ex, ey, canvasRect) {
+  function hitTestRowResize(ex: number, ey: number, canvasRect: CanvasRect): number | null {
     const { x, y } = _logical(ex, ey, canvasRect)
     if (x >= ROW_HEADER_W) return null
     const fr = freeze.rows || 0
     const mainY = _mainY()
-    for (let r = 0; r < TOTAL_ROWS; r++) {
+    for (let r = 0; r < totalRows(); r++) {
       const yTop = rowY(r)
       if (yTop > y + 10) break
       const bottom = yTop + rh(r)
@@ -291,10 +302,6 @@ export function createGeometry(
       if (Math.abs(y - bottom) <= 4) return r
     }
     return null
-  }
-
-  function setRowHeight(r, h) {
-    rowH[r] = Math.max(16, h)
   }
 
   return {
@@ -309,6 +316,8 @@ export function createGeometry(
     firstVisRow,
     lastVisCol,
     lastVisRow,
+    totalRows,
+    totalCols,
     hitTest,
     clamp,
     hitTestColResize,
@@ -316,8 +325,6 @@ export function createGeometry(
     hitTestRowHeader,
     hitTestCorner,
     colInsertIndex,
-    setColWidth,
     hitTestRowResize,
-    setRowHeight,
   }
 }

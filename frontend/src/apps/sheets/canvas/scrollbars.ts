@@ -19,12 +19,33 @@
 // so the cells beneath the gutter stay clickable.
 
 import { SCROLLBAR_THICK as THICK } from './constants.js'
+import type { ScrollModel } from './viewport.js'
+
+export interface Scrollbars {
+  /** Re-place the thumbs for the current scroll (called after every paint). */
+  layout(): void
+  destroy(): void
+}
+
+type Axis = 'x' | 'y'
+
+interface AxisGeom {
+  trackPx: number
+  thumbPx: number
+  travel: number
+  offset: number
+  posFrac: number
+  max: number
+}
 
 const MIN_THUMB = 24 // floor on thumb length so it stays grabbable near the ends
 const HIDE_DELAY = 1400 // ms of inactivity before the bars fade out
 
-export function createScrollbars(host, { getModel, scrollTo }) {
-  const el = (cls) => {
+export function createScrollbars(
+  host: HTMLElement,
+  { getModel, scrollTo }: { getModel(): ScrollModel; scrollTo(x: number, y: number): void },
+): Scrollbars {
+  const el = (cls: string): HTMLDivElement => {
     const d = document.createElement('div')
     d.className = cls
     return d
@@ -55,19 +76,19 @@ export function createScrollbars(host, { getModel, scrollTo }) {
   host.style.setProperty('--sn-sb-thick', THICK + 'px')
 
   // Per-axis geometry cached from the last layout(), read by the drag handlers.
-  const geom = { x: null, y: null }
+  const geom: { x: AxisGeom | null; y: AxisGeom | null } = { x: null, y: null }
 
   // ── Auto-hide ────────────────────────────────────────────────────────────
   // `_pinned` (hover/drag) suppresses the fade entirely; otherwise a timer
   // fades the bars out after HIDE_DELAY. layout() calls reveal() whenever the
   // scroll position changes, so wheel/keyboard scrolling wakes them too.
   const parts = [vTrack, hTrack, corner]
-  let _hideTimer = null
+  let _hideTimer: ReturnType<typeof setTimeout> | null = null
   let _pinned = false
   let _lastX = -1,
     _lastY = -1
 
-  function reveal() {
+  function reveal(): void {
     for (const p of parts) p.classList.remove('sn-sb--hidden')
     if (_hideTimer) {
       clearTimeout(_hideTimer)
@@ -79,7 +100,7 @@ export function createScrollbars(host, { getModel, scrollTo }) {
       for (const p of parts) p.classList.add('sn-sb--hidden')
     }, HIDE_DELAY)
   }
-  function pin(on) {
+  function pin(on: boolean): void {
     _pinned = on
     if (on) {
       if (_hideTimer) {
@@ -90,21 +111,24 @@ export function createScrollbars(host, { getModel, scrollTo }) {
     } else reveal()
   }
 
-  const onHostMove = () => reveal()
+  const onHostMove = (): void => reveal()
   host.addEventListener('pointermove', onHostMove, { passive: true })
   for (const t of [vTrack, hTrack]) {
     t.addEventListener('pointerenter', () => pin(true))
     t.addEventListener('pointerleave', () => pin(false))
   }
 
-  function measure(trackPx, a) {
+  function measure(
+    trackPx: number,
+    a: { view: number; content: number; pos: number; max: number },
+  ): AxisGeom {
     const thumbPx = Math.max(MIN_THUMB, Math.round(trackPx * Math.min(1, a.view / a.content)))
     const travel = Math.max(0, trackPx - thumbPx)
     const posFrac = a.max > 0 ? a.pos / a.max : 0
     return { trackPx, thumbPx, travel, offset: posFrac * travel, posFrac, max: a.max }
   }
 
-  function layout() {
+  function layout(): void {
     const m = getModel()
     // Any change in scroll position (wheel, keyboard, drag) wakes the bars.
     if (m.x.pos !== _lastX || m.y.pos !== _lastY) {
@@ -144,28 +168,28 @@ export function createScrollbars(host, { getModel, scrollTo }) {
   }
 
   // Set one axis to `pos`, leaving the other where the model has it.
-  function applyAxis(axis, pos) {
+  function applyAxis(axis: Axis, pos: number): void {
     const m = getModel()
     if (axis === 'y') scrollTo(m.x.pos, pos)
     else scrollTo(pos, m.y.pos)
   }
 
-  function startDrag(axis, thumb, e) {
+  function startDrag(axis: Axis, thumb: HTMLElement, e: PointerEvent): void {
     const g = geom[axis]
-    if (!g || g.travel <= 0 || (e.button != null && e.button !== 0)) return
+    if (!g || g.travel <= 0 || e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
-    thumb.setPointerCapture?.(e.pointerId)
+    if (typeof thumb.setPointerCapture === 'function') thumb.setPointerCapture(e.pointerId)
     const client0 = axis === 'y' ? e.clientY : e.clientX
     const off0 = g.offset
     document.body.classList.add('sn-sb-dragging')
     pin(true) // keep bars up for the whole drag, even off the thumb
-    const move = (ev) => {
+    const move = (ev: PointerEvent): void => {
       const client = axis === 'y' ? ev.clientY : ev.clientX
       const off = Math.max(0, Math.min(g.travel, off0 + (client - client0)))
       applyAxis(axis, (off / g.travel) * g.max)
     }
-    const up = () => {
+    const up = (): void => {
       thumb.removeEventListener('pointermove', move)
       thumb.removeEventListener('pointerup', up)
       thumb.removeEventListener('pointercancel', up)
@@ -184,7 +208,7 @@ export function createScrollbars(host, { getModel, scrollTo }) {
   // Click in the track gutter (not the thumb) pages toward the click by ~90% of
   // a viewport — matching the native page-scroll behaviour. scrollTo clamps, so
   // overshoot at the ends is harmless.
-  function trackClick(axis, track, e) {
+  function trackClick(axis: Axis, track: HTMLElement, e: PointerEvent): void {
     if (e.target !== track) return
     const g = geom[axis]
     if (!g) return
@@ -203,7 +227,7 @@ export function createScrollbars(host, { getModel, scrollTo }) {
 
   reveal() // show on mount, then fade — so they're discoverable on first paint
 
-  function destroy() {
+  function destroy(): void {
     if (_hideTimer) clearTimeout(_hideTimer)
     host.removeEventListener('pointermove', onHostMove)
     host.style.removeProperty('--sn-sb-thick')

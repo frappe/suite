@@ -11,7 +11,7 @@ export const CHECKBOX = {
 // Box placement inside a cell of `cellW` × `cellH`, offsets from the cell's
 // top-left corner. Always centred, regardless of the cell's text alignment
 // (matches Sheets). Returns { x, y, size }.
-export function checkboxRect(cellW, cellH) {
+export function checkboxRect(cellW: number, cellH: number): { x: number; y: number; size: number } {
   const size = Math.min(CHECKBOX.maxSize, cellH - CHECKBOX.margin, cellW - CHECKBOX.margin)
   return {
     x: (cellW - size) / 2,

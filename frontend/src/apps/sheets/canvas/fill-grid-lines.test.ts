@@ -157,6 +157,8 @@ function createGeometry() {
     frozenW: () => 0,
     frozenH: () => 0,
     isFilterHidden: () => false,
+    totalRows: () => 1000,
+    totalCols: () => 26,
   }
 }
 
@@ -176,11 +178,19 @@ function paint(fills: Record<string, string>) {
     cssW: CANVAS_W,
     cssH: CANVAS_H,
     getValue: () => '',
-    getFormat: (id: string) => byId.get(id) ?? {},
+    cells: { getStyle: (id: string) => byId.get(id) ?? {} },
     sel: { r: 6, c: 3 },
     selEnd: { r: 6, c: 3 },
+    selMode: 'cell',
     editing: false,
-  } as never)
+    freeze: { rows: 0, cols: 0 },
+    getDiffFor: null,
+    marchAnts: null,
+    marchPhase: 0,
+    pickerRect: null,
+    colDrag: null,
+    zoom: 1,
+  })
   return ctx
 }
 

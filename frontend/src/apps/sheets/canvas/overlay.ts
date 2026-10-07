@@ -1,6 +1,12 @@
 import { COLORS } from './constants.js'
+import type { EditorFormat, EditorOverlay } from './input/editor.js'
 
-export function createOverlay(parent) {
+/** The in-cell editor's <textarea>, added to `parent`. */
+export interface Overlay extends EditorOverlay {
+  remove(): void
+}
+
+export function createOverlay(parent: HTMLElement): Overlay {
   // A textarea (not an input) so Cmd/Ctrl/Alt+Enter can insert real newlines
   // inside a cell, like Google Sheets. wrap=off keeps lines breaking only at
   // explicit \n, matching the old single-line horizontal-scroll behavior.
@@ -31,7 +37,14 @@ export function createOverlay(parent) {
 
   let baseH = 0 // cell height; autosize never shrinks below it
 
-  function position(x, y, w, h, fmt = {}, zoom = 1) {
+  function position(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    fmt: EditorFormat = {},
+    zoom = 1,
+  ): void {
     el.style.left = x + 'px'
     el.style.top = y + 'px'
     el.style.width = w + 'px'
@@ -57,13 +70,13 @@ export function createOverlay(parent) {
   }
 
   // Grow the editor downward to fit newline-separated lines.
-  function autosize() {
+  function autosize(): void {
     el.style.height = baseH + 'px'
     if (el.scrollHeight > el.clientHeight) el.style.height = el.scrollHeight + 4 + 'px'
   }
   el.addEventListener('input', autosize)
 
-  function show(value) {
+  function show(value: string): void {
     el.style.display = 'block'
     el.value = value
     autosize()
@@ -71,16 +84,16 @@ export function createOverlay(parent) {
     el.setSelectionRange(value.length, value.length)
   }
 
-  function hide() {
+  function hide(): void {
     el.style.display = 'none'
     el.value = ''
   }
 
-  function getValue() {
+  function getValue(): string {
     return el.value
   }
 
-  function remove() {
+  function remove(): void {
     el.remove()
   }
 

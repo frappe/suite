@@ -4,6 +4,8 @@
 // always lines up with what's painted. Keep the two in sync by routing all
 // chip measurement through here.
 
+import type { CellFormat, ValidationRule } from './types.js'
+
 export const CHIP = {
   padX: 4, // gap from the cell's edge to the pill
   innerPad: 8, // text padding inside the pill
@@ -28,13 +30,16 @@ const CHIP_PALETTE = [
 // The auto colour for the i-th option in a list, cycling the palette. Slotting
 // by position (not by hashing the text) means adjacent options never collide on
 // the same colour, which is what made the old hash feel "random".
-export function chipPaletteColor(i) {
-  return CHIP_PALETTE[((i % CHIP_PALETTE.length) + CHIP_PALETTE.length) % CHIP_PALETTE.length]
+export function chipPaletteColor(i: number): string {
+  return (
+    CHIP_PALETTE[((i % CHIP_PALETTE.length) + CHIP_PALETTE.length) % CHIP_PALETTE.length] ??
+    '#E8F0FE'
+  )
 }
 
 // Canvas font string for a cell format. Mirrors the cell painter exactly so
 // text measured here for hit-testing matches what gets drawn.
-export function chipFont(fmt = {}) {
+export function chipFont(fmt: CellFormat = {}): string {
   const weight = fmt.bold ? 'bold' : 'normal'
   const style = fmt.italic ? 'italic' : 'normal'
   const px = Math.max(8, Math.min(72, fmt.fontSize || 13))
@@ -47,7 +52,10 @@ export function chipFont(fmt = {}) {
 //   2. otherwise the auto palette slot for the option's position in the list.
 // `rule` is optional: without it (or for a value not among the options) we fall
 // back to hashing the text so callers with no rule context still get a colour.
-export function chipColor(value, rule) {
+export function chipColor(
+  value: unknown,
+  rule?: Pick<ValidationRule, 'colors' | 'options'> | null,
+): string {
   const s = String(value)
   const custom = rule?.colors?.[s]
   if (custom) return custom
@@ -61,13 +69,18 @@ export function chipColor(value, rule) {
 // Pill placement for `text` in a cell of width `cellW`: its x-offset from the
 // cell's left edge and its width, honouring the cell's horizontal alignment.
 // Caller need not pre-set ctx.font. Returns { offsetX, chipW }.
-export function chipMetrics(ctx, text, fmt, cellW) {
+export function chipMetrics(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fmt: CellFormat | null | undefined,
+  cellW: number,
+): { offsetX: number; chipW: number } {
   ctx.save()
-  ctx.font = chipFont(fmt)
+  ctx.font = chipFont(fmt ?? {})
   const tw = ctx.measureText(text).width
   ctx.restore()
   const chipW = Math.min(cellW - CHIP.padX * 2, CHIP.innerPad + tw + CHIP.caretW)
-  const align = fmt.align || 'left'
+  const align = fmt?.align || 'left'
   const offsetX =
     align === 'right'
       ? cellW - CHIP.padX - chipW

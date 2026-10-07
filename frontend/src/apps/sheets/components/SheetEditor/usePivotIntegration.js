@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 
-import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
+import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants'
 import {
   computePivotModel,
   computePivotModelAsync,

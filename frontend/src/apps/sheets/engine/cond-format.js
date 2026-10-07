@@ -187,7 +187,7 @@ export function createCondFormatEngine() {
 
   function _iconForBucket(set, bucket) {
     // Set-specific palettes + shape codes. The painter knows how to draw each
-    // `shape` value — see canvas/painters/cell-painter.js.
+    // `shape` value — see canvas/painters/cell-decorations.ts.
     if (set === 'arrows3') {
       if (bucket === 'low') return { shape: 'arrow-down', color: '#dc2626' }
       if (bucket === 'mid') return { shape: 'arrow-right', color: '#737373' }

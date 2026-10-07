@@ -9,21 +9,36 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGrid } from './index.js'
 import { createMockCtx } from './painters/test-utils.js'
 
-function mount(opts = {}) {
+function mount(host = {}) {
   const parent = document.createElement('div')
   const canvas = document.createElement('canvas')
   vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
   parent.appendChild(canvas)
   document.body.appendChild(parent)
-  const grid = createGrid(canvas, { getFormat: () => ({}), canEdit: () => true, ...opts })
+  const grid = createGrid(canvas, {
+    cells: { getStyle: () => ({}) },
+    host: { canEdit: () => true, ...host },
+  })
   grid.resize(800, 600)
   const editor = () => parent.querySelector('textarea') as HTMLTextAreaElement | null
   const press = (key: string, init: KeyboardEventInit = {}) => {
     const target = grid.isEditing() ? editor()! : canvas
     target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }))
   }
-  return { grid, editor, press }
+  return { grid, editor, press, canvas }
 }
+
+// The tests below dispatch keys straight at the canvas, which works even when
+// a real browser could never focus it. Regression: the split dropped the
+// tabindex, so clicks didn't focus the grid and typing/Delete did nothing.
+describe('grid focus', () => {
+  it('lets the canvas take keyboard focus', () => {
+    document.body.innerHTML = ''
+    const { canvas } = mount()
+    canvas.focus()
+    expect(document.activeElement).toBe(canvas)
+  })
+})
 
 describe('Enter on the selected cell', () => {
   let h: ReturnType<typeof mount>

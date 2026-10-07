@@ -23,8 +23,8 @@ describe('isCanvasClipboardTarget', () => {
     expect(isCanvasClipboardTarget({ ...base, activeEl: canvasEl, editing: false })).toBe(true)
   })
 
-  it('is true when the formula bar holds focus (not editing)', () => {
-    expect(isCanvasClipboardTarget({ ...base, activeEl: formulaEl, editing: false })).toBe(true)
+  it('is false when the formula bar holds focus, so a paste lands in its text', () => {
+    expect(isCanvasClipboardTarget({ ...base, activeEl: formulaEl, editing: false })).toBe(false)
   })
 
   it('is true for any element inside the grid wrapper (not editing)', () => {

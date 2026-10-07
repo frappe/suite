@@ -6,8 +6,9 @@
 // wrapper, so a plain "is the focused element inside gridWrap?" check treats an
 // open editor as "grid focused" and hijacks Cmd/Ctrl+C/X/V for cell ops —
 // breaking paste, and copy/cut of a selected substring, inside the editor.
-// While the editor is open, clipboard ops belong to the textarea.
+// While the editor is open, clipboard ops belong to the textarea. The formula
+// bar is a text field too, so its copy/cut/paste act on its text.
 export function isCanvasClipboardTarget({ activeEl, canvasEl, formulaEl, gridWrap, editing }) {
-  if (editing) return false
-  return activeEl === canvasEl || activeEl === formulaEl || !!gridWrap?.contains(activeEl)
+  if (editing || activeEl === formulaEl) return false
+  return activeEl === canvasEl || !!gridWrap?.contains(activeEl)
 }

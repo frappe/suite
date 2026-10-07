@@ -1,8 +1,31 @@
 import { cellId } from '../../utils/cells.js'
 import { COL_HEADER_H, COLORS, ROW_HEADER_W } from '../constants.js'
+import type { Geometry } from '../geometry.js'
+import type { Cell } from '../selection.js'
+import type { CellBlock, CellProvider } from '../types.js'
 
-export function createSelectionPainter(ctx, { cw, rh, colX, rowY }) {
-  function drawSelFill({ r0, c0, r1, c1 }) {
+export interface SelectionPainter {
+  drawSelFill(range: CellBlock): void
+  drawSelectionBorder(
+    sel: Cell,
+    range: CellBlock,
+    fc: number,
+    fr: number,
+    mainX: number,
+    mainY: number,
+    cssW: number,
+    cssH: number,
+    getMergeInfo: CellProvider['getMergeInfo'],
+  ): void
+  drawMarchingAnts(rect: CellBlock, phase: number): void
+  drawPickerRect(rect: CellBlock): void
+}
+
+export function createSelectionPainter(
+  ctx: CanvasRenderingContext2D,
+  { cw, rh, colX, rowY }: Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY'>,
+): SelectionPainter {
+  function drawSelFill({ r0, c0, r1, c1 }: CellBlock): void {
     const x = colX(c0),
       y = rowY(r0)
     const w = colX(c1) + cw(c1) - x
@@ -11,7 +34,17 @@ export function createSelectionPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.fillRect(x, y, w, h)
   }
 
-  function drawSelectionBorder(sel, range, fc, fr, mainX, mainY, cssW, cssH, getMergeInfo) {
+  function drawSelectionBorder(
+    sel: Cell,
+    range: CellBlock,
+    fc: number,
+    fr: number,
+    mainX: number,
+    mainY: number,
+    cssW: number,
+    cssH: number,
+    getMergeInfo: CellProvider['getMergeInfo'],
+  ): void {
     const activeMerge = getMergeInfo ? getMergeInfo(cellId(sel.r, sel.c)) : null
     const spanC = activeMerge ? activeMerge.colSpan : 1
     const spanR = activeMerge ? activeMerge.rowSpan : 1
@@ -46,7 +79,7 @@ export function createSelectionPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.restore()
   }
 
-  function _drawFillHandle({ r1, c1 }) {
+  function _drawFillHandle({ r1, c1 }: CellBlock): void {
     const hx = colX(c1) + cw(c1)
     const hy = rowY(r1) + rh(r1)
     ctx.save()
@@ -62,7 +95,7 @@ export function createSelectionPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.restore()
   }
 
-  function drawMarchingAnts({ r0, c0, r1, c1 }, phase) {
+  function drawMarchingAnts({ r0, c0, r1, c1 }: CellBlock, phase: number): void {
     const x = colX(c0) + 1,
       y = rowY(r0) + 1
     const w = colX(c1) + cw(c1) - x - 1
@@ -76,7 +109,7 @@ export function createSelectionPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.restore()
   }
 
-  function drawPickerRect({ r0, c0, r1, c1 }) {
+  function drawPickerRect({ r0, c0, r1, c1 }: CellBlock): void {
     const x = colX(c0),
       y = rowY(r0)
     const w = colX(c1) + cw(c1) - x

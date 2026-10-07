@@ -1,14 +1,43 @@
 import { COL_HEADER_H, COLORS, ROW_HEADER_W } from '../constants.js'
+import type { Geometry } from '../geometry.js'
 
-export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
-  const _isFilterHidden = isFilterHidden || (() => false)
+export interface GridPainter {
+  drawGridLines(r0: number, c0: number, r1: number, c1: number, cssW: number, cssH: number): void
+  drawFreezeSeparators(frozW: number, frozH: number, cssW: number, cssH: number): void
+}
 
-  function drawGridLines(r0, c0, r1, c1, cssW, cssH) {
+export function createGridPainter(
+  ctx: CanvasRenderingContext2D,
+  {
+    cw,
+    rh,
+    colX,
+    rowY,
+    isFilterHidden,
+  }: Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY'> & Partial<Pick<Geometry, 'isFilterHidden'>>,
+): GridPainter {
+  const _isFilterHidden = isFilterHidden || ((): boolean => false)
+
+  function drawGridLines(
+    r0: number,
+    c0: number,
+    r1: number,
+    c1: number,
+    cssW: number,
+    cssH: number,
+  ): void {
     _drawMainGridLines(r0, c0, r1, c1, cssW, cssH)
     _drawHiddenBoundaryLines(r0, c0, r1, c1, cssW, cssH)
   }
 
-  function _drawMainGridLines(r0, c0, r1, c1, cssW, cssH) {
+  function _drawMainGridLines(
+    r0: number,
+    c0: number,
+    r1: number,
+    c1: number,
+    cssW: number,
+    cssH: number,
+  ): void {
     ctx.strokeStyle = COLORS.gridLine
     ctx.lineWidth = 1
     ctx.beginPath()
@@ -25,7 +54,14 @@ export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
     ctx.stroke()
   }
 
-  function _drawHiddenBoundaryLines(r0, c0, r1, c1, cssW, cssH) {
+  function _drawHiddenBoundaryLines(
+    r0: number,
+    c0: number,
+    r1: number,
+    c1: number,
+    cssW: number,
+    cssH: number,
+  ): void {
     ctx.strokeStyle = COLORS.freezeLine
     ctx.lineWidth = 2
     ctx.beginPath()
@@ -50,7 +86,7 @@ export function createGridPainter(ctx, { cw, rh, colX, rowY, isFilterHidden }) {
     ctx.stroke()
   }
 
-  function drawFreezeSeparators(frozW, frozH, cssW, cssH) {
+  function drawFreezeSeparators(frozW: number, frozH: number, cssW: number, cssH: number): void {
     ctx.strokeStyle = COLORS.freezeLine
     ctx.lineWidth = 2
     ctx.beginPath()
