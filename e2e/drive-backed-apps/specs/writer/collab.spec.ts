@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { Page } from "@playwright/test";
 import { expect, test } from "../../fixtures/test";
 import {
 	bodyLimitProxy,
@@ -105,6 +106,51 @@ test.describe("Writer collaboration", () => {
 		await openWriterDocument(owner.page, node);
 
 		await expect.poll(() => editorBlocks(owner.page)).toEqual(before);
+	});
+
+	test("an edit reaches the other tab over the realtime socket, without a poll", async ({ owner, collaborator }) => {
+		const frames: string[] = [];
+		collaborator.page.on("websocket", (socket) =>
+			socket.on("framereceived", ({ payload }) => frames.push(String(payload))),
+		);
+		const polls: string[] = [];
+		collaborator.page.on("request", (request) => {
+			if (request.url().includes("/collab/updates")) polls.push(request.url());
+		});
+		await openWriterDocument(owner.page, node);
+		await openWriterDocument(collaborator.page, node);
+		await expect.poll(() => frames.some((frame) => frame.includes('"roster"'))).toBe(true);
+		await typeParagraph(collaborator.page, "Collaborator is here");
+		await expect(writerEditor(owner.page)).toContainText("Collaborator is here");
+
+		polls.length = 0;
+		await typeParagraph(owner.page, "Heard live");
+
+		await expect(writerEditor(collaborator.page)).toContainText("Heard live", { timeout: 3000 });
+		// Longer than one poll tick
+		await collaborator.page.waitForTimeout(6000);
+		expect(frames.some((frame) => frame.includes("suite_collab_row"))).toBe(true);
+		expect(polls).toEqual([]);
+	});
+
+	test("each tab shows the other person's name, in the users bar and at their caret", async ({
+		owner,
+		collaborator,
+		run,
+	}) => {
+		const nameOf = (user: { user: string }) =>
+			`Drive Writer E2E ${run.users.findIndex((each) => each.user === user.user) + 1}`;
+		const labels = (page: Page) => page.locator(".collaboration-carets__label");
+		await openWriterDocument(owner.page, node);
+		await openWriterDocument(collaborator.page, node);
+
+		await typeParagraph(owner.page, "Owner's caret");
+		await typeParagraph(collaborator.page, "Collaborator's caret");
+
+		await expect(owner.page.getByRole("button", { name: `${nameOf(collaborator.user)} is here` })).toBeVisible();
+		await expect(collaborator.page.getByRole("button", { name: `${nameOf(owner.user)} is here` })).toBeVisible();
+		await expect(labels(owner.page)).toHaveText([nameOf(collaborator.user)]);
+		await expect(labels(collaborator.page)).toHaveText([nameOf(owner.user)]);
 	});
 
 	test("compaction leaves the document unchanged, for an open tab and a late joiner", async ({
@@ -600,6 +646,8 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 
 		await writeNewerSchema(testApi, node);
+		// The hook writes no row to hear live, so the tab pulls as it does on coming back online
+		await owner.page.evaluate(() => window.dispatchEvent(new Event("online")));
 		await expect(owner.page.getByText(banner)).toBeVisible();
 		await expect(writerEditor(owner.page)).toHaveAttribute("contenteditable", "false");
 

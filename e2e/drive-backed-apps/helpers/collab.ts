@@ -67,10 +67,14 @@ export async function logRows(api: APIRequestContext, log: string): Promise<Reco
 export const serverText = (api: APIRequestContext, node: string) =>
 	hook<string[]>(api, "server_text", node);
 
-/** The text of each top-level block in the editor. */
+/** The text of each top-level block in the editor, without other people's carets. */
 export function editorBlocks(page: Page): Promise<string[]> {
 	return writerEditor(page).evaluate((editor) =>
-		[...editor.children].map((block) => block.textContent ?? ""),
+		[...editor.children].map((block) => {
+			const copy = block.cloneNode(true) as Element;
+			copy.querySelectorAll(".collaboration-carets__caret").forEach((caret) => caret.remove());
+			return copy.textContent ?? "";
+		}),
 	);
 }
 
