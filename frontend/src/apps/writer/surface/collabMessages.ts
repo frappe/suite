@@ -16,6 +16,8 @@ interface Standing {
   stopped: string | null
   // The document waits for an admin: one change, or its saved content
   held: string | null
+  // A newer editor wrote to the document, so this tab only shows it
+  newerSchema: boolean
   onDevice: boolean
   // The editor's HTML was kept in this browser as a recovery copy
   kept: boolean
@@ -34,10 +36,20 @@ export const SET_ASIDE: Banner = {
   text: "Your last edits couldn't be saved here and were kept as a recovery copy.",
 }
 
-export function bannerFor({ blocked, stopped, held, onDevice, kept, unsent }: Standing): Banner {
+export function bannerFor({
+  blocked,
+  stopped,
+  held,
+  newerSchema,
+  onDevice,
+  kept,
+  unsent,
+}: Standing): Banner {
   const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
+  if (newerSchema && !blocked && !stopped)
+    return { text: 'This document was edited in a newer version of Writer. Reload to edit it.' }
   if (held && !blocked && !stopped) {
     const text =
       held === 'bad_checkpoint'

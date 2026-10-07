@@ -38,7 +38,7 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     { doc, lineage: header.lineage!, epoch: header.q_epoch ?? 0, canWrite, sid, bound: true },
     options,
   )
-  await room.start({ base: header.base ?? 0, checkpoint, rows })
+  await room.start({ base: header.base ?? 0, schema: header.schema, checkpoint, rows })
   return { state: 'live', room }
 }
 

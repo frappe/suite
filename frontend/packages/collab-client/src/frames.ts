@@ -10,6 +10,8 @@ export interface OpenHeader {
   // The rev the checkpoint covers; rows follow it
   base?: number
   q_epoch?: number
+  // The highest editor schema the document's rows were written with
+  schema?: number
 }
 
 export interface PullHeader {
@@ -22,6 +24,7 @@ export interface PullHeader {
   verdict?: string
   // The document waits for an admin: `change` for one change, `bad_checkpoint` for its saved content
   held?: string
+  schema?: number
 }
 
 export interface Row {

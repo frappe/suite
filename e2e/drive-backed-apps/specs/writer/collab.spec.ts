@@ -15,6 +15,7 @@ import {
 	serverText,
 	takeVersion,
 	typeParagraph,
+	writeNewerSchema,
 } from "../../helpers/collab";
 import {
 	DRIVE,
@@ -291,6 +292,26 @@ test.describe("Writer collaboration", () => {
 			"Before the hold",
 			"After the release",
 		]);
+	});
+
+	test("a document a newer Writer edited is read-only here and asks for a reload", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		const banner = "This document was edited in a newer version of Writer. Reload to edit it.";
+		await openWriterDocument(owner.page, node);
+		await typeParagraph(owner.page, "Before the newer Writer");
+		await expectSaved(owner.page);
+
+		await writeNewerSchema(testApi, node);
+		await expect(owner.page.getByText(banner)).toBeVisible();
+		await expect(writerEditor(owner.page)).toHaveAttribute("contenteditable", "false");
+
+		await openWriterDocument(collaborator.page, node);
+		await expect(collaborator.page.getByText(banner)).toBeVisible();
+		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "false");
+		await expectConverged(testApi, node, [owner.page, collaborator.page], ["Before the newer Writer"]);
 	});
 
 	test("an edit made while another tab previews a version shows after Back to current", async ({

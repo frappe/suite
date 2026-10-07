@@ -9,6 +9,7 @@ const standing = {
   blocked: null,
   stopped: null,
   held: null,
+  newerSchema: false,
   onDevice: true,
   kept: false,
   unsent: 1,
@@ -113,6 +114,12 @@ describe('collab stop copy', () => {
   it('says the whole document is in question when its saved content is held', () => {
     expect(read(bannerFor({ ...standing, held: 'bad_checkpoint', unsent: 0 }))).toBe(
       'This document is in question and read-only while an admin reviews it.',
+    )
+  })
+
+  it('asks for a reload when a newer Writer edited the document', () => {
+    expect(read(bannerFor({ ...standing, newerSchema: true }))).toBe(
+      'This document was edited in a newer version of Writer. Reload to edit it.',
     )
   })
 

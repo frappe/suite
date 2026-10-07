@@ -17,6 +17,7 @@ interface RoomStatus {
   paused: string | null
   stopped: string | null
   held: string | null
+  newerSchema: boolean
   unsent: number
   onDevice: boolean
 }
@@ -28,6 +29,7 @@ const snapshot = (room: CollabRoom): RoomStatus => ({
   paused: room.paused,
   stopped: room.stopped,
   held: room.held,
+  newerSchema: room.newerSchema,
   unsent: room.unsent,
   onDevice: room.onDevice,
 })
@@ -119,12 +121,13 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const banner = computed(() => {
     const now = status.value
     if (!live.value || !now) return null
-    if (!(now.blocked || now.held || now.saveState === 'failed'))
+    if (!(now.blocked || now.held || now.newerSchema || now.saveState === 'failed'))
       return setAside.value ? SET_ASIDE : null
     return bannerFor({
       blocked: now.blocked,
       stopped: now.stopped,
       held: now.held,
+      newerSchema: now.newerSchema,
       onDevice: now.onDevice,
       kept: kept.value,
       unsent: now.unsent,

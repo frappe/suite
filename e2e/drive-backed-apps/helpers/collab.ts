@@ -36,6 +36,10 @@ export async function holdDocument(api: APIRequestContext, node: string, why: st
 export const releaseDocument = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "release", node);
 
+/** Mark a document as written from here on by a Writer one schema newer than this site's. */
+export const writeNewerSchema = (api: APIRequestContext, node: string) =>
+	hook<CollabState>(api, "write_newer_schema", node);
+
 /** How many rows each collab table holds for a log, keyed by table kind. */
 export async function logRows(api: APIRequestContext, log: string): Promise<Record<string, number>> {
 	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.log_rows", { form: { log } }));

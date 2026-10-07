@@ -39,6 +39,7 @@ export interface RoomInit {
 // What a room opens on: the checkpoint covering revs through `base`, then the rows after it
 export interface Opening {
   base: number
+  schema?: number
   checkpoint: Uint8Array | null
   rows: Row[]
 }
@@ -48,6 +49,7 @@ export class Room implements CollabRoom {
   blocked: Blocked | null = null
   paused: string | null = null
   held: string | null = null
+  newerSchema = false
   appliedThrough = 0
   needsRebuild = false
   private readonly lineage: string
@@ -100,6 +102,7 @@ export class Room implements CollabRoom {
     }
     this.own.release = (await holdLock(this.lockName(this.own.sid))) ?? (() => {})
     this.appliedThrough = opening.base
+    this.follow(opening.schema)
     this.apply(opening.rows, opening)
     if (this.writable) await this.adopt()
     this.pollTimer = setInterval(() => void this.tick(), this.options.pollMs ?? 2000)
@@ -160,6 +163,7 @@ export class Room implements CollabRoom {
         this.heard()
         if (header.state === 'rebuild') return this.outdated()
         this.hold(header.held ?? null)
+        if (!this.follow(header.schema)) return
         if (this.judging) return this.judged(header)
         this.apply(rows)
       })
@@ -588,6 +592,16 @@ export class Room implements CollabRoom {
     if (this.paused === reason) return
     this.paused = reason
     this.changed()
+  }
+
+  // An editor older than the document's rows may drop what it can't show; nothing it does from now on is sent.
+  // Work typed before still goes out, as the server takes older schemas
+  private follow(schema = 0) {
+    if (schema <= this.options.schema || this.newerSchema) return !this.newerSchema
+    this.newerSchema = true
+    this.writable = false
+    this.changed()
+    return false
   }
 
   // A held document's pushes wait minutes between tries, so its release sends at once

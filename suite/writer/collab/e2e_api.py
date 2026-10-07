@@ -1,5 +1,7 @@
 """Collab hooks for the Playwright suites: turn collaboration on, compact now, and read a log back."""
 
+import json
+
 import frappe
 import pycrdt
 from frappe.tests.utils import whitelist_for_tests
@@ -50,6 +52,19 @@ def hold(node: str, why: str) -> dict:
 def release(node: str) -> dict:
     """Clear `node`'s hold as an admin does from the suspect list."""
     suspect.release(writer_collab.ADAPTER, collab_doc(node)["id"])
+    return state(node)
+
+
+@whitelist_for_tests(methods=["POST"])
+def write_newer_schema(node: str) -> dict:
+    """Mark `node`'s rows as written from here on by an editor one schema newer, as its pushes would."""
+    doc = collab_doc(node)
+    steps = json.loads(doc["schema_steps"])
+    steps.append([int(doc["head_rev"]) + 1, steps[-1][1] + 1])
+    frappe.db.sql(
+        f"UPDATE `{table(writer_collab.ADAPTER, 'doc')}` SET `schema_steps` = %s WHERE `id` = %s",
+        (json.dumps(steps), doc["id"]),
+    )
     return state(node)
 
 

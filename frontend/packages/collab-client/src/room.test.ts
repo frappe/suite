@@ -56,6 +56,8 @@ function fakeServer(state = 'live', lineage = 'L') {
   const schemas: number[] = []
   // Rises with every quarantine; a pull from a tab that heard an older one answers `rebuild`
   const epoch = { now: 0, sent: [] as (number | undefined)[] }
+  // The highest editor schema any stored row was written with
+  const schema = { now: 1 }
   // Rows through `base` folded into one state, as a compaction leaves them
   const checkpoint = { base: 0, bytes: new Uint8Array() }
   // The judge's count and last verdict; `answer` is what a report of a rev gets back.
@@ -83,6 +85,7 @@ function fakeServer(state = 'live', lineage = 'L') {
         can_write: access.canWrite,
         base: checkpoint.base,
         q_epoch: epoch.now,
+        schema: schema.now,
       }
       return frame(header, tail, checkpoint.bytes)
     },
@@ -101,6 +104,7 @@ function fakeServer(state = 'live', lineage = 'L') {
           judged: judge.judged,
           verdict: judge.verdict,
           held: judge.held,
+          schema: schema.now,
         },
         rows.filter((row) => row.rev > since),
       )
@@ -172,6 +176,7 @@ function fakeServer(state = 'live', lineage = 'L') {
     finals,
     schemas,
     epoch,
+    schema,
     judge,
     compact,
     quarantine,
@@ -518,6 +523,65 @@ describe('collab room', () => {
 
     await room.pull()
     await vi.waitFor(() => expect(room.held).toBe('change'))
+  })
+
+  it('a tab stops following a document a newer editor wrote to, and goes read-only', async () => {
+    const server = fakeServer()
+    const room = await join(server.endpoints())
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'new')
+    await writer.flush()
+    server.schema.now = 2
+
+    await room.pull()
+    room.doc.getText('t').insert(0, 'mine')
+    writer.doc.getText('t').insert(0, 'later')
+    await writer.flush()
+    await room.pull()
+
+    expect([room.newerSchema, room.canWrite, text(room), room.unsent]).toEqual([
+      true,
+      false,
+      'mine',
+      0,
+    ])
+  })
+
+  it('typing from before a newer editor wrote is still saved', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const room = await join(server.endpoints(), { sendDelayMs: 1000 })
+    room.doc.getText('t').insert(0, 'kept')
+    server.schema.now = 2
+
+    await room.pull()
+    await vi.advanceTimersByTimeAsync(1500)
+
+    expect([room.newerSchema, room.saveState, text(await join(server.endpoints()))]).toEqual([
+      true,
+      'clean',
+      'kept',
+    ])
+  })
+
+  it('a tab opened on a document a newer editor wrote to shows it and sends nothing', async () => {
+    const server = fakeServer()
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'new')
+    await writer.flush()
+    server.schema.now = 2
+
+    const room = await join(server.endpoints())
+    room.doc.getText('t').insert(0, 'x')
+    await room.flush()
+
+    expect([room.newerSchema, room.canWrite, text(room), room.unsent, server.rows.length]).toEqual([
+      true,
+      false,
+      'xnew',
+      0,
+      1,
+    ])
   })
 
   it('a tab tells its listeners why it stopped when it stops', async () => {

@@ -60,6 +60,8 @@ export interface CollabRoom {
   readonly stopped: string | null
   // The document waits for an admin, so nobody edits it: `change` or `bad_checkpoint`
   readonly held: string | null
+  // A newer editor wrote to the document; this tab follows and sends nothing more until reloaded
+  readonly newerSchema: boolean
   // This copy may hold a change the server has since quarantined; it follows nothing more and is to be opened again
   readonly needsRebuild: boolean
   readonly saveState: SaveState
