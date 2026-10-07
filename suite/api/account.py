@@ -130,7 +130,6 @@ def get_users() -> list[dict]:
         "User",
         filters={
             "enabled": 1,
-            "user_type": "System User",
             "name": ["not in", ["Administrator", "Guest"]],
         },
         fields=["name", "email", "full_name", "user_image"],
