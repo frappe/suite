@@ -20,6 +20,8 @@ export interface PullHeader {
   // Rises with every verdict on a suspect document; `verdict` is the last one
   judged?: number
   verdict?: string
+  // The document waits for an admin: `change` for one change, `bad_checkpoint` for its saved content
+  held?: string
 }
 
 export interface Row {

@@ -27,6 +27,15 @@ export const collabState = (api: APIRequestContext, node: string) =>
 
 export const logId = (api: APIRequestContext, node: string) => hook<string>(api, "log_id", node);
 
+/** Hold a document for an admin; `why` is the judge's cause, and `bad_checkpoint` puts the whole document in question. */
+export async function holdDocument(api: APIRequestContext, node: string, why: string): Promise<CollabState> {
+	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.hold", { form: { node, why } }));
+}
+
+/** Clear a held document, as an admin does. */
+export const releaseDocument = (api: APIRequestContext, node: string) =>
+	hook<CollabState>(api, "release", node);
+
 /** How many rows each collab table holds for a log, keyed by table kind. */
 export async function logRows(api: APIRequestContext, log: string): Promise<Record<string, number>> {
 	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.log_rows", { form: { log } }));

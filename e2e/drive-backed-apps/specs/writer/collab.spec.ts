@@ -6,10 +6,12 @@ import {
 	enableCollab,
 	expectConverged,
 	expectSaved,
+	holdDocument,
 	logId,
 	logRows,
 	pastePicture,
 	picturesLoaded,
+	releaseDocument,
 	serverText,
 	takeVersion,
 	typeParagraph,
@@ -255,6 +257,40 @@ test.describe("Writer collaboration", () => {
 		await expect(writerEditor(owner.page)).toHaveAttribute("contenteditable", "false");
 		await typeParagraph(collaborator.page, "Still saving");
 		await expectConverged(testApi, node, [collaborator.page], ["Marked \u00a7 here", "Still saving"]);
+	});
+
+	test("a document held for an admin is read-only for everyone until it is released", async ({
+		owner,
+		collaborator,
+		testApi,
+	}) => {
+		await openWriterDocument(owner.page, node);
+		await openWriterDocument(collaborator.page, node);
+		await typeParagraph(owner.page, "Before the hold");
+		await expectSaved(owner.page);
+
+		await holdDocument(testApi, node, "kernel_failed");
+		for (const page of [owner.page, collaborator.page]) {
+			await expect(
+				page.getByText("This document is read-only while an admin reviews a change to it."),
+			).toBeVisible();
+			await expect(writerEditor(page)).toHaveAttribute("contenteditable", "false");
+		}
+
+		await releaseDocument(testApi, node);
+		await holdDocument(testApi, node, "bad_checkpoint");
+		await expect(
+			owner.page.getByText("This document is in question and read-only while an admin reviews it."),
+		).toBeVisible();
+
+		await releaseDocument(testApi, node);
+		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "true");
+		await expect(owner.page.getByText("read-only while an admin reviews")).toBeHidden();
+		await typeParagraph(collaborator.page, "After the release");
+		await expectConverged(testApi, node, [owner.page, collaborator.page], [
+			"Before the hold",
+			"After the release",
+		]);
 	});
 
 	test("an edit made while another tab previews a version shows after Back to current", async ({

@@ -58,6 +58,8 @@ export interface CollabRoom {
   readonly paused: string | null
   // Why this tab's work can never be committed; its unsent work went to recovery
   readonly stopped: string | null
+  // The document waits for an admin, so nobody edits it: `change` or `bad_checkpoint`
+  readonly held: string | null
   // This copy may hold a change the server has since quarantined; it follows nothing more and is to be opened again
   readonly needsRebuild: boolean
   readonly saveState: SaveState

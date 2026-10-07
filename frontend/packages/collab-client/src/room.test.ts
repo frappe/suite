@@ -58,10 +58,12 @@ function fakeServer(state = 'live', lineage = 'L') {
   const epoch = { now: 0, sent: [] as (number | undefined)[] }
   // Rows through `base` folded into one state, as a compaction leaves them
   const checkpoint = { base: 0, bytes: new Uint8Array() }
-  // The judge's count and last verdict; `answer` is what a report of a rev gets back
+  // The judge's count and last verdict; `answer` is what a report of a rev gets back.
+  // `held`: the document waits for an admin, so pushes are refused for a while
   const judge = {
     judged: 0,
     verdict: undefined as string | undefined,
+    held: undefined as string | undefined,
     reports: [] as number[],
     answer: (): Answer => reply(202, { collab: 'judging', judged: judge.judged }),
   }
@@ -92,7 +94,14 @@ function fakeServer(state = 'live', lineage = 'L') {
       if (seen !== undefined && seen < epoch.now)
         return frame({ state: 'rebuild', proto: 1, q_epoch: epoch.now })
       return frame(
-        { state, proto: 1, q_epoch: epoch.now, judged: judge.judged, verdict: judge.verdict },
+        {
+          state,
+          proto: 1,
+          q_epoch: epoch.now,
+          judged: judge.judged,
+          verdict: judge.verdict,
+          held: judge.held,
+        },
         rows.filter((row) => row.rev > since),
       )
     },
@@ -120,6 +129,7 @@ function fakeServer(state = 'live', lineage = 'L') {
     async push(body) {
       reach('push')
       if (access.refuse) return access.refuse
+      if (judge.held) return reply(423, { collab: 'paused', reason: 'suspect', retry_ms: 300_000 })
       const view = new DataView(body.buffer, body.byteOffset)
       const length = view.getUint32(0)
       const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
@@ -441,6 +451,73 @@ describe('collab room', () => {
     const third = await judgedOnce(server, 'clean')
     await vi.waitFor(() => expect(third.stopped).toBe('browser'))
     expect([third.needsRebuild, third.canWrite]).toEqual([false, false])
+  })
+
+  it('a held document locks the tab, keeps its typing and sends it once released', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const room = await join(server.endpoints())
+    server.judge.held = 'change'
+
+    room.doc.getText('t').insert(0, 'kept')
+    await vi.advanceTimersByTimeAsync(1500)
+    expect([room.held, room.canWrite, room.unsent, server.rows.length]).toEqual([
+      'change',
+      false,
+      1,
+      0,
+    ])
+
+    server.judge.held = undefined
+    await room.pull()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect([room.held, room.canWrite, room.saveState, server.rows.length]).toEqual([
+      null,
+      true,
+      'clean',
+      1,
+    ])
+  })
+
+  it('a pull tells a tab with nothing to send that the document is held, and when it is not', async () => {
+    const server = fakeServer()
+    const room = await join(server.endpoints())
+    server.judge.held = 'bad_checkpoint'
+
+    await room.pull()
+    expect([room.held, room.canWrite]).toEqual(['bad_checkpoint', false])
+    server.judge.held = undefined
+    await room.pull()
+
+    expect([room.held, room.canWrite]).toEqual([null, true])
+  })
+
+  it('a refused push does not hide that the whole document is in question', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const room = await join(server.endpoints())
+    server.judge.held = 'bad_checkpoint'
+    await room.pull()
+
+    room.doc.getText('t').insert(0, 'x')
+    await vi.advanceTimersByTimeAsync(1500)
+
+    expect([room.held, room.paused]).toEqual(['bad_checkpoint', 'suspect'])
+  })
+
+  it('a report answered with a hold locks the tab as held', async () => {
+    const server = fakeServer('live', 'apply-11')
+    server.judge.answer = () =>
+      reply(423, { collab: 'paused', reason: 'suspect', retry_ms: 300_000 })
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
+
+    await room.pull()
+    await vi.waitFor(() => expect(room.held).toBe('change'))
   })
 
   it('a tab tells its listeners why it stopped when it stops', async () => {

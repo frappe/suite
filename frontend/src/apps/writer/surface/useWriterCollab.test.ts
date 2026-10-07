@@ -11,6 +11,7 @@ const fake = vi.hoisted(() => {
     blocked: null as string | null,
     stopped: null as string | null,
     paused: null as string | null,
+    held: null as string | null,
     needsRebuild: false,
     saveState: 'clean',
     unsent: 0,
@@ -92,6 +93,17 @@ describe('writer collab editing state', () => {
       false,
       true,
       null,
+    ])
+  })
+
+  it('holds editing with a banner while an admin reviews the document', async () => {
+    fake.room = fake.make()
+    const collab = await opened()
+    becomes({ canWrite: false, held: 'change', unsent: 0 })
+    expect([collab.allowsEditing.value, collab.editingPaused.value, collab.banner.value]).toEqual([
+      false,
+      true,
+      { text: 'This document is read-only while an admin reviews a change to it.' },
     ])
   })
 })

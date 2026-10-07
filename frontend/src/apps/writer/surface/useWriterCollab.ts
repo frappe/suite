@@ -16,6 +16,7 @@ interface RoomStatus {
   blocked: Blocked | null
   paused: string | null
   stopped: string | null
+  held: string | null
   unsent: number
   onDevice: boolean
 }
@@ -26,6 +27,7 @@ const snapshot = (room: CollabRoom): RoomStatus => ({
   blocked: room.blocked,
   paused: room.paused,
   stopped: room.stopped,
+  held: room.held,
   unsent: room.unsent,
   onDevice: room.onDevice,
 })
@@ -107,7 +109,7 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
     if (now.blocked === 'lost_edit' || now.blocked === 'lost_read') return 'closed'
     const stopped = now.saveState === 'failed' || now.blocked === 'offline'
     if (now.canWrite) return stopped ? 'paused' : 'editing'
-    return stopped || now.blocked || now.paused ? 'paused' : 'closed'
+    return stopped || now.blocked || now.paused || now.held ? 'paused' : 'closed'
   })
   const allowsEditing = computed(() => standing.value === 'editing')
   const editingPaused = computed(() => standing.value === 'paused')
@@ -117,10 +119,12 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const banner = computed(() => {
     const now = status.value
     if (!live.value || !now) return null
-    if (!(now.blocked || now.saveState === 'failed')) return setAside.value ? SET_ASIDE : null
+    if (!(now.blocked || now.held || now.saveState === 'failed'))
+      return setAside.value ? SET_ASIDE : null
     return bannerFor({
       blocked: now.blocked,
       stopped: now.stopped,
+      held: now.held,
       onDevice: now.onDevice,
       kept: kept.value,
       unsent: now.unsent,

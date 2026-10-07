@@ -5,7 +5,7 @@ import pycrdt
 from frappe.tests.utils import whitelist_for_tests
 
 from suite.suite_core import collab
-from suite.suite_core.collab import compaction
+from suite.suite_core.collab import compaction, suspect
 from suite.suite_core.collab.tables import KINDS, table
 from suite.writer import collab as writer_collab
 
@@ -32,6 +32,24 @@ def enable_collab(node: str) -> dict:
 def compact_now(node: str) -> dict:
     """Compact `node`'s collab log in this request, as the queued job would."""
     writer_collab.compact(collab_doc(node)["id"])
+    return state(node)
+
+
+@whitelist_for_tests(methods=["POST"])
+def hold(node: str, why: str) -> dict:
+    """Hold `node` for an admin, as a judge that can't settle a compaction's suspect does."""
+    doc_id = collab_doc(node)["id"]
+    frappe.db.sql(
+        f"UPDATE `{table(writer_collab.ADAPTER, 'doc')}` SET `suspect` = 'unreadable' WHERE `id` = %s", doc_id
+    )
+    suspect.hold(writer_collab.ADAPTER, doc_id, why, "Held by the Playwright suite")
+    return state(node)
+
+
+@whitelist_for_tests(methods=["POST"])
+def release(node: str) -> dict:
+    """Clear `node`'s hold as an admin does from the suspect list."""
+    suspect.release(writer_collab.ADAPTER, collab_doc(node)["id"])
     return state(node)
 
 

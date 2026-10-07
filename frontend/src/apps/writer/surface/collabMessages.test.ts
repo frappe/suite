@@ -5,7 +5,14 @@ import { bannerFor, openFailureFor, type Banner } from './collabMessages'
 // What the banner reads on the page, with the link standing for its words
 const read = (banner: Banner) =>
   `${banner.text}${banner.link ? `[${banner.link.label}]` : ''}${banner.after ?? ''}`
-const standing = { blocked: null, stopped: null, onDevice: true, kept: false, unsent: 1 } as const
+const standing = {
+  blocked: null,
+  stopped: null,
+  held: null,
+  onDevice: true,
+  kept: false,
+  unsent: 1,
+} as const
 
 describe('collab banner copy', () => {
   it("says a signed-out tab isn't saving and asks to sign in", () => {
@@ -88,6 +95,24 @@ describe('collab stop copy', () => {
   it('does not offer a reload for a stop a reload would only repeat', () => {
     expect(read(bannerFor({ ...standing, stopped: 'browser', kept: true }))).toBe(
       "This document can't be edited in this browser version. Unsent changes were kept as a recovery copy.",
+    )
+  })
+
+  it('says a held document is read-only while an admin reviews it, and where the typing is', () => {
+    expect(read(bannerFor({ ...standing, held: 'change' }))).toBe(
+      'This document is read-only while an admin reviews a change to it. Your unsent changes are kept on this device and save once it is released.',
+    )
+    expect(read(bannerFor({ ...standing, held: 'change', onDevice: false }))).toBe(
+      'This document is read-only while an admin reviews a change to it. Your unsent changes save once it is released. Keep this tab open.',
+    )
+    expect(read(bannerFor({ ...standing, held: 'change', unsent: 0 }))).toBe(
+      'This document is read-only while an admin reviews a change to it.',
+    )
+  })
+
+  it('says the whole document is in question when its saved content is held', () => {
+    expect(read(bannerFor({ ...standing, held: 'bad_checkpoint', unsent: 0 }))).toBe(
+      'This document is in question and read-only while an admin reviews it.',
     )
   })
 

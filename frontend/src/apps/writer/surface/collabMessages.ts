@@ -14,6 +14,8 @@ interface Standing {
   blocked: Blocked | null
   // Why the room will never save this tab's work
   stopped: string | null
+  // The document waits for an admin: one change, or its saved content
+  held: string | null
   onDevice: boolean
   // The editor's HTML was kept in this browser as a recovery copy
   kept: boolean
@@ -32,10 +34,22 @@ export const SET_ASIDE: Banner = {
   text: "Your last edits couldn't be saved here and were kept as a recovery copy.",
 }
 
-export function bannerFor({ blocked, stopped, onDevice, kept, unsent }: Standing): Banner {
+export function bannerFor({ blocked, stopped, held, onDevice, kept, unsent }: Standing): Banner {
   const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
+  if (held && !blocked && !stopped) {
+    const text =
+      held === 'bad_checkpoint'
+        ? 'This document is in question and read-only while an admin reviews it.'
+        : 'This document is read-only while an admin reviews a change to it.'
+    if (!unsent) return { text }
+    return {
+      text: onDevice
+        ? `${text} Your unsent changes are kept on this device and save once it is released.`
+        : `${text} Your unsent changes save once it is released.${keepOpen}`,
+    }
+  }
   switch (blocked) {
     case 'signed_out':
       return {
