@@ -8,7 +8,7 @@ import { writerSchema } from '@/apps/writer/schema'
 
 // The server refuses a row naming anything this file does not declare at or below the row's schema
 const declared = JSON.parse(
-  readFileSync(resolve(__dirname, '../../../../../suite/writer/collab/features.json'), 'utf8'),
+  readFileSync(resolve(__dirname, '../../../../../suite/writer/content/features.json'), 'utf8'),
 ) as { schema: number; features: Record<string, number>; nodes: string[]; marks: string[] }
 
 const editorNames = () => {

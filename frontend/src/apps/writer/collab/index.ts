@@ -13,7 +13,7 @@ import { createTransport, type HttpMethod, type Operation } from '@/platform/tra
 
 export { FIELD } from './field'
 
-// Raise with suite/writer/collab/features.json whenever the editor learns a new node, mark or attribute
+// Raise with suite/writer/content/features.json whenever the editor learns a new node, mark or attribute
 export const WRITER_SCHEMA = 1
 
 const route = (id: string, method: HttpMethod, path: string): Operation => ({

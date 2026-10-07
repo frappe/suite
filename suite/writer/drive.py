@@ -40,7 +40,7 @@ cleanly and panics on the first child read.
 
 `version_bytes` writes one `writer-document/1` JSON envelope carrying the Yjs
 body, its HTML mirror, and the collaboration mode. A collab document's version
-is `writer-document/2`, built from its log by `suite.writer.collab`. `restore_version` also
+is `writer-document/2`, built from its log by `suite.writer.content`. `restore_version` also
 accepts the exact UTF-8 HTML bytes §14.6 copies from a legacy `Writer Version`.
 That legacy form becomes a non-collaborative body: Writer cannot reconstruct a
 historical Yjs document from HTML, and leaving the current Yjs state behind
@@ -78,7 +78,7 @@ from frappe import _
 from suite import drive
 from suite.suite_core import content
 from suite.suite_core.content import compaction
-from suite.writer.collab import (
+from suite.writer.content import (
     copy_log,
     live_checkpoint,
     live_state,

@@ -23,8 +23,8 @@ from suite.suite_core.content.log import chain_next, chain_seed
 from suite.suite_core.content.stage import PIECE_MAX
 from suite.suite_core.content.updates import encoded_string, encoded_uint
 from suite.tests.utils import ensure_user
-from suite.writer import collab as writer_collab
-from suite.writer.collab import routes
+from suite.writer import content as writer_content
+from suite.writer.content import routes
 
 WRITER = "writer-collab-writer@example.com"
 OUTSIDER = "writer-collab-outsider@example.com"
@@ -685,7 +685,7 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.db.sql("UPDATE `__writer_content_doc` SET `start_clocks` = NULL WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        routes.content.backfill_clocks(routes.ADAPTER, writer_collab.document_owner)
+        routes.content.backfill_clocks(routes.ADAPTER, writer_content.document_owner)
 
         self.assertEqual(self.push(node, sid, cid, 3, a), (409, {"collab": "clock_gap", "clock": 3}))
         self.assertEqual(self.push(node, sid, cid, 3, c)[0], 200)
@@ -1252,7 +1252,7 @@ class TestWriterCollab(IntegrationTestCase):
         frappe.db.commit()
 
         with patch.object(scheduling, "enqueue"):
-            writer_collab.sweep()
+            writer_content.sweep()
 
         self.assertEqual(self.push_staged(node, sid, cid, change, old), (409, {"collab": "stage_incomplete"}))
         self.assertEqual(self.push_staged(node, sid, cid, change, recent)[0], 200)
@@ -1286,7 +1286,7 @@ class TestWriterCollab(IntegrationTestCase):
                     self.put(node, stage_id, idx, piece_body(lineage, sid, 1, change, pieces[idx]))[0], 200
                 )
         with patch.object(scheduling, "enqueue"):
-            writer_collab.sweep()
+            writer_content.sweep()
 
         self.assertEqual(
             [

@@ -140,7 +140,7 @@ def purge_log(node: str) -> None:
     doc_id = content.mark_purged(ADAPTER, node)
     if doc_id:
         scheduling.enqueue(
-            "suite.writer.collab.delete_purged",
+            "suite.writer.content.delete_purged",
             f"suite-collab-purge-{ADAPTER}-{doc_id}",
             doc_id=doc_id,
             enqueue_after_commit=True,
@@ -152,7 +152,7 @@ def delete_purged(doc_id: str) -> None:
 
 
 def compact(doc_id: str) -> None:
-    checkpoints.run(ADAPTER, doc_id, ROOTS, "suite.writer.collab.judge", document_owner)
+    checkpoints.run(ADAPTER, doc_id, ROOTS, "suite.writer.content.judge", document_owner)
 
 
 def judge(doc_id: str) -> None:
@@ -173,7 +173,7 @@ def suspect_documents() -> list[dict]:
 @frappe.whitelist(methods=["POST"])
 def rejudge_suspect(doc_id: str) -> bool:
     frappe.only_for(SUSPECT_ADMINS)
-    return suspect.rejudge(ADAPTER, doc_id, "suite.writer.collab.judge")
+    return suspect.rejudge(ADAPTER, doc_id, "suite.writer.content.judge")
 
 
 @frappe.whitelist(methods=["POST"])
@@ -183,19 +183,19 @@ def clear_suspect(doc_id: str) -> bool:
 
 
 def report_suspect(doc_id: str, rev: int) -> tuple[int, dict]:
-    return suspect.report(ADAPTER, doc_id, rev, "suite.writer.collab.judge")
+    return suspect.report(ADAPTER, doc_id, rev, "suite.writer.content.judge")
 
 
 def consider_compaction(doc_id: str, *, final_from: str | None = None, refused: bool = False) -> None:
     scheduling.consider(
-        ADAPTER, doc_id, "suite.writer.collab.compact", final_from=final_from, refused=refused
+        ADAPTER, doc_id, "suite.writer.content.compact", final_from=final_from, refused=refused
     )
 
 
 def sweep() -> None:
     scheduling.sweep(
         ADAPTER,
-        "suite.writer.collab.compact",
-        purge_method="suite.writer.collab.delete_purged",
-        judge_method="suite.writer.collab.judge",
+        "suite.writer.content.compact",
+        purge_method="suite.writer.content.delete_purged",
+        judge_method="suite.writer.content.judge",
     )

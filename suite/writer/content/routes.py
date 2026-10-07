@@ -16,7 +16,7 @@ from werkzeug.wrappers import Response
 from suite import drive
 from suite.composition.http import Route
 from suite.suite_core import content
-from suite.writer.collab import ADAPTER, SCHEMA, consider_compaction, report_suspect
+from suite.writer.content import ADAPTER, SCHEMA, consider_compaction, report_suspect
 
 # The Writer table resolves every handler here, the contract-only ones too
 from suite.writer.http.routes import document as document

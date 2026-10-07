@@ -20,7 +20,7 @@ export default defineConfig({
   ssr: { noExternal: true, target: 'node' },
   build: {
     ssr: path.resolve(__dirname, 'src/apps/writer/collab/kernel-entry.ts'),
-    outDir: '../suite/writer/collab/dist',
+    outDir: '../suite/writer/content/dist',
     emptyOutDir: true,
     minify: false,
     sourcemap: false,

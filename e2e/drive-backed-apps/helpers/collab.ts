@@ -5,7 +5,7 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { frappeData } from "../../shared/frappe";
 import { writerEditor } from "./writer";
 
-/** Where a document's collab log stands, from `suite.writer.collab.e2e_api.state`. */
+/** Where a document's collab log stands, from `suite.writer.content.e2e_api.state`. */
 export interface CollabState {
 	checkpoint_rev: number;
 	head_rev: number;
@@ -14,7 +14,7 @@ export interface CollabState {
 
 async function hook<T>(api: APIRequestContext, name: string, node: string): Promise<T> {
 	return frappeData<T>(
-		await api.post(`/api/method/suite.writer.collab.e2e_api.${name}`, { form: { node } }),
+		await api.post(`/api/method/suite.writer.content.e2e_api.${name}`, { form: { node } }),
 	);
 }
 
@@ -35,7 +35,7 @@ export const logId = (api: APIRequestContext, node: string) => hook<string>(api,
 
 /** Hold a document for an admin; `why` is the judge's cause, and `bad_checkpoint` puts the whole document in question. */
 export async function holdDocument(api: APIRequestContext, node: string, why: string): Promise<CollabState> {
-	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.hold", { form: { node, why } }));
+	return frappeData(await api.post("/api/method/suite.writer.content.e2e_api.hold", { form: { node, why } }));
 }
 
 /** Clear a held document, as an admin does. */
@@ -44,7 +44,7 @@ export const releaseDocument = (api: APIRequestContext, node: string) =>
 
 /** Quarantine a document's last row, as a judge that finds it bad does. */
 export async function quarantineLast(api: APIRequestContext, node: string, why: string): Promise<CollabState> {
-	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.quarantine_last", { form: { node, why } }));
+	return frappeData(await api.post("/api/method/suite.writer.content.e2e_api.quarantine_last", { form: { node, why } }));
 }
 
 /** Count a document's state as big as its tail leaves room for, so its next adding push waits for a compaction. */
@@ -60,7 +60,7 @@ export const writeNewerSchema = (api: APIRequestContext, node: string) =>
 
 /** How many rows each collab table holds for a log, keyed by table kind. */
 export async function logRows(api: APIRequestContext, log: string): Promise<Record<string, number>> {
-	return frappeData(await api.post("/api/method/suite.writer.collab.e2e_api.log_rows", { form: { log } }));
+	return frappeData(await api.post("/api/method/suite.writer.content.e2e_api.log_rows", { form: { log } }));
 }
 
 /** The text of each top-level block, as the server would serve it. */
@@ -189,7 +189,7 @@ export async function pushInPieces(
 	expect(session.ok(), await session.text()).toBe(true);
 	const cid = ((await session.json()) as { client_id: number }).client_id;
 	const made = await frappeData<{ change: string; lineage: string; head_rev: number }>(
-		await api.post("/api/method/suite.writer.collab.e2e_api.paragraph_change", {
+		await api.post("/api/method/suite.writer.content.e2e_api.paragraph_change", {
 			form: { node, client_id: String(cid), length: String(length) },
 		}),
 	);

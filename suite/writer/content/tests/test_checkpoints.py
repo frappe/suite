@@ -17,9 +17,9 @@ from suite import drive
 from suite.suite_core.content import admission, checkpoints, compaction, live, scheduling
 from suite.suite_core.content.log import isolation
 from suite.tests.utils import ensure_user
-from suite.writer import collab as writer_collab
-from suite.writer.collab import routes
-from suite.writer.collab.tests.test_collab import answer, body_for, call, push_body, read_open, typed
+from suite.writer import content as writer_content
+from suite.writer.content import routes
+from suite.writer.content.tests.test_collab import answer, body_for, call, push_body, read_open, typed
 
 WRITER = "writer-collab-writer@example.com"
 
@@ -29,7 +29,7 @@ class CheckpointCase(IntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()
         ensure_user(WRITER)
-        writer_collab.ensure_tables()
+        writer_content.ensure_tables()
         frappe.db.commit()
 
     def setUp(self):
@@ -45,7 +45,11 @@ class CheckpointCase(IntegrationTestCase):
 
     def job(self, doc_id: str) -> checkpoints.Compaction:
         return checkpoints.Compaction(
-            "writer", doc_id, writer_collab.ROOTS, "suite.writer.collab.judge", writer_collab.document_owner
+            "writer",
+            doc_id,
+            writer_content.ROOTS,
+            "suite.writer.content.judge",
+            writer_content.document_owner,
         )
 
     def restore_mode(self):
@@ -123,14 +127,14 @@ class CheckpointCase(IntegrationTestCase):
         return "".join(str(child) for child in doc.get("default", type=pycrdt.XmlFragment).children)
 
     def compact(self, node: str):
-        writer_collab.compact(self.doc_row(node).id)
+        writer_content.compact(self.doc_row(node).id)
 
 
 class TestWriterCheckpoints(CheckpointCase):
     def test_the_self_test_fixture_uses_the_roots_writer_writes(self):
         from suite.suite_core.content import selftest
 
-        self.assertEqual(selftest.ROOTS, writer_collab.ROOTS)
+        self.assertEqual(selftest.ROOTS, writer_content.ROOTS)
 
     def test_a_compaction_installs_a_checkpoint_of_every_row(self):
         node = self.new_document()
@@ -187,7 +191,7 @@ class TestWriterCheckpoints(CheckpointCase):
                 frappe.init(site)
                 frappe.connect()
                 with patch.object(compaction, "compact", kernel):
-                    writer_collab.compact(doc_id)
+                    writer_content.compact(doc_id)
             finally:
                 os._exit(0)
         return os.waitpid(pid, 0)[1]
@@ -251,7 +255,7 @@ class TestWriterCheckpoints(CheckpointCase):
         self.compact(node)
 
         rows = [payload for _rev, payload in older["rows"]]
-        result = compaction.compact(older["checkpoint"], rows, writer_collab.ROOTS)
+        result = compaction.compact(older["checkpoint"], rows, writer_content.ROOTS)
         job = self.job(doc_id)
         sha = job.store(older, result)
         job.install(older, sha, result)
@@ -331,7 +335,7 @@ class TestWriterCheckpoints(CheckpointCase):
         doc_id = self.doc_row(node).id
         snapshot = routes.content.read("writer", doc_id)
         rows = [payload for _rev, payload in snapshot["rows"]]
-        result = compaction.compact(snapshot["checkpoint"], rows, writer_collab.ROOTS)
+        result = compaction.compact(snapshot["checkpoint"], rows, writer_content.ROOTS)
         if not integrated:
             result = compaction.Compacted(compaction.pycrdt.merge_updates(*rows), integrated=False)
         result.ms = 1
@@ -344,7 +348,7 @@ class TestWriterCheckpoints(CheckpointCase):
         doc_id, site = self.doc_row(node).id, frappe.local.site
         snapshot = routes.content.read("writer", doc_id)
         result = compaction.compact(
-            None, [payload for _rev, payload in snapshot["rows"]], writer_collab.ROOTS
+            None, [payload for _rev, payload in snapshot["rows"]], writer_content.ROOTS
         )
         result.ms = 1
         typed = []
@@ -380,7 +384,7 @@ class TestWriterCheckpoints(CheckpointCase):
         doc_id, site = self.doc_row(node).id, frappe.local.site
         snapshot = routes.content.read("writer", doc_id)
         result = compaction.compact(
-            None, [payload for _rev, payload in snapshot["rows"]], writer_collab.ROOTS
+            None, [payload for _rev, payload in snapshot["rows"]], writer_content.ROOTS
         )
         result.ms = 1
         purged = []
@@ -441,7 +445,7 @@ class TestWriterCheckpoints(CheckpointCase):
                 with patch.object(
                     checkpoints.Compaction, "install", lambda *args: os.kill(os.getpid(), signal.SIGKILL)
                 ):
-                    writer_collab.compact(doc_id)
+                    writer_content.compact(doc_id)
             finally:
                 os._exit(0)
         os.waitpid(pid, 0)
@@ -545,7 +549,7 @@ class TestWriterCheckpoints(CheckpointCase):
             frappe.init(site=site)
             frappe.connect()
             try:
-                writer_collab.compact(doc_id)
+                writer_content.compact(doc_id)
             finally:
                 frappe.destroy()
 
@@ -684,7 +688,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         )
         frappe.db.commit()
 
-        writer_collab.sweep()
+        writer_content.sweep()
 
         self.assertIn(self.doc_row(waited).id, self.requested)
         self.assertNotIn(self.doc_row(fresh).id, self.requested)
@@ -845,7 +849,7 @@ class TestWriterAdmission(CheckpointCase):
         abc, de = typed(tab[1], ["abc", "de"])
         self.assertEqual(self.push(node, tab, 1, abc)[0], 200)
         doc = self.doc_row(node)
-        room = live.rooms(writer_collab.ADAPTER, doc.id, doc.lineage)["keys"][0]
+        room = live.rooms(writer_content.ADAPTER, doc.id, doc.lineage)["keys"][0]
         self.set_doc(node, state_bytes=scheduling.STATE_MAX)
 
         with patch("frappe.publish_realtime") as publish:
@@ -889,6 +893,6 @@ class TestWriterAdmission(CheckpointCase):
         self.assertEqual(self.push(node, tab, 1, abc)[0], 200)
         self.set_doc(node, tail_bound=0)
 
-        writer_collab.ensure_tables()
+        writer_content.ensure_tables()
 
         self.assertEqual(self.doc_row(node).tail_bound, len(abc))

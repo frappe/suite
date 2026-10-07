@@ -19,11 +19,11 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.versions import restore_version
 from suite.suite_core import content
 from suite.suite_core.content import log, scheduling
-from suite.writer import collab as writer_collab
+from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
-from suite.writer.collab import routes
-from suite.writer.collab.tests.test_checkpoints import WRITER, CheckpointCase
-from suite.writer.collab.tests.test_collab import answer, call, push_body, read_open
+from suite.writer.content import routes
+from suite.writer.content.tests.test_checkpoints import WRITER, CheckpointCase
+from suite.writer.content.tests.test_collab import answer, call, push_body, read_open
 
 
 def version_of(docname: str) -> dict:
@@ -423,7 +423,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
             frappe.db.sql("SELECT `mode` FROM `__writer_content_doc` WHERE `id` = %s", doc_id)[0][0], "purged"
         )
         with patch.object(log, "PURGE_BATCH", 2):
-            writer_collab.delete_purged(doc_id)
+            writer_content.delete_purged(doc_id)
         self.assertEqual(
             self.rows_of(doc_id), {"doc": 0, "update": 0, "checkpoint": 0, "session": 0, "stage": 0}
         )
@@ -434,16 +434,16 @@ class TestWriterDriveCallbacks(CheckpointCase):
         doc_id = self.purged(node)
 
         with patch.object(scheduling, "enqueue") as enqueue:
-            writer_collab.sweep()
+            writer_content.sweep()
 
         self.assertIn(
             (
-                ("suite.writer.collab.delete_purged", f"suite-collab-purge-writer-{doc_id}"),
+                ("suite.writer.content.delete_purged", f"suite-collab-purge-writer-{doc_id}"),
                 {"doc_id": doc_id},
             ),
             [(call.args, call.kwargs) for call in enqueue.call_args_list],
         )
-        writer_collab.delete_purged(doc_id)
+        writer_content.delete_purged(doc_id)
         self.assertEqual(self.rows_of(doc_id)["update"], 0)
 
     def test_a_compaction_never_stores_a_checkpoint_for_a_purged_log(self):
@@ -453,10 +453,10 @@ class TestWriterDriveCallbacks(CheckpointCase):
         frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
 
-        writer_collab.compact(doc_id)
+        writer_content.compact(doc_id)
 
         self.assertEqual(self.rows_of(doc_id)["checkpoint"], 0)
-        writer_collab.delete_purged(doc_id)
+        writer_content.delete_purged(doc_id)
 
     def test_a_compaction_during_a_purge_raises_no_alert(self):
         node = self.new_document()
@@ -467,10 +467,10 @@ class TestWriterDriveCallbacks(CheckpointCase):
         frappe.db.commit()
         alerts = frappe.db.count("Error Log", {"method": "Collab compaction: chain_break"})
 
-        writer_collab.compact(doc_id)
+        writer_content.compact(doc_id)
 
         self.assertEqual(frappe.db.count("Error Log", {"method": "Collab compaction: chain_break"}), alerts)
-        writer_collab.delete_purged(doc_id)
+        writer_content.delete_purged(doc_id)
 
     def test_a_purged_log_reads_as_missing_on_every_route(self):
         node = self.new_document()
@@ -479,7 +479,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         sid = uuid.uuid4().hex
         frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
-        self.addCleanup(writer_collab.delete_purged, doc_id)
+        self.addCleanup(writer_content.delete_purged, doc_id)
 
         header, _checkpoint, rows = read_open(call(routes.collab_get, node).get_data())
         self.assertEqual((header["state"], rows), ("unconverted", []))
@@ -503,7 +503,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         lineage = self.doc_row(node).lineage
         frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
-        self.addCleanup(writer_collab.delete_purged, doc_id)
+        self.addCleanup(writer_content.delete_purged, doc_id)
         doc = pycrdt.Doc(client_id=cid)
         doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText("two"))
         header, payload = content.parse_push(push_body(lineage, sid, cid, 1, 1, doc.get_update()))
@@ -529,7 +529,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
             doc = found(adapter, node)
             if doc:
                 frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc.id)
-                self.addCleanup(writer_collab.delete_purged, doc.id)
+                self.addCleanup(writer_content.delete_purged, doc.id)
             return doc
 
         return patch.object(content, "find", find)
@@ -541,9 +541,9 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 lambda node: read_open(call(routes.collab_get, node).get_data())[0]["state"],
                 "unconverted",
             ),
-            ("live state", writer_collab.live_state, None),
-            ("live checkpoint", writer_collab.live_checkpoint, None),
-            ("remap", lambda node: writer_collab.remap_log(node, lambda value: value), None),
+            ("live state", writer_content.live_state, None),
+            ("live checkpoint", writer_content.live_checkpoint, None),
+            ("remap", lambda node: writer_content.remap_log(node, lambda value: value), None),
         )
         for name, read, expected in reads:
             with self.subTest(read=name):

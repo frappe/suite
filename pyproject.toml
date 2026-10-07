@@ -90,7 +90,7 @@ docstring-code-format = true
 # frappe and the app's dependencies resolve. Tests and patches are excluded as
 # frappe does. Every module not listed under `ignore_errors` must stay clean.
 [tool.mypy]
-files = ["suite/drive", "suite/composition", "suite/suite_core/content", "suite/writer/collab"]
+files = ["suite/drive", "suite/composition", "suite/suite_core/content", "suite/writer/content"]
 python_executable = "../../env/bin/python"
 exclude = ['/tests/', '/patches/', '/test_[^/]+\.py$', 'benchmark_']
 ignore_missing_imports = true

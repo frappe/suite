@@ -309,7 +309,7 @@ scheduler_events = {
     ],
     "all": [
         # writer
-        "suite.writer.collab.sweep",
+        "suite.writer.content.sweep",
     ],
     "cron": {
         "* * * * *": [
