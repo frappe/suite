@@ -50,6 +50,7 @@ const extensions = [
   Collaboration.configure({ document: props.room.doc, field: FIELD }),
   PasteSizeGuard.configure({
     limits: () => props.room.limits,
+    atLimit: () => props.room.atLimit,
     tooLarge: () =>
       toast.error('This is too large to add in one go. Insert large images as files.'),
     nearFull: () => toast.warning('This document is nearly full. Some changes may not save.'),

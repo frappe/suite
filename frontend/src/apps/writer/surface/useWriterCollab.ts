@@ -5,7 +5,7 @@ import type { DocumentSession } from '@/apps/drive'
 import { openWriterRoom } from '@/apps/writer/collab'
 import { TransportError } from '@/platform/transport'
 
-import { bannerFor, openFailureFor, PAUSES, SET_ASIDE } from './collabMessages'
+import { bannerFor, openFailureFor } from './collabMessages'
 import type { DocumentSaveState } from './navigation'
 
 export type CollabMode = 'opening' | 'legacy' | 'live' | 'failed'
@@ -20,6 +20,7 @@ interface RoomStatus {
   newerSchema: boolean
   unsent: number
   onDevice: boolean
+  atLimit: boolean
 }
 
 const snapshot = (room: CollabRoom): RoomStatus => ({
@@ -32,6 +33,7 @@ const snapshot = (room: CollabRoom): RoomStatus => ({
   newerSchema: room.newerSchema,
   unsent: room.unsent,
   onDevice: room.onDevice,
+  atLimit: room.atLimit,
 })
 
 // A Writer document's live room: opening it, mirroring its state for the page, and closing it.
@@ -122,18 +124,11 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const banner = computed(() => {
     const now = status.value
     if (!live.value || !now) return null
-    const waiting = !!now.paused && Object.hasOwn(PAUSES, now.paused)
-    if (!(now.blocked || now.held || now.newerSchema || waiting || now.saveState === 'failed'))
-      return setAside.value ? SET_ASIDE : null
     return bannerFor({
-      blocked: now.blocked,
-      stopped: now.stopped,
-      held: now.held,
-      newerSchema: now.newerSchema,
-      paused: now.paused,
-      onDevice: now.onDevice,
+      ...now,
+      failed: now.saveState === 'failed',
       kept: kept.value,
-      unsent: now.unsent,
+      setAside: setAside.value,
     })
   })
   const openFailure = computed(() => openFailureFor(openReason.value, openStatus.value))

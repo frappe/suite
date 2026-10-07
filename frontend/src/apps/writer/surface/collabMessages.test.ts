@@ -3,16 +3,19 @@ import { describe, expect, it } from 'vitest'
 import { bannerFor, openFailureFor, type Banner } from './collabMessages'
 
 // What the banner reads on the page, with the link standing for its words
-const read = (banner: Banner) =>
-  `${banner.text}${banner.link ? `[${banner.link.label}]` : ''}${banner.after ?? ''}`
+const read = (banner: Banner | null) =>
+  banner && `${banner.text}${banner.link ? `[${banner.link.label}]` : ''}${banner.after ?? ''}`
 const standing = {
   blocked: null,
   stopped: null,
   held: null,
   newerSchema: false,
   paused: null,
+  failed: false,
+  atLimit: false,
   onDevice: true,
   kept: false,
+  setAside: false,
   unsent: 1,
 } as const
 
@@ -81,7 +84,7 @@ describe('collab banner copy', () => {
     expect(read(bannerFor({ ...standing, blocked: 'lost_read' }))).toBe(
       'You can no longer open this document.',
     )
-    expect(read(bannerFor({ ...standing, kept: true }))).toBe(
+    expect(read(bannerFor({ ...standing, failed: true, kept: true }))).toBe(
       'Saving stopped in this tab. Unsent changes were kept as a recovery copy. Reload to keep editing.',
     )
   })
@@ -89,23 +92,38 @@ describe('collab banner copy', () => {
 
 describe('collab stop copy', () => {
   it('says why the server will never save a change', () => {
-    expect(read(bannerFor({ ...standing, stopped: 'poison', kept: true }))).toBe(
+    expect(read(bannerFor({ ...standing, failed: true, stopped: 'poison', kept: true }))).toBe(
       "This document can't hold a change made in this tab, so saving stopped. Unsent changes were kept as a recovery copy. Reload to keep editing.",
     )
   })
 
   it('says a change too large to save should go in as files', () => {
-    expect(read(bannerFor({ ...standing, stopped: 'too_large', kept: true }))).toBe(
+    expect(read(bannerFor({ ...standing, failed: true, stopped: 'too_large', kept: true }))).toBe(
       'A change in this tab is too large to save. Insert large images as files. Unsent changes were kept as a recovery copy. Reload to keep editing.',
     )
   })
 
-  it('says a full document is not saving the latest changes, and where they are', () => {
-    expect(read(bannerFor({ ...standing, paused: 'doc_full' }))).toBe(
-      "This document has reached its size limit, so your latest changes aren't saved. They're kept on this device.",
+  it('says a change a full document refused could not be saved, and where it went', () => {
+    expect(
+      read(bannerFor({ ...standing, failed: true, stopped: 'document_full', kept: true })),
+    ).toBe(
+      "This document is at its size limit, so a change in this tab couldn't be saved. Unsent changes were kept as a recovery copy. Reload to keep editing.",
     )
-    expect(read(bannerFor({ ...standing, paused: 'doc_full', onDevice: false }))).toBe(
-      "This document has reached its size limit, so your latest changes aren't saved. Keep this tab open.",
+  })
+
+  it('says a document at its size limit frees space as content is deleted, and where the latest changes went', () => {
+    expect(read(bannerFor({ ...standing, atLimit: true }))).toBe(
+      'This document is at its size limit. Delete content to free space.',
+    )
+    expect(read(bannerFor({ ...standing, atLimit: true, setAside: true }))).toBe(
+      'This document is at its size limit. Your latest changes went to a recovery copy. Delete content to free space.',
+    )
+  })
+
+  it('says nothing while saving goes on, unless an earlier room set edits aside', () => {
+    expect(bannerFor(standing)).toBeNull()
+    expect(read(bannerFor({ ...standing, setAside: true }))).toBe(
+      "Your last edits couldn't be saved here and were kept as a recovery copy.",
     )
   })
 
@@ -119,7 +137,7 @@ describe('collab stop copy', () => {
   })
 
   it('does not offer a reload for a stop a reload would only repeat', () => {
-    expect(read(bannerFor({ ...standing, stopped: 'browser', kept: true }))).toBe(
+    expect(read(bannerFor({ ...standing, failed: true, stopped: 'browser', kept: true }))).toBe(
       "This document can't be edited in this browser version. Unsent changes were kept as a recovery copy.",
     )
   })
@@ -150,7 +168,7 @@ describe('collab stop copy', () => {
 
   it('keeps the general copy for a stop it has no words for', () => {
     for (const stopped of ['seq_conflict', 'constructor'])
-      expect(read(bannerFor({ ...standing, stopped }))).toBe(
+      expect(read(bannerFor({ ...standing, failed: true, stopped }))).toBe(
         'Saving stopped in this tab. Reload to keep editing.',
       )
   })

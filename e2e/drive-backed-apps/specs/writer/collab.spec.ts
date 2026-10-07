@@ -499,20 +499,46 @@ test.describe("Writer collaboration", () => {
 		expect([saved.includes("Before the huge import"), saved.includes("zzzz")]).toEqual([true, false]);
 	});
 
-	test("a full document keeps the latest typing and says it isn't saved", async ({ owner, testApi }) => {
+	test("a paste into a full document is kept aside, and deletes save until there is room", async ({ owner, testApi }) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the document filled");
+		await typeParagraph(owner.page, "Delete me");
 		await expectSaved(owner.page);
 
+		// Held pulls keep the tab from learning the document is full before the paste reaches the server
+		let letPullsThrough = () => {};
+		const pullsHeld = new Promise<void>((resolve) => {
+			letPullsThrough = resolve;
+		});
+		await owner.page.route("**/collab/updates**", async (route) => {
+			if (route.request().method() === "GET") await pullsHeld;
+			await route.fallback();
+		});
 		await fillUp(testApi, node);
-		await typeParagraph(owner.page, "After it filled");
+		await pasteText(owner.page, "Pasted after it filled");
 
-		await expect(
-			owner.page.getByText("This document has reached its size limit, so your latest changes aren't saved."),
-		).toBeVisible();
-		await expect(writerEditor(owner.page)).toContainText("After it filled");
-		const saved = (await serverText(testApi, node)).join("");
-		expect([saved.includes("Before the document filled"), saved.includes("After it filled")]).toEqual([true, false]);
+		const banner =
+			"This document is at its size limit. Your latest changes went to a recovery copy. Delete content to free space.";
+		await expect(owner.page.getByText(banner)).toBeVisible();
+		letPullsThrough();
+		await expect(writerEditor(owner.page)).not.toContainText("Pasted after it filled");
+		expect((await serverText(testApi, node)).join("")).not.toContain("Pasted after it filled");
+
+		await writerEditor(owner.page).getByText("Delete me").click();
+		await owner.page.keyboard.press("End");
+		for (let i = 0; i < 3; i++) await owner.page.keyboard.press("Backspace");
+		await expect(writerEditor(owner.page)).not.toContainText("Delete me");
+		await expect.poll(async () => (await serverText(testApi, node)).join("")).not.toContain("Delete me");
+		await expect(owner.page.getByText(banner)).toBeVisible();
+		// Checked at once, as typing that went in would also leave once its refusal rebuilds the tab
+		await owner.page.keyboard.type("Typed while full");
+		expect(await writerEditor(owner.page).innerText()).not.toContain("Typed while full");
+
+		await compactNow(testApi, node);
+		await expect(owner.page.getByText(banner)).toBeHidden();
+		await typeParagraph(owner.page, "Room again");
+		await expectSaved(owner.page);
+		expect((await serverText(testApi, node)).join("")).toContain("Room again");
 	});
 
 	test("a change the server finds too large stops saving and says to insert images as files", async ({ owner }) => {

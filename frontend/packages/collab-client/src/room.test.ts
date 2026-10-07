@@ -76,12 +76,14 @@ function fakeServer(state = 'live', lineage = 'L') {
   const pieces: { stage: string; idx: number }[] = []
   const shas = new Map<string, string>()
   let nextClient = 1
+  // A compacted state counted this big instead of the checkpoint's own size
+  const counted = { state: null as number | null }
   // What the server publishes about sizes: the caps, and how full the document is now
   const limits = () => ({
     fragment: 256 * 1024,
     edit_max: 4 * 2 ** 20,
     state_max: 4 * 2 ** 20,
-    state_bytes: checkpoint.bytes.byteLength,
+    state_bytes: counted.state ?? checkpoint.bytes.byteLength,
     tail_bound: rows
       .filter((row) => row.rev > checkpoint.base)
       .reduce((sum, row) => sum + row.bytes.byteLength, 0),
@@ -228,6 +230,7 @@ function fakeServer(state = 'live', lineage = 'L') {
     epoch,
     schema,
     judge,
+    counted,
     compact,
     quarantine,
   }
@@ -1726,6 +1729,47 @@ describe('collab room on a device', () => {
       'failed',
     ])
     expect((await kept.store.recovery('D')).map((copy) => copy.reason)).toEqual(['client_closed'])
+  })
+
+  it('a change refused by a full document is kept aside and the tab asks to be rebuilt', async () => {
+    const server = fakeServer()
+    const kept = await device()
+    const room = await join(server.endpoints(), { device: kept })
+    server.access.refuse = reply(423, { collab: 'doc_full', retry_ms: 300_000 })
+
+    room.doc.getText('t').insert(0, 'one line too many')
+    await room.flush()
+    server.access.refuse = null
+
+    expect([room.stopped, room.needsRebuild, room.paused]).toEqual(['document_full', true, null])
+    expect((await kept.store.recovery('D')).map((copy) => copy.reason)).toEqual(['document_full'])
+    expect(text(await join(server.endpoints(), { device: kept }))).toBe('')
+  })
+
+  it('a tab knows the document is at its limit from the open, and that it has room again from a pull', async () => {
+    const server = fakeServer()
+    server.counted.state = 4 * 2 ** 20
+    const room = await join(server.endpoints())
+    const opened = room.atLimit
+    let told = 0
+    room.onChange(() => told++)
+
+    server.counted.state = null
+    await room.pull()
+
+    expect([opened, room.atLimit, told > 0]).toEqual([true, false, true])
+  })
+
+  it('a document is at its limit once its saved changes fill what its state leaves', async () => {
+    const server = fakeServer()
+    server.counted.state = 4 * 2 ** 20 - 10
+    const room = await join(server.endpoints())
+    const opened = room.atLimit
+    room.doc.getText('t').insert(0, 'more than ten bytes')
+    await room.flush()
+    await room.pull()
+
+    expect([opened, room.atLimit]).toEqual([false, true])
   })
 
   it('a rebuild leaves no quarantined change in the device copy', async () => {

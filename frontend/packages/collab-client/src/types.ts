@@ -73,6 +73,8 @@ export interface CollabRoom {
   readonly appliedThrough: number
   // The sizes the server last published; null until it has, as in a tab opened offline
   readonly limits: Limits | null
+  // The document holds all it may until a compaction shrinks it, so only deleting content saves
+  readonly atLimit: boolean
   onChange(listener: () => void): () => void
   pull(): Promise<void>
   flush(): Promise<void>

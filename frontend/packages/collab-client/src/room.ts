@@ -127,6 +127,11 @@ export class Room implements CollabRoom {
     return !!this.device
   }
 
+  get atLimit() {
+    const limits = this.limits
+    return !!limits && limits.state_bytes + limits.tail_bound >= limits.state_max
+  }
+
   get unsent() {
     return this.boxes.reduce((sum, box) => sum + box.pending.length, 0)
   }
@@ -166,7 +171,7 @@ export class Room implements CollabRoom {
         }
         const { header, rows } = decodeFrame<PullHeader>(answer.bytes)
         this.heard()
-        if (header.limits) this.limits = header.limits
+        if (header.limits) this.measure(header.limits)
         if (header.state === 'rebuild') return this.outdated()
         this.hold(header.held ?? null)
         if (!this.follow(header.schema)) return
@@ -531,6 +536,11 @@ export class Room implements CollabRoom {
       if (reply.collab === 'stage_conflict') this.staging = null
       return this.retryAfter(backoff())
     }
+    // A change that adds content to a full document is never taken, so it waits in a recovery copy
+    if (reply.status === 423 && reply.collab === 'doc_full') {
+      await this.die('document_full')
+      return this.outdated()
+    }
     if (reply.status === 423) {
       if (reply.reason === 'suspect') this.hold(this.held ?? 'change')
       this.pause(reply.reason ?? reply.collab ?? 'busy')
@@ -623,6 +633,12 @@ export class Room implements CollabRoom {
     if (this.persisted || !this.device) return
     this.persisted = true
     void globalThis.navigator?.storage?.persist?.().catch(() => {})
+  }
+
+  private measure(limits: Limits) {
+    const was = this.atLimit
+    this.limits = limits
+    if (this.atLimit !== was) this.changed()
   }
 
   private pause(reason: string | null) {

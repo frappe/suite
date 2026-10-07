@@ -17,6 +17,7 @@ const fake = vi.hoisted(() => {
     saveState: 'clean',
     unsent: 0,
     onDevice: true,
+    atLimit: false,
     listeners: [] as (() => void)[],
     onChange(listener: () => void) {
       this.listeners.push(listener)
@@ -119,18 +120,25 @@ describe('writer collab editing state', () => {
     ])
   })
 
-  it('tells a writer their changes wait on a full document or a refusing network, and not on a busy one', async () => {
+  it('tells a writer their changes wait on a refusing network, and not on a busy one', async () => {
     fake.room = fake.make()
     const collab = await opened()
     becomes({ saveState: 'unsaved', unsent: 1, paused: 'compacting' })
     const busy = collab.banner.value
-    becomes({ paused: 'doc_full' })
-    const full = collab.banner.value?.text
     becomes({ paused: 'upload_refused' })
-    expect([busy, full, collab.banner.value?.text]).toEqual([
+    expect([busy, collab.banner.value?.text]).toEqual([
       null,
-      "This document has reached its size limit, so your latest changes aren't saved. They're kept on this device.",
       "Your network is refusing uploads, so your latest changes aren't saved. They're kept on this device.",
+    ])
+  })
+
+  it('keeps editing open on a document at its size limit, and says deleting frees space', async () => {
+    fake.room = fake.make()
+    const collab = await opened()
+    becomes({ atLimit: true })
+    expect([collab.allowsEditing.value, collab.banner.value?.text]).toEqual([
+      true,
+      'This document is at its size limit. Delete content to free space.',
     ])
   })
 })
@@ -243,6 +251,21 @@ describe('writer collab rebuild', () => {
     await vi.waitFor(() => expect(collab.room.value).toBe(third))
 
     expect(collab.banner.value).toBeNull()
+  })
+
+  it('after a full document refuses a change, the rebuilt room says where it went and that deleting frees space', async () => {
+    fake.room = fake.make()
+    const collab = await opened(() => true)
+    const first = fake.room
+    const second = (fake.room = { ...fake.make(), atLimit: true })
+    becomesOn(first, { stopped: 'document_full', saveState: 'failed', unsent: 1 })
+    becomesOn(first, { needsRebuild: true })
+    await vi.waitFor(() => expect(collab.room.value).toBe(second))
+
+    expect([collab.allowsEditing.value, collab.banner.value?.text]).toEqual([
+      true,
+      'This document is at its size limit. Your latest changes went to a recovery copy. Delete content to free space.',
+    ])
   })
 
   it('says nothing was set aside when the rebuilt room takes the unsent work over', async () => {

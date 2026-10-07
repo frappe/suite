@@ -18,11 +18,17 @@ interface Standing {
   held: string | null
   // A newer editor wrote to the document, so this tab only shows it
   newerSchema: boolean
-  // Why saving waits; `doc_full` lasts until the document gets smaller
+  // Why saving waits
   paused: string | null
+  // Saving stopped with work unsent
+  failed: boolean
+  // The document holds all it may, so only deletes save
+  atLimit: boolean
   onDevice: boolean
   // The editor's HTML was kept in this browser as a recovery copy
   kept: boolean
+  // An earlier room of this page set its unsent work aside as a recovery copy
+  setAside: boolean
   unsent: number
 }
 
@@ -30,19 +36,24 @@ const STOPS: Record<string, string> = {
   poison: "This document can't hold a change made in this tab, so saving stopped.",
   browser: "This document can't be edited in this browser version.",
   too_large: 'A change in this tab is too large to save. Insert large images as files.',
+  document_full: "This document is at its size limit, so a change in this tab couldn't be saved.",
 }
 // Stops a reload would only repeat
 const LASTING = new Set(['browser'])
 
-// Shown in a rebuilt room once the stopped room's unsent work went to a recovery copy
-export const SET_ASIDE: Banner = {
-  text: "Your last edits couldn't be saved here and were kept as a recovery copy.",
+// Waits that say why changes aren't saving yet; other pauses clear on their own too soon to mention
+const PAUSES: Record<string, string> = {
+  upload_refused: 'Your network is refusing uploads',
 }
 
-// Waits that say why changes aren't saving yet; other pauses clear on their own too soon to mention
-export const PAUSES: Record<string, string> = {
-  doc_full: 'This document has reached its size limit',
-  upload_refused: 'Your network is refusing uploads',
+// While saving goes on: a full document, or a rebuilt room after the stopped one's work went to a recovery copy
+function savingBanner(atLimit: boolean, setAside: boolean): Banner | null {
+  if (atLimit) {
+    const moved = setAside ? ' Your latest changes went to a recovery copy.' : ''
+    return { text: `This document is at its size limit.${moved} Delete content to free space.` }
+  }
+  if (!setAside) return null
+  return { text: "Your last edits couldn't be saved here and were kept as a recovery copy." }
 }
 
 export function bannerFor({
@@ -51,10 +62,15 @@ export function bannerFor({
   held,
   newerSchema,
   paused,
+  failed,
+  atLimit,
   onDevice,
   kept,
+  setAside,
   unsent,
-}: Standing): Banner {
+}: Standing): Banner | null {
+  const waiting = paused && Object.hasOwn(PAUSES, paused) ? PAUSES[paused] : null
+  if (!(blocked || held || newerSchema || waiting || failed)) return savingBanner(atLimit, setAside)
   const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
@@ -72,7 +88,6 @@ export function bannerFor({
         : `${text} Your unsent changes save once it is released.${keepOpen}`,
     }
   }
-  const waiting = paused && Object.hasOwn(PAUSES, paused) ? PAUSES[paused] : null
   if (waiting && !blocked && !stopped)
     return {
       text: onDevice
