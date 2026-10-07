@@ -144,7 +144,7 @@ def _open(node: str) -> Response:
         return _frame({"state": "unconverted", "proto": collab.PROTO})
     consider_compaction(doc.id)
     return _frame(
-        collab.open_header(snapshot, can_write=can_write),
+        {**collab.open_header(snapshot, can_write=can_write), "limits": collab.limits(doc)},
         collab.with_tombstones(snapshot),
         snapshot["checkpoint"],
     )
@@ -172,6 +172,7 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
         "q_epoch": epoch,
         "judged": int(doc.judged),
         "schema": json.loads(doc.schema_steps)[-1][1],
+        "limits": collab.limits(doc),
     }
     if doc.verdict:
         header["verdict"] = doc.verdict

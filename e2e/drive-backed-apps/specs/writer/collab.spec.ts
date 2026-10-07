@@ -364,6 +364,15 @@ test.describe("Writer collaboration", () => {
 		expect((await serverText(testApi, node)).at(-1)).toBe("x".repeat(700_000));
 	});
 
+	test("a change over a quarter mebibyte sent whole is refused and saves nothing", async ({ owner, testApi }) => {
+		const before = await serverText(testApi, node);
+
+		const answer = await pushInPieces(owner.page.request, testApi, node, owner.user.user, 300_000, true);
+
+		expect(answer).toEqual({ pieces: 0, status: 413, collab: "too_large" });
+		expect(await serverText(testApi, node)).toEqual(before);
+	});
+
 	test("a big paste is saved in pieces and reads back whole", async ({ owner, testApi }) => {
 		const pieces: string[] = [];
 		owner.page.on("request", (request) => {

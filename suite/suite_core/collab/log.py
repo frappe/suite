@@ -19,7 +19,7 @@ from collections.abc import Sequence
 import frappe
 from frappe.utils import now_datetime
 
-from suite.suite_core.collab import capacity, ingest, stage
+from suite.suite_core.collab import capacity, ingest, scheduling, stage
 from suite.suite_core.collab.tables import table
 
 PROTO = 1
@@ -66,7 +66,7 @@ def find(adapter: str, node: str) -> frappe._dict | None:
     """`node`'s log, or None when it has none or its log is purged."""
     rows = frappe.db.sql(
         f"""SELECT `id`, `lineage`, `head_rev`, `head_chain`, `q_epoch`, `verdict`, `judged`, `schema_steps`,
-        `suspect_held` FROM `{table(adapter, "doc")}` WHERE `node` = %s AND `mode` != 'purged'""",
+        `suspect_held`, `state_bytes`, `tail_bound` FROM `{table(adapter, "doc")}` WHERE `node` = %s AND `mode` != 'purged'""",
         node,
         as_dict=True,
     )
@@ -157,6 +157,17 @@ def open_header(doc: dict, *, can_write: bool) -> dict:
     }
 
 
+def limits(doc: frappe._dict) -> dict:
+    """The sizes a tab checks a change against before it enters the document."""
+    return {
+        "fragment": stage.PIECE_MAX,
+        "edit_max": capacity.edit_max(),
+        "state_max": scheduling.STATE_MAX,
+        "state_bytes": int(doc.state_bytes),
+        "tail_bound": int(doc.tail_bound),
+    }
+
+
 def load_session(adapter: str, doc_id: str, sid: str, principal: str):
     """The session row for `sid`, or None. Refused if it belongs to another principal."""
     rows = frappe.db.sql(
@@ -240,6 +251,9 @@ def parse_push(body: bytes) -> tuple[dict, bytes]:
     except ValueError:
         raise Refusal(400, "malformed") from None
     payload = body[4 + length :]
+    # A bigger change is staged in pieces first
+    if len(payload) > stage.PIECE_MAX:
+        raise Refusal(413, "too_large")
     required = {
         "lineage": str,
         "sid": str,

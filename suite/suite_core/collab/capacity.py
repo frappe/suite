@@ -8,6 +8,8 @@ own bound stay under the cap.
 
 from datetime import datetime
 
+import frappe
+
 from suite.suite_core.collab import ingest, updates
 from suite.suite_core.collab.scheduling import STATE_MAX
 
@@ -17,6 +19,13 @@ DELETE_ROOM = 512 * 2**10
 TAIL_ROWS_MAX = 20_000
 COMPACTION_MS = 2000
 FULL_RETRY_MS = 300_000
+EDIT_MAX = 4 * 2**20
+
+
+def edit_max() -> int:
+    """The largest change one push may commit; escaping can double its bytes on the way to the database."""
+    packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
+    return min(EDIT_MAX, (packet - 2**20) // 2)
 
 
 class Full(Exception):

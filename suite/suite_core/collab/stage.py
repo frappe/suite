@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 import frappe
 
-from suite.suite_core.collab import ingest
+from suite.suite_core.collab import capacity
 from suite.suite_core.collab.tables import table
 
 PIECE_MAX = 256 * 2**10
@@ -71,7 +71,7 @@ def parse_piece(body: bytes, idx: str) -> tuple[dict, int, bytes]:
         raise Malformed
     if header["from"] < 1 or header["to"] < header["from"] or header["total_len"] < 1:
         raise Malformed
-    if header["total_len"] > ingest.MAX_BYTES:
+    if header["total_len"] > capacity.edit_max():
         raise TooLarge
     if not idx.isdigit() or int(idx) >= count(header["total_len"]):
         raise Malformed

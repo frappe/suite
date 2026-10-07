@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import frappe
 import pycrdt
@@ -115,3 +116,16 @@ class TestAdmit(UnitTestCase):
         capacity.admit(doc_row(rows=19_999), self.adds, 1, NOW)
 
         self.assertEqual(self.refusal(doc_row(rows=20_000), self.adds, 1)[0], "compacting")
+
+
+class TestEditMax(UnitTestCase):
+    def edit_max(self, packet: int) -> int:
+        with patch.object(frappe.db, "sql", return_value=[[packet]]):
+            return capacity.edit_max()
+
+    def test_a_database_that_takes_big_packets_allows_four_mebibyte_changes(self):
+        self.assertEqual(self.edit_max(64 * 2**20), 4 * 2**20)
+
+    def test_a_small_packet_allows_half_of_what_is_left_after_a_mebibyte(self):
+        # Escaping can double a change's bytes, and the statement around them needs room too
+        self.assertEqual(self.edit_max(4 * 2**20), 1536 * 2**10)

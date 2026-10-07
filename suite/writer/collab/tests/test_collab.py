@@ -17,7 +17,7 @@ from werkzeug.wrappers import Request
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
-from suite.suite_core.collab import scheduling
+from suite.suite_core.collab import capacity, scheduling
 from suite.suite_core.collab.log import chain_next, chain_seed
 from suite.suite_core.collab.stage import PIECE_MAX
 from suite.suite_core.collab.updates import encoded_string, encoded_uint
@@ -171,6 +171,20 @@ def piece_body(lineage: str, sid: str, seq: int, change: bytes, piece: bytes, /,
     return struct.pack(">I", len(data)) + data + piece
 
 
+def body_for(node: str, lineage: str, sid: str, cid: int, seq: int, update: bytes) -> bytes:
+    """The push of `update` as `seq`: inline, or naming the stage its pieces were put to first."""
+    if len(update) <= PIECE_MAX:
+        return push_body(lineage, sid, cid, seq, 0, update)
+    stage_id = uuid.uuid4().hex
+    for idx, piece in enumerate(pieces_of(update)):
+        body = piece_body(lineage, sid, seq, update, piece)
+        response = call(
+            lambda node, idx=idx: routes.collab_stage_put(node, stage_id, str(idx)), node, body=body
+        )
+        assert response.status_code == 200, answer(response)
+    return push_body(lineage, sid, cid, seq, 0, b"", entries=[update], stage_id=stage_id)
+
+
 def big_change(cid: int, nbytes: int) -> bytes:
     """A first change by `cid` of about `nbytes` bytes of typing."""
     return typed(cid, ["x" * (nbytes - 64)])[0]
@@ -294,10 +308,11 @@ class TestWriterCollab(IntegrationTestCase):
         node = self.new_document()
         sid, cid = self.session(node)
         doc = pycrdt.Doc(client_id=cid)
-        doc.get("meta", type=pycrdt.Map)["firstTabLabel"] = bytes(range(256)) * 1024
+        doc.get("meta", type=pycrdt.Map)["firstTabLabel"] = bytes(range(256)) * (16 * 2**10 - 1)
         payload = doc.get_update()
+        self.assertLessEqual(len(payload), 4 * 2**20)
 
-        self.assertEqual(self.push(node, sid, cid, 1, payload)[0], 200)
+        self.assertEqual(self.push_staged(node, sid, cid, payload, self.stage(node, sid, payload))[0], 200)
 
         self.assertEqual(self.open(node)[1], [(1, payload)])
         self.assert_one_order(node, 1)
@@ -372,7 +387,7 @@ class TestWriterCollab(IntegrationTestCase):
         cases = (
             ("not an update", b"\x00\x01"),
             ("empty", b"\x00\x00"),
-            ("nested too deep", embedded(cid, "[" * 200_000 + "]" * 200_000)),
+            ("nested too deep", embedded(cid, "[" * 100_000 + "]" * 100_000)),
             ("another writer's", typed(cid + 1, ["a"])[0]),
         )
         for case, payload in cases:
@@ -1087,6 +1102,50 @@ class TestWriterCollab(IntegrationTestCase):
         self.assertEqual(put(0, pieces[0], sid=uuid.uuid4().hex), (409, {"collab": "session_unknown"}))
         self.assertEqual(put(2, pieces[2])[0], 200)
         self.assertEqual(self.staged(node), 1)
+
+    def test_a_change_over_a_quarter_mebibyte_sent_whole_is_refused_as_too_large(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        overhead = len(big_change(cid, 200_000)) - 200_000
+
+        self.assertEqual(
+            self.push(node, sid, cid, 1, big_change(cid, PIECE_MAX + 1 - overhead)),
+            (413, {"collab": "too_large"}),
+        )
+        self.assertEqual(self.push(node, sid, cid, 1, big_change(cid, PIECE_MAX - overhead))[0], 200)
+
+    def test_pieces_of_a_change_over_what_the_database_takes_are_refused_as_too_large(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, _cid = self.session(node)
+        change = b"x" * 600_000
+
+        with patch.object(capacity, "edit_max", return_value=len(change) - 1):
+            status, body = self.put(
+                node,
+                uuid.uuid4().hex,
+                0,
+                piece_body(self.open(node)[0]["lineage"], sid, 1, change, change[:PIECE_MAX]),
+            )
+
+        self.assertEqual((status, body), (413, {"collab": "too_large"}))
+        self.assertEqual(self.staged(node), 0)
+
+    def test_open_and_pull_name_the_sizes_a_change_is_checked_against(self):
+        self.set_mode("on")
+        node = self.new_document()
+        sid, cid = self.session(node)
+        self.push(node, sid, cid, 1, big_change(cid, 10_000))
+
+        opened = self.open(node)[0]["limits"]
+        pulled = read_frame(call(routes.collab_updates_get, node).get_data())[0]["limits"]
+
+        self.assertEqual(opened, pulled)
+        self.assertEqual(
+            (opened["fragment"], opened["edit_max"], opened["state_max"]), (256 * 2**10, 4 * 2**20, 4 * 2**20)
+        )
+        self.assertEqual(opened["tail_bound"], len(big_change(cid, 10_000)))
 
     def test_a_document_holds_at_most_sixteen_mebibytes_of_pieces(self):
         self.set_mode("on")

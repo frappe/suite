@@ -158,14 +158,15 @@ function framed(header: object, bytes: Buffer): Buffer {
 	return Buffer.concat([length, json, bytes]);
 }
 
-/** Add a paragraph of `length` letters to `node` as `user`, staged over the piece route in reverse order and then pushed. */
+/** Add a paragraph of `length` letters to `node` as `user`, staged over the piece route in reverse order and then pushed; `whole` sends it in the push itself. */
 export async function pushInPieces(
 	request: APIRequestContext,
 	api: APIRequestContext,
 	node: string,
 	user: string,
 	length: number,
-): Promise<{ pieces: number; status: number }> {
+	whole = false,
+): Promise<{ pieces: number; status: number; collab?: string }> {
 	const base = `/api/suite/writer/documents/${encodeURIComponent(node)}/collab`;
 	const headers = { "X-Collab-Principal": user };
 	const sid = randomUUID().replaceAll("-", "");
@@ -184,7 +185,7 @@ export async function pushInPieces(
 	const sha = createHash("sha256").update(change).digest("hex");
 	const stage = randomUUID().replaceAll("-", "");
 	const size = 256 * 1024;
-	const pieces = Math.ceil(change.length / size);
+	const pieces = whole ? 0 : Math.ceil(change.length / size);
 	for (let idx = pieces - 1; idx >= 0; idx--) {
 		const header = { lineage: made.lineage, principal: user, sid, from: 1, to: 1, total_len: change.length, sha_total: sha };
 		const put = await request.put(`${base}/stage/${stage}/${idx}`, {
@@ -203,11 +204,12 @@ export async function pushInPieces(
 		seen_rev: made.head_rev,
 		schema: 1,
 		shas: [sha],
-		stage_id: stage,
+		...(whole ? {} : { stage_id: stage }),
 	};
 	const push = await request.post(`${base}/updates`, {
 		headers: { ...headers, "Content-Type": "application/octet-stream" },
-		data: framed(header, Buffer.alloc(0)),
+		data: framed(header, whole ? change : Buffer.alloc(0)),
 	});
-	return { pieces, status: push.status() };
+	if (push.ok()) return { pieces, status: push.status() };
+	return { pieces, status: push.status(), collab: ((await push.json()) as { collab: string }).collab };
 }
