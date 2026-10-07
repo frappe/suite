@@ -983,6 +983,33 @@ describe('collab room', () => {
     expect([room.stopped, room.saveState, server.rows.length]).toEqual(['too_large', 'failed', 0])
   })
 
+  it('a change a proxy refuses for its size stays unsent and saves once uploads get through', async () => {
+    vi.useFakeTimers()
+    const server = fakeServer()
+    const endpoints = server.endpoints()
+    const stage = endpoints.stage
+    let proxy = true
+    endpoints.stage = async (id, idx, body) =>
+      proxy
+        ? {
+            status: 413,
+            bytes: new TextEncoder().encode('<html>413 Request Entity Too Large</html>'),
+          }
+        : stage(id, idx, body)
+    const room = await join(endpoints)
+    room.doc.getText('t').insert(0, BIG)
+
+    await vi.advanceTimersByTimeAsync(500)
+    const refused = [room.paused, room.stopped, room.unsent, server.rows.length]
+    proxy = false
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    expect([refused, [room.paused, room.saveState, server.rows.length]]).toEqual([
+      ['upload_refused', null, 1, 0],
+      [null, 'clean', 1],
+    ])
+  })
+
   it('a staged change whose answer was lost is acknowledged without staging it again', async () => {
     vi.useFakeTimers()
     const server = fakeServer()

@@ -530,7 +530,11 @@ export class Room implements CollabRoom {
     const blocked = this.refused(reply, 'lost_edit')
     if (blocked && recoverable(blocked)) return this.retryAfter(backoff())
     if (blocked) return
-    if (!reply.collab) return this.retryAfter(backoff())
+    if (!reply.collab) {
+      // Only a proxy refuses a body without a reason; the change stays here until uploads get through
+      if (reply.status === 413) this.pause('upload_refused')
+      return this.retryAfter(backoff())
+    }
     await this.die(reply.collab)
     // The server quarantined a change of this session, which this copy still holds
     if (reply.collab === 'client_closed') this.outdated()

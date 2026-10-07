@@ -39,6 +39,12 @@ export const SET_ASIDE: Banner = {
   text: "Your last edits couldn't be saved here and were kept as a recovery copy.",
 }
 
+// Waits that say why changes aren't saving yet; other pauses clear on their own too soon to mention
+export const PAUSES: Record<string, string> = {
+  doc_full: 'This document has reached its size limit',
+  upload_refused: 'Your network is refusing uploads',
+}
+
 export function bannerFor({
   blocked,
   stopped,
@@ -66,11 +72,12 @@ export function bannerFor({
         : `${text} Your unsent changes save once it is released.${keepOpen}`,
     }
   }
-  if (paused === 'doc_full' && !blocked && !stopped)
+  const waiting = paused && Object.hasOwn(PAUSES, paused) ? PAUSES[paused] : null
+  if (waiting && !blocked && !stopped)
     return {
       text: onDevice
-        ? "This document has reached its size limit, so your latest changes aren't saved. They're kept on this device."
-        : `This document has reached its size limit, so your latest changes aren't saved.${keepOpen}`,
+        ? `${waiting}, so your latest changes aren't saved. They're kept on this device.`
+        : `${waiting}, so your latest changes aren't saved.${keepOpen}`,
     }
   switch (blocked) {
     case 'signed_out':

@@ -5,7 +5,7 @@ import type { DocumentSession } from '@/apps/drive'
 import { openWriterRoom } from '@/apps/writer/collab'
 import { TransportError } from '@/platform/transport'
 
-import { bannerFor, openFailureFor, SET_ASIDE } from './collabMessages'
+import { bannerFor, openFailureFor, PAUSES, SET_ASIDE } from './collabMessages'
 import type { DocumentSaveState } from './navigation'
 
 export type CollabMode = 'opening' | 'legacy' | 'live' | 'failed'
@@ -121,8 +121,8 @@ export function useWriterCollab(session: DocumentSession, retainRecovery: () => 
   const banner = computed(() => {
     const now = status.value
     if (!live.value || !now) return null
-    const full = now.paused === 'doc_full'
-    if (!(now.blocked || now.held || now.newerSchema || full || now.saveState === 'failed'))
+    const waiting = !!now.paused && Object.hasOwn(PAUSES, now.paused)
+    if (!(now.blocked || now.held || now.newerSchema || waiting || now.saveState === 'failed'))
       return setAside.value ? SET_ASIDE : null
     return bannerFor({
       blocked: now.blocked,

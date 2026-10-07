@@ -109,6 +109,15 @@ describe('collab stop copy', () => {
     )
   })
 
+  it('says a network refusing uploads is holding the latest changes back, and where they are', () => {
+    expect(read(bannerFor({ ...standing, paused: 'upload_refused' }))).toBe(
+      "Your network is refusing uploads, so your latest changes aren't saved. They're kept on this device.",
+    )
+    expect(read(bannerFor({ ...standing, paused: 'upload_refused', onDevice: false }))).toBe(
+      "Your network is refusing uploads, so your latest changes aren't saved. Keep this tab open.",
+    )
+  })
+
   it('does not offer a reload for a stop a reload would only repeat', () => {
     expect(read(bannerFor({ ...standing, stopped: 'browser', kept: true }))).toBe(
       "This document can't be edited in this browser version. Unsent changes were kept as a recovery copy.",

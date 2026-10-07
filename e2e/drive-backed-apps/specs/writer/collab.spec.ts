@@ -386,6 +386,36 @@ test.describe("Writer collaboration", () => {
 		}
 	});
 
+	test("a paste a 200 KiB proxy refuses stays unsent, says so, and saves once the proxy lets it through", async ({
+		owner,
+		testApi,
+		baseURL,
+	}) => {
+		test.setTimeout(90_000);
+		const proxy = await bodyLimitProxy(baseURL!, 200 * 2 ** 10);
+		try {
+			await owner.page.goto(`${proxy.origin}/d/${node}`);
+			await expect(writerEditor(owner.page)).toBeVisible();
+			const big = "p".repeat(300 * 2 ** 10);
+
+			await pasteText(owner.page, big);
+
+			const refusing = owner.page.getByText("Your network is refusing uploads, so your latest changes aren't saved.");
+			await expect(refusing).toBeVisible();
+			expect(proxy.seen.refused).toBeGreaterThan(0);
+			expect((await serverText(testApi, node)).includes(big)).toBe(false);
+
+			proxy.lift();
+
+			// The tab retries on its own backoff, up to half a minute
+			await expect(owner.page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 45_000 });
+			await expect(refusing).toBeHidden();
+			expect((await serverText(testApi, node)).includes(big)).toBe(true);
+		} finally {
+			await proxy.close();
+		}
+	});
+
 	test("a document at the cap opens in under three seconds", async ({ owner, testApi }) => {
 		test.setTimeout(120_000);
 		const length = 4 * 2 ** 20 - 64 * 2 ** 10;

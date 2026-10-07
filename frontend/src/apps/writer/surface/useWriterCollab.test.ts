@@ -119,15 +119,18 @@ describe('writer collab editing state', () => {
     ])
   })
 
-  it('tells a writer their changes wait on a full document, and not on a busy one', async () => {
+  it('tells a writer their changes wait on a full document or a refusing network, and not on a busy one', async () => {
     fake.room = fake.make()
     const collab = await opened()
     becomes({ saveState: 'unsaved', unsent: 1, paused: 'compacting' })
     const busy = collab.banner.value
     becomes({ paused: 'doc_full' })
-    expect([busy, collab.banner.value?.text]).toEqual([
+    const full = collab.banner.value?.text
+    becomes({ paused: 'upload_refused' })
+    expect([busy, full, collab.banner.value?.text]).toEqual([
       null,
       "This document has reached its size limit, so your latest changes aren't saved. They're kept on this device.",
+      "Your network is refusing uploads, so your latest changes aren't saved. They're kept on this device.",
     ])
   })
 })

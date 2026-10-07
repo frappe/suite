@@ -253,6 +253,9 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20) {
 	return {
 		origin: `${upstream.protocol}//${upstream.hostname}:${port}`,
 		seen,
+		lift: () => {
+			limit = Infinity;
+		},
 		close: () =>
 			new Promise<void>((closed) => {
 				server.close(() => closed());
