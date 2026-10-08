@@ -5,23 +5,21 @@
 // component.
 //
 // Usage:
-//   const { pushEditOp } = useEditOps({ sheet, history, queueOp,
+//   const { pushEditOp } = useEditOps({ currentSheet, history, queueOp,
 //                                       broadcastBatchChange,
 //                                       syncFlags, isDirty })
 //
-// Caller pattern (per edit path — formula bar commit, fill, cut,
-// dropdown pick):
-//   1) capture `beforeMap = { id: oldValue, … }` BEFORE the writes
-//   2) run the writes via sheet.setCell
-//   3) `pushEditOp(sheetName, beforeMap, 'Edit cell')`
+// Caller pattern (per edit path — fill, dropdown pick, checkbox):
+//   1) read `beforeMap = { id: oldInput, … }` BEFORE the writes
+//   2) write `afterMap = { id: newInput, … }` (one command)
+//   3) `pushEditOp(sheetName, beforeMap, afterMap, 'Edit cell')`
 //
-// pushEditOp re-reads each id, builds a refs-only diff, fires the
-// op through history.pushOp + queueOp + broadcastBatchChange, and
-// flips the dirty / saved flags. Returns the op (or null when no
-// cells actually changed) so callers can chain logic off the diff.
+// pushEditOp keeps only the cells whose input changed, fires the op
+// through history.pushOp + queueOp + broadcastBatchChange, and flips
+// the dirty / saved flags. Returns the op (or null when no cells
+// actually changed) so callers can chain logic off the diff.
 
 export function useEditOps({
-  sheet,
   currentSheet,
   history,
   queueOp,
@@ -29,16 +27,16 @@ export function useEditOps({
   syncFlags,
   isDirty,
 }) {
-  function pushEditOp(sheetName, beforeMap, summary = '') {
-    if (!beforeMap) return null
+  function pushEditOp(sheetName, beforeMap, afterMap, summary = '') {
+    if (!beforeMap || !afterMap) return null
     const sn = sheetName || currentSheet.value
     const refs = []
     const before = {},
       after = {}
-    for (const id of Object.keys(beforeMap)) {
-      const a = sheet.getCell(id, sn)
-      if (a !== beforeMap[id]) {
-        before[id] = beforeMap[id]
+    for (const [id, a] of Object.entries(afterMap)) {
+      const b = beforeMap[id] ?? ''
+      if (a !== b) {
+        before[id] = b
         after[id] = a
         refs.push(id)
       }

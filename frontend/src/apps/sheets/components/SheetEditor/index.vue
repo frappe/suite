@@ -2202,7 +2202,7 @@ import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
-import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
+import { planFill } from '../../engine/fill-series.js'
 import { formatScope } from '../../engine/format-scope.js'
 import { createFormatsEngine } from '../../engine/formats.js'
 import { adjustFormula } from '../../engine/formula-adjust.js'
@@ -2450,18 +2450,16 @@ function _onNamedRangesChanged() {
 // selected column, detects a heuristic transform (case / concat / word /
 // substring / email-part), and fills the rest.
 const { runSmartFill: _runSmartFill } = useSmartFill({
-  getSheet: () => sheet,
+  readInputs: (rect, sn) => _readInputs(rect, sn),
+  writeInputs: (sn, map) => _writeInputs(sn, map),
   currentSheet,
   getGrid: () => grid,
   queueOp: (...a) => _queueOp(...a),
-  captureRange: (...a) => _captureRange(...a),
-  diffRefs: (...a) => _diffRefs(...a),
   getHistory: () => history,
   getIsDirty: () => isDirty,
-  repopulateGrid: () => _repopulateGrid(),
 })
-function runSmartFill() {
-  const result = _runSmartFill()
+async function runSmartFill() {
+  const result = await _runSmartFill()
   if (!result.ok) {
     // Hint the user when there's nothing to fill — quiet failure feels broken.
     const hints = {
@@ -4415,18 +4413,21 @@ function _fillValidation(src, total, sn) {
 }
 
 // _runFill modes: 'auto' | 'series' | 'copy' | 'format-only' | 'without-format'
-function _runFill(src, total, mode) {
+async function _runFill(src, total, mode) {
   const sheetName = currentSheet.value
-  const fillBefore = _captureRange(total, sheetName)
+  // `total` includes `src`, so this one read is also the fill's source.
+  const fillBefore = await _readInputs(total, sheetName)
   const beforeFmt = _captureFormatsRange(total, sheetName)
   const beforeVal = _captureValidationRange(total, sheetName)
   const beforeMergeSnap = merge.snapshot?.()
   const cfBefore = condFormat?.getRules?.(sheetName)?.length ?? 0
+  let writes = {}
   if (mode === 'format-only') {
     _fillFormatsOnly(src, total, sheetName)
   } else {
     const valueMode = mode === 'without-format' ? 'auto' : mode
-    _fillValues(src, total, sheetName, valueMode)
+    writes = planFill(src, total, (r, c) => fillBefore[cellId(r, c)] ?? '', valueMode)
+    _writeInputs(sheetName, writes)
     if (mode === 'without-format') _clearFormats(src, total, sheetName)
   }
   if (mode !== 'format-only') {
@@ -4439,7 +4440,7 @@ function _runFill(src, total, mode) {
   if (mode !== 'without-format') {
     _fillMerges(src, total, sheetName)
   }
-  const fillAfter = _captureRange(total, sheetName)
+  const fillAfter = { ...fillBefore, ...writes }
   const afterFmt = _captureFormatsRange(total, sheetName)
   const afterVal = _captureValidationRange(total, sheetName)
   const afterMergeSnap = merge.snapshot?.()
@@ -4499,81 +4500,6 @@ function _fillSummary(mode, n) {
   if (mode === 'format-only') return `Filled formats into ${n} cell${n === 1 ? '' : 's'}`
   if (mode === 'without-format') return `Filled (no format) ${n} cell${n === 1 ? '' : 's'}`
   return `Filled ${n} cell${n === 1 ? '' : 's'}`
-}
-
-// Read every cell value inside `src` into a 2D array shaped [rows][cols].
-function _readSrcGrid(src) {
-  const data = []
-  for (let r = src.r0; r <= src.r1; r++) {
-    const row = []
-    for (let c = src.c0; c <= src.c1; c++) row.push(sheet.getCell(cellId(r, c)))
-    data.push(row)
-  }
-  return data
-}
-function _fillValues(src, total, sheetName, valueMode) {
-  const goDown = total.r1 > src.r1,
-    goUp = total.r0 < src.r0
-  const goRight = total.c1 > src.c1,
-    goLeft = total.c0 < src.c0
-
-  // Diagonal drags extend `total` in BOTH axes. The original 1D branch ran
-  // only the vertical OR horizontal path, leaving the off-axis columns/rows
-  // empty (the user's report: drag A1 → C10 only filled A1:A10). Run the
-  // vertical phase first; then, treating the now-grown column as the new
-  // source, run the horizontal phase. Re-read srcData between phases so
-  // computeFillRight sees the freshly written values in each column.
-
-  let workSrc = src
-  let srcData = _readSrcGrid(workSrc)
-  let srcRows = workSrc.r1 - workSrc.r0 + 1
-  const srcCols = workSrc.c1 - workSrc.c0 + 1
-  if (goDown || goUp) {
-    const count = goDown ? total.r1 - workSrc.r1 : workSrc.r0 - total.r0
-    const dir = goDown ? 1 : -1
-    const filled = computeFillDown(srcData, count, dir, {
-      mode: valueMode,
-    })
-    const startR = goDown ? workSrc.r1 + 1 : total.r0
-    filled.forEach((row, rOff) =>
-      row.forEach((val, cOff) => {
-        if (typeof val === 'string' && val.startsWith('=')) {
-          const srcRowOff =
-            dir > 0 ? rOff % srcRows : (((srcRows - 1 - rOff) % srcRows) + srcRows) % srcRows
-          val = adjustFormula(val, startR + rOff - (workSrc.r0 + srcRowOff), 0)
-        }
-        sheet.setCell(cellId(startR + rOff, workSrc.c0 + cOff), val)
-      }),
-    )
-    // Expand the working source vertically — phase 2 will spread these full
-    // columns sideways across the rest of the destination.
-    workSrc = {
-      r0: Math.min(workSrc.r0, total.r0),
-      r1: Math.max(workSrc.r1, total.r1),
-      c0: workSrc.c0,
-      c1: workSrc.c1,
-    }
-    srcData = _readSrcGrid(workSrc)
-    srcRows = workSrc.r1 - workSrc.r0 + 1
-  }
-  if (goRight || goLeft) {
-    const count = goRight ? total.c1 - workSrc.c1 : workSrc.c0 - total.c0
-    const dir = goRight ? 1 : -1
-    const filled = computeFillRight(srcData, count, dir, {
-      mode: valueMode,
-    })
-    const startC = goRight ? workSrc.c1 + 1 : total.c0
-    filled.forEach((row, rOff) =>
-      row.forEach((val, cOff) => {
-        if (typeof val === 'string' && val.startsWith('=')) {
-          const srcColOff =
-            dir > 0 ? cOff % srcCols : (((srcCols - 1 - cOff) % srcCols) + srcCols) % srcCols
-          val = adjustFormula(val, 0, startC + cOff - (workSrc.c0 + srcColOff))
-        }
-        sheet.setCell(cellId(workSrc.r0 + rOff, startC + cOff), val)
-      }),
-    )
-  }
 }
 
 // Replicate every merge whose master AND span lie entirely inside `src` into
@@ -4681,20 +4607,28 @@ function _clearFormats(src, total, sn) {
     }
   }
 }
-function _previewSeriesKind(src) {
+// The series a fill from `src` would continue (null = plain copy).
+async function _previewSeriesKind(src) {
   const sn = currentSheet.value
   const sel = grid?.getSelection()
   const goingDown = sel ? sel.r1 > src.r1 : false
   const goingRight = sel ? sel.c1 > src.c1 : false
   const sampleAlongCol = goingDown || !goingRight
+  const inputs = await _readInputs(src, sn)
   const vals = []
   if (sampleAlongCol) {
-    for (let r = src.r0; r <= src.r1; r++) vals.push(sheet.getCell(cellId(r, src.c0), sn))
+    for (let r = src.r0; r <= src.r1; r++) vals.push(inputs[cellId(r, src.c0)])
   } else {
-    for (let c = src.c0; c <= src.c1; c++) vals.push(sheet.getCell(cellId(src.r0, c), sn))
+    for (let c = src.c0; c <= src.c1; c++) vals.push(inputs[cellId(src.r0, c)])
   }
   const series = detectSeries(vals.map((v) => (v == null ? '' : String(v))))
   return series ? series.kind : null
+}
+
+// Cmd/Ctrl held inverts the auto-detected mode — Google Sheets behaviour.
+async function _fillFromHandle(src, total, withModifier) {
+  const mode = withModifier ? ((await _previewSeriesKind(src)) ? 'copy' : 'series') : 'auto'
+  await _runFill(src, total, mode)
 }
 
 // ── Mount phases ─────────────────────────────────────────────────────────────
@@ -4928,10 +4862,9 @@ function _setupGridInstance() {
       onBlockedEdit: () => _flashProtected(currentSheet.value),
       onFill(src, total, { withModifier = false } = {}) {
         if (_fillDestBlocked(src, total)) return // only the destination cells, not the source
-        const series = _previewSeriesKind(src)
-        // Cmd/Ctrl held inverts the auto-detected mode — Google Sheets behaviour.
-        const mode = withModifier ? (series ? 'copy' : 'series') : 'auto'
-        _runFill(src, total, mode)
+        _fillFromHandle(src, total, withModifier).catch((e) =>
+          console.error('[sheets] fill failed', e),
+        )
       },
       onBatchCommit(cells) {
         if (_cellsBlocked(cells.map((c) => c.id))) return
@@ -5741,77 +5674,34 @@ function _cancelFormulaBar() {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
-function fillDown() {
+// Ctrl+D / Ctrl+R: copy the selection's first row down (or first column
+// right) across the rest of it.
+async function _fillFromEdge(down) {
   if (!grid) return
-  const { r0, c0, r1, c1 } = grid.getSelection()
-  if (r1 <= r0) return
+  const sel = grid.getSelection()
+  const { r0, c0, r1, c1 } = sel
+  if (down ? r1 <= r0 : c1 <= c0) return
   const sn = currentSheet.value
-  if (
-    _rectBlocked(
-      {
-        r0: r0 + 1,
-        c0,
-        r1,
-        c1,
-      },
-      sn,
-    )
-  )
-    return
-  const before = {}
-  for (let c = c0; c <= c1; c++) {
-    for (let r = r0 + 1; r <= r1; r++) {
-      const id = colLabel(c) + (r + 1)
-      before[id] = sheet.getCell(id, sn)
+  const dest = down ? { r0: r0 + 1, c0, r1, c1 } : { r0, c0: c0 + 1, r1, c1 }
+  if (_rectBlocked(dest, sn)) return
+  const before = await _readInputs(sel, sn)
+  const after = {}
+  for (let r = dest.r0; r <= dest.r1; r++) {
+    for (let c = dest.c0; c <= dest.c1; c++) {
+      const srcVal = before[down ? cellId(r0, c) : cellId(r, c0)] ?? ''
+      after[cellId(r, c)] = srcVal.startsWith('=')
+        ? adjustFormula(srcVal, down ? r - r0 : 0, down ? 0 : c - c0)
+        : srcVal
     }
   }
-  for (let c = c0; c <= c1; c++) {
-    const srcVal = sheet.getCell(colLabel(c) + (r0 + 1))
-    for (let r = r0 + 1; r <= r1; r++) {
-      const val =
-        typeof srcVal === 'string' && srcVal.startsWith('=')
-          ? adjustFormula(srcVal, r - r0, 0)
-          : srcVal
-      sheet.setCell(colLabel(c) + (r + 1), val)
-    }
-  }
-  _pushEditOp(sn, before, 'Fill down')
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, down ? 'Fill down' : 'Fill right')
+}
+function fillDown() {
+  _fillFromEdge(true).catch((e) => console.error('[sheets] fill down failed', e))
 }
 function fillRight() {
-  if (!grid) return
-  const { r0, c0, r1, c1 } = grid.getSelection()
-  if (c1 <= c0) return
-  const sn = currentSheet.value
-  if (
-    _rectBlocked(
-      {
-        r0,
-        c0: c0 + 1,
-        r1,
-        c1,
-      },
-      sn,
-    )
-  )
-    return
-  const before = {}
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0 + 1; c <= c1; c++) {
-      const id = colLabel(c) + (r + 1)
-      before[id] = sheet.getCell(id, sn)
-    }
-  }
-  for (let r = r0; r <= r1; r++) {
-    const srcVal = sheet.getCell(colLabel(c0) + (r + 1))
-    for (let c = c0 + 1; c <= c1; c++) {
-      const val =
-        typeof srcVal === 'string' && srcVal.startsWith('=')
-          ? adjustFormula(srcVal, 0, c - c0)
-          : srcVal
-      sheet.setCell(colLabel(c) + (r + 1), val)
-    }
-  }
-  _pushEditOp(sn, before, 'Fill right')
+  _fillFromEdge(false).catch((e) => console.error('[sheets] fill right failed', e))
 }
 
 // Mirrors `clipboard.hasData()` reactively so the context menu can show /
@@ -6625,38 +6515,32 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.id = id
   dropdownPanel.options = rule.options
   dropdownPanel.rule = rule
-  dropdownPanel.value = String(sheet.getCell(id, currentSheet.value) ?? '')
+  dropdownPanel.value = _inputAt(id) ?? ''
   dropdownPanel.x = pos.x ?? 0
   dropdownPanel.y = pos.y ?? 0
   dropdownPanel.w = pos.w ?? 120
   dropdownPanel.open = true
 }
-function pickDropdownOption(opt) {
+async function pickDropdownOption(opt) {
   const id = dropdownPanel.id
   const sn = currentSheet.value
-  if (_cellBlocked(id, sn)) {
-    dropdownPanel.open = false
-    return
-  }
-  const before = {
-    [id]: sheet.getCell(id, sn),
-  }
-  sheet.setCell(id, opt)
   dropdownPanel.open = false
-  _pushEditOp(sn, before, 'Edit cell')
+  if (_cellBlocked(id, sn)) return
+  const before = { [id]: await _readInput(id, sn) }
+  const after = { [id]: String(opt) }
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Edit cell')
   recomputePivotsForSheet(sn)
 }
 
 // Clicking a checkbox cell's tickbox flips TRUE ↔ FALSE (empty → TRUE). Routed
 // through the same edit-op path as a dropdown pick so undo + collab match.
-function toggleCheckbox(id) {
+async function toggleCheckbox(id) {
   const sn = currentSheet.value
-  const before = {
-    [id]: sheet.getCell(id, sn),
-  }
-  const next = String(before[id]).toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE'
-  sheet.setCell(id, next, sn)
-  _pushEditOp(sn, before, 'Toggle checkbox')
+  const before = { [id]: await _readInput(id, sn) }
+  const after = { [id]: before[id].toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE' }
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Toggle checkbox')
   recomputePivotsForSheet(sn)
 }
 
@@ -7823,17 +7707,16 @@ function unlinkLinkCardCell() {
   syncFlags()
   isDirty.value = true
 }
-function replaceLinkWithTitle() {
+async function replaceLinkWithTitle() {
   const sn = currentSheet.value
   const id = linkCard.id
   const title = linkCard.preview?.title
   linkCard.open = false
   if (!id || !title || readOnly.value || _cellBlocked(id, sn)) return
-  const before = {
-    [id]: sheet.getCell(id, sn),
-  }
-  sheet.setCell(id, title, sn)
-  _pushEditOp(sn, before, 'Replace URL with title')
+  const before = { [id]: await _readInput(id, sn) }
+  const after = { [id]: title }
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Replace URL with title')
   if (activeCell.value === id) formulaValue.value = title
 }
 function openInsertMany(kind, below = false) {
@@ -8176,7 +8059,6 @@ function markEdited() {
 // ./useEditOps.js so the contract is unit-testable in isolation;
 // see that file for the rationale on op-based vs snapshot history.
 const { pushEditOp: _pushEditOp } = useEditOps({
-  sheet,
   currentSheet,
   history,
   queueOp: _queueOp,
@@ -8320,6 +8202,15 @@ async function _readInputs(rect, sn = currentSheet.value) {
     for (let c = rect.c0; c <= rect.c1; c++)
       out[cellId(r, c)] = inputs[r - rect.r0]?.[c - rect.c0] ?? ''
   return out
+}
+
+// One cell's input: from the cache when on screen, else from the worker.
+async function _readInput(id, sn = currentSheet.value) {
+  const known = _inputAt(id, sn)
+  if (known !== undefined) return known
+  const p = parseCellId(id)
+  if (!p) return ''
+  return (await _readInputs({ r0: p.row, c0: p.col, r1: p.row, c1: p.col }, sn))[id] ?? ''
 }
 
 // A cell's computed display string. Readers that run during a paint use this,
