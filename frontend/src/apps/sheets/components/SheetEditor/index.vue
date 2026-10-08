@@ -2194,6 +2194,9 @@ import { confirmLeave } from '@/utils/confirmLeave'
 import { chipColor, chipPaletteColor } from '../../canvas/chip-geometry'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants'
 import { createGrid } from '../../canvas/index'
+import { createCellProvider } from '../../core/cell-provider'
+import { createWorkbookClient } from '../../core/client'
+import { createDisplayCache } from '../../core/display-cache'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
@@ -2573,29 +2576,11 @@ const history = createHistory({
   getLocalTouches: () => _drainCollabLocalTouches(),
 })
 
-// Used by op-based undo/redo to write a {cellId: value} diff back to the
-// engine. Routes through the engine's bulk write so a big op (delete-all,
-// 25k-cell paste) doesn't freeze the main thread the same way the import
-// hot loop used to. For small ops the per-cell setCell path is still
-// fine and keeps the collab Y.Doc mirror in sync; the batch path is only
-// taken when the op is large enough that the per-cell cascade would be
-// the bottleneck.
-//
-// Threshold is conservative — 25 cells is well below the point where
-// per-cell setCell starts to feel slow, but above any typical single-cell
-// edit so collab sync stays exact for normal undo/redo.
-const _BATCH_THRESHOLD = 25
+// Used by op-based undo/redo to write a {cellId: value} diff back, as one
+// command.
 function _applyCellMap(map, sheetName) {
   if (!map) return
-  const ids = Object.keys(map)
-  if (ids.length === 0) return
-  if (ids.length > _BATCH_THRESHOLD && sheet.batchSetCells) {
-    sheet.batchSetCells(map, sheetName, {
-      replace: false,
-    })
-    return
-  }
-  for (const id of ids) sheet.setCell(id, map[id] ?? '', sheetName)
+  _writeInputs(sheetName || currentSheet.value, map)
 }
 
 // Apply a {cellId: format|null} diff. Used by paste/fill undo/redo to
@@ -3845,8 +3830,7 @@ const {
   retrySave,
   workbookJson,
 } = usePersistence({
-  sheet,
-  currentSheet,
+  engine: { start: _startEngine, toBytes: _engineBytes },
   formats,
   merge,
   comments,
@@ -4722,7 +4706,7 @@ function _setupGridInstance() {
       getDisplay: _cellDisplay,
       // The in-cell editor opens with the raw input (the formula, not its
       // result), matching the formula bar set in onSelect.
-      getEditValue: (id) => sheet.getCell(id),
+      getEditValue: (id) => _inputAt(id) ?? (id === activeCell.value ? formulaValue.value : ''),
       // Non-empty cell ids for the current sheet — the lazy path's source for
       // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
       // own `data` keys.
@@ -4755,8 +4739,8 @@ function _setupGridInstance() {
     host: {
       onSelect(id) {
         activeCell.value = id
-        formulaValue.value = sheet.getCell(id)
         _typedCell = null
+        _showInputInFormulaBar(id)
         refreshActiveFormat()
         _syncNumberFormat(id)
         computeSelectionStats()
@@ -4830,8 +4814,8 @@ function _setupGridInstance() {
             }, 3500)
           }
         }
-        const before = sheet.getCell(id, writeSheet)
-        sheet.setCell(id, value, writeSheet)
+        const before = _inputAt(id, writeSheet) ?? ''
+        _writeInputs(writeSheet, { [id]: value })
         if (writeSheet !== currentSheet.value) {
           switchSheet(writeSheet, {
             preserveEdit: true,
@@ -4908,7 +4892,7 @@ function _setupGridInstance() {
         editingHomeSheet.value = null
         editingHomeCell.value = null
         _typedCell = null
-        formulaValue.value = sheet.getCell(id)
+        _showInputInFormulaBar(id)
       },
       onHyperlinkClick(url) {
         window.open(url, '_blank', 'noopener,noreferrer')
@@ -4945,8 +4929,11 @@ function _setupGridInstance() {
       },
       onBatchCommit(cells) {
         if (_cellsBlocked(cells.map((c) => c.id))) return
-        const { before, after, refs } = diffCells(cells, (id) => sheet.getCell(id))
-        for (const { id, value } of cells) sheet.setCell(id, value)
+        const { before, after, refs } = diffCells(cells, (id) => _inputAt(id) ?? '')
+        _writeInputs(
+          currentSheet.value,
+          Object.fromEntries(cells.map(({ id, value }) => [id, value])),
+        )
         if (refs.length) {
           const op = {
             opType: 'edit',
@@ -4991,9 +4978,7 @@ function _setupGridInstance() {
       // selection, navigation and copy.
       canEdit: () => !readOnly.value,
     },
-    // Lazy render is the default; eager `data` cache stays as an opt-out
-    // fallback (`?lazy=0`). See _lazyValuesEnabled.
-    lazyValues: _lazyValuesEnabled(),
+    lazyValues: true,
   })
   // Keep DOM overlays (filter chevrons) in sync with canvas scroll/resize/freeze.
   grid.onRender(() => {
@@ -5067,7 +5052,7 @@ async function _loadInitialData() {
     _applyHiddenRows()
     syncNames()
     activeCell.value = 'A1'
-    formulaValue.value = sheet.getCell('A1')
+    _showInputInFormulaBar('A1')
     refreshActiveFormat()
     _syncNumberFormat('A1')
     // Re-baseline history to the loaded state. The pre-load init() above
@@ -5076,11 +5061,15 @@ async function _loadInitialData() {
     // blank the sheet on the first snapshot-based undo (e.g. insert column).
     history.reset()
     syncFlags()
-  } else if (props.id === 'new') {
-    // Google-Sheets model: create the doc immediately so there is never an
-    // "unsaved" state.  The parent swaps the URL to ?id=<name> via onSaved.
-    const name = await autoCreate(currentTitle.value || 'Untitled Sheet')
-    if (name) emit('saved', name)
+  } else {
+    // A new sheet starts as an empty workbook.
+    await _startEngine()
+    if (props.id === 'new') {
+      // Google-Sheets model: create the doc immediately so there is never an
+      // "unsaved" state.  The parent swaps the URL to ?id=<name> via onSaved.
+      const name = await autoCreate(currentTitle.value || 'Untitled Sheet')
+      if (name) emit('saved', name)
+    }
   }
 }
 
@@ -5097,13 +5086,6 @@ onMounted(async () => {
   } finally {
     isInitialLoad.value = false
   }
-  if (_ironcalcEnabled() && grid?.isLazyValues?.()) {
-    try {
-      await _startIronCalc()
-    } catch (e) {
-      console.error('[sheets] IronCalc preview failed to start', e)
-    }
-  }
   // Focus the grid on open so arrow-key nav and Cmd+V work immediately, without
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
   _refocusGridIfIdle()
@@ -5115,16 +5097,17 @@ onBeforeUnmount(() => {
   // debounce window) silently drops the most recent changes — exactly the
   // "data is lost when I come back" report. The fetch uses `keepalive: true`
   // so the request survives the unmount.
-  if (isDirty.value && !readOnly.value && props.id && props.id !== 'new') {
-    void saveExisting(props.id, currentTitle.value, {
-      keepalive: true,
-    }).catch(() => {})
-  }
+  const lastSave =
+    isDirty.value && !readOnly.value && props.id && props.id !== 'new'
+      ? saveExisting(props.id, currentTitle.value, {
+          keepalive: true,
+        }).catch(() => {})
+      : null
+  // That save reads the workbook from the worker, so stop it only after.
+  if (lastSave) void lastSave.finally(_stopEngine)
+  else _stopEngine()
   gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
-  _ironcalc?.provider.dispose()
-  _ironcalc?.client.terminate()
-  _ironcalc = null
   grid?.destroy()
   window.removeEventListener('keydown', onGlobalKey)
   document.removeEventListener('paste', onDocPaste)
@@ -5682,30 +5665,41 @@ function _commitFormulaBar() {
     editingHomeSheet.value = null
     editingHomeCell.value = null
     _typedCell = null
-    formulaValue.value = sheet.getCell(targetId, targetSheet)
+    _showInputInFormulaBar(targetId, targetSheet)
     return
   }
-  const before = {
-    [targetId]: sheet.getCell(targetId, targetSheet),
-  }
+  const value = formulaValue.value
+  const before = _inputAt(targetId, targetSheet) ?? ''
   if (homeSheet && homeSheet !== currentSheet.value) {
     switchSheet(homeSheet, {
       preserveEdit: true,
     })
-    sheet.setCell(homeCell, formulaValue.value, homeSheet)
-  } else {
-    sheet.setCell(activeCell.value, formulaValue.value)
   }
+  _writeInputs(targetSheet, { [targetId]: value })
   editingHomeSheet.value = null
   editingHomeCell.value = null
   _typedCell = null
-  _pushEditOp(targetSheet, before, 'Edit cell')
+  if (before !== value) {
+    const op = {
+      opType: 'edit',
+      subSheet: targetSheet,
+      cellRefs: [targetId],
+      before: { [targetId]: before },
+      after: { [targetId]: value },
+      summary: 'Edit cell',
+    }
+    _queueOp(op)
+    history.pushOp(op)
+    broadcastCellChange(targetSheet, targetId, value)
+    syncFlags()
+    isDirty.value = true
+  }
   _maybeAutoLink(
     [
       {
         id: targetId,
-        value: formulaValue.value,
-        before: before[targetId],
+        value,
+        before,
       },
     ],
     targetSheet,
@@ -5720,9 +5714,9 @@ function _cancelFormulaBar() {
     // committed contents (i.e. the edit is discarded cleanly).
     switchSheet(homeSheet)
     activeCell.value = homeCell
-    formulaValue.value = sheet.getCell(homeCell, homeSheet)
+    _showInputInFormulaBar(homeCell, homeSheet)
   } else {
-    formulaValue.value = sheet.getCell(activeCell.value)
+    _showInputInFormulaBar(activeCell.value)
   }
   editingHomeSheet.value = null
   editingHomeCell.value = null
@@ -8175,134 +8169,110 @@ const { pushEditOp: _pushEditOp } = useEditOps({
 
 // ── Repopulate ────────────────────────────────────────────────────────────────
 
-// Lazy render path is the default (Phase 3 cutover): the grid pulls each
-// visible cell's display string on demand, so switch/load cost no longer scales
-// with cell count. The eager `data`-cache path is kept intact as a fallback —
-// disable lazy per-browser with `?lazy=0` or localStorage['sheets:lazy']='0' if
-// a rendering regression turns up on a real sheet.
-function _lazyValuesEnabled() {
-  try {
-    if (new URLSearchParams(window.location.search).get('lazy') === '0') return false
-    if (window.localStorage?.getItem('sheets:lazy') === '0') return false
-  } catch {
-    /* no window/storage — fall through to default */
-  }
-  return true
-}
-
 // Display string for a single cell — the formatted value the canvas paints.
 // Single source of truth shared by the eager repopulate (below), the per-cell
 // onCellChanged repaint, and the lazy render path (grid `getDisplay`), so all
 // three render identical pixels. showFormulas mode paints raw formula text.
 function _cellDisplay(id) {
-  if (showFormulas.value) return String(sheet.getCell(id) ?? '')
+  if (showFormulas.value) return _inputAt(id) ?? ''
   const sn = currentSheet.value
   const fmt = formats.get(id, sn)
   const dv = _displayValue(id, sn)
   return fmt.numberFormat ? applyNumberFmt(dv, fmt.numberFormat) : dv
 }
 
-// A cell's computed display string, from whichever engine is active: IronCalc
-// in the preview, else the old engine. Readers that run during a paint use
-// this, so values and conditional formats come from the same engine.
-function _displayValue(id, sn = currentSheet.value) {
-  return _ironcalc ? _ironcalcDisplay(id, sn) : sheet.getDisplayValue(id, sn)
-}
+// ── IronCalc ─────────────────────────────────────────────────────────────────
+// IronCalc (core/: worker, client, display cache) holds every cell. The grid
+// reads display values and inputs through the cell provider; every write is a
+// command sent with client.dispatch. Features that still read the old engine
+// (sheet.*) move over one at a time.
 
-// ── IronCalc preview (?engine=ironcalc) ──────────────────────────────────────
-// Runs the new core (core/: worker, client, display cache) beside the old
-// engine. The grid's lazy getDisplay reads values from IronCalc; the old
-// engine still owns saving, undo and every feature layer. Cell writes are
-// mirrored by wrapping the old engine's setCell / batchSetCells, so every
-// write path (in-cell editor, formula bar, paste, fill, checkboxes) reaches
-// IronCalc. Structural edits (insert/delete/move rows and columns, sheet
-// add/rename/delete) are not mirrored and diverge until editing moves to
-// commands. Needs the lazy render path (the default).
+let _engine = null // { client, provider } once started
 
-let _ironcalc = null // { client, provider } once started
-
-function _ironcalcEnabled() {
-  try {
-    return new URLSearchParams(window.location.search).get('engine') === 'ironcalc'
-  } catch {
-    return false
-  }
-}
-
-async function _startIronCalc() {
-  // Dynamic imports: without the flag, none of the core is downloaded.
-  const [{ createWorkbookClient }, { createDisplayCache }, { createCellProvider }, { importV1 }] =
-    await Promise.all([
-      import('../../core/client'),
-      import('../../core/display-cache'),
-      import('../../core/cell-provider'),
-      import('../../core/import-v1'),
-    ])
+async function _startEngine(snapshotBytes = null) {
+  _stopEngine()
   const cache = createDisplayCache()
-  const client = await createWorkbookClient({ echo: cache })
+  const client = await createWorkbookClient({ echo: cache, snapshotBytes })
   client.onCommandError((f) => console.error('[sheets] IronCalc rejected', f.command.type, f.error))
-
-  const t0 = performance.now()
-  const names = sheet.getSheetNames()
-  const { command, skipped } = importV1(
-    names.map((name) => ({ name, cells: sheet.getRawData(name) })),
-  )
-  client.dispatch(command)
-  await client.idle()
-  console.info(
-    `[sheets] IronCalc loaded ${command.payload.commands.length} commands in ${Math.round(performance.now() - t0)} ms`,
-  )
-  if (Object.keys(skipped).length) console.warn('[sheets] IronCalc skipped cells', skipped)
-
   const provider = createCellProvider({ client, cache, requestRender: () => grid?.render?.() })
-  _ironcalc = { client, provider }
-  _mirrorOldEngineWrites()
+  _engine = { client, provider }
   grid?.render?.()
 }
 
-// The old engine's two write entry points. Internal calls inside sheet.js
-// bypass these wrappers, but every caller in this component goes through
-// the object.
-function _mirrorOldEngineWrites() {
-  const setCell = sheet.setCell
-  sheet.setCell = (id, value, sn = currentSheet.value) => {
-    setCell(id, value, sn)
-    _ironcalcMirrorInput(id, value, sn)
-  }
-  const batchSetCells = sheet.batchSetCells
-  sheet.batchSetCells = (map, sn = currentSheet.value, opts) => {
-    const diff = batchSetCells(map, sn, opts)
-    // `after` holds every cell the batch changed, '' for cleared ones.
-    for (const [id, value] of Object.entries(diff?.after ?? {})) _ironcalcMirrorInput(id, value, sn)
-    return diff
-  }
+function _stopEngine() {
+  _engine?.provider.dispose()
+  _engine?.client.terminate()
+  _engine = null
 }
 
-let _ironcalcSeq = 0
+function _engineBytes() {
+  if (!_engine) return Promise.reject(new Error('IronCalc is not running'))
+  return _engine.client.toBytes()
+}
 
-function _ironcalcMirrorInput(id, value, sn) {
-  if (!_ironcalc) return
+let _commandSeq = 0
+
+function _command(type, payload) {
+  return { id: `ui-${Date.now()}-${_commandSeq++}`, actor: 'local', ts: Date.now(), type, payload }
+}
+
+// One cell's write: setInput, or clearContents when the value is empty.
+function _inputCommand(sn, id, value) {
   const p = parseCellId(id)
-  if (!p) return
-  const row = p.row + 1,
-    col = p.col + 1
+  if (!p) return null
+  const row = p.row + 1
+  const col = p.col + 1
   const input = value == null ? '' : String(value)
-  _ironcalc.client.dispatch({
-    id: `ui-${Date.now()}-${_ironcalcSeq++}`,
-    actor: 'local',
-    ts: Date.now(),
-    ...(input === ''
-      ? {
-          type: 'clearContents',
-          payload: { sheet: sn, range: { r1: row, c1: col, r2: row, c2: col } },
-        }
-      : { type: 'setInput', payload: { sheet: sn, row, col, input } }),
-  })
+  return input === ''
+    ? _command('clearContents', { sheet: sn, range: { r1: row, c1: col, r2: row, c2: col } })
+    : _command('setInput', { sheet: sn, row, col, input })
 }
 
-function _ironcalcDisplay(id, sn) {
+// Writes a {cellId: value} map as one command, so a multi-cell edit or an
+// undo recalculates once.
+function _writeInputs(sn, map) {
+  if (!_engine) return
+  const commands = Object.entries(map)
+    .map(([id, value]) => _inputCommand(sn, id, value))
+    .filter(Boolean)
+  if (commands.length === 1) _engine.client.dispatch(commands[0])
+  else if (commands.length > 1) _engine.client.dispatch(_command('batch', { commands }))
+}
+
+// The cell's input (a formula, not its result) when its area is on screen,
+// else undefined. Writes use it as the value they replace.
+function _inputAt(id, sn = currentSheet.value) {
   const p = parseCellId(id)
-  return p ? _ironcalc.provider.getDisplay(sn, p.row + 1, p.col + 1) : ''
+  return p && _engine ? _engine.provider.getInput(sn, p.row + 1, p.col + 1) : undefined
+}
+
+// Shows a cell's input in the formula bar. A cell off screen (a jump to a far
+// cell) takes one round trip to the worker.
+function _showInputInFormulaBar(id, sn = currentSheet.value) {
+  const known = _inputAt(id, sn)
+  if (known !== undefined) {
+    formulaValue.value = known
+    return
+  }
+  formulaValue.value = ''
+  const p = parseCellId(id)
+  if (!p || !_engine) return
+  _engine.client
+    .readCells({ sheet: sn, cells: [{ row: p.row + 1, col: p.col + 1 }], what: ['input'] })
+    .then(({ cells }) => {
+      // Still the active cell, and nobody has started typing into it.
+      if (activeCell.value === id && currentSheet.value === sn && !_typedCell) {
+        formulaValue.value = cells[0]?.input ?? ''
+      }
+    })
+    .catch((e) => console.error('[sheets] readCells failed', e))
+}
+
+// A cell's computed display string. Readers that run during a paint use this,
+// so values and conditional formats come from the same place.
+function _displayValue(id, sn = currentSheet.value) {
+  const p = parseCellId(id)
+  return p && _engine ? _engine.provider.getDisplay(sn, p.row + 1, p.col + 1) : ''
 }
 
 // Grow the grid's scrollable area to cover a sheet's used extent so the user

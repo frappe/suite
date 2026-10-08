@@ -39,18 +39,19 @@ function refusal(): Error {
   return Object.assign(new Error('Not permitted'), { type: 'PermissionError', status: 403 })
 }
 
-let live: Record<string, Record<string, string>> = { Sheet1: {} }
+const WORKBOOK = new Uint8Array([1, 2, 3])
+const started: Array<Uint8Array | null> = []
 
 function persistence(options: Record<string, unknown> = {}) {
-  const sheet = {
-    restore: () => {},
-    getAllRaw: () => live,
-    getCurrentSheet: () => 'Sheet1',
+  const engine = {
+    start: async (bytes: Uint8Array | null) => {
+      started.push(bytes)
+    },
+    toBytes: async () => WORKBOOK,
   }
   const formats = { restore: () => {}, snapshot: () => ({}) }
   return usePersistence({
-    sheet,
-    currentSheet: ref('Sheet1'),
+    engine,
     formats,
     currentTitle: ref('Budget'),
     emit: () => {},
@@ -61,7 +62,7 @@ function persistence(options: Record<string, unknown> = {}) {
 const saves = () => server.calls.filter((call) => call.method === 'suite.sheets.api.save_sheet')
 
 beforeEach(() => {
-  live = { Sheet1: {} }
+  started.length = 0
   server.calls = []
   server.visits = []
   server.answer = (method) =>
@@ -112,10 +113,34 @@ describe('Sheets persistence', () => {
     expect(saved.saveError.value).toContain('Not permitted')
   })
 
-  it('keeps the whole workbook as JSON for a recovery copy', () => {
-    const workbook = JSON.parse(persistence().workbookJson())
-    expect(workbook).toMatchObject({ formats: {}, merge: null, view: null })
-    expect(workbook.sheet).toBeTruthy()
+  it('keeps the whole workbook as JSON for a recovery copy', async () => {
+    const workbook = JSON.parse(await persistence().workbookJson())
+    expect(workbook).toMatchObject({
+      formats: {},
+      merge: null,
+      view: null,
+      engine_version: '0.8.4',
+    })
+    expect(workbook.engine).toBe(btoa('\x01\x02\x03'))
+  })
+
+  it('saves the IronCalc workbook in sheets_data', async () => {
+    await persistence().saveExisting('sheet-1', 'Budget')
+    const sent = JSON.parse(saves()[0]!.args.sheets_data as string)
+    expect(sent.engine).toBe(btoa('\x01\x02\x03'))
+    expect(sent.sheet).toBeUndefined()
+  })
+
+  it('starts IronCalc from the saved workbook, or empty for an older save', async () => {
+    server.answer = () => ({
+      name: 's',
+      title: 'T',
+      sheets_data: JSON.stringify({ engine: btoa('\x07') }),
+    })
+    await persistence().loadSheet('s')
+    server.answer = () => ({ name: 's', title: 'T', sheets_data: JSON.stringify({ sheet: {} }) })
+    await persistence().loadSheet('s')
+    expect(started).toEqual([new Uint8Array([7]), null])
   })
 
   it("loads and saves through the caller's fetch, so link credentials ride along", async () => {
@@ -142,13 +167,9 @@ describe('Sheets persistence', () => {
     expect(saves()).toHaveLength(1)
   })
 
-  it('puts a cell edit still in progress into the recovery copy, and leaves the live workbook alone', () => {
-    live = { Sheet1: { A1: 'kept' } }
-    const workbook = JSON.parse(
-      persistence().workbookJson({ sheet: 'Sheet1', cell: 'B2', value: 'typing' }),
-    )
-
-    expect(workbook.sheet.sheets.Sheet1.rows).toEqual({ '0': ['kept'], '1': [null, 'typing'] })
-    expect(live).toEqual({ Sheet1: { A1: 'kept' } })
+  it('puts a cell edit still in progress into the recovery copy', async () => {
+    const draft = { sheet: 'Sheet1', cell: 'B2', value: 'typing' }
+    const workbook = JSON.parse(await persistence().workbookJson(draft))
+    expect(workbook.draft).toEqual(draft)
   })
 })
