@@ -144,6 +144,7 @@ class TestWriterCheckpoints(CheckpointCase):
     def test_a_compaction_writes_every_row_into_the_writer_row(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two ", "three"])
+        versions = frappe.db.count("Drive Node Version", {"node": node})
 
         self.compact(node)
 
@@ -153,6 +154,8 @@ class TestWriterCheckpoints(CheckpointCase):
         self.assertEqual((doc.body_rev, doc.tail_rows, doc.tail_bytes), (3, 0, 0))
         self.assertEqual((doc.compaction_failures, doc.next_compaction_at), (0, None))
         self.assertEqual(self.row_count(node), 3)
+        self.assertEqual(frappe.db.get_value("Writer Document", {"node": node}, "html"), "")
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": node}), versions)
 
     def test_a_second_compaction_replaces_the_first_body(self):
         node = self.new_document()
@@ -292,7 +295,9 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.job(self.doc_row(node).id).install({**snapshot, "lineage": "0" * 32}, result)
 
-        self.assertEqual((self.doc_row(node).body_rev, self.body_of(node)), (0, b"\x00\x00"))
+        doc = self.doc_row(node)
+        self.assertEqual((doc.body_rev, self.body_of(node)), (0, b"\x00\x00"))
+        self.assertEqual((doc.compaction_failures, doc.next_compaction_at), (0, None))
         self.assertEqual(self.opened(node)[2], "one two")
 
     def test_with_every_place_taken_a_compaction_waits_without_counting_a_failure(self):
