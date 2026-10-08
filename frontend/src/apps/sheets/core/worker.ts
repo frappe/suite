@@ -12,6 +12,7 @@
 
 import init, { type ExtendedCellStyle } from '@ironcalc/wasm'
 
+import type { ViewportResult } from './client.js'
 import { MAX_VIEWPORT_CELLS } from './limits.js'
 import { createWorkbook, WorkbookError, type Workbook } from './workbook.js'
 
@@ -149,20 +150,28 @@ export function createWorkerHost(): WorkerHost {
       throw new ProtocolError(`range exceeds ${MAX_VIEWPORT_CELLS} cells`)
     }
     const includeStyles = field(p, 'includeStyles') === true
+    const includeInputs = field(p, 'includeInputs') === true
 
     const values: string[][] = []
     const styles: ExtendedCellStyle[][] = []
+    const inputs: string[][] = []
     for (let r = r1; r <= r2; r++) {
       const valueRow: string[] = []
       const styleRow: ExtendedCellStyle[] = []
+      const inputRow: string[] = []
       for (let c = c1; c <= c2; c++) {
         valueRow.push(w.getDisplayValue(sheet, r, c))
         if (includeStyles) styleRow.push(w.getStyle(sheet, r, c))
+        if (includeInputs) inputRow.push(w.getInput(sheet, r, c))
       }
       values.push(valueRow)
       if (includeStyles) styles.push(styleRow)
+      if (includeInputs) inputs.push(inputRow)
     }
-    return includeStyles ? { values, styles } : { values }
+    const result: ViewportResult = { values }
+    if (includeStyles) result.styles = styles
+    if (includeInputs) result.inputs = inputs
+    return result
   }
 
   // Scattered reads for cold paths (editor open, Cmd+Arrow, autofit).

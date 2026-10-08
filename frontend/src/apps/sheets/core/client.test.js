@@ -154,7 +154,7 @@ describe('client — optimistic echo', () => {
   it('echoes setInput before the worker replies, then shows the evaluated value', async () => {
     const { wb, cache, refill } = await connected()
     wb.dispatch(setInput('Sheet1', 1, 1, '=1+1'))
-    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', provisional: true })
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', input: '=1+1', provisional: true })
 
     await wb.idle()
     expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
@@ -169,7 +169,11 @@ describe('client — optimistic echo', () => {
     wb.dispatch(setInput('Sheet1', 2, 1, 'second'))
 
     await new Promise((resolve) => wb.onVersion(resolve)) // first apply's bump
-    expect(cache.get('Sheet1', 2, 1)).toEqual({ display: 'second', provisional: true })
+    expect(cache.get('Sheet1', 2, 1)).toEqual({
+      display: 'second',
+      input: 'second',
+      provisional: true,
+    })
     await wb.idle()
   })
 

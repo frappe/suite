@@ -32,6 +32,12 @@ export interface CellProviderOptions {
 
 export interface CellProvider {
   getDisplay(sheet: string, row: number, col: number): string
+  /**
+   * The cell's input, or undefined until its area has been read. Every
+   * read brings inputs with the display values, so a cell on screen has
+   * its input ready when the editor opens.
+   */
+  getInput(sheet: string, row: number, col: number): string | undefined
   dispose(): void
 }
 
@@ -72,6 +78,13 @@ export function createCellProvider({
     return ''
   }
 
+  function getInput(sheet: string, row: number, col: number): string | undefined {
+    const hit = cache.get(sheet, row, col)
+    if (hit) return hit.input
+    noteMiss(sheet, row, col)
+    return undefined
+  }
+
   function noteMiss(sheet: string, row: number, col: number): void {
     if (!missed || missed.sheet !== sheet) {
       // The canvas paints one sheet per frame; a new sheet name means
@@ -102,7 +115,7 @@ export function createCellProvider({
     inFlight = true
     const version = client.getVersion()
     try {
-      const result = await client.readViewport(box)
+      const result = await client.readViewport({ ...box, includeInputs: true })
       if (disposed) return
       // false: the version moved while the read was in flight. The
       // clear() that came with it already asked for a repaint, which
@@ -133,6 +146,7 @@ export function createCellProvider({
 
   return {
     getDisplay,
+    getInput,
     dispose() {
       disposed = true
       offVersion()

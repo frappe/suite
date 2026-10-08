@@ -117,6 +117,23 @@ describe('worker host — reads', () => {
     })
   })
 
+  it('readViewport includes inputs only when asked', () => {
+    const { inputs } = ok('readViewport', {
+      sheet: 'Sheet1',
+      r1: 1,
+      c1: 1,
+      r2: 2,
+      c2: 3,
+      includeInputs: true,
+    })
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).toHaveLength(3)
+    expect(inputs[0][2]).toBe('')
+    expect(
+      ok('readViewport', { sheet: 'Sheet1', r1: 1, c1: 1, r2: 1, c2: 1 }).inputs,
+    ).toBeUndefined()
+  })
+
   it('readViewport includes styles only when asked', () => {
     const { styles } = ok('readViewport', {
       sheet: 'Sheet1',

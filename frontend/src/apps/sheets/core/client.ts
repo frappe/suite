@@ -62,11 +62,14 @@ export interface ViewportArgs {
   r2: number
   c2: number
   includeStyles?: boolean
+  /** Also return each cell's input (the formula, not its result). */
+  includeInputs?: boolean
 }
 
 export interface ViewportResult {
   values: string[][]
   styles?: ExtendedCellStyle[][]
+  inputs?: string[][]
 }
 
 export interface ReadCellsArgs {

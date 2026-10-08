@@ -5,6 +5,13 @@ import { createDisplayCache } from './display-cache.js'
 const bold = { style: { font: { b: true } } }
 
 describe('display cache — fill and read', () => {
+  it('keeps inputs that come with the values', () => {
+    const cache = createDisplayCache()
+    cache.fill('Sheet1', 1, 1, { values: [['2', 'x']], inputs: [['=1+1', 'x']] }, 0)
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '2', input: '=1+1' })
+    expect(cache.get('Sheet1', 1, 2)).toEqual({ display: 'x', input: 'x' })
+  })
+
   it('misses before a fill and hits after', () => {
     const cache = createDisplayCache()
     expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
@@ -72,7 +79,12 @@ describe('display cache — provisional echo', () => {
     const cache = createDisplayCache()
     cache.fill('Sheet1', 1, 1, { values: [['old']], styles: [[bold]] }, 0)
     cache.setProvisional('Sheet1', 1, 1, 'new')
-    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'new', style: bold, provisional: true })
+    expect(cache.get('Sheet1', 1, 1)).toEqual({
+      display: 'new',
+      input: 'new',
+      style: bold,
+      provisional: true,
+    })
   })
 
   it('survives clear and fill until settled', () => {
@@ -93,7 +105,7 @@ describe('display cache — provisional echo', () => {
     cache.setProvisional('Sheet1', 1, 1, 'one')
     cache.setProvisional('Sheet1', 1, 1, 'two')
     cache.settleProvisional('Sheet1', 1, 1)
-    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'two', provisional: true })
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'two', input: 'two', provisional: true })
     cache.settleProvisional('Sheet1', 1, 1)
     expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
   })

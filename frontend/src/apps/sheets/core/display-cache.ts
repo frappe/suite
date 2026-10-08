@@ -1,5 +1,6 @@
 // Main-thread cache of what the grid paints: one entry per cell, keyed
-// "{sheet}:{row}:{col}", holding the formatted display string and style.
+// "{sheet}:{row}:{col}", holding the formatted display string, the input
+// (what the editor opens with: a formula, not its result) and style.
 //
 // The renderer reads only from here; there is no synchronous engine read
 // on the main thread. A miss (undefined) means "not loaded": the renderer
@@ -22,6 +23,7 @@ import type { EchoTarget, ViewportResult } from './client.js'
 
 export interface CachedCell {
   display: string
+  input?: string
   style?: ExtendedCellStyle
   provisional?: true
 }
@@ -66,7 +68,11 @@ export function createDisplayCache(initialVersion = 0): DisplayCache {
         const k = key(sheet, r1 + i, c1 + j)
         if (pending.has(k)) return
         const style = result.styles?.[i]?.[j] ?? cells.get(k)?.style
-        cells.set(k, style ? { display, style } : { display })
+        const input = result.inputs?.[i]?.[j]
+        const cell: CachedCell = { display }
+        if (input !== undefined) cell.input = input
+        if (style) cell.style = style
+        cells.set(k, cell)
       })
     })
     return true
@@ -75,8 +81,11 @@ export function createDisplayCache(initialVersion = 0): DisplayCache {
   function setProvisional(sheet: string, row: number, col: number, display: string): void {
     const k = key(sheet, row, col)
     pending.set(k, (pending.get(k) ?? 0) + 1)
+    // The echoed text is what was typed, so it is the input too.
     const style = cells.get(k)?.style
-    cells.set(k, style ? { display, style, provisional: true } : { display, provisional: true })
+    const cell: CachedCell = { display, input: display, provisional: true }
+    if (style) cell.style = style
+    cells.set(k, cell)
   }
 
   // Called once per echoed command when its apply returns, whether it
