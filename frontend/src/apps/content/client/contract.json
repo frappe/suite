@@ -1,0 +1,212 @@
+{
+  "owner": "content",
+  "prefix": "/api/suite/content/",
+  "operations": [
+    {
+      "id": "document_get",
+      "kind": "query",
+      "publicName": "content.open",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "{node}/log",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": true,
+      "bytes": true
+    },
+    {
+      "id": "updates_get",
+      "kind": "query",
+      "publicName": "content.pull",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "{node}/updates",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": true,
+      "bytes": true
+    },
+    {
+      "id": "updates_post",
+      "kind": "mutation",
+      "publicName": "content.push",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "{node}/updates",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": true,
+      "bytes": false
+    },
+    {
+      "id": "stage_put",
+      "kind": "mutation",
+      "publicName": "content.stage",
+      "page": null,
+      "envelope": "data",
+      "method": "PUT",
+      "path": "{node}/stage/{stage_id}/{idx}",
+      "pathParams": [
+        "node",
+        "stage_id",
+        "idx"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": true,
+      "bytes": false
+    },
+    {
+      "id": "sessions_post",
+      "kind": "mutation",
+      "publicName": "content.startSession",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "{node}/sessions",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": true,
+      "bytes": false
+    },
+    {
+      "id": "suspect_post",
+      "kind": "mutation",
+      "publicName": "content.reportSuspect",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "{node}/suspect",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": true,
+      "bytes": false
+    }
+  ]
+}
