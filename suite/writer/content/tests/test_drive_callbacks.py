@@ -3,8 +3,9 @@ import gzip
 import io
 import json
 import uuid
+from contextlib import contextmanager
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import frappe
@@ -605,3 +606,57 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 self.type_into(node, ["one"])
                 with self.purging_on_find():
                     self.assertEqual(read(node), expected)
+
+    def changed(self, node: str):
+        return frappe.db.get_value("Drive Node", node, "content_modified")
+
+    @contextmanager
+    def clock(self, at: datetime):
+        """The time the content layer and Drive read while a document is touched."""
+        with (
+            patch.object(documents, "now_datetime", return_value=at),
+            patch.object(drive_content, "now_datetime", return_value=at),
+        ):
+            yield
+
+    def test_pushes_move_the_documents_last_change_at_most_every_ten_minutes(self):
+        node = self.new_document()
+        start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+        for minutes in (0, 9):
+            with self.clock(start + timedelta(minutes=minutes)):
+                self.type_into(node, ["one"])
+        self.assertEqual(self.changed(node), start)
+
+        with self.clock(start + timedelta(minutes=10)):
+            self.type_into(node, ["two"])
+
+        self.assertEqual(self.changed(node), start + timedelta(minutes=10))
+
+    def test_the_sweep_records_the_edits_after_a_touch_once_ten_minutes_pass(self):
+        node = self.new_document()
+        start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+        for minutes in (0, 5):
+            with self.clock(start + timedelta(minutes=minutes)):
+                self.type_into(node, ["one"])
+        frappe.set_user("Administrator")
+        seen = []
+        for minutes in (9, 10, 30):
+            with self.clock(start + timedelta(minutes=minutes)), patch.object(scheduling, "enqueue"):
+                documents.sweep()
+            seen.append(self.changed(node))
+
+        self.assertEqual(seen, [start, start + timedelta(minutes=10), start + timedelta(minutes=10)])
+
+    def test_the_sweep_leaves_a_document_edited_before_pushes_touched_drive(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        frappe.db.sql(
+            "UPDATE `__writer_content_doc` SET `touched_at` = NULL, `touched_rev` = 0 WHERE `node` = %s", node
+        )
+        frappe.db.commit()
+        before = self.changed(node)
+
+        with self.clock(now_datetime() + timedelta(hours=1)), patch.object(scheduling, "enqueue"):
+            documents.sweep()
+
+        self.assertEqual(self.changed(node), before)

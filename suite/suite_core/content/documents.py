@@ -1,15 +1,22 @@
 """Each adapter's documents in their logs, by node: what Drive's callbacks and the routes call, and the jobs."""
 
+from contextlib import suppress
+from datetime import timedelta
+
 import frappe
 import pycrdt
+from frappe.utils import now_datetime
 
 from suite.suite_core import content
 from suite.suite_core.content import checkpoints, compaction, scheduling, suspect, updates
 from suite.suite_core.content.adapters import adapters, spec_of
+from suite.suite_core.content.tables import table
 
 COMPACT = "suite.suite_core.content.documents.compact"
 JUDGE = "suite.suite_core.content.documents.judge"
 DELETE_PURGED = "suite.suite_core.content.documents.delete_purged"
+# A push tells the app at most this often; the sweep tells it about the edits after
+TOUCH_EVERY = timedelta(minutes=10)
 
 
 def ensure_tables() -> None:
@@ -160,3 +167,43 @@ def consider_compaction(
 def sweep() -> None:
     for name in adapters():
         scheduling.sweep(name, COMPACT, purge_method=DELETE_PURGED, judge_method=JUDGE)
+        for (doc_id,) in frappe.db.sql(
+            f"""SELECT `id` FROM `{table(name, "doc")}` WHERE `touched_at` <= %s AND `head_rev` > `touched_rev`
+            AND `mode` != 'purged' LIMIT 100""",
+            now_datetime() - TOUCH_EVERY,
+        ):
+            touch(name, doc_id)
+
+
+def touch(adapter: str, doc_id: str) -> None:
+    """Tell the app the document changed, once per TOUCH_EVERY at most; after a push commits, and from the sweep.
+
+    The sweep only follows a push's touch, so a document nobody has edited since keeps its date.
+    """
+    due = """`id` = %s AND `mode` != 'purged' AND `head_rev` > `touched_rev`
+        AND (`touched_at` IS NULL OR `touched_at` <= %s)"""
+    now = now_datetime()
+    doc = table(adapter, "doc")
+    if not frappe.db.sql(f"SELECT 1 FROM `{doc}` WHERE {due}", (doc_id, now - TOUCH_EVERY)):
+        return
+    frappe.db.sql(
+        f"UPDATE `{doc}` SET `touched_at` = %s, `touched_rev` = `head_rev` WHERE {due}",
+        (now, doc_id, now - TOUCH_EVERY),
+    )
+    claimed = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+    node = frappe.db.sql(f"SELECT `node` FROM `{doc}` WHERE `id` = %s", doc_id)[0][0]
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    if not claimed:
+        return
+    try:
+        spec_of(adapter).touch(node)
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    except Exception:
+        frappe.db.rollback()
+        # The edits are committed; a lost touch leaves only Drive's date behind until the next one
+        with suppress(Exception):
+            frappe.log_error(
+                title="Collab: Drive touch failed",
+                message=f"{adapter} document {doc_id}\n{frappe.get_traceback()}",
+                reference_doctype="Suite Collab Settings",
+            )

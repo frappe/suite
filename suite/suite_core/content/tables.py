@@ -65,6 +65,9 @@ def ensure_tables(adapter: str) -> None:
         "`fallback_judged_clean_at` datetime(6) NULL",
         # When a tab last reported a row it couldn't apply; one report a minute is heard
         "`suspect_reported_at` datetime(6) NULL",
+        # When a push last told the app the document changed, and the head it told; the sweep tells it the rest
+        "`touched_at` datetime(6) NULL",
+        "`touched_rev` bigint unsigned NOT NULL DEFAULT 0",
     ):
         frappe.db.sql_ddl(f"ALTER TABLE `{table(adapter, 'doc')}` ADD COLUMN IF NOT EXISTS {column}")
     frappe.db.sql_ddl(

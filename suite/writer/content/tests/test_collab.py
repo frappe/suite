@@ -1392,7 +1392,11 @@ class TestWriterCollab(IntegrationTestCase):
 
         lineage = self.open(node)[0]["lineage"]
         self.assertEqual(
-            [(event.args, event.kwargs) for event in publish.call_args_list],
+            [
+                (event.args, event.kwargs)
+                for event in publish.call_args_list
+                if event.args[0] == "suite_collab_row"
+            ],
             [
                 (
                     (

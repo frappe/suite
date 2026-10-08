@@ -204,6 +204,7 @@ def _push(node: str) -> Response:
         if refusal.body["collab"] == "compacting":
             documents.consider_compaction(adapter, doc.id, refused=True)
         raise
+    documents.touch(adapter, doc.id)
     documents.consider_compaction(
         adapter, doc.id, final_from=header["sid"] if header.get("final") is True else None
     )
