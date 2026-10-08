@@ -56,8 +56,7 @@ class WriterDocument(drive.DriveContent, Document):
     @frappe.whitelist(methods=["POST"])
     def update_settings(self, data: str):
         self.drive_check(drive.EDIT)
-        self.settings = data
-        self.save()
+        self.db_set("settings", data)
 
     @frappe.whitelist(methods=["POST"], allow_guest=True)
     def save_html(self, html: str):

@@ -540,6 +540,20 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 self.assertEqual(frappe.db.get_value("Writer Document", self.docname(node), fields), before)
         self.assertEqual(self.text_of(self.body_of(node)), "one")
 
+    def test_changing_settings_keeps_the_body_a_compaction_wrote_meanwhile(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        document = frappe.get_doc("Writer Document", self.docname(node))
+        self.type_into(node, [" two"])
+        self.compact(node)
+
+        document.update_settings('{"fullWidth": true}')
+
+        self.assertEqual(self.text_of(self.body_of(node)), "one two")
+        self.assertEqual(
+            frappe.db.get_value("Writer Document", self.docname(node), "settings"), '{"fullWidth": true}'
+        )
+
     def test_drive_refuses_to_export_a_collab_document(self):
         node = self.new_document()
         self.type_into(node, ["one"])
