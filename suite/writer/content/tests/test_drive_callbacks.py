@@ -554,6 +554,16 @@ class TestWriterDriveCallbacks(CheckpointCase):
             frappe.db.get_value("Writer Document", self.docname(node), "settings"), '{"fullWidth": true}'
         )
 
+    def test_the_row_read_sends_no_body_for_a_collab_document(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        self.compact(node)
+
+        row = frappe.client.get("Writer Document", self.docname(node))
+
+        self.assertEqual((row["name"], row.get("content")), (self.docname(node), None))
+        self.assertEqual(self.text_of(self.body_of(node)), "one")
+
     def test_drive_refuses_to_export_a_collab_document(self):
         node = self.new_document()
         self.type_into(node, ["one"])
