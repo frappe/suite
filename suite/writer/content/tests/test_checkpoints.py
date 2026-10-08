@@ -6,6 +6,7 @@ import shutil
 import signal
 import tempfile
 import threading
+import time
 import uuid
 from unittest.mock import patch
 
@@ -20,6 +21,7 @@ from suite.suite_core.content import admission, checkpoints, compaction, documen
 from suite.suite_core.content.log import isolation
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
+from suite.writer import drive as writer_drive
 from suite.writer.content.tests.test_collab import answer, body_for, call, push_body, read_open, typed
 
 WRITER = "writer-collab-writer@example.com"
@@ -426,6 +428,58 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.assertEqual(failed.exception.reason, "purged")
         self.assertEqual((self.body_of(node), self.checkpoints_of(node)), (b"\x00\x00", []))
+
+    def test_a_purge_while_the_body_is_written_waits_and_neither_deadlocks(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        doc_id, site = self.doc_row(node).id, frappe.local.site
+        name = frappe.db.get_value("Writer Document", {"node": node})
+        snapshot, result = self.compacted(node)
+        errors = []
+        marking = threading.Event()
+
+        def purge_elsewhere():
+            frappe.init(site=site)
+            frappe.connect()
+            sql = frappe.db.sql
+
+            def signalled(query, *args, **kwargs):
+                if "SET `mode` = 'purged'" in str(query):
+                    marking.set()
+                return sql(query, *args, **kwargs)
+
+            try:
+                with patch.object(frappe.db, "sql", signalled):
+                    writer_drive.on_purge(name)
+                frappe.db.commit()
+            except Exception as error:
+                errors.append(error)
+            finally:
+                frappe.destroy()
+
+        sql = frappe.db.sql
+        purge = threading.Thread(target=purge_elsewhere)
+
+        def purge_while_writing(query, *args, **kwargs):
+            if "FROM `tabWriter Document`" in str(query) and "FOR UPDATE" in str(query) and not purge.ident:
+                purge.start()
+                marking.wait(10)
+                time.sleep(0.5)
+            try:
+                return sql(query, *args, **kwargs)
+            except Exception as error:
+                errors.append(error)
+                raise
+
+        with patch.object(frappe.db, "sql", purge_while_writing):
+            self.job(doc_id).install(snapshot, result)
+        purge.join()
+        frappe.db.rollback()
+        self.addCleanup(documents.delete_purged, writer_content.ADAPTER, doc_id)
+
+        self.assertEqual(errors, [])
+        self.assertFalse(frappe.db.exists("Writer Document", name))
+        self.assertEqual(self.doc_row(node).mode, "purged")
 
     def test_an_attempt_killed_while_writing_is_finished_by_the_next(self):
         node = self.new_document()
