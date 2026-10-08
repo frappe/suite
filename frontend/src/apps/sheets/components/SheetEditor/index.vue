@@ -2391,6 +2391,9 @@ const sheet = createSheet({
 })
 // The open tab. The editor owns it; IronCalc's sheet list sets it on load.
 const currentSheet = ref('Sheet1')
+// IronCalc: { client, provider, offSheets } once started (see _startEngine).
+// Declared up here because setup code (the sheet tabs) reads it.
+let _engine = null
 const formats = createFormatsEngine()
 const merge = createMergeEngine()
 const sortFilter = createSortFilter(sheet)
@@ -8185,8 +8188,6 @@ function _cellDisplay(id) {
 // reads display values and inputs through the cell provider; every write is a
 // command sent with client.dispatch. Features that still read the old engine
 // (sheet.*) move over one at a time.
-
-let _engine = null // { client, provider, offSheets } once started
 
 async function _startEngine(snapshotBytes = null) {
   _stopEngine()
