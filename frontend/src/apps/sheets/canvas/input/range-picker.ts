@@ -47,15 +47,19 @@ export interface RangePickerOptions {
 
 // ── Reference text (pure) ─────────────────────────────────────────────────────
 
+// A reference ending at the caret, with an optional sheet prefix: a cell or
+// range (A1, A1:B, B2:E5), a column range (A:A) or a row range (3:3). Bare
+// letters are not one: `SUM` or `AVER` is a function name being typed.
+const REF_BEFORE_CARET =
+  /(?:'(?:[^']|'')*'!|[A-Za-z_][A-Za-z0-9_]*!)?(?:[A-Z]+\d+(?::[A-Z]*\d*)?|[A-Z]+:[A-Z]*\d*|\d+:\d*)$/i
+
 /**
  * Where a picked reference should start replacing: just before any partial
  * reference that ends at the caret, including a sheet prefix, so a second
  * pick replaces `Sheet1!B2:E` whole instead of producing `Sheet1!Sheet1!…`.
  */
 export function refReplaceStart(value: string, caret: number): number {
-  const m = value
-    .slice(0, caret)
-    .match(/(?:'(?:[^']|'')*'!|[A-Za-z_][A-Za-z0-9_]*!)?[A-Z]+\d*(?::[A-Z]*\d*)?$/i)
+  const m = value.slice(0, caret).match(REF_BEFORE_CARET)
   return m ? caret - m[0].length : caret
 }
 
