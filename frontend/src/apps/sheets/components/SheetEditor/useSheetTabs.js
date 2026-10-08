@@ -1,20 +1,27 @@
 import { ref } from 'vue'
 
+// Sheet tabs. IronCalc owns the sheets: every tab change is a command sent
+// with run(type, payload), and names() is the sheet list as of the last apply.
+// The tab list updates at once from what was asked for; syncNames() takes
+// IronCalc's list when it reports one (load, undo, an apply that changed it).
+//
 // getGrid is a getter fn () => grid. onSwitch is called after every sheet switch
 // so the caller can repopulate canvas data for the new sheet.
 // extras: additional engines with renameSheet/duplicateSheet/deleteSheet/reorderSheets
+// showInput(id): puts a cell's input in the formula bar.
 export function useSheetTabs({
-  sheet,
+  names,
+  run,
   currentSheet,
   formats,
   extras = [],
   getGrid,
   activeCell,
-  formulaValue,
+  showInput,
   refreshActiveFormat,
   onSwitch,
 }) {
-  const sheetNames = ref(sheet.getSheetNames())
+  const sheetNames = ref(names())
 
   // Per-sheet view-state cache. Freeze, hidden rows/cols, column widths, row
   // heights, total rows/cols and zoom are all sheet-local in Google Sheets —
@@ -27,10 +34,10 @@ export function useSheetTabs({
 
   function _captureCurrentView() {
     const cs = currentSheet.value
-    // Skip if the cached "current" name no longer exists in the engine
-    // (e.g. deleteSheet just removed it) — otherwise we'd resurrect dead
-    // entries with stale grid state on every subsequent switch.
-    if (!cs || !sheet.getSheetNames().includes(cs)) return
+    // Skip if the cached "current" name no longer exists (e.g. deleteSheet
+    // just removed it) — otherwise we'd resurrect dead entries with stale
+    // grid state on every subsequent switch.
+    if (!cs || !sheetNames.value.includes(cs)) return
     const snap = getGrid()?.viewSnapshot?.()
     if (snap) _viewBySheet[cs] = snap
   }
@@ -55,24 +62,31 @@ export function useSheetTabs({
     // returns to this tab.
     _captureCurrentView()
     getGrid()?.clearAll()
-    sheet.switchSheet(name)
     currentSheet.value = name
-    _applyViewFor(currentSheet.value)
+    _applyViewFor(name)
     if (!preserveEdit) {
       activeCell.value = 'A1'
-      formulaValue.value = sheet.getCell('A1')
+      showInput('A1')
       getGrid()?.moveTo(0, 0)
     }
     refreshActiveFormat()
     onSwitch?.()
   }
 
+  // name(n) for the first n from `from` that no tab uses.
+  function _freeName(name, from) {
+    const taken = new Set(sheetNames.value)
+    let n = from
+    while (taken.has(name(n))) n++
+    return name(n)
+  }
+
   // name is optional: callers normally let us auto-name the next sheet, but
   // undo/redo passes an explicit name to recreate the exact sheet it removed.
   function addSheet(name) {
-    name = name || 'Sheet' + (sheet.getSheetNames().length + 1)
-    sheet.addSheet(name)
-    sheetNames.value = sheet.getSheetNames()
+    name = name || _freeName((n) => `Sheet${n}`, sheetNames.value.length + 1)
+    run('addSheet', { name })
+    sheetNames.value = [...sheetNames.value, name]
     switchSheet(name)
     return name
   }
@@ -80,30 +94,25 @@ export function useSheetTabs({
   // Returns true on success, false on collision / invalid name.
   function renameSheet(oldName, newName) {
     newName = (newName || '').trim()
-    if (!newName) return false
-    if (sheet.getSheetNames().includes(newName) && newName !== oldName) return false
-    const ok = sheet.renameSheet(oldName, newName)
-    if (!ok) return false
+    if (!newName || !sheetNames.value.includes(oldName)) return false
+    if (newName === oldName) return true
+    if (sheetNames.value.includes(newName)) return false
+    // IronCalc rewrites formulas that name the sheet.
+    run('renameSheet', { sheet: oldName, name: newName })
     if (_viewBySheet[oldName] != null) {
       _viewBySheet[newName] = _viewBySheet[oldName]
       delete _viewBySheet[oldName]
     }
     formats?.renameSheet(oldName, newName)
     extras.forEach((e) => e?.renameSheet?.(oldName, newName))
-    sheetNames.value = sheet.getSheetNames()
+    sheetNames.value = sheetNames.value.map((n) => (n === oldName ? newName : n))
     if (currentSheet.value === oldName) currentSheet.value = newName
     return true
   }
 
   function duplicateSheet(srcName) {
-    const existing = sheet.getSheetNames()
-    let copy = `${srcName} copy`
-    let n = 1
-    while (existing.includes(copy)) {
-      n++
-      copy = `${srcName} copy ${n}`
-    }
-    sheet.duplicateSheet(srcName, copy)
+    const copy = _freeName((n) => (n === 1 ? `${srcName} copy` : `${srcName} copy ${n}`), 1)
+    run('duplicateSheet', { sheet: srcName, name: copy })
     // Inherit the source's view (freeze, widths, hidden, ...) onto the copy.
     // When srcName is the currently-active sheet, the live grid state is the
     // freshest snapshot — capture it first so the cache is up to date before
@@ -114,35 +123,45 @@ export function useSheetTabs({
     }
     formats?.duplicateSheet(srcName, copy)
     extras.forEach((e) => e?.duplicateSheet?.(srcName, copy))
-    sheetNames.value = sheet.getSheetNames()
+    // Shown next to its source until IronCalc reports where it put it.
+    const at = sheetNames.value.indexOf(srcName) + 1
+    sheetNames.value = [...sheetNames.value.slice(0, at), copy, ...sheetNames.value.slice(at)]
     switchSheet(copy)
     return copy
   }
 
   function deleteSheet(name) {
-    if (sheet.getSheetNames().length <= 1) return false
+    if (sheetNames.value.length <= 1 || !sheetNames.value.includes(name)) return false
     const wasCurrent = currentSheet.value === name
-    const ok = sheet.deleteSheet(name)
-    if (!ok) return false
+    run('deleteSheet', { sheet: name })
     delete _viewBySheet[name]
     formats?.deleteSheet(name)
     extras.forEach((e) => e?.deleteSheet?.(name))
-    sheetNames.value = sheet.getSheetNames()
-    // Deleting the open tab opens the first one, as the engine does.
-    if (wasCurrent) switchSheet(sheet.getSheetNames()[0])
+    sheetNames.value = sheetNames.value.filter((n) => n !== name)
+    // Deleting the open tab opens the first one.
+    if (wasCurrent) switchSheet(sheetNames.value[0])
     return true
   }
 
+  // One moveSheet per tab that is out of place, front to back.
   function reorderSheets(orderedNames) {
-    sheet.reorderSheets(orderedNames)
+    const order = [...sheetNames.value]
+    orderedNames.forEach((name, i) => {
+      const from = order.indexOf(name)
+      if (from < 0 || from === i) return
+      run('moveSheet', { sheet: name, index: i })
+      order.splice(from, 1)
+      order.splice(i, 0, name)
+    })
     formats?.reorderSheets(orderedNames)
     extras.forEach((e) => e?.reorderSheets?.(orderedNames))
-    sheetNames.value = sheet.getSheetNames()
+    sheetNames.value = order
   }
 
+  // Takes IronCalc's sheet list. If the open tab is gone, opens the first.
   function syncNames() {
-    sheetNames.value = sheet.getSheetNames()
-    currentSheet.value = sheet.getCurrentSheet()
+    sheetNames.value = names()
+    if (!sheetNames.value.includes(currentSheet.value)) switchSheet(sheetNames.value[0])
   }
 
   // Snapshot the whole per-sheet view map (stamping the active sheet first

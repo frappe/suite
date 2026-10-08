@@ -2389,9 +2389,8 @@ const sheet = createSheet({
     recomputePivotsForSheet(sn)
   },
 })
-// The open tab. The editor owns it, not the engine: the old engine is told
-// through switchSheet and copied back after it restores a snapshot.
-const currentSheet = ref(sheet.getCurrentSheet())
+// The open tab. The editor owns it; IronCalc's sheet list sets it on load.
+const currentSheet = ref('Sheet1')
 const formats = createFormatsEngine()
 const merge = createMergeEngine()
 const sortFilter = createSortFilter(sheet)
@@ -2512,7 +2511,6 @@ const history = createHistory({
       _restoreTouchedCells(snap.sheet, opts.touches)
     } else {
       sheet.restore(snap.sheet)
-      currentSheet.value = sheet.getCurrentSheet()
     }
     if (snap.merge) merge.restore(snap.merge)
     if (snap.sortFilter) sortFilter.restore(snap.sortFilter)
@@ -3895,13 +3893,14 @@ if (props.embedded) {
   )
 }
 _sheetTabs = useSheetTabs({
-  sheet,
+  names: () => _engine?.client.sheets ?? [currentSheet.value],
+  run: (type, payload) => _engine?.client.dispatch(_command(type, payload)),
   currentSheet,
   formats,
   extras: [merge, comments, validation, protection, condFormat, sortFilter, slicers],
   getGrid: () => grid,
   activeCell,
-  formulaValue,
+  showInput: (id) => _showInputInFormulaBar(id),
   refreshActiveFormat,
   onSwitch: () => {
     filterPanel.open = false // close any open filter popover so it doesn't carry stale state
@@ -8187,7 +8186,7 @@ function _cellDisplay(id) {
 // command sent with client.dispatch. Features that still read the old engine
 // (sheet.*) move over one at a time.
 
-let _engine = null // { client, provider } once started
+let _engine = null // { client, provider, offSheets } once started
 
 async function _startEngine(snapshotBytes = null) {
   _stopEngine()
@@ -8195,11 +8194,15 @@ async function _startEngine(snapshotBytes = null) {
   const client = await createWorkbookClient({ echo: cache, snapshotBytes })
   client.onCommandError((f) => console.error('[sheets] IronCalc rejected', f.command.type, f.error))
   const provider = createCellProvider({ client, cache, requestRender: () => grid?.render?.() })
-  _engine = { client, provider }
+  // Tabs follow the workbook: its sheets on load, and any later change.
+  const offSheets = client.onSheets(() => syncNames())
+  _engine = { client, provider, offSheets }
+  syncNames()
   grid?.render?.()
 }
 
 function _stopEngine() {
+  _engine?.offSheets()
   _engine?.provider.dispose()
   _engine?.client.terminate()
   _engine = null
