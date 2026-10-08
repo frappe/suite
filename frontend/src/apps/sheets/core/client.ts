@@ -123,6 +123,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   // --- request / response correlation -----------------------------------
 
   let nextReqId = 1
+  let terminated = false
   const waiting = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>()
 
   port.onmessage = (event: MessageEvent) => {
@@ -136,6 +137,8 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   }
 
   function request<T>(type: string, payload: unknown = {}): Promise<T> {
+    // A read that waited for pending edits can reach here after terminate().
+    if (terminated) return Promise.reject(new WorkerRequestError('worker terminated'))
     const reqId = nextReqId++
     return new Promise<T>((resolve, reject) => {
       waiting.set(reqId, { resolve: resolve as (v: unknown) => void, reject })
@@ -274,14 +277,23 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       return () => errorListeners.delete(cb)
     },
     getVersion: () => version,
-    readViewport: (args) => request<ViewportResult>('readViewport', args),
-    readCells: (args) => request<{ cells: CellRead[] }>('readCells', args),
+    // Reads wait for the edits already dispatched, so they see them: a sheet
+    // just added exists, a cell just typed holds its new input.
+    async readViewport(args) {
+      await idle()
+      return request<ViewportResult>('readViewport', args)
+    },
+    async readCells(args) {
+      await idle()
+      return request<{ cells: CellRead[] }>('readCells', args)
+    },
     async toBytes() {
       await idle()
       return (await request<{ bytes: Uint8Array }>('toBytes')).bytes
     },
     idle,
     terminate() {
+      terminated = true
       port.terminate?.()
       for (const entry of waiting.values())
         entry.reject(new WorkerRequestError('worker terminated'))

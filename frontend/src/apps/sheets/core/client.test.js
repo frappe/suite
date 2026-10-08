@@ -56,6 +56,16 @@ describe('client — init and reads', () => {
     expect(seen).toEqual([['Sheet1', 'Data']])
   })
 
+  it('reads after the edits already dispatched, so a new sheet can be read at once', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    await Promise.resolve()
+    // The first apply is now in flight; this one waits in the queue.
+    wb.dispatch(cmd(CommandTypes.addSheet, { name: 'New' }))
+    const read = wb.readViewport({ sheet: 'New', r1: 1, c1: 1, r2: 1, c2: 1 })
+    await expect(read).resolves.toEqual({ values: [['']] })
+  })
+
   it('round-trips readViewport and readCells', async () => {
     const wb = await createWorkbookClient({ port })
     wb.dispatch(setInput('Sheet1', 1, 1, '10'))
