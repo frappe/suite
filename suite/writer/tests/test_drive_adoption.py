@@ -263,7 +263,7 @@ class TestWriterDeclaration(UnitTestCase):
         row = frappe._dict(node="node-1", content="body", html="<p>x</p>", collab=0)
         with (
             patch.object(writer.frappe.db, "get_value", return_value=row),
-            patch.object(writer, "live_checkpoint", return_value=None),
+            patch.object(writer.documents, "live_checkpoint", return_value=None),
         ):
             stream, mime = writer.version_bytes("WR-1")
         self.assertEqual(mime, writer.VERSION_MIME)
@@ -388,7 +388,7 @@ class TestLegacyEmbedReferences(UnitTestCase):
         )
         with (
             patch.object(writer, "frappe") as frappe_mock,
-            patch.object(writer, "live_state", return_value=None),
+            patch.object(writer.documents, "live_state", return_value=None),
         ):
             frappe_mock.db.get_value.return_value = SimpleNamespace(node="node-1", content=None, html=html)
             self.assertEqual(writer.used_nodes("WR-1"), {"first", "second", "third"})
