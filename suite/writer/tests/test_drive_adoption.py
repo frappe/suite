@@ -411,7 +411,7 @@ class TestLegacyEmbedReferences(UnitTestCase):
             "embed_name=file", "embed_name=other"
         )
         with patch.object(writer, "frappe") as frappe_mock:
-            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+            frappe_mock.db.get_value.return_value = SimpleNamespace(node="node-1", content=None, html=html)
             writer.remap_media("WR-1", {"old": "new", "file": "other"})
         frappe_mock.db.set_value.assert_called_once_with(
             DOCTYPE, "WR-1", {"html": expected}, update_modified=False

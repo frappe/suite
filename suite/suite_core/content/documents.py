@@ -24,11 +24,6 @@ def start_log(adapter: str, node: str) -> None:
         content.create(adapter, node)
 
 
-def log_of(adapter: str, node: str) -> frappe._dict | None:
-    """`node`'s log while collaboration is on: then its body lives there, not in the document row."""
-    return content.find(adapter, node) if content.enabled() else None
-
-
 def live_state(adapter: str, node: str) -> pycrdt.Doc | None:
     """The document as its log stands now, read in the caller's transaction; None when the node has no log.
 

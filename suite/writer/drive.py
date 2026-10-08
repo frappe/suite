@@ -180,7 +180,7 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
-    if documents.log_of(ADAPTER, row.node):
+    if content.find(ADAPTER, row.node):
         raise drive.DriveConflict(_("Open the document to download it"))
     return io.BytesIO((row.html or "").encode("utf-8")), HTML_MIME
 
@@ -225,7 +225,7 @@ def restore_version(docname: str, stream) -> None:
     A collab document's body is its log, so it is restored in the editor instead.
     """
     node = frappe.db.get_value(DOCTYPE, docname, "node")
-    if documents.log_of(ADAPTER, node):
+    if content.find(ADAPTER, node):
         raise drive.DriveConflict(_("Open the document to restore this version"))
     payload = _version_payload(_read_bounded(stream))
     frappe.db.set_value(
@@ -289,7 +289,7 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
-    logged = documents.log_of(ADAPTER, row.node)
+    logged = content.find(ADAPTER, row.node)
     values = {"html": _remap_text(row.html or "", mapping)}
     body = None if logged else _remap_body(row.content, mapping)
     if body is not None:

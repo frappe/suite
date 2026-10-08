@@ -243,7 +243,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.assertEqual((self.doc_row(node).head_rev, self.row_count(node)), (head, head))
         self.assertEqual(frappe.db.count("Drive Node Version", {"node": node}), 1)
 
-    def test_with_collaboration_off_drive_refuses_a_version_saved_while_it_was_on(self):
+    def test_with_collaboration_off_drive_still_refuses_to_restore_a_collab_document(self):
         node = self.new_document()
         self.type_into(node, ["one"])
         seq = drive.take_version(node, kind="named", label="one")
@@ -253,9 +253,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         before = frappe.db.get_value("Writer Document", self.docname(node), fields)
 
         writer = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
-        with self.assertRaisesRegex(
-            drive.DriveConflict, "This version can be restored only while collaboration is on"
-        ):
+        with self.assertRaisesRegex(drive.DriveConflict, "Open the document to restore this version"):
             restore_version(writer, node, seq)
 
         frappe.db.rollback()
@@ -351,21 +349,23 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.assertEqual(meta["pictures"].to_py(), [embed(copied_picture), [copied_picture]])
         self.assertEqual(str(meta["note"]), embed(picture))
 
-    def test_with_collaboration_off_every_callback_leaves_the_log_alone(self):
+    def test_with_collaboration_off_drive_still_copies_versions_and_guards_from_the_log(self):
         node = self.new_document()
         picture = self.old_media(node, "picture.png")
         self.edit(
             node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)}))
         )
-        before = self.checkpoints_of(node), self.row_count(node)
         frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
         frappe.db.commit()
 
-        writer_drive.remap_media(self.docname(node), {picture: "elsewhere"})
-        writer_drive.export(self.docname(node), "html")
-        self.assertEqual(version_of(self.docname(node))["schema"], "writer-document/2")
+        copied = self.copy_of(node)
 
-        self.assertEqual((self.checkpoints_of(node), self.row_count(node)), before)
+        [copied_picture] = frappe.get_all("Drive Node", {"parent_node": copied, "kind": "file"}, pluck="name")
+        [image] = documents.live_state("writer", copied).get("default", type=pycrdt.XmlFragment).children
+        self.assertEqual(dict(image.attributes), {"src": embed(copied_picture)})
+        self.assertEqual(version_of(self.docname(node))["schema"], "writer-document/2")
+        with self.assertRaisesRegex(drive.DriveConflict, "Open the document to download it"):
+            writer_drive.export(self.docname(node), "html")
 
     def test_a_copys_start_cannot_change_once_a_tab_has_a_session(self):
         node = self.new_document()
@@ -519,6 +519,26 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         self.assertEqual((refused.exception.status, refused.exception.body), (404, {"collab": "not_found"}))
         self.assertEqual(self.rows_of(doc_id)["update"], 1)
+
+    def test_an_old_tab_cannot_save_over_a_collab_document_with_collaboration_on_or_off(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        self.compact(node)
+        fields = ("content", "html")
+        before = frappe.db.get_value("Writer Document", self.docname(node), fields)
+        document = frappe.get_doc("Writer Document", self.docname(node))
+
+        for mode in ("on", "off"):
+            frappe.db.set_single_value("Suite Collab Settings", "mode", mode)
+            frappe.db.commit()
+            for save in (
+                lambda: document.save_doc("AAA=", html="<p>older</p>"),
+                lambda: document.save_html("<p>older</p>"),
+            ):
+                with self.subTest(mode=mode), self.assertRaisesRegex(drive.DriveConflict, "reload it"):
+                    save()
+                self.assertEqual(frappe.db.get_value("Writer Document", self.docname(node), fields), before)
+        self.assertEqual(self.text_of(self.body_of(node)), "one")
 
     def test_drive_refuses_to_export_a_collab_document(self):
         node = self.new_document()
