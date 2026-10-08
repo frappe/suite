@@ -268,36 +268,36 @@ def on_purge(docname: str) -> None:
 def used_nodes(docname: str) -> set[str]:
     """Answer the media node ids this body still names (§10.6).
 
-    A collab document's body lives in its log, so its live state is read too. A log
-    that cannot be read raises, and Drive's sweep skips the document.
+    A collab document's body lives in its log, so its live state is read instead of the
+    row's. A log that cannot be read raises, and Drive's sweep skips the document.
     """
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         return set()
-    found = _ids_in(row.html or "") | _body_ids(row.content)
+    found = _ids_in(row.html or "")
     with _readable_body():
         state = documents.live_state(ADAPTER, row.node)
-        if state is not None:
-            found |= _fragment_ids(state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment))
-    return found
+        if state is None:
+            return found | _body_ids(row.content)
+        return found | _fragment_ids(state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment))
 
 
 def remap_media(docname: str, mapping: dict[str, str]) -> None:
     """Repoint this body at the media nodes Drive copied for it (§8.9)."""
     if not mapping:
         return
-    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html"), as_dict=True)
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
+    logged = documents.log_of(ADAPTER, row.node)
     values = {"html": _remap_text(row.html or "", mapping)}
-    body = _remap_body(row.content, mapping)
+    body = None if logged else _remap_body(row.content, mapping)
     if body is not None:
         values["content"] = body
     frappe.db.set_value(DOCTYPE, docname, values, update_modified=False)
-    node = frappe.db.get_value(DOCTYPE, docname, "node")
-    if documents.log_of(ADAPTER, node):
+    if logged:
         try:
-            documents.remap_log(ADAPTER, node, remap_rule(mapping))
+            documents.remap_log(ADAPTER, row.node, remap_rule(mapping))
         except (ValueError, compaction.CompactionFailed) as refused:
             raise drive.DriveConflict(_("The copy's pictures could not be moved to it")) from refused
 

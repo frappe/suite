@@ -130,8 +130,7 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual((doc.tail_bytes, doc.tail_bound), (len(a.sent[0]) + len(b.sent[0]), kept))
 
         self.compact(node)
-        [(through, state, _integrated)] = self.checkpoints_of(node)
-        self.assertEqual((through, self.text_of(state)), (4, "beta alpha"))
+        self.assertEqual((self.doc_row(node).body_rev, self.text_of(self.body_of(node))), (4, "beta alpha"))
 
     def test_a_quarantine_tells_the_documents_live_room_its_new_epoch(self):
         node = self.new_document()
@@ -172,7 +171,7 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual(self.stored_text(node), "alXpha")
         self.assertEqual((self.closed(node, b), self.closed(node, c)), (True, False))
         self.compact(node)
-        self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alXpha")
+        self.assertEqual(self.text_of(self.body_of(node)), "alXpha")
 
     def test_a_row_that_deletes_quarantined_text_goes_with_it(self):
         node = self.new_document()
@@ -190,7 +189,7 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual((self.closed(node, b), self.closed(node, c)), (True, False))
         self.assertEqual(self.stored_text(node), "al!pha")
         self.compact(node)
-        self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "al!pha")
+        self.assertEqual(self.text_of(self.body_of(node)), "al!pha")
 
     def test_a_push_that_needs_quarantined_text_is_refused(self):
         node = self.new_document()
@@ -378,8 +377,7 @@ class TestQuarantine(CheckpointCase):
 
         self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
         self.assertEqual(self.recovered(node), [(2, WRITER, "cut_surrogate", split)])
-        [(through, state, _integrated)] = self.checkpoints_of(node)
-        self.assertEqual((through, self.text_of(state)), (3, "!a😀b"))
+        self.assertEqual((self.doc_row(node).body_rev, self.text_of(self.body_of(node))), (3, "!a😀b"))
 
     def test_a_compaction_quarantines_an_unreadable_row_and_compacts_the_rest(self):
         node = self.new_document()
@@ -392,7 +390,7 @@ class TestQuarantine(CheckpointCase):
         self.compact(node)
 
         self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
-        self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alpha gamma")
+        self.assertEqual(self.text_of(self.body_of(node)), "alpha gamma")
 
     def test_a_compaction_quarantines_each_stored_row_the_push_gate_now_refuses(self):
         def text(value: str) -> bytes:
@@ -436,7 +434,7 @@ class TestQuarantine(CheckpointCase):
 
                 self.assertEqual(self.states(node), ["ok", "quarantined", "ok"])
                 self.assertEqual(self.recovered(node), [(2, WRITER, reason, payload(b.cid))])
-                self.assertEqual(self.text_of(self.checkpoints_of(node)[0][1]), "alpha gamma")
+                self.assertEqual(self.text_of(self.body_of(node)), "alpha gamma")
 
     def test_clocks_are_read_from_a_log_once_its_unreadable_row_is_quarantined(self):
         node = self.new_document()

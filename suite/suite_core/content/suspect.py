@@ -45,18 +45,18 @@ def mark(adapter: str, doc_id: str, reason: str, method: str) -> None:
 def report(adapter: str, doc_id: str, rev: int, method: str) -> tuple[int, dict]:
     """A tab's report that row `rev` threw when it applied it; answers the status and body to send.
 
-    Rows the checkpoint integrated already passed the compaction's checks, so the throw was the tab's own
+    Rows the body holds already passed the compaction's checks, so the throw was the tab's own
     and the answer is `clean` at once. Otherwise the document is marked suspect and a job judges it;
     the tab reads the verdict on a pull once `judged` passes the number in the answer.
     """
     doc = frappe.db.sql(
-        f"SELECT `head_rev`, `integrated_rev`, `suspect_held`, `judged` FROM `{table(adapter, 'doc')}` WHERE `id` = %s",
+        f"SELECT `head_rev`, `body_rev`, `suspect_held`, `judged` FROM `{table(adapter, 'doc')}` WHERE `id` = %s",
         doc_id,
         as_dict=True,
     )[0]
     if not 0 < rev <= int(doc.head_rev):
         raise Refusal(400, "malformed")
-    if rev <= int(doc.integrated_rev):
+    if rev <= int(doc.body_rev):
         return 200, {"verdict": "clean", "judged": int(doc.judged)}
     if doc.suspect_held:
         raise Refusal(423, "paused", reason="suspect", retry_ms=SUSPECT_RETRY_MS)
@@ -131,7 +131,7 @@ def settle(
     bundle: Path,
     owner_of: Callable[[str], str | None],
 ) -> str | None:
-    snapshot = read(adapter, doc_id)
+    snapshot = read(adapter, doc_id, integrated=True)
     if snapshot is None:
         return None
     checkpoint, revs = snapshot["checkpoint"], [rev for rev, _payload in snapshot["rows"]]
@@ -154,7 +154,7 @@ def settle(
             quarantine.quarantine(adapter, doc_id, {revs[index]}, reason, owner_of)
         except RuntimeError as error:
             return hold(adapter, doc_id, "unowned_row", repr(error))
-        after = read(adapter, doc_id)
+        after = read(adapter, doc_id, integrated=True)
         if after and refused(after["checkpoint"], [payload for _rev, payload in after["rows"]], roots):
             return hold(
                 adapter, doc_id, "still_refused", f"rev {revs[index]} quarantined, pycrdt still refuses"
@@ -175,8 +175,7 @@ LISTED = (
     "verdict",
     "judged",
     "head_rev",
-    "checkpoint_rev",
-    "integrated_rev",
+    "body_rev",
     "state_bytes",
     "tail_bytes",
     "compaction_failures",

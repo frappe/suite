@@ -37,6 +37,8 @@ def document_owner(node: str) -> str | None:
 SPEC = ContentAdapterSpec(
     name=ADAPTER,
     content_type="Writer Document",
+    body_field="content",
+    node_field="node",
     roots=ROOTS,
     schema=SCHEMA,
     kernel=KERNEL,

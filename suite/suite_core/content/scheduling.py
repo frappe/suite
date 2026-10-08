@@ -25,16 +25,23 @@ QUEUE_PAUSE = timedelta(minutes=1)
 paused_until = 0.0
 
 
+def based(adapter: str) -> str:
+    """The control rows with `base`, the rev their open base runs through: the newer of the body and any fallback."""
+    return f"""(SELECT `doc`.*, GREATEST(`doc`.`body_rev`, COALESCE((SELECT MAX(`c`.`through_rev`)
+        FROM `{table(adapter, "checkpoint")}` `c` WHERE `c`.`doc_id` = `doc`.`id`), 0)) AS `base`
+        FROM `{table(adapter, "doc")}` `doc`)"""
+
+
 def consider(
     adapter: str, doc_id: str, method: str, *, final_from: str | None = None, refused: bool = False
 ) -> None:
     """Request a compaction if the document is due. `final_from` names a tab's session that is hiding or closing;
     `refused`: a push was just refused for want of room, which only a compaction makes."""
     doc = frappe.db.sql(
-        f"""SELECT `d`.`head_rev`, `d`.`checkpoint_rev`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`, `d`.`tail_bound`,
+        f"""SELECT `d`.`head_rev`, `d`.`base`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`, `d`.`tail_bound`,
         `d`.`next_compaction_at`, `d`.`suspect`, `u`.`created` AS `oldest`
-        FROM `{table(adapter, "doc")}` `d` LEFT JOIN `{table(adapter, "update")}` `u`
-        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
+        FROM {based(adapter)} `d` LEFT JOIN `{table(adapter, "update")}` `u`
+        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`base` + 1
         WHERE `d`.`id` = %s""",
         doc_id,
         as_dict=True,
@@ -60,7 +67,7 @@ def due(doc, now, *, closing: bool = False) -> bool:
     under the cap, whichever is less. The room term is hysteresis: a document
     near the cap waits for a real tail instead of compacting after every push.
     """
-    if int(doc.head_rev) == int(doc.checkpoint_rev) or doc.get("suspect"):
+    if int(doc.head_rev) == int(doc.base) or doc.get("suspect"):
         return False
     if doc.next_compaction_at and doc.next_compaction_at > now:
         return False
@@ -99,9 +106,9 @@ def sweep(
             enqueue(judge_method, f"suite-collab-judge-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
     now = now_datetime()
     for (doc_id,) in frappe.db.sql(
-        f"""SELECT `d`.`id` FROM `{table(adapter, "doc")}` `d` JOIN `{table(adapter, "update")}` `u`
-        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`checkpoint_rev` + 1
-        WHERE `d`.`head_rev` > `d`.`checkpoint_rev` AND `d`.`mode` != 'purged' AND `d`.`suspect` IS NULL
+        f"""SELECT `d`.`id` FROM {based(adapter)} `d` JOIN `{table(adapter, "update")}` `u`
+        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`base` + 1
+        WHERE `d`.`head_rev` > `d`.`base` AND `d`.`mode` != 'purged' AND `d`.`suspect` IS NULL
         AND `u`.`created` <= %s
         AND (`d`.`next_compaction_at` IS NULL OR `d`.`next_compaction_at` <= %s)
         ORDER BY `u`.`created` LIMIT %s""",

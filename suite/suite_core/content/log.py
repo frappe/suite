@@ -8,6 +8,7 @@ committed gets their original answer back, checked against each seq's sha, so a
 lost answer costs one request and never a second row.
 """
 
+import base64
 import contextlib
 import gzip
 import hashlib
@@ -20,6 +21,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from suite.suite_core.content import capacity, ingest, live, scheduling, stage
+from suite.suite_core.content.adapters import spec_of
 from suite.suite_core.content.tables import table
 
 PROTO = 1
@@ -503,34 +505,46 @@ def start_clocks(doc: frappe._dict) -> dict[int, int]:
 
 
 def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: bool = True) -> dict | None:
-    """The checkpoint and every row after it through the head, from one snapshot, chain checked.
-    `rows` leaves out quarantined rows; `quarantined` lists their revs.
+    """The base and every row after it through the head, from one snapshot, chain checked.
+    The base is the app row's checked body, or a fallback newer than it unless `integrated`.
+    `rows` leaves out quarantined rows; `quarantined` lists their revs. None when the log is
+    purged or the app has no row for it.
 
     Rows are gap-free and commit-ordered, so a break means the store changed under
     the read or was rewound; the read is tried once more before it gives up.
-    `integrated` starts from the newest integrated checkpoint, never a fallback one.
     A Drive callback may not commit, so it passes `own_snapshot=False` and reads in Drive's transaction.
     """
     for _try in range(2):
         with repeatable_read() if own_snapshot else contextlib.nullcontext():
             doc = frappe.db.sql(
-                f"""SELECT `lineage`, `head_rev`, `head_chain`, `checkpoint_rev`, `integrated_rev`, `schema_steps`, `q_epoch`
-                FROM `{table(adapter, "doc")}` WHERE `id` = %s AND `mode` != 'purged'""",
+                f"""SELECT `node`, `lineage`, `head_rev`, `head_chain`, `body_rev`, `body_chain`, `body_sha`,
+                `schema_steps`, `q_epoch` FROM `{table(adapter, "doc")}` WHERE `id` = %s AND `mode` != 'purged'""",
                 doc_id,
                 as_dict=True,
             )
-            if not doc:
+            row = body_row(adapter, doc[0].node) if doc else None
+            if row is None:
                 return None
             doc = doc[0]
-            base = int(doc.integrated_rev if integrated else doc.checkpoint_rev)
-            checkpoint = None
-            chain = chain_seed(doc.lineage)
+            base, checkpoint, chain = int(doc.body_rev), None, chain_seed(doc.lineage)
+            whole = True
             if base:
-                gz, chain = frappe.db.sql(
-                    f"SELECT `gz`, `chain` FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` = %s",
+                checkpoint, chain = row.body, bytes(doc.body_chain or b"")
+                sha = doc.body_sha
+                whole = sha is not None and hashlib.sha256(checkpoint).digest() == bytes(sha)
+            fallback = (
+                None
+                if integrated
+                else frappe.db.sql(
+                    f"""SELECT `through_rev`, `gz`, `chain` FROM `{table(adapter, "checkpoint")}`
+                    WHERE `doc_id` = %s AND `through_rev` > %s ORDER BY `through_rev` DESC LIMIT 1""",
                     (doc_id, base),
-                )[0]
-                checkpoint, chain = gzip.decompress(bytes(gz)), bytes(chain)
+                )
+            )
+            if fallback:
+                through, gz, stored_chain = fallback[0]
+                base, checkpoint, chain = int(through), gzip.decompress(bytes(gz)), bytes(stored_chain)
+                whole = True
             stored = frappe.db.sql(
                 f"""SELECT `rev`, `payload`, `sha256`, `state` FROM `{table(adapter, "update")}`
                 WHERE `doc_id` = %s AND `rev` > %s ORDER BY `rev`""",
@@ -546,7 +560,7 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
                 rows.append((rev, payload))
                 chain = chain_next(chain, rev, hashlib.sha256(payload).digest())
         revs = [int(row[0]) for row in stored]
-        if revs == list(range(base + 1, int(doc.head_rev) + 1)) and chain == bytes(doc.head_chain):
+        if whole and revs == list(range(base + 1, int(doc.head_rev) + 1)) and chain == bytes(doc.head_chain):
             return {
                 "lineage": doc.lineage,
                 "head_rev": int(doc.head_rev),
@@ -559,6 +573,36 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
                 "q_epoch": int(doc.q_epoch),
             }
     raise ChainBroken
+
+
+def body_row(adapter: str, node: str, *, lock: bool = False) -> frappe._dict | None:
+    """The app's row for `node`, with its body decoded, or None when it has none."""
+    spec = spec_of(adapter)
+    found = frappe.db.sql(
+        f"""SELECT `name`, `{spec.body_field}` AS `body`, `modified` FROM `tab{spec.content_type}`
+        WHERE `{spec.node_field}` = %s ORDER BY `name` LIMIT 1{" FOR UPDATE" if lock else ""}""",
+        node,
+        as_dict=True,
+    )
+    if not found:
+        return None
+    row = found[0]
+    try:
+        row.body = base64.b64decode(row.body or "", validate=True)
+    except ValueError:
+        # Answered as a body no stamp matches
+        row.body = b""
+    return row
+
+
+def fallback_rev(adapter: str, doc_id: str) -> int:
+    """The rev the document's fallback runs through, 0 when it has none."""
+    return int(
+        frappe.db.sql(
+            f"SELECT COALESCE(MAX(`through_rev`), 0) FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s",
+            doc_id,
+        )[0][0]
+    )
 
 
 @contextlib.contextmanager

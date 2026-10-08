@@ -176,14 +176,14 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 gzip.compress(fallback.get_update()).hex(),
             ),
         )
-        self.set_doc(node, checkpoint_rev=doc.head_rev)
+        frappe.db.commit()
 
         version = version_of(self.docname(node))
 
         self.assertEqual(self.text_of(gzip.decompress(base64.b64decode(version["state"]))), "one two three")
         self.assertEqual(version["through_rev"], doc.head_rev)
 
-    def test_with_collaboration_off_a_version_is_the_stored_body(self):
+    def test_with_collaboration_off_a_version_is_still_the_logs_state(self):
         node = self.new_document()
         self.type_into(node, ["one"])
         frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
@@ -191,7 +191,8 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         version = version_of(self.docname(node))
 
-        self.assertEqual(version["schema"], "writer-document/1")
+        self.assertEqual(version["schema"], "writer-document/2")
+        self.assertEqual(self.text_of(gzip.decompress(base64.b64decode(version["state"]))), "one")
 
     def test_a_broken_log_refuses_a_version_instead_of_storing_a_wrong_one(self):
         node = self.new_document()
@@ -362,7 +363,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         writer_drive.remap_media(self.docname(node), {picture: "elsewhere"})
         writer_drive.export(self.docname(node), "html")
-        self.assertEqual(version_of(self.docname(node))["schema"], "writer-document/1")
+        self.assertEqual(version_of(self.docname(node))["schema"], "writer-document/2")
 
         self.assertEqual((self.checkpoints_of(node), self.row_count(node)), before)
 

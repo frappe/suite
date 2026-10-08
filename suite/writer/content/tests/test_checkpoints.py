@@ -1,3 +1,4 @@
+import base64
 import gzip
 import json
 import os
@@ -107,6 +108,10 @@ class CheckpointCase(IntegrationTestCase):
             )
         ]
 
+    def body_of(self, node: str) -> bytes:
+        """The body Writer's own row holds, as Drive and a version read it."""
+        return base64.b64decode(frappe.db.get_value("Writer Document", {"node": node}, "content") or "")
+
     def row_count(self, node: str) -> int:
         return frappe.db.sql(
             "SELECT COUNT(*) FROM `__writer_content_update` WHERE `doc_id` = %s", self.doc_row(node).id
@@ -134,23 +139,20 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.assertEqual(selftest.ROOTS, writer_content.ROOTS)
 
-    def test_a_compaction_installs_a_checkpoint_of_every_row(self):
+    def test_a_compaction_writes_every_row_into_the_writer_row(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two ", "three"])
 
         self.compact(node)
 
         doc = self.doc_row(node)
-        [(through, state, integrated)] = self.checkpoints_of(node)
-        self.assertEqual((through, integrated), (3, 1))
-        self.assertEqual(self.text_of(state), "one two three")
-        self.assertEqual(
-            (doc.checkpoint_rev, doc.integrated_rev, doc.tail_rows, doc.tail_bytes), (3, 3, 0, 0)
-        )
+        self.assertEqual(self.text_of(self.body_of(node)), "one two three")
+        self.assertEqual(self.checkpoints_of(node), [])
+        self.assertEqual((doc.body_rev, doc.tail_rows, doc.tail_bytes), (3, 0, 0))
         self.assertEqual((doc.compaction_failures, doc.next_compaction_at), (0, None))
         self.assertEqual(self.row_count(node), 3)
 
-    def test_a_second_compaction_replaces_the_first_checkpoint(self):
+    def test_a_second_compaction_replaces_the_first_body(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two "])
         self.compact(node)
@@ -158,9 +160,27 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.compact(node)
 
-        [(through, state, _integrated)] = self.checkpoints_of(node)
-        self.assertEqual(through, 3)
-        self.assertEqual(self.text_of(state), "one two three")
+        self.assertEqual(self.doc_row(node).body_rev, 3)
+        self.assertEqual(self.text_of(self.body_of(node)), "one two three")
+
+    def test_the_writer_row_is_modified_as_of_the_newest_edit_it_holds(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        set_edited = "UPDATE `__writer_content_update` SET `created` = %s WHERE `doc_id` = %s"
+        frappe.db.sql(set_edited, ("2999-01-02 03:04:05", self.doc_row(node).id))
+        frappe.db.commit()
+
+        self.compact(node)
+
+        modified = frappe.db.get_value("Writer Document", {"node": node}, "modified")
+        self.assertEqual(str(modified), "2999-01-02 03:04:05")
+        self.type_into(node, [" two"])
+        frappe.db.sql(set_edited + " AND `rev` = 2", ("2000-01-01", self.doc_row(node).id))
+        frappe.db.commit()
+        self.compact(node)
+        self.assertEqual(
+            str(frappe.db.get_value("Writer Document", {"node": node}, "modified")), str(modified)
+        )
 
     def test_a_work_horse_killed_mid_compaction_leaves_every_row_and_commits_nothing(self):
         # A crash, the worker's timeout kill and a memory abort all end the horse with a signal
@@ -175,8 +195,8 @@ class TestWriterCheckpoints(CheckpointCase):
                 self.assertTrue(os.WIFSIGNALED(status))
                 frappe.db.rollback()
                 doc = self.doc_row(node)
-                self.assertEqual(self.checkpoints_of(node), [])
-                self.assertEqual((doc.checkpoint_rev, self.row_count(node)), (0, 2))
+                self.assertEqual((self.checkpoints_of(node), self.body_of(node)), ([], b"\x00\x00"))
+                self.assertEqual((doc.body_rev, self.row_count(node)), (0, 2))
                 self.assertEqual(doc.compaction_failures, 1)
                 self.assertGreater(doc.next_compaction_at, frappe.utils.now_datetime())
                 self.release_places()
@@ -210,7 +230,7 @@ class TestWriterCheckpoints(CheckpointCase):
         doc = self.doc_row(node)
         self.assertEqual(self.checkpoints_of(node), [])
         self.assertEqual(
-            (doc.checkpoint_rev, doc.compaction_failures, doc.last_compaction_error), (0, 1, "kernel_version")
+            (doc.body_rev, doc.compaction_failures, doc.last_compaction_error), (0, 1, "kernel_version")
         )
         self.assertGreater(doc.next_compaction_at, frappe.utils.now_datetime())
         self.assertEqual(frappe.db.count("Error Log"), before + 1)
@@ -229,7 +249,7 @@ class TestWriterCheckpoints(CheckpointCase):
         self.compact(node)
 
         doc = self.doc_row(node)
-        self.assertEqual((doc.compaction_failures, doc.next_compaction_at, doc.checkpoint_rev), (0, None, 1))
+        self.assertEqual((doc.compaction_failures, doc.next_compaction_at, doc.body_rev), (0, None, 1))
 
     def test_the_third_failure_in_a_row_tells_an_admin(self):
         node = self.new_document()
@@ -244,23 +264,34 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.assertEqual(counts, [0, 0, 1])
 
-    def test_an_older_compaction_never_replaces_a_newer_checkpoint(self):
+    def test_an_older_compaction_never_replaces_a_newer_body(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two "])
         doc_id = self.doc_row(node).id
         older = routes.content.read("writer", doc_id)
         self.type_into(node, ["three"])
         self.compact(node)
+        modified = frappe.db.get_value("Writer Document", {"node": node}, "modified")
 
         rows = [payload for _rev, payload in older["rows"]]
         result = compaction.compact(older["checkpoint"], rows, writer_content.ROOTS)
-        job = self.job(doc_id)
-        sha = job.store(older, result)
-        job.install(older, sha, result)
+        self.job(doc_id).install(older, result)
 
-        [(through, state, _integrated)] = self.checkpoints_of(node)
-        self.assertEqual((through, self.doc_row(node).checkpoint_rev), (3, 3))
-        self.assertEqual(self.text_of(state), "one two three")
+        self.assertEqual(self.doc_row(node).body_rev, 3)
+        self.assertEqual(self.text_of(self.body_of(node)), "one two three")
+        self.assertEqual(frappe.db.get_value("Writer Document", {"node": node}, "modified"), modified)
+
+    def test_a_compaction_of_another_lineage_changes_nothing(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two"])
+        snapshot = routes.content.read("writer", self.doc_row(node).id)
+        rows = [payload for _rev, payload in snapshot["rows"]]
+        result = compaction.compact(None, rows, writer_content.ROOTS)
+
+        self.job(self.doc_row(node).id).install({**snapshot, "lineage": "0" * 32}, result)
+
+        self.assertEqual((self.doc_row(node).body_rev, self.body_of(node)), (0, b"\x00\x00"))
+        self.assertEqual(self.opened(node)[2], "one two")
 
     def test_with_every_place_taken_a_compaction_waits_without_counting_a_failure(self):
         node = self.new_document()
@@ -284,21 +315,21 @@ class TestWriterCheckpoints(CheckpointCase):
         self.compact(node)
 
         doc = self.doc_row(node)
-        self.assertEqual(doc.checkpoint_rev, 2)
+        self.assertEqual(doc.body_rev, 2)
         wait = (doc.next_compaction_at - frappe.utils.now_datetime()).total_seconds()
         self.assertGreater(wait, 50)
 
-    def test_a_state_larger_than_half_the_packet_limit_is_stored(self):
+    def test_a_fallback_larger_than_half_the_packet_limit_is_stored(self):
         node = self.new_document()
         self.type_into(node, ["one"])
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
         state = os.urandom(packet // 2 + 2**20)
-        result = compaction.Compacted(state=state, integrated=True, report={})
+        result = compaction.Compacted(state=state, integrated=False, report={})
         snapshot = routes.content.read("writer", self.doc_row(node).id)
 
-        self.job(self.doc_row(node).id).store(snapshot, result)
+        self.job(self.doc_row(node).id).keep_fallback(snapshot, result)
 
-        self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
+        self.assertEqual(self.checkpoints_of(node), [(1, state, 0)])
 
     def test_a_start_state_larger_than_half_the_packet_limit_is_stored(self):
         node = self.new_document()
@@ -309,7 +340,7 @@ class TestWriterCheckpoints(CheckpointCase):
 
         checkpoints.replace_start("writer", self.doc_row(node).id, state, 1)
 
-        self.assertEqual(self.checkpoints_of(node), [(1, state, 1)])
+        self.assertEqual((self.body_of(node), self.checkpoints_of(node)), (state, []))
 
     def test_a_state_too_large_to_store_whole_is_refused(self):
         node = self.new_document()
@@ -318,119 +349,85 @@ class TestWriterCheckpoints(CheckpointCase):
         frappe.db.sql("SET SESSION sql_mode = ''")
         self.addCleanup(frappe.db.sql, "SET SESSION sql_mode = %s", mode)
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
-        result = compaction.Compacted(state=os.urandom(packet + 2**20), integrated=True, report={})
+        result = compaction.Compacted(state=os.urandom(packet + 2**20), integrated=False, report={})
         snapshot = routes.content.read("writer", self.doc_row(node).id)
 
         with self.assertRaises(compaction.CompactionFailed) as failed:
-            self.job(self.doc_row(node).id).store(snapshot, result)
+            self.job(self.doc_row(node).id).keep_fallback(snapshot, result)
         frappe.db.rollback()
 
         self.assertEqual(failed.exception.reason, "too_large")
         self.assertEqual(self.checkpoints_of(node), [])
 
-    def stored(self, node: str, *, integrated: bool = True) -> tuple[dict, object, bytes]:
-        """A compaction of the document through its head, stored as T2 leaves it, not yet installed."""
-        doc_id = self.doc_row(node).id
-        snapshot = routes.content.read("writer", doc_id)
+    def compacted(self, node: str, *, integrated: bool = True) -> tuple[dict, compaction.Compacted]:
+        """A compaction of the document through its head, not yet installed."""
+        snapshot = routes.content.read("writer", self.doc_row(node).id)
         rows = [payload for _rev, payload in snapshot["rows"]]
         result = compaction.compact(snapshot["checkpoint"], rows, writer_content.ROOTS)
         if not integrated:
             result = compaction.Compacted(compaction.pycrdt.merge_updates(*rows), integrated=False)
         result.ms = 1
-        sha = self.job(doc_id).store(snapshot, result)
-        return snapshot, result, sha
+        return snapshot, result
 
-    def test_typing_while_a_checkpoint_is_stored_is_accepted(self):
+    def test_a_push_while_the_body_is_written_answers_busy_and_lands_after(self):
         node = self.new_document()
         self.type_into(node, ["one "])
         doc_id, site = self.doc_row(node).id, frappe.local.site
-        snapshot = routes.content.read("writer", doc_id)
-        result = compaction.compact(
-            None, [payload for _rev, payload in snapshot["rows"]], writer_content.ROOTS
-        )
-        result.ms = 1
-        typed = []
+        snapshot, result = self.compacted(node)
+        sid = uuid.uuid4().hex
+        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
+        header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
+        doc = pycrdt.Doc(client_id=cid)
+        for payload in [checkpoint, *(payload for _rev, payload in rows)]:
+            if payload:
+                doc.apply_update(payload)
+        seen = doc.get_state()
+        doc.get("default", type=pycrdt.XmlFragment).children[0].insert(4, "two")
+        body = body_for(node, header["lineage"], sid, cid, 1, doc.get_update(seen))
+        answered = []
 
-        def type_elsewhere():
+        def push_elsewhere():
             frappe.init(site=site)
             frappe.connect()
             frappe.set_user(WRITER)
             try:
-                typed.append(self.type_into(node, ["two"]))
-            except AssertionError as refused:
-                typed.append(str(refused))
+                answered.append(call(routes.updates_post, node, body=body).status_code)
             finally:
                 frappe.destroy()
 
         sql = frappe.db.sql
 
-        def type_while_storing(query, *args, **kwargs):
-            if "SET `gz` = CONCAT" in str(query) and not typed:
-                thread = threading.Thread(target=type_elsewhere)
+        def push_while_writing(query, *args, **kwargs):
+            if "UPDATE `tabWriter Document`" in str(query) and not answered:
+                thread = threading.Thread(target=push_elsewhere)
                 thread.start()
                 thread.join()
             return sql(query, *args, **kwargs)
 
-        with patch.object(frappe.db, "sql", type_while_storing):
-            self.job(doc_id).store(snapshot, result)
+        with patch.object(frappe.db, "sql", push_while_writing):
+            self.job(doc_id).install(snapshot, result)
 
-        self.assertEqual(typed, ["one two"])
+        self.assertEqual(answered, [423])
+        self.assertEqual(self.text_of(self.body_of(node)), "one ")
+        self.assertEqual(call(routes.updates_post, node, body=body).status_code, 200)
+        self.assertEqual(self.opened(node)[2], "one two")
 
-    def test_a_purge_while_a_checkpoint_is_stored_leaves_no_checkpoint(self):
+    def test_a_purge_before_the_body_is_written_leaves_the_row_as_it_was(self):
         node = self.new_document()
         self.type_into(node, ["one"])
-        doc_id, site = self.doc_row(node).id, frappe.local.site
-        snapshot = routes.content.read("writer", doc_id)
-        result = compaction.compact(
-            None, [payload for _rev, payload in snapshot["rows"]], writer_content.ROOTS
-        )
-        result.ms = 1
-        purged = []
-
-        def purge_elsewhere():
-            frappe.init(site=site)
-            frappe.connect()
-            try:
-                purged.append(routes.content.mark_purged("writer", node))
-                frappe.db.commit()
-            finally:
-                frappe.destroy()
-
-        sql = frappe.db.sql
-
-        def purge_while_storing(query, *args, **kwargs):
-            if "SET `gz` = CONCAT" in str(query) and not purged:
-                thread = threading.Thread(target=purge_elsewhere)
-                thread.start()
-                thread.join()
-            return sql(query, *args, **kwargs)
-
-        with (
-            patch.object(frappe.db, "sql", purge_while_storing),
-            self.assertRaises(compaction.CompactionFailed),
-        ):
-            self.job(doc_id).store(snapshot, result)
-        frappe.db.rollback()
-
-        self.assertEqual(purged, [doc_id])
-        self.assertEqual(self.checkpoints_of(node), [])
-
-    def test_a_checkpoint_row_gone_before_its_install_is_never_pointed_at(self):
-        node = self.new_document()
-        self.type_into(node, ["one ", "two"])
-        snapshot, result, sha = self.stored(node)
-        # Another job's failure clears the row it thinks is its own
-        frappe.db.sql("DELETE FROM `__writer_content_checkpoint` WHERE `doc_id` = %s", self.doc_row(node).id)
+        doc_id = self.doc_row(node).id
+        snapshot, result = self.compacted(node)
+        routes.content.mark_purged("writer", node)
         frappe.db.commit()
 
-        self.job(self.doc_row(node).id).install(snapshot, sha, result)
+        with self.assertRaises(compaction.CompactionFailed) as failed:
+            self.job(doc_id).install(snapshot, result)
+        frappe.db.rollback()
 
-        self.assertEqual(self.doc_row(node).checkpoint_rev, 0)
-        self.assertEqual(self.opened(node)[2], "one two")
-        self.compact(node)
-        self.assertEqual((self.doc_row(node).checkpoint_rev, self.opened(node)[2]), (2, "one two"))
+        self.assertEqual(failed.exception.reason, "purged")
+        self.assertEqual((self.body_of(node), self.checkpoints_of(node)), (b"\x00\x00", []))
 
-    def test_an_attempt_killed_after_storing_is_finished_by_the_next(self):
+    def test_an_attempt_killed_while_writing_is_finished_by_the_next(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two"])
         doc_id = self.doc_row(node).id
@@ -440,34 +437,42 @@ class TestWriterCheckpoints(CheckpointCase):
             try:
                 frappe.init(site)
                 frappe.connect()
-                with patch.object(
-                    checkpoints.Compaction, "install", lambda *args: os.kill(os.getpid(), signal.SIGKILL)
-                ):
+                sql = frappe.db.sql
+
+                def killed_after_writing(query, *args, **kwargs):
+                    found = sql(query, *args, **kwargs)
+                    if "UPDATE `tabWriter Document`" in str(query):
+                        os.kill(os.getpid(), signal.SIGKILL)
+                    return found
+
+                with patch.object(frappe.db, "sql", killed_after_writing):
                     documents.compact(writer_content.ADAPTER, doc_id)
             finally:
                 os._exit(0)
         os.waitpid(pid, 0)
         frappe.db.rollback()
         self.release_places()
-        self.assertEqual((self.doc_row(node).checkpoint_rev, len(self.checkpoints_of(node))), (0, 1))
+        self.assertEqual((self.doc_row(node).body_rev, self.body_of(node)), (0, b"\x00\x00"))
 
         self.compact(node)
 
-        doc = self.doc_row(node)
-        [(through, state, integrated)] = self.checkpoints_of(node)
-        self.assertEqual((doc.checkpoint_rev, doc.integrated_rev, through, integrated), (2, 2, 2, 1))
-        self.assertEqual(self.text_of(state), "one two")
+        self.assertEqual(self.doc_row(node).body_rev, 2)
+        self.assertEqual(self.text_of(self.body_of(node)), "one two")
 
-    def test_a_left_over_open_base_is_replaced_by_an_integrated_result(self):
+    def test_a_fallback_is_replaced_by_an_integrated_result(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two"])
-        self.stored(node, integrated=False)
+        self.job(self.doc_row(node).id).keep_fallback(*self.compacted(node, integrated=False))
+        self.assertEqual(
+            [(rev, integrated) for rev, _state, integrated in self.checkpoints_of(node)], [(2, 0)]
+        )
+        self.set_doc(node, next_compaction_at=None)
+        self.type_into(node, [" three"])
 
         self.compact(node)
 
-        doc = self.doc_row(node)
-        self.assertEqual((doc.checkpoint_rev, doc.integrated_rev), (2, 2))
-        self.assertEqual([integrated for _rev, _state, integrated in self.checkpoints_of(node)], [1])
+        self.assertEqual((self.doc_row(node).body_rev, self.checkpoints_of(node)), (3, []))
+        self.assertEqual(self.text_of(self.body_of(node)), "one two three")
 
     def test_one_document_compacts_in_one_job_at_a_time(self):
         self.addCleanup(self.release_places)
@@ -507,7 +512,7 @@ class TestWriterCheckpoints(CheckpointCase):
             with patch.object(admission, "CGROUP", cgroup):
                 self.compact(node)
             doc = self.doc_row(node)
-            self.assertEqual(doc.checkpoint_rev == 1, compacts)
+            self.assertEqual(doc.body_rev == 1, compacts)
             if not compacts:
                 self.assertEqual(
                     (doc.last_compaction_error, self.row_count(node)), ("insufficient_memory", 1)
@@ -524,7 +529,7 @@ class TestWriterCheckpoints(CheckpointCase):
             self.text_of(compaction.pycrdt.merge_updates(*parts, *(p for _, p in rows))),
         )
 
-    def test_opening_a_long_edited_document_reads_one_checkpoint_plus_the_tail(self):
+    def test_opening_a_long_edited_document_reads_its_body_plus_the_tail(self):
         node = self.new_document()
         self.type_into(node, [f"{n} " for n in range(2000)])
         self.compact(node)
@@ -554,8 +559,8 @@ class TestWriterCheckpoints(CheckpointCase):
         sql, installed = frappe.db.sql, []
 
         def install_first(query, *args, **kwargs):
-            # The install lands after the open read the control row and before it reads the checkpoint
-            if "_content_checkpoint` WHERE" in str(query) and not installed:
+            # The install lands after the open read the control row and before it reads the body
+            if "FROM `tabWriter Document`" in str(query) and not installed:
                 installed.append(True)
                 thread = threading.Thread(target=compact_elsewhere)
                 thread.start()
@@ -572,7 +577,7 @@ class TestWriterCheckpoints(CheckpointCase):
 
         self.assertEqual(installed, [True])
         self.assertEqual((header["base"], revs, text), (2, [3], typed))
-        self.assertEqual(self.doc_row(node).checkpoint_rev, 3)
+        self.assertEqual(self.doc_row(node).body_rev, 3)
         header, revs, text = self.opened(node)
         self.assertEqual((header["base"], revs, text), (3, [], typed))
 
@@ -616,7 +621,7 @@ class TestWriterCompactionTriggers(CheckpointCase):
         self.push_bytes(node, [100])
         self.set_doc(
             node,
-            checkpoint_rev=1,
+            body_rev=1,
             state_bytes=scheduling.STATE_MAX - 300 * 1024,
             tail_rows=0,
             tail_bytes=0,

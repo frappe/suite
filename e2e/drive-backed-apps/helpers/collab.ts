@@ -7,7 +7,7 @@ import { writerEditor } from "./writer";
 
 /** Where a document's collab log stands, from `suite.writer.content.e2e_api.state`. */
 export interface CollabState {
-	checkpoint_rev: number;
+	body_rev: number;
 	head_rev: number;
 	tail_rows: number;
 }

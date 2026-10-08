@@ -11,12 +11,15 @@ from suite.suite_core.content.ingest import EditorSchema
 
 @dataclass(frozen=True)
 class ContentAdapterSpec:
-    """One app's plug-in. `name` is also its table prefix; `content_type` is its Drive content type;
-    `roots` names every root type it writes; `kernel` is the Node bundle that judges suspect documents;
-    `owner` names a document's owner from its node."""
+    """One app's plug-in. `name` is also its table prefix; `content_type` is its Drive content type and
+    the doctype whose row holds each document's latest checked body, base64, in `body_field`, found by
+    its node in `node_field`; `roots` names every root type it writes; `kernel` is the Node bundle that
+    judges suspect documents; `owner` names a document's owner from its node."""
 
     name: str
     content_type: str
+    body_field: str
+    node_field: str
     roots: Mapping[str, type]
     schema: EditorSchema
     kernel: Path

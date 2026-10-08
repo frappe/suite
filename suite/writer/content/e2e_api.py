@@ -125,9 +125,9 @@ def state_bytes(node: str) -> int:
 
 @whitelist_for_tests(methods=["GET", "POST"])
 def state(node: str) -> dict:
-    """Where `node`'s collab log stands: its checkpoint, its head and the rows between."""
+    """Where `node`'s collab log stands: its body, its head and the rows between."""
     row = frappe.db.sql(
-        f"""SELECT `checkpoint_rev`, `head_rev`, `tail_rows`
+        f"""SELECT `body_rev`, `head_rev`, `tail_rows`
         FROM `{table(writer_content.ADAPTER, "doc")}` WHERE `id` = %s""",
         collab_doc(node)["id"],
         as_dict=True,
@@ -154,7 +154,7 @@ def log_rows(log: str) -> dict:
 
 @whitelist_for_tests(methods=["GET", "POST"])
 def server_text(node: str) -> list[str]:
-    """The text of each top-level block of `node`, read from the checkpoint and the rows after it."""
+    """The text of each top-level block of `node`, read from the body and the rows after it."""
     stored = content.read(writer_content.ADAPTER, collab_doc(node)["id"])
     if stored is None:
         raise frappe.DoesNotExistError(f"{node} has no collab log")

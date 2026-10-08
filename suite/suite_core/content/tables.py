@@ -31,9 +31,10 @@ def ensure_tables(adapter: str) -> None:
         ) {options}"""
     )
     for column in (
-        "`checkpoint_rev` bigint unsigned NOT NULL DEFAULT 0",
-        "`checkpoint_chain` binary(32) NULL",
-        "`integrated_rev` bigint unsigned NOT NULL DEFAULT 0",
+        # The rev, chain and sha of the checked body in the app's row; 0 while the row holds none
+        "`body_rev` bigint unsigned NOT NULL DEFAULT 0",
+        "`body_chain` binary(32) NULL",
+        "`body_sha` binary(32) NULL",
         "`kernel_schema` varchar(40) NULL",
         "`state_bytes` bigint unsigned NOT NULL DEFAULT 0",
         "`tail_rows` bigint unsigned NOT NULL DEFAULT 0",

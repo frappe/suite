@@ -43,13 +43,13 @@ def live_state(adapter: str, node: str) -> pycrdt.Doc | None:
 
 
 def live_checkpoint(adapter: str, node: str) -> tuple[dict, bytes] | None:
-    """The document's read and its state now, or None while its body is not in a log.
+    """The document's read and its state now, or None when the node has no log.
 
-    The state is compacted with pycrdt in the request from the newest integrated
-    checkpoint, never a fallback one, and only an integrated result is answered.
-    A state or tail larger than a compaction job would take is refused.
+    Read whether collaboration is on or not. The state is compacted with pycrdt in
+    the request from the body, never a fallback, and only an integrated result is
+    answered. A state or tail larger than a compaction job would take is refused.
     """
-    doc = log_of(adapter, node)
+    doc = content.find(adapter, node)
     read = content.read(adapter, doc.id, integrated=True, own_snapshot=False) if doc else None
     if read is None:
         return None

@@ -7,7 +7,6 @@ writer's session is closed, and `q_epoch` rises so a tab that may have applied
 it rebuilds.
 """
 
-import gzip
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -17,7 +16,7 @@ import pycrdt
 from frappe.utils import now_datetime
 
 from suite.suite_core.content import compaction, ingest, live, updates
-from suite.suite_core.content.log import start_clocks
+from suite.suite_core.content.log import body_row, fallback_rev, start_clocks
 from suite.suite_core.content.tables import table
 
 
@@ -34,13 +33,14 @@ def quarantine(
 ) -> list[int]:
     """Quarantine `revs` and every row that depends on them; answers every rev quarantined.
 
-    Only rows after the checkpoint can be taken out: content already in it is not a row any more.
+    Only rows after the body can be taken out: content already in it is not a row any more. A fallback
+    holding a quarantined row goes with it.
     A row whose session is gone has its recovery copy kept for `owner_of(node)`, the document's owner.
     """
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     locked = frappe.db.sql(
-        f"""SELECT `node`, `lineage`, `checkpoint_rev`, `start_clocks`, `mode`, `q_epoch` FROM `{table(adapter, "doc")}`
+        f"""SELECT `node`, `lineage`, `body_rev`, `start_clocks`, `mode`, `q_epoch` FROM `{table(adapter, "doc")}`
         WHERE `id` = %s FOR UPDATE""",
         doc_id,
         as_dict=True,
@@ -50,18 +50,18 @@ def quarantine(
             frappe.db.rollback()
             return []
         doc = locked[0]
-        if min(revs) <= int(doc.checkpoint_rev):
-            raise ValueError("a row in the checkpoint can't be quarantined")
+        if min(revs) <= int(doc.body_rev):
+            raise ValueError("a row in the body can't be quarantined")
         rows = frappe.db.sql(
             f"""SELECT `u`.`rev`, `u`.`client_id`, `u`.`payload`, `s`.`principal`
             FROM `{table(adapter, "update")}` `u` LEFT JOIN `{table(adapter, "session")}` `s`
             ON `s`.`doc_id` = `u`.`doc_id` AND `s`.`sid` = `u`.`sid`
             WHERE `u`.`doc_id` = %s AND `u`.`rev` > %s AND `u`.`state` = 'ok' ORDER BY `u`.`rev`""",
-            (doc_id, doc.checkpoint_rev),
+            (doc_id, doc.body_rev),
             as_dict=True,
         )
         tail = [TailRow(int(row.rev), int(row.client_id), readable(bytes(row.payload))) for row in rows]
-        picked, cut = dependents(tail, revs, floor(adapter, doc_id, doc))
+        picked, cut = dependents(tail, revs, floor(adapter, doc))
         if not picked:
             frappe.db.rollback()
             return []
@@ -102,6 +102,10 @@ def quarantine(
             WHERE `doc_id` = %s AND `rev` IN %s""",
             (doc_id, tuple(picked)),
         )
+        frappe.db.sql(
+            f"DELETE FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` >= %s",
+            (doc_id, min(picked)),
+        )
         for client, clock in cut.items():
             # Other writers' rows that need a clock at or past `clock` are refused from now on
             frappe.db.sql(
@@ -116,7 +120,7 @@ def quarantine(
             `tail_bound` = (SELECT COALESCE(SUM(COALESCE(`bound`, LENGTH(`payload`))), 0) FROM `{table(adapter, "update")}`
                 WHERE `doc_id` = %(doc)s AND `rev` > %(base)s)
             WHERE `id` = %(doc)s""",
-            {"doc": doc_id, "base": doc.checkpoint_rev},
+            {"doc": doc_id, "base": max(int(doc.body_rev), fallback_rev(adapter, doc_id))},
         )
         frappe.log_error(
             title=f"Collab rows quarantined: {reason}",
@@ -174,15 +178,12 @@ def readable(payload: bytes) -> updates.Update | None:
         return None
 
 
-def floor(adapter: str, doc_id: str, doc: frappe._dict) -> dict[int, int]:
-    """Each writer's next clock in the checkpoint and the start, which no quarantine can take back."""
+def floor(adapter: str, doc: frappe._dict) -> dict[int, int]:
+    """Each writer's next clock in the body and the start, which no quarantine can take back."""
     clocks = start_clocks(doc)
-    if int(doc.checkpoint_rev):
-        gz = frappe.db.sql(
-            f"SELECT `gz` FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` = %s",
-            (doc_id, doc.checkpoint_rev),
-        )[0][0]
-        for client, clock in compaction.state_vector(pycrdt.get_state(gzip.decompress(bytes(gz)))).items():
+    row = body_row(adapter, doc.node) if int(doc.body_rev) else None
+    if row is not None:
+        for client, clock in compaction.state_vector(pycrdt.get_state(row.body)).items():
             clocks[client] = max(clocks.get(client, 0), clock)
     return clocks
 

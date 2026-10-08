@@ -169,12 +169,12 @@ test.describe("Writer collaboration", () => {
 			["Written before compaction", "Second line before compaction"],
 		);
 		const logged = await collabState(testApi, node);
-		expect(logged.head_rev).toBeGreaterThan(logged.checkpoint_rev);
+		expect(logged.head_rev).toBeGreaterThan(logged.body_rev);
 
 		const compacted = await compactNow(testApi, node);
 
 		expect(compacted).toEqual({
-			checkpoint_rev: logged.head_rev,
+			body_rev: logged.head_rev,
 			head_rev: logged.head_rev,
 			tail_rows: 0,
 		});
@@ -237,7 +237,7 @@ test.describe("Writer collaboration", () => {
 				async () => {
 					const state = await collabState(testApi, node);
 					return {
-						compacted: state.head_rev > 0 && state.checkpoint_rev === state.head_rev,
+						compacted: state.head_rev > 0 && state.body_rev === state.head_rev,
 						tail_rows: state.tail_rows,
 					};
 				},
@@ -402,7 +402,7 @@ test.describe("Writer collaboration", () => {
 		await expect.poll(() => waited, { timeout: 15_000 }).toContain("compacting");
 		await expectConverged(testApi, node, [owner.page], ["Before the cap", "After the wait"], 30_000);
 		const state = await collabState(testApi, node);
-		expect(state.checkpoint_rev).toBeGreaterThan(0);
+		expect(state.body_rev).toBeGreaterThan(0);
 	});
 
 	test("a change sent in pieces is saved whole and opens in the editor", async ({ owner, testApi }) => {

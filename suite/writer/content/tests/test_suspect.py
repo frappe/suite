@@ -122,8 +122,14 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.recovered(node), [(3, WRITER, "pycrdt_refused", a.sent[1])])
         self.assertEqual((self.doc_row(node).suspect, self.doc_row(node).suspect_held), (None, None))
         self.job(doc_id).run()
-        [(through, _state, integrated)] = self.checkpoints_of(node)
-        self.assertEqual((through, integrated), (3, 1))
+        self.assertEqual((self.doc_row(node).body_rev, self.checkpoints_of(node)), (3, []))
+        self.assertIn(
+            self.text_of(self.body_of(node)),
+            {
+                "<paragraph>alpha</paragraph><paragraph>beta</paragraph>",
+                "<paragraph>beta</paragraph><paragraph>alpha</paragraph>",
+            },
+        )
 
     def test_a_table_cell_straight_in_the_body_is_quarantined_with_what_its_writer_wrote_after(self):
         node = self.new_document()
@@ -338,7 +344,13 @@ class TestSuspect(CheckpointCase):
 
         with patch.object(compaction, "compact", merged):
             self.job(doc_id).run()
-        self.assertEqual((self.doc_row(node).checkpoint_rev, self.doc_row(node).suspect), (rev, "fallback"))
+        self.assertEqual(
+            (
+                [through for through, _state, _integrated in self.checkpoints_of(node)],
+                self.doc_row(node).suspect,
+            ),
+            ([rev], "fallback"),
+        )
         self.set_doc(node, suspect=None)
         self.requested.clear()
 
@@ -355,7 +367,7 @@ class TestSuspect(CheckpointCase):
             ("unreadable", "judge_failed", "held", Panic),
         ):
 
-            def breaks(*args, error=error):
+            def breaks(*args, error=error, **kwargs):
                 raise error("unexpected")
 
             with self.subTest(marked=marked, error=error.__name__):
@@ -515,8 +527,7 @@ class TestSuspect(CheckpointCase):
                 "verdict",
                 "judged",
                 "head_rev",
-                "checkpoint_rev",
-                "integrated_rev",
+                "body_rev",
                 "state_bytes",
                 "tail_bytes",
                 "compaction_failures",
