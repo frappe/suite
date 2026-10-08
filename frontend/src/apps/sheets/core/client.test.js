@@ -44,6 +44,18 @@ describe('client — init and reads', () => {
     expect(port.sent[0]).toMatchObject({ reqId: 1, type: 'init', payload: { snapshotBytes: null } })
   })
 
+  it('keeps the sheet list current and reports changes to it', async () => {
+    const wb = await createWorkbookClient({ port })
+    const seen = []
+    wb.onSheets((s) => seen.push(s))
+    wb.dispatch(cmd(CommandTypes.addSheet, { name: 'Data' }))
+    await wb.idle()
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    await wb.idle()
+    expect(wb.sheets).toEqual(['Sheet1', 'Data'])
+    expect(seen).toEqual([['Sheet1', 'Data']])
+  })
+
   it('round-trips readViewport and readCells', async () => {
     const wb = await createWorkbookClient({ port })
     wb.dispatch(setInput('Sheet1', 1, 1, '10'))

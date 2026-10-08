@@ -66,6 +66,7 @@ describe('worker host — apply', () => {
         { id: a.id, ok: true },
         { id: b.id, ok: true },
       ],
+      sheets: ['Sheet1'],
     })
   })
 

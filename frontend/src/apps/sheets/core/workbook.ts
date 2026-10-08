@@ -52,6 +52,7 @@ const MULTI_CALL: ReadonlySet<CommandType> = new Set<CommandType>([
   CommandTypes.setFrozen,
   CommandTypes.setRangeStyle,
   CommandTypes.addSheet,
+  CommandTypes.duplicateSheet,
   CommandTypes.setDefinedName,
 ])
 
@@ -260,8 +261,19 @@ export function createWorkbook({
       case CommandTypes.renameSheet:
         model.renameSheet(sheetIndex(cmd.payload.sheet), cmd.payload.name)
         return
-      case CommandTypes.duplicateSheet:
-        model.duplicateSheet(sheetIndex(cmd.payload.sheet))
+      // IronCalc names the copy itself; find it and rename it when asked.
+      case CommandTypes.duplicateSheet: {
+        const p = cmd.payload
+        const before = new Set(model.getWorksheetsProperties().map((s) => s.name))
+        model.duplicateSheet(sheetIndex(p.sheet))
+        if (p.name) {
+          const i = model.getWorksheetsProperties().findIndex((s) => !before.has(s.name))
+          model.renameSheet(i, p.name)
+        }
+        return
+      }
+      case CommandTypes.moveSheet:
+        model.moveSheet(sheetIndex(cmd.payload.sheet), cmd.payload.index)
         return
       // Upsert: IronCalc splits create/update, the command does not.
       case CommandTypes.setDefinedName: {

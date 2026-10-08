@@ -133,7 +133,8 @@ export function createWorkerHost(): WorkerHost {
       }
       return result
     })
-    return { version: w.getVersion(), results }
+    // The sheet list rides along, so tabs follow adds, renames and moves.
+    return { version: w.getVersion(), results, sheets: w.getSheets() }
   }
 
   // One message per screen instead of one per cell: IronCalc has no batch

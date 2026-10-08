@@ -94,7 +94,10 @@ export class WorkerRequestError extends Error {
 }
 
 export interface WorkbookClient {
+  /** Sheet names in tab order, as of the last apply. */
   readonly sheets: string[]
+  /** Called when an apply changes the sheet list. Returns an unsubscribe. */
+  onSheets(cb: (sheets: string[]) => void): () => void
   /** Throws on an invalid command; it never reaches the worker. */
   dispatch(cmd: unknown): void
   onVersion(cb: (version: number) => void): () => void
@@ -151,6 +154,14 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   let version = init.version
   const versionListeners = new Set<(version: number) => void>()
   const errorListeners = new Set<(failure: CommandFailure) => void>()
+  let sheets = init.sheets
+  const sheetListeners = new Set<(sheets: string[]) => void>()
+
+  function setSheets(next: string[] | undefined): void {
+    if (!next || next.join('\u0000') === sheets.join('\u0000')) return
+    sheets = next
+    for (const cb of sheetListeners) cb(next)
+  }
 
   function setVersion(v: number): void {
     if (v === version) return
@@ -211,7 +222,11 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     const batch = queue
     queue = []
     try {
-      const res = await request<{ version: number; results: ApplyResult[] }>('apply', {
+      const res = await request<{
+        version: number
+        results: ApplyResult[]
+        sheets?: string[]
+      }>('apply', {
         commands: batch,
       })
       // Settle before the version listeners run, so their clear()
@@ -221,6 +236,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
         const command = batch[i]
         if (!r.ok && command) reportFailure(command, r.error ?? 'unknown error')
       })
+      setSheets(res.sheets)
       setVersion(res.version)
     } catch (e) {
       // The whole request failed, so none of the batch applied.
@@ -241,7 +257,13 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   // --- public API --------------------------------------------------------
 
   return {
-    sheets: init.sheets,
+    get sheets() {
+      return sheets
+    },
+    onSheets(cb) {
+      sheetListeners.add(cb)
+      return () => sheetListeners.delete(cb)
+    },
     dispatch,
     onVersion(cb) {
       versionListeners.add(cb)
