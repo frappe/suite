@@ -2197,6 +2197,7 @@ import { createGrid } from '../../canvas/index'
 import { createCellProvider } from '../../core/cell-provider'
 import { createWorkbookClient } from '../../core/client'
 import { createDisplayCache } from '../../core/display-cache'
+import { MAX_VIEWPORT_CELLS } from '../../core/limits'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
@@ -2403,7 +2404,7 @@ const validation = createValidationEngine()
 const protection = createProtectionEngine()
 const condFormat = createCondFormatEngine()
 const clipboard = createClipboard({
-  sheet,
+  cells: { read: (sn, rect) => _readRect(sn, rect), write: (sn, map) => _writeInputs(sn, map) },
   getCurrentSheet: () => currentSheet.value,
   formats,
   condFormat,
@@ -2547,6 +2548,8 @@ const history = createHistory({
       return
     }
     _applyCellMap(op.before, op.subSheet)
+    // A cut pasted onto another sheet: put its source cells back.
+    if (op.source) _applyCellMap(op.source.before, op.source.sheet)
     if (op.beforeFormats) _applyFormatMap(op.beforeFormats, op.subSheet)
     if (op.beforeCols) _applyAxisFormatMap('col', op.beforeCols, op.subSheet)
     if (op.beforeRows) _applyAxisFormatMap('row', op.beforeRows, op.subSheet)
@@ -2564,6 +2567,7 @@ const history = createHistory({
       return
     }
     _applyCellMap(op.after, op.subSheet)
+    if (op.source) _applyCellMap(op.source.after, op.source.sheet)
     if (op.afterFormats) _applyFormatMap(op.afterFormats, op.subSheet)
     if (op.afterCols) _applyAxisFormatMap('col', op.afterCols, op.subSheet)
     if (op.afterRows) _applyAxisFormatMap('row', op.afterRows, op.subSheet)
@@ -3908,9 +3912,9 @@ _sheetTabs = useSheetTabs({
   onSwitch: () => {
     filterPanel.open = false // close any open filter popover so it doesn't carry stale state
     _repopulateGrid()
+    // The cut/copy stays pending so it can be pasted on this tab; only its
+    // marching ants, drawn for the other tab, go.
     grid?.setMarchingAnts(null)
-    clipboard.clear()
-    clipboardHas.value = false
     _applyHiddenRows() // refresh filter-driven row hides for the new sheet
     // Re-mirror freeze / hidden refs into the Vue state so the context-menu
     // predicates and toolbar reflect the new sheet's restored view.
@@ -5279,6 +5283,7 @@ function _captureValidationRange(rect, sheetName) {
 //      and any outside the destination would otherwise be lost on undo.
 // Returns an array of rects; callers merge per-cell captures across them.
 // Must be called BEFORE clipboard.paste(), which consumes the cut buffer.
+// A cut from another sheet is covered by _cutSourceElsewhere instead.
 function _pasteAffectedRects(destSel) {
   const rects = destSel ? [destSel] : []
   const src = clipboard.getSourceSel()
@@ -5291,9 +5296,18 @@ function _pasteAffectedRects(destSel) {
         r1: anch.row + (src.r1 - src.r0),
         c1: anch.col + (src.c1 - src.c0),
       })
-    if (clipboard.getMode() === 'cut') rects.push(src)
+    if (clipboard.getMode() === 'cut' && clipboard.getSourceSheet() === currentSheet.value)
+      rects.push(src)
   }
   return rects
+}
+
+// A cut pasted onto another sheet clears its source on the sheet it came
+// from, so undo needs that sheet's cells too. Call before clipboard.paste().
+function _cutSourceElsewhere(sn) {
+  const sheetName = clipboard.getSourceSheet()
+  if (clipboard.getMode() !== 'cut' || !sheetName || sheetName === sn) return null
+  return { sheet: sheetName, rect: clipboard.getSourceSel() }
 }
 
 // ── Protection enforcement ────────────────────────────────────────────────────
@@ -5895,7 +5909,7 @@ function onDocCopy(e) {
   if (!_canvasActive()) return
   e.preventDefault()
   const src = grid.getSelection()
-  clipboard.copy(src)
+  clipboard.copy(src).catch((err) => console.error('[sheets] copy failed', err))
   clipboardHas.value = true
   grid.setMarchingAnts(src)
 }
@@ -5908,11 +5922,10 @@ function onDocCut(e) {
   const sn = currentSheet.value
   // Cut moves content out of the source — block it when the source is protected.
   if (_rectBlocked(src, sn)) return
-  const before = _captureRange(src, sn)
-  clipboard.cut(src)
+  // Nothing changes until the paste, which records the move for undo.
+  clipboard.cut(src).catch((err) => console.error('[sheets] cut failed', err))
   clipboardHas.value = true
   grid.setMarchingAnts(src)
-  _pushEditOp(sn, before, 'Cut')
 }
 async function onDocPaste(e) {
   if (!_canvasActive()) return
@@ -5931,7 +5944,7 @@ async function onDocPaste(e) {
     await clipboard.paste(activeCell.value, () => {}, 'all', destSel)
     clipboardHas.value = clipboard.hasData()
     grid.setMarchingAnts(null)
-    formulaValue.value = sheet.getCell(activeCell.value) // fx bar tracks the pasted anchor
+    _showInputInFormulaBar(activeCell.value) // fx bar tracks the pasted anchor
     history.push()
     isDirty.value = true
     return
@@ -5965,7 +5978,9 @@ async function onDocPaste(e) {
   // and — for a cut — the vacated source) so undo restores all of it.
   const rects = _pasteAffectedRects(destSel)
   if (externalRect) rects.push(externalRect)
-  const before = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+  const before = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+  const cutSrc = _cutSourceElsewhere(sn)
+  const srcBefore = cutSrc && (await _readInputs(cutSrc.rect, cutSrc.sheet))
   const beforeFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
   const beforeVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
   const cfBefore = condFormat?.getRules?.(sn)?.length ?? 0
@@ -5975,7 +5990,7 @@ async function onDocPaste(e) {
     // history entry from out here. clipboard still does its mutations.
     // A protected destination returns { blocked } and writes nothing; leave
     // the marching ants + cut buffer intact so the user can retry elsewhere.
-    if (clipboard.paste(activeCell.value, () => {}, 'all', destSel)?.blocked) {
+    if ((await clipboard.paste(activeCell.value, () => {}, 'all', destSel))?.blocked) {
       _flashProtected(sn)
       return
     }
@@ -6007,9 +6022,15 @@ async function onDocPaste(e) {
     // notified for cell-value changes, but format changes happened AFTER
     // batchSetCells so the canvas painted those cells with the old
     // format, and a cut's vacated source needs to repaint as empty.
-    for (const r of rects) _refreshDisplayForRange(r, sn)
-    formulaValue.value = sheet.getCell(activeCell.value) // fx bar tracks the pasted anchor
-    const after = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+    grid?.render?.() // pasted formats
+    // Reads wait for the paste's write, so `after` holds the pasted inputs.
+    const after = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+    const source = cutSrc && {
+      sheet: cutSrc.sheet,
+      before: srcBefore,
+      after: await _readInputs(cutSrc.rect, cutSrc.sheet),
+    }
+    _showInputInFormulaBar(activeCell.value) // fx bar tracks the pasted anchor
     const afterFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
     const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
     const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
@@ -6022,6 +6043,7 @@ async function onDocPaste(e) {
         before,
         after,
         summary: `Pasted into ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
+        ...(source && { source }),
       })
       _pushPasteHistory({
         opType: 'paste',
@@ -6034,6 +6056,7 @@ async function onDocPaste(e) {
         beforeValidation: beforeVal,
         afterValidation: afterVal,
         cfChanged: cfBefore !== cfAfter,
+        ...(source && { source }),
       })
       syncFlags()
     }
@@ -6042,25 +6065,33 @@ async function onDocPaste(e) {
 }
 
 // Right-click → Paste special. `kind` ∈ {'values', 'formats', 'formulas'}.
-function doPasteSpecial(kind) {
+async function doPasteSpecial(kind) {
   contextMenu.open = false
   if (!clipboard.hasData()) return
   const destSel = grid.getSelection()
   const sn = currentSheet.value
   const rects = _pasteAffectedRects(destSel)
-  const before = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+  const before = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+  const cutSrc = _cutSourceElsewhere(sn)
+  const srcBefore = cutSrc && (await _readInputs(cutSrc.rect, cutSrc.sheet))
   const beforeFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
   const beforeVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
   const cfBefore = condFormat?.getRules?.(sn)?.length ?? 0
-  if (clipboard.paste(activeCell.value, () => {}, kind, destSel)?.blocked) {
+  if ((await clipboard.paste(activeCell.value, () => {}, kind, destSel))?.blocked) {
     _flashProtected(sn)
     return // keep the pending cut/copy + its marching ants
   }
-  for (const r of rects) _refreshDisplayForRange(r, sn)
-  formulaValue.value = sheet.getCell(activeCell.value) // fx bar tracks the pasted anchor
+  grid?.render?.() // pasted formats
   clipboardHas.value = clipboard.hasData()
   grid?.setMarchingAnts(null)
-  const after = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+  // Reads wait for the paste's write, so `after` holds the pasted inputs.
+  const after = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+  const source = cutSrc && {
+    sheet: cutSrc.sheet,
+    before: srcBefore,
+    after: await _readInputs(cutSrc.rect, cutSrc.sheet),
+  }
+  _showInputInFormulaBar(activeCell.value) // fx bar tracks the pasted anchor
   const afterFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
   const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
   const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
@@ -6073,6 +6104,7 @@ function doPasteSpecial(kind) {
       before,
       after,
       summary: `Pasted ${kind} into ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
+      ...(source && { source }),
     })
     _pushPasteHistory({
       opType: 'paste',
@@ -6085,6 +6117,7 @@ function doPasteSpecial(kind) {
       beforeValidation: beforeVal,
       afterValidation: afterVal,
       cfChanged: cfBefore !== cfAfter,
+      ...(source && { source }),
     })
     syncFlags()
   }
@@ -6103,23 +6136,6 @@ function _pushPasteHistory(op) {
     return
   }
   history.pushOp(op)
-}
-
-// Re-push display strings for every cell in `rect`. Used after paste
-// since format changes that happen AFTER batchSetCells don't fire the
-// engine's onCellsChanged callback — the canvas has the right value
-// but the wrong format-applied display.
-function _refreshDisplayForRange(rect, sheetName) {
-  if (!rect || !grid) return
-  const sn = sheetName || currentSheet.value
-  for (let r = rect.r0; r <= rect.r1; r++) {
-    for (let c = rect.c0; c <= rect.c1; c++) {
-      const id = cellId(r, c)
-      const fmt = formats.get(id, sn)
-      const dv = sheet.getDisplayValue(id, sn)
-      grid.setCell(id, fmt.numberFormat ? applyNumberFmt(dv, fmt.numberFormat) : dv)
-    }
-  }
 }
 
 // ── History ───────────────────────────────────────────────────────────────────
@@ -8270,6 +8286,40 @@ function _showInputInFormulaBar(id, sn = currentSheet.value) {
       }
     })
     .catch((e) => console.error('[sheets] readCells failed', e))
+}
+
+// A rect's inputs and display strings (0-based rect), read from the worker in
+// chunks of rows that fit one readViewport.
+async function _readRect(sn, rect) {
+  const inputs = []
+  const displays = []
+  if (!_engine) return { inputs, displays }
+  const cols = rect.c1 - rect.c0 + 1
+  const step = Math.max(1, Math.floor(MAX_VIEWPORT_CELLS / cols))
+  for (let r = rect.r0; r <= rect.r1; r += step) {
+    const res = await _engine.client.readViewport({
+      sheet: sn,
+      r1: r + 1,
+      c1: rect.c0 + 1,
+      r2: Math.min(r + step - 1, rect.r1) + 1,
+      c2: rect.c1 + 1,
+      includeInputs: true,
+    })
+    inputs.push(...(res.inputs ?? []))
+    displays.push(...res.values)
+  }
+  return { inputs, displays }
+}
+
+// {cellId: input} for a rect: an edit op's before or after.
+async function _readInputs(rect, sn = currentSheet.value) {
+  const out = {}
+  if (!rect) return out
+  const { inputs } = await _readRect(sn, rect)
+  for (let r = rect.r0; r <= rect.r1; r++)
+    for (let c = rect.c0; c <= rect.c1; c++)
+      out[cellId(r, c)] = inputs[r - rect.r0]?.[c - rect.c0] ?? ''
+  return out
 }
 
 // A cell's computed display string. Readers that run during a paint use this,

@@ -1,11 +1,16 @@
 // Clipboard engine — internal copy/cut/paste + system clipboard TSV interchange.
+//
+// Cells are read and written through `cells`:
+//   read(sheetName, rect)  → Promise<{ inputs: string[][], displays: string[][] }>
+//   write(sheetName, map)  → writes a {cellId: input} map as one edit ('' clears)
+// A copy reads the source once; the paste then works from that capture.
 
 import { colLabel, parseCellId } from '../utils/cells.js'
 import { adjustFormula } from './formula-adjust.js'
 import { detectHyperlink } from './links.js'
 
 export function createClipboard({
-  sheet,
+  cells,
   getCurrentSheet,
   formats,
   condFormat = null,
@@ -14,45 +19,71 @@ export function createClipboard({
   createPivotFromPaste = null,
   protection = null,
 }) {
-  let _data = null // { 'dr,dc': rawValue }
+  let _data = null // { 'dr,dc': input }, filled once the source read returns
+  let _shown = null // { 'dr,dc': display value } at copy time
   let _fmts = null // { 'dr,dc': formatObj }
   let _vals = null // { 'dr,dc': validationRule | null }
-  let _mode = null // 'copy' | 'cut'
+  let _mode = null // 'copy' | 'cut'; set at once, so hasData() is true while reading
   let _srcSel = null // { r0, c0, r1, c1 } of the source
+  let _srcSheet = null // the sheet the source is on
   let _pivot = null // portable pivot config when the source overlaps a pivot
+  let _ready = null // the source read; paste waits for it
 
   // ── Capture ───────────────────────────────────────────────────────────────
 
   function _capture(sel, mode) {
     const { r0, c0, r1, c1 } = sel
-    _data = {}
+    const sn = getCurrentSheet()
+    _data = _shown = null
     _fmts = {}
     _vals = {}
     _mode = mode
     _srcSel = sel
+    _srcSheet = sn
     // If the copied range overlaps a pivot, remember its config so a paste
     // can mint a new live pivot instead of dead values (Google Sheets UX).
-    _pivot = getPivotAt ? getPivotAt(sel, getCurrentSheet()) : null
+    _pivot = getPivotAt ? getPivotAt(sel, sn) : null
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
         const key = `${r - r0},${c - c0}`
         const id = colLabel(c) + (r + 1)
-        _data[key] = sheet.getCell(id)
-        _fmts[key] = formats ? { ...formats.get(id, getCurrentSheet()) } : {}
-        _vals[key] = validation ? validation.get(id, getCurrentSheet()) : null
+        _fmts[key] = formats ? { ...formats.get(id, sn) } : {}
+        _vals[key] = validation ? validation.get(id, sn) : null
       }
     }
+    const ready = cells.read(sn, sel).then(
+      ({ inputs, displays }) => {
+        // A newer copy or a clear() replaced this one while it was reading.
+        if (_ready !== ready) return
+        _data = {}
+        _shown = {}
+        for (let r = r0; r <= r1; r++) {
+          for (let c = c0; c <= c1; c++) {
+            const key = `${r - r0},${c - c0}`
+            _data[key] = inputs[r - r0]?.[c - c0] ?? ''
+            _shown[key] = displays[r - r0]?.[c - c0] ?? ''
+          }
+        }
+      },
+      (e) => {
+        // Nothing was captured, so there is nothing to paste.
+        if (_ready === ready) clear()
+        throw e
+      },
+    )
+    _ready = ready
+    return ready
   }
 
   // Write TSV to system clipboard (display values, tab-separated)
   function _writeSystem(sel) {
-    const { r0, c0, r1, c1 } = sel
+    if (!_shown) return
     const rows = []
-    for (let r = r0; r <= r1; r++) {
-      const cells = []
-      for (let c = c0; c <= c1; c++)
-        cells.push(String(sheet.getDisplayValue(colLabel(c) + (r + 1))).replace(/\t|\n/g, ' '))
-      rows.push(cells.join('\t'))
+    for (let dr = 0; dr <= sel.r1 - sel.r0; dr++) {
+      const row = []
+      for (let dc = 0; dc <= sel.c1 - sel.c0; dc++)
+        row.push(String(_shown[`${dr},${dc}`]).replace(/\t|\n/g, ' '))
+      rows.push(row.join('\t'))
     }
     // Guard `navigator` at the global level — Node < 21 (CI runs Node 20)
     // doesn't expose it, and optional-chaining only on `.clipboard` still
@@ -64,14 +95,14 @@ export function createClipboard({
 
   // ── Public ────────────────────────────────────────────────────────────────
 
-  function copy(sel) {
-    _capture(sel, 'copy')
-    _writeSystem(sel)
+  async function copy(sel) {
+    await _capture(sel, 'copy')
+    if (_srcSel === sel) _writeSystem(sel)
   }
 
-  function cut(sel) {
-    _capture(sel, 'cut')
-    _writeSystem(sel)
+  async function cut(sel) {
+    await _capture(sel, 'cut')
+    if (_srcSel === sel) _writeSystem(sel)
   }
 
   // Compute the (r, c) cells that should receive paste output, along with the
@@ -125,7 +156,9 @@ export function createClipboard({
   //   destSel = { r0, c0, r1, c1 } (optional) — when provided and the source is
   //             a single cell, the source is tiled across the entire dest range
   //             (Google-Sheets behaviour: copy A1, select B1:D1, paste → B/C/D).
-  function paste(anchorId, historyPush, kind = 'all', destSel = null) {
+  async function paste(anchorId, historyPush, kind = 'all', destSel = null) {
+    if (!_mode) return
+    await _ready?.catch(() => {}) // a failed read leaves _data empty
     if (!_data) return
     const anch = parseCellId(anchorId)
     if (!anch) return
@@ -171,17 +204,12 @@ export function createClipboard({
               ? adjustFormula(raw, r - (_srcSel.r0 + dr), c - (_srcSel.c0 + dc))
               : raw
         } else {
-          // 'values' — formulas paste as their computed display value.
+          // 'values' — formulas paste as the value they showed when copied.
           const isFormula = typeof raw === 'string' && raw.startsWith('=')
-          writes[id] = isFormula ? _displayAt(key) : raw
+          writes[id] = isFormula ? _shown[key] : raw
         }
       }
-      if (sheet.batchSetCells) {
-        sheet.batchSetCells(writes, sh, { replace: false })
-      } else {
-        // Engine without batch API — fall back to per-cell loop.
-        for (const [id, v] of Object.entries(writes)) sheet.setCell(id, v, sh)
-      }
+      cells.write(sh, writes)
     }
 
     // Formats / validation pass — still per-cell, but skipped entirely when
@@ -212,40 +240,28 @@ export function createClipboard({
       (kind === 'all' || kind === 'values' || kind === 'formulas')
     ) {
       const { r0, c0, r1, c1 } = _srcSel
+      const src = _srcSheet
       // Cells that just received the paste — when source and destination
       // overlap (e.g. cut C2:C7, paste at C3:C8) the clear pass must NOT
       // touch these or it wipes the content we just wrote. Only the source
       // cells outside the destination should be vacated.
-      const destIds = new Set(targets.map(({ r, c }) => colLabel(c) + (r + 1)))
+      const destIds =
+        src === sh ? new Set(targets.map(({ r, c }) => colLabel(c) + (r + 1))) : new Set()
       const clears = {}
       for (let r = r0; r <= r1; r++)
         for (let c = c0; c <= c1; c++) {
           const id = colLabel(c) + (r + 1)
           if (destIds.has(id)) continue
           clears[id] = ''
-          if (formats) formats.clear(id, sh)
-          if (validation) validation.clear(id, sh)
+          if (formats) formats.clear(id, src)
+          if (validation) validation.clear(id, src)
         }
-      if (sheet.batchSetCells) sheet.batchSetCells(clears, sh, { replace: false })
-      else for (const id of Object.keys(clears)) sheet.setCell(id, '', sh)
-      _data = _fmts = _vals = _mode = _srcSel = _pivot = null
+      cells.write(src, clears)
+      clear()
     }
     // Post-mutate snapshot — history.push() must run after the data has
     // settled so undo restores the correct state.
     historyPush?.()
-  }
-
-  // Display value captured at the time the source cell was copied/cut. Falls
-  // back to the raw string when the captured value isn't a formula.
-  function _displayAt(key) {
-    const raw = _data[key]
-    if (typeof raw !== 'string' || !raw.startsWith('=')) return raw
-    // Use the sheet engine to evaluate against current state. The user may
-    // have edited the source after copy — we accept that race for simplicity.
-    const [dr, dc] = key.split(',').map(Number)
-    if (!_srcSel) return raw
-    const srcId = colLabel(_srcSel.c0 + dc) + (_srcSel.r0 + dr + 1)
-    return sheet.getDisplayValue(srcId)
   }
 
   // Parse an HTML fragment's first <table> into a 2D grid of cell strings, or
@@ -408,8 +424,7 @@ export function createClipboard({
     ) {
       return { blocked: true }
     }
-    if (sheet.batchSetCells) sheet.batchSetCells(writes, sn, { replace: false })
-    else for (const [id, v] of Object.entries(writes)) sheet.setCell(id, v, sn)
+    cells.write(sn, writes)
     if (formats)
       for (const [id, url] of Object.entries(linkAt)) formats.set(id, { hyperlink: url }, sn)
     historyPush?.() // post-mutate snapshot
@@ -418,22 +433,25 @@ export function createClipboard({
 
   // Expand selection to fit pasted content (used for visual feedback).
   function hasData() {
-    return !!_data
+    return !!_mode
   }
   function getMode() {
     return _mode
   }
   function getSourceSel() {
-    return _data ? _srcSel : null
+    return _mode ? _srcSel : null
+  }
+  function getSourceSheet() {
+    return _mode ? _srcSheet : null
   }
   // The pivot config captured on copy, if the source overlapped a pivot. Lets
   // the paste dispatcher branch its undo bookkeeping (a pivot paste needs a
   // full snapshot, not the cell-diff op).
   function getPivotBlob() {
-    return _data ? _pivot : null
+    return _mode ? _pivot : null
   }
   function clear() {
-    _data = _fmts = _vals = _mode = _srcSel = _pivot = null
+    _data = _shown = _fmts = _vals = _mode = _srcSel = _srcSheet = _pivot = _ready = null
   }
 
   return {
@@ -447,6 +465,7 @@ export function createClipboard({
     hasData,
     getMode,
     getSourceSel,
+    getSourceSheet,
     getPivotBlob,
     clear,
   }
