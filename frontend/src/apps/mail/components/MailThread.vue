@@ -5,14 +5,14 @@
       :threads
       :thread
       :can-go-next="canGoNext"
-      @set-flagged="(ids: string[], flagged: boolean) => emit('setFlagged', ids, flagged)"
+      @set-flagged="onSetFlagged"
       @set-seen="setThreadSeen"
-      @move-thread="(moveToMailbox: string) => emit('moveThread', moveToMailbox)"
+      @move-thread="onMoveThread"
       @add-thread-to-mailbox="(mailboxId: string) => emit('addThreadToMailbox', mailboxId)"
       @remove-thread-from-mailbox="
         (mailboxId: string) => emit('removeThreadFromMailbox', mailboxId)
       "
-      @set-spam-status="(spam: boolean) => emit('setSpamStatus', spam)"
+      @set-spam-status="onSetSpamStatus"
       @delete-thread="emit('deleteThread')"
       @prev-thread="emit('prevThread')"
       @next-thread="emit('nextThread')"
@@ -53,6 +53,22 @@
                 'sm:flex sm:h-full sm:flex-col': isDraftAlone,
               }"
             >
+              <ScreenerThreadBanner
+                v-if="screenedSenders.length"
+                :senders="screenedSenders"
+                :domains="trustableDomains(screenedSenders.map((sender) => sender.email))"
+                :hidden-images="hiddenImages"
+                @allow="allowSenders()"
+                @allow-one="(email: string) => allowSenders([email])"
+                @allow-domain="(domain: string) => allowDomain(domain)"
+                @deny="denySenders()"
+                @load-images="imagesShown = true"
+              />
+              <HiddenImagesBanner
+                v-else-if="hiddenImages !== null"
+                :images="hiddenImages"
+                @show="imagesShown = true"
+              />
               <template v-for="group in mailsByDay" :key="group.date">
                 <!-- Borderless: the date is a label, not a control — only the
 					     more-messages toggle keeps the pill outline. -->
@@ -148,10 +164,9 @@
                           :reply-all
                           :forward
                           :reload-mails="handleReload"
+                          :drop-mail
                           :thread="thread"
-                          @set-flagged="
-                            (ids: string[], flagged: boolean) => emit('setFlagged', ids, flagged)
-                          "
+                          @set-flagged="onSetFlagged"
                           @sync-unseen="handleSyncUnseen"
                           @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
                           @mark-mail-spam="
@@ -323,11 +338,9 @@
                                 :reply-all
                                 :forward
                                 :reload-mails="handleReload"
+                                :drop-mail
                                 :thread="thread"
-                                @set-flagged="
-                                  (ids: string[], flagged: boolean) =>
-                                    emit('setFlagged', ids, flagged)
-                                "
+                                @set-flagged="onSetFlagged"
                                 @sync-unseen="handleSyncUnseen"
                                 @move-mail="
                                   (m: Mail, target: string) => emit('moveMail', m, target)
@@ -353,40 +366,33 @@
                       </div>
 
                       <div v-show="!isCollapsed(mail)">
-                        <Alert
+                        <!-- Styled as the new-sender bar is: a blocked sender's mail is the
+										     other side of the same decision. -->
+                        <div
                           v-if="!readonly && isSenderBlocked(mail.from_email)"
-                          :title="__('This sender is blocked')"
-                          class="mb-4"
-                          :dismissable="false"
+                          class="bg-surface-gray-1 mb-4 flex items-center gap-3 rounded-6 px-3 py-2"
+                          role="region"
+                          :aria-label="__('Blocked sender')"
                         >
-                          <template #description>
-                            <p class="text-ink-gray-6 prose-sm">
-                              {{
-                                __('{0} is currently on your', [mail.from_name || mail.from_email])
-                              }}
-                              <button
-                                type="button"
-                                class="hover:text-ink-gray-8 underline"
-                                @click="openSettings('mail.screener')"
-                              >
-                                {{ __('block list') }}</button
-                              >{{
-                                __(
-                                  ". You won't receive new messages from this source until you unblock them.",
-                                )
-                              }}
-                            </p>
-                          </template>
-                          <template #footer>
-                            <div class="col-span-full">
-                              <Button
-                                :label="__('Unblock')"
-                                variant="outline"
-                                @click="unblockEmailAddressSubmit(mail.from_email)"
-                              />
-                            </div>
-                          </template>
-                        </Alert>
+                          <Ban class="text-ink-gray-5 size-4 shrink-0" />
+                          <div class="text-p-sm text-ink-gray-8 min-w-0 flex-1">
+                            <span class="!font-medium">{{ mail.from_name || mail.from_email }}</span>
+                            {{ __('is on your') }}
+                            <button
+                              type="button"
+                              class="underline underline-offset-2"
+                              @click="openSettings('mail.screener')"
+                            >
+                              {{ __('block list') }}</button
+                            >{{ __('. Their mail goes to Junk.') }}
+                          </div>
+                          <Button
+                            class="shrink-0"
+                            variant="outline"
+                            :label="__('Unblock')"
+                            @click="unblockEmailAddressSubmit(mail.from_email)"
+                          />
+                        </div>
                         <CalendarInviteBanner
                           v-if="!readonly && !isCollapsed(mail) && icsAttachment(mail)"
                           :key="`invite-${mail.name}`"
@@ -404,9 +410,7 @@
                           <EmailContent
                             v-if="hasHtmlContent(mail.html_body)"
                             :content="mail.html_body"
-                            :block-images="shouldBlockImages(mail)"
-                            :can-trust="!readonly"
-                            @trust="trustSenderSubmit(mail.from_email)"
+                            :block-images="isBlocked(mail)"
                           />
 
                           <!-- font-sans is the system stack, not Inter: the preset leaves
@@ -542,8 +546,8 @@
 </template>
 
 <script setup lang="ts">
-import { Alert, Avatar, Badge, Button, Tooltip } from 'frappe-ui'
-import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
+import { Avatar, Badge, Button, Tooltip } from 'frappe-ui'
+import { Ban, ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
 import {
   computed,
   inject,
@@ -564,6 +568,7 @@ import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vu
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
+import HiddenImagesBanner from '@/apps/mail/components/HiddenImagesBanner.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
@@ -574,6 +579,8 @@ import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
+import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
+import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import {
   closeComposeWindow,
   composeWindowDraft,
@@ -593,6 +600,7 @@ import type {
   ScreenedAddress,
 } from '@/apps/mail/types'
 import {
+  analyzeRemoteAssets,
   decodeHtmlEntities,
   downloadUrlAsFile,
   extractQuotedContent,
@@ -612,7 +620,7 @@ import {
   useTheme,
 } from '@/apps/mail/utils/composables'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
-import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { isCollapsed as isCollapsedIn, lastMessageOf } from '@/apps/mail/utils/threadFolding'
 import { mailRow } from '@/apps/mail/utils/threadRows'
@@ -683,11 +691,11 @@ const { accountId: scopeAccountId, identities, screenedAddresses, mailboxIds } =
 // they come from the store rather than the pane's scope.
 const { globalScreenedAddresses } = userStore()
 
-// A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
-// exact address or by an accepted/blocked '@domain' entry covering them.
+// A sender is "blocked" when screened with the Spam action (their mail goes to Junk) — either by their
+// exact address or by a blocked '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
   !!screenedAddresses.value.data?.some(
-    (a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
+    (a: ScreenedAddress) => a.action === 'Spam' && matchesScreenedValue(email, a.email),
   )
 
 // Trusted senders — you, or anyone you've accepted — load images normally. For everyone else, the
@@ -915,12 +923,16 @@ const syncWithSource = () => {
   const source = sourceMessages()
   if (!source?.length) return
 
-  // Refresh existing mails' mailbox membership from the list (e.g. after a move/undo), in place so
-  // unsaved inline drafts and collapse state survive.
+  // Refresh existing mails' mailbox membership and screening from the list (e.g. after a move, a
+  // sender accepted from the list, or an undo), in place so unsaved inline drafts and collapse state
+  // survive.
   const sourceById = new Map(source.map((mail) => [mail.id, mail]))
   thread.value.forEach((mail) => {
     const fresh = sourceById.get(mail.id)
-    if (fresh) mail.mailboxes = fresh.mailboxes
+    if (!fresh) return
+    mail.mailboxes = fresh.mailboxes
+    // Waiting again after an undo: a decision made here no longer holds, so the banner returns.
+    mail.unscreened = fresh.unscreened
   })
 
   // Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
@@ -961,6 +973,138 @@ const filterRelevantMails = (mail: Mail) => {
   if (mailbox === trash) return mailboxes.includes(trash)
   if (mailbox === mailboxIds.value.junk) return !!mail.junk
   return !mailboxes.includes(trash) && !mail.junk
+}
+
+// ── Screener prototype ──────────────────────────────────────────────────────────────────────────
+// With a Screener variant on, a screened thread opens here like any other. It carries a banner with
+// the verdict, and the thread's own actions decide it too: reply, star or a move to any folder but
+// Junk (Trash included) allows the sender; Junk denies them. Off, the Screener page owns all of this.
+const screener = useScreener()
+// Senders decided from this pane: the banner drops at once, before the moved messages come back.
+// The senders this thread is waiting on, each with the name they wrote as, in the order they first
+// wrote. A sender decided anywhere — here, on the list, through an action — drops out at once, and an
+// Undo brings them back (see useScreener).
+const screenedSenders = computed(() => {
+  if (readonly || !screener.isActive(scopeAccountId.value)) return []
+  const senders = new Map<string, { email: string; name: string }>()
+  for (const mail of thread.value)
+    for (const email of screener.waitingSenders(mail, scopeAccountId.value))
+      if (!senders.has(email.toLowerCase()))
+        senders.set(email.toLowerCase(), { email, name: mail.from_name })
+  return [...senders.values()]
+})
+
+// Remote content is withheld from senders not yet trusted, and offered back once for the whole thread
+// (see HiddenImagesBanner). A sender allowed from here is trusted at once: their images load without
+// waiting for the rules to be read again. Once the rules are read again they say who is trusted —
+// an Undo, or a failed acceptance, takes the trust back.
+const imagesShown = ref(false)
+const trustedHere = ref(new Set<string>())
+watch(
+  () => threadID,
+  () => {
+    imagesShown.value = false
+    trustedHere.value = new Set()
+  },
+)
+const trustHere = (email: string) =>
+  (trustedHere.value = new Set([...trustedHere.value, email.toLowerCase()]))
+const domainOf = (email?: string) => `@${(email ?? '').split('@').pop()?.toLowerCase()}`
+const isBlocked = (mail: Mail) =>
+  !imagesShown.value &&
+  !trustedHere.value.has(mail.from_email?.toLowerCase()) &&
+  !trustedHere.value.has(domainOf(mail.from_email)) &&
+  shouldBlockImages(mail)
+// How many remote images the thread holds back, or null when it holds nothing back.
+const hiddenImages = computed(() => {
+  const held = thread.value
+    .filter(isBlocked)
+    .map((mail) => analyzeRemoteAssets(mail.html_body))
+    .filter((assets) => assets.hasRemote)
+  return held.length ? held.reduce((n, assets) => n + assets.images, 0) : null
+})
+// A verdict changes who is trusted, and an accepted sender's images load: read the rules again.
+watch(screener.version, () =>
+  screenedAddresses.value
+    .refetch()
+    .then(() => (trustedHere.value = new Set()))
+    .catch(() => {}),
+)
+
+const asScreenable = (senders: { email: string }[]) =>
+  senders.map((sender) => ({ from_email: sender.email, unscreened: 1 as const }))
+
+// Yes: every waiting sender, or the one picked from the arrow beside it. They are trusted here at
+// once, so their images load without waiting for the rules to be read again.
+const allowSenders = async (emails = screenedSenders.value.map((sender) => sender.email)) => {
+  if (!emails.length) return
+  emails.forEach(trustHere)
+  await screener.allow(emails, { account: scopeAccountId.value })
+  reload()
+}
+
+// From the arrow beside Yes: trust one of the waiting senders' domains, everyone who writes from it.
+const allowDomain = async (domain: string) => {
+  trustHere(domain)
+  await screener.allow([domain], {
+    account: scopeAccountId.value,
+    message: __('{0} marked as trusted.', [domain.slice(1)]),
+  })
+  reload()
+}
+
+// No is a move to Junk, and reads like one: the thread leaves at once rather than losing its bar
+// first and its place in the list a beat later. The whole thread goes, the mail of senders already
+// known included, as it would on any other move to Junk.
+const denySenders = async () => {
+  const emails = screenedSenders.value.map((sender) => sender.email)
+  if (!emails.length) return
+  const mails = (sourceMessages() ?? thread.value).flatMap(mailCopies).map((copy) => ({
+    id: copy.id,
+    mailbox_ids: copy.mailboxes.map((mailbox) => mailbox.mailbox_id),
+    junk: copy.junk,
+  }))
+  goToMailbox()
+  await screener.deny(emails, { account: scopeAccountId.value, mails })
+  emit('reloadMails')
+}
+
+// Junk is the one refusal. A move anywhere else, Trash included, is an ordinary move: the move
+// itself accepts the thread's senders, and its Undo takes that back (see useThreadActions).
+const onMoveThread = (to: string) => {
+  if (screenedSenders.value.length && to === mailboxIds.value.junk) return denySenders()
+  emit('moveThread', to)
+}
+
+// Every star in the pane — the thread's and each message's — lands here. The pane shows it at once
+// rather than when the list next comes back, and starring a screened thread accepts its senders; the
+// toast's Undo unstars it again, here and on the server (see useScreener).
+const onSetFlagged = (ids: string[], flagged: boolean) => {
+  syncFlagged(ids, flagged)
+  emit('setFlagged', ids, flagged)
+  const senders = flagged ? screenedSenders.value : []
+  if (!senders.length) return
+  senders.forEach((sender) => trustHere(sender.email))
+  screener.acceptWithUndo(
+    asScreenable(senders),
+    () => {
+      syncFlagged(ids, false)
+      emit('setFlagged', ids, false)
+    },
+    scopeAccountId.value,
+  )
+}
+
+const onSetSpamStatus = (spam: boolean) =>
+  spam && screenedSenders.value.length ? denySenders() : emit('setSpamStatus', spam)
+
+// Replying is accepting the thread's senders, with an Undo. The draft lives in this pane, so nothing
+// here reloads it away.
+const allowOnReply = () => {
+  const senders = screenedSenders.value
+  if (!senders.length) return
+  senders.forEach((sender) => trustHere(sender.email))
+  screener.acceptWithUndo(asScreenable(senders), undefined, scopeAccountId.value)
 }
 
 // Explicit refresh: ask the parent to reload `get_threads`, then re-derive once the `messages` prop
@@ -1024,21 +1168,9 @@ async function unblockEmailAddressSubmit(email) {
   }
   await unblockEmailAddress.run(input)
   raiseToast(__('Sender unblocked.'))
-  screenedAddresses.value.reload()
+  screenedAddresses.value.refetch().catch(() => {})
 }
 
-// Trusting a sender accepts them (screened in), so their remote images load now and going forward.
-const trustSender = useMutation(api.mail.screening.set)
-async function trustSenderSubmit(email: string) {
-  const input: InputOf<typeof api.mail.screening.set> = {
-    account: scopeAccountId.value,
-    emails: [email],
-    action: 'Accepted',
-  }
-  await trustSender.run(input)
-  raiseToast(__('Sender marked as trusted.'))
-  screenedAddresses.value.reload()
-}
 const handleReload = (isUndo = false) => {
   if (thread.value.length == 1) {
     emit('reloadMails')
@@ -1138,18 +1270,25 @@ const populateDraftMails = (mail: Mail) =>
     attachments: mail.attachments || [],
     ...extractQuotedContent(mail.html_body),
   })
-const reply = (mail: Mail) =>
-  createLocalDraft(mail, {
+
+const reply = (mail: Mail) => {
+  allowOnReply()
+  return createLocalDraft(mail, {
     ...getReplyDetails(mail),
     ...getReplyRecipients(mail),
     type: 'reply',
   })
-const replyAll = (mail: Mail) =>
-  createLocalDraft(mail, {
+}
+
+const replyAll = (mail: Mail) => {
+  allowOnReply()
+  return createLocalDraft(mail, {
     ...getReplyDetails(mail),
     ...getReplyAllRecipients(mail),
     type: 'replyAll',
   })
+}
+
 const forward = (mail: Mail) =>
   createLocalDraft(mail, {
     subject: `Fwd: ${mail.subject || ''}`,
@@ -1274,6 +1413,13 @@ const removeMailFromView = (
       if (removed.thread_id === threadID) thread.value.splice(idx, 0, removed)
     },
   }
+}
+// Takes a message out of the pane ahead of the server — a block sends it to Junk — and leaves the
+// thread if it was the last one. Returns what puts it back.
+const dropMail = (mailId: string) => {
+  const { emptied, rollback } = removeMailFromView(mailId)
+  if (emptied) goToMailbox()
+  return rollback
 }
 defineExpose({
   syncFlagged,

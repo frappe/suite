@@ -53,6 +53,8 @@ class Copy(TypedDict):
     junk: Flag
     flagged: Flag
     draft: Flag
+    # From a sender nobody has allowed or denied yet: the mail waits in the Inbox, marked new.
+    unscreened: NotRequired[Flag]
 
 
 class Message(Copy):
@@ -79,6 +81,8 @@ class AccountTag(TypedDict, total=False):
 
 
 class Thread(Copy, AccountTag):
+    # The senders of this thread's unscreened mail, in the order they first wrote.
+    unscreened_senders: NotRequired[list[str]]
     subject: str | None
     preview: str
     recipients: list[Recipient]
@@ -147,16 +151,6 @@ SearchFilter = TypedDict(
     },
     total=False,
 )
-
-
-class ScreeningSender(TypedDict):
-    from_email: str
-    from_name: str | None
-    subject: str | None
-    preview: str
-    received_at: str
-    count: int
-    unread: int
 
 
 class DraftResult(TypedDict):

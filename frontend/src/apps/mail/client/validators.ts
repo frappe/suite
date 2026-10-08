@@ -41,6 +41,8 @@ import type {
   AddPushSubscriptionOutput,
   AllowScreeningSendersInput,
   AllowScreeningSendersOutput,
+  BlockSendersInput,
+  BlockSendersOutput,
   BookInput,
   BookOutput,
   CancelScheduledMailInput,
@@ -213,10 +215,6 @@ import type {
   GetScheduledMailOutput,
   GetScreenedAddressesInput,
   GetScreenedAddressesOutput,
-  GetScreeningSenderMailsInput,
-  GetScreeningSenderMailsOutput,
-  GetScreeningSendersInput,
-  GetScreeningSendersOutput,
   GetSieveScriptsInput,
   GetSieveScriptsOutput,
   GetSignupDomainsInput,
@@ -249,10 +247,10 @@ import type {
   InboxSummaryOutput,
   InviteInput,
   InviteOutput,
+  JunkSendersInboxMailInput,
+  JunkSendersInboxMailOutput,
   MoveMailsInput,
   MoveMailsOutput,
-  MoveScreeningMailsToInboxInput,
-  MoveScreeningMailsToInboxOutput,
   OngoingCalendarExchangeInput,
   OngoingCalendarExchangeOutput,
   OngoingExchangeInput,
@@ -710,14 +708,14 @@ export const operationAccountPreferences: Validators<
           },
           enable_screening: { enum: [0, 1], title: 'Enable Screening', type: 'integer' },
           block_remote_images: { enum: [0, 1], title: 'Block Remote Images', type: 'integer' },
+          on_block_old_mail: {
+            enum: ['Ask', 'Move to Junk', 'Keep'],
+            title: 'On Block Old Mail',
+            type: 'string',
+          },
           default_outgoing_email: {
             anyOf: [{ type: 'string' }, { type: 'null' }],
             title: 'Default Outgoing Email',
-          },
-          on_mark_as_junk: {
-            enum: ["Junk Sender's Mail", 'Ask to Block Sender'],
-            title: 'On Mark As Junk',
-            type: 'string',
           },
         },
         required: [
@@ -727,8 +725,8 @@ export const operationAccountPreferences: Validators<
           'keep_forwarded_email_in_thread',
           'enable_screening',
           'block_remote_images',
+          'on_block_old_mail',
           'default_outgoing_email',
-          'on_mark_as_junk',
         ],
         title: 'AccountPreferences',
         type: 'object',
@@ -778,14 +776,14 @@ export const operationUpdateAccountPreferences: Validators<
               },
               enable_screening: { enum: [0, 1], title: 'Enable Screening', type: 'integer' },
               block_remote_images: { enum: [0, 1], title: 'Block Remote Images', type: 'integer' },
+              on_block_old_mail: {
+                enum: ['Ask', 'Move to Junk', 'Keep'],
+                title: 'On Block Old Mail',
+                type: 'string',
+              },
               default_outgoing_email: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Default Outgoing Email',
-              },
-              on_mark_as_junk: {
-                enum: ["Junk Sender's Mail", 'Ask to Block Sender'],
-                title: 'On Mark As Junk',
-                type: 'string',
               },
             },
             title: 'AccountChanges',
@@ -1408,12 +1406,9 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Default Outgoing Email',
               },
-              on_mark_as_junk: {
-                anyOf: [{ type: 'string' }, { type: 'null' }],
-                title: 'On Mark As Junk',
-              },
               enable_screening: { title: 'Enable Screening', type: 'boolean' },
               block_remote_images: { title: 'Block Remote Images', type: 'boolean' },
+              on_block_old_mail: { title: 'On Block Old Mail', type: 'string' },
             },
             required: [
               'account',
@@ -1424,9 +1419,9 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
               'in_calendar',
               'jmap_account',
               'default_outgoing_email',
-              'on_mark_as_junk',
               'enable_screening',
               'block_remote_images',
+              'on_block_old_mail',
             ],
             title: 'UserAccount',
             type: 'object',
@@ -1850,7 +1845,7 @@ export const operationGetScreenedAddresses: Validators<
           ScreenedAddress: {
             properties: {
               email: { title: 'Email', type: 'string' },
-              action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+              action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
               creation: { title: 'Creation', type: 'string' },
               modified: { title: 'Modified', type: 'string' },
             },
@@ -1886,7 +1881,7 @@ export const operationGetGlobalScreenedAddresses: Validators<
           ScreenedAddress: {
             properties: {
               email: { title: 'Email', type: 'string' },
-              action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+              action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
               creation: { title: 'Creation', type: 'string' },
               modified: { title: 'Modified', type: 'string' },
             },
@@ -2553,7 +2548,7 @@ export const operationScreenEmailAddresses: Validators<
         properties: {
           account: { title: 'Account', type: 'string' },
           emails: { items: { type: 'string' }, title: 'Emails', type: 'array' },
-          action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+          action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
           override: { title: 'Override', type: 'boolean' },
         },
         required: ['account', 'emails'],
@@ -3469,7 +3464,7 @@ export const operationScreenEmailAddress: Validators<
         properties: {
           account: { title: 'Account', type: 'string' },
           email: { title: 'Email', type: 'string' },
-          action: { enum: ['Reject', 'Spam', 'Accepted'], title: 'Action', type: 'string' },
+          action: { enum: ['Spam', 'Accepted'], title: 'Action', type: 'string' },
         },
         required: ['account', 'email'],
         additionalProperties: false,
@@ -3480,28 +3475,6 @@ export const operationScreenEmailAddress: Validators<
   },
   validateOutput(value: unknown): asserts value is ScreenEmailAddressOutput {
     assertSchema(value, { type: 'null' }, 'screen_email_address output')
-  },
-}
-
-export const operationMoveScreeningMailsToInbox: Validators<
-  MoveScreeningMailsToInboxInput,
-  MoveScreeningMailsToInboxOutput
-> = {
-  validateInput(value: unknown): asserts value is MoveScreeningMailsToInboxInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { account: { title: 'Account', type: 'string' } },
-        required: ['account'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'move_screening_mails_to_inbox input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is MoveScreeningMailsToInboxOutput {
-    assertSchema(value, { type: 'null' }, 'move_screening_mails_to_inbox output')
   },
 }
 
@@ -6861,6 +6834,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
             },
             required: [
               'name',
@@ -6908,6 +6882,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
@@ -6999,12 +6974,18 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               account: { title: 'Account', type: 'string' },
               account_name: { title: 'Account Name', type: 'string' },
               view_mailbox: { title: 'View Mailbox', type: 'string' },
               inbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Inbox' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
+              unscreened_senders: {
+                items: { type: 'string' },
+                title: 'Unscreened Senders',
+                type: 'array',
+              },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7118,6 +7099,7 @@ export const operationGetUnifiedThreads: Validators<
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
             },
             required: [
               'name',
@@ -7165,6 +7147,7 @@ export const operationGetUnifiedThreads: Validators<
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
@@ -7256,12 +7239,18 @@ export const operationGetUnifiedThreads: Validators<
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               account: { title: 'Account', type: 'string' },
               account_name: { title: 'Account Name', type: 'string' },
               view_mailbox: { title: 'View Mailbox', type: 'string' },
               inbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Inbox' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
+              unscreened_senders: {
+                items: { type: 'string' },
+                title: 'Unscreened Senders',
+                type: 'array',
+              },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7369,6 +7358,7 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
             },
             required: [
               'name',
@@ -7416,6 +7406,7 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
               flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
+              unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
@@ -7789,249 +7780,6 @@ export const operationGetDeliveryStatus: Validators<
         type: 'object',
       },
       'get_delivery_status output',
-    )
-  },
-}
-
-export const operationGetScreeningSenders: Validators<
-  GetScreeningSendersInput,
-  GetScreeningSendersOutput
-> = {
-  validateInput(value: unknown): asserts value is GetScreeningSendersInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { account: { title: 'Account', type: 'string' } },
-        required: ['account'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'get_screening_senders input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is GetScreeningSendersOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          ScreeningSender: {
-            properties: {
-              from_email: { title: 'From Email', type: 'string' },
-              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
-              preview: { title: 'Preview', type: 'string' },
-              received_at: { title: 'Received At', type: 'string' },
-              count: { title: 'Count', type: 'integer' },
-              unread: { title: 'Unread', type: 'integer' },
-            },
-            required: [
-              'from_email',
-              'from_name',
-              'subject',
-              'preview',
-              'received_at',
-              'count',
-              'unread',
-            ],
-            title: 'ScreeningSender',
-            type: 'object',
-          },
-        },
-        items: { $ref: '#/$defs/ScreeningSender' },
-        type: 'array',
-      },
-      'get_screening_senders output',
-    )
-  },
-}
-
-export const operationGetScreeningSenderMails: Validators<
-  GetScreeningSenderMailsInput,
-  GetScreeningSenderMailsOutput
-> = {
-  validateInput(value: unknown): asserts value is GetScreeningSenderMailsInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          account: { title: 'Account', type: 'string' },
-          from_email: { title: 'From Email', type: 'string' },
-        },
-        required: ['account', 'from_email'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'get_screening_sender_mails input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is GetScreeningSenderMailsOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          Attachment: {
-            properties: {
-              filename: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Filename' },
-              type: { title: 'Type', type: 'string' },
-              size: { title: 'Size', type: 'integer' },
-              blob_id: { title: 'Blob Id', type: 'string' },
-              disposition: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Disposition' },
-              cid: { title: 'Cid', type: 'string' },
-              url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
-              part_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Part Id' },
-              charset: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Charset' },
-              language: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Language' },
-              location: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Location' },
-            },
-            required: ['filename', 'type', 'size', 'blob_id', 'disposition', 'cid', 'url'],
-            title: 'Attachment',
-            type: 'object',
-          },
-          Copy: {
-            properties: {
-              name: { title: 'Name', type: 'string' },
-              id: { title: 'Id', type: 'string' },
-              thread_id: { title: 'Thread Id', type: 'string' },
-              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
-              received_at: { title: 'Received At', type: 'string' },
-              mailboxes: {
-                items: { $ref: '#/$defs/MailboxRef' },
-                title: 'Mailboxes',
-                type: 'array',
-              },
-              seen: { enum: [0, 1], title: 'Seen', type: 'integer' },
-              junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
-              flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
-              draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
-            },
-            required: [
-              'name',
-              'id',
-              'thread_id',
-              'from_name',
-              'from_email',
-              'received_at',
-              'mailboxes',
-              'seen',
-              'junk',
-              'flagged',
-              'draft',
-            ],
-            title: 'Copy',
-            type: 'object',
-          },
-          MailboxRef: {
-            properties: {
-              mailbox: { title: 'Mailbox', type: 'string' },
-              mailbox_id: { title: 'Mailbox Id', type: 'string' },
-              mailbox_name: {
-                anyOf: [{ type: 'string' }, { type: 'null' }],
-                title: 'Mailbox Name',
-              },
-            },
-            required: ['mailbox', 'mailbox_id', 'mailbox_name'],
-            title: 'MailboxRef',
-            type: 'object',
-          },
-          Message: {
-            properties: {
-              name: { title: 'Name', type: 'string' },
-              id: { title: 'Id', type: 'string' },
-              thread_id: { title: 'Thread Id', type: 'string' },
-              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
-              received_at: { title: 'Received At', type: 'string' },
-              mailboxes: {
-                items: { $ref: '#/$defs/MailboxRef' },
-                title: 'Mailboxes',
-                type: 'array',
-              },
-              seen: { enum: [0, 1], title: 'Seen', type: 'integer' },
-              junk: { enum: [0, 1], title: 'Junk', type: 'integer' },
-              flagged: { enum: [0, 1], title: 'Flagged', type: 'integer' },
-              draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
-              message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
-              subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
-              html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
-              text_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Text Body' },
-              preview: { title: 'Preview', type: 'string' },
-              recipients: {
-                items: { $ref: '#/$defs/Recipient' },
-                title: 'Recipients',
-                type: 'array',
-              },
-              reply_to: {
-                items: { $ref: '#/$defs/ReplyAddress' },
-                title: 'Reply To',
-                type: 'array',
-              },
-              attachments: {
-                items: { $ref: '#/$defs/Attachment' },
-                title: 'Attachments',
-                type: 'array',
-              },
-              dsn_blob_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Dsn Blob Id' },
-              duplicates: { items: { $ref: '#/$defs/Copy' }, title: 'Duplicates', type: 'array' },
-              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
-            },
-            required: [
-              'name',
-              'id',
-              'thread_id',
-              'from_name',
-              'from_email',
-              'received_at',
-              'mailboxes',
-              'seen',
-              'junk',
-              'flagged',
-              'draft',
-              'message_id',
-              'subject',
-              'html_body',
-              'text_body',
-              'preview',
-              'recipients',
-              'reply_to',
-              'attachments',
-              'dsn_blob_id',
-            ],
-            title: 'Message',
-            type: 'object',
-          },
-          Recipient: {
-            properties: {
-              type: { enum: ['To', 'Cc', 'Bcc'], title: 'Type', type: 'string' },
-              email: { title: 'Email', type: 'string' },
-              display_name: {
-                anyOf: [{ type: 'string' }, { type: 'null' }],
-                title: 'Display Name',
-              },
-            },
-            required: ['type', 'email', 'display_name'],
-            title: 'Recipient',
-            type: 'object',
-          },
-          ReplyAddress: {
-            properties: {
-              email: { title: 'Email', type: 'string' },
-              display_name: {
-                anyOf: [{ type: 'string' }, { type: 'null' }],
-                title: 'Display Name',
-              },
-            },
-            required: ['email', 'display_name'],
-            title: 'ReplyAddress',
-            type: 'object',
-          },
-        },
-        items: { $ref: '#/$defs/Message' },
-        type: 'array',
-      },
-      'get_screening_sender_mails output',
     )
   },
 }
@@ -8565,6 +8313,67 @@ export const operationUndoScreeningVerdict: Validators<
   },
   validateOutput(value: unknown): asserts value is UndoScreeningVerdictOutput {
     assertSchema(value, { type: 'null' }, 'undo_screening_verdict output')
+  },
+}
+
+export const operationBlockSenders: Validators<BlockSendersInput, BlockSendersOutput> = {
+  validateInput(value: unknown): asserts value is BlockSendersInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          from_emails: { items: { type: 'string' }, title: 'From Emails', type: 'array' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+        },
+        required: ['account', 'from_emails'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'block_senders input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is BlockSendersOutput {
+    assertSchema(
+      value,
+      {
+        properties: { inbox: { title: 'Inbox', type: 'integer' } },
+        required: ['inbox'],
+        title: 'BlockResult',
+        type: 'object',
+      },
+      'block_senders output',
+    )
+  },
+}
+
+export const operationJunkSendersInboxMail: Validators<
+  JunkSendersInboxMailInput,
+  JunkSendersInboxMailOutput
+> = {
+  validateInput(value: unknown): asserts value is JunkSendersInboxMailInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          from_emails: { items: { type: 'string' }, title: 'From Emails', type: 'array' },
+        },
+        required: ['account', 'from_emails'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'junk_senders_inbox_mail input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is JunkSendersInboxMailOutput {
+    assertSchema(
+      value,
+      { items: { type: 'string' }, type: 'array' },
+      'junk_senders_inbox_mail output',
+    )
   },
 }
 

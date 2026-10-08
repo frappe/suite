@@ -28,7 +28,7 @@ interface AccountScope {
   /** The account's record off the user resource (default_outgoing_email, block_remote_images, …). */
   account: ComputedRef<UserAccount | undefined>
   mailboxes: ComputedRef<QueryState<GetMailboxesOutput>>
-  mailboxIds: ComputedRef<Record<MailboxRole | 'screener', string>>
+  mailboxIds: ComputedRef<Record<MailboxRole, string>>
   identities: ComputedRef<QueryState<GetIdentitiesOutput>>
   screenedAddresses: ComputedRef<QueryState<GetScreenedAddressesOutput>>
 }

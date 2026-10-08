@@ -176,20 +176,14 @@ export const routes: RouteRecordRaw[] = [
         name: 'mail-profile',
         component: () => import('@/apps/mail/pages/ProfileView.vue'),
       },
+      // The Screener had a page of its own; screened mail now waits in the Inbox, so an old link
+      // to it — or to one of its senders — lands there.
       {
-        path: 'account/:accountId/screener',
-        name: 'mail-screener',
-        component: () => import('@/apps/mail/pages/ScreenerView.vue'),
-        props: true,
-      },
-      // The open sender lives in the URL, as the open thread does: on mobile the preview is a
-      // full-screen overlay, so the back gesture has to close it rather than leave the screener.
-      // Same component — the param only says which sender is open.
-      {
-        path: 'account/:accountId/screener/:senderEmail',
-        name: 'mail-screener-sender',
-        component: () => import('@/apps/mail/pages/ScreenerView.vue'),
-        props: true,
+        path: 'account/:accountId/screener/:senderEmail?',
+        redirect: (to) => ({
+          name: 'mail-mailbox',
+          params: { accountId: to.params.accountId, mailbox: 'inbox' },
+        }),
       },
       {
         path: 'account/:accountId/outbox',

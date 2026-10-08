@@ -112,13 +112,6 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
     const param = to.params.mailbox as string
     const mailboxId = mailboxIdForParam(param, mailboxes.data)
 
-    // The screener mailbox has its own dedicated view (Allow/Block UI). Redirect its
-    // plain mailbox URL to the screener route so direct navigation and reloads land on
-    // the screener view, matching the sidebar link (which already targets 'mail-screener').
-    const screenerId = userStore().mailboxIds.screener
-    if (screenerId && mailboxId === screenerId)
-      return { name: 'mail-screener', params: { accountId } }
-
     // With no mailbox list (fetch failed above) the param can't be validated — keep the
     // requested route rather than bouncing the user off the URL they asked for.
     const mailboxExists =

@@ -35,8 +35,8 @@ class AccountPreferences(TypedDict):
     keep_forwarded_email_in_thread: Flag
     enable_screening: Flag
     block_remote_images: Flag
+    on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None
-    on_mark_as_junk: Literal["Junk Sender's Mail", "Ask to Block Sender"]
 
 
 class AccountChanges(TypedDict, total=False):
@@ -46,8 +46,8 @@ class AccountChanges(TypedDict, total=False):
     keep_forwarded_email_in_thread: Flag
     enable_screening: Flag
     block_remote_images: Flag
+    on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None
-    on_mark_as_junk: Literal["Junk Sender's Mail", "Ask to Block Sender"]
 
 
 class UpdateAccount(AccountInput):

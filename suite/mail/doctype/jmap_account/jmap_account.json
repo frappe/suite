@@ -18,10 +18,10 @@
   "destroy_newsletter_after_submit",
   "keep_forwarded_email_in_thread",
   "incoming_section",
-  "on_mark_as_junk",
   "column_break_fnnk",
   "enable_screening",
   "block_remote_images",
+  "on_block_old_mail",
   "cache_section",
   "column_break_brmt",
   "total_cached_blobs",
@@ -90,18 +90,8 @@
    "label": "Incoming"
   },
   {
-   "default": "Junk Sender's Mail",
-   "description": "What to do with the sender when a message is marked as Junk. \"Junk Sender's Mail\" files their future mail into Junk; \"Ask to Block Sender\" prompts to block them outright.",
-   "fieldname": "on_mark_as_junk",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "On Mark As Junk",
-   "options": "Junk Sender's Mail\nAsk to Block Sender"
-  },
-  {
    "default": "0",
-   "description": "When enabled, mail from senders not on the Accepted list is filed into the Screening folder instead of the inbox (Hey-style screening). Only senders you accept reach the inbox. Enabled by default for personal accounts.",
+   "description": "When enabled, mail from a sender not on the Accepted list is delivered to the inbox marked as from an unknown sender, until it is accepted or blocked. Enabled by default for personal accounts.",
    "fieldname": "enable_screening",
    "fieldtype": "Check",
    "label": "Enable Screening"
@@ -112,6 +102,14 @@
    "fieldname": "block_remote_images",
    "fieldtype": "Check",
    "label": "Block Remote Images"
+  },
+  {
+   "default": "Ask",
+   "description": "When a sender is blocked, what happens to their mail already in the Inbox: ask each time, move it to Junk, or keep it where it is. Their future mail goes to Junk either way.",
+   "fieldname": "on_block_old_mail",
+   "fieldtype": "Select",
+   "label": "On Block, Old Mail",
+   "options": "Ask\nMove to Junk\nKeep"
   },
   {
    "depends_on": "eval: !doc.__islocal",

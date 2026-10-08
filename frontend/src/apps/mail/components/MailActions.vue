@@ -52,9 +52,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, client, useMutation, type InputOf } from '@/api'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
-import { downloadUrlAsFile, raiseError, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import {
+  downloadUrlAsFile,
+  matchesScreenedValue,
+  raiseError,
+  raiseOptimisticToast,
+  raiseToast,
+} from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
@@ -69,6 +76,8 @@ const {
   reply,
   replyAll,
   forward,
+  reloadMails,
+  dropMail,
   thread,
 } = defineProps<{
   mailbox: string
@@ -81,6 +90,8 @@ const {
   replyAll: (mail: Mail) => void
   forward: (mail: Mail) => void
   reloadMails: (isUndo?: boolean) => void
+  /** Takes the message out of the pane ahead of the server; returns what puts it back. */
+  dropMail: (mailId: string) => () => void
   thread: Mail[]
 }>()
 const emit = defineEmits(['setFlagged', 'syncUnseen', 'moveMail', 'markMailSpam', 'deleteMail'])
@@ -97,14 +108,15 @@ const {
   screenedAddresses,
 } = injectAccountScope()
 const { setUndoAction, undo } = useUndo()
+const screener = useScreener()
 const { filterBySender } = useFilterBySender()
 const user = inject('$user')
 
-// A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
+// A sender is "blocked" when screened with the Spam action (their mail goes to Junk) — either by their
 // exact address or by a '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
   screenedAddresses.value.data?.some(
-    (a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
+    (a: ScreenedAddress) => a.action === 'Spam' && matchesScreenedValue(email, a.email),
   )
 const primaryActions = (mail: Mail): MailAction[] => [
   {
@@ -230,7 +242,6 @@ const moreActions = (mail: Mail): GroupedAction[] => [
         onClick: () => handleBlockAddress(true),
         icon: Ban,
         condition: () =>
-          mailbox !== mailboxIds.value.screener &&
           !(identities.value.data ?? []).some((i: Identity) => i.email === mail.from_email) &&
           !isSenderBlocked(mail.from_email),
       },
@@ -238,17 +249,13 @@ const moreActions = (mail: Mail): GroupedAction[] => [
         label: __('Unblock Sender'),
         onClick: () => handleBlockAddress(false),
         icon: LockOpen,
-        condition: () => mailbox !== mailboxIds.value.screener && isSenderBlocked(mail.from_email),
+        condition: () => isSenderBlocked(mail.from_email),
       },
       {
         label: __('Mark Domain as Trusted'),
         onClick: () => trustDomain(),
         icon: ShieldCheck,
-        condition: () =>
-          mailbox !== mailboxIds.value.screener &&
-          !mail.draft &&
-          !!mail.from_email &&
-          !isDomainTrusted(mail.from_email),
+        condition: () => !mail.draft && !!mail.from_email && !isDomainTrusted(mail.from_email),
       },
     ],
   },
@@ -344,28 +351,56 @@ const trustDomain = async () => {
   })
   raiseToast(__('Domain marked as trusted.'))
 }
-const handleBlockAddress = (block: boolean, isUndo = false) => {
-  const input = {
-    account: scopeAccountId.value,
-    emails: [mail.from_email],
-  }
-  const forward = block
-    ? client.mutation(
-        api.mail.screening.set,
-        {
-          ...input,
-          action: 'Reject',
-        },
-        {
-          silent: true,
-        },
-      )
-    : client.mutation(api.mail.screening.remove, input, {
-        silent: true,
-      })
-  const successMessage = block ? __('Sender blocked.') : __('Sender unblocked.')
-  if (isUndo) return raiseOptimisticToast(forward, successMessage)
-  setUndoAction(() => handleBlockAddress(!block, true))
-  raiseOptimisticToast(forward, successMessage, undo)
+const handleBlockAddress = (block: boolean) => (block ? blockSender() : unblockSender())
+
+const unblockSender = (isUndo = false) => {
+  const forward = client.mutation(
+    api.mail.screening.remove,
+    { account: scopeAccountId.value, emails: [mail.from_email] },
+    { silent: true },
+  )
+  if (isUndo) return raiseOptimisticToast(forward, __('Sender blocked.'))
+  setUndoAction(() => {
+    const back = client.mutation(
+      api.mail.screening.set,
+      { account: scopeAccountId.value, emails: [mail.from_email], action: 'Spam' },
+      { silent: true },
+    )
+    raiseOptimisticToast(back, __('Sender blocked.'))
+  })
+  raiseOptimisticToast(forward, __('Sender unblocked.'), undo)
 }
+
+// Blocking sends the sender's future mail to Junk, and this message with it — they were blocked while
+// it was being read. The rest of their mail stays put; the toast offers to move what is in the Inbox.
+const blockSender = async () => {
+  const account = scopeAccountId.value
+  const from_emails = [mail.from_email]
+  const ids = mailCopyIds(mail)
+  // The message leaves at once, as a junked one does: waiting for the server let the refreshed block
+  // list mark it blocked while it was still on screen.
+  const putBack = dropMail(mail.id)
+  let blocked: { inbox: number }
+  try {
+    blocked = await client.mutation(api.mail.screening.block, { account, from_emails, ids })
+  } catch (error) {
+    putBack()
+    raiseError(error)
+    return
+  }
+  screener.raiseBlocked(
+    from_emails,
+    () => {
+      putBack()
+      const back = Promise.all([
+        client.mutation(api.mail.screening.remove, { account, emails: from_emails }, { silent: true }),
+        client.mutation(api.mail.messages.spam, { account, ids, spam: false }, { silent: true }),
+      ]).then(() => reloadMails(true))
+      raiseOptimisticToast(back, __('Sender unblocked.'))
+    },
+    blocked.inbox,
+    account,
+  )
+}
+
 </script>

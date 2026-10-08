@@ -6,9 +6,9 @@ export type SieveScript = import('../client/generated').GetSieveScriptsOutput[nu
 
 // What happens to a sender when one of their messages is marked as Junk (JMAP Account).
 
-// A screened sender: how their future mail is handled. 'Reject' discards it silently; 'Spam' files
-// it into the Spam (Junk) folder; 'Accepted' lets it reach the inbox. (Doctype: Screened Email Address.)
-export type ScreeningAction = 'Reject' | 'Spam' | 'Accepted'
+// A screened sender: how their future mail is handled. 'Spam' blocks them, filing it into Junk;
+// 'Accepted' lets it reach the inbox. (Doctype: Screened Email Address.)
+export type ScreeningAction = 'Spam' | 'Accepted'
 export interface ScreenedAddress {
   email: string
   action: ScreeningAction
@@ -30,17 +30,6 @@ export interface PushSubscription {
   modified: string
 }
 
-// A row in the Screener: one unique sender in the Screening folder, summarised by their latest mail.
-export interface ScreeningSender {
-  from_email: string
-  from_name: string
-  subject: string
-  preview: string
-  // UTC "...Z" wire timestamp, not an epoch.
-  received_at: string
-  count: number
-  unread: number
-}
 export type User = NonNullable<import('../client/generated').GetUserInfoOutput>
 export type UserAccount = User['accounts'][number]
 export interface UserResource {
@@ -90,6 +79,8 @@ export interface Mail {
   flagged: 0 | 1
   seen: 0 | 1
   junk: 0 | 1
+  /** From a sender nobody has allowed or denied yet: waiting in the Inbox, marked new. */
+  unscreened?: 0 | 1
   mailboxes: Mailbox[]
   recipients: Recipient[]
   groupedRecipients?: {
@@ -179,6 +170,10 @@ export interface Thread {
   draft: 0 | 1
   junk: 0 | 1
   flagged: 0 | 1
+  /** From a sender nobody has allowed or denied yet: waiting in the Inbox, marked new. */
+  unscreened?: 0 | 1
+  /** The senders of the thread's unscreened mail, in the order they first wrote. */
+  unscreened_senders?: string[]
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]

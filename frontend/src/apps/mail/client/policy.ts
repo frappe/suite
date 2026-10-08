@@ -29,7 +29,7 @@ function screeningPolicy(remove: boolean) {
               !addresses.has(row.email.toLowerCase()),
           )
           if (remove) return kept
-          const action = typeof input.action === 'string' ? input.action : 'Reject'
+          const action = typeof input.action === 'string' ? input.action : 'Spam'
           return [
             ...kept,
             ...input.emails.map((email) => ({ email, action, creation: '', modified: '' })),
@@ -48,6 +48,9 @@ export const registration: OwnerRegistration = {
   }): Policy<I, O> {
     if (reference.id === 'screen_email_addresses') return screeningPolicy(false)
     if (reference.id === 'unscreen_email_addresses') return screeningPolicy(true)
+    // Blocking moves mail to Junk as well as writing the rule, so it reads as a message change.
+    if (['block_senders', 'junk_senders_inbox_mail'].includes(reference.id))
+      return messagePolicy<I, O>(reference.id)
     if (reference.id === 'create_calendar_import' || reference.id === 'create_calendar_export')
       return { effects: { invalidates: ['mail.ongoing_calendar_exchange'] } }
     if (
@@ -105,16 +108,6 @@ export const registration: OwnerRegistration = {
     if (reference.id === 'set_signature')
       return { effects: { invalidates: ['mail.get_identities'] } }
     if (reference.id === 'screen_email_address') return screeningPolicy(false)
-    if (reference.id === 'move_screening_mails_to_inbox')
-      return {
-        effects: {
-          invalidates: [
-            'mail.get_mailboxes',
-            'mail.get_unified_folders',
-            'mail.get_all_inbox_unread_count',
-          ],
-        },
-      }
     if (
       [
         'create_mail_import',
@@ -292,8 +285,6 @@ const messageReaders = [
   'get_unified_folders',
   'get_all_inbox_unread_count',
   'inbox_summary',
-  'get_screening_senders',
-  'get_screening_sender_mails',
   'get_submissions',
   'get_scheduled_mail',
 ].map((id) => `mail.${id}`)

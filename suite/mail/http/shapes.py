@@ -18,9 +18,9 @@ class UserAccount(TypedDict):
     in_calendar: bool
     jmap_account: str | None
     default_outgoing_email: str | None
-    on_mark_as_junk: str | None
     enable_screening: bool
     block_remote_images: bool
+    on_block_old_mail: str
 
 
 class UserInfo(TypedDict):
@@ -127,7 +127,7 @@ class ParticipantIdentity(TypedDict):
 
 class ScreenedAddress(TypedDict):
     email: str
-    action: Literal["Reject", "Spam", "Accepted"]
+    action: Literal["Spam", "Accepted"]
     creation: str
     modified: str
 
@@ -147,7 +147,7 @@ class SieveScript(TypedDict):
 
 class ScreenAddresses(AccountInput):
     emails: list[str]
-    action: NotRequired[Literal["Reject", "Spam", "Accepted"]]
+    action: NotRequired[Literal["Spam", "Accepted"]]
     override: NotRequired[bool]
 
 

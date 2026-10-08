@@ -148,7 +148,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
-import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
+import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
@@ -197,8 +197,8 @@ const original = reactive({
 const isNotificationsDisabled = computed(
   () =>
     !isNew.value &&
-    ((mailbox?.role && ['sent', 'drafts', 'junk', 'trash', 'archive'].includes(mailbox.role)) ||
-      mailbox?._name === SCREENER_MAILBOX_NAME),
+    !!mailbox?.role &&
+    ['sent', 'drafts', 'junk', 'trash', 'archive'].includes(mailbox.role),
 )
 const isNotDirty = computed(() => {
   const folderUnchanged =

@@ -65,7 +65,7 @@ import { computed, ref } from 'vue'
 import { api, useMutation } from '@/api'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
-import { FOLDER_ICON_COLOR_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
+import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
@@ -77,11 +77,7 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 const { mailboxes } = userStore()
 const { isMobile } = useScreenSize()
 
-// The Screener is a system folder driven by the screening flow, not a user-configurable folder — keep
-// it out of the management list so it can't be renamed, deleted, or given a folder icon/color here.
-const managedMailboxes = computed(
-  () => mailboxes?.data?.filter((m: MailboxData) => m._name !== SCREENER_MAILBOX_NAME) ?? [],
-)
+const managedMailboxes = computed(() => mailboxes?.data ?? [])
 const showFolderModal = ref(false)
 const selectedMailbox = ref<MailboxData>()
 const showDeleteFolderModal = ref(false)

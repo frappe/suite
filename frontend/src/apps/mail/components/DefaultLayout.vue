@@ -110,16 +110,12 @@ useShellPhoneChrome(shellChrome)
 
 const { isSearchRoute, paletteOpen } = useMobileSearch()
 const { isMobileSelectionActive } = useMobileSelection()
-const screenerActive = computed(() =>
-  ['mail-screener', 'mail-screener-sender'].includes(route.name as string),
-)
 const showComposeButton = computed(
   () =>
     shellChrome.value &&
     !isMobileSelectionActive.value &&
     !isSearchRoute.value &&
     !paletteOpen.value &&
-    !screenerActive.value &&
     route.name !== 'mail-profile',
 )
 

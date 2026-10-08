@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
-import { SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import router from '@/apps/mail/router'
 import type { UserAccount } from '@/apps/mail/types'
 import { useSession } from '@/platform/session'
@@ -18,12 +17,12 @@ export const SECONDARY_MAILBOX_ROLES: readonly string[] = [
   'trash',
 ] satisfies readonly MailboxRole[]
 
-/** Role → mailbox id map for a mailbox list (plus the named Screener). Shared with
- * utils/accountScope, which derives the same map for a non-active account's list. */
+/** Role → mailbox id map for a mailbox list. Shared with utils/accountScope, which derives the
+ * same map for a non-active account's list. */
 export const deriveMailboxIds = (
   mailboxes?: { role?: MailboxRole | null; _name?: string; id: string }[],
-): Record<MailboxRole | 'screener', string> => {
-  const ids: Record<MailboxRole | 'screener', string> = {
+): Record<MailboxRole, string> => {
+  const ids: Record<MailboxRole, string> = {
     inbox: '',
     sent: '',
     drafts: '',
@@ -31,11 +30,9 @@ export const deriveMailboxIds = (
     junk: '',
     archive: '',
     important: '',
-    screener: '',
   }
   mailboxes?.forEach((m) => {
     if (m.role) ids[m.role] = m.id
-    else if (m._name === SCREENER_MAILBOX_NAME) ids.screener = m.id
   })
   return ids
 }

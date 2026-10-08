@@ -59,7 +59,7 @@ class DeleteMailbox(AccountInput):
 
 class ScreenAddress(AccountInput):
     email: str
-    action: NotRequired[Literal["Reject", "Spam", "Accepted"]]
+    action: NotRequired[Literal["Spam", "Accepted"]]
 
 
 class CreateScript(AccountInput):
@@ -109,7 +109,6 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
     (mail.update_mailbox, "mutation", "mailboxes.update", UpdateMailbox, type(None)),
     (mail.delete_mailbox, "mutation", "mailboxes.delete", DeleteMailbox, type(None)),
     (mail.screen_email_address, "mutation", "screening.setAddress", ScreenAddress, type(None)),
-    (mail.move_screening_mails_to_inbox, "mutation", "screening.moveToInbox", AccountInput, type(None)),
     (sieve.create_sieve_script, "mutation", "sieve.create", CreateScript, type(None)),
     (sieve.update_sieve_script, "mutation", "sieve.update", UpdateScript, type(None)),
     (sieve.delete_sieve_script, "mutation", "sieve.delete", DeleteScript, type(None)),

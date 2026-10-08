@@ -29,6 +29,14 @@
       >
         {{ messageCount }}
       </span>
+      <!-- The banner's icon, so an unknown sender reads the same in the row and in the thread. The
+		       trigger is kept out of the focus order and drawn without an outline: a focusable one put a
+		       focus ring on the row. After the message count. -->
+      <Tooltip v-if="screened" :text="unknownSendersLabel">
+        <span class="flex shrink-0 outline-none" tabindex="-1">
+          <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="unknownSendersLabel" />
+        </span>
+      </Tooltip>
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
     </template>
 
@@ -150,7 +158,7 @@
 
 <script setup lang="ts">
 import { Badge, Popover, Tooltip } from 'frappe-ui'
-import { Download, Loader } from 'lucide-vue-next'
+import { Download, Loader, UserRoundSearch } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -158,6 +166,7 @@ import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
@@ -183,6 +192,7 @@ const {
   threadRouteName = 'mail-mail',
   hideAvatar = false,
   outgoing,
+  screened = false,
 } = defineProps<{
   mailbox: string
   mail: Thread
@@ -210,6 +220,8 @@ const {
   // Sent and Drafts ids can't say whether a row from another account is outgoing, so the view —
   // which knows the folder — says it instead.
   outgoing?: boolean
+  // A screened thread mixed into the inbox: an ordinary row, marked with the New sender icon.
+  screened?: boolean
 }>()
 
 const emit = defineEmits([
@@ -225,6 +237,12 @@ const emit = defineEmits([
 
 const route = useRoute()
 const { mailboxes, mailboxIds } = userStore()
+const screener = useScreener()
+
+// One sender or several: the row says which, the open thread says who.
+const unknownSendersLabel = computed(() =>
+  screener.waitingSenders(mail).length > 1 ? __('Unknown senders') : __('Unknown sender'),
+)
 const ownEmails = useOwnEmails()
 
 // An account's thread route names its folder by slug (see utils/unifiedFolders); the merged

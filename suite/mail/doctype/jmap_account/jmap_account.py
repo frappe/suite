@@ -53,6 +53,7 @@ class JMAPAccount(Document):
         _name: DF.Data
         account_id: DF.Data
         block_remote_images: DF.Check
+        on_block_old_mail: DF.Literal["Ask", "Move to Junk", "Keep"]
         create_contacts_after_email_submit: DF.Check
         default_outgoing_email: DF.Data | None
         destroy_email_after_submit: DF.Check
@@ -62,7 +63,6 @@ class JMAPAccount(Document):
         is_readonly: DF.Check
         keep_forwarded_email_in_thread: DF.Check
         last_active_sieve_script_id: DF.Data | None
-        on_mark_as_junk: DF.Literal["Junk Sender's Mail", "Ask to Block Sender"]
     # end: auto-generated types
 
     """Per-account settings shared across every user that has JMAP access to the account.

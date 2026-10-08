@@ -21,7 +21,6 @@ vi.mock('@/apps/mail/utils', () => ({
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useUndo: () => ({ setUndoAction: vi.fn(), undo: vi.fn() }),
-  useBlockSender: () => ({ promptBlockSenders: vi.fn(), willJunkSenders: vi.fn() }),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => store }))
 

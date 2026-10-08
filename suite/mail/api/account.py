@@ -257,9 +257,9 @@ def get_user_info() -> dict | None:
                 "_name",
                 "is_personal",
                 "default_outgoing_email",
-                "on_mark_as_junk",
                 "enable_screening",
                 "block_remote_images",
+                "on_block_old_mail",
             ],
         )
     }
@@ -272,9 +272,9 @@ def get_user_info() -> dict | None:
         account["in_calendar"] = apps.get(account["account"], {}).get("calendar", True)
         account["jmap_account"] = settings["name"] if settings else None
         account["default_outgoing_email"] = settings["default_outgoing_email"] if settings else None
-        account["on_mark_as_junk"] = settings["on_mark_as_junk"] if settings else "Junk Sender's Mail"
         account["enable_screening"] = bool(settings["enable_screening"]) if settings else False
         account["block_remote_images"] = bool(settings["block_remote_images"]) if settings else True
+        account["on_block_old_mail"] = (settings["on_block_old_mail"] if settings else None) or "Ask"
 
     data.user_image = data.user_image or get_avatar_url(user)
 

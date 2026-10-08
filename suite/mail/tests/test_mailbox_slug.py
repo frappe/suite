@@ -5,7 +5,6 @@
 import unittest
 
 from suite.mail.api.mail import mailbox_slug
-from suite.mail.doctype.sieve_script.sieve_script import SCREENER_MAILBOX_NAME
 
 
 class MailboxSlug(unittest.TestCase):
@@ -26,6 +25,5 @@ class MailboxSlug(unittest.TestCase):
     def test_non_latin_names_keep_their_letters(self):
         self.assertEqual(mailbox_slug({"name": "Счета"}), "счета")
 
-    def test_screener_and_unroutable_names_have_no_slug(self):
-        self.assertIsNone(mailbox_slug({"name": SCREENER_MAILBOX_NAME}))
+    def test_unroutable_names_have_no_slug(self):
         self.assertIsNone(mailbox_slug({"name": "!!!"}))

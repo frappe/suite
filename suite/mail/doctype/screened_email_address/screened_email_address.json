@@ -33,14 +33,14 @@
   },
   {
    "default": "Spam",
-   "description": "Accepted lets the sender's mail reach the inbox (used by screening). Spam files incoming mail into the Spam (Junk) folder. Reject discards incoming mail from the sender silently.",
+   "description": "Accepted lets the sender's mail reach the inbox (used by screening). Spam blocks the sender: their incoming mail is filed into the Junk folder.",
    "fieldname": "action",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Action",
    "no_copy": 1,
-   "options": "Spam\nReject\nAccepted",
+   "options": "Spam\nAccepted",
    "reqd": 1,
    "search_index": 1
   },

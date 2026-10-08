@@ -28,14 +28,20 @@ RELATIONS = {
 
 
 # One branch of the gate: `if|elsif <test> { fileinto [tags] "<mailbox>"; stop; }`, the mailbox an
-# RFC 5228 quoted string.
+# RFC 5228 quoted string — or `keep [tags];`, delivery where the server would put it anyway. A tag
+# may carry a quoted argument (`:flags "unscreened"`).
 GATE_BRANCH = re.compile(
-    r'\s*(?:if|elsif) (.+?) \{\s*fileinto ((?::\w+ )*)"((?:[^"\\]|\\.)*)";\s*stop;\s*\}', re.DOTALL
+    r'\s*(?:if|elsif) (.+?) \{\s*(?:fileinto ((?::\w+(?: "[^"]*")? )*)"((?:[^"\\]|\\.)*)"'
+    r'|keep((?: :\w+(?: "[^"]*")?)*));\s*stop;\s*\}',
+    re.DOTALL,
 )
+
+# What `route_through_gate` calls a `keep`: the server's own choice of mailbox, the Inbox for ham.
+KEEP = "<keep>"
 
 
 def render_screening_gate(
-    accepted_emails: list[str], own_emails: list[str] | None = None, screener: str = "Screener"
+    accepted_emails: list[str], own_emails: list[str] | None = None, inbox: str = "INBOX"
 ) -> str:
     """Render the Screening gate with the mailbox and identity lookups (JMAP calls) stubbed out."""
 
@@ -43,8 +49,7 @@ def render_screening_gate(
 
     own_emails = ["me@own.example"] if own_emails is None else own_emails
     with (
-        patch.object(sieve_script, "get_screening_mailbox_path", return_value=screener),
-        patch.object(sieve_script, "get_inbox_mailbox_path", return_value="INBOX"),
+        patch.object(sieve_script, "get_inbox_mailbox_path", return_value=inbox),
         patch.object(sieve_script, "get_account_emails", return_value=own_emails),
     ):
         return sieve_script.build_screening_gate("account", accepted_emails)
@@ -61,19 +66,22 @@ def parse_gate(gate: str) -> list[tuple[str, list[str], str]]:
 
     branches, pos = [], 0
     while match := GATE_BRANCH.match(body, pos):
-        test, tags, mailbox = match.groups()
-        branches.append((test, tags.split(), re.sub(r"\\(.)", r"\1", mailbox)))
+        test, tags, mailbox, keep_tags = match.groups()
+        if mailbox is None:
+            branches.append((test, (keep_tags or "").split(), KEEP))
+        else:
+            branches.append((test, tags.split(), re.sub(r"\\(.)", r"\1", mailbox)))
         pos = match.end()
 
     assert branches and not body[pos:].strip(), f"Unparsed Sieve in the gate:\n{body[pos:]}"
     return branches
 
 
-def route_through_gate(gate: str, sender: str, spamtest: int) -> str | None:
-    """Evaluate the rendered gate for one message with RFC 5228/5231/5235 semantics.
+def route_through_gate(gate: str, sender: str, spamtest: int) -> tuple[str, bool] | None:
+    """Evaluate the rendered gate for one message with RFC 5228/5231/5235/5232 semantics.
 
-    Returns the mailbox the gate files the message into, or None when no branch matches — an
-    implicit keep, where the server's own filtering picks the mailbox. Understands only the tests the
+    Returns the mailbox the gate files the message into and whether it marks it unscreened, or None
+    when no branch matches — an implicit keep, where the server's own filtering picks the mailbox. Understands only the tests the
     gate emits, and fails on anything else rather than guess.
     """
 
@@ -93,7 +101,14 @@ def route_through_gate(gate: str, sender: str, spamtest: int) -> str | None:
             return RELATIONS[match[1]](spamtest, int(match[2]))
         raise AssertionError(f"Unrecognised Sieve test: {test}")
 
-    return next((mailbox for test, _tags, mailbox in parse_gate(gate) if evaluate(test)), None)
+    return next(
+        (
+            (mailbox, ":flags" in tags and '"unscreened"' in tags)
+            for test, tags, mailbox in parse_gate(gate)
+            if evaluate(test)
+        ),
+        None,
+    )
 
 
 def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False, queue_wait: float = 0):
@@ -158,7 +173,8 @@ class IntegrationTestSieveScript(IntegrationTestCase):
     """
 
     def test_screening_gate_screens_all_mail_the_server_does_not_call_spam(self):
-        """Mail from an unaccepted sender goes to the Screener unless Stalwart calls it spam.
+        """Mail from an unaccepted sender reaches the Inbox marked unscreened, unless Stalwart calls it
+        spam.
 
         Stalwart hands the script a spamtest value (RFC 5235) of 0 when it did not score the message,
         1-4 for ham (1 at a score of about zero or below, rising towards the spam threshold) and 5-10
@@ -174,39 +190,31 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         for shape, gate in gates.items():
             for spamtest in range(11):
                 with self.subTest(shape=shape, spamtest=spamtest):
-                    expected = "Screener" if spamtest < 5 else None
+                    expected = (KEEP, True) if spamtest < 5 else None
                     self.assertEqual(route_through_gate(gate, "stranger@else.example", spamtest), expected)
 
     def test_screening_gate_delivers_trusted_senders_to_the_inbox(self):
         gate = render_screening_gate(["boss@work.example", "@partner.example"])
 
-        # Accepted addresses and domains, and the account's own identities, skip the Screener at
-        # every spam score.
+        # Accepted addresses and domains, and the account's own identities, reach the Inbox unmarked
+        # at every spam score.
         for sender in ("boss@work.example", "anyone@partner.example", "me@own.example"):
             for spamtest in range(11):
                 with self.subTest(sender=sender, spamtest=spamtest):
-                    self.assertEqual(route_through_gate(gate, sender, spamtest), "INBOX")
+                    self.assertEqual(route_through_gate(gate, sender, spamtest), ("INBOX", False))
 
         # A subdomain of an accepted domain is a different domain.
-        self.assertEqual(route_through_gate(gate, "someone@info.partner.example", 1), "Screener")
+        self.assertEqual(route_through_gate(gate, "someone@info.partner.example", 1), (KEEP, True))
 
-    def test_screening_gate_creates_a_missing_screener(self):
-        """Stalwart files into the Inbox when a `fileinto` target does not exist, so the Screener
-        branch creates it on delivery instead (RFC 5490 `:create`)."""
+    def test_screening_gate_requires_what_it_uses(self):
+        """RFC 5228: a script using an extension it does not require fails to compile, and the account
+        keeps its previous script. `:flags` needs "imap4flags", `:value` "relational"."""
 
         from suite.mail.doctype.sieve_script.sieve_script import AUTOMATION_SCRIPT_REQUIRE
 
-        for own_emails in ([], ["me@own.example"]):
-            with self.subTest(own_emails=own_emails):
-                branches = parse_gate(render_screening_gate([], own_emails=own_emails))
-                screener_tags = [tags for _test, tags, mailbox in branches if mailbox == "Screener"]
-                self.assertEqual(screener_tags, [[":create"]])
-
-        # RFC 5228: a script using an extension it does not require fails to compile, and the account
-        # keeps its previous script. `:create` needs "mailbox", `:value` "relational".
         required = set(re.findall(r'"([^"]+)"', AUTOMATION_SCRIPT_REQUIRE))
         self.assertLessEqual(
-            {"fileinto", "mailbox", "spamtest", "relational", "comparator-i;ascii-numeric"}, required
+            {"fileinto", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"}, required
         )
 
     def test_rebuild_retries_accounts_that_fail(self):
@@ -342,8 +350,8 @@ class IntegrationTestSieveScript(IntegrationTestCase):
 
         path = 'Clients/"VIP" \\ Gold'
 
-        gate = render_screening_gate([], screener=path)
-        self.assertEqual(route_through_gate(gate, "stranger@else.example", 1), path)
+        gate = render_screening_gate(["boss@work.example"], inbox=path)
+        self.assertEqual(route_through_gate(gate, "boss@work.example", 1), (path, False))
 
         rule = rule_object_to_sieve({"emails_from": "boss@work.example"}, path)
         self.assertIn('fileinto "Clients/\\"VIP\\" \\\\ Gold";', rule)

@@ -7,6 +7,7 @@
     <router-view />
   </component>
   <ShortcutsModal v-model:open="showShortcuts" />
+  <OldMailDialog v-if="!mailServerUnavailable" />
 </template>
 
 <script setup lang="ts">
@@ -17,6 +18,7 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
+import OldMailDialog from '@/apps/mail/components/Screener/OldMailDialog.vue'
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
@@ -75,18 +77,16 @@ const gPrefix = useGPrefix()
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
 // see the key and keep their own prefix state; this one only ever acts on a following letter,
 // so a `g g` falls through to the list untouched.
-// `g` then a letter. Beyond the account's own folders this reaches the three views that are not
-// folders at all — the merged list, the Screener and the Outbox — so the map holds routes, not
+// `g` then a letter. Beyond the account's own folders this reaches the two views that are not
+// folders at all — the merged list and the Outbox — so the map holds routes, not
 // mailbox ids.
 //
 // `a` is the Inbox of all accounts (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
-// already archives a thread, so one letter means archive throughout. The Screener takes `r` for
-// review: `s` is Sent, and `c` would collide with Contacts if that ever gets a jump.
+// already archives a thread, so one letter means archive throughout.
 const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
 
 const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
   a: () => unifiedFolderRoute(INBOX_FOLDER),
-  r: () => ({ name: 'mail-screener', params: { accountId } }),
   o: () => ({ name: 'mail-outbox', params: { accountId } }),
   i: () => mailboxRoute(mailboxIds.inbox),
   f: () => mailboxRoute('starred'),

@@ -75,10 +75,10 @@
         </SettingsRow>
         <SettingsRow
           class="!py-0"
-          :title="__('When Marking as Junk')"
-          :description="__('Choose how to handle future messages from this sender.')"
+          :title="__('When Blocking a Sender')"
+          :description="__('What to do with their mail already in your Inbox.')"
         >
-          <Select v-model="draft.on_mark_as_junk" :options="ON_MARK_AS_JUNK_OPTIONS" />
+          <Select v-model="draft.on_block_old_mail" :options="ON_BLOCK_OLD_MAIL_OPTIONS" />
         </SettingsRow>
 
         <!-- Read-only, so it sits after the settings rather than ahead of them; the
@@ -88,17 +88,16 @@
 
         <ErrorMessage :message="savePreferences.error?.message" />
 
-        <Dialog v-model:open="showMoveToInbox" v-bind="moveToInboxOptions" />
       </div>
     </template>
   </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import { Button, Combobox, Dialog, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
-import { api, useMutation, useQuery, type InputOf, type OutputOf } from '@/api'
+import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import { useQuota } from '@/apps/mail/composables/useQuota'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
@@ -113,7 +112,7 @@ const { isLimited, usedPercentage, label } = useQuota()
 // Read store.accountId live in makeParams; destructuring would snapshot the
 // unwrapped value and miss account switches while this component stays mounted.
 const store = userStore()
-const { identities, mailboxes, mailboxIds } = store
+const { identities } = store
 
 // Outgoing settings live on the active account's JMAP Account. Recovery (backup_email) and the
 // JMAP connection credentials moved to the dedicated Credentials tab (CredentialsSettings.vue).
@@ -163,15 +162,11 @@ const blockRemoteImages = computed({
   get: () => !!draft.value?.block_remote_images,
   set: (val: boolean) => (draft.value!.block_remote_images = val ? 1 : 0),
 })
-const ON_MARK_AS_JUNK_OPTIONS = [
-  {
-    label: __('Move future emails to Junk'),
-    value: "Junk Sender's Mail",
-  },
-  {
-    label: __('Ask whether to block the sender'),
-    value: 'Ask to Block Sender',
-  },
+// Future mail from a blocked sender always goes to Junk; this is only about what is already there.
+const ON_BLOCK_OLD_MAIL_OPTIONS = [
+  { label: __('Ask each time'), value: 'Ask' },
+  { label: __('Move old mail to Junk'), value: 'Move to Junk' },
+  { label: __('Keep old mail'), value: 'Keep' },
 ]
 const accountDirty = computed(
   () => JSON.stringify(draft.value) !== JSON.stringify(preferences.data),
@@ -179,36 +174,8 @@ const accountDirty = computed(
 const isDirty = computed(() => accountDirty.value)
 const loading = computed(() => preferences.isFetching)
 const saving = computed(() => savePreferences.isPending)
-const showMoveToInbox = ref(false)
-const moveScreeningToInbox = useMutation(api.mail.screening.moveToInbox)
-async function moveScreeningToInboxSubmit() {
-  const input: InputOf<typeof api.mail.screening.moveToInbox> = {
-    account: store.accountId,
-  }
-  await moveScreeningToInbox.run(input)
-  raiseToast(__('Unscreened messages moved to Inbox.'))
-  showMoveToInbox.value = false
-}
-const moveToInboxOptions = computed(() => ({
-  title: __('Move unscreened messages?'),
-  message: __('Screening is off. Move the messages currently in the Screener to your Inbox?'),
-  actions: [
-    {
-      label: __('Move to Inbox'),
-      variant: 'solid' as const,
-      onClick: () => moveScreeningToInboxSubmit(),
-      loading: moveScreeningToInbox.isPending,
-    },
-  ],
-}))
 const save = async () => {
   if (!draft.value) return
-  const screeningChanged =
-    Boolean(draft.value.enable_screening) !== Boolean(preferences.data?.enable_screening)
-  const askMoveToInbox =
-    screeningChanged &&
-    !draft.value.enable_screening &&
-    (mailboxes.data?.find((m) => m.id === mailboxIds.screener)?.total_threads ?? 0) > 0
   await savePreferences.run({
     account: store.accountId,
     changes: {
@@ -216,6 +183,5 @@ const save = async () => {
     },
   })
   raiseToast(__('Account updated.'))
-  if (askMoveToInbox) showMoveToInbox.value = true
 }
 </script>
