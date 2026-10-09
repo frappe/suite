@@ -44,13 +44,18 @@ const { query = '' } = defineProps<{
 
 /** `text` split around the first case-insensitive occurrence of the query. */
 const highlight = (text: string) => {
-  const needle = query.trim().toLowerCase()
-  const at = needle ? text.toLowerCase().indexOf(needle) : -1
-  if (at < 0) return [{ text, match: false }]
+  const needle = query.trim()
+  // Matched case-insensitively in the text itself, never in a lowercased copy: lowercasing can
+  // change a string's length ("İ" becomes two characters), which would shift the marked letters.
+  const found = needle
+    ? new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'iu').exec(text)
+    : null
+  if (!found) return [{ text, match: false }]
+  const end = found.index + found[0].length
   return [
-    { text: text.slice(0, at), match: false },
-    { text: text.slice(at, at + needle.length), match: true },
-    { text: text.slice(at + needle.length), match: false },
+    { text: text.slice(0, found.index), match: false },
+    { text: text.slice(found.index, end), match: true },
+    { text: text.slice(end), match: false },
   ].filter((part) => part.text)
 }
 </script>
