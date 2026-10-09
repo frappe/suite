@@ -13,7 +13,7 @@
 import init, { type ExtendedCellStyle } from '@ironcalc/wasm'
 
 import type { ViewportResult } from './client.js'
-import { MAX_VIEWPORT_CELLS } from './limits.js'
+import { MAX_FIND_RESULTS, MAX_VIEWPORT_CELLS } from './limits.js'
 import { createWorkbook, WorkbookError, type Workbook } from './workbook.js'
 
 export type ReadWhat = 'display' | 'input' | 'style'
@@ -200,6 +200,11 @@ export function createWorkerHost(): WorkerHost {
     }
   }
 
+  // Every cell of a sheet whose input contains the query (Find & Replace).
+  function onFindCells(p: unknown) {
+    return { cells: workbook().findInputs(str(p, 'sheet'), str(p, 'query'), MAX_FIND_RESULTS) }
+  }
+
   function onToBytes() {
     return { bytes: workbook().toBytes() }
   }
@@ -222,6 +227,8 @@ export function createWorkerHost(): WorkerHost {
           return { reqId: id, result: onReadViewport(payload) }
         case 'readCells':
           return { reqId: id, result: onReadCells(payload) }
+        case 'findCells':
+          return { reqId: id, result: onFindCells(payload) }
         case 'toBytes':
           return { reqId: id, result: onToBytes() }
         default:

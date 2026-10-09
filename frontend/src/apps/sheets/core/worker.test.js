@@ -197,3 +197,30 @@ describe('worker host — protocol errors', () => {
     expect(host.handle(null).reqId).toBe(-1)
   })
 })
+
+describe('worker host — findCells', () => {
+  it('returns cells whose input contains the query, row by row', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', {
+      commands: [
+        setInput('Sheet1', 3, 1, 'apple pie'),
+        setInput('Sheet1', 1, 2, 'Apple'),
+        setInput('Sheet1', 2, 1, 'banana'),
+        setInput('Sheet1', 900000, 5, 'crab apple'),
+        setInput('Sheet1', 4, 1, '=UPPER("apple")'),
+      ],
+    })
+    expect(ok('findCells', { sheet: 'Sheet1', query: 'APPLE' }).cells).toEqual([
+      { row: 1, col: 2, input: 'Apple' },
+      { row: 3, col: 1, input: 'apple pie' },
+      { row: 4, col: 1, input: '=UPPER("apple")' },
+      { row: 900000, col: 5, input: 'crab apple' },
+    ])
+  })
+
+  it('finds nothing for an empty query', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', { commands: [setInput('Sheet1', 1, 1, 'x')] })
+    expect(ok('findCells', { sheet: 'Sheet1', query: '' }).cells).toEqual([])
+  })
+})

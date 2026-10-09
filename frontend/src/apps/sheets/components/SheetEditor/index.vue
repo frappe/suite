@@ -1559,8 +1559,8 @@
       <FindReplace
         v-if="showFindReplace"
         ref="findReplaceRef"
-        :sheet="sheet"
-        :grid="grid"
+        :find="_findCells"
+        :write="_replaceCells"
         :is-protected="(id) => _cellSilentlyProtected(id)"
         @close="closeFindReplace"
         @navigate-to="onNavigateTo"
@@ -6855,6 +6855,18 @@ async function openCellHistory() {
 
 // ── Find & Replace ────────────────────────────────────────────────────────────
 
+// Cells on the open sheet whose input contains `query`, as [{ id, input }].
+async function _findCells(query) {
+  if (!_engine) return []
+  const { cells } = await _engine.client.findCells({ sheet: currentSheet.value, query })
+  return cells.map(({ row, col, input }) => ({ id: cellId(row - 1, col - 1), input }))
+}
+// Replacements as one write and one undo step.
+function _replaceCells(before, after) {
+  const sn = currentSheet.value
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Replace')
+}
 function closeFindReplace() {
   showFindReplace.value = false
   canvasRef.value?.focus?.()

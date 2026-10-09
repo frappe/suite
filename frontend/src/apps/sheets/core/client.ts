@@ -19,6 +19,7 @@
 import type { ExtendedCellStyle } from '@ironcalc/wasm'
 
 import { CommandTypes, validateCommand, type Command } from './commands.js'
+import type { FoundCell } from './workbook.js'
 import type { ApplyResult, CellRead, ReadWhat, WorkerResponse } from './worker.js'
 
 /** The part of a Worker the client uses. Tests pass a fake. */
@@ -105,6 +106,8 @@ export interface WorkbookClient {
   getVersion(): number
   readViewport(args: ViewportArgs): Promise<ViewportResult>
   readCells(args: ReadCellsArgs): Promise<{ cells: CellRead[] }>
+  /** Cells whose input contains `query`, row by row (1-based). */
+  findCells(args: { sheet: string; query: string }): Promise<{ cells: FoundCell[] }>
   /** Sends queued commands first, so the bytes include them. */
   toBytes(): Promise<Uint8Array>
   /** Resolves once no command is queued or in flight. */
@@ -286,6 +289,10 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     async readCells(args) {
       await idle()
       return request<{ cells: CellRead[] }>('readCells', args)
+    },
+    async findCells(args) {
+      await idle()
+      return request<{ cells: FoundCell[] }>('findCells', args)
     },
     async toBytes() {
       await idle()

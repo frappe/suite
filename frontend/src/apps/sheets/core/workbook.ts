@@ -11,6 +11,7 @@
 import { Model, type ExtendedCellStyle } from '@ironcalc/wasm'
 
 import { CommandTypes, validateCommand, type Command, type CommandType } from './commands.js'
+import { MAX_ROWS } from './limits.js'
 
 const LANGUAGE = 'en'
 
@@ -67,6 +68,12 @@ export interface VersionResult {
   version: number
 }
 
+export interface FoundCell {
+  row: number
+  col: number
+  input: string
+}
+
 export interface Workbook {
   apply(cmd: unknown): VersionResult
   undo(): VersionResult
@@ -81,6 +88,11 @@ export interface Workbook {
   getFrozen(sheet: string): { rows: number; cols: number }
   getColumnWidth(sheet: string, col: number): number
   getRowHeight(sheet: string, row: number): number
+  /**
+   * Cells whose input contains `query` (case-insensitive), in reading
+   * order (row by row), at most `limit` of them.
+   */
+  findInputs(sheet: string, query: string, limit: number): FoundCell[]
   toBytes(): Uint8Array
   getVersion(): number
 }
@@ -336,6 +348,23 @@ export function createWorkbook({
       }),
     getColumnWidth: (sheet, col) => read(() => model.getColumnWidth(sheetIndex(sheet), col)),
     getRowHeight: (sheet, row) => read(() => model.getRowHeight(sheetIndex(sheet), row)),
+    // IronCalc has no "all cells" call; asking each row for its used
+    // columns is cheap (about 130 ms for every row of a sheet).
+    findInputs: (sheet, query, limit) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const q = query.toLowerCase()
+        const found: FoundCell[] = []
+        if (!q) return found
+        for (let row = 1; row <= MAX_ROWS && found.length < limit; row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            const input = model.getCellContent(idx, row, col)
+            if (input.toLowerCase().includes(q)) found.push({ row, col, input })
+            if (found.length >= limit) break
+          }
+        }
+        return found
+      }),
     toBytes: () => read(() => model.toBytes()),
     getVersion: () => version,
   }
