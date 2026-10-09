@@ -3384,13 +3384,19 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
 )
 onScopeDispose(unregisterPaletteGroups)
 const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
-  getSheet: () => sheet,
+  cells: {
+    readSheet: _readWholeSheet,
+    write: _writeInputs,
+    clear: _clearSheet,
+    addSheet: (name) => _engine?.client.dispatch(_command('addSheet', { name })),
+    idle: () => (_engine ? _engine.client.idle() : Promise.resolve()),
+  },
+  // Lazy: useSheetTabs defines sheetNames further down.
+  sheetNames: () => sheetNames.value,
   currentSheet,
   getCurrentTitle: () => currentTitle.value,
-  getGrid: () => grid,
   getFormats: () => formats,
   getMerge: () => merge,
-  queueOp: _queueOp,
   repopulateGrid: _repopulateGrid,
   // Defined later by useSheetTabs — lazy-wrapped so they resolve at call time.
   syncNames: () => syncNames(),
@@ -8459,6 +8465,38 @@ function _refreshUsedCells() {
         _refreshUsedCells()
       }
     })
+}
+
+// Any sheet's data extent (0-based), read from the worker; null when empty.
+async function _sheetExtent(sn) {
+  if (!_engine) return null
+  const { cells } = await _engine.client.usedCells({ sheet: sn })
+  let maxRow = -1,
+    maxCol = -1
+  for (let i = 0; i < cells.length; i += 2) {
+    if (cells[i] - 1 > maxRow) maxRow = cells[i] - 1
+    if (cells[i + 1] - 1 > maxCol) maxCol = cells[i + 1] - 1
+  }
+  return maxRow < 0 ? null : { maxRow, maxCol }
+}
+
+// A whole sheet's inputs and displays, A1 to its last used cell.
+async function _readWholeSheet(sn) {
+  const ext = await _sheetExtent(sn)
+  if (!ext) return { inputs: [], displays: [] }
+  return _readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol })
+}
+
+// Empties a sheet's cells (contents only; formats stay).
+async function _clearSheet(sn) {
+  const ext = await _sheetExtent(sn)
+  if (!ext || !_engine) return
+  _engine.client.dispatch(
+    _command('clearContents', {
+      sheet: sn,
+      range: { r1: 1, c1: 1, r2: ext.maxRow + 1, c2: ext.maxCol + 1 },
+    }),
+  )
 }
 
 // The open sheet's data extent, or null when it is empty.
