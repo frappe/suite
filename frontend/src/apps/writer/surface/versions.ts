@@ -2,7 +2,7 @@ import type { JSONContent } from '@tiptap/core'
 import { yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
 
-import { FIELD } from '@/apps/writer/collab'
+import { BODY_FIELD } from '@/apps/writer/collab'
 
 /** What one stored version shows: HTML, or a document read from its Yjs state. */
 export type VersionContent = string | JSONContent
@@ -24,10 +24,10 @@ export async function readVersion(bytes: Uint8Array): Promise<VersionContent> {
   const version = payload as Record<string, unknown>
   const isHtmlVersion = version.schema === 'writer-document/1'
   const hasContent = typeof version.content === 'string' && version.content !== ''
-  const knownCollab = [0, 1, false, true, undefined].includes(
+  const isKnownCollab = [0, 1, false, true, undefined].includes(
     version.collab as number | boolean | undefined,
   )
-  if (isHtmlVersion && hasContent && typeof version.html === 'string' && knownCollab) {
+  if (isHtmlVersion && hasContent && typeof version.html === 'string' && isKnownCollab) {
     return version.html
   }
 
@@ -38,7 +38,7 @@ export async function readVersion(bytes: Uint8Array): Promise<VersionContent> {
       const compressed = fromBase64(version.state)
       const update = await gunzip(compressed)
       Y.applyUpdate(ydoc, update)
-      const fragment = ydoc.getXmlFragment(FIELD)
+      const fragment = ydoc.getXmlFragment(BODY_FIELD)
       return yXmlFragmentToProsemirrorJSON(fragment)
     } finally {
       ydoc.destroy()

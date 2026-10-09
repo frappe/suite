@@ -14,7 +14,7 @@ import { Carets, peopleOf } from './carets'
 const searchUsers = vi.hoisted(() => vi.fn())
 vi.mock('@/apps/writer/drive', () => ({ searchUsers }))
 
-const PEER = 2 ** 31 + 7
+const PEER_ID = 2 ** 31 + 7
 const editors: Editor[] = []
 
 afterEach(() => {
@@ -22,11 +22,11 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function open() {
+function openEditor() {
   const doc = new Y.Doc()
-  const scratch = new Y.Doc()
-  scratch.clientID = 0
-  const awareness = new Awareness(scratch)
+  const presenceDoc = new Y.Doc()
+  presenceDoc.clientID = 0
+  const awareness = new Awareness(presenceDoc)
   const presence = { awareness, peers: [], onChange: () => () => true }
   const element = document.createElement('div')
   document.body.append(element)
@@ -49,20 +49,20 @@ function open() {
 
 function caretAt(editor: Editor, at: number, to = at) {
   const { type, binding } = ySyncPluginKey.getState(editor.state)
-  const place = (pos: number) => absolutePositionToRelativePosition(pos, type, binding.mapping)
-  return { anchor: place(at), head: place(to) }
+  const toRelative = (pos: number) => absolutePositionToRelativePosition(pos, type, binding.mapping)
+  return { anchor: toRelative(at), head: toRelative(to) }
 }
 
-function peer(awareness: Awareness) {
+function remotePeer(awareness: Awareness) {
   const doc = new Y.Doc()
-  doc.clientID = PEER
-  const own = new Awareness(doc)
-  const say = (state: object | null) => {
-    own.setLocalState(state)
-    const update = encodeAwarenessUpdate(own, [PEER])
+  doc.clientID = PEER_ID
+  const peerAwareness = new Awareness(doc)
+  const setPeerState = (state: object | null) => {
+    peerAwareness.setLocalState(state)
+    const update = encodeAwarenessUpdate(peerAwareness, [PEER_ID])
     applyAwarenessUpdate(awareness, update, 'remote')
   }
-  return say
+  return setPeerState
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -78,69 +78,69 @@ function caretAfter(editor: Editor) {
   return range.toString()
 }
 
-const shades = (editor: Editor) =>
+const shadedSelections = (editor: Editor) =>
   [...editor.view.dom.querySelectorAll<HTMLElement>('.collaboration-carets__selection')].map(
     (shade) => [shade.textContent, shade.style.backgroundColor],
   )
 
-const idle = (editor: Editor) =>
+const isLabelIdle = (editor: Editor) =>
   editor.view.dom
     .querySelector('.collaboration-carets__label')
     ?.classList.contains('collaboration-carets__label--idle')
 
-const labels = (editor: Editor) =>
+const labelTexts = (editor: Editor) =>
   [...editor.view.dom.querySelectorAll('.collaboration-carets__label')].map(
     (label) => label.textContent,
   )
 
 describe('Writer carets', () => {
   it('draws another person’s caret by their full name, and never this tab’s own', async () => {
-    const { editor, awareness } = open()
-    const peerSays = peer(awareness)
+    const { editor, awareness } = openEditor()
+    const peerSays = remotePeer(awareness)
     vi.spyOn(editor.view, 'hasFocus').mockReturnValue(true)
     editor.commands.setTextSelection(2)
 
-    let answer = (_: object[]) => {}
-    const lookup = new Promise((resolve) => (answer = resolve))
+    let answerLookup = (_: object[]) => {}
+    const lookup = new Promise((resolve) => (answerLookup = resolve))
     searchUsers.mockReturnValue(lookup)
     const user = { id: 'bea@x.com', color: '#3E63DD' }
 
     peerSays({ user, cursor: caretAt(editor, 3) })
     await tick()
-    const before = labels(editor)
-    answer([{ name: 'bea@x.com', full_name: 'Bea Writer' }])
+    const labelsBefore = labelTexts(editor)
+    answerLookup([{ name: 'bea@x.com', full_name: 'Bea Writer' }])
     await tick()
 
     expect(awareness.getLocalState()?.cursor).toHaveProperty('head')
-    expect(before).toEqual(['bea@x.com'])
-    expect(labels(editor)).toEqual(['Bea Writer'])
+    expect(labelsBefore).toEqual(['bea@x.com'])
+    expect(labelTexts(editor)).toEqual(['Bea Writer'])
   })
 
   it('keeps a peer’s caret where it was while their text is on its way, and drops it when they clear or leave', async () => {
     searchUsers.mockResolvedValue([])
-    const { editor, awareness, doc } = open()
-    const say = peer(awareness)
+    const { editor, awareness, doc } = openEditor()
+    const setPeerState = remotePeer(awareness)
     const peerSays = async (state: object | null) => {
-      say(state)
+      setPeerState(state)
       await tick()
     }
     const user = { id: 'bea@x.com', color: '#3E63DD' }
-    const theirs = new Y.Doc()
-    const ours = Y.encodeStateAsUpdate(doc)
-    Y.applyUpdate(theirs, ours)
-    const before = Y.encodeStateVector(theirs)
-    const paragraph = theirs.getXmlFragment('default').get(0) as Y.XmlElement
-    const words = paragraph.get(0) as Y.XmlText
-    words.insert(5, ' world')
-    const position = Y.createRelativePositionFromTypeIndex(words, 8)
-    const within = Y.relativePositionToJSON(position)
-    const ahead = { anchor: within, head: within }
+    const peerDoc = new Y.Doc()
+    const ourUpdate = Y.encodeStateAsUpdate(doc)
+    Y.applyUpdate(peerDoc, ourUpdate)
+    const peerVectorBefore = Y.encodeStateVector(peerDoc)
+    const paragraph = peerDoc.getXmlFragment('default').get(0) as Y.XmlElement
+    const paragraphText = paragraph.get(0) as Y.XmlText
+    paragraphText.insert(5, ' world')
+    const position = Y.createRelativePositionFromTypeIndex(paragraphText, 8)
+    const aheadPosition = Y.relativePositionToJSON(position)
+    const aheadCaret = { anchor: aheadPosition, head: aheadPosition }
 
     await peerSays({ user, cursor: caretAt(editor, 3) })
     const placed = caretAfter(editor)
-    await peerSays({ user, cursor: ahead })
+    await peerSays({ user, cursor: aheadCaret })
     const waiting = caretAfter(editor)
-    const theirEdit = Y.encodeStateAsUpdate(theirs, before)
+    const theirEdit = Y.encodeStateAsUpdate(peerDoc, peerVectorBefore)
     Y.applyUpdate(doc, theirEdit)
     const arrived = caretAfter(editor)
     await peerSays({ user, cursor: null })
@@ -152,38 +152,38 @@ describe('Writer carets', () => {
     expect(caretAfter(editor)).toBeNull()
   })
 
-  it('shades what another person selected in their colour, and nothing for a caret alone', async () => {
+  it('shadedSelections what another person selected in their colour, and nothing for a caret alone', async () => {
     searchUsers.mockResolvedValue([])
-    const { editor, awareness } = open()
-    const peerSays = peer(awareness)
+    const { editor, awareness } = openEditor()
+    const peerSays = remotePeer(awareness)
     const user = { id: 'bea@x.com', color: '#3E63DD' }
 
     peerSays({ user, cursor: caretAt(editor, 2, 5) })
     await tick()
-    const selected = shades(editor)
+    const selected = shadedSelections(editor)
     peerSays({ user, cursor: caretAt(editor, 3) })
     await tick()
 
     expect(selected).toEqual([['ell', 'rgba(62, 99, 221, 0.2)']])
-    expect(shades(editor)).toEqual([])
+    expect(shadedSelections(editor)).toEqual([])
   })
 
   it('fades a name a few seconds after its person stops, and shows it again when they move', async () => {
     vi.useFakeTimers()
     searchUsers.mockResolvedValue([])
-    const { editor, awareness } = open()
-    const peerSays = peer(awareness)
+    const { editor, awareness } = openEditor()
+    const peerSays = remotePeer(awareness)
     const user = { id: 'bea@x.com', color: '#3E63DD' }
 
     peerSays({ user, cursor: caretAt(editor, 3) })
     await vi.advanceTimersByTimeAsync(2000)
-    const typing = idle(editor)
+    const typing = isLabelIdle(editor)
     await vi.advanceTimersByTimeAsync(1500)
-    const still = idle(editor)
+    const still = isLabelIdle(editor)
     peerSays({ user, cursor: caretAt(editor, 4) })
     await vi.advanceTimersByTimeAsync(0)
 
-    expect([typing, still, idle(editor)]).toEqual([false, true, false])
+    expect([typing, still, isLabelIdle(editor)]).toEqual([false, true, false])
   })
 
   it('lists each signed-in person once and every guest tab apart', () => {
@@ -191,8 +191,8 @@ describe('Writer carets', () => {
     const color = '#E5484D'
 
     const peers: Peer[] = [
-      { pid: PEER, user: 'cy@x.com', color },
-      { pid: PEER + 1, user: 'cy@x.com', color },
+      { pid: PEER_ID, user: 'cy@x.com', color },
+      { pid: PEER_ID + 1, user: 'cy@x.com', color },
       { pid: 2 ** 31 + 1_000_000, user: 'Guest', color },
       { pid: 2 ** 31 + 2_000_000, user: 'Guest', color },
     ]

@@ -18,10 +18,10 @@ vi.hoisted(() => {
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent: define, h: render } = await import('vue')
-  const blank = { render: () => null }
+  const emptyComponent = { render: () => null }
   return {
-    Avatar: blank,
-    Badge: blank,
+    Avatar: emptyComponent,
+    Badge: emptyComponent,
     Button: define({
       props: { label: String },
       emits: ['click'],
@@ -30,8 +30,8 @@ vi.mock('frappe-ui', async () => {
         () =>
           render('button', { onClick: () => emit('click') }, props.label),
     }),
-    Skeleton: blank,
-    TextInput: blank,
+    Skeleton: emptyComponent,
+    TextInput: emptyComponent,
     toast: {
       info: () => {},
       warning: () => {},
@@ -69,7 +69,7 @@ vi.mock('@/apps/drive', async () => {
 const rooms = vi.hoisted(() => ({ next: null as object | null }))
 
 vi.mock('@/apps/writer/collab', () => ({
-  FIELD: 'default',
+  BODY_FIELD: 'default',
   openWriterRoom: async () => (rooms.next ? { state: 'live', room: rooms.next } : { state: 'off' }),
   withinTenSeconds: (promise: Promise<void>) => promise,
 }))
@@ -96,7 +96,7 @@ vi.mock('@/apps/writer/components/NonCollabEditor.vue', async () => {
 
 vi.mock('./writerDocument', async (importOriginal) => {
   const original = await importOriginal<typeof import('./writerDocument')>()
-  const write = () => ({
+  const idleWrite = () => ({
     loading: false,
     error: null,
     submit: async () => null,
@@ -109,9 +109,9 @@ vi.mock('./writerDocument', async (importOriginal) => {
     }
     const resources = {
       doc,
-      saveDoc: write(),
-      saveHtml: write(),
-      saveComments: write(),
+      saveDoc: idleWrite(),
+      saveHtml: idleWrite(),
+      saveComments: idleWrite(),
     }
     return reactive(resources)
   }
@@ -361,15 +361,15 @@ describe('Writer surface', () => {
   it('shows edits made in another tab while a version was previewed', async () => {
     const room = liveRoom()
     const root = await openedSurface(oneVersion)
-    const other = new Y.Doc()
-    Y.applyUpdate(other, Y.encodeStateAsUpdate(room.doc))
+    const otherTab = new Y.Doc()
+    Y.applyUpdate(otherTab, Y.encodeStateAsUpdate(room.doc))
 
     const typeInOtherTab = () => {
       const paragraph = new Y.XmlElement('paragraph')
       paragraph.insert(0, [new Y.XmlText('Typed in the other tab')])
-      other.getXmlFragment('default').insert(0, [paragraph])
-      const roomHas = Y.encodeStateVector(room.doc)
-      const missing = Y.encodeStateAsUpdate(other, roomHas)
+      otherTab.getXmlFragment('default').insert(0, [paragraph])
+      const roomVector = Y.encodeStateVector(room.doc)
+      const missing = Y.encodeStateAsUpdate(otherTab, roomVector)
       Y.applyUpdate(room.doc, missing)
     }
     await previewAndReturn(root, typeInOtherTab)
@@ -387,9 +387,9 @@ describe('Writer surface', () => {
     await previewAndReturn(root)
 
     expect(shownText(root)).toContain('Typed here first')
-    const other = new Y.Doc()
-    Y.applyUpdate(other, Y.encodeStateAsUpdate(room.doc))
-    expect(other.getXmlFragment('default').toString()).toContain('Typed here first')
+    const otherTab = new Y.Doc()
+    Y.applyUpdate(otherTab, Y.encodeStateAsUpdate(room.doc))
+    expect(otherTab.getXmlFragment('default').toString()).toContain('Typed here first')
     editor().commands.undo()
     expect(shownText(root)).not.toContain('Typed here first')
   })

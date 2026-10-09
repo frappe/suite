@@ -138,6 +138,7 @@ const props = defineProps({
   saveComments: Function,
   rawContent: String,
 })
+
 const emit = defineEmits(['save', 'editor-change', 'cleanup'])
 
 const showSettings = defineModel('showSettings')
@@ -145,6 +146,7 @@ const edited = defineModel('edited')
 const root = useRootStore()
 
 const localContent = ref(props.rawContent ?? '')
+
 watch(
   () => props.rawContent,
   (val) => {
@@ -173,6 +175,7 @@ const scrollParent = computed(() => document.querySelector('#editor-scroll-conta
 // The format painter keeps its flag in plain editor storage, which Vue does
 // not track. Read it again after each transaction.
 const isPainting = ref(false)
+
 watch(
   editor,
   (instance, _previous, onCleanup) => {
@@ -255,6 +258,7 @@ const writerEditorOptions = {
   edited,
   onCommentsPainted: () => (commentsPainted.value = true),
 }
+
 const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...props.extensions]
 
 const menuButtons = computed(() =>
@@ -308,6 +312,7 @@ const autoversion = async () => {
   if (!html || html === '<p></p>') return
   await props.document.newVersion.run({ data: html })
 }
+
 const autoversionInterval = setInterval(() => {
   void autoversion().catch(reportSaveError)
 }, AUTOVERSION_INTERVAL_MS)
@@ -390,6 +395,7 @@ emitter.on('print-file', () => {
     printDoc(editor.value.commands.getCurrentTabHTML(), props.settings)
   }
 })
+
 emitter.on('manual-save', manualSave)
 
 onBeforeUnmount(() => {

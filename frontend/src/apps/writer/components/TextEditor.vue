@@ -46,13 +46,16 @@ const props = defineProps({
   settings: Object,
   editable: Boolean,
 })
+
 const emit = defineEmits(['saveComment'])
 
 const textEditor = ref('textEditor')
+
 const editor = computed(() => {
   const editor = textEditor.value?.editor
   return editor
 })
+
 provide('editor', editor)
 
 // `useYjs` owns the unsaved flag: it sets `edited` on each change to store
@@ -63,6 +66,7 @@ const { doc, save, cleanup, provider, loaded, peers, ...commentsDetail } = useYj
   editor,
   edited,
 )
+
 defineExpose({ editor, peers })
 watch(loaded, () => rebuild(editor.value))
 

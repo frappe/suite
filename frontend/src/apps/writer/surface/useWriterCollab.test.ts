@@ -5,8 +5,8 @@ import type { DocumentSession } from '@/apps/drive'
 
 import { useWriterCollab } from './useWriterCollab'
 
-const fake = vi.hoisted(() => {
-  const make = () => ({
+const fakeRooms = vi.hoisted(() => {
+  const makeRoom = () => ({
     canWrite: true,
     blocked: null as string | null,
     stopped: null as string | null,
@@ -27,31 +27,31 @@ const fake = vi.hoisted(() => {
   })
 
   return {
-    room: make(),
-    opens: 0,
-    make,
+    room: makeRoom(),
+    openCount: 0,
+    makeRoom,
   }
 })
 
 vi.mock('@/apps/writer/collab', () => ({
   openWriterRoom: async () => {
-    fake.opens++
-    return { state: 'live', room: fake.room }
+    fakeRooms.openCount++
+    return { state: 'live', room: fakeRooms.room }
   },
 }))
 
-async function opened(retainRecovery = () => false, mayEdit = () => true) {
+async function openCollab(retainRecovery = () => false, mayEdit = () => true) {
   const session = { nodeId: 'node-1' } as DocumentSession
   const collab = useWriterCollab(session, retainRecovery, mayEdit)
   await collab.open()
   return collab
 }
 
-function becomes(change: Partial<typeof fake.room>) {
-  becomesOn(fake.room, change)
+function becomes(change: Partial<typeof fakeRooms.room>) {
+  becomesOn(fakeRooms.room, change)
 }
 
-function becomesOn(room: typeof fake.room, change: Partial<typeof fake.room>) {
+function becomesOn(room: typeof fakeRooms.room, change: Partial<typeof fakeRooms.room>) {
   Object.assign(room, change)
   for (const listener of room.listeners) {
     listener()
@@ -60,7 +60,7 @@ function becomesOn(room: typeof fake.room, change: Partial<typeof fake.room>) {
 
 describe('writer collab editing state', () => {
   it('pauses editing, not access, while the room is stopped for a reason that clears', async () => {
-    const collab = await opened()
+    const collab = await openCollab()
     expect(collab.editingPaused.value).toBe(false)
 
     for (const blocked of ['signed_out', 'locked', 'offline', 'stale_session', 'other_user']) {
@@ -81,13 +81,13 @@ describe('writer collab editing state', () => {
   })
 
   it('tells why the room stopped saving', async () => {
-    const collab = await opened()
+    const collab = await openCollab()
     becomes({ blocked: null, stopped: 'poison', saveState: 'failed', unsent: 1, canWrite: false })
     expect(collab.banner.value?.text).toMatch(/can't hold a change made in this tab/)
   })
 
   it('leaves a lost right or a read-only room as view only', async () => {
-    const collab = await opened()
+    const collab = await openCollab()
     for (const blocked of ['lost_edit', 'lost_read']) {
       becomes({ blocked, saveState: 'failed', canWrite: false })
       expect(collab.editingPaused.value).toBe(false)
@@ -98,8 +98,8 @@ describe('writer collab editing state', () => {
   })
 
   it('pauses editing while the server judges a change this tab could not apply', async () => {
-    fake.room = fake.make()
-    const collab = await opened()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab()
     becomes({ blocked: null, saveState: 'unsaved', unsent: 1, canWrite: false, paused: 'suspect' })
     expect([collab.allowsEditing.value, collab.editingPaused.value, collab.banner.value]).toEqual([
       false,
@@ -109,8 +109,8 @@ describe('writer collab editing state', () => {
   })
 
   it('holds editing with a banner while an admin reviews the document', async () => {
-    fake.room = fake.make()
-    const collab = await opened()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab()
     becomes({ canWrite: false, held: 'change', unsent: 0 })
     expect([collab.allowsEditing.value, collab.editingPaused.value, collab.banner.value]).toEqual([
       false,
@@ -120,8 +120,8 @@ describe('writer collab editing state', () => {
   })
 
   it('makes the document read-only with a banner once a newer Writer edited it', async () => {
-    fake.room = fake.make()
-    const collab = await opened()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab()
     becomes({ canWrite: false, newerSchema: true })
     expect([collab.allowsEditing.value, collab.editingPaused.value, collab.banner.value]).toEqual([
       false,
@@ -131,8 +131,8 @@ describe('writer collab editing state', () => {
   })
 
   it('tells a reader of a document a newer Writer edited to reload to see it', async () => {
-    fake.room = fake.make()
-    const collab = await opened(undefined, () => false)
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab(undefined, () => false)
     becomes({ canWrite: false, newerSchema: true })
     expect(collab.banner.value).toEqual({
       text: 'This document was edited in a newer version of Writer. Reload to see its latest changes.',
@@ -140,8 +140,8 @@ describe('writer collab editing state', () => {
   })
 
   it('tells a writer their changes wait on a refusing network, and not on a busy one', async () => {
-    fake.room = fake.make()
-    const collab = await opened()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab()
     becomes({ saveState: 'unsaved', unsent: 1, paused: 'compacting' })
     const busy = collab.banner.value
     becomes({ paused: 'upload_refused' })
@@ -152,8 +152,8 @@ describe('writer collab editing state', () => {
   })
 
   it('keeps editing open on a document at its size limit, and says deleting frees space', async () => {
-    fake.room = fake.make()
-    const collab = await opened()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab()
     becomes({ atLimit: true })
     expect([collab.allowsEditing.value, collab.banner.value?.text]).toEqual([
       true,
@@ -164,92 +164,92 @@ describe('writer collab editing state', () => {
 
 describe('writer collab rebuild', () => {
   it('opens the document again when the room may hold a quarantined change', async () => {
-    fake.room = fake.make()
-    const collab = await opened()
-    const old = fake.room
-    const closed = vi.spyOn(old, 'close')
-    fake.room = fake.make()
-    const opens = fake.opens
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab()
+    const oldRoom = fakeRooms.room
+    const closeSpy = vi.spyOn(oldRoom, 'close')
+    fakeRooms.room = fakeRooms.makeRoom()
+    const opensBefore = fakeRooms.openCount
 
-    Object.assign(old, { needsRebuild: true })
-    old.listeners.forEach((listener) => listener())
+    Object.assign(oldRoom, { needsRebuild: true })
+    oldRoom.listeners.forEach((listener) => listener())
 
     expect([collab.mode.value, collab.room.value]).toEqual(['opening', null])
-    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
-    expect([collab.mode.value, closed.mock.calls.length, fake.opens - opens]).toEqual([
-      'live',
-      1,
-      1,
-    ])
+    await vi.waitFor(() => expect(collab.room.value).toBe(fakeRooms.room))
+    expect([
+      collab.mode.value,
+      closeSpy.mock.calls.length,
+      fakeRooms.openCount - opensBefore,
+    ]).toEqual(['live', 1, 1])
   })
 
   it('without a device copy, keeps unsent work before the old room goes', async () => {
     const order: string[] = []
-    fake.room = fake.make()
-    const collab = await opened(() => (order.push('kept'), true))
-    const old = fake.room
-    old.close = async () => void order.push('closed')
-    fake.room = fake.make()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab(() => (order.push('kept'), true))
+    const oldRoom = fakeRooms.room
+    oldRoom.close = async () => void order.push('closed')
+    fakeRooms.room = fakeRooms.makeRoom()
 
-    Object.assign(old, { needsRebuild: true, unsent: 2, onDevice: false })
-    old.listeners.forEach((listener) => listener())
+    Object.assign(oldRoom, { needsRebuild: true, unsent: 2, onDevice: false })
+    oldRoom.listeners.forEach((listener) => listener())
 
-    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    await vi.waitFor(() => expect(collab.room.value).toBe(fakeRooms.room))
     expect(order).toEqual(['kept', 'closed'])
   })
 
   it('without a device copy or a kept copy, leaves the unsent work on screen until it is sent', async () => {
-    fake.room = fake.make()
-    const collab = await opened(() => false)
-    const old = fake.room
-    const closed = vi.spyOn(old, 'close')
-    fake.room = fake.make()
-    const opens = fake.opens
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab(() => false)
+    const oldRoom = fakeRooms.room
+    const closeSpy = vi.spyOn(oldRoom, 'close')
+    fakeRooms.room = fakeRooms.makeRoom()
+    const opensBefore = fakeRooms.openCount
 
-    becomesOn(old, { needsRebuild: true, unsent: 2, onDevice: false })
+    becomesOn(oldRoom, { needsRebuild: true, unsent: 2, onDevice: false })
     await nextTick()
-    expect([collab.mode.value, collab.room.value, closed.mock.calls.length]).toEqual([
+    expect([collab.mode.value, collab.room.value, closeSpy.mock.calls.length]).toEqual([
       'live',
-      old,
+      oldRoom,
       0,
     ])
 
-    becomesOn(old, { unsent: 0 })
-    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
-    expect(fake.opens - opens).toBe(1)
+    becomesOn(oldRoom, { unsent: 0 })
+    await vi.waitFor(() => expect(collab.room.value).toBe(fakeRooms.room))
+    expect(fakeRooms.openCount - opensBefore).toBe(1)
   })
 
   it('still says the last edits were set aside once the room is rebuilt', async () => {
-    fake.room = fake.make()
-    const collab = await opened(() => true)
-    const old = fake.room
-    fake.room = fake.make()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab(() => true)
+    const oldRoom = fakeRooms.room
+    fakeRooms.room = fakeRooms.makeRoom()
 
-    becomesOn(old, {
+    becomesOn(oldRoom, {
       needsRebuild: false,
       stopped: 'client_closed',
       saveState: 'failed',
       unsent: 2,
     })
     expect(collab.banner.value).not.toBeNull()
-    becomesOn(old, { needsRebuild: true })
+    becomesOn(oldRoom, { needsRebuild: true })
 
-    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    await vi.waitFor(() => expect(collab.room.value).toBe(fakeRooms.room))
     expect(collab.banner.value?.text).toBe(
       "Your last edits couldn't be saved here and were kept as a recovery copy.",
     )
   })
 
   it("keeps a later room's unsent work on screen when this time no copy could be kept", async () => {
-    let keeps = 1
-    fake.room = fake.make()
-    const collab = await opened(() => keeps-- > 0)
-    const first = fake.room
-    fake.room = fake.make()
-    const second = fake.room
+    let keepsLeft = 1
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab(() => keepsLeft-- > 0)
+    const first = fakeRooms.room
+    fakeRooms.room = fakeRooms.makeRoom()
+    const second = fakeRooms.room
     becomesOn(first, { needsRebuild: true, unsent: 2, onDevice: false })
     await vi.waitFor(() => expect(collab.room.value).toBe(second))
-    fake.room = fake.make()
+    fakeRooms.room = fakeRooms.makeRoom()
 
     becomesOn(second, { needsRebuild: true, unsent: 1, onDevice: false })
     await nextTick()
@@ -258,16 +258,16 @@ describe('writer collab rebuild', () => {
   })
 
   it('stops saying edits were set aside after a later rebuild sets nothing aside', async () => {
-    fake.room = fake.make()
-    const collab = await opened(() => true)
-    const first = fake.room
-    fake.room = fake.make()
-    const second = fake.room
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab(() => true)
+    const first = fakeRooms.room
+    fakeRooms.room = fakeRooms.makeRoom()
+    const second = fakeRooms.room
     becomesOn(first, { stopped: 'client_closed', saveState: 'failed', unsent: 2 })
     becomesOn(first, { needsRebuild: true })
     await vi.waitFor(() => expect(collab.room.value).toBe(second))
-    fake.room = fake.make()
-    const third = fake.room
+    fakeRooms.room = fakeRooms.makeRoom()
+    const third = fakeRooms.room
 
     becomesOn(second, { needsRebuild: true })
     await vi.waitFor(() => expect(collab.room.value).toBe(third))
@@ -276,11 +276,11 @@ describe('writer collab rebuild', () => {
   })
 
   it('after a full document refuses a change, the rebuilt room says where it went and that deleting frees space', async () => {
-    fake.room = fake.make()
-    const collab = await opened(() => true)
-    const first = fake.room
-    fake.room = { ...fake.make(), atLimit: true }
-    const second = fake.room
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab(() => true)
+    const first = fakeRooms.room
+    fakeRooms.room = { ...fakeRooms.makeRoom(), atLimit: true }
+    const second = fakeRooms.room
     becomesOn(first, { stopped: 'document_full', saveState: 'failed', unsent: 1 })
     becomesOn(first, { needsRebuild: true })
     await vi.waitFor(() => expect(collab.room.value).toBe(second))
@@ -292,14 +292,14 @@ describe('writer collab rebuild', () => {
   })
 
   it('says nothing was set aside when the rebuilt room takes the unsent work over', async () => {
-    fake.room = fake.make()
-    const collab = await opened()
-    const old = fake.room
-    fake.room = fake.make()
+    fakeRooms.room = fakeRooms.makeRoom()
+    const collab = await openCollab()
+    const oldRoom = fakeRooms.room
+    fakeRooms.room = fakeRooms.makeRoom()
 
-    becomesOn(old, { needsRebuild: true, unsent: 2, onDevice: true })
+    becomesOn(oldRoom, { needsRebuild: true, unsent: 2, onDevice: true })
 
-    await vi.waitFor(() => expect(collab.room.value).toBe(fake.room))
+    await vi.waitFor(() => expect(collab.room.value).toBe(fakeRooms.room))
     expect(collab.banner.value).toBeNull()
   })
 })

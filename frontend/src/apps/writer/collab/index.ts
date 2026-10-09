@@ -12,12 +12,12 @@ import { getRealtimeSocket } from '@/platform/realtime'
 import { getCookieSessionUser } from '@/platform/session'
 import { createTransport, type HttpMethod, type Operation } from '@/platform/transport'
 
-export { FIELD } from './field'
+export { BODY_FIELD } from './field'
 
 // Raise with suite/writer/content/features.json whenever the editor learns a new node, mark or attribute
 export const WRITER_SCHEMA = 1
 
-const route = (id: string, method: HttpMethod, path: string): Operation => ({
+const contentOperation = (id: string, method: HttpMethod, path: string): Operation => ({
   id,
   owner: 'content',
   method,
@@ -26,13 +26,13 @@ const route = (id: string, method: HttpMethod, path: string): Operation => ({
   nodeParams: ['node'],
 })
 
-const OPEN = route('document_get', 'GET', '{node}/log')
-const PULL = route('updates_get', 'GET', '{node}/updates')
-const PUSH = route('updates_post', 'POST', '{node}/updates')
-const SESSION = route('sessions_post', 'POST', '{node}/sessions')
-const SUSPECT = route('suspect_post', 'POST', '{node}/suspect')
+const OPEN = contentOperation('document_get', 'GET', '{node}/log')
+const PULL = contentOperation('updates_get', 'GET', '{node}/updates')
+const PUSH = contentOperation('updates_post', 'POST', '{node}/updates')
+const SESSION = contentOperation('sessions_post', 'POST', '{node}/sessions')
+const SUSPECT = contentOperation('suspect_post', 'POST', '{node}/suspect')
 const STAGE: Operation = {
-  ...route('stage_put', 'PUT', '{node}/stage/{stage_id}/{idx}'),
+  ...contentOperation('stage_put', 'PUT', '{node}/stage/{stage_id}/{idx}'),
   pathParams: ['node', 'stage_id', 'idx'],
 }
 
@@ -61,16 +61,16 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
       }
       return transport.requestBytes(PUSH, { node }, bytesOptions)
     },
-    stage: (stage, idx, body) => {
+    stage: (stageId, pieceIndex, body) => {
       const input = {
         node,
-        stage_id: stage,
-        idx,
+        stage_id: stageId,
+        idx: pieceIndex,
       }
       return transport.requestBytes(STAGE, input, { body, headers })
     },
-    session: (sid, claim) => {
-      const sessionClaim = claim ? { sid, claim } : { sid }
+    session: (sessionId, claim) => {
+      const sessionClaim = claim ? { sid: sessionId, claim } : { sid: sessionId }
       const json = JSON.stringify(sessionClaim)
       const body = new TextEncoder().encode(json)
       return transport.requestBytes(SESSION, { node }, { body, headers })
@@ -92,15 +92,15 @@ export const withinTenSeconds = (work: Promise<void>) => {
 const signedIn = () => getCookieSessionUser() ?? 'Guest'
 
 // One store per person on this site; another person's stays untouched on the device
-const stores = new Map<string, Promise<DeviceStore | null>>()
+const deviceStores = new Map<string, Promise<DeviceStore | null>>()
 
 function deviceStore(principal: string) {
-  const key = principal === 'Guest' ? 'guest' : principal
-  if (!stores.has(key)) {
-    stores.set(key, openDeviceStore(`suite-writer-collab:${location.host}:${key}`))
+  const storeKey = principal === 'Guest' ? 'guest' : principal
+  if (!deviceStores.has(storeKey)) {
+    deviceStores.set(storeKey, openDeviceStore(`suite-writer-collab:${location.host}:${storeKey}`))
   }
 
-  return stores.get(key)!
+  return deviceStores.get(storeKey)!
 }
 
 export async function openWriterRoom(session: DocumentSession): Promise<Opened> {

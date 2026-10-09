@@ -44,14 +44,14 @@ export function searchMentions(query: string): void {
 }
 
 /** Bumped when a looked-up person arrives, so names shown from `known` update. */
-const learned = shallowRef(0)
+const knownVersion = shallowRef(0)
 const lookups = new Map<string, Promise<void>>()
 
-function learn(found: WriterUser[]) {
-  for (const person of found) {
+function rememberPeople(people: WriterUser[]) {
+  for (const person of people) {
     known.set(person.name, person)
   }
-  learned.value++
+  knownVersion.value++
 }
 
 /** Look a person up once by user id, for `fullName`. */
@@ -59,7 +59,7 @@ export function lookUp(user: string): Promise<void> {
   let lookup = lookups.get(user)
   if (!lookup) {
     lookup = searchUsers(user)
-      .then(learn)
+      .then(rememberPeople)
       .catch(() => {})
     lookups.set(user, lookup)
   }
@@ -69,7 +69,7 @@ export function lookUp(user: string): Promise<void> {
 
 /** A person's full name; their user id until the lookup answers. */
 export function fullName(user: string): string {
-  void learned.value
+  void knownVersion.value
   const found = known.get(user)
   if (!found) {
     void lookUp(user)

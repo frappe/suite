@@ -24,7 +24,7 @@ import { toast } from 'frappe-ui'
 import { computed, onBeforeUnmount, provide, ref, shallowRef } from 'vue'
 import * as Y from 'yjs'
 
-import { FIELD, withinTenSeconds } from '@/apps/writer/collab'
+import { BODY_FIELD, withinTenSeconds } from '@/apps/writer/collab'
 import { Carets, peopleOf } from '@/apps/writer/collab/carets'
 import { PasteSizeGuard } from '@/apps/writer/extensions/paste-size-guard'
 
@@ -39,8 +39,10 @@ const props = defineProps<{
 }>()
 
 const showSettings = defineModel('showSettings')
+
 const edited = ref(false)
 const textEditor = ref<InstanceType<typeof CoreEditor> | null>(null)
+
 const editor = computed(() => textEditor.value?.editor)
 provide('editor', editor)
 
@@ -48,19 +50,21 @@ const presence = props.room.presence
 const roster = shallowRef(presence?.peers ?? [])
 const stopListening = presence?.onChange(() => (roster.value = presence.peers))
 onBeforeUnmount(() => stopListening?.())
+
 const peers = computed(() => peopleOf(roster.value))
 defineExpose({ editor, peers })
 
 // Collaborative documents carry no comments yet
 const comments = new Y.Doc().getMap('comments')
+
 const extensions = [
-  Collaboration.configure({ document: props.room.doc, field: FIELD }),
+  Collaboration.configure({ document: props.room.doc, field: BODY_FIELD }),
   Carets.configure({ presence }),
   PasteSizeGuard.configure({
     limits: () => props.room.limits,
     atLimit: () => props.room.atLimit,
-    tooLarge: () => toast.error('This is too large to add in one go. Add it in smaller parts.'),
-    nearFull: () => toast.warning('This document is nearly full. Some changes may not save.'),
+    onTooLarge: () => toast.error('This is too large to add in one go. Add it in smaller parts.'),
+    onNearFull: () => toast.warning('This document is nearly full. Some changes may not save.'),
   }),
 ]
 

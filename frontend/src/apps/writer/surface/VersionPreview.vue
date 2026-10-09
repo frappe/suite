@@ -23,30 +23,32 @@ const props = defineProps<{
 }>()
 
 const media = inject(DOCUMENT_MEDIA, null)
+
 const editor = shallowRef<Editor | null>(null)
 const loading = ref(true)
 const failed = ref(false)
-let request = 0
 
-async function show(seq: number) {
-  const current = ++request
+let latestRequest = 0
+
+async function showVersion(seq: number) {
+  const thisRequest = ++latestRequest
   loading.value = !editor.value
 
   try {
     const content = await fetchVersion(seq)
-    if (current !== request) return
+    if (thisRequest !== latestRequest) return
 
-    const shown = editor.value
+    const previousEditor = editor.value
     failed.value = false
     editor.value = previewEditor(content)
     await nextTick()
-    shown?.destroy()
+    previousEditor?.destroy()
   } catch {
-    if (current === request) {
+    if (thisRequest === latestRequest) {
       failed.value = true
     }
   } finally {
-    if (current === request) {
+    if (thisRequest === latestRequest) {
       loading.value = false
     }
   }
@@ -76,9 +78,10 @@ function previewEditor(content: VersionContent) {
   return new Editor(options)
 }
 
-watch(() => props.seq, show, { immediate: true })
+watch(() => props.seq, showVersion, { immediate: true })
+
 onBeforeUnmount(() => {
-  request++
+  latestRequest++
   editor.value?.destroy()
 })
 </script>

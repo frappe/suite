@@ -10,7 +10,7 @@ export interface Banner {
   after?: string
 }
 
-export interface Standing {
+export interface BannerState {
   blocked: Blocked | null
   // Why the room will never save this tab's work
   stopped: string | null
@@ -19,7 +19,7 @@ export interface Standing {
   // A newer editor wrote to the document, so this tab only shows it
   newerSchema: boolean
   // The person may edit the document in an editor that can show it
-  editor: boolean
+  canEdit: boolean
   // Why saving waits
   paused: string | null
   // Saving stopped with work unsent
@@ -28,7 +28,7 @@ export interface Standing {
   atLimit: boolean
   onDevice: boolean
   // The editor's HTML was kept in this browser as a recovery copy
-  kept: boolean
+  recoveryKept: boolean
   // An earlier room of this page set its unsent work aside as a recovery copy
   setAside: boolean
   unsent: number
@@ -36,25 +36,27 @@ export interface Standing {
   polling: boolean
 }
 
-const STOPS: Record<string, string> = {
+const STOP_MESSAGES: Record<string, string> = {
   poison: "This document can't hold a change made in this tab, so saving stopped.",
   browser: "This document can't be edited in this browser version.",
   too_large: 'A change in this tab is too large to save. Insert large images as files.',
   document_full: "This document is at its size limit, so a change in this tab couldn't be saved.",
 }
 // Stops a reload would only repeat
-const LASTING = new Set(['browser'])
+const LASTING_STOPS = new Set(['browser'])
 
 // Waits that say why changes aren't saving yet; other pauses clear on their own too soon to mention
-const PAUSES: Record<string, string> = {
+const PAUSE_MESSAGES: Record<string, string> = {
   upload_refused: 'Your network is refusing uploads',
 }
 
 // While saving goes on: a full document, or a rebuilt room after the stopped one's work went to a recovery copy
 function savingBanner(atLimit: boolean, setAside: boolean): Banner | null {
   if (atLimit) {
-    const moved = setAside ? ' Your latest changes went to a recovery copy.' : ''
-    return { text: `This document is at its size limit.${moved} Delete content to free space.` }
+    const setAsideNote = setAside ? ' Your latest changes went to a recovery copy.' : ''
+    return {
+      text: `This document is at its size limit.${setAsideNote} Delete content to free space.`,
+    }
   }
 
   if (!setAside) return null
@@ -67,31 +69,32 @@ export function bannerFor({
   stopped,
   held,
   newerSchema,
-  editor,
+  canEdit,
   paused,
   failed,
   atLimit,
   onDevice,
-  kept,
+  recoveryKept,
   setAside,
   unsent,
   polling,
-}: Standing): Banner | null {
-  const waiting = paused && Object.hasOwn(PAUSES, paused) ? PAUSES[paused] : null
-  const interrupted = blocked || held || newerSchema || waiting || failed
+}: BannerState): Banner | null {
+  const pauseMessage =
+    paused && Object.hasOwn(PAUSE_MESSAGES, paused) ? PAUSE_MESSAGES[paused] : null
+  const interrupted = blocked || held || newerSchema || pauseMessage || failed
   if (!interrupted) {
-    const late = polling
+    const pollingBanner = polling
       ? { text: "Live updates are unavailable, so others' changes show up late." }
       : null
-    return savingBanner(atLimit, setAside) ?? late
+    return savingBanner(atLimit, setAside) ?? pollingBanner
   }
 
-  const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
+  const recoveryNote = recoveryKept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
   const unblocked = !blocked && !stopped
   if (newerSchema && unblocked) {
-    const reloadTo = editor ? 'edit it' : 'see its latest changes'
+    const reloadTo = canEdit ? 'edit it' : 'see its latest changes'
     return { text: `This document was edited in a newer version of Writer. Reload to ${reloadTo}.` }
   }
 
@@ -111,14 +114,14 @@ export function bannerFor({
     return { text: `${text} Your unsent changes save once it is released.${keepOpen}` }
   }
 
-  if (waiting && unblocked) {
+  if (pauseMessage && unblocked) {
     if (onDevice) {
       return {
-        text: `${waiting}, so your latest changes aren't saved. They're kept on this device.`,
+        text: `${pauseMessage}, so your latest changes aren't saved. They're kept on this device.`,
       }
     }
 
-    return { text: `${waiting}, so your latest changes aren't saved.${keepOpen}` }
+    return { text: `${pauseMessage}, so your latest changes aren't saved.${keepOpen}` }
   }
 
   switch (blocked) {
@@ -140,7 +143,7 @@ export function bannerFor({
       return { text: "You're offline and this browser can't keep changes, so editing is paused." }
     case 'stale_session':
       return {
-        text: `You signed in again in another tab.${onDevice ? '' : copy} Reload to keep saving.`,
+        text: `You signed in again in another tab.${onDevice ? '' : recoveryNote} Reload to keep saving.`,
       }
     case 'other_user':
       if (onDevice) {
@@ -149,16 +152,16 @@ export function bannerFor({
         }
       }
 
-      return { text: `Someone else is now signed in here.${copy} Reload to continue.` }
+      return { text: `Someone else is now signed in here.${recoveryNote} Reload to continue.` }
     case 'lost_edit':
-      return { text: `You can no longer edit this document.${copy}` }
+      return { text: `You can no longer edit this document.${recoveryNote}` }
     case 'lost_read':
-      return { text: `You can no longer open this document.${copy}` }
+      return { text: `You can no longer open this document.${recoveryNote}` }
     default: {
-      const known = stopped && Object.hasOwn(STOPS, stopped) ? stopped : null
-      const reason = known ? STOPS[known] : 'Saving stopped in this tab.'
-      const reload = known && LASTING.has(known) ? '' : ' Reload to keep editing.'
-      return { text: `${reason}${copy}${reload}` }
+      const knownStop = stopped && Object.hasOwn(STOP_MESSAGES, stopped) ? stopped : null
+      const reason = knownStop ? STOP_MESSAGES[knownStop] : 'Saving stopped in this tab.'
+      const reloadHint = knownStop && LASTING_STOPS.has(knownStop) ? '' : ' Reload to keep editing.'
+      return { text: `${reason}${recoveryNote}${reloadHint}` }
     }
   }
 }

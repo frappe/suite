@@ -92,6 +92,7 @@ interface EditorSurface {
 }
 
 const props = defineProps<{ session: DocumentSession }>()
+
 const editorSurface = shallowRef<EditorSurface | null>(null)
 /** The editor's own unsaved flag, bound to its `dirty` model. */
 const dirty = ref(false)
@@ -100,12 +101,15 @@ const showComments = ref(false)
 const showVersions = ref(false)
 const threads = ref<CommentThread[]>([])
 const versions = ref<VersionRow[]>([])
-const previewing = ref<VersionRow | null>(null)
-const sidePanel = computed(() => showComments.value || showVersions.value)
+const previewedVersion = ref<VersionRow | null>(null)
+
+const showSidePanel = computed(() => showComments.value || showVersions.value)
+
 const versionsCursor = ref<string | null>(null)
 const loadingMoreVersions = ref(false)
 const panelLoading = ref(false)
 const commentText = ref('')
+
 // Guests may sign their comments. Signed-in users never see the field (spec §10.5).
 const {
   shown: showGuestName,
@@ -114,11 +118,13 @@ const {
   maxLength: guestNameMaxLength,
   take: takeGuestName,
 } = useDriveGuestName()
+
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
+
 const {
-  mode: collab,
+  mode: collabMode,
   room,
-  live: collabLive,
+  isLive: collabLive,
   allowsEditing,
   editingPaused,
   saveState: roomSaveState,
@@ -144,11 +150,14 @@ const writes = createWriteGate(props.session, () => {
     action: { label: 'Download my changes', onClick: downloadChanges },
   })
 })
+
 const writerDocument = createWriterDocument(props.session)
+
 const version = useMutation(api.drive.versions.create, {
   context: props.session.credentials.context,
   silent: true,
 })
+
 const automaticVersion: DocumentWrite = {
   get isPending() {
     return version.isPending
@@ -158,32 +167,41 @@ const automaticVersion: DocumentWrite = {
   },
   run: () => version.run({ node: props.session.nodeId, kind: 'auto' }),
 }
+
 const documentResource = writes.guard(
   reactive({ ...toRefs(writerDocument), newVersion: automaticVersion }) as WriterDocumentResource,
   ['saveDoc', 'saveHtml', 'newVersion'],
 )
 
 const readable = computed(() => props.session.state.value !== 'Refused' && writes.role.value >= 10)
+
 const canComment = computed(
   () => props.session.state.value === 'Active' && writes.role.value >= COMMENT,
 )
+
 const saving = computed(
   () => !!documentResource.saveDoc?.isPending || !!documentResource.saveHtml?.isPending,
 )
+
 const saveFailed = computed(
   () => !!documentResource.saveDoc?.error || !!documentResource.saveHtml?.error,
 )
+
 const resourceSaveState = computed<DocumentSaveState>(() =>
   saving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean',
 )
+
 const saveState = computed<DocumentSaveState>(() => roomSaveState.value ?? resourceSaveState.value)
 const savingPaused = computed(() => !!roomPaused.value && saveState.value !== 'failed')
+
 const saveNote = computed(() =>
   [savingPaused.value && 'Saving paused', roomUnsent.value && `${roomUnsent.value} unsent`]
     .filter(Boolean)
     .join(' · '),
 )
+
 const settings = computed(() => documentResource.doc?.settings ?? {})
+
 const editable = computed(
   () =>
     readable.value &&
@@ -192,9 +210,11 @@ const editable = computed(
     allowsEditing.value &&
     !belowMinBuild('writer'),
 )
+
 const showEditingPaused = computed(
   () => !editable.value && editingPaused.value && writes.writable.value,
 )
+
 const fakeFileResource = computed(() => ({
   doc: {
     name: props.session.nodeId,
@@ -203,7 +223,9 @@ const fakeFileResource = computed(() => ({
     modified: new Date().toISOString(),
   },
 }))
+
 const peers = computed(() => editorSurface.value?.peers ?? [])
+
 /** The editor that shows this document, with the props only it takes. */
 const editorView = computed(() => {
   if (collabLive.value && room.value) {
@@ -240,13 +262,16 @@ const editorView = computed(() => {
 })
 
 provide('file', fakeFileResource)
+
 provide(
   'isOffline',
   computed(() => !online.value),
 )
+
 provide(RENAME_DOCUMENT, async (title) => {
   await props.session.rename(title)
 })
+
 provide(DOCUMENT_MEDIA, (id) => props.session.media(id))
 
 // A save that lands with edit access makes the recovery copy stale.
@@ -288,11 +313,13 @@ function versionLabel(version: VersionRow) {
 }
 
 async function closePreview() {
-  const row = document.querySelector<HTMLElement>('aside button[aria-pressed="true"]')
-  previewing.value = null
+  const pressedVersionButton = document.querySelector<HTMLElement>(
+    'aside button[aria-pressed="true"]',
+  )
+  previewedVersion.value = null
   await nextTick()
-  if (row) {
-    row.focus()
+  if (pressedVersionButton) {
+    pressedVersionButton.focus()
   } else {
     editorSurface.value?.editor?.commands.focus()
   }
@@ -372,16 +399,19 @@ function setOnline() {
   online.value = true
   void room.value?.pull()
 }
+
 function setOffline() {
   online.value = false
   void room.value?.pull()
 }
+
 onMounted(() => {
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
   window.addEventListener('beforeunload', warnBeforeUnload)
   void openCollab()
 })
+
 onBeforeUnmount(() => {
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
@@ -449,12 +479,12 @@ onBeforeUnmount(() => {
           You no longer have permission to read this document.
         </p>
       </div>
-      <div v-else-if="collab === 'failed'" class="m-auto text-center">
+      <div v-else-if="collabMode === 'failed'" class="m-auto text-center">
         <p class="text-p-sm text-ink-gray-6">{{ openFailure }}</p>
         <Button class="mt-3" label="Try again" @click="openCollab" />
       </div>
       <div
-        v-else-if="!documentResource.doc || collab === 'opening'"
+        v-else-if="!documentResource.doc || collabMode === 'opening'"
         class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10"
       >
         <Skeleton
@@ -474,19 +504,19 @@ onBeforeUnmount(() => {
             :settings="settings"
             :editable="editable"
           >
-            <template v-if="previewing" #toolbar>
+            <template v-if="previewedVersion" #toolbar>
               <div
                 class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-elevation-2 px-5 py-1.5"
                 role="status"
               >
                 <p class="truncate text-sm text-ink-gray-7">
-                  Viewing {{ versionLabel(previewing) }}
+                  Viewing {{ versionLabel(previewedVersion) }}
                 </p>
                 <Button size="sm" variant="ghost" label="Back to current" @click="closePreview" />
               </div>
             </template>
-            <template v-if="previewing" #cover>
-              <VersionPreview :session="session" :seq="previewing.seq" :settings="settings" />
+            <template v-if="previewedVersion" #cover>
+              <VersionPreview :session="session" :seq="previewedVersion.seq" :settings="settings" />
             </template>
             <template #aside>
               <Transition
@@ -496,7 +526,7 @@ onBeforeUnmount(() => {
                 leave-to-class="md:!w-0"
               >
                 <aside
-                  v-if="sidePanel"
+                  v-if="showSidePanel"
                   :aria-label="showComments ? 'Comments' : 'Versions'"
                   class="absolute bottom-0 right-0 top-0 z-20 w-full overflow-hidden border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl md:static md:w-80 md:shrink-0 md:border-outline-gray-2 md:bg-surface-base md:shadow-none"
                 >
@@ -582,12 +612,12 @@ onBeforeUnmount(() => {
                           type="button"
                           class="block w-full rounded-4 p-3 text-left"
                           :class="
-                            previewing?.seq === version.seq
+                            previewedVersion?.seq === version.seq
                               ? 'bg-surface-gray-3'
                               : 'bg-surface-gray-1 hover:bg-surface-gray-2'
                           "
-                          :aria-pressed="previewing?.seq === version.seq"
-                          @click="previewing = version"
+                          :aria-pressed="previewedVersion?.seq === version.seq"
+                          @click="previewedVersion = version"
                         >
                           <p class="text-sm-medium text-ink-gray-8">{{ versionLabel(version) }}</p>
                           <p class="text-p-xs text-ink-gray-5">

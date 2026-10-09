@@ -1,36 +1,36 @@
 import { describe, expect, it } from 'vitest'
 
-import { bannerFor, openFailureFor, type Banner, type Standing } from './collabMessages'
+import { bannerFor, openFailureFor, type Banner, type BannerState } from './collabMessages'
 
 // What the banner reads on the page, with the link standing for its words
-function read(banner: Banner | null) {
+function pageText(banner: Banner | null) {
   if (!banner) return banner
 
   const link = banner.link ? `[${banner.link.label}]` : ''
   return `${banner.text}${link}${banner.after ?? ''}`
 }
 
-const standing = {
+const defaultState = {
   blocked: null,
   stopped: null,
   held: null,
   newerSchema: false,
-  editor: true,
+  canEdit: true,
   paused: null,
   failed: false,
   atLimit: false,
   onDevice: true,
-  kept: false,
+  recoveryKept: false,
   setAside: false,
   unsent: 1,
   polling: false,
 } as const
 
-// What the banner reads for a room that differs from the default standing in `changes`
-function bannerText(changes: Partial<Standing>) {
-  const changed = { ...standing, ...changes }
+// What the banner reads for a room that differs from the default state in `changes`
+function bannerText(changes: Partial<BannerState>) {
+  const changed = { ...defaultState, ...changes }
   const banner = bannerFor(changed)
-  return read(banner)
+  return pageText(banner)
 }
 
 describe('collab banner copy', () => {
@@ -70,7 +70,7 @@ describe('collab banner copy', () => {
     expect(bannerText({ blocked: 'stale_session' })).toBe(
       'You signed in again in another tab. Reload to keep saving.',
     )
-    expect(bannerText({ blocked: 'stale_session', onDevice: false, kept: true })).toBe(
+    expect(bannerText({ blocked: 'stale_session', onDevice: false, recoveryKept: true })).toBe(
       'You signed in again in another tab. Unsent changes were kept as a recovery copy. Reload to keep saving.',
     )
   })
@@ -82,17 +82,17 @@ describe('collab banner copy', () => {
     expect(bannerText({ blocked: 'other_user', onDevice: false })).toBe(
       'Someone else is now signed in here. Reload to continue.',
     )
-    expect(bannerText({ blocked: 'other_user', onDevice: false, kept: true })).toBe(
+    expect(bannerText({ blocked: 'other_user', onDevice: false, recoveryKept: true })).toBe(
       'Someone else is now signed in here. Unsent changes were kept as a recovery copy. Reload to continue.',
     )
   })
 
   it('names the recovery copy after a lost right or a stop', () => {
-    expect(bannerText({ blocked: 'lost_edit', kept: true })).toBe(
+    expect(bannerText({ blocked: 'lost_edit', recoveryKept: true })).toBe(
       'You can no longer edit this document. Unsent changes were kept as a recovery copy.',
     )
     expect(bannerText({ blocked: 'lost_read' })).toBe('You can no longer open this document.')
-    expect(bannerText({ failed: true, kept: true })).toBe(
+    expect(bannerText({ failed: true, recoveryKept: true })).toBe(
       'Saving stopped in this tab. Unsent changes were kept as a recovery copy. Reload to keep editing.',
     )
   })
@@ -100,19 +100,19 @@ describe('collab banner copy', () => {
 
 describe('collab stop copy', () => {
   it('says why the server will never save a change', () => {
-    expect(bannerText({ failed: true, stopped: 'poison', kept: true })).toBe(
+    expect(bannerText({ failed: true, stopped: 'poison', recoveryKept: true })).toBe(
       "This document can't hold a change made in this tab, so saving stopped. Unsent changes were kept as a recovery copy. Reload to keep editing.",
     )
   })
 
   it('says a change too large to save should go in as files', () => {
-    expect(bannerText({ failed: true, stopped: 'too_large', kept: true })).toBe(
+    expect(bannerText({ failed: true, stopped: 'too_large', recoveryKept: true })).toBe(
       'A change in this tab is too large to save. Insert large images as files. Unsent changes were kept as a recovery copy. Reload to keep editing.',
     )
   })
 
   it('says a change a full document refused could not be saved, and where it went', () => {
-    expect(bannerText({ failed: true, stopped: 'document_full', kept: true })).toBe(
+    expect(bannerText({ failed: true, stopped: 'document_full', recoveryKept: true })).toBe(
       "This document is at its size limit, so a change in this tab couldn't be saved. Unsent changes were kept as a recovery copy. Reload to keep editing.",
     )
   })
@@ -127,7 +127,7 @@ describe('collab stop copy', () => {
   })
 
   it('says nothing while saving goes on, unless an earlier room set edits aside', () => {
-    expect(bannerFor(standing)).toBeNull()
+    expect(bannerFor(defaultState)).toBeNull()
     expect(bannerText({ setAside: true })).toBe(
       "Your last edits couldn't be saved here and were kept as a recovery copy.",
     )
@@ -143,7 +143,7 @@ describe('collab stop copy', () => {
   })
 
   it('does not offer a reload for a stop a reload would only repeat', () => {
-    expect(bannerText({ failed: true, stopped: 'browser', kept: true })).toBe(
+    expect(bannerText({ failed: true, stopped: 'browser', recoveryKept: true })).toBe(
       "This document can't be edited in this browser version. Unsent changes were kept as a recovery copy.",
     )
   })
@@ -173,7 +173,7 @@ describe('collab stop copy', () => {
   })
 
   it('asks a reader to reload to see the changes, not to edit', () => {
-    expect(bannerText({ newerSchema: true, editor: false, unsent: 0 })).toBe(
+    expect(bannerText({ newerSchema: true, canEdit: false, unsent: 0 })).toBe(
       'This document was edited in a newer version of Writer. Reload to see its latest changes.',
     )
   })

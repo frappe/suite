@@ -31,6 +31,7 @@ const setBarHeight = (height) =>
 
 let observer
 let editorDom
+
 watchEffect(() => {
   observer?.disconnect()
   if (!bar.value) return setBarHeight(0)
@@ -40,11 +41,13 @@ watchEffect(() => {
 
 // doc isn't reactive, so re-derive on every update
 const tabs = ref([])
+
 const updateTabs = () => {
   tabs.value = listTabs(props.editor)
 }
 
 const activeTabId = ref(props.editor.storage.tab?.activeTabId ?? null)
+
 const handleTabChange = (e) => {
   activeTabId.value = e.detail.tabId
 }

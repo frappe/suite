@@ -15,16 +15,16 @@ type KernelInput = {
 
 // The Node child the server runs on demand: {checkpoint, rows} in base64 on stdin, a verdict
 // and the bundled Yjs version on stdout
-const chunks: Buffer[] = []
+const stdinChunks: Buffer[] = []
 
 const judgeInput = () => {
   // Trusted as kernel.py's own request; anything else throws, and the server sees the child fail
-  const inputText = Buffer.concat(chunks).toString()
+  const inputText = Buffer.concat(stdinChunks).toString()
   const input = JSON.parse(inputText) as KernelInput
 
-  const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64'))
-  const checkpoint = input.checkpoint ? bytes(input.checkpoint) : null
-  const rows = input.rows.map(bytes)
+  const fromBase64 = (base64: string) => new Uint8Array(Buffer.from(base64, 'base64'))
+  const checkpoint = input.checkpoint ? fromBase64(input.checkpoint) : null
+  const rows = input.rows.map(fromBase64)
   const verdict = judge(checkpoint, rows, writerFault)
 
   const reply = {
@@ -34,5 +34,5 @@ const judgeInput = () => {
   process.stdout.write(JSON.stringify(reply))
 }
 
-process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk))
+process.stdin.on('data', (chunk: Buffer) => stdinChunks.push(chunk))
 process.stdin.on('end', judgeInput)

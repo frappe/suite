@@ -221,6 +221,7 @@ const updateTabs = () => {
 
 // Get active tab ID
 const activeTabId = ref()
+
 onMounted(() => {
   updateTabs()
   props.editor.on('update', updateTabs)
