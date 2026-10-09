@@ -2208,7 +2208,6 @@ import { planFill } from '../../engine/fill-series.js'
 import { formatScope } from '../../engine/format-scope.js'
 import { createFormatsEngine } from '../../engine/formats.js'
 import { adjustFormula } from '../../engine/formula-adjust.js'
-import { getFunctionNames } from '../../engine/formula.js'
 import { createHistory } from '../../engine/history.js'
 import { detectHyperlink, isAutoLinkText } from '../../engine/links.js'
 import { createMergeEngine } from '../../engine/merge.js'
@@ -2226,6 +2225,7 @@ import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
 import { isCanvasClipboardTarget } from '../../utils/clipboard-target.js'
 import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/format-number.js'
+import { AC_FUN_KEYS } from '../../utils/formula-ac.js'
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
 import { overlayRectStyle } from '../../utils/overlay-rect.js'
 import { userInitials } from '../../utils/session.js'
@@ -2372,7 +2372,9 @@ const pivot = createPivotEngine()
 const charts = createChartEngine()
 // Named ranges: the validator hook prevents users from defining names that
 // collide with the formula engine's built-in functions (SUM, VLOOKUP, etc.).
-const _builtinFns = new Set(getFunctionNames())
+// The functions autocomplete offers (each one IronCalc evaluates; see
+// core/function-catalog.test.js).
+const _builtinFns = new Set(AC_FUN_KEYS)
 const namedRanges = createNamedRanges({
   isBuiltinFunction: (n) => _builtinFns.has(n),
 })

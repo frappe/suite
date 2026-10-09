@@ -637,7 +637,7 @@ From ADR 0001; each maps to a mitigation in this spec.
 | No dependency DAG upstream | Heavy docs pay seconds per edit | Top upstream contribution target ("use dependency DAG" issue); vendored fork is the fallback (MIT) |
 | No batch range-read API | Per-cell read loop per viewport | Loop confined to the worker; upstream contribution target |
 | No history-free bulk load | Snapshot replay costs undo-history memory | Upstream contribution target; replay uses the `batch` + `pauseEvaluation` path in the adapter |
-| Two-person upstream, pre-1.0 | Breaking changes between releases | Version pinning gated by `engine/difftest/ironcalc.test.ts` |
+| Two-person upstream, pre-1.0 | Breaking changes between releases | Version pinning gated by `core/ironcalc-gate/ironcalc-gate.test.js` |
 | Engine panics on edge input | Poisoned wasm instance | Snapshot + command-log recovery: rebuild worker from last snapshot, replay |
 | Merged cells not on npm | `merge.js` interim layer (section 6) | Migrate when released |
 | `zip` 0.6.6 unmaintained (xlsx path) | Sidecar-only exposure | xlsx confined to sidecar; monitor upstream |
@@ -653,10 +653,12 @@ From ADR 0001; each maps to a mitigation in this spec.
 - Fixtures are generated, not stored. A helper builds a workbook by
   dispatching commands, so fixtures exercise the real write path and stay
   valid as the schema moves (decision 2).
-- Difftest gate. `engine/difftest/ironcalc.test.ts` runs on every
-  `@ironcalc/wasm` version bump; agreement must not regress from the
-  0.8.4 baseline (99.91% corpus agreement, 15/16 curated,
-  `engine/difftest/IRONCALC-REPORT.md`).
+- Upgrade gate. `core/ironcalc-gate/ironcalc-gate.test.js` runs with every
+  test run: 15/16 curated Excel answers, and a seeded corpus of 2000
+  formulas whose answers are snapshotted from 0.8.4. A version bump that
+  changes an answer fails until the diff is reviewed and the snapshot
+  updated (`docs/sheets-ironcalc/IRONCALC-REPORT.md` has the original
+  measurements).
 - Command-log fuzz and convergence suite, extending `core/workbook.test.ts`
   (its "determinism" describe block is the seed): random command streams,
   seeded, applied to two workbook instances and to
