@@ -8188,7 +8188,9 @@ const { pushEditOp: _pushEditOp } = useEditOps({
 // onCellChanged repaint, and the lazy render path (grid `getDisplay`), so all
 // three render identical pixels. showFormulas mode paints raw formula text.
 function _cellDisplay(id) {
-  if (showFormulas.value) return _inputAt(id) ?? ''
+  // The fresh input, or the last one painted while it is re-read (asking
+  // for it is what queues the read), so the mode doesn't flash blank.
+  if (showFormulas.value) return _inputAt(id) ?? _paintedInput(id) ?? ''
   // A sparkline paints a chart, not IronCalc's #NAME?.
   if (parseSparkline(_paintedInput(id))) return ''
   const sn = currentSheet.value
@@ -8311,7 +8313,10 @@ function _showInputInFormulaBar(id, sn = currentSheet.value) {
         formulaValue.value = cells[0]?.input ?? ''
       }
     })
-    .catch((e) => console.error('[sheets] readCells failed', e))
+    .catch((e) => {
+      // Stopping the engine (leaving the page) rejects reads still in flight.
+      if (_engine) console.error('[sheets] readCells failed', e)
+    })
 }
 
 // Re-reads the active cell's input after an edit that may have written it
@@ -8447,7 +8452,9 @@ function _refreshUsedCells() {
       _usedMax = ids.length ? { maxRow, maxCol } : null
       if (grid && _usedMax) _expandGridTo(_usedMax.maxCol, _usedMax.maxRow)
     })
-    .catch((e) => console.error('[sheets] reading used cells failed', e))
+    .catch((e) => {
+      if (_engine) console.error('[sheets] reading used cells failed', e) // see readCells
+    })
     .finally(() => {
       _usedReading = false
       if (_usedStale) {
