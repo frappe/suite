@@ -41,17 +41,17 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+const waitForUpdates = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const image = (src: string, attrs: object = {}) => ({
   type: 'image',
   attrs: { src, ...attrs },
 })
-const pic = (src: string, attrs: object = {}) => ({
+const imageParagraph = (src: string, attrs: object = {}) => ({
   type: 'paragraph',
   content: [image(src, attrs)],
 })
-const p = (text: string) => ({
+const paragraph = (text: string) => ({
   type: 'paragraph',
   content: [{ type: 'text', text }],
 })
@@ -60,8 +60,8 @@ const doc = (...content: object[]): JSONContent => ({
   content,
 })
 
-function extensions(ydoc: Y.Doc | null) {
-  const comments = new Y.Doc()
+function editorExtensions(ydoc: Y.Doc | null) {
+  const commentsDoc = new Y.Doc()
   const options: WriterEditorOptions = {
     collaborative: !!ydoc,
     mentionItems: () => [],
@@ -70,25 +70,25 @@ function extensions(ydoc: Y.Doc | null) {
     onAnchors: () => {},
     scrollParent: () => window,
     media: null,
-    comments: comments.getMap('comments'),
-    ydoc: comments,
+    comments: commentsDoc.getMap('comments'),
+    ydoc: commentsDoc,
     activeComment: ref(null),
     showComments: ref(false),
     showResolved: ref(false),
     edited: ref(false),
     onCommentsPainted: () => {},
   }
-  const writer = writerEditorExtensions(options)
-  if (!ydoc) return writer
+  const baseExtensions = writerEditorExtensions(options)
+  if (!ydoc) return baseExtensions
 
   const collaboration = {
     document: ydoc,
     field: 'default',
   }
-  return [...writer, Collaboration.configure(collaboration)]
+  return [...baseExtensions, Collaboration.configure(collaboration)]
 }
 
-function open(content: JSONContent | Y.Doc, collaborative = true) {
+function openEditor(content: JSONContent | Y.Doc, collaborative = true) {
   let ydoc: Y.Doc | null = null
   if (content instanceof Y.Doc) {
     ydoc = content
@@ -106,7 +106,7 @@ function open(content: JSONContent | Y.Doc, collaborative = true) {
   ydoc?.on('update', countWrite)
 
   const editorOptions = {
-    extensions: extensions(ydoc),
+    extensions: editorExtensions(ydoc),
     ...(!ydoc && { content: content as JSONContent }),
   }
   const editor = new Editor(editorOptions)
@@ -118,51 +118,51 @@ function open(content: JSONContent | Y.Doc, collaborative = true) {
   }
 }
 
-const type = (editor: Editor, text = 'y') =>
+const typeAtEnd = (editor: Editor, text = 'y') =>
   editor.commands.insertContentAt(editor.state.doc.content.size - 1, text)
 
-const sizes = (editor: Editor, name = 'image') => {
-  const found: [unknown, unknown][] = []
-  const collect = (node: ProseMirrorNode) => {
+const mediaSizes = (editor: Editor, name = 'image') => {
+  const sizes: [unknown, unknown][] = []
+  const collectSize = (node: ProseMirrorNode) => {
     if (node.type.name === name) {
-      found.push([node.attrs.width, node.attrs.height])
+      sizes.push([node.attrs.width, node.attrs.height])
     }
   }
-  editor.state.doc.descendants(collect)
+  editor.state.doc.descendants(collectSize)
 
-  return found
+  return sizes
 }
 
 describe.each([
   ['a plain', false],
   ['a collaborative', true],
 ])('media sizes in %s document', (_, collaborative) => {
-  const stored = doc(pic('/files/old.png'), p('x'))
+  const stored = doc(imageParagraph('/files/old.png'), paragraph('x'))
 
   it('writes nothing when the document opens', async () => {
-    const { editor, writes } = open(stored, collaborative)
+    const { editor, writes } = openEditor(stored, collaborative)
     const updated = vi.fn()
     editor.on('update', updated)
-    await settle()
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([[null, null]])
+    expect(mediaSizes(editor)).toEqual([[null, null]])
     expect(updated).not.toHaveBeenCalled()
     expect(writes()).toBe(0)
   })
 
   it('sizes stored media right after the first edit the person makes', async () => {
-    const { editor } = open(stored, collaborative)
-    await settle()
-    type(editor)
+    const { editor } = openEditor(stored, collaborative)
+    await waitForUpdates()
+    typeAtEnd(editor)
     await Promise.resolve()
 
     expect(editor.state.doc.textContent).toBe('xy')
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('sends the sizes after the edit, kept out of history', async () => {
-    const { editor } = open(stored, collaborative)
-    await settle()
+    const { editor } = openEditor(stored, collaborative)
+    await waitForUpdates()
     const sent: Transaction[] = []
     const recordChange = ({ transaction }: { transaction: Transaction }) => {
       if (transaction.docChanged) {
@@ -170,7 +170,7 @@ describe.each([
       }
     }
     editor.on('transaction', recordChange)
-    type(editor)
+    typeAtEnd(editor)
     await Promise.resolve()
 
     expect(sent).toHaveLength(2)
@@ -180,62 +180,62 @@ describe.each([
   })
 
   it("undoes the person's edit, not the sizing", async () => {
-    const { editor } = open(stored, collaborative)
-    await settle()
-    type(editor)
-    await settle()
+    const { editor } = openEditor(stored, collaborative)
+    await waitForUpdates()
+    typeAtEnd(editor)
+    await waitForUpdates()
     editor.commands.undo()
-    await settle()
+    await waitForUpdates()
 
     expect(editor.state.doc.textContent).toBe('x')
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('does not size an image that undo brings back', async () => {
-    const { editor } = open(stored, collaborative)
-    await settle()
+    const { editor } = openEditor(stored, collaborative)
+    await waitForUpdates()
     editor.commands.deleteRange({ from: 1, to: 2 })
-    await settle()
+    await waitForUpdates()
     editor.commands.undo()
-    await settle()
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([[null, null]])
+    expect(mediaSizes(editor)).toEqual([[null, null]])
   })
 })
 
 describe('media sizes', () => {
   it('leaves media alone when a collaborator changes the document', async () => {
-    const { editor } = open(doc(pic('/files/old.png'), p('x')))
-    await settle()
+    const { editor } = openEditor(doc(imageParagraph('/files/old.png'), paragraph('x')))
+    await waitForUpdates()
     const theirImage = editor.schema.nodes.image.create({ src: '/files/theirs.png' })
     const received = editor.state.tr
       .insert(1, theirImage)
       .setMeta(ySyncPluginKey, { isChangeOrigin: true })
     editor.view.dispatch(received)
-    await settle()
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([
+    expect(mediaSizes(editor)).toEqual([
       [null, null],
       [null, null],
     ])
   })
 
   it("sizes only what the person's edit owed, not a collaborator's later image", async () => {
-    let measured = (_size: Size) => {}
-    measure.mockImplementationOnce(() => new Promise((resolve) => (measured = resolve)))
-    const { editor } = open(doc(pic('/files/old.png'), p('x')))
-    type(editor)
+    let finishMeasuring = (_size: Size) => {}
+    measure.mockImplementationOnce(() => new Promise((resolve) => (finishMeasuring = resolve)))
+    const { editor } = openEditor(doc(imageParagraph('/files/old.png'), paragraph('x')))
+    typeAtEnd(editor)
     const theirImage = editor.schema.nodes.image.create({ src: '/files/theirs.png' })
     const received = editor.state.tr
       .insert(1, theirImage)
       .setMeta(ySyncPluginKey, { isChangeOrigin: true })
     editor.view.dispatch(received)
-    await settle()
+    await waitForUpdates()
 
-    measured({ width: 100, height: 50 })
-    await settle()
+    finishMeasuring({ width: 100, height: 50 })
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([
+    expect(mediaSizes(editor)).toEqual([
       [null, null],
       [100, 50],
     ])
@@ -243,129 +243,137 @@ describe('media sizes', () => {
 
   it('does not give an image the size of the file it replaced', async () => {
     measure.mockImplementationOnce(async () => ({ width: 7, height: 7 }))
-    const { editor } = open(doc(pic('/files/old.png'), p('x')))
+    const { editor } = openEditor(doc(imageParagraph('/files/old.png'), paragraph('x')))
     const replaced = editor.state.tr
       .setNodeAttribute(1, 'src', '/files/new.png')
       .setMeta(ySyncPluginKey, { isChangeOrigin: true })
     editor.view.dispatch(replaced)
-    await settle()
-    type(editor)
-    await settle()
+    await waitForUpdates()
+    typeAtEnd(editor)
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('sizes stored media after an edit that came before it was measured', async () => {
-    let measured = (_size: Size) => {}
-    measure.mockImplementationOnce(() => new Promise((resolve) => (measured = resolve)))
-    const { editor } = open(doc(pic('/files/old.png'), p('x')))
-    type(editor)
-    await settle()
-    expect(sizes(editor)).toEqual([[null, null]])
+    let finishMeasuring = (_size: Size) => {}
+    measure.mockImplementationOnce(() => new Promise((resolve) => (finishMeasuring = resolve)))
+    const { editor } = openEditor(doc(imageParagraph('/files/old.png'), paragraph('x')))
+    typeAtEnd(editor)
+    await waitForUpdates()
+    expect(mediaSizes(editor)).toEqual([[null, null]])
 
-    measured({ width: 100, height: 50 })
-    await settle()
+    finishMeasuring({ width: 100, height: 50 })
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('sizes an image the person inserts', async () => {
-    const { editor } = open(doc(p('x')))
+    const { editor } = openEditor(doc(paragraph('x')))
     editor.commands.insertContentAt(0, image('/files/new.png'))
-    await settle()
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('sizes stored media when its attributes change', async () => {
-    const { editor } = open(doc(pic('/files/old.png'), p('x')))
-    await settle()
+    const { editor } = openEditor(doc(imageParagraph('/files/old.png'), paragraph('x')))
+    await waitForUpdates()
     editor.view.dispatch(editor.state.tr.setNodeAttribute(1, 'align', 'left'))
     await Promise.resolve()
 
     expect(editor.state.doc.nodeAt(1)!.attrs.align).toBe('left')
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('fills only the side that is missing', async () => {
-    const { editor } = open(doc(pic('/files/old.png', { width: 300 }), p('x')))
-    await settle()
-    type(editor)
+    const { editor } = openEditor(
+      doc(imageParagraph('/files/old.png', { width: 300 }), paragraph('x')),
+    )
+    await waitForUpdates()
+    typeAtEnd(editor)
     await Promise.resolve()
 
-    expect(sizes(editor)).toEqual([[300, 50]])
+    expect(mediaSizes(editor)).toEqual([[300, 50]])
   })
 
   it('measures a source once for every image that uses it', async () => {
-    const { editor } = open(doc(pic('/files/a.png'), pic('/files/a.png'), p('x')))
-    await settle()
-    type(editor)
+    const { editor } = openEditor(
+      doc(imageParagraph('/files/a.png'), imageParagraph('/files/a.png'), paragraph('x')),
+    )
+    await waitForUpdates()
+    typeAtEnd(editor)
     await Promise.resolve()
 
     expect(measure).toHaveBeenCalledTimes(1)
-    expect(sizes(editor)).toEqual([
+    expect(mediaSizes(editor)).toEqual([
       [100, 50],
       [100, 50],
     ])
   })
 
   it('measures a source once when a menu registers a plugin', async () => {
-    const { editor } = open(doc(pic('/files/a.png'), p('x')))
-    await settle()
+    const { editor } = openEditor(doc(imageParagraph('/files/a.png'), paragraph('x')))
+    await waitForUpdates()
     editor.registerPlugin(new Plugin({ key: new PluginKey('menu') }))
-    await settle()
-    type(editor)
-    await settle()
+    await waitForUpdates()
+    typeAtEnd(editor)
+    await waitForUpdates()
 
     expect(measure).toHaveBeenCalledTimes(1)
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('leaves loaded content as it came until the person edits', async () => {
-    const { editor } = open(doc(p('x')), false)
-    editor.commands.setContent(doc(pic('/files/loaded.png'), p('x')), { emitUpdate: false })
-    await settle()
-    expect(sizes(editor)).toEqual([[null, null]])
+    const { editor } = openEditor(doc(paragraph('x')), false)
+    editor.commands.setContent(doc(imageParagraph('/files/loaded.png'), paragraph('x')), {
+      emitUpdate: false,
+    })
+    await waitForUpdates()
+    expect(mediaSizes(editor)).toEqual([[null, null]])
 
-    type(editor)
+    typeAtEnd(editor)
     await Promise.resolve()
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('sizes content set with an update event', async () => {
-    const { editor } = open(doc(p('x')), false)
-    editor.commands.setContent(doc(pic('/files/set.png'), p('x')), { emitUpdate: true })
-    await settle()
+    const { editor } = openEditor(doc(paragraph('x')), false)
+    editor.commands.setContent(doc(imageParagraph('/files/set.png'), paragraph('x')), {
+      emitUpdate: true,
+    })
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('sizes an image once its upload finishes', async () => {
-    const { editor } = open(doc(p('x')))
+    const { editor } = openEditor(doc(paragraph('x')))
     editor.commands.insertContentAt(0, image('blob:pending', { loading: true }))
-    await settle()
+    await waitForUpdates()
     expect(measure).not.toHaveBeenCalled()
 
     const uploaded = editor.state.tr
       .setNodeAttribute(1, 'src', '/files/done.png')
       .setNodeAttribute(1, 'loading', false)
     editor.view.dispatch(uploaded)
-    await settle()
+    await waitForUpdates()
 
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('measures again on the next change when a file could not be measured', async () => {
     measure.mockRejectedValueOnce(new Error('offline'))
-    const { editor } = open(doc(pic('/files/old.png'), p('x')))
-    await settle()
-    expect(sizes(editor)).toEqual([[null, null]])
+    const { editor } = openEditor(doc(imageParagraph('/files/old.png'), paragraph('x')))
+    await waitForUpdates()
+    expect(mediaSizes(editor)).toEqual([[null, null]])
 
-    type(editor)
-    await settle()
+    typeAtEnd(editor)
+    await waitForUpdates()
 
     expect(measure).toHaveBeenCalledTimes(2)
-    expect(sizes(editor)).toEqual([[100, 50]])
+    expect(mediaSizes(editor)).toEqual([[100, 50]])
   })
 
   it('sizes a stored video right after the first edit', async () => {
@@ -378,40 +386,40 @@ describe('media sizes', () => {
       queueMicrotask(() => this.onloadedmetadata?.(new Event('loadedmetadata')))
     }
     vi.spyOn(HTMLVideoElement.prototype, 'src', 'set').mockImplementation(loadMetadata)
-    const stop = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
+    const loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
     const video = {
       type: 'video',
       attrs: { src: '/files/clip.mp4' },
     }
-    const { editor } = open(doc(video, p('x')))
-    await settle()
-    expect(sizes(editor, 'video')).toEqual([[null, null]])
-    expect(stop).toHaveBeenCalledTimes(1)
+    const { editor } = openEditor(doc(video, paragraph('x')))
+    await waitForUpdates()
+    expect(mediaSizes(editor, 'video')).toEqual([[null, null]])
+    expect(loadSpy).toHaveBeenCalledTimes(1)
 
-    type(editor)
-    await settle()
+    typeAtEnd(editor)
+    await waitForUpdates()
 
-    expect(sizes(editor, 'video')).toEqual([[640, 360]])
+    expect(mediaSizes(editor, 'video')).toEqual([[640, 360]])
   })
 })
 
 it('does not size an image that undo brings back with a fix-up', async () => {
-  const h = (text: string) => ({
+  const heading = (text: string) => ({
     type: 'heading',
     attrs: { level: 2 },
     content: [{ type: 'text', text }],
   })
-  const { editor } = open(doc(pic('/files/old.png'), h('End')), false)
-  await settle()
+  const { editor } = openEditor(doc(imageParagraph('/files/old.png'), heading('End')), false)
+  await waitForUpdates()
   editor.commands.deleteRange({ from: 1, to: 2 })
-  await settle()
+  await waitForUpdates()
   expect(editor.state.doc.lastChild!.type.name).toBe('paragraph')
 
   editor.commands.undo()
-  await settle()
+  await waitForUpdates()
 
   expect(editor.state.doc.lastChild!.type.name).toBe('paragraph')
-  expect(sizes(editor)).toEqual([[null, null]])
+  expect(mediaSizes(editor)).toEqual([[null, null]])
 })
 
 describe('media sizes with collaborators', () => {
@@ -419,41 +427,41 @@ describe('media sizes with collaborators', () => {
     const schema = getSchema(writerSchema())
     const source = prosemirrorJSONToYDoc(schema, content, 'default')
     const stored = Y.encodeStateAsUpdate(source)
-    const [a, b] = [new Y.Doc(), new Y.Doc()]
-    Y.applyUpdate(a, stored, 'remote')
-    Y.applyUpdate(b, stored, 'remote')
+    const [docA, docB] = [new Y.Doc(), new Y.Doc()]
+    Y.applyUpdate(docA, stored, 'remote')
+    Y.applyUpdate(docB, stored, 'remote')
 
     const relayTo = (target: Y.Doc) => (update: Uint8Array, origin: unknown) => {
       if (origin !== 'remote') {
         Y.applyUpdate(target, update, 'remote')
       }
     }
-    a.on('update', relayTo(b))
-    b.on('update', relayTo(a))
-    return [open(a), open(b)]
+    docA.on('update', relayTo(docB))
+    docB.on('update', relayTo(docA))
+    return [openEditor(docA), openEditor(docB)]
   }
 
   it('sends the edit and then the sizes, and both clients undo only the edit', async () => {
-    const [mine, theirs] = pair(doc(pic('/files/old.png'), p('x')))
-    await settle()
+    const [mine, theirs] = pair(doc(imageParagraph('/files/old.png'), paragraph('x')))
+    await waitForUpdates()
     expect(mine.writes()).toBe(0)
 
-    type(mine.editor)
-    await settle()
+    typeAtEnd(mine.editor)
+    await waitForUpdates()
     expect(mine.writes()).toBe(2)
     expect(theirs.writes()).toBe(0)
     expect(theirs.editor.state.doc.textContent).toBe('xy')
-    expect(sizes(theirs.editor)).toEqual([[100, 50]])
+    expect(mediaSizes(theirs.editor)).toEqual([[100, 50]])
 
     mine.editor.commands.undo()
-    await settle()
+    await waitForUpdates()
     for (const { editor } of [mine, theirs]) {
       expect(editor.state.doc.textContent).toBe('x')
-      expect(sizes(editor)).toEqual([[100, 50]])
+      expect(mediaSizes(editor)).toEqual([[100, 50]])
     }
 
     mine.editor.commands.redo()
-    await settle()
+    await waitForUpdates()
     expect(theirs.editor.state.doc.textContent).toBe('xy')
   })
 })

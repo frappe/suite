@@ -19,7 +19,7 @@ export const JoinAdjacentLists = Extension.create({
         appendTransaction(transactions, oldState, newState) {
           if (!transactions.some((tr) => tr.docChanged)) return
 
-          const changed = changedRanges(transactions)
+          const editedRanges = changedRanges(transactions)
 
           // Boundary position (start of `child`) for every pair of adjacent
           // same-type list siblings. `descendants` skips the doc node itself,
@@ -32,7 +32,7 @@ export const JoinAdjacentLists = Extension.create({
               const boundary = pos + 1 + offset
               const sameListType =
                 JOINABLE.has(child.type.name) && child.type === node.child(index - 1).type
-              if (sameListType && touches(changed, boundary - 1, boundary + 1)) {
+              if (sameListType && touches(editedRanges, boundary - 1, boundary + 1)) {
                 boundaries.push(boundary)
               }
             })

@@ -8,8 +8,8 @@ import { ReplaceStep, type Step } from '@tiptap/pm/transform'
 export interface PasteSizeGuardOptions {
   limits: () => Limits | null
   atLimit: () => boolean
-  tooLarge: () => void
-  nearFull: () => void
+  onTooLarge: () => void
+  onNearFull: () => void
 }
 
 // No less than what content costs once saved, bar the splits of another writer's text the server adds
@@ -23,9 +23,9 @@ function contentBytes(content: Fragment) {
 function removesOnly(step: Step, doc: Node) {
   if (!(step instanceof ReplaceStep) || step.from >= step.to) return false
 
-  let writes = false
+  let writesInline = false
   const noteInline = (node: Node) => {
-    writes ||= node.isInline
+    writesInline ||= node.isInline
   }
   step.slice.content.descendants(noteInline)
 
@@ -34,14 +34,14 @@ function removesOnly(step: Step, doc: Node) {
   const endsInText = $to.parent.isTextblock
   const crossesBlocks = !$to.sameParent($from)
   const keepsTextAfter = $to.parentOffset < $to.parent.content.size
-  const joins = endsInText && crossesBlocks && keepsTextAfter
-  return !writes && !joins
+  const joinsBlocks = endsInText && crossesBlocks && keepsTextAfter
+  return !writesInline && !joinsBlocks
 }
 
 const deletesOnly = (tr: Transaction) => tr.steps.every((step, i) => removesOnly(step, tr.docs[i]))
 
 export interface PasteSizeGuardStorage {
-  refuses: (content: Fragment, tooLarge?: () => void) => boolean
+  refuses: (content: Fragment, reportTooLarge?: () => void) => boolean
 }
 
 // A change too big for one save is refused before it enters the document, so it is never stuck unsaved
@@ -53,32 +53,32 @@ export const PasteSizeGuard = Extension.create<PasteSizeGuardOptions, PasteSizeG
     return {
       limits: () => null,
       atLimit: () => false,
-      tooLarge: () => {},
-      nearFull: () => {},
+      onTooLarge: () => {},
+      onNearFull: () => {},
     }
   },
 
   // An import asks here before it inserts, as a paste does
   addStorage() {
-    const { limits, atLimit, tooLarge, nearFull } = this.options
+    const { limits, atLimit, onTooLarge, onNearFull } = this.options
     return {
-      refuses: (content: Fragment, tell = tooLarge) => {
-        const fit = sizeCheck(limits(), contentBytes(content))
-        if (fit === 'too_large') {
-          tell()
+      refuses: (content: Fragment, reportTooLarge = onTooLarge) => {
+        const sizeStatus = sizeCheck(limits(), contentBytes(content))
+        if (sizeStatus === 'too_large') {
+          reportTooLarge()
         }
         // At the limit the banner already says so
-        if (fit === 'near_full' && !atLimit()) {
-          nearFull()
+        if (sizeStatus === 'near_full' && !atLimit()) {
+          onNearFull()
         }
-        return fit === 'too_large'
+        return sizeStatus === 'too_large'
       },
     }
   },
 
   // A document at its limit takes only deletes until a compaction makes room, so nothing else is typed
   addProseMirrorPlugins() {
-    const refuse = (slice: Slice) => this.storage.refuses(slice.content)
+    const refusesSlice = (slice: Slice) => this.storage.refuses(slice.content)
     const { atLimit } = this.options
     const spec: PluginSpec<unknown> = {
       key: new PluginKey('pasteSizeGuard'),
@@ -88,8 +88,8 @@ export const PasteSizeGuard = Extension.create<PasteSizeGuardOptions, PasteSizeG
         return isChangeOrigin(tr) || deletesOnly(tr)
       },
       props: {
-        handlePaste: (_view, _event, slice) => refuse(slice),
-        handleDrop: (_view, _event, slice, moved) => !moved && refuse(slice),
+        handlePaste: (_view, _event, slice) => refusesSlice(slice),
+        handleDrop: (_view, _event, slice, moved) => !moved && refusesSlice(slice),
       },
     }
 

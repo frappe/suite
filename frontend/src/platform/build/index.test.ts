@@ -1,36 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const info = vi.fn()
-vi.mock('frappe-ui', () => ({ toast: { info } }))
+const toastInfo = vi.fn()
+vi.mock('frappe-ui', () => ({ toast: { info: toastInfo } }))
 vi.mock('@/platform/translation', () => ({
   translate: (text: string, replace: string[] = []) => text.replace('{0}', replace[0]),
 }))
 
-const respond = (headers: Record<string, string>) =>
+const fakeFetch = (headers: Record<string, string>) =>
   vi.fn(async () => new Response('{}', { headers }))
 
-async function tabOnBuild(build: string, server: Record<string, string>) {
+async function tabOnBuild(build: string, serverHeaders: Record<string, string>) {
   vi.resetModules()
   vi.stubGlobal('__SUITE_BUILD__', build)
   vi.stubEnv('DEV', false)
-  vi.stubGlobal('fetch', respond(server))
-  const module = await import('./index')
-  module.watchBuild()
+  vi.stubGlobal('fetch', fakeFetch(serverHeaders))
+  const buildModule = await import('./index')
+  buildModule.watchBuild()
   await window.fetch('/api/method/ping')
-  return module
+  return buildModule
 }
 
 describe('build watcher', () => {
-  beforeEach(() => info.mockClear())
+  beforeEach(() => toastInfo.mockClear())
 
   it('offers a reload once when the server runs a newer build', async () => {
     await tabOnBuild('200', { 'X-Suite-Build': '100' })
-    expect(info).not.toHaveBeenCalled()
+    expect(toastInfo).not.toHaveBeenCalled()
 
     await tabOnBuild('100', { 'X-Suite-Build': '200' })
     await window.fetch('/api/method/ping')
-    expect(info).toHaveBeenCalledOnce()
-    expect(info.mock.calls[0][1].action.label).toBe('Reload')
+    expect(toastInfo).toHaveBeenCalledOnce()
+    expect(toastInfo.mock.calls[0][1].action.label).toBe('Reload')
   })
 
   it('turns a product read-only below its minimum build and says why', async () => {
@@ -41,6 +41,6 @@ describe('build watcher', () => {
 
     expect(tab.belowMinBuild('writer')).toBe(true)
     expect(tab.belowMinBuild('slides')).toBe(false)
-    expect(info.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Writer.')
+    expect(toastInfo.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Writer.')
   })
 })

@@ -15,18 +15,18 @@ import { ySyncPluginKey } from '@tiptap/y-tiptap'
 
 type Range = [number, number]
 
-const key = new PluginKey<Range[] | null>('receivedContentGuard')
+const guardKey = new PluginKey<Range[] | null>('receivedContentGuard')
 
-function touched(tr: Transaction) {
+function rangesChangedBy(tr: Transaction) {
   const ranges: Range[] = []
-  const collect = (step: Step, i: number) => {
-    const after = tr.mapping.slice(i + 1)
+  const collectStepRanges = (step: Step, i: number) => {
+    const laterMapping = tr.mapping.slice(i + 1)
     const addRange = (_from: number, _to: number, from: number, to: number) => {
-      ranges.push([after.map(from, -1), after.map(to, 1)])
+      ranges.push([laterMapping.map(from, -1), laterMapping.map(to, 1)])
     }
     step.getMap().forEach(addRange)
   }
-  tr.steps.forEach(collect)
+  tr.steps.forEach(collectStepRanges)
 
   return ranges
 }
@@ -37,7 +37,10 @@ const mapRanges = (ranges: Range[], mapping: Mappable) =>
 // Where `transactions` changed the document, in the last one's positions.
 // Normalizers fix only there, or the guard refuses their whole transaction
 export const changedRanges = (transactions: readonly Transaction[], ranges: Range[] = []) =>
-  transactions.reduce((all, tr) => [...mapRanges(all, tr.mapping), ...touched(tr)], ranges)
+  transactions.reduce(
+    (rangesSoFar, tr) => [...mapRanges(rangesSoFar, tr.mapping), ...rangesChangedBy(tr)],
+    ranges,
+  )
 
 export const touches = (ranges: Range[], from: number, to = from) =>
   ranges.some(([start, end]) => from <= end && start <= to)
@@ -66,60 +69,64 @@ function settlesToOneValue(step: Step, doc: Node) {
 
 // Every viewer runs the same normalizers, and Yjs keeps each viewer's copy of
 // an insert, so normalizers may only follow up the user's own edits, where they made them.
-export const ReceivedContentGuard = Extension.create<object, { root: Transaction | null }>({
+export const ReceivedContentGuard = Extension.create<
+  object,
+  { rootTransaction: Transaction | null }
+>({
   name: 'receivedContentGuard',
 
   addStorage() {
-    return { root: null }
+    return { rootTransaction: null }
   },
 
   dispatchTransaction({ transaction, next }) {
-    this.storage.root = transaction
+    this.storage.rootTransaction = transaction
     try {
       next(transaction)
     } finally {
-      this.storage.root = null
+      this.storage.rootTransaction = null
     }
   },
 
   addProseMirrorPlugins() {
     const storage = this.storage
     const spec: PluginSpec<Range[] | null> = {
-      key,
+      key: guardKey,
       state: {
         init: () => null,
         apply: (tr, ranges) => {
-          const { root } = storage
-          if (tr === root) {
-            const ownEdit = root.docChanged && !root.getMeta(ySyncPluginKey)?.isChangeOrigin
-            if (!ownEdit) return null
+          const { rootTransaction } = storage
+          if (tr === rootTransaction) {
+            const isOwnEdit =
+              rootTransaction.docChanged && !rootTransaction.getMeta(ySyncPluginKey)?.isChangeOrigin
+            if (!isOwnEdit) return null
 
-            return touched(tr)
+            return rangesChangedBy(tr)
           }
 
-          if (!root || !ranges) return null
+          if (!rootTransaction || !ranges) return null
 
           return changedRanges([tr], ranges)
         },
       },
       filterTransaction: (tr, state) => {
-        const { root } = storage
-        if (!root || tr === root || !tr.docChanged) return true
+        const { rootTransaction } = storage
+        if (!rootTransaction || tr === rootTransaction || !tr.docChanged) return true
 
-        const ranges = key.getState(state)
+        const ranges = guardKey.getState(state)
         if (!ranges) return false
 
         const staysInside = (step: Step, i: number) => {
           if (settlesToOneValue(step, tr.docs[i])) return true
 
           const mappingBefore = tr.mapping.slice(0, i)
-          const allowed = mapRanges(ranges, mappingBefore)
-          let inside = true
+          const allowedRanges = mapRanges(ranges, mappingBefore)
+          let isInside = true
           const checkRange = (from: number, to: number) => {
-            inside &&= touches(allowed, from, to)
+            isInside &&= touches(allowedRanges, from, to)
           }
           step.getMap().forEach(checkRange)
-          return inside
+          return isInside
         }
 
         return tr.steps.every(staysInside)

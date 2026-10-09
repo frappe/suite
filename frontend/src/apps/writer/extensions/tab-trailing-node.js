@@ -12,14 +12,14 @@ const TabTrailingNode = Extension.create({
         key: new PluginKey('tabTrailingNode'),
         appendTransaction(transactions, oldState, newState) {
           const { doc, tr, schema } = newState
-          const changed = changedRanges(transactions)
+          const editedRanges = changedRanges(transactions)
           let modified = false
 
           doc.forEach((node, offset, index) => {
             if (node.type.name === 'tab') {
               const lastChild = node.lastChild
               const endPos = offset + node.nodeSize - 1
-              if (lastChild.type === schema.nodes.table && touches(changed, endPos)) {
+              if (lastChild.type === schema.nodes.table && touches(editedRanges, endPos)) {
                 const insertAt = tr.mapping.map(endPos)
                 tr.insert(insertAt, schema.nodes.paragraph.create())
                 modified = true
@@ -28,7 +28,7 @@ const TabTrailingNode = Extension.create({
               const tableEnd = offset + node.nodeSize
               const isTable = node.type === schema.nodes.table
               const tabFollows = doc.maybeChild(index + 1)?.type.name === 'tab'
-              if (isTable && tabFollows && touches(changed, tableEnd)) {
+              if (isTable && tabFollows && touches(editedRanges, tableEnd)) {
                 // The first tab's content ends here, before the other tabs
                 const insertAt = tr.mapping.map(tableEnd)
                 tr.insert(insertAt, schema.nodes.paragraph.create())

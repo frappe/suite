@@ -8,11 +8,11 @@ import * as Y from 'yjs'
 
 import { listTabs, orderedTabs, TabsExtension, tabsIn } from './tabs'
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+const waitForUpdates = () => new Promise((resolve) => setTimeout(resolve, 20))
 
 const editors: Editor[] = []
 afterEach(async () => {
-  await settle()
+  await waitForUpdates()
   editors.splice(0).forEach((editor) => editor.destroy())
 })
 
@@ -112,7 +112,7 @@ describe('ordered serialisation', () => {
   })
 })
 
-function open(ydoc = new Y.Doc()) {
+function openPeer(ydoc = new Y.Doc()) {
   const element = document.createElement('div')
   document.body.append(element)
   const collaboration = {
@@ -128,55 +128,55 @@ function open(ydoc = new Y.Doc()) {
   return { ydoc, editor }
 }
 
-const sync = (a: Y.Doc, b: Y.Doc) => {
-  const missingInA = Y.encodeStateAsUpdate(b, Y.encodeStateVector(a))
-  Y.applyUpdate(a, missingInA, 'remote')
-  const missingInB = Y.encodeStateAsUpdate(a, Y.encodeStateVector(b))
-  Y.applyUpdate(b, missingInB, 'remote')
+const syncDocs = (first: Y.Doc, second: Y.Doc) => {
+  const missingInFirst = Y.encodeStateAsUpdate(second, Y.encodeStateVector(first))
+  Y.applyUpdate(first, missingInFirst, 'remote')
+  const missingInSecond = Y.encodeStateAsUpdate(first, Y.encodeStateVector(second))
+  Y.applyUpdate(second, missingInSecond, 'remote')
 }
 
 const textOf = (editor: Editor) =>
   editor.state.doc.textBetween(0, editor.state.doc.content.size, '|')
 
-const untabbed = () => {
-  const author = open()
+const untabbedPeer = () => {
+  const author = openPeer()
   author.editor.commands.setContent('<p>Hello</p>')
   return author
 }
 
 describe('the first tab', () => {
   it('adding a tab keeps what someone else is typing', async () => {
-    const a = untabbed()
-    const b = open()
-    sync(a.ydoc, b.ydoc)
-    await settle()
+    const peerA = untabbedPeer()
+    const peerB = openPeer()
+    syncDocs(peerA.ydoc, peerB.ydoc)
+    await waitForUpdates()
 
-    a.editor.commands.createTab({ label: 'Second' })
-    b.editor.commands.insertContentAt(6, ' world')
-    sync(a.ydoc, b.ydoc)
-    await settle()
+    peerA.editor.commands.createTab({ label: 'Second' })
+    peerB.editor.commands.insertContentAt(6, ' world')
+    syncDocs(peerA.ydoc, peerB.ydoc)
+    await waitForUpdates()
 
-    expect(textOf(a.editor)).toBe('Hello world|')
-    expect(textOf(b.editor)).toBe('Hello world|')
-    expect(a.editor.state.doc.firstChild!.type.name).toBe('paragraph')
+    expect(textOf(peerA.editor)).toBe('Hello world|')
+    expect(textOf(peerB.editor)).toBe('Hello world|')
+    expect(peerA.editor.state.doc.firstChild!.type.name).toBe('paragraph')
   })
 
   it('shows an untabbed document as one tab whose label other editors see', async () => {
-    const a = untabbed()
-    const b = open()
-    sync(a.ydoc, b.ydoc)
-    await settle()
-    expect(listTabs(a.editor)).toEqual([{ id: 'main', label: 'Untitled' }])
+    const peerA = untabbedPeer()
+    const peerB = openPeer()
+    syncDocs(peerA.ydoc, peerB.ydoc)
+    await waitForUpdates()
+    expect(listTabs(peerA.editor)).toEqual([{ id: 'main', label: 'Untitled' }])
 
-    a.editor.commands.renameTab('main', 'Notes', false)
-    sync(a.ydoc, b.ydoc)
+    peerA.editor.commands.renameTab('main', 'Notes', false)
+    syncDocs(peerA.ydoc, peerB.ydoc)
 
-    expect(listTabs(b.editor)).toEqual([{ id: 'main', label: 'Notes' }])
-    expect(tabsIn(b.editor.state.doc)).toHaveLength(0)
+    expect(listTabs(peerB.editor)).toEqual([{ id: 'main', label: 'Notes' }])
+    expect(tabsIn(peerB.editor.state.doc)).toHaveLength(0)
   })
 
   it('hides its content while another tab is open', async () => {
-    const { editor } = untabbed()
+    const { editor } = untabbedPeer()
     editor.commands.createTab({ id: 'second', label: 'Second' })
     editor.commands.changeTab('second', false)
 
@@ -186,7 +186,7 @@ describe('the first tab', () => {
   })
 
   it('getHTML writes it as a tab of its own next to other tabs', () => {
-    const { editor } = untabbed()
+    const { editor } = untabbedPeer()
     editor.commands.renameTab('main', 'Notes', false)
     editor.commands.createTab({ id: 'second', label: 'Second' })
 
@@ -204,7 +204,7 @@ describe('the first tab', () => {
   })
 
   it('stays first when other tabs are reordered', () => {
-    const { editor } = untabbed()
+    const { editor } = untabbedPeer()
     editor.commands.createTab({ id: 'b', label: 'b' })
     editor.commands.createTab({ id: 'c', label: 'c' })
 
@@ -216,14 +216,14 @@ describe('the first tab', () => {
   it('opens the first saved tab once a tabbed document loads', async () => {
     const saved = makeEditor(['a', 'b'])
     const stored = new Y.Doc()
-    const author = open(stored)
+    const author = openPeer(stored)
     author.editor.commands.setContent(saved.getHTML())
-    const viewer = open()
-    await settle()
+    const viewer = openPeer()
+    await waitForUpdates()
     expect(viewer.editor.storage.tab.activeTabId).toBe('main')
 
-    sync(stored, viewer.ydoc)
-    await settle()
+    syncDocs(stored, viewer.ydoc)
+    await waitForUpdates()
 
     expect(viewer.editor.storage.tab.activeTabId).toBe('tab-a')
   })

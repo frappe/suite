@@ -38,26 +38,35 @@ import { describeFailure, TransportError } from '@/platform/transport'
 
 const route = useRoute()
 const router = useRouter()
+
 const session = shallowRef<DocumentSession | null>(null)
 const surface = shallowRef<Component | null>(null)
 const loading = shallowRef(true)
 const error = shallowRef('')
+
 // A password link answered `401 DriveLocked`: the unlock screen shows in place (spec §10.2).
 const locked = shallowRef(false)
+
 // Present only in the guest frame, where a refused node shows the Sign-in screen (spec §10.8).
 const guestFrame = inject(GUEST_FRAME_KEY, null)
+
 const reopen = shallowRef(0)
+
 let opening = 0
 
 const nodeId = computed(() => String(route.params.node ?? ''))
+
 // Until the session answers, the tab keeps the route's title: the name the
 // opener put on this history entry, otherwise "Opening…". The skeleton header
 // shows the same name. The entry is current once the route is.
 const openingTitle = computed(() =>
   nodeId.value ? historyOpeningTitle(router.options.history.state) : null,
 )
+
 usePageTitle(() => session.value?.title.value ?? '')
+
 const downloadUrl = computed(() => nodeContentUrl(nodeId.value, { download: true }))
+
 const refused = computed(
   () => session.value?.state.value === 'Refused' || (session.value?.access.value.role ?? 0) < 10,
 )
@@ -167,9 +176,10 @@ function present(next: DocumentSession | null, nextSurface: Component | null) {
 
 function failureMessage(reason: unknown) {
   const status = reason instanceof TransportError ? reason.status : null
-  const described = describeFailure(status)
-  const fallback = reason instanceof Error ? reason.message : 'This document could not be opened.'
-  return described ?? fallback
+  const statusMessage = describeFailure(status)
+  const fallbackMessage =
+    reason instanceof Error ? reason.message : 'This document could not be opened.'
+  return statusMessage ?? fallbackMessage
 }
 
 async function replaceDecorativeSlug(opened: DocumentSession) {

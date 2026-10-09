@@ -14,9 +14,9 @@ import { ReceivedContentGuard } from './received-content-guard'
 const editors: Editor[] = []
 afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+const waitForUpdates = () => new Promise((resolve) => setTimeout(resolve, 20))
 
-function open(state: Uint8Array) {
+function openViewer(state: Uint8Array) {
   const ydoc = new Y.Doc()
   Y.applyUpdate(ydoc, state, 'server')
   let writes = 0
@@ -85,16 +85,16 @@ const headingIds = (editor: Editor) => {
 
 describe('heading anchors', () => {
   it('opening a document whose headings lack ids writes nothing', async () => {
-    const viewer = open(legacyDoc('Intro', 'Intro', 'Usage'))
-    await settle()
+    const viewer = openViewer(legacyDoc('Intro', 'Intro', 'Usage'))
+    await waitForUpdates()
 
     expect(viewer.writes()).toBe(0)
     expect(headingIds(viewer.editor)).toEqual([null, null, null])
   })
 
   it('gives those headings working table-of-contents links', async () => {
-    const viewer = open(legacyDoc('Intro', 'Intro', 'Usage'))
-    await settle()
+    const viewer = openViewer(legacyDoc('Intro', 'Intro', 'Usage'))
+    await waitForUpdates()
 
     const anchors = viewer.anchors()
     expect(anchors.map((anchor) => anchor.textContent)).toEqual(['Intro', 'Intro', 'Usage'])
@@ -106,8 +106,8 @@ describe('heading anchors', () => {
   })
 
   it('editing gives the headings ids', async () => {
-    const viewer = open(legacyDoc('Intro', 'Usage'))
-    await settle()
+    const viewer = openViewer(legacyDoc('Intro', 'Usage'))
+    await waitForUpdates()
 
     viewer.editor.commands.insertContentAt(viewer.editor.state.doc.content.size, '<h2>New</h2>')
     const ids = headingIds(viewer.editor)

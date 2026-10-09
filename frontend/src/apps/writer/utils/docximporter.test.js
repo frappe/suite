@@ -419,14 +419,18 @@ describe('importDocx into a document with a size limit', () => {
     tail_bound: 0,
   }
 
-  function guarded(content) {
+  function guardedEditor(content) {
     const tooLarge = vi.fn()
     const extensions = [
       Document,
       Paragraph,
       Text,
       TabsExtension,
-      PasteSizeGuard.configure({ limits: () => limits, tooLarge, nearFull: () => {} }),
+      PasteSizeGuard.configure({
+        limits: () => limits,
+        onTooLarge: tooLarge,
+        onNearFull: () => {},
+      }),
     ]
     const editor = new Editor({ extensions, content })
     return { editor, tooLarge }
@@ -446,7 +450,7 @@ describe('importDocx into a document with a size limit', () => {
       }
     }
     convertToHtmlMock.mockImplementation(convertWithImage)
-    const { editor, tooLarge } = guarded('<p>Original text</p>')
+    const { editor, tooLarge } = guardedEditor('<p>Original text</p>')
 
     await importDocx(fakeFile('huge.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
 
@@ -463,7 +467,7 @@ describe('importDocx into a document with a size limit', () => {
 
   it('keeps the runs of spaces it measured', async () => {
     convertToHtmlMock.mockResolvedValue({ value: '<p>a   b</p>', messages: [] })
-    const { editor } = guarded('')
+    const { editor } = guardedEditor('')
 
     await importDocx(fakeFile('spaces.docx'), {
       editor: { value: editor },
@@ -475,7 +479,7 @@ describe('importDocx into a document with a size limit', () => {
 
   it('imports a document that fits in one save', async () => {
     convertToHtmlMock.mockResolvedValue({ value: `<p>${'y'.repeat(1500)}</p>`, messages: [] })
-    const { editor, tooLarge } = guarded('')
+    const { editor, tooLarge } = guardedEditor('')
 
     await importDocx(fakeFile('fits.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
 

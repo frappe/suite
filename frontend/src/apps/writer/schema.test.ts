@@ -11,7 +11,7 @@ import { writerSchema } from './schema'
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
 
-const editorSchema = (collaborative: boolean) => {
+const buildEditorSchema = (collaborative: boolean) => {
   const ydoc = new Y.Doc()
   const options: WriterEditorOptions = {
     collaborative,
@@ -53,12 +53,12 @@ const describeSchema = (schema: Schema) => {
 
 describe('writer schema', () => {
   it('holds every node and mark the editor does, with the same specs', () => {
-    const schema = getSchema(writerSchema())
+    const standaloneSchema = getSchema(writerSchema())
     for (const collaborative of [false, true]) {
-      const editor = editorSchema(collaborative)
-      expect(Object.keys(schema.nodes)).toEqual(Object.keys(editor.nodes))
-      expect(Object.keys(schema.marks)).toEqual(Object.keys(editor.marks))
-      expect(describeSchema(schema)).toEqual(describeSchema(editor))
+      const editorSchema = buildEditorSchema(collaborative)
+      expect(Object.keys(standaloneSchema.nodes)).toEqual(Object.keys(editorSchema.nodes))
+      expect(Object.keys(standaloneSchema.marks)).toEqual(Object.keys(editorSchema.marks))
+      expect(describeSchema(standaloneSchema)).toEqual(describeSchema(editorSchema))
     }
   })
 })

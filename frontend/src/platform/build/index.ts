@@ -3,26 +3,26 @@ import { ref } from 'vue'
 
 import { translate } from '@/platform/translation'
 
-const BUILD = Number(__SUITE_BUILD__)
+const PAGE_BUILD = Number(__SUITE_BUILD__)
 
 const minBuilds = ref<Record<string, string>>({})
 
 /** A product turns read-only in tabs older than its minimum build. */
-export const belowMinBuild = (product: string) => BUILD < Number(minBuilds.value[product] ?? 0)
+export const belowMinBuild = (product: string) => PAGE_BUILD < Number(minBuilds.value[product] ?? 0)
 
-let shown: string | null = null
+let shownBannerKey: string | null = null
 
 // Reload stays the person's choice, so a page still served stale can't loop
-function showBanner(paused: string[] = []) {
-  const state = paused.join()
-  if (shown !== null && shown.length >= state.length) return
+function showBanner(pausedProducts: string[] = []) {
+  const bannerKey = pausedProducts.join()
+  if (shownBannerKey !== null && shownBannerKey.length >= bannerKey.length) return
 
-  shown = state
-  const products = paused.map((product) => product[0].toUpperCase() + product.slice(1))
-  const description = products.length
-    ? translate('Reload to keep editing in {0}.', [products.join(', ')])
+  shownBannerKey = bannerKey
+  const productLabels = pausedProducts.map((product) => product[0].toUpperCase() + product.slice(1))
+  const description = productLabels.length
+    ? translate('Reload to keep editing in {0}.', [productLabels.join(', ')])
     : undefined
-  const reload = {
+  const reloadAction = {
     label: translate('Reload'),
     onClick: () => window.location.reload(),
   }
@@ -30,21 +30,21 @@ function showBanner(paused: string[] = []) {
     id: 'suite-newer-build',
     duration: Infinity,
     description,
-    action: reload,
+    action: reloadAction,
   }
   toast.info(translate('A newer version is available'), options)
 }
 
 function readHeaders(headers: Headers) {
-  const min = headers.get('X-Suite-Min-Builds')
-  if (min) {
-    minBuilds.value = JSON.parse(min)
+  const minBuildsHeader = headers.get('X-Suite-Min-Builds')
+  if (minBuildsHeader) {
+    minBuilds.value = JSON.parse(minBuildsHeader)
   }
 
-  const paused = Object.keys(minBuilds.value).filter(belowMinBuild)
-  if (paused.length) {
-    showBanner(paused)
-  } else if (Number(headers.get('X-Suite-Build')) > BUILD) {
+  const pausedProducts = Object.keys(minBuilds.value).filter(belowMinBuild)
+  if (pausedProducts.length) {
+    showBanner(pausedProducts)
+  } else if (Number(headers.get('X-Suite-Build')) > PAGE_BUILD) {
     showBanner()
   }
 }
@@ -52,9 +52,9 @@ function readHeaders(headers: Headers) {
 export function watchBuild() {
   if (import.meta.env.DEV) return
 
-  const fetch = window.fetch
+  const originalFetch = window.fetch
   window.fetch = async (...args) => {
-    const response = await fetch(...args)
+    const response = await originalFetch(...args)
     readHeaders(response.headers)
     return response
   }

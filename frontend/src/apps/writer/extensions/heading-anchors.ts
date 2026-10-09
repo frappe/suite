@@ -24,15 +24,15 @@ function renderedId(text: string, occurrence: number) {
 }
 
 function renderedAnchors(doc: Node) {
-  const seen = new Map<string, number>()
+  const occurrencesByText = new Map<string, number>()
   const decorations: Decoration[] = []
   const anchorHeading = (node: Node, pos: number) => {
     if (node.type.name !== 'heading') return
 
     if (!node.textContent || node.attrs['data-toc-id']) return false
 
-    const occurrence = seen.get(node.textContent) ?? 0
-    seen.set(node.textContent, occurrence + 1)
+    const occurrence = occurrencesByText.get(node.textContent) ?? 0
+    occurrencesByText.set(node.textContent, occurrence + 1)
     const id = renderedId(node.textContent, occurrence)
     const attrs = {
       id,
@@ -50,12 +50,12 @@ function renderedAnchors(doc: Node) {
 function withRenderedIds(anchors: Anchor[], scrollPosition: number) {
   if (anchors.every((anchor) => anchor.id)) return anchors
 
-  const seen = new Map<string, number>()
+  const occurrencesByText = new Map<string, number>()
   const withId = (anchor: Anchor) => {
     let id = anchor.id
     if (!id) {
-      const occurrence = seen.get(anchor.textContent) ?? 0
-      seen.set(anchor.textContent, occurrence + 1)
+      const occurrence = occurrencesByText.get(anchor.textContent) ?? 0
+      occurrencesByText.set(anchor.textContent, occurrence + 1)
       id = renderedId(anchor.textContent, occurrence)
     }
     return {
@@ -64,17 +64,18 @@ function withRenderedIds(anchors: Anchor[], scrollPosition: number) {
       isScrolledOver: scrollPosition >= anchor.dom.offsetTop,
     }
   }
-  const items = anchors.map(withId)
-  const active = items.findLast((item) => item.isScrolledOver)
-  return items.map((item) => ({ ...item, isActive: item === active }))
+  const anchorsWithIds = anchors.map(withId)
+  const activeAnchor = anchorsWithIds.findLast((item) => item.isScrolledOver)
+  return anchorsWithIds.map((item) => ({ ...item, isActive: item === activeAnchor }))
 }
 
-function anchorDecorations() {
+function anchorDecorationsPlugin() {
   const spec: PluginSpec<DecorationSet> = {
     key: new PluginKey('headingAnchorDecorations'),
     state: {
       init: (_config, state) => renderedAnchors(state.doc),
-      apply: (tr, set) => (tr.docChanged ? renderedAnchors(tr.doc) : set),
+      apply: (tr, previousDecorations) =>
+        tr.docChanged ? renderedAnchors(tr.doc) : previousDecorations,
     },
     props: {
       decorations(state) {
@@ -87,30 +88,30 @@ function anchorDecorations() {
 
 export const HeadingAnchors = TableOfContents.extend({
   onBeforeCreate() {
-    const onUpdate = this.options.onUpdate
+    const callerOnUpdate = this.options.onUpdate
     this.options.onUpdate = (anchors, isInitial) => {
       const anchorsWithIds = withRenderedIds(anchors as Anchor[], this.storage.scrollPosition)
-      onUpdate?.(anchorsWithIds as never, isInitial)
+      callerOnUpdate?.(anchorsWithIds as never, isInitial)
     }
   },
 
   onCreate(event) {
     const { view } = this.editor
-    const dispatch = view.dispatch
+    const originalDispatch = view.dispatch
     view.dispatch = (tr) => {
       if (!tr.docChanged) {
-        dispatch(tr)
+        originalDispatch(tr)
       }
     }
 
     try {
       this.parent?.(event)
     } finally {
-      view.dispatch = dispatch
+      view.dispatch = originalDispatch
     }
   },
 
   addProseMirrorPlugins() {
-    return [...this.parent!(), anchorDecorations()]
+    return [...this.parent!(), anchorDecorationsPlugin()]
   },
 })

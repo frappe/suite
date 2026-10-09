@@ -5,33 +5,33 @@ import { Image as StockImage, Video as StockVideo } from 'frappe-ui/editor'
 
 type Size = { width: number; height: number }
 
-const HEAL = 'heal'
+const HEAL_META = 'heal'
 
 type Resolve = (size: Size) => void
 type Reject = (error: unknown) => void
 
 function measureImage(src: string) {
-  const load = (resolve: Resolve, reject: Reject) => {
-    const img = new globalThis.Image()
-    img.onload = () => {
+  const loadImage = (resolve: Resolve, reject: Reject) => {
+    const image = new globalThis.Image()
+    image.onload = () => {
       const size: Size = {
-        width: img.naturalWidth,
-        height: img.naturalHeight,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
       }
       resolve(size)
     }
-    img.onerror = reject
-    img.src = src
+    image.onerror = reject
+    image.src = src
   }
 
-  return new Promise<Size>(load)
+  return new Promise<Size>(loadImage)
 }
 
 function measureVideo(src: string) {
   const loadMetadata = (resolve: Resolve, reject: Reject) => {
     const video = document.createElement('video')
 
-    const stop = () => {
+    const releaseVideo = () => {
       video.onloadedmetadata = video.onerror = null
       video.removeAttribute('src')
       video.load()
@@ -44,11 +44,11 @@ function measureVideo(src: string) {
         height: video.videoHeight,
       }
       resolve(size)
-      stop()
+      releaseVideo()
     }
     video.onerror = (error) => {
       reject(error)
-      stop()
+      releaseVideo()
     }
     video.src = src
   }
@@ -61,11 +61,11 @@ function measureVideo(src: string) {
 function isOwnEdit(tr: Transaction) {
   if (!tr.docChanged) return false
 
-  const root: Transaction = tr.getMeta('appendedTransaction') ?? tr
-  const loaded = root.getMeta('preventUpdate')
-  const undoneOrRedone = root.getMeta('history$')
-  const healed = root.getMeta(HEAL)
-  const received = root.getMeta(ySyncPluginKey)?.isChangeOrigin
+  const rootTransaction: Transaction = tr.getMeta('appendedTransaction') ?? tr
+  const loaded = rootTransaction.getMeta('preventUpdate')
+  const undoneOrRedone = rootTransaction.getMeta('history$')
+  const healed = rootTransaction.getMeta(HEAL_META)
+  const received = rootTransaction.getMeta(ySyncPluginKey)?.isChangeOrigin
   return !loaded && !undoneOrRedone && !healed && !received
 }
 
@@ -74,46 +74,46 @@ function isOwnEdit(tr: Transaction) {
 // sizes out of them. Opening or receiving a document writes nothing
 export function healSizes(nodeName: string, measure: (src: string) => Promise<Size>) {
   const key = new PluginKey<number>(`${nodeName}Sizes`)
-  const unsized = (node: Node) =>
+  const isUnsized = (node: Node) =>
     node.type.name === nodeName &&
     !!node.attrs.src &&
     !node.attrs.loading &&
     (node.attrs.width == null || node.attrs.height == null)
 
-  const sources = (doc: Node) => {
-    const found = new Set<string>()
-    const collect = (node: Node) => {
-      if (unsized(node)) {
-        found.add(node.attrs.src)
+  const unsizedSources = (doc: Node) => {
+    const sources = new Set<string>()
+    const collectSource = (node: Node) => {
+      if (isUnsized(node)) {
+        sources.add(node.attrs.src)
       }
     }
-    doc.descendants(collect)
+    doc.descendants(collectSource)
 
-    return found
+    return sources
   }
 
   // Outside the view: registering a plugin rebuilds every plugin view
-  const measured = new Map<string, Size>()
-  const measuring = new Set<string>()
-  const owed = new Set<string>()
-  let schedule = () => {}
+  const measuredSizes = new Map<string, Size>()
+  const measuringSources = new Set<string>()
+  const owedSources = new Set<string>()
+  let scheduleFill = () => {}
 
   const measureAll = (doc: Node) => {
-    for (const src of sources(doc)) {
-      if (measured.has(src) || measuring.has(src)) continue
+    for (const src of unsizedSources(doc)) {
+      if (measuredSizes.has(src) || measuringSources.has(src)) continue
 
-      const remember = (size: Size) => {
-        measured.set(src, size)
-        if (owed.has(src)) {
-          schedule()
+      const rememberSize = (size: Size) => {
+        measuredSizes.set(src, size)
+        if (owedSources.has(src)) {
+          scheduleFill()
         }
       }
 
-      measuring.add(src)
+      measuringSources.add(src)
       measure(src)
-        .then(remember)
+        .then(rememberSize)
         .catch(() => {})
-        .finally(() => measuring.delete(src))
+        .finally(() => measuringSources.delete(src))
     }
   }
 
@@ -121,18 +121,19 @@ export function healSizes(nodeName: string, measure: (src: string) => Promise<Si
     key,
     state: {
       init: () => 0,
-      apply: (tr, edits) => (isOwnEdit(tr) ? edits + 1 : edits),
+      apply: (tr, ownEditCount) => (isOwnEdit(tr) ? ownEditCount + 1 : ownEditCount),
     },
     view(view) {
-      let scheduled = false
+      let isFillScheduled = false
 
-      const flush = () => {
-        scheduled = false
+      const fillOwedSizes = () => {
+        isFillScheduled = false
         if (view.isDestroyed) return
 
         const { tr } = view.state
         const fillSize = (node: Node, pos: number) => {
-          const size = unsized(node) && owed.has(node.attrs.src) && measured.get(node.attrs.src)
+          const size =
+            isUnsized(node) && owedSources.has(node.attrs.src) && measuredSizes.get(node.attrs.src)
           if (!size) return
 
           if (node.attrs.width == null) {
@@ -144,34 +145,34 @@ export function healSizes(nodeName: string, measure: (src: string) => Promise<Si
         }
         tr.doc.descendants(fillSize)
 
-        for (const src of measured.keys()) {
-          owed.delete(src)
+        for (const src of measuredSizes.keys()) {
+          owedSources.delete(src)
         }
         if (tr.docChanged) {
-          tr.setMeta(HEAL, true)
+          tr.setMeta(HEAL_META, true)
           tr.setMeta('addToHistory', false)
           view.dispatch(tr)
         }
       }
 
       // After every plugin view has seen the edit, so Yjs sends the edit and the sizes apart
-      schedule = () => {
-        if (scheduled) return
+      scheduleFill = () => {
+        if (isFillScheduled) return
 
-        scheduled = true
-        queueMicrotask(flush)
+        isFillScheduled = true
+        queueMicrotask(fillOwedSizes)
       }
 
       measureAll(view.state.doc)
       return {
-        update(_view, previous) {
-          if (view.state.doc.eq(previous.doc)) return
+        update(_view, previousState) {
+          if (view.state.doc.eq(previousState.doc)) return
 
-          if (key.getState(view.state) !== key.getState(previous)) {
-            for (const src of sources(view.state.doc)) {
-              owed.add(src)
+          if (key.getState(view.state) !== key.getState(previousState)) {
+            for (const src of unsizedSources(view.state.doc)) {
+              owedSources.add(src)
             }
-            schedule()
+            scheduleFill()
           }
           measureAll(view.state.doc)
         },
@@ -184,9 +185,9 @@ export function healSizes(nodeName: string, measure: (src: string) => Promise<Si
 
 // The stock plugin sizes unsized media after any change, so opening a
 // document or receiving a collaborator's change would write
-function withoutBackfill(stock: Plugin) {
+function withoutBackfill(stockPlugin: Plugin) {
   const spec: PluginSpec<unknown> = {
-    ...stock.spec,
+    ...stockPlugin.spec,
     appendTransaction: undefined,
   }
   return new Plugin(spec)
@@ -194,14 +195,14 @@ function withoutBackfill(stock: Plugin) {
 
 export const Image = StockImage.extend({
   addProseMirrorPlugins() {
-    const [stock] = this.parent!()
-    return [withoutBackfill(stock), healSizes(this.name, measureImage)]
+    const [stockPlugin] = this.parent!()
+    return [withoutBackfill(stockPlugin), healSizes(this.name, measureImage)]
   },
 })
 
 export const Video = StockVideo.extend({
   addProseMirrorPlugins() {
-    const [stock] = this.parent!()
-    return [withoutBackfill(stock), healSizes(this.name, measureVideo)]
+    const [stockPlugin] = this.parent!()
+    return [withoutBackfill(stockPlugin), healSizes(this.name, measureVideo)]
   },
 })

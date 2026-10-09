@@ -402,9 +402,9 @@ describe('drafts', () => {
   })
 
   it('offers a draft with no known owner only to someone who can edit', async () => {
-    const { openDrafts } = await import('@/apps/slides/utils/drafts')
-    const legacy = await openDrafts('slides-db')
-    const tx = legacy.transaction('presentations', 'readwrite')
+    const { openDraftsDb } = await import('@/apps/slides/utils/drafts')
+    const legacyDb = await openDraftsDb('slides-db')
+    const tx = legacyDb.transaction('presentations', 'readwrite')
     const unowned = {
       id: 'p-shared',
       content: [],
@@ -412,7 +412,7 @@ describe('drafts', () => {
     }
     tx.objectStore('presentations').put(unowned)
     await new Promise((resolve) => (tx.oncomplete = resolve))
-    legacy.close()
+    legacyDb.close()
 
     viewOnly.value = true
     expect(await getPresentationFromLocalDB('p-shared')).toBeNull()

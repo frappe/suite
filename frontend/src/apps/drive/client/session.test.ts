@@ -169,16 +169,16 @@ describe('document session media', () => {
 })
 
 describe('document session access refresh', () => {
-  const failure = (type: string, status: number) =>
+  const transportError = (type: string, status: number) =>
     new TransportError({ type, message: type, status })
 
   it('keeps access through network and server errors and refuses on a real answer', async () => {
     vi.useFakeTimers()
-    let answer: TransportError | null = null
+    let nextFailure: TransportError | null = null
     const requester: Transport = {
       request: (operation, input) =>
-        operation.id === 'node_get' && answer
-          ? Promise.reject(answer)
+        operation.id === 'node_get' && nextFailure
+          ? Promise.reject(nextFailure)
           : Promise.resolve(documentNode((input as { node: string }).node) as never),
     }
     const dependencies = {
@@ -188,18 +188,18 @@ describe('document session access refresh', () => {
     const session = await openDriveDocumentSession('root', dependencies)
 
     const passingFailures = [
-      failure('NetworkError', 0),
-      failure('ServerError', 500),
-      failure('Timeout', 408),
+      transportError('NetworkError', 0),
+      transportError('ServerError', 500),
+      transportError('Timeout', 408),
     ]
     for (const error of passingFailures) {
-      answer = error
+      nextFailure = error
       await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
       expect(session.state.value).toBe('Active')
       expect(session.access.value.role).toBe(40)
     }
 
-    answer = failure('DriveNotFound', 404)
+    nextFailure = transportError('DriveNotFound', 404)
     await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
     expect(session.state.value).toBe('Refused')
     expect(session.access.value).toEqual({})
@@ -207,44 +207,44 @@ describe('document session access refresh', () => {
   })
 
   it('keeps access when signed out elsewhere, so the editor can say so', async () => {
-    let answer: TransportError | null = null
+    let nextFailure: TransportError | null = null
     let user: string | null = 'Administrator'
-    let refused = 0
-    const target = new EventTarget()
+    let refusedCount = 0
+    const fakeWindow = new EventTarget()
     const requester: Transport = {
       request: (operation, input) => {
-        if (operation.id !== 'node_get' || !answer) {
+        if (operation.id !== 'node_get' || !nextFailure) {
           return Promise.resolve(documentNode((input as { node: string }).node) as never)
         }
 
-        refused += 1
-        return Promise.reject(answer)
+        refusedCount += 1
+        return Promise.reject(nextFailure)
       },
     }
     const dependencies = {
       client: testClient(requester),
-      window: target as Window,
+      window: fakeWindow as Window,
       signedIn: () => user,
     }
     const session = await openDriveDocumentSession('root', dependencies)
     user = null
     const refusals = [
-      failure('DriveNotFound', 404),
-      failure('SessionExpired', 401),
-      failure('PermissionError', 403),
+      transportError('DriveNotFound', 404),
+      transportError('SessionExpired', 401),
+      transportError('PermissionError', 403),
     ]
     for (const error of refusals) {
-      answer = error
-      const before = refused
-      target.dispatchEvent(new Event('focus'))
-      await vi.waitFor(() => expect(refused).toBe(before + 1))
+      nextFailure = error
+      const refusedBefore = refusedCount
+      fakeWindow.dispatchEvent(new Event('focus'))
+      await vi.waitFor(() => expect(refusedCount).toBe(refusedBefore + 1))
       await Promise.resolve()
       expect(session.state.value).toBe('Active')
       expect(session.access.value.role).toBe(40)
     }
 
     user = 'Administrator'
-    target.dispatchEvent(new Event('focus'))
+    fakeWindow.dispatchEvent(new Event('focus'))
     await vi.waitFor(() => expect(session.state.value).toBe('Refused'))
     session.dispose()
   })

@@ -39,12 +39,12 @@ const FIRST_TAB_LABEL = 'firstTabLabel'
 
 const firstTabBlocks = (doc: PMNode): TabMatch[] => {
   const blocks: TabMatch[] = []
-  const collect = (node: PMNode, pos: number) => {
+  const collectBlock = (node: PMNode, pos: number) => {
     if (node.type.name !== 'tab') {
       blocks.push({ node, pos })
     }
   }
-  doc.forEach(collect)
+  doc.forEach(collectBlock)
 
   return blocks
 }
@@ -146,13 +146,13 @@ export const TabsExtension = TabNode.extend({
     const storage = this.storage
 
     const hideFirstTab = (state: EditorState) => {
-      const active = storage.activeTabId
-      if (!active || active === FIRST_TAB_ID) return null
+      const activeTabId = storage.activeTabId
+      if (!activeTabId || activeTabId === FIRST_TAB_ID) return null
 
-      const hide = ({ node, pos }: TabMatch) =>
+      const hiddenDecoration = ({ node, pos }: TabMatch) =>
         Decoration.node(pos, pos + node.nodeSize, { style: 'display: none' })
-      const hidden = firstTabBlocks(state.doc).map(hide)
-      return DecorationSet.create(state.doc, hidden)
+      const hiddenDecorations = firstTabBlocks(state.doc).map(hiddenDecoration)
+      return DecorationSet.create(state.doc, hiddenDecorations)
     }
 
     const firstTabVisibility: PluginSpec<unknown> = {
@@ -191,9 +191,10 @@ export const TabsExtension = TabNode.extend({
   onCreate() {
     const meta = metaMap(this.editor.state)
     if (meta) {
-      const announce = () => this.editor.view.dom.dispatchEvent(new CustomEvent('tab-renamed'))
-      meta.observe(announce)
-      this.storage.stopAnnouncing = () => meta.unobserve(announce)
+      const announceRename = () =>
+        this.editor.view.dom.dispatchEvent(new CustomEvent('tab-renamed'))
+      meta.observe(announceRename)
+      this.storage.stopAnnouncing = () => meta.unobserve(announceRename)
     }
 
     // Also runs when the active tab disappears, such as the first tab of an
@@ -364,9 +365,9 @@ export const TabsExtension = TabNode.extend({
           const blocks = firstTabBlocks(state.doc)
           if (!tabsIn(state.doc).length || !blocks.length) return false
 
-          const last = blocks[blocks.length - 1]
+          const lastBlock = blocks[blocks.length - 1]
           const from = state.doc.resolve(blocks[0].pos)
-          const to = state.doc.resolve(last.pos + last.node.nodeSize)
+          const to = state.doc.resolve(lastBlock.pos + lastBlock.node.nodeSize)
           const firstTabContent = TextSelection.between(from, to)
           view.dispatch(state.tr.setSelection(firstTabContent))
           return true

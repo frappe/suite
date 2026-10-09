@@ -10,7 +10,7 @@ import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
-const VENDORED = path.resolve(__dirname, '../../../../packages/collab-prosemirror')
+const VENDORED_DIR = path.resolve(__dirname, '../../../../packages/collab-prosemirror')
 
 // Published @tiptap/y-tiptap 3.0.5, except where a later commit names its change
 const SHA256: Record<string, string> = {
@@ -31,17 +31,17 @@ const SHA256: Record<string, string> = {
 
 describe('owned collab binding', () => {
   it('matches the published package plus our recorded changes', () => {
-    for (const [file, sha] of Object.entries(SHA256)) {
-      const bytes = fs.readFileSync(path.join(VENDORED, file))
+    for (const [file, expectedSha] of Object.entries(SHA256)) {
+      const bytes = fs.readFileSync(path.join(VENDORED_DIR, file))
       const actual = createHash('sha256').update(bytes).digest('hex')
-      expect(actual, file).toBe(sha)
+      expect(actual, file).toBe(expectedSha)
     }
   })
 
   it('is the one copy every importer gets', () => {
-    const root = path.resolve(VENDORED, '../../..')
+    const root = path.resolve(VENDORED_DIR, '../../..')
     const installed = path.join(root, 'node_modules/@tiptap/y-tiptap')
-    expect(fs.realpathSync(installed)).toBe(VENDORED)
+    expect(fs.realpathSync(installed)).toBe(VENDORED_DIR)
 
     const collaboration = Collaboration.configure({ document: new Y.Doc() })
     const editorOptions = {
@@ -56,7 +56,7 @@ describe('owned collab binding', () => {
 const editors: Editor[] = []
 afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 
-function open(ydoc: Y.Doc) {
+function openEditor(ydoc: Y.Doc) {
   const element = document.createElement('div')
   document.body.append(element)
   const editorOptions = {
@@ -69,12 +69,12 @@ function open(ydoc: Y.Doc) {
 }
 
 const syncAll = (docs: Y.Doc[]) => {
-  for (const to of docs) {
-    for (const from of docs) {
-      if (from !== to) {
-        const known = Y.encodeStateVector(to)
-        const missing = Y.encodeStateAsUpdate(from, known)
-        Y.applyUpdate(to, missing, 'remote')
+  for (const target of docs) {
+    for (const source of docs) {
+      if (source !== target) {
+        const targetStateVector = Y.encodeStateVector(target)
+        const missing = Y.encodeStateAsUpdate(source, targetStateVector)
+        Y.applyUpdate(target, missing, 'remote')
       }
     }
   }
@@ -91,18 +91,18 @@ describe('typing at the same time', () => {
   it('two people typing into the same new empty line keep one copy each', () => {
     for (let trial = 0; trial < 40; trial++) {
       const docs = [new Y.Doc(), new Y.Doc(), new Y.Doc()]
-      const [a, b, c] = docs
-      const [editorA, editorB, editorC] = docs.map(open)
+      const [docA, docB, docC] = docs
+      const [editorA, editorB, editorC] = docs.map(openEditor)
       editorA.commands.setContent('<p>first</p><p></p>')
       syncAll(docs)
 
-      const before = Y.encodeStateVector(a)
+      const before = Y.encodeStateVector(docA)
       typeAtEnd(editorA, 'TOKA')
       typeAtEnd(editorB, 'TOKB')
-      const fromA = Y.encodeStateAsUpdate(a, before)
-      Y.applyUpdate(c, fromA, 'remote')
-      const fromB = Y.encodeStateAsUpdate(b, before)
-      Y.applyUpdate(c, fromB, 'remote')
+      const fromA = Y.encodeStateAsUpdate(docA, before)
+      Y.applyUpdate(docC, fromA, 'remote')
+      const fromB = Y.encodeStateAsUpdate(docB, before)
+      Y.applyUpdate(docC, fromB, 'remote')
       typeAtEnd(editorC, 'TOKC')
       syncAll(docs)
       syncAll(docs)

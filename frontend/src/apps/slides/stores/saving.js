@@ -8,7 +8,7 @@ import {
   viewOnly,
 } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
-import { openDrafts, takeUnownedDraft } from '@/apps/slides/utils/drafts'
+import { openDraftsDb, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 import { draftsDbName } from '@/apps/slides/utils/slidesCaches'
 import { getSessionUser } from '@/boot/session'
@@ -16,17 +16,17 @@ import { getSessionUser } from '@/boot/session'
 const STORE = 'presentations'
 
 let db = null
-let dbUser = null
+let dbOwner = null
 
-const draftsUser = () => getSessionUser() || 'Guest'
+const draftsOwner = () => getSessionUser() || 'Guest'
 
 const openDB = async () => {
-  const user = draftsUser()
-  if (db && dbUser === user) return db
+  const user = draftsOwner()
+  if (db && dbOwner === user) return db
 
   db?.close()
-  db = await openDrafts(draftsDbName(user))
-  dbUser = user
+  db = await openDraftsDb(draftsDbName(user))
+  dbOwner = user
   // a database being deleted or upgraded waits on this connection
   db.onversionchange = () => {
     db.close()
@@ -118,7 +118,7 @@ const getPresentationFromLocalDB = async (id) => {
   })
   if (record || viewOnly.value) return record ?? null
 
-  return takeUnownedDraft(id, draftsUser()).catch(() => null)
+  return takeUnownedDraft(id, draftsOwner()).catch(() => null)
 }
 
 // explicit dirty flag set by every mutation path

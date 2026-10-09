@@ -177,9 +177,9 @@ export async function importDocx(file, { editor, currentFileId }) {
       ...ed.options.parseOptions,
     }
     const content = createNodeFromContent(html, ed.schema, { parseOptions })
-    const tooLarge = () => nToast.error('This file is too large to import.')
+    const reportTooLarge = () => nToast.error('This file is too large to import.')
     // Only a collaborative document has a size limit
-    if (ed.storage.pasteSizeGuard?.refuses(content, tooLarge)) {
+    if (ed.storage.pasteSizeGuard?.refuses(content, reportTooLarge)) {
       await _discardUploads(uploaded)
       return
     }

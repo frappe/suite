@@ -5,11 +5,13 @@ import { defineConfig } from 'vite'
 
 // The Writer collab kernel: one Node file with the browsers' Yjs, y-tiptap and the editor schema,
 // which the server runs on demand to judge rows (suite_core/content/kernel.py)
-const yjs = createRequire(path.resolve(__dirname, 'package.json'))('yjs/package.json').version
+const yjsVersion = createRequire(path.resolve(__dirname, 'package.json'))(
+  'yjs/package.json',
+).version
 
 export default defineConfig({
   root: __dirname,
-  define: { __KERNEL_YJS__: JSON.stringify(yjs) },
+  define: { __KERNEL_YJS__: JSON.stringify(yjsVersion) },
   publicDir: false,
   configFile: false,
   plugins: [vue()],

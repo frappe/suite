@@ -18,7 +18,7 @@ import { ReceivedContentGuard } from './received-content-guard'
 const editors: Editor[] = []
 afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+const waitForUpdates = () => new Promise((resolve) => setTimeout(resolve, 20))
 
 const extensions = [
   Document,
@@ -33,20 +33,20 @@ const extensions = [
 ]
 
 const schema = new Editor({ extensions }).schema
-const p = (text: string) => ({
+const paragraph = (text: string) => ({
   type: 'paragraph',
   content: [{ type: 'text', text }],
 })
-const h = (text: string) => ({
+const heading = (text: string) => ({
   type: 'heading',
   attrs: { level: 2 },
   content: [{ type: 'text', text }],
 })
-const ul = (text: string) => ({
+const bulletList = (text: string) => ({
   type: 'bulletList',
-  content: [{ type: 'listItem', content: [p(text)] }],
+  content: [{ type: 'listItem', content: [paragraph(text)] }],
 })
-function stored(...content: object[]) {
+function storedState(...content: object[]) {
   const json = {
     type: 'doc',
     content,
@@ -55,7 +55,7 @@ function stored(...content: object[]) {
   return Y.encodeStateAsUpdate(ydoc)
 }
 
-function open(state: Uint8Array) {
+function openViewer(state: Uint8Array) {
   const ydoc = new Y.Doc()
   Y.applyUpdate(ydoc, state, 'server')
   let writes = 0
@@ -85,60 +85,72 @@ function open(state: Uint8Array) {
   }
 }
 
-const blocks = (editor: Editor) => editor.getJSON().content!.map((node) => node.type)
+const blockTypes = (editor: Editor) => editor.getJSON().content!.map((node) => node.type)
 
 describe('received content guard', () => {
   it('opening a document that ends in a heading writes nothing', async () => {
-    const viewer = open(stored(p('body'), h('End')))
+    const viewer = openViewer(storedState(paragraph('body'), heading('End')))
     viewer.editor.commands.setTextSelection(3)
-    await settle()
+    await waitForUpdates()
 
     expect(viewer.writes()).toBe(0)
-    expect(blocks(viewer.editor)).toEqual(['paragraph', 'heading'])
+    expect(blockTypes(viewer.editor)).toEqual(['paragraph', 'heading'])
   })
 
   it('opening a document with two adjacent lists writes nothing', async () => {
-    const viewer = open(stored(ul('one'), ul('two'), p('end')))
-    await settle()
+    const viewer = openViewer(storedState(bulletList('one'), bulletList('two'), paragraph('end')))
+    await waitForUpdates()
 
     expect(viewer.writes()).toBe(0)
-    expect(blocks(viewer.editor)).toEqual(['bulletList', 'bulletList', 'paragraph'])
+    expect(blockTypes(viewer.editor)).toEqual(['bulletList', 'bulletList', 'paragraph'])
   })
 
   it("the user's own edit still tidies what it touched", async () => {
-    const viewer = open(stored(ul('one'), p('gap'), ul('two'), p('end')))
-    await settle()
+    const viewer = openViewer(
+      storedState(bulletList('one'), paragraph('gap'), bulletList('two'), paragraph('end')),
+    )
+    await waitForUpdates()
 
-    const gap = viewer.editor.state.doc.child(0).nodeSize
+    const gapStart = viewer.editor.state.doc.child(0).nodeSize
     const gapRange = {
-      from: gap,
-      to: gap + viewer.editor.state.doc.child(1).nodeSize,
+      from: gapStart,
+      to: gapStart + viewer.editor.state.doc.child(1).nodeSize,
     }
     viewer.editor.commands.deleteRange(gapRange)
 
-    expect(blocks(viewer.editor)).toEqual(['bulletList', 'paragraph'])
+    expect(blockTypes(viewer.editor)).toEqual(['bulletList', 'paragraph'])
     expect(viewer.ydoc.getXmlFragment('default').length).toBe(2)
   })
 
   it("an untidy spot elsewhere still lets the user's own edit tidy up", async () => {
-    const viewer = open(stored(ul('a'), ul('b'), p('x'), ul('c'), p('gap'), ul('d'), p('end')))
-    await settle()
+    const viewer = openViewer(
+      storedState(
+        bulletList('a'),
+        bulletList('b'),
+        paragraph('x'),
+        bulletList('c'),
+        paragraph('gap'),
+        bulletList('d'),
+        paragraph('end'),
+      ),
+    )
+    await waitForUpdates()
 
     const { doc } = viewer.editor.state
-    let gap = 0
+    let gapStart = 0
     const findGap = (node: ProseMirrorNode, offset: number) => {
       if (node.textContent === 'gap') {
-        gap = offset
+        gapStart = offset
       }
     }
     doc.forEach(findGap)
     const gapRange = {
-      from: gap,
-      to: gap + doc.nodeAt(gap)!.nodeSize,
+      from: gapStart,
+      to: gapStart + doc.nodeAt(gapStart)!.nodeSize,
     }
     viewer.editor.commands.deleteRange(gapRange)
 
-    expect(blocks(viewer.editor)).toEqual([
+    expect(blockTypes(viewer.editor)).toEqual([
       'bulletList',
       'bulletList',
       'paragraph',
@@ -148,21 +160,21 @@ describe('received content guard', () => {
   })
 
   it('two people editing elsewhere tidy nothing twice', async () => {
-    const base = stored(ul('abc'), ul('def'), p('end'))
-    const a = open(base)
-    const b = open(base)
-    await settle()
+    const base = storedState(bulletList('abc'), bulletList('def'), paragraph('end'))
+    const viewerA = openViewer(base)
+    const viewerB = openViewer(base)
+    await waitForUpdates()
 
-    a.editor.commands.insertContentAt(a.editor.state.doc.content.size - 1, '1')
-    b.editor.commands.insertContentAt(b.editor.state.doc.content.size - 1, '2')
-    const fromB = Y.encodeStateAsUpdate(b.ydoc)
-    Y.applyUpdate(a.ydoc, fromB, 'remote')
-    const fromA = Y.encodeStateAsUpdate(a.ydoc)
-    Y.applyUpdate(b.ydoc, fromA, 'remote')
+    viewerA.editor.commands.insertContentAt(viewerA.editor.state.doc.content.size - 1, '1')
+    viewerB.editor.commands.insertContentAt(viewerB.editor.state.doc.content.size - 1, '2')
+    const fromB = Y.encodeStateAsUpdate(viewerB.ydoc)
+    Y.applyUpdate(viewerA.ydoc, fromB, 'remote')
+    const fromA = Y.encodeStateAsUpdate(viewerA.ydoc)
+    Y.applyUpdate(viewerB.ydoc, fromA, 'remote')
 
-    for (const { editor } of [a, b]) {
+    for (const { editor } of [viewerA, viewerB]) {
       expect(editor.state.doc.textContent.match(/abc|def/g)).toEqual(['abc', 'def'])
     }
-    expect(a.editor.getJSON()).toEqual(b.editor.getJSON())
+    expect(viewerA.editor.getJSON()).toEqual(viewerB.editor.getJSON())
   })
 })

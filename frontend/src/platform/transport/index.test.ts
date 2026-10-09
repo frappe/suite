@@ -69,29 +69,29 @@ describe('transport', () => {
 
   it('sends and returns binary bodies byte for byte, with the same headers, whatever the status', async () => {
     window.csrf_token = 'csrf'
-    const sent = new Uint8Array([0, 255, 128, 10, 13, 0])
+    const sentBytes = new Uint8Array([0, 255, 128, 10, 13, 0])
     const fetcher = vi.fn<typeof fetch>(
       async () => new Response(new Uint8Array([255, 0, 1]), { status: 409 }),
     )
     const client = createTransport({ fetch: fetcher })
-    const push: Operation = {
+    const pushOperation: Operation = {
       ...getNode,
       method: 'POST',
       path: 'nodes/{node}/bytes',
     }
 
     const bytesOptions = {
-      body: sent,
+      body: sentBytes,
       keepalive: true,
       headers: { 'X-Drive-Links': 'c1' },
     }
-    const answer = await client.requestBytes(push, { node: 'n1' }, bytesOptions)
+    const bytesResponse = await client.requestBytes(pushOperation, { node: 'n1' }, bytesOptions)
 
-    expect([answer.status, [...answer.bytes]]).toEqual([409, [255, 0, 1]])
+    expect([bytesResponse.status, [...bytesResponse.bytes]]).toEqual([409, [255, 0, 1]])
     const [url, init] = fetcher.mock.calls[0]!
     expect(url).toBe('/api/suite/drive/nodes/n1/bytes')
     const sentBody = await new Response(init?.body).arrayBuffer()
-    expect([...new Uint8Array(sentBody)]).toEqual([...sent])
+    expect([...new Uint8Array(sentBody)]).toEqual([...sentBytes])
     expect(init?.keepalive).toBe(true)
     const headers = new Headers(init?.headers)
     expect([
