@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import jwt from 'jsonwebtoken';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallbackClient } from './CallbackClient.js';
+import { logger } from './logger.js';
 import { safeJobDirectory } from './ManifestStore.js';
 import type { JobRecord } from './types.js';
 
@@ -13,12 +14,267 @@ const roots: string[] = [];
 afterEach(async () => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 	await Promise.all(
 		roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
 	);
 });
 
 describe('CallbackClient', () => {
+	it('retries a connection reset with the same progress and fresh authorization', async () => {
+		const fetch = vi
+			.fn()
+			.mockRejectedValueOnce(
+				new TypeError('fetch failed', {
+					cause: Object.assign(new Error('connection reset'), {
+						code: 'ECONNRESET',
+					}),
+				}),
+			)
+			.mockResolvedValue(
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, budget_bytes: 2_000_000 },
+					}),
+				),
+			);
+		vi.stubGlobal('fetch', fetch);
+		const log = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+		const secret = 's'.repeat(32);
+		const client = new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret,
+			dataRoot: '/tmp',
+			sleep: async () => undefined,
+		});
+		await expect(
+			client.segmentProgress(
+				{ job: 'job', recording: 'recording' } as JobRecord,
+				1_234_567,
+			),
+		).resolves.toBe(2_000_000);
+		expect(fetch).toHaveBeenCalledTimes(2);
+		const [first, second] = fetch.mock.calls.map((call) => call[1]);
+		expect(first.body).toBe(second.body);
+		const claims = [first, second].map((request) =>
+			jwt.verify(
+				String(
+					new Headers(request.headers).get('X-Meet-Recorder-Authorization'),
+				).slice(7),
+				secret,
+			),
+		);
+		expect(claims[0]).toMatchObject({ operation_id: '1234567' });
+		expect(claims[1]).toMatchObject({ operation_id: '1234567' });
+		expect(claims[0]).not.toEqual(claims[1]);
+		expect(log).toHaveBeenCalledWith(
+			expect.objectContaining({
+				job: 'job',
+				status: 'retrying',
+				reason: 'ECONNRESET',
+			}),
+		);
+		expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
+	});
+
+	it.each([408, 429, 500, 502, 503, 504])(
+		'retries transient HTTP %i',
+		async (status) => {
+			const fetch = vi
+				.fn()
+				.mockResolvedValueOnce(new Response('upstream unavailable', { status }))
+				.mockResolvedValue(
+					new Response(
+						JSON.stringify({
+							message: { protocol_version: 1, budget_bytes: 2_000_000 },
+						}),
+					),
+				);
+			vi.stubGlobal('fetch', fetch);
+			vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+			const client = new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret: 's'.repeat(32),
+				dataRoot: '/tmp',
+				sleep: async () => undefined,
+			});
+			await expect(
+				client.segmentProgress(
+					{ job: 'job', recording: 'recording' } as JobRecord,
+					1,
+				),
+			).resolves.toBe(2_000_000);
+			expect(fetch).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it.each([400, 401, 403, 404, 409, 422])(
+		'does not retry a backend refusal with HTTP %i',
+		async (status) => {
+			const fetch = vi.fn(async () => new Response('refused', { status }));
+			vi.stubGlobal('fetch', fetch);
+			vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+			const sleep = vi.fn(async () => undefined);
+			const client = new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret: 's'.repeat(32),
+				dataRoot: '/tmp',
+				sleep,
+			});
+			await expect(
+				client.segmentProgress(
+					{ job: 'job', recording: 'recording' } as JobRecord,
+					1,
+				),
+			).rejects.toThrow(`Frappe callback failed with HTTP ${status}`);
+			expect(fetch).toHaveBeenCalledTimes(1);
+			expect(sleep).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([401, 403, 409])(
+		'does not retry HTTP %i when its response body disconnects',
+		async (status) => {
+			const fetch = vi.fn(
+				async () =>
+					new Response(
+						new ReadableStream({
+							start(controller) {
+								controller.error(new Error('response body disconnected'));
+							},
+						}),
+						{ status },
+					),
+			);
+			vi.stubGlobal('fetch', fetch);
+			vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+			const client = new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret: 's'.repeat(32),
+				dataRoot: '/tmp',
+				sleep: async () => undefined,
+			});
+			await expect(
+				client.segmentProgress(
+					{ job: 'job', recording: 'recording' } as JobRecord,
+					1,
+				),
+			).rejects.toThrow(`Frappe callback failed with HTTP ${status}`);
+			expect(fetch).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it.each([
+		{ configuredMs: 60_000, expectedMs: 10_000 },
+		{ configuredMs: 30, expectedMs: 30 },
+	])(
+		'cancels stalled requests after $expectedMs ms and gives up after three attempts',
+		async ({ configuredMs, expectedMs }) => {
+			const cancellations: number[] = [];
+			const fetch = vi.fn(
+				(_url: URL, request: RequestInit) =>
+					new Promise<Response>((_resolve, reject) => {
+						const started = performance.now();
+						const signal = request.signal;
+						if (!signal) {
+							reject(new Error('request has no cancellation signal'));
+							return;
+						}
+						signal.addEventListener(
+							'abort',
+							() => {
+								cancellations.push(performance.now() - started);
+								reject(signal.reason);
+							},
+							{ once: true },
+						);
+					}),
+			);
+			vi.stubGlobal('fetch', fetch);
+			vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+			const client = new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret: 's'.repeat(32),
+				dataRoot: '/tmp',
+				timeoutMs: configuredMs,
+				sleep: async () => undefined,
+			});
+			await expect(
+				client.segmentProgress(
+					{ job: 'job', recording: 'recording' } as JobRecord,
+					1,
+				),
+			).rejects.toThrow('Frappe callback transport failed: timeout');
+			expect(fetch).toHaveBeenCalledTimes(3);
+			expect(cancellations).toHaveLength(3);
+			for (const elapsed of cancellations) {
+				expect(elapsed).toBeGreaterThanOrEqual(expectedMs - 10);
+				expect(elapsed).toBeLessThan(expectedMs + 5_000);
+			}
+		},
+		45_000,
+	);
+
+	it('stops retrying after three connection failures and logs the final failure', async () => {
+		const fetch = vi.fn().mockRejectedValue(
+			new TypeError('fetch failed', {
+				cause: Object.assign(new Error('connection reset'), {
+					code: 'ECONNRESET',
+				}),
+			}),
+		);
+		vi.stubGlobal('fetch', fetch);
+		const log = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+		const client = new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+			sleep: async () => undefined,
+		});
+		await expect(
+			client.segmentProgress(
+				{ job: 'job', recording: 'recording' } as JobRecord,
+				1,
+			),
+		).rejects.toThrow('Frappe callback transport failed: ECONNRESET');
+		expect(fetch).toHaveBeenCalledTimes(3);
+		expect(log).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				job: 'job',
+				status: 'exhausted',
+				reason: 'ECONNRESET',
+			}),
+		);
+	});
+
+	it('does not retry or expose response bytes when a success response is invalid JSON', async () => {
+		const fetch = vi.fn(async () => new Response('sensitive response bytes'));
+		vi.stubGlobal('fetch', fetch);
+		const log = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+		const client = new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+		});
+		await expect(
+			client.segmentProgress(
+				{ job: 'job', recording: 'recording' } as JobRecord,
+				1,
+			),
+		).rejects.toThrow('invalid Frappe callback response');
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(JSON.stringify(log.mock.calls)).not.toContain(
+			'sensitive response bytes',
+		);
+	});
+
 	it('reports segment progress with the captured byte operation ID', async () => {
 		const fetch = vi.fn(
 			async () =>

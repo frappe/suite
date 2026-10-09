@@ -9,6 +9,8 @@ type LogEvent =
 	| 'startup_callback_failed'
 	| 'replacement_ready_callback_failed'
 	| 'terminal_delivery_failed'
+	| 'segment_progress_callback_failed'
+	| 'capture_budget_check_failed'
 	| 'service_initialization_failed'
 	| 'service_error';
 
@@ -19,6 +21,7 @@ export interface LogEntry {
 	method?: string;
 	route?: string;
 	job?: string;
+	attempt?: number;
 }
 
 export interface Logger {

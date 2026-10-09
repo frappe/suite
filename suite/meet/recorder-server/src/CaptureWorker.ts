@@ -9,6 +9,7 @@ import type {
 	MediaTools,
 } from './captureTypes.js';
 import { FfmpegMediaTools, Finalizer } from './Finalizer.js';
+import { logger } from './logger.js';
 import { ManifestStore } from './ManifestStore.js';
 import { type ManagedProcess, ProcessSupervisor } from './ProcessSupervisor.js';
 import { SegmentWatcher } from './SegmentWatcher.js';
@@ -646,7 +647,15 @@ export class CaptureWorker {
 					throw new Error('recording budget callback is unavailable');
 				this.options.limits.budget_bytes =
 					await this.options.onProgress(capturedBytes);
-			} catch {
+			} catch (error) {
+				logger.error({
+					event: 'capture_budget_check_failed',
+					job: this.job,
+					reason:
+						error instanceof Error
+							? error.message.slice(0, 160)
+							: 'unknown_error',
+				});
 				if (!stopping) this.requestStop(false, 'capture_budget_unavailable');
 				return;
 			}

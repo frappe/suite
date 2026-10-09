@@ -2,11 +2,17 @@ import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CallbackClient } from './CallbackClient.js';
 import { CaptureWorker, type CaptureWorkerOptions } from './CaptureWorker.js';
 import { CaptureWorkerManager } from './CaptureWorkerManager.js';
 import type { ManagedProcess, ProcessSupervisor } from './ProcessSupervisor.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
-import { COMMAND_AUDIENCE, type CommandClaims } from './types.js';
+import { SegmentWatcher } from './SegmentWatcher.js';
+import {
+	COMMAND_AUDIENCE,
+	type CommandClaims,
+	type JobRecord,
+} from './types.js';
 
 const roots: string[] = [];
 const options = (root: string): CaptureWorkerOptions => ({
@@ -49,12 +55,117 @@ const process = (code?: number): ManagedProcess => ({
 });
 
 afterEach(async () => {
+	vi.unstubAllGlobals();
 	await Promise.all(
 		roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
 	);
 });
 
 describe('capture lifecycle', () => {
+	it('reports the next durable segment after a progress connection reset recovers', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const fetch = vi
+			.fn()
+			.mockRejectedValueOnce(
+				new TypeError('fetch failed', {
+					cause: Object.assign(new Error('connection reset'), {
+						code: 'ECONNRESET',
+					}),
+				}),
+			)
+			.mockImplementation(
+				async () =>
+					new Response(
+						JSON.stringify({
+							message: { protocol_version: 1, budget_bytes: 100_000_000 },
+						}),
+					),
+			);
+		vi.stubGlobal('fetch', fetch);
+		const client = new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: root,
+			sleep: async () => undefined,
+		});
+		const onStopRequested = vi.fn();
+		let watcher: SegmentWatcher | undefined;
+		const worker = new CaptureWorker(
+			'progress-reset',
+			{
+				...options(root),
+				limits: {
+					...command('progress-reset').limits,
+					max_ends_at: new Date(Date.now() + 60_000).toISOString(),
+				},
+				onProgress: (bytes) =>
+					client.segmentProgress(
+						{ job: 'progress-reset', recording: 'recording' } as JobRecord,
+						bytes,
+					),
+				onStopRequested,
+			},
+			{
+				supervisor: {
+					start: vi.fn(async (name: string) =>
+						name === 'pactl' ? process(0) : process(),
+					),
+				} as unknown as ProcessSupervisor,
+				sleep: async () => undefined,
+				tools: {
+					validate: async () => ({
+						duration_ms: 30_000,
+						video: { codec: 'h264', width: 1920, height: 1080, fps: 30 },
+						audio: { codec: 'aac', sample_rate: 48000, channels: 2 },
+					}),
+					concat: async () => undefined,
+				},
+				watcher: (manifest, tools, epoch, onAdopt, onError) => {
+					// Scan explicitly to exercise the real watcher without timer races.
+					watcher = new SegmentWatcher(
+						manifest,
+						tools,
+						epoch,
+						60_000,
+						onAdopt,
+						onError,
+					);
+					return watcher;
+				},
+				finalizer: () => ({ finalize: async () => 'complete' as const }),
+			},
+		);
+		try {
+			await worker.initialize();
+			await worker.startCapture();
+			if (!watcher) throw new Error('capture did not start');
+			await writeFile(
+				join(worker.manifest.directory, 'epoch-000-segment-000000.ts'),
+				'first',
+			);
+			await writeFile(
+				join(worker.manifest.directory, 'epoch-000-segment-000001.ts'),
+				'second',
+			);
+			await watcher.scan(false);
+			await writeFile(
+				join(worker.manifest.directory, 'epoch-000-segment-000002.ts'),
+				'current',
+			);
+			await watcher.scan(false);
+			expect(
+				fetch.mock.calls.map(
+					(call) => JSON.parse(String(call[1].body)).captured_bytes,
+				),
+			).toEqual([5, 5, 11]);
+			expect(onStopRequested).not.toHaveBeenCalled();
+		} finally {
+			await worker.stop();
+		}
+	});
+
 	it('orders prepare, spawn, durable commit, startup publication, then browser command', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);

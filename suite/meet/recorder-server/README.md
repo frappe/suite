@@ -71,6 +71,21 @@ the ephemeral node home are writable. Restrict recorder-host egress separately
 to the configured Frappe and SFU origins plus the WebRTC media destinations
 required by that SFU deployment.
 
+## Segment progress failures
+
+Cumulative segment progress retries transport failures, HTTP 408/429, and HTTP
+5xx up to three attempts, each capped at ten seconds (or the shorter configured
+callback timeout), with 250 ms and 500 ms backoff. Each attempt uses a fresh JWT
+and the same captured byte count, so a lost response after a committed update is
+safe to retry. Backend refusals and invalid response contracts are not retried.
+
+Structured `segment_progress_callback_failed` logs identify the job, attempt,
+transport code or HTTP status, and whether a retry will follow. They never include
+authorization headers or response bodies. Exhaustion or a permanent refusal still
+stops capture; `capture_budget_check_failed` also records local budget-check
+failures before stopping. The existing callback protocol and terminal reason
+mapping are unchanged.
+
 ## Chromium integration test
 
 Build the recorder browser assets, then run the recorder-server tests:
