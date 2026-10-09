@@ -2392,12 +2392,15 @@ const sheet = createSheet({
 })
 // The open tab. The editor owns it; IronCalc's sheet list sets it on load.
 const currentSheet = ref('Sheet1')
-// IronCalc: { client, provider, offSheets } once started (see _startEngine).
+// IronCalc: { client, provider, offSheets, offVersion } once started (see _startEngine).
 // Declared up here because setup code (the sheet tabs) reads it.
 let _engine = null
 const formats = createFormatsEngine()
 const merge = createMergeEngine()
-const sortFilter = createSortFilter(sheet)
+const sortFilter = createSortFilter({
+  read: (sn, rect) => _readRect(sn, rect),
+  write: (sn, map) => _writeInputs(sn, map),
+})
 const slicers = createSlicerEngine()
 const comments = createCommentsEngine()
 const validation = createValidationEngine()
@@ -4110,7 +4113,9 @@ const showSortFilter = computed({
     return sortFilter.hasFilter(currentSheet.value)
   },
   set(v) {
-    v ? _createFilterOnSelection() : _removeFilter()
+    v
+      ? _createFilterOnSelection().catch((e) => console.error('[sheets] filter failed', e))
+      : _removeFilter()
   },
 })
 
@@ -6868,9 +6873,32 @@ function onNavigateTo(id) {
 // the adjacent cell down/right that has data — the empty anchor then becomes
 // the header row/col of the resulting block. Returns null only when nothing
 // adjacent has data either.
-function _detectContiguousBlock(r, c) {
-  const hasVal = (rr, cc) =>
-    rr >= 0 && cc >= 0 && String(sheet.getCell(cellId(rr, cc)) ?? '').length > 0
+// The contiguous block of non-empty cells around (r, c), as a rect, or null
+// when the anchor and its right/lower neighbours are empty. Reads a window
+// around the anchor in one go and widens it while the block reaches its edge.
+async function _detectContiguousBlock(r, c) {
+  const sn = currentSheet.value
+  for (let rows = 1000, cols = 26; ; rows *= 8, cols *= 8) {
+    const win = { r0: Math.max(0, r - rows), c0: Math.max(0, c - cols), r1: r + rows, c1: c + cols }
+    const { inputs } = await _readRect(sn, win)
+    const hasVal = (rr, cc) =>
+      rr >= win.r0 &&
+      cc >= win.c0 &&
+      rr <= win.r1 &&
+      cc <= win.c1 &&
+      (inputs[rr - win.r0]?.[cc - win.c0] ?? '') !== ''
+    const block = _blockAround(r, c, hasVal)
+    if (!block) return null
+    const atEdge =
+      (block.r0 === win.r0 && win.r0 > 0) ||
+      block.r1 === win.r1 ||
+      (block.c0 === win.c0 && win.c0 > 0) ||
+      block.c1 === win.c1
+    if (!atEdge || rows >= 1_000_000) return block
+  }
+}
+
+function _blockAround(r, c, hasVal) {
   const anchorEmpty = !hasVal(r, c)
   let ar = r,
     ac = c
@@ -6912,12 +6940,12 @@ function _detectContiguousBlock(r, c) {
 // would produce a header-only range (r1 === r0): chevrons appear, but the
 // value list scans zero data rows and comes up empty. A genuine multi-row
 // block is taken verbatim.
-function _createFilterOnSelection() {
+async function _createFilterOnSelection() {
   if (!grid) return
   const sel = grid.getSelection()
   const noDataRows = sel.r0 === sel.r1
   const range = noDataRows
-    ? _detectContiguousBlock(sel.r0, sel.c0) || {
+    ? (await _detectContiguousBlock(sel.r0, sel.c0)) || {
         r0: sel.r0,
         c0: sel.c0,
         r1: sel.r0,
@@ -6987,7 +7015,7 @@ const activeSlicers = computed(() => {
 function _slicerColumnOptions(range, sn) {
   const opts = []
   for (let c = range.c0; c <= range.c1; c++) {
-    const header = sheet.getDisplayValue(colLabel(c) + (range.r0 + 1), sn)
+    const header = sortFilter.getHeader(c, sn)
     opts.push({
       label: header || colLabel(c),
       value: c,
@@ -7010,7 +7038,7 @@ function slicerValues(sl) {
 }
 function slicerLabel(sl, sn = currentSheet.value) {
   const range = sortFilter.getRange(sn)
-  const header = range ? sheet.getDisplayValue(colLabel(sl.col) + (range.r0 + 1), sn) : ''
+  const header = range ? sortFilter.getHeader(sl.col, sn) : ''
   return header || colLabel(sl.col)
 }
 // The set of values currently kept visible, or null when the column is unfiltered.
@@ -7087,7 +7115,7 @@ function _applySlicerFilter(sl, set, all) {
   isDirty.value = true
   slicerVersion.value++
 }
-function insertSlicer() {
+async function insertSlicer() {
   contextMenu.open = false
   const sn = currentSheet.value
   const p = parseCellId(activeCell.value)
@@ -7096,7 +7124,7 @@ function insertSlicer() {
   // A slicer reads distinct values from the filter range — auto-create one over
   // the surrounding data block if the sheet isn't filtered yet.
   if (!sortFilter.getRange(sn)) {
-    const block = _detectContiguousBlock(p?.row ?? 0, col)
+    const block = await _detectContiguousBlock(p?.row ?? 0, col)
     if (!block) return // no data to slice
     sortFilter.setRange(block, sn)
   }
@@ -7153,8 +7181,9 @@ function _endSlicerDrag() {
   window.removeEventListener('mousemove', _onSlicerDrag)
   window.removeEventListener('mouseup', _endSlicerDrag)
 }
-function openFilterPanel(colIdx) {
+async function openFilterPanel(colIdx) {
   const sn = currentSheet.value
+  await sortFilter.refresh(sn)
   const cfg = sortFilter.getFilterConfig(sn)
   const existing = cfg[colIdx]
   const allValues = sortFilter.getColumnValues(colIdx, sn)
@@ -7197,11 +7226,11 @@ function clampFilterLeft(left, wrapWidth) {
 // Alt+↓ on a canvas cell opens the filter panel for that cell's column. Forces
 // the filter row visible first (so chevrons exist) and anchors the popover at
 // the column's row-0 cell rather than at a click target.
-function openQuickFilterForActive() {
+async function openQuickFilterForActive() {
   const id = activeCell.value
   const p = parseCellId(id)
   if (!p) return
-  if (!sortFilter.hasFilter(currentSheet.value)) _createFilterOnSelection()
+  if (!sortFilter.hasFilter(currentSheet.value)) await _createFilterOnSelection()
   nextTick(() => {
     const range = sortFilter.getRange(currentSheet.value)
     if (!range || p.col < range.c0 || p.col > range.c1) return
@@ -7259,19 +7288,16 @@ function clearFilterCol() {
   history.push()
   isDirty.value = true
 }
-function doSort(colIdx, dir) {
+async function doSort(colIdx, dir) {
   const sn = currentSheet.value
   // Sorting permutes values across the filter range — refuse if it overlaps
   // protection, matching Google Sheets (a protected range blocks the sort).
   const range = sortFilter.getRange(sn)
   if (range && _rectBlocked(range, sn)) return
-  sortFilter.sort(colIdx, dir, sn)
   filterPanel.open = false
-  _repopulateGrid()
+  const sorted = await sortFilter.sort(colIdx, dir, sn)
+  if (sorted) _pushEditOp(sn, sorted.before, sorted.after, 'Sort')
   _applyHiddenRows()
-  history.push() // post-mutate snapshot
-  syncFlags()
-  isDirty.value = true // sort mutates cell values
 }
 // ── Context menu ──────────────────────────────────────────────────────────────
 
@@ -7978,7 +8004,17 @@ function doUnfreezeCols() {
 // pushing to the canvas via _applyHiddenRows().
 const manualHiddenRows = reactive(new Set())
 const manualHiddenCols = reactive(new Set())
+// Re-reads the filter range's values, then repaints the hidden rows.
 function _applyHiddenRows() {
+  const sn = currentSheet.value
+  sortFilter
+    .refresh(sn)
+    .then(() => {
+      if (currentSheet.value === sn) _paintHiddenRows()
+    })
+    .catch((e) => console.error('[sheets] filter refresh failed', e))
+}
+function _paintHiddenRows() {
   const filterHidden = sortFilter.computeHiddenRows(currentSheet.value)
   const union = new Set([...filterHidden, ...manualHiddenRows])
   grid?.setHiddenRows(union)
@@ -8095,13 +8131,23 @@ async function _startEngine(snapshotBytes = null) {
   const provider = createCellProvider({ client, cache, requestRender: () => grid?.render?.() })
   // Tabs follow the workbook: its sheets on load, and any later change.
   const offSheets = client.onSheets(() => syncNames())
-  _engine = { client, provider, offSheets }
+  // Edits change the values a filter's lists show.
+  const offVersion = client.onVersion(() => {
+    const sn = currentSheet.value
+    if (!sortFilter.hasFilter(sn)) return
+    sortFilter
+      .refresh(sn)
+      .then(() => slicerVersion.value++)
+      .catch(() => {}) // the next filter action reads again
+  })
+  _engine = { client, provider, offSheets, offVersion }
   syncNames()
   grid?.render?.()
 }
 
 function _stopEngine() {
   _engine?.offSheets()
+  _engine?.offVersion()
   _engine?.provider.dispose()
   _engine?.client.terminate()
   _engine = null

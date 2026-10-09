@@ -1,5 +1,6 @@
-import { colLabel, parseCellId } from '../utils/cells.js'
+import { cellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { adjustFormula } from './formula-adjust.js'
 import { remapIndexKeys, remapRect } from './ref-remap.js'
 
 // Ranged, per-sheet sort & filter — Google-Sheets-style "basic filter":
@@ -14,8 +15,16 @@ import { remapIndexKeys, remapRect } from './ref-remap.js'
 //   - range.r0 is the header row (chevrons go on these cells)
 //   - byCol keys are GLOBAL column indices; specs only apply to columns in
 //     [range.c0 .. range.c1]
-export function createSortFilter(sheet) {
+//
+// Cells are read and written through `cells` (the same port as the clipboard):
+//   read(sheetName, rect)  → Promise<{ inputs: string[][], displays: string[][] }>
+//   write(sheetName, map)  → writes a {cellId: input} map as one edit
+// Filtering matches displayed values, which refresh(sheetName) reads into a
+// cache; computeHiddenRows, getColumnValues and getHeader read that cache, so
+// the UI can call them synchronously.
+export function createSortFilter(cells) {
   const _byShet = {} // { [sheetName]: { range, byCol } }
+  const _shown = {} // { [sheetName]: { rect, rows: string[][] } } display values
 
   function _entry(sn) {
     if (!_byShet[sn]) _byShet[sn] = { range: null, byCol: {} }
@@ -26,56 +35,59 @@ export function createSortFilter(sheet) {
     return colIdx >= range.c0 && colIdx <= range.c1
   }
 
-  function _getRows() {
-    return _buildRows((id) => sheet.getCell(id))
-  }
-
-  // Same shape as _getRows but each cell is the *displayed* (formula-evaluated)
-  // value rather than the raw stored cell. Used by the filter so a row whose
-  // visible value is "306" (from `=A1*B1`) matches a "contains 0" predicate
-  // — matching against the raw `=A1*B1` would not.
-  function _getDisplayRows() {
-    const get = sheet.getDisplayValue
-      ? (id) => sheet.getDisplayValue(id)
-      : (id) => sheet.getCell(id)
-    return _buildRows(get)
-  }
-
-  function _buildRows(get) {
-    const data = sheet.getRawData()
-    let maxR = 0,
-      maxC = 0
-    for (const id of Object.keys(data)) {
-      const p = parseCellId(id)
-      if (p) {
-        if (p.row > maxR) maxR = p.row
-        if (p.col > maxC) maxC = p.col
-      }
-    }
-    const rows = []
-    for (let r = 0; r <= maxR; r++) {
-      const row = []
-      for (let c = 0; c <= maxC; c++) row.push(get(colLabel(c) + (r + 1)))
-      rows.push(row)
-    }
-    return rows
-  }
-
-  // Sort data rows of the active filter range (range.r0 stays as the header).
-  function sort(colIndex, dir = 'asc', sheetName) {
+  // Reads the filter range's displayed values (formula results, so a row
+  // showing "306" from `=A1*B1` matches "contains 0"). No-op without a range.
+  async function refresh(sheetName) {
     const range = getRange(sheetName)
-    if (!range || !_inCols(colIndex, range)) return
-    const rows = _getRows()
-    const headerR = range.r0
-    if (range.r1 <= headerR) return
-    const block = []
-    for (let r = headerR + 1; r <= range.r1; r++) block.push(rows[r] || [])
-    block.sort((a, b) => _cmp(a[colIndex] ?? '', b[colIndex] ?? '', dir))
-    for (let i = 0; i < block.length; i++) {
-      for (let c = range.c0; c <= range.c1; c++) {
-        sheet.setCell(colLabel(c) + (headerR + 2 + i), block[i][c] ?? '')
-      }
+    if (!range) {
+      delete _shown[sheetName]
+      return
     }
+    const rect = { ...range }
+    const { displays } = await cells.read(sheetName, rect)
+    // A newer range replaced this one while reading: its own refresh wins.
+    const now = getRange(sheetName)
+    if (
+      !now ||
+      now.r0 !== rect.r0 ||
+      now.r1 !== rect.r1 ||
+      now.c0 !== rect.c0 ||
+      now.c1 !== rect.c1
+    )
+      return
+    _shown[sheetName] = { rect, rows: displays }
+  }
+
+  // Displayed value at (r, c) from the last refresh, '' when unknown.
+  function _shownAt(sheetName, r, c) {
+    const s = _shown[sheetName]
+    if (!s) return ''
+    return String(s.rows[r - s.rect.r0]?.[c - s.rect.c0] ?? '')
+  }
+
+  // Sort data rows of the active filter range (range.r0 stays as the header)
+  // by their displayed values. Formulas move with their row and shift their
+  // references by the distance moved. Returns the {cellId: input} maps of
+  // the rows before and after, for undo; null when nothing to sort.
+  async function sort(colIndex, dir = 'asc', sheetName) {
+    const range = getRange(sheetName)
+    if (!range || !_inCols(colIndex, range) || range.r1 <= range.r0) return null
+    const rect = { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
+    const { inputs, displays } = await cells.read(sheetName, rect)
+    const key = colIndex - rect.c0
+    const order = inputs.map((_, i) => i)
+    order.sort((a, b) => _cmp(displays[a]?.[key] ?? '', displays[b]?.[key] ?? '', dir))
+    const before = {}
+    const after = {}
+    order.forEach((from, to) => {
+      for (let c = rect.c0; c <= rect.c1; c++) {
+        before[cellId(rect.r0 + to, c)] = inputs[to]?.[c - rect.c0] ?? ''
+        const v = inputs[from]?.[c - rect.c0] ?? ''
+        after[cellId(rect.r0 + to, c)] = v.startsWith('=') ? adjustFormula(v, to - from, 0) : v
+      }
+    })
+    cells.write(sheetName, after)
+    return { before, after }
   }
 
   function _cmp(av, bv, dir) {
@@ -133,9 +145,9 @@ export function createSortFilter(sheet) {
     return _byShet[sheetName]?.byCol || {}
   }
 
-  function _rowFails(row, entries) {
+  function _rowFails(sheetName, r, entries) {
     for (const [colId, spec] of entries) {
-      const cellVal = String(row?.[parseInt(colId)] ?? '')
+      const cellVal = _shownAt(sheetName, r, parseInt(colId))
       const specVal = String(spec.value ?? '')
       const op = spec.operator
       if (op === 'contains' && !cellVal.toLowerCase().includes(specVal.toLowerCase())) return true
@@ -152,18 +164,19 @@ export function createSortFilter(sheet) {
     return false
   }
 
+  // The header cell's displayed value for a column of the range.
+  function getHeader(colIdx, sheetName) {
+    const range = getRange(sheetName)
+    return range ? _shownAt(sheetName, range.r0, colIdx) : ''
+  }
+
   // Distinct displayed values within the column's data range (header row is
   // excluded). Drives the "Filter by values" checklist in the UI.
   function getColumnValues(colIdx, sheetName) {
     const range = getRange(sheetName)
     if (!range || !_inCols(colIdx, range)) return []
-    const rows = _getDisplayRows()
     const seen = new Set()
-    const start = range.r0 + 1,
-      end = Math.min(range.r1, rows.length - 1)
-    for (let r = start; r <= end; r++) {
-      seen.add(String(rows[r]?.[colIdx] ?? ''))
-    }
+    for (let r = range.r0 + 1; r <= range.r1; r++) seen.add(_shownAt(sheetName, r, colIdx))
     // Sort so the list is stable across opens; empty string first so
     // "(Blanks)" sits at the top like Google Sheets.
     return [...seen].sort((a, b) => {
@@ -185,11 +198,8 @@ export function createSortFilter(sheet) {
     if (!e?.range) return hidden
     const entries = Object.entries(e.byCol)
     if (!entries.length) return hidden
-    const rows = _getDisplayRows()
-    const start = e.range.r0 + 1,
-      end = Math.min(e.range.r1, rows.length - 1)
-    for (let ri = start; ri <= end; ri++) {
-      if (_rowFails(rows[ri], entries)) hidden.add(ri)
+    for (let ri = e.range.r0 + 1; ri <= e.range.r1; ri++) {
+      if (_rowFails(sheetName, ri, entries)) hidden.add(ri)
     }
     return hidden
   }
@@ -293,6 +303,7 @@ export function createSortFilter(sheet) {
   }
 
   return {
+    refresh,
     sort,
     setFilter,
     clearFilter,
@@ -300,6 +311,7 @@ export function createSortFilter(sheet) {
     getFilterConfig,
     computeHiddenRows,
     getColumnValues,
+    getHeader,
     setRange,
     getRange,
     clearRange,
