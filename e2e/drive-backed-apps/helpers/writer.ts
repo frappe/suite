@@ -4,6 +4,11 @@ import { createDocument, grantAccess, revokeAccess, ROLE, type DriveNode } from 
 /** The Drive content doctype that Writer documents are stored as. */
 const WRITER_DOCTYPE = "Writer Document";
 
+/** The part of the editor `placeCaretIn` reads. */
+type CaretEditor = {
+	state: { selection: { $from: { parent: { textContent: string } } } };
+};
+
 export function uniqueWriterTitle(runId: string, scenario: string): string {
 	return `E2E Writer ${scenario} ${runId} ${Date.now().toString(36)}`;
 }
@@ -54,11 +59,10 @@ export async function placeCaretIn(page: Page, text: string): Promise<void> {
 	// The editor reads a click's caret on the browser's next selection event, which can come after the next keys
 	await expect
 		.poll(() =>
-			page.evaluate(
-				() =>
-					(document.querySelector(".ProseMirror") as { editor?: { state: { selection: { $from: { parent: { textContent: string } } } } } } | null)
-						?.editor?.state.selection.$from.parent.textContent,
-			),
+			page.evaluate(() => {
+				const root = document.querySelector(".ProseMirror") as { editor?: CaretEditor } | null;
+				return root?.editor?.state.selection.$from.parent.textContent;
+			}),
 		)
 		.toBe(text);
 }

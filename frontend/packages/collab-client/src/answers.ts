@@ -22,7 +22,8 @@ export type Reply = Body & { status: number }
 // An answer that is not JSON reads as a bare status
 export function readReply(answer: Answer): Reply {
   try {
-    const body = JSON.parse(new TextDecoder().decode(answer.bytes))
+    const text = new TextDecoder().decode(answer.bytes)
+    const body = JSON.parse(text)
     return {
       ...(body && typeof body === 'object' ? body : {}),
       status: answer.status,
@@ -48,10 +49,22 @@ export class CollabOpenError extends Error {
 
 export function openError(answer: Answer, options: OpenOptions) {
   const reply = readReply(answer)
-  if (staleSession(reply)) return new CollabOpenError(reply.status, 'stale_session')
+  if (staleSession(reply)) {
+    return new CollabOpenError(reply.status, 'stale_session')
+  }
+
   const reason = reply.collab ?? null
-  if (reply.status !== 403 && reply.status !== 404) return new CollabOpenError(reply.status, reason)
-  const now = options.signedIn()
-  if (now === 'Guest') return new CollabOpenError(401, 'signed_out')
-  return new CollabOpenError(reply.status, now === options.principal ? reason : 'principal_changed')
+  if (reply.status !== 403 && reply.status !== 404) {
+    return new CollabOpenError(reply.status, reason)
+  }
+
+  // A refusal can mean the tab's user signed out or changed since it opened
+  const signedIn = options.signedIn()
+  if (signedIn === 'Guest') {
+    return new CollabOpenError(401, 'signed_out')
+  }
+  if (signedIn !== options.principal) {
+    return new CollabOpenError(reply.status, 'principal_changed')
+  }
+  return new CollabOpenError(reply.status, reason)
 }

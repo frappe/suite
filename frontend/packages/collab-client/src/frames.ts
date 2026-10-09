@@ -61,30 +61,46 @@ export function decodeFrame<Header>(bytes: Uint8Array): {
 } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let at = 0
+
   const need = (length: number) => {
     if (at + length > bytes.byteLength) throw new RangeError('Truncated collab frame')
   }
+
   const u32 = () => {
     need(4)
     at += 4
     return view.getUint32(at - 4)
   }
+
   const take = (length: number) => {
     need(length)
     at += length
     return bytes.slice(at - length, at)
   }
+
+  const headerBytes = take(u32())
+  const headerText = new TextDecoder().decode(headerBytes)
   // Trusted as the collab server's own reply, not checked field by field
-  const header = JSON.parse(new TextDecoder().decode(take(u32()))) as Header
+  const header = JSON.parse(headerText) as Header
+
   const checkpoint = take(u32())
+
   const rows: Row[] = []
   for (let count = u32(); count > 0; count--) {
     need(8)
     const rev = Number(view.getBigUint64(at))
     at += 8
-    rows.push({ rev, bytes: take(u32()) })
+    rows.push({
+      rev,
+      bytes: take(u32()),
+    })
   }
-  return { header, checkpoint: checkpoint.byteLength ? checkpoint : null, rows }
+
+  return {
+    header,
+    checkpoint: checkpoint.byteLength ? checkpoint : null,
+    rows,
+  }
 }
 
 export function encodePush(
