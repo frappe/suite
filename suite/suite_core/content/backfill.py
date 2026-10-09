@@ -21,7 +21,7 @@ def backfill_clocks(adapter: str, owner_of: Callable[[str], str | None]) -> None
             if log is None:
                 continue
 
-            unreadable = {rev for rev, payload in log["rows"] if quarantine.readable(payload) is None}
+            unreadable = {rev for rev, payload in log["rows"] if quarantine.parse_or_none(payload) is None}
             if unreadable:
                 quarantine.quarantine(adapter, doc_id, unreadable, "malformed_row", owner_of)
                 log = read(adapter, doc_id)
@@ -35,20 +35,20 @@ def backfill_clocks(adapter: str, owner_of: Callable[[str], str | None]) -> None
             frappe.log_error(f"Collab clocks not read for {adapter} log {doc_id}")
             continue
 
-        session_clients = frappe.db.sql(
+        session_rows = frappe.db.sql(
             f"SELECT `client_id` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s", doc_id
         )
-        sessions = {int(client) for (client,) in session_clients}
-        for client in sessions:
+        session_client_ids = {int(client) for (client,) in session_rows}
+        for client in session_client_ids:
             frappe.db.sql(
                 f"""UPDATE `{table(adapter, "session")}` SET `next_clock` = %s
                 WHERE `doc_id` = %s AND `client_id` = %s AND `next_clock` IS NULL""",
                 (clocks.get(client, 0), doc_id, client),
             )
 
-        start = {client: clock for client, clock in clocks.items() if client not in sessions}
+        start_clocks = {client: clock for client, clock in clocks.items() if client not in session_client_ids}
         frappe.db.sql(
             f"UPDATE `{table(adapter, 'doc')}` SET `start_clocks` = %s WHERE `id` = %s",
-            (json.dumps(start), doc_id),
+            (json.dumps(start_clocks), doc_id),
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit

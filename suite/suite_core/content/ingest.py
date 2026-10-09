@@ -11,7 +11,7 @@ from suite.suite_core.content.tables import table
 MAX_BYTES = 4 * 2**20
 # ContentJSON, ContentBinary and ContentDoc: no collab adapter writes them
 REFUSED_KINDS = {2, 3, 9}
-SKIP = 10
+SKIP_KIND = 10
 
 
 class Unclosed(Exception):
@@ -60,27 +60,27 @@ class Row:
     clock_to: int
 
 
-def check(payload: bytes, cid: int) -> Row:
-    """The row `cid` pushed, or `ValueError` when it is malformed: too large, unreadable, or refused by `admit`."""
+def check_row(payload: bytes, client_id: int) -> Row:
+    """The row `client_id` pushed, or `ValueError` when it is malformed: too large, unreadable, or refused by `admit_update`."""
     if len(payload) > MAX_BYTES:
         raise ValueError("update too large")
 
     update = updates.parse(payload)
-    return admit(update, cid)
+    return admit_update(update, client_id)
 
 
-def admit(update: updates.Update, cid: int) -> Row:
-    """The row `update` makes for `cid`, or `ValueError` when it is empty, written by another client,
+def admit_update(update: updates.Update, client_id: int) -> Row:
+    """The row `update` makes for `client_id`, or `ValueError` when it is empty, written by another client,
     holds a gap, or holds content no collab adapter writes."""
     has_deletes = any(update.deletes.values())
     if not update.structs and not has_deletes:
         raise ValueError("an empty row")
 
     for struct in update.structs:
-        if struct.client != cid:
+        if struct.client != client_id:
             raise ValueError("written by another client")
 
-        if struct.kind == SKIP:
+        if struct.kind == SKIP_KIND:
             raise ValueError("a gap in the writer's clocks")
 
         if struct.kind in REFUSED_KINDS:
@@ -105,31 +105,31 @@ def next_clocks(payloads: Iterable[bytes]) -> dict[int, int]:
     return clocks
 
 
-def close(adapter: str, doc_id: str, row: Row, cid: int, start: dict[int, int]) -> None:
+def check_closed(adapter: str, doc_id: str, row: Row, client_id: int, start_clocks: dict[int, int]) -> None:
     """Refuse a row that does not continue its writer's clocks, or that needs a struct neither
     committed nor in the row. Run under the document's lock, which every clock change takes."""
-    clients = referenced_clients(row, cid)
-    committed = committed_clocks(adapter, doc_id, clients, start)
-    follows(row, cid, committed)
+    clients = referenced_clients(row, client_id)
+    committed = committed_clocks(adapter, doc_id, clients, start_clocks)
+    check_follows(row, client_id, committed)
 
 
-def follows(row: Row, cid: int, committed: dict[int, int]) -> None:
-    """Refuse `row` unless it continues `cid`'s clocks and needs only clocks below `committed` or earlier in the row."""
-    known = dict(committed)
-    if row.update.structs and row.clock_from != known.get(cid, 0):
-        raise Unclosed("clock_gap", clock=known.get(cid, 0))
+def check_follows(row: Row, client_id: int, committed: dict[int, int]) -> None:
+    """Refuse `row` unless it continues `client_id`'s clocks and needs only clocks below `committed` or earlier in the row."""
+    known_clocks = dict(committed)
+    if row.update.structs and row.clock_from != known_clocks.get(client_id, 0):
+        raise Unclosed("clock_gap", clock=known_clocks.get(client_id, 0))
 
     for struct in row.update.structs:
         # A struct can only follow what is committed or earlier in the row, never itself or a later struct
-        for ref in struct.refs():
-            if ref[1] >= known.get(ref[0], 0):
-                raise Unclosed("missing_dep", client=ref[0], clock=ref[1])
+        for dependency in struct.refs():
+            if dependency[1] >= known_clocks.get(dependency[0], 0):
+                raise Unclosed("missing_dep", client=dependency[0], clock=dependency[1])
 
-        known[cid] = struct.clock + struct.length
+        known_clocks[client_id] = struct.clock + struct.length
     for client, ranges in row.update.deletes.items():
         for clock, length in ranges:
-            if clock + length > known.get(client, 0):
-                raise Unclosed("missing_dep", client=client, clock=max(clock, known.get(client, 0)))
+            if clock + length > known_clocks.get(client, 0):
+                raise Unclosed("missing_dep", client=client, clock=max(clock, known_clocks.get(client, 0)))
 
 
 def committed_clocks(adapter: str, doc_id: str, clients: set[int], start: dict[int, int]) -> dict[int, int]:
@@ -146,8 +146,8 @@ def committed_clocks(adapter: str, doc_id: str, clients: set[int], start: dict[i
     return clocks
 
 
-def referenced_clients(row: Row, cid: int) -> set[int]:
-    clients = {cid, *row.update.deletes}
+def referenced_clients(row: Row, client_id: int) -> set[int]:
+    clients = {client_id, *row.update.deletes}
     for struct in row.update.structs:
         clients.update(client for client, _clock in struct.refs())
 

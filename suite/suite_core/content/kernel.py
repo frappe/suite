@@ -51,8 +51,8 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
     if not getattr(frappe.local, "job", None):
         raise RuntimeError("the collab kernel runs only in background jobs")
 
-    node = usable_node()
-    if not node or not bundle.is_file():
+    node_path = usable_node()
+    if not node_path or not bundle.is_file():
         return None
 
     # Node checks the read permission against the real path
@@ -64,14 +64,14 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
     }
     request_text = json.dumps(request)
     command = [
-        node,
+        node_path,
         "--permission",
         f"--allow-fs-read={bundle}",
         f"--max-old-space-size={HEAP_MB}",
         str(bundle),
     ]
     try:
-        done = subprocess.run(
+        completed = subprocess.run(
             command,
             input=request_text,
             capture_output=True,
@@ -80,7 +80,7 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
             env={},
             check=True,
         )
-        answer = json.loads(done.stdout)
+        answer = json.loads(completed.stdout)
         if answer["verdict"] == "clean":
             return Verdict(None)
 
@@ -88,16 +88,16 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
         if type(index) is not int or not -1 <= index < len(rows):
             raise ValueError("the index names no row")
 
-        reason = plain(str(answer["reason"]))
+        reason = plain_reason(str(answer["reason"]))
         return Verdict(index, reason)
     except subprocess.CalledProcessError as error:
-        last = error.stderr.strip().rsplit("\n", 1)[-1]
-        raise KernelFailed(f"exit {error.returncode}: {plain(last)}") from error
+        last_stderr_line = error.stderr.strip().rsplit("\n", 1)[-1]
+        raise KernelFailed(f"exit {error.returncode}: {plain_reason(last_stderr_line)}") from error
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
         raise KernelFailed(repr(error)) from error
 
 
-def plain(text: str) -> str:
+def plain_reason(text: str) -> str:
     return REASON_END.split(text, maxsplit=1)[0][:80].strip()
 
 

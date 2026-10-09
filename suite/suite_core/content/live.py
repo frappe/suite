@@ -25,8 +25,8 @@ def rooms(adapter: str, doc_id: str, lineage: str) -> dict:
     """The rooms a tab joins now: this epoch's and the next, with the server's clock to time them by."""
     now = time.time()
     epoch = int(now // EPOCH_SECONDS)
-    this_room = room(adapter, doc_id, lineage, epoch)
-    next_room = room(adapter, doc_id, lineage, epoch + 1)
+    this_room = room_key(adapter, doc_id, lineage, epoch)
+    next_room = room_key(adapter, doc_id, lineage, epoch + 1)
     return {
         "epoch": epoch,
         "keys": [this_room, next_room],
@@ -35,41 +35,41 @@ def rooms(adapter: str, doc_id: str, lineage: str) -> dict:
     }
 
 
-def room(adapter: str, doc_id: str, lineage: str, epoch: int) -> str:
+def room_key(adapter: str, doc_id: str, lineage: str, epoch: int) -> str:
     site_key = get_encryption_key().encode()
-    key = hmac.new(site_key, b"suite-collab-rooms", hashlib.sha256).digest()
-    name = f"suite-collab-room|1|{adapter}|{doc_id}|{lineage}|{epoch}".encode()
-    digest = hmac.new(key, name, hashlib.sha256).digest()
+    rooms_key = hmac.new(site_key, b"suite-collab-rooms", hashlib.sha256).digest()
+    room_label = f"suite-collab-room|1|{adapter}|{doc_id}|{lineage}|{epoch}".encode()
+    digest = hmac.new(rooms_key, room_label, hashlib.sha256).digest()
     digest_text = base64.urlsafe_b64encode(digest).decode()
     return "sc:" + digest_text[:32]
 
 
 def publish_row(adapter: str, doc_id: str, lineage: str, rev: int, schema: int, payload: bytes) -> None:
-    inline = base64.b64encode(payload).decode() if len(payload) <= INLINE_MAX else None
+    inline_payload = base64.b64encode(payload).decode() if len(payload) <= INLINE_MAX else None
     message = {
         "lineage": lineage,
         "rev": rev,
         "schema": schema,
-        "u": inline,
+        "u": inline_payload,
     }
     publish(adapter, doc_id, lineage, "suite_collab_row", message)
 
 
-def publish_ctl(adapter: str, doc_id: str, lineage: str, **message) -> None:
-    ctl_message = {"lineage": lineage, **message}
-    publish(adapter, doc_id, lineage, "suite_collab_ctl", ctl_message)
+def publish_control(adapter: str, doc_id: str, lineage: str, **message) -> None:
+    control_message = {"lineage": lineage, **message}
+    publish(adapter, doc_id, lineage, "suite_collab_ctl", control_message)
 
 
 def publish_change(adapter: str, doc_id: str, kind: str) -> None:
     """A hold, a release or room freed by a compaction: live tabs pull, as a polling tab would have."""
-    found = frappe.db.sql(f"SELECT `lineage` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id)
-    if found:
-        publish_ctl(adapter, doc_id, found[0][0], kind=kind)
+    lineage_rows = frappe.db.sql(f"SELECT `lineage` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id)
+    if lineage_rows:
+        publish_control(adapter, doc_id, lineage_rows[0][0], kind=kind)
 
 
 def publish(adapter: str, doc_id: str, lineage: str, event: str, message: dict) -> None:
     epoch = int(time.time() // EPOCH_SECONDS)
-    room_name = room(adapter, doc_id, lineage, epoch)
+    room_name = room_key(adapter, doc_id, lineage, epoch)
     try:
         frappe.publish_realtime(event, message, room=room_name)
     except Exception:

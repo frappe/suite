@@ -50,8 +50,8 @@ def quarantine(
             frappe.db.rollback()
             return []
 
-        doc = locked[0]
-        if min(revs) <= int(doc.body_rev):
+        control_row = locked[0]
+        if min(revs) <= int(control_row.body_rev):
             raise ValueError("a row in the body can't be quarantined")
 
         rows = frappe.db.sql(
@@ -59,21 +59,21 @@ def quarantine(
             FROM `{table(adapter, "update")}` `u` LEFT JOIN `{table(adapter, "session")}` `s`
             ON `s`.`doc_id` = `u`.`doc_id` AND `s`.`sid` = `u`.`sid`
             WHERE `u`.`doc_id` = %s AND `u`.`rev` > %s AND `u`.`state` = 'ok' ORDER BY `u`.`rev`""",
-            (doc_id, doc.body_rev),
+            (doc_id, control_row.body_rev),
             as_dict=True,
         )
-        tail = [TailRow(int(row.rev), int(row.client_id), readable(bytes(row.payload))) for row in rows]
-        kept_clocks = floor(adapter, doc)
-        picked, cut = dependents(tail, revs, kept_clocks)
+        tail = [TailRow(int(row.rev), int(row.client_id), parse_or_none(bytes(row.payload))) for row in rows]
+        kept_clocks = floor_clocks(adapter, control_row)
+        picked, cut_clocks = dependents(tail, revs, kept_clocks)
         if not picked:
             frappe.db.rollback()
             return []
 
         now = now_datetime()
-        sessionless = [int(row.rev) for row in rows if int(row.rev) in picked and not row.principal]
-        document_owner = owner_of(doc.node) if sessionless else None
-        if sessionless and not document_owner:
-            raise RuntimeError(f"revs {sessionless} have no session and the document no owner")
+        sessionless_revs = [int(row.rev) for row in rows if int(row.rev) in picked and not row.principal]
+        document_owner = owner_of(control_row.node) if sessionless_revs else None
+        if sessionless_revs and not document_owner:
+            raise RuntimeError(f"revs {sessionless_revs} have no session and the document no owner")
 
         for row in rows:
             if int(row.rev) not in picked:
@@ -83,10 +83,10 @@ def quarantine(
             recovery_values = (
                 frappe.generate_hash(length=20),
                 doc_id,
-                doc.node,
+                control_row.node,
                 row.principal or document_owner,
                 reason,
-                doc.lineage,
+                control_row.lineage,
                 hashlib.sha256(payload).hexdigest(),
                 len(payload),
                 payload.hex(),
@@ -113,14 +113,14 @@ def quarantine(
             f"DELETE FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s AND `through_rev` >= %s",
             (doc_id, min(picked)),
         )
-        for client, clock in cut.items():
+        for client, clock in cut_clocks.items():
             # Other writers' rows that need a clock at or past `clock` are refused from now on
             frappe.db.sql(
                 f"""UPDATE `{table(adapter, "session")}` SET `closed` = 1, `next_clock` = %s
                 WHERE `doc_id` = %s AND `client_id` = %s""",
                 (clock, doc_id, client),
             )
-        base_rev = max(int(doc.body_rev), fallback_rev(adapter, doc_id))
+        base_rev = max(int(control_row.body_rev), fallback_rev(adapter, doc_id))
         tail_params = {
             "doc": doc_id,
             "base": base_rev,
@@ -136,13 +136,13 @@ def quarantine(
         )
         frappe.log_error(
             title=f"Collab rows quarantined: {reason}",
-            message=f"{adapter} document {doc_id}: revs {sorted(picked)} quarantined, {len(cut)} sessions closed",
+            message=f"{adapter} document {doc_id}: revs {sorted(picked)} quarantined, {len(cut_clocks)} sessions closed",
             reference_doctype="Suite Collab Settings",
         )
-        if sessionless:
+        if sessionless_revs:
             frappe.log_error(
                 title="Collab recovery copies kept for the document owner",
-                message=f"{adapter} document {doc_id}: revs {sessionless} had no session, so {document_owner} keeps their copies",
+                message=f"{adapter} document {doc_id}: revs {sessionless_revs} had no session, so {document_owner} keeps their copies",
                 reference_doctype="Suite Collab Settings",
             )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
@@ -150,8 +150,8 @@ def quarantine(
         frappe.db.rollback()
         raise
 
-    q_epoch = int(doc.q_epoch) + 1
-    live.publish_ctl(adapter, doc_id, doc.lineage, kind="quarantine", q_epoch=q_epoch)
+    q_epoch = int(control_row.q_epoch) + 1
+    live.publish_control(adapter, doc_id, control_row.lineage, kind="quarantine", q_epoch=q_epoch)
     return sorted(picked)
 
 
@@ -162,43 +162,43 @@ def first_unfit(checkpoint: bytes | None, rows: list[bytes], roots: set[str]) ->
     before a gate are never checked again on the write path.
     """
     parts = [checkpoint] if checkpoint else []
-    found = compaction.unfit(parts + rows)
-    if found and found[0] < len(parts):
-        return -1, found[1]
+    unfit_part = compaction.first_unfit_part(parts + rows)
+    if unfit_part and unfit_part[0] < len(parts):
+        return -1, unfit_part[1]
 
-    known = ingest.next_clocks(parts)
+    known_clocks = ingest.next_clocks(parts)
     for index, payload in enumerate(rows):
-        if found and found[0] == len(parts) + index:
-            return index, found[1]
+        if unfit_part and unfit_part[0] == len(parts) + index:
+            return index, unfit_part[1]
 
         update = updates.parse(payload)
-        cid = update.structs[0].client if update.structs else 0
+        client_id = update.structs[0].client if update.structs else 0
         unknown_root = any(struct.root is not None and struct.root not in roots for struct in update.structs)
         if unknown_root:
             return index, "unknown_root"
 
         try:
-            row = ingest.admit(update, cid)
-            ingest.follows(row, cid, known)
+            row = ingest.admit_update(update, client_id)
+            ingest.check_follows(row, client_id, known_clocks)
         except ValueError:
             return index, "refused_row"
         except ingest.Unclosed as error:
             return index, error.reason
 
         if update.structs:
-            known[cid] = row.clock_to
+            known_clocks[client_id] = row.clock_to
 
     return None
 
 
-def readable(payload: bytes) -> updates.Update | None:
+def parse_or_none(payload: bytes) -> updates.Update | None:
     try:
         return updates.parse(payload)
     except ValueError:
         return None
 
 
-def floor(adapter: str, doc: frappe._dict) -> dict[int, int]:
+def floor_clocks(adapter: str, doc: frappe._dict) -> dict[int, int]:
     """Each writer's next clock in the body and the start, which no quarantine can take back."""
     clocks = start_clocks(doc)
     row = body_row(adapter, doc.node) if int(doc.body_rev) else None
@@ -210,7 +210,9 @@ def floor(adapter: str, doc: frappe._dict) -> dict[int, int]:
     return clocks
 
 
-def dependents(tail: list[TailRow], revs: set[int], floor: dict[int, int]) -> tuple[set[int], dict[int, int]]:
+def dependents(
+    tail: list[TailRow], revs: set[int], floor_clocks: dict[int, int]
+) -> tuple[set[int], dict[int, int]]:
     """The revs of `tail` to quarantine with `revs`, and for each writer losing a row, the clock its kept
     content ends at.
 
@@ -219,27 +221,35 @@ def dependents(tail: list[TailRow], revs: set[int], floor: dict[int, int]) -> tu
     it, goes, with its own later rows, until nothing changes. So a writer that re-sends whole delete
     sets loses its own rows and their dependents too, each with its recovery copy.
     """
-    picked = {row.rev for row in tail if row.rev in revs}
+    quarantined_revs = {row.rev for row in tail if row.rev in revs}
     while True:
-        first: dict[int, int] = {}
+        first_picked_rev: dict[int, int] = {}
         for row in tail:
-            if row.rev in picked:
-                first.setdefault(row.client, row.rev)
-        picked |= {row.rev for row in tail if row.client in first and row.rev > first[row.client]}
-        cut = {client: floor.get(client, 0) for client in first}
+            if row.rev in quarantined_revs:
+                first_picked_rev.setdefault(row.client, row.rev)
+        quarantined_revs |= {
+            row.rev
+            for row in tail
+            if row.client in first_picked_rev and row.rev > first_picked_rev[row.client]
+        }
+        cut = {client: floor_clocks.get(client, 0) for client in first_picked_rev}
         for row in tail:
-            kept_with_structs = row.rev not in picked and row.update and row.update.structs
+            kept_with_structs = row.rev not in quarantined_revs and row.update and row.update.structs
             if row.client in cut and kept_with_structs:
-                last = row.update.structs[-1]
-                cut[row.client] = max(cut[row.client], last.clock + last.length)
-        grown = {row.rev for row in tail if row.rev not in picked and row.update and reaches(row.update, cut)}
-        if not grown:
-            return picked, cut
+                last_struct = row.update.structs[-1]
+                cut[row.client] = max(cut[row.client], last_struct.clock + last_struct.length)
+        new_dependents = {
+            row.rev
+            for row in tail
+            if row.rev not in quarantined_revs and row.update and reaches_cut(row.update, cut)
+        }
+        if not new_dependents:
+            return quarantined_revs, cut
 
-        picked |= grown
+        quarantined_revs |= new_dependents
 
 
-def reaches(update: updates.Update, cut: dict[int, int]) -> bool:
+def reaches_cut(update: updates.Update, cut: dict[int, int]) -> bool:
     """Whether `update` needs or deletes a writer's content at or past its clock in `cut`."""
     needs_cut_content = any(
         client in cut and clock >= cut[client] for struct in update.structs for client, clock in struct.refs()

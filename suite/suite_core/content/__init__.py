@@ -12,15 +12,15 @@ from suite.suite_core.content.checkpoints import replace_start
 from suite.suite_core.content.ingest import EditorSchema
 from suite.suite_core.content.live import rooms
 from suite.suite_core.content.log import (
-    PROTO,
+    PROTOCOL_VERSION,
     ChainBroken,
     Refusal,
     claim_session,
     create,
     delete_purged,
     enabled,
+    encode_frame,
     find,
-    frame,
     issue_session,
     limits,
     mark_purged,
@@ -37,7 +37,7 @@ from suite.suite_core.content.log import (
 from suite.suite_core.content.tables import ensure_tables
 
 __all__ = [
-    "PROTO",
+    "PROTOCOL_VERSION",
     "ChainBroken",
     "EditorSchema",
     "Refusal",
@@ -46,9 +46,9 @@ __all__ = [
     "create",
     "delete_purged",
     "enabled",
+    "encode_frame",
     "ensure_tables",
     "find",
-    "frame",
     "issue_session",
     "limits",
     "mark_purged",

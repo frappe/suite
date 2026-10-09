@@ -13,25 +13,25 @@ import re
 import frappe
 
 PACKAGE_DIR = os.path.dirname(os.path.dirname(__file__))
-PAGE = os.path.join(PACKAGE_DIR, "www", "suite.html")
-STAMP = re.compile(r'<meta name="suite-build" content="(\d+)"')
+PAGE_PATH = os.path.join(PACKAGE_DIR, "www", "suite.html")
+BUILD_STAMP = re.compile(r'<meta name="suite-build" content="(\d+)"')
 
-_page = {"mtime": None, "build": None}
+page_cache = {"mtime": None, "build": None}
 
 
 def current_build() -> str | None:
     try:
-        mtime = os.stat(PAGE).st_mtime
+        mtime = os.stat(PAGE_PATH).st_mtime
     except OSError:
         return None
 
-    if _page["mtime"] != mtime:
-        with open(PAGE) as page:
+    if page_cache["mtime"] != mtime:
+        with open(PAGE_PATH) as page:
             html = page.read()
-        stamp = STAMP.search(html)
-        build = stamp and stamp.group(1)
-        _page.update(mtime=mtime, build=build)
-    return _page["build"]
+        build_match = BUILD_STAMP.search(html)
+        build = build_match and build_match.group(1)
+        page_cache.update(mtime=mtime, build=build)
+    return page_cache["build"]
 
 
 def after_request(response):

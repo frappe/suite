@@ -17,36 +17,36 @@ from suite.suite_core.content.tables import table
 STATE_MAX = 4 * 2**20
 TAIL_MIN = 256 * 2**10
 TAIL_ROWS = 2000
-AGE = timedelta(minutes=10)
-QUIET = timedelta(seconds=30)
+TAIL_AGE = timedelta(minutes=10)
+QUIET_SPAN = timedelta(seconds=30)
 SWEEP_AGE = timedelta(minutes=30)
 QUEUE_PAUSE = timedelta(minutes=1)
 
 paused_until = 0.0
 
 
-def based(adapter: str) -> str:
+def docs_with_base(adapter: str) -> str:
     """The control rows with `base`, the rev their open base runs through: the newer of the body and any fallback."""
     return f"""(SELECT `doc`.*, GREATEST(`doc`.`body_rev`, COALESCE((SELECT MAX(`c`.`through_rev`)
         FROM `{table(adapter, "checkpoint")}` `c` WHERE `c`.`doc_id` = `doc`.`id`), 0)) AS `base`
         FROM `{table(adapter, "doc")}` `doc`)"""
 
 
-def consider(
-    adapter: str, doc_id: str, method: str, *, final_from: str | None = None, refused: bool = False
+def request_if_due(
+    adapter: str, doc_id: str, compact_method: str, *, final_from: str | None = None, refused: bool = False
 ) -> None:
     """Request a compaction if the document is due. `final_from` names a tab's session that is hiding or closing;
     `refused`: a push was just refused for want of room, which only a compaction makes."""
-    doc = frappe.db.sql(
+    due_rows = frappe.db.sql(
         f"""SELECT `d`.`head_rev`, `d`.`base`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`, `d`.`tail_bound`,
         `d`.`next_compaction_at`, `d`.`suspect`, `u`.`created` AS `oldest`
-        FROM {based(adapter)} `d` LEFT JOIN `{table(adapter, "update")}` `u`
+        FROM {docs_with_base(adapter)} `d` LEFT JOIN `{table(adapter, "update")}` `u`
         ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`base` + 1
         WHERE `d`.`id` = %s""",
         doc_id,
         as_dict=True,
     )
-    if not doc:
+    if not due_rows:
         return
 
     closing = refused
@@ -54,14 +54,14 @@ def consider(
         closing = not frappe.db.sql(
             f"""SELECT 1 FROM `{table(adapter, "session")}` WHERE `doc_id` = %s AND `sid` != %s
             AND `last_push_at` > %s LIMIT 1""",
-            (doc_id, final_from, now_datetime() - QUIET),
+            (doc_id, final_from, now_datetime() - QUIET_SPAN),
         )
 
-    if due(doc[0], now_datetime(), closing=closing):
-        request(adapter, doc_id, method)
+    if compaction_due(due_rows[0], now_datetime(), closing=closing):
+        request_compaction(adapter, doc_id, compact_method)
 
 
-def due(doc, now, *, closing: bool = False) -> bool:
+def compaction_due(doc, now, *, closing: bool = False) -> bool:
     """Whether a document's tail calls for a compaction now. `closing`: the tab that closed was the last one typing,
     or a push waits for room.
 
@@ -75,12 +75,12 @@ def due(doc, now, *, closing: bool = False) -> bool:
     if doc.next_compaction_at and doc.next_compaction_at > now:
         return False
 
-    state = int(doc.state_bytes)
-    room_left = STATE_MAX - state
-    tail_bytes_big = int(doc.tail_bytes) >= max(TAIL_MIN, min(state // 4, room_left // 2))
+    state_bytes = int(doc.state_bytes)
+    room_left = STATE_MAX - state_bytes
+    tail_bytes_big = int(doc.tail_bytes) >= max(TAIL_MIN, min(state_bytes // 4, room_left // 2))
     tail_bound_big = int(doc.tail_bound) >= max(TAIL_MIN, room_left // 2)
     tail_rows_many = int(doc.tail_rows) >= TAIL_ROWS
-    tail_old = doc.oldest is not None and doc.oldest <= now - AGE
+    tail_old = doc.oldest is not None and doc.oldest <= now - TAIL_AGE
     return closing or tail_bytes_big or tail_bound_big or tail_rows_many or tail_old
 
 
@@ -94,7 +94,7 @@ def sweep(
 ) -> None:
     """Request compactions for documents whose tail has waited too long, whatever their traffic,
     the deletion of purged logs and expired staged pieces and the judging of suspect documents a job has not finished."""
-    stage.expire(adapter, now_datetime())
+    stage.expire_pieces(adapter, now_datetime())
 
     if purge_method:
         for (doc_id,) in frappe.db.sql(
@@ -112,7 +112,7 @@ def sweep(
 
     now = now_datetime()
     for (doc_id,) in frappe.db.sql(
-        f"""SELECT `d`.`id` FROM {based(adapter)} `d` JOIN `{table(adapter, "update")}` `u`
+        f"""SELECT `d`.`id` FROM {docs_with_base(adapter)} `d` JOIN `{table(adapter, "update")}` `u`
         ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`base` + 1
         WHERE `d`.`head_rev` > `d`.`base` AND `d`.`mode` != 'purged' AND `d`.`suspect` IS NULL
         AND `u`.`created` <= %s
@@ -120,7 +120,7 @@ def sweep(
         ORDER BY `u`.`created` LIMIT %s""",
         (now - SWEEP_AGE, now, limit),
     ):
-        request(adapter, doc_id, method)
+        request_compaction(adapter, doc_id, method)
 
 
 def enqueue(method: str, job_id: str, **kwargs) -> None:
@@ -129,7 +129,7 @@ def enqueue(method: str, job_id: str, **kwargs) -> None:
     frappe.enqueue(method, queue=queue, timeout=TIMEOUT, job_id=job_id, deduplicate=True, **kwargs)
 
 
-def request(adapter: str, doc_id: str, method: str) -> None:
+def request_compaction(adapter: str, doc_id: str, method: str) -> None:
     """Enqueue `method(adapter, doc_id)` once per document."""
     global paused_until
     if time.monotonic() < paused_until:

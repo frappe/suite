@@ -1,7 +1,7 @@
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite.suite_core.content.compaction import load, serialize, snapshot, state_vector
+from suite.suite_core.content.compaction import load_doc, serialize, state_vector, vector_and_deletes
 from suite.suite_core.content.updates import encoded_string, encoded_uint, parse, rewrite_values
 
 
@@ -69,28 +69,28 @@ class TestParse(UnitTestCase):
         )
 
     def test_json_values_nested_deeper_than_a_hundred_levels_are_refused(self):
-        def holding(ref: int, content: bytes) -> bytes:
+        def one_struct_holding(ref: int, content: bytes) -> bytes:
             return bytes([1, 1, 5, 0, ref, 1]) + encoded_string("t") + content + bytes([0])
 
         def nested(depth: int, inner: str) -> str:
             return "[" * depth + inner + "]" * depth
 
-        def kinds(text: str) -> dict[str, bytes]:
+        def by_content_kind(text: str) -> dict[str, bytes]:
             return {
-                "JSON": holding(2, encoded_uint(1) + encoded_string(text)),
-                "embed": holding(5, encoded_string(text)),
-                "format": holding(6, encoded_string("bold") + encoded_string(text)),
+                "JSON": one_struct_holding(2, encoded_uint(1) + encoded_string(text)),
+                "embed": one_struct_holding(5, encoded_string(text)),
+                "format": one_struct_holding(6, encoded_string("bold") + encoded_string(text)),
             }
 
         # Only containers count: what the innermost one holds does not change its level
         for inner in ("", "1"):
-            at_limit = kinds(nested(100, inner))
+            at_limit = by_content_kind(nested(100, inner))
             for kind, payload in at_limit.items():
                 with self.subTest(kind, inner=inner):
                     self.assertEqual(parse(payload).structs[0].length, 1)
 
             for depth in (101, 200_000):
-                past_limit = kinds(nested(depth, inner))
+                past_limit = by_content_kind(nested(depth, inner))
                 for kind, payload in past_limit.items():
                     with self.subTest(kind, inner=inner, depth=depth), self.assertRaises(ValueError):
                         parse(payload)
@@ -133,25 +133,25 @@ class TestParse(UnitTestCase):
                 bytes([0, 1]) + encoded_uint(client) + bytes([1]) + encoded_uint(clock) + encoded_uint(length)
             )
 
-        def counted(value: int) -> bytes:
+        def any_integer(value: int) -> bytes:
             signed = bytes([0x80 | value & 0x3F]) + encoded_uint(value >> 6)
             return bytes([1, 1, 5, 0, 8, 1]) + encoded_string("t") + bytes([1, 125]) + signed + bytes([0])
 
-        top = 2**53 - 1
+        max_safe = 2**53 - 1
         cases = {
-            "client": lambda n: written(client=n),
-            "clock": lambda n: written(clock=n - 1),
-            "origin client": lambda n: written(origin=(n, 0)),
-            "origin clock": lambda n: written(origin=(5, n)),
-            "delete client": lambda n: deleted(client=n),
-            "delete clock": lambda n: deleted(clock=n - 1),
-            "delete length": lambda n: deleted(length=n),
-            "number": counted,
+            "client": lambda value: written(client=value),
+            "clock": lambda value: written(clock=value - 1),
+            "origin client": lambda value: written(origin=(value, 0)),
+            "origin clock": lambda value: written(origin=(5, value)),
+            "delete client": lambda value: deleted(client=value),
+            "delete clock": lambda value: deleted(clock=value - 1),
+            "delete length": lambda value: deleted(length=value),
+            "number": any_integer,
         }
         for case, build in cases.items():
             with self.subTest(case):
-                parse(build(top))
-                for past in (top + 1, 2**64):
+                parse(build(max_safe))
+                for past in (max_safe + 1, 2**64):
                     with self.assertRaises(ValueError):
                         parse(build(past))
 
@@ -195,9 +195,9 @@ class TestRewriteValues(UnitTestCase):
 
         state = doc.get_update()
         rewritten_state = rewrite_values(state, swap)
-        rewritten = load([rewritten_state])
+        rewritten = load_doc([rewritten_state])
 
-        self.assertEqual(snapshot(rewritten), snapshot(doc))
+        self.assertEqual(vector_and_deletes(rewritten), vector_and_deletes(doc))
         body = rewritten.get("default", type=pycrdt.XmlFragment)
         image, text = body.children
         self.assertEqual(dict(image.attributes), {"src": "/embed.get?id=NEW", "data-node": "NEW", "alt": "x"})
@@ -230,8 +230,8 @@ class TestRewriteValues(UnitTestCase):
         rewritten = rewrite_values(state, swap)
 
         self.assertEqual(rewritten.count(b"OLD"), 1, "only the text still says OLD")
-        reloaded = load([rewritten])
-        self.assertEqual(snapshot(reloaded), snapshot(first))
+        reloaded = load_doc([rewritten])
+        self.assertEqual(vector_and_deletes(reloaded), vector_and_deletes(first))
 
     def test_nothing_to_rewrite_keeps_every_byte_and_a_rerun_changes_nothing(self):
         state = pictured().get_update()

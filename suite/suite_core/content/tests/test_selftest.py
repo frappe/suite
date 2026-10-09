@@ -14,11 +14,13 @@ class TestCollabSelfTest(IntegrationTestCase):
         super().setUp()
         # The self-test commits its record, so the site's own last result is put back afterwards
         fields = ("self_test_at", "self_test_passed", "self_test_report")
-        kept = {field: frappe.db.get_single_value("Suite Collab Settings", field) for field in fields}
-        self.addCleanup(self.restore, kept)
+        previous_settings = {
+            field: frappe.db.get_single_value("Suite Collab Settings", field) for field in fields
+        }
+        self.addCleanup(self.restore, previous_settings)
 
-    def restore(self, kept: dict):
-        frappe.db.set_single_value("Suite Collab Settings", kept)
+    def restore(self, previous_settings: dict):
+        frappe.db.set_single_value("Suite Collab Settings", previous_settings)
         frappe.db.commit()
 
     def recorded(self) -> tuple[int, dict]:
@@ -45,10 +47,10 @@ class TestCollabSelfTest(IntegrationTestCase):
         self.assertEqual((passed, report["pycrdt"], report["compaction"]), (0, "0.15.0", "kernel_version"))
 
     def test_a_compaction_that_loses_a_change_fails_the_run(self):
-        real = compaction.compact
+        real_compact = compaction.compact
 
         def drops_the_last_row(checkpoint, rows, roots):
-            return real(checkpoint, rows[:-1], roots)
+            return real_compact(checkpoint, rows[:-1], roots)
 
         with patch.object(compaction, "compact", drops_the_last_row):
             selftest.self_test()

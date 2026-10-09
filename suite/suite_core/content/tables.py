@@ -40,7 +40,7 @@ def ensure_tables(adapter: str) -> None:
         "`state_bytes` bigint unsigned NOT NULL DEFAULT 0",
         "`tail_rows` bigint unsigned NOT NULL DEFAULT 0",
         "`tail_bytes` bigint unsigned NOT NULL DEFAULT 0",
-        # The most the tail can add to the next compaction: the sum of its rows' bounds (capacity.bound)
+        # The most the tail can add to the next compaction: the sum of its rows' bounds (capacity.row_bound)
         "`tail_bound` bigint unsigned NOT NULL DEFAULT 0",
         "`compaction_failures` int unsigned NOT NULL DEFAULT 0",
         "`next_compaction_at` datetime(6) NULL",

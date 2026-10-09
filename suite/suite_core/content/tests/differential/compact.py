@@ -12,36 +12,35 @@ import sys
 
 import pycrdt
 
-from suite.suite_core.content.compaction import CompactionFailed, compact, load
+from suite.suite_core.content.compaction import CompactionFailed, compact, load_doc
 
-HERE = pathlib.Path(__file__).parent
-WRITER = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
-SLIDES = {"meta": pycrdt.Map, "slides": pycrdt.Map, "provenance": pycrdt.Map}
+DIFFERENTIAL_DIR = pathlib.Path(__file__).parent
+WRITER_ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
+SLIDES_ROOTS = {"meta": pycrdt.Map, "slides": pycrdt.Map, "provenance": pycrdt.Map}
 
 
 def roots_of(parts: list[bytes]) -> dict:
     try:
-        return SLIDES if "slides" in load(parts).keys() else WRITER
+        return SLIDES_ROOTS if "slides" in load_doc(parts).keys() else WRITER_ROOTS
     except Exception:
-        return WRITER  # the compaction reports what it cannot read
+        return WRITER_ROOTS  # the compaction reports what it cannot read
 
 
-def run(job: dict) -> dict:
-    decode = base64.b64decode
-    checkpoint = decode(job["cp"]) if job.get("cp") else None
-    rows = [decode(row) for row in job["rows"]]
-    stages = [[], [decode(job["heal"])]] if job.get("heal") else [[]]
+def compact_job(job: dict) -> dict:
+    checkpoint = base64.b64decode(job["cp"]) if job.get("cp") else None
+    rows = [base64.b64decode(row) for row in job["rows"]]
+    arrivals = [[], [base64.b64decode(job["heal"])]] if job.get("heal") else [[]]
     parts = ([checkpoint] if checkpoint else []) + rows
     roots = roots_of(parts)
     outcomes = []
-    for arriving in stages:
+    for arriving in arrivals:
         rows += arriving
         try:
             compacted = compact(checkpoint, rows, roots)
             checkpoint, rows = compacted.state, []
             outcomes.append("compacted")
-        except CompactionFailed as failed:
-            outcomes.append(failed.reason)
+        except CompactionFailed as error:
+            outcomes.append(error.reason)
 
     fully_compacted = checkpoint and not rows
     return {
@@ -54,8 +53,8 @@ def run(job: dict) -> dict:
 if __name__ == "__main__":
     jobs = []
     for name in ("robust", "emoji"):
-        compressed = (HERE / f"{name}.json.gz").read_bytes()
+        compressed = (DIFFERENTIAL_DIR / f"{name}.json.gz").read_bytes()
         jobs += json.loads(gzip.decompress(compressed))
 
-    results = [run(job) for job in jobs]
+    results = [compact_job(job) for job in jobs]
     pathlib.Path(sys.argv[1]).write_text(json.dumps(results))

@@ -17,8 +17,8 @@ import pycrdt
 from suite.suite_core.content import updates
 from suite.suite_core.content.updates import Reader
 
-PYCRDT = "0.14.8"
-KERNEL = f"pycrdt {PYCRDT}"
+PYCRDT_VERSION = "0.14.8"
+KERNEL = f"pycrdt {PYCRDT_VERSION}"
 
 
 class CompactionFailed(Exception):
@@ -38,14 +38,14 @@ class Compacted:
 
 def compact(checkpoint: bytes | None, rows: list[bytes], roots: Mapping[str, type]) -> Compacted:
     """`roots` names every root type the product writes; a document with another root is refused."""
-    if pycrdt.__version__ != PYCRDT:
+    if pycrdt.__version__ != PYCRDT_VERSION:
         raise CompactionFailed("kernel_version")
 
     checkpoint_part = [checkpoint] if checkpoint else []
     parts = checkpoint_part + list(rows)
-    found = unfit(parts)
-    if found:
-        raise CompactionFailed(found[1])
+    unfit_part = first_unfit_part(parts)
+    if unfit_part:
+        raise CompactionFailed(unfit_part[1])
 
     try:
         merged = pycrdt.merge_updates(*parts)
@@ -55,32 +55,32 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: Mapping[str, typ
         if Reader(past_state).uint():
             raise CompactionFailed("missing_dependency")
 
-        wanted = state_vector(merged_state)
-        doc = load(parts)
+        wanted_vector = state_vector(merged_state)
+        doc = load_doc(parts)
         state = doc.get_update()
         report = {"rows": len(rows)}
-        reached = state_vector(pycrdt.get_state(state))
-        if reached != wanted:
+        reached_vector = state_vector(pycrdt.get_state(state))
+        if reached_vector != wanted_vector:
             report["short"] = True
             missing = pycrdt.get_update(merged, doc.get_state())
             state = pycrdt.merge_updates(state, missing)
         del doc
-        reached = state_vector(pycrdt.get_state(state))
-        if reached != wanted:
+        reached_vector = state_vector(pycrdt.get_state(state))
+        if reached_vector != wanted_vector:
             report["fallback"] = True
             return Compacted(merged, integrated=False, report=report)
 
-        expected = fingerprint(load([merged]), roots)
-        reloaded = load([state])
-        if fingerprint(reloaded, roots) != expected:
+        expected_fingerprint = fingerprint(load_doc([merged]), roots)
+        reloaded = load_doc([state])
+        if fingerprint(reloaded, roots) != expected_fingerprint:
             raise CompactionFailed("content_mismatch")
 
-        if fingerprint(load([reloaded.get_update()]), roots) != expected:
+        if fingerprint(load_doc([reloaded.get_update()]), roots) != expected_fingerprint:
             raise CompactionFailed("reencode_mismatch")
 
         for part in parts:
             reloaded.apply_update(part)
-        if snapshot(reloaded) != expected[1:]:
+        if vector_and_deletes(reloaded) != expected_fingerprint[1:]:
             raise CompactionFailed("not_contained")
     except CompactionFailed:
         raise
@@ -89,11 +89,11 @@ def compact(checkpoint: bytes | None, rows: list[bytes], roots: Mapping[str, typ
             raise
         raise CompactionFailed("unreadable") from error
 
-    report["clients"] = len(expected[1])
+    report["clients"] = len(expected_fingerprint[1])
     return Compacted(state, integrated=True, report=report)
 
 
-def unfit(parts: list[bytes]) -> tuple[int, str] | None:
+def first_unfit_part(parts: list[bytes]) -> tuple[int, str] | None:
     """The index of the first part that can't be read or that splits an emoji, or any surrogate pair,
     between its two halves, with the reason; None when every part is fit.
 
@@ -114,12 +114,12 @@ def unfit(parts: list[bytes]) -> tuple[int, str] | None:
     return None
 
 
-def same(left: bytes, right: bytes, roots: Mapping[str, type]) -> bool:
+def same_content(left: bytes, right: bytes, roots: Mapping[str, type]) -> bool:
     """Whether two states hold the same content, state vector and delete set."""
-    return fingerprint(load([left]), roots) == fingerprint(load([right]), roots)
+    return fingerprint(load_doc([left]), roots) == fingerprint(load_doc([right]), roots)
 
 
-def load(parts: list[bytes]) -> pycrdt.Doc:
+def load_doc(parts: list[bytes]) -> pycrdt.Doc:
     doc: pycrdt.Doc = pycrdt.Doc()
     for part in parts:
         doc.apply_update(part)
@@ -128,10 +128,10 @@ def load(parts: list[bytes]) -> pycrdt.Doc:
 
 
 def fingerprint(doc: pycrdt.Doc, roots: Mapping[str, type]) -> tuple[str, dict, dict]:
-    return (content(doc, roots), *snapshot(doc))
+    return (content_json(doc, roots), *vector_and_deletes(doc))
 
 
-def content(doc: pycrdt.Doc, roots: Mapping[str, type], rewrite=None) -> str:
+def content_json(doc: pycrdt.Doc, roots: Mapping[str, type], rewrite=None) -> str:
     """The document as JSON; `rewrite` is applied to its values, never its text, tags or keys."""
     unknown = set(doc.keys()) - set(roots)
     if unknown:
@@ -141,11 +141,11 @@ def content(doc: pycrdt.Doc, roots: Mapping[str, type], rewrite=None) -> str:
     return json.dumps(by_root, ensure_ascii=False)
 
 
-def snapshot(doc: pycrdt.Doc) -> tuple[dict, dict]:
+def vector_and_deletes(doc: pycrdt.Doc) -> tuple[dict, dict]:
     """The state vector and the merged delete set, read from pycrdt's snapshot encoding."""
     encoded = pycrdt.Snapshot.from_doc(doc).encode()
     reader = Reader(encoded)
-    deleted = {}
+    delete_set = {}
     for _ in range(reader.uint()):
         client = reader.uint()
         merged: list[list[int]] = []
@@ -156,16 +156,16 @@ def snapshot(doc: pycrdt.Doc) -> tuple[dict, dict]:
             elif length:
                 merged.append([start, length])
         if merged:
-            deleted[client] = [tuple(r) for r in merged]
+            delete_set[client] = [tuple(span) for span in merged]
 
-    return clocks(reader), deleted
+    return read_clocks(reader), delete_set
 
 
 def state_vector(encoded: bytes) -> dict:
-    return clocks(Reader(encoded))
+    return read_clocks(Reader(encoded))
 
 
-def clocks(reader: Reader) -> dict:
+def read_clocks(reader: Reader) -> dict:
     found = {}
     for _ in range(reader.uint()):
         client, clock = reader.uint(), reader.uint()
@@ -177,24 +177,24 @@ def clocks(reader: Reader) -> dict:
 
 def serialize(value, rewrite=None):
     if isinstance(value, pycrdt.XmlText):
-        out = {"text": delta(value.diff(), rewrite)}
+        serialized = {"text": text_delta(value.diff(), rewrite)}
         if attributes := dict(value.attributes):
-            out["attrs"] = plain(attributes, rewrite)
+            serialized["attrs"] = plain_value(attributes, rewrite)
 
-        return out
+        return serialized
 
     if isinstance(value, pycrdt.XmlElement):
         return {
             "el": value.tag,
-            "attrs": plain(dict(value.attributes), rewrite),
-            "kids": [serialize(c, rewrite) for c in value.children],
+            "attrs": plain_value(dict(value.attributes), rewrite),
+            "kids": [serialize(child, rewrite) for child in value.children],
         }
 
     if isinstance(value, pycrdt.XmlFragment):
         return {"frag": [serialize(child, rewrite) for child in value.children]}
 
     if isinstance(value, pycrdt.Text):
-        return {"ytext": delta(value.diff(), rewrite)}
+        return {"ytext": text_delta(value.diff(), rewrite)}
 
     if isinstance(value, pycrdt.Map):
         return {"map": {key: serialize(value[key], rewrite) for key in sorted(value.keys())}}
@@ -202,30 +202,30 @@ def serialize(value, rewrite=None):
     if isinstance(value, pycrdt.Array):
         return {"arr": [serialize(item, rewrite) for item in value]}
 
-    return plain(value, rewrite)
+    return plain_value(value, rewrite)
 
 
-def delta(diff, rewrite=None) -> list:
-    out: list[dict] = []
+def text_delta(diff, rewrite=None) -> list:
+    ops: list[dict] = []
     for insert, attributes in diff:
-        item = insert if isinstance(insert, str) else plain(insert, rewrite)
-        attributes = plain(dict(attributes), rewrite) if attributes else None
+        item = insert if isinstance(insert, str) else plain_value(insert, rewrite)
+        attributes = plain_value(dict(attributes), rewrite) if attributes else None
         last_is_same_text = (
-            bool(out) and isinstance(out[-1]["insert"], str) and out[-1].get("attributes") == attributes
+            bool(ops) and isinstance(ops[-1]["insert"], str) and ops[-1].get("attributes") == attributes
         )
         if isinstance(item, str) and last_is_same_text:
-            out[-1]["insert"] += item
+            ops[-1]["insert"] += item
             continue
 
         entry = {"insert": item}
         if attributes:
             entry["attributes"] = attributes
-        out.append(entry)
+        ops.append(entry)
 
-    return out
+    return ops
 
 
-def plain(value, rewrite=None):
+def plain_value(value, rewrite=None):
     if isinstance(
         value,
         pycrdt.Map | pycrdt.Array | pycrdt.Text | pycrdt.XmlFragment | pycrdt.XmlElement | pycrdt.XmlText,
@@ -236,13 +236,13 @@ def plain(value, rewrite=None):
         return rewrite(value)
 
     if isinstance(value, list | tuple):
-        return [plain(item, rewrite) for item in value]
+        return [plain_value(item, rewrite) for item in value]
 
     if isinstance(value, bytes | bytearray):
         return {"$bin": bytes(value).hex()}
 
     if isinstance(value, dict):
-        return {key: plain(value[key], rewrite) for key in sorted(value)}
+        return {key: plain_value(value[key], rewrite) for key in sorted(value)}
 
     if isinstance(value, float) and value.is_integer():
         return int(value)

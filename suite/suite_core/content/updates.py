@@ -12,9 +12,9 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-MAX_SAFE = 2**53 - 1
+MAX_SAFE_INTEGER = 2**53 - 1
 MAX_DEPTH = 100
-ASTRAL = re.compile("[\U00010000-\U0010ffff]")
+ASTRAL_CHAR = re.compile("[\U00010000-\U0010ffff]")
 
 
 @dataclass
@@ -72,18 +72,18 @@ class Update:
 
 
 class Reader:
-    __slots__ = ("at", "data")
+    __slots__ = ("buffer", "position")
 
-    def __init__(self, data: bytes):
-        self.data = data
-        self.at = 0
+    def __init__(self, buffer: bytes):
+        self.buffer = buffer
+        self.position = 0
 
     def byte(self) -> int:
-        if self.at >= len(self.data):
+        if self.position >= len(self.buffer):
             raise ValueError("unexpected end of update")
 
-        self.at += 1
-        return self.data[self.at - 1]
+        self.position += 1
+        return self.buffer[self.position - 1]
 
     def uint(self) -> int:
         value, factor = 0, 1
@@ -91,13 +91,13 @@ class Reader:
             byte = self.byte()
             value += (byte & 0x7F) * factor
             factor *= 128
-            if value > MAX_SAFE:
+            if value > MAX_SAFE_INTEGER:
                 raise ValueError("integer out of range")
 
             if byte < 0x80:
                 return value
 
-    def int(self) -> None:
+    def skip_signed(self) -> None:
         byte = self.byte()
         value, factor = byte & 0x3F, 64
         if byte & 0x80 == 0:
@@ -107,22 +107,22 @@ class Reader:
             byte = self.byte()
             value += (byte & 0x7F) * factor
             factor *= 128
-            if value > MAX_SAFE:
+            if value > MAX_SAFE_INTEGER:
                 raise ValueError("integer out of range")
 
             if byte < 0x80:
                 return
 
-    def raw(self, length: builtins.int) -> bytes:
-        if self.at + length > len(self.data):
+    def read_bytes(self, length: builtins.int) -> bytes:
+        if self.position + length > len(self.buffer):
             raise ValueError("unexpected end of update")
 
-        self.at += length
-        return self.data[self.at - length : self.at]
+        self.position += length
+        return self.buffer[self.position - length : self.position]
 
     def string(self) -> str:
         length = self.uint()
-        return self.raw(length).decode("utf-8")
+        return self.read_bytes(length).decode("utf-8")
 
     def json(self):
         return checked_json(self.string())
@@ -161,31 +161,31 @@ def checked_json(text: str):
 
 def string_length(struct: Struct, text: str) -> int:
     """The text's length in UTF-16 code units, the way Yjs counts clocks, noting where each pair splits."""
-    extra = 0
-    for found in ASTRAL.finditer(text):
-        struct.pairs.append(struct.clock + found.start() + extra + 1)
-        extra += 1
+    surrogate_count = 0
+    for astral_match in ASTRAL_CHAR.finditer(text):
+        struct.pairs.append(struct.clock + astral_match.start() + surrogate_count + 1)
+        surrogate_count += 1
 
-    return len(text) + extra
+    return len(text) + surrogate_count
 
 
-def parse(data: bytes) -> Update:
-    reader = Reader(data)
+def parse(payload: bytes) -> Update:
+    reader = Reader(payload)
     update = Update()
-    seen = set()
+    seen_clients = set()
     for _section in range(reader.uint()):
-        count, client, clock = reader.uint(), reader.uint(), reader.uint()
-        if client in seen:
+        struct_count, client, clock = reader.uint(), reader.uint(), reader.uint()
+        if client in seen_clients:
             raise ValueError("a client appears twice")
 
-        seen.add(client)
-        for _struct in range(count):
+        seen_clients.add(client)
+        for _struct in range(struct_count):
             struct = read_struct(reader, client, clock)
             if struct.length == 0:
                 raise ValueError("empty struct")
 
             clock += struct.length
-            if clock > MAX_SAFE:
+            if clock > MAX_SAFE_INTEGER:
                 raise ValueError("clock out of range")
 
             update.structs.append(struct)
@@ -198,12 +198,12 @@ def parse(data: bytes) -> Update:
             if length == 0:
                 raise ValueError("empty delete range")
 
-            if clock + length > MAX_SAFE:
+            if clock + length > MAX_SAFE_INTEGER:
                 raise ValueError("clock out of range")
 
             ranges.append((clock, length))
 
-    if reader.at != len(data):
+    if reader.position != len(payload):
         raise ValueError("trailing bytes")
 
     return update
@@ -211,12 +211,12 @@ def parse(data: bytes) -> Update:
 
 def read_struct(reader: Reader, client: int, clock: int) -> Struct:
     info = reader.byte()
-    ref = info & 0x1F
-    if ref in (0, 10):  # GC and Skip
+    content_ref = info & 0x1F
+    if content_ref in (0, 10):  # GC and Skip
         length = reader.uint()
-        return Struct(client, clock, length, ref)
+        return Struct(client, clock, length, content_ref)
 
-    struct = Struct(client, clock, 0, ref)
+    struct = Struct(client, clock, 0, content_ref)
     if info & 0x80:
         struct.origin = reader.id()
     if info & 0x40:
@@ -230,15 +230,15 @@ def read_struct(reader: Reader, client: int, clock: int) -> Struct:
         if info & 0x20:
             struct.names.append(reader.string())
 
-    struct.length = read_content(reader, ref, struct)
+    struct.length = read_content(reader, content_ref, struct)
     return struct
 
 
-def read_content(reader: Reader, ref: int, struct: Struct) -> int:
-    if ref == 1:  # deleted
+def read_content(reader: Reader, content_ref: int, struct: Struct) -> int:
+    if content_ref == 1:  # deleted
         return reader.uint()
 
-    if ref == 2:  # JSON
+    if content_ref == 2:  # JSON
         count = reader.uint()
         for _item in range(count):
             value = reader.string()
@@ -246,20 +246,20 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
                 checked_json(value)
         return count
 
-    if ref == 3:  # binary
+    if content_ref == 3:  # binary
         length = reader.uint()
-        reader.raw(length)
+        reader.read_bytes(length)
         return 1
 
-    if ref == 4:  # string
+    if content_ref == 4:  # string
         text = reader.string()
         return string_length(struct, text)
 
-    if ref == 5:  # embed
+    if content_ref == 5:  # embed
         reader.json()
         return 1
 
-    if ref == 6:  # format
+    if content_ref == 6:  # format
         # A mark that may overlap itself is keyed `name--<hash>`
         struct.format_key = reader.string()
         mark_name = struct.format_key.split("--", 1)[0]
@@ -269,7 +269,7 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
             struct.names.extend(attributes)
         return 1
 
-    if ref == 7:  # type
+    if content_ref == 7:  # type
         struct.type = reader.uint()
         if struct.type in (3, 5):
             struct.node = reader.string()
@@ -278,18 +278,18 @@ def read_content(reader: Reader, ref: int, struct: Struct) -> int:
             raise ValueError(f"unknown type {struct.type}")
         return 1
 
-    if ref == 8:  # any
+    if content_ref == 8:  # any
         count = reader.uint()
         for _item in range(count):
             read_any(reader)
         return count
 
-    if ref == 9:  # subdocument
+    if content_ref == 9:  # subdocument
         reader.string()
         read_any(reader)
         return 1
 
-    raise ValueError(f"unknown content {ref}")
+    raise ValueError(f"unknown content {content_ref}")
 
 
 def read_any(reader: Reader, depth: int = 0) -> None:
@@ -298,11 +298,11 @@ def read_any(reader: Reader, depth: int = 0) -> None:
         return
 
     if tag == 125:
-        reader.int()
+        reader.skip_signed()
     elif tag == 124:
-        reader.raw(4)
+        reader.read_bytes(4)
     elif tag in (123, 122):
-        reader.raw(8)
+        reader.read_bytes(8)
     elif tag == 119:
         reader.string()
     elif tag in (118, 117):  # object, array
@@ -315,7 +315,7 @@ def read_any(reader: Reader, depth: int = 0) -> None:
             read_any(reader, depth + 1)
     elif tag == 116:
         length = reader.uint()
-        reader.raw(length)
+        reader.read_bytes(length)
     else:
         raise ValueError(f"unknown value tag {tag}")
 
@@ -329,23 +329,23 @@ def rewrite_values(data: bytes, rewrite: Callable[[str], str]) -> bytes:
     """
     parse(data)
     reader = Reader(data)
-    out = bytearray()
-    copied = 0
+    rewritten_update = bytearray()
+    copied_up_to = 0
 
-    def replace(start: int, value: bytes) -> None:
-        nonlocal copied
-        if value != data[start : reader.at]:
-            out.extend(data[copied:start])
-            out.extend(value)
-            copied = reader.at
+    def replace_value(start: int, value: bytes) -> None:
+        nonlocal copied_up_to
+        if value != data[start : reader.position]:
+            rewritten_update.extend(data[copied_up_to:start])
+            rewritten_update.extend(value)
+            copied_up_to = reader.position
 
     for _section in range(reader.uint()):
         count = reader.uint()
         reader.uint(), reader.uint()
         for _struct in range(count):
             info = reader.byte()
-            ref = info & 0x1F
-            if ref in (0, 10):
+            content_ref = info & 0x1F
+            if content_ref in (0, 10):
                 reader.uint()
                 continue
 
@@ -361,57 +361,57 @@ def rewrite_values(data: bytes, rewrite: Callable[[str], str]) -> bytes:
                 if info & 0x20:
                     reader.string()
 
-            if ref == 2:  # JSON
+            if content_ref == 2:  # JSON
                 for _item in range(reader.uint()):
-                    start = reader.at
+                    start = reader.position
                     value = reader.string()
                     if value != "undefined":
                         rewritten = rewritten_json(value, rewrite)
-                        replace(start, encoded_string(rewritten))
-            elif ref == 5:  # embed
-                start = reader.at
+                        replace_value(start, encoded_string(rewritten))
+            elif content_ref == 5:  # embed
+                start = reader.position
                 value = reader.string()
                 rewritten = rewritten_json(value, rewrite)
-                replace(start, encoded_string(rewritten))
-            elif ref == 6:  # format
+                replace_value(start, encoded_string(rewritten))
+            elif content_ref == 6:  # format
                 reader.string()
-                start = reader.at
+                start = reader.position
                 value = reader.string()
                 rewritten = rewritten_json(value, rewrite)
-                replace(start, encoded_string(rewritten))
-            elif ref == 8:  # any
+                replace_value(start, encoded_string(rewritten))
+            elif content_ref == 8:  # any
                 for _item in range(reader.uint()):
-                    start = reader.at
+                    start = reader.position
                     rewritten_value = rewritten_any(reader, rewrite)
-                    replace(start, rewritten_value)
+                    replace_value(start, rewritten_value)
             else:
-                read_content(reader, ref, Struct(0, 0, 0))
+                read_content(reader, content_ref, Struct(0, 0, 0))
 
-    out.extend(data[copied:])
-    return bytes(out)
+    rewritten_update.extend(data[copied_up_to:])
+    return bytes(rewritten_update)
 
 
 def rewritten_json(text: str, rewrite: Callable[[str], str]) -> str:
-    def walk(value):
+    def rewrite_strings(value):
         if isinstance(value, str):
             return rewrite(value)
         if isinstance(value, list):
-            return [walk(item) for item in value]
+            return [rewrite_strings(item) for item in value]
         if isinstance(value, dict):
-            return {key: walk(item) for key, item in value.items()}
+            return {key: rewrite_strings(item) for key, item in value.items()}
         return value
 
     value = json.loads(text, parse_constant=refuse_constant)
-    changed = walk(value)
-    if changed == value:
+    rewritten = rewrite_strings(value)
+    if rewritten == value:
         return text
 
-    return json.dumps(changed, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(rewritten, ensure_ascii=False, separators=(",", ":"))
 
 
 def rewritten_any(reader: Reader, rewrite: Callable[[str], str]) -> bytes:
     """One value read from `reader`, encoded again with its strings rewritten and everything else as read."""
-    start = reader.at
+    start = reader.position
     tag = reader.byte()
     if tag == 119:
         text = reader.string()
@@ -422,9 +422,9 @@ def rewritten_any(reader: Reader, rewrite: Callable[[str], str]) -> bytes:
         count = reader.uint()
         out = bytearray([tag]) + encoded_uint(count)
         for _key in range(count):
-            key_start = reader.at
+            key_start = reader.position
             reader.string()
-            key = reader.data[key_start : reader.at]
+            key = reader.buffer[key_start : reader.position]
             value = rewritten_any(reader, rewrite)
             out += key + value
         return bytes(out)
@@ -436,21 +436,21 @@ def rewritten_any(reader: Reader, rewrite: Callable[[str], str]) -> bytes:
             out += rewritten_any(reader, rewrite)
         return bytes(out)
 
-    reader.at = start
+    reader.position = start
     read_any(reader)
-    return reader.data[start : reader.at]
+    return reader.buffer[start : reader.position]
 
 
 def encoded_string(text: str) -> bytes:
-    raw = text.encode("utf-8")
-    return encoded_uint(len(raw)) + raw
+    utf8 = text.encode("utf-8")
+    return encoded_uint(len(utf8)) + utf8
 
 
 def encoded_uint(value: int) -> bytes:
-    out = bytearray()
+    encoded = bytearray()
     while value > 0x7F:
-        out.append(0x80 | (value & 0x7F))
+        encoded.append(0x80 | (value & 0x7F))
         value >>= 7
 
-    out.append(value)
-    return bytes(out)
+    encoded.append(value)
+    return bytes(encoded)

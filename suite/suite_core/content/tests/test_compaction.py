@@ -5,14 +5,14 @@ import pycrdt
 from frappe.tests import UnitTestCase
 
 from suite.suite_core.content import compaction
-from suite.suite_core.content.compaction import CompactionFailed, compact, load, same
+from suite.suite_core.content.compaction import CompactionFailed, compact, load_doc, same_content
 
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 
 
 def typing(seed: int, edits: int = 12, client_id: int = 7):
     """A document typed into one paragraph, and the update each edit sent."""
-    rnd = random.Random(seed)
+    rng = random.Random(seed)
     doc = pycrdt.Doc(client_id=client_id)
     updates = []
     doc.observe(lambda event: updates.append(event.update))
@@ -21,44 +21,57 @@ def typing(seed: int, edits: int = 12, client_id: int = 7):
     text = paragraph.children.append(pycrdt.XmlText())
     for _ in range(edits):
         length = len(str(text))
-        if length > 2 and rnd.random() < 0.3:
-            index = rnd.randrange(length - 1)
+        if length > 2 and rng.random() < 0.3:
+            index = rng.randrange(length - 1)
             del text[index : index + 1]
         else:
-            text.insert(rnd.randint(0, length), rnd.choice("abcdef"))
+            text.insert(rng.randint(0, length), rng.choice("abcdef"))
     return str(text), updates
 
 
-def number(value: int) -> bytes:
-    out = bytearray()
+def encoded_varuint(value: int) -> bytes:
+    encoded = bytearray()
     while value >= 0x80:
-        out.append(value & 0x7F | 0x80)
+        encoded.append(value & 0x7F | 0x80)
         value >>= 7
-    return bytes(out + bytes([value]))
+    return bytes(encoded + bytes([value]))
 
 
 def crafted(*, insert=None, delete=None) -> bytes:
     """A v1 row no editor would send. `insert` is (client, clock, origin, right_origin, text), `delete` is (client, clock, length)."""
-    out = number(0)
+    out = encoded_varuint(0)
     if insert:
-        client, clock, origin, right, text = insert
+        client, clock, origin, right_origin, text = insert
         encoded = text.encode()
-        info = 0x84 | (0x40 if right else 0)
-        out = number(1) + number(1) + number(client) + number(clock) + bytes([info])
-        origins = (origin, right) if right else (origin,)
-        for found in origins:
-            out += number(found[0]) + number(found[1])
-        out += number(len(encoded)) + encoded
+        info = 0x84 | (0x40 if right_origin else 0)
+        out = (
+            encoded_varuint(1)
+            + encoded_varuint(1)
+            + encoded_varuint(client)
+            + encoded_varuint(clock)
+            + bytes([info])
+        )
+        origins = (origin, right_origin) if right_origin else (origin,)
+        for origin_id in origins:
+            out += encoded_varuint(origin_id[0]) + encoded_varuint(origin_id[1])
+        out += encoded_varuint(len(encoded)) + encoded
 
     if delete:
         client, clock, length = delete
-        return out + number(1) + number(client) + number(1) + number(clock) + number(length)
+        return (
+            out
+            + encoded_varuint(1)
+            + encoded_varuint(client)
+            + encoded_varuint(1)
+            + encoded_varuint(clock)
+            + encoded_varuint(length)
+        )
 
-    return out + number(0)
+    return out + encoded_varuint(0)
 
 
 def text_of(state: bytes) -> str:
-    fragment = load([state]).get("default", type=pycrdt.XmlFragment)
+    fragment = load_doc([state]).get("default", type=pycrdt.XmlFragment)
     return "".join(str(text) for paragraph in fragment.children for text in paragraph.children)
 
 
@@ -79,7 +92,7 @@ class TestCompaction(UnitTestCase):
         chained = compact(second.state, rows[30:], ROOTS)
         direct = compact(None, rows, ROOTS)
 
-        self.assertTrue(same(chained.state, direct.state, ROOTS))
+        self.assertTrue(same_content(chained.state, direct.state, ROOTS))
 
     def test_rows_out_of_order_still_compact_into_the_typed_text(self):
         # pycrdt leaves part of this shuffled history out of its first result
@@ -179,12 +192,12 @@ class TestCompaction(UnitTestCase):
         after = compact(None, [typed, typing_after], ROOTS)
         removed = compact(None, [typed, deleting], ROOTS)
 
-        def read(state):
-            loaded = load([state])
+        def text_in(state):
+            loaded = load_doc([state])
             return str(loaded.get("default", type=pycrdt.XmlFragment))
 
-        self.assertEqual(read(after.state), "a😀xb")
-        self.assertEqual(read(removed.state), "ab")
+        self.assertEqual(text_in(after.state), "a😀xb")
+        self.assertEqual(text_in(removed.state), "ab")
 
     def test_a_row_the_strict_reader_refuses_leaves_the_log_uncompacted(self):
         _typed, rows = typing(seed=3)
@@ -198,22 +211,22 @@ class TestCompaction(UnitTestCase):
         # Each check, made to disagree once, must refuse rather than install
         _typed, rows = typing(seed=3)
 
-        real_fingerprint, real_snapshot = compaction.fingerprint, compaction.snapshot
+        real_fingerprint, real_vector_and_deletes = compaction.fingerprint, compaction.vector_and_deletes
         for reason, target, call in (
             ("content_mismatch", "fingerprint", 2),
             ("reencode_mismatch", "fingerprint", 3),
-            ("not_contained", "snapshot", 4),
+            ("not_contained", "vector_and_deletes", 4),
         ):
-            real = real_fingerprint if target == "fingerprint" else real_snapshot
+            real_check = real_fingerprint if target == "fingerprint" else real_vector_and_deletes
             calls = []
 
-            def disagreeing(*args, real=real, call=call, calls=calls):
+            def disagreeing(*args, real_check=real_check, call=call, calls=calls):
                 calls.append(1)
-                found = real(*args)
+                real_result = real_check(*args)
                 if len(calls) == call:
-                    return (*found[:-1], {"changed": True})
+                    return (*real_result[:-1], {"changed": True})
 
-                return found
+                return real_result
 
             with self.subTest(reason), patch.object(compaction, target, disagreeing):
                 with self.assertRaises(CompactionFailed) as failed:

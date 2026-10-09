@@ -47,11 +47,11 @@ def valid_id(value) -> bool:
     return isinstance(value, str) and len(value) == 32 and value.isalnum() and value.isascii()
 
 
-def count(total_len: int) -> int:
+def piece_count(total_len: int) -> int:
     return -(-total_len // PIECE_MAX)
 
 
-def parse_piece(body: bytes, idx: str) -> tuple[dict, int, bytes]:
+def parse_piece(body: bytes, index_text: str) -> tuple[dict, int, bytes]:
     """Split `u32 hlen | header JSON | piece` and check the piece's place in its change."""
     if len(body) < 4:
         raise Malformed
@@ -85,10 +85,10 @@ def parse_piece(body: bytes, idx: str) -> tuple[dict, int, bytes]:
     if header["total_len"] > capacity.edit_max():
         raise TooLarge
 
-    if not idx.isdigit() or int(idx) >= count(header["total_len"]):
+    if not index_text.isdigit() or int(index_text) >= piece_count(header["total_len"]):
         raise Malformed
 
-    index = int(idx)
+    index = int(index_text)
     piece = body[4 + length :]
     expected_len = min(PIECE_MAX, header["total_len"] - index * PIECE_MAX)
     if len(piece) != expected_len:
@@ -98,32 +98,32 @@ def parse_piece(body: bytes, idx: str) -> tuple[dict, int, bytes]:
     return header, index, piece
 
 
-def store(
+def store_piece(
     adapter: str, doc_id: str, stage_id: str, index: int, header: dict, piece: bytes, principal: str
 ) -> None:
     """Keep one piece. The same bytes again at an index change nothing but the stage's age. Each
     principal has its own `DOC_MAX`, so one editor's pieces never block another's."""
-    stage = table(adapter, "stage")
-    shape = (header["sid"], header["from"], header["to"], header["total_len"], header["sha_total"])
-    held = frappe.db.sql(
+    stage_table = table(adapter, "stage")
+    stage_shape = (header["sid"], header["from"], header["to"], header["total_len"], header["sha_total"])
+    staged_pieces = frappe.db.sql(
         f"""SELECT `idx`, `sid`, `seq_from`, `seq_to`, `total_len`, `sha_total`, `bytes` = UNHEX(%s) AS `same`
-        FROM `{stage}` WHERE `doc_id` = %s AND `stage_id` = %s""",
+        FROM `{stage_table}` WHERE `doc_id` = %s AND `stage_id` = %s""",
         (piece.hex(), doc_id, stage_id),
         as_dict=True,
     )
-    for row in held:
-        if (row.sid, row.seq_from, row.seq_to, row.total_len, bytes(row.sha_total)) != shape:
+    for row in staged_pieces:
+        if (row.sid, row.seq_from, row.seq_to, row.total_len, bytes(row.sha_total)) != stage_shape:
             raise Conflict
 
         if row.idx == index:
             if not row.same:
                 raise Conflict
 
-            return touch(adapter, doc_id, stage_id)
+            return refresh_expiry(adapter, doc_id, stage_id)
 
     # Locked, so a principal's puts take turns and each sees what the one before it kept
     staged = frappe.db.sql(
-        f"""SELECT COALESCE(SUM(LENGTH(`stage`.`bytes`)), 0) FROM `{stage}` `stage`
+        f"""SELECT COALESCE(SUM(LENGTH(`stage`.`bytes`)), 0) FROM `{stage_table}` `stage`
         JOIN `{table(adapter, "session")}` `session`
             ON `session`.`doc_id` = `stage`.`doc_id` AND `session`.`sid` = `stage`.`sid`
         WHERE `stage`.`doc_id` = %s AND `session`.`principal` = %s FOR UPDATE""",
@@ -134,15 +134,23 @@ def store(
         raise Full
 
     frappe.db.sql(
-        f"""INSERT IGNORE INTO `{stage}`
+        f"""INSERT IGNORE INTO `{stage_table}`
         (`doc_id`, `stage_id`, `idx`, `purpose`, `sid`, `seq_from`, `seq_to`, `total_len`, `sha_total`, `bytes`, `created`)
         VALUES (%s, %s, %s, 'save', %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), %s)""",
-        (doc_id, stage_id, index, *shape[:4], shape[4].hex(), piece.hex(), frappe.utils.now_datetime()),
+        (
+            doc_id,
+            stage_id,
+            index,
+            *stage_shape[:4],
+            stage_shape[4].hex(),
+            piece.hex(),
+            frappe.utils.now_datetime(),
+        ),
     )
-    touch(adapter, doc_id, stage_id)
+    refresh_expiry(adapter, doc_id, stage_id)
 
 
-def touch(adapter: str, doc_id: str, stage_id: str) -> None:
+def refresh_expiry(adapter: str, doc_id: str, stage_id: str) -> None:
     """Restart the expiry of every piece of the stage, so a slow upload loses none of its early pieces."""
     frappe.db.sql(
         f"UPDATE `{table(adapter, 'stage')}` SET `created` = %s WHERE `doc_id` = %s AND `stage_id` = %s",
@@ -163,32 +171,36 @@ def assemble(adapter: str, doc_id: str, stage_id: str, header: dict) -> bytes:
     if not rows:
         raise Incomplete
 
-    first = rows[0]
-    if (first.sid, first.seq_from, first.seq_to) != (header["sid"], header["from"], header["to"]):
+    first_piece = rows[0]
+    if (first_piece.sid, first_piece.seq_from, first_piece.seq_to) != (
+        header["sid"],
+        header["from"],
+        header["to"],
+    ):
         raise Conflict
 
-    expected_indexes = list(range(count(first.total_len)))
+    expected_indexes = list(range(piece_count(first_piece.total_len)))
     if [row.idx for row in rows] != expected_indexes:
         raise Incomplete
 
     payload = b"".join(bytes(row.bytes) for row in rows)
-    length_wrong = len(payload) != first.total_len
-    sha_wrong = hashlib.sha256(payload).digest() != bytes(first.sha_total)
+    length_wrong = len(payload) != first_piece.total_len
+    sha_wrong = hashlib.sha256(payload).digest() != bytes(first_piece.sha_total)
     if length_wrong or sha_wrong:
-        drop(adapter, doc_id, stage_id)
+        drop_stage(adapter, doc_id, stage_id)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         raise Incomplete
 
     return payload
 
 
-def drop(adapter: str, doc_id: str, stage_id: str) -> None:
+def drop_stage(adapter: str, doc_id: str, stage_id: str) -> None:
     frappe.db.sql(
         f"DELETE FROM `{table(adapter, 'stage')}` WHERE `doc_id` = %s AND `stage_id` = %s", (doc_id, stage_id)
     )
 
 
-def expire(adapter: str, now: datetime) -> None:
+def expire_pieces(adapter: str, now: datetime) -> None:
     """Delete save pieces older than `EXPIRY`; their tab still holds the change and can stage it again."""
     frappe.db.sql(
         f"DELETE FROM `{table(adapter, 'stage')}` WHERE `purpose` = 'save' AND `created` < %s", now - EXPIRY

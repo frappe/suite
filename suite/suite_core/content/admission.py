@@ -11,11 +11,13 @@ from frappe.utils.background_jobs import get_redis_conn
 TIMEOUT = 120
 PLACES = 2
 PER_COMPACTION = 240 * 2**20
-LEASE = TIMEOUT + 90
+LEASE_SECONDS = TIMEOUT + 90
 CGROUP = "/sys/fs/cgroup"
 
 # Bench-wide places, held in RQ's Redis; a lease outlives the job timeout, so a killed horse frees its place
-RELEASE = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0"
+RELEASE_SCRIPT = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0"
+)
 
 
 def take_place(adapter: str, doc_id: str) -> tuple[str, list[str]] | None:
@@ -26,24 +28,24 @@ def take_place(adapter: str, doc_id: str) -> tuple[str, list[str]] | None:
     """
     redis = get_redis_conn()
     token = secrets.token_hex(16)
-    own = f"suite:collab:compacting:{frappe.local.site}:{adapter}:{doc_id}"
-    if not redis.set(own, token, nx=True, ex=LEASE):
+    doc_key = f"suite:collab:compacting:{frappe.local.site}:{adapter}:{doc_id}"
+    if not redis.set(doc_key, token, nx=True, ex=LEASE_SECONDS):
         return None
 
     for index in range(PLACES):
         key = f"suite:collab:compaction:{index}"
-        if redis.set(key, token, nx=True, ex=LEASE):
-            return token, [key, own]
+        if redis.set(key, token, nx=True, ex=LEASE_SECONDS):
+            return token, [key, doc_key]
 
-    redis.eval(RELEASE, 1, own, token)
+    redis.eval(RELEASE_SCRIPT, 1, doc_key, token)
     return None
 
 
-def free_place(held: tuple[str, list[str]]) -> None:
-    token, keys = held
+def free_place(place: tuple[str, list[str]]) -> None:
+    token, keys = place
     redis = get_redis_conn()
     for key in keys:
-        redis.eval(RELEASE, 1, key, token)
+        redis.eval(RELEASE_SCRIPT, 1, key, token)
 
 
 def enough_memory() -> bool:
@@ -52,7 +54,7 @@ def enough_memory() -> bool:
         with open(f"{CGROUP}/memory.max") as limit_file:
             max_text = limit_file.read().strip()
         with open(f"{CGROUP}/memory.stat") as stat_file:
-            anon = next(int(line.split()[1]) for line in stat_file if line.startswith("anon "))
+            anon_bytes = next(int(line.split()[1]) for line in stat_file if line.startswith("anon "))
     except (OSError, StopIteration, ValueError):
         return True
 
@@ -60,7 +62,7 @@ def enough_memory() -> bool:
         return True
 
     limit = int(max_text)
-    return limit - anon - PLACES * PER_COMPACTION >= limit // 5
+    return limit - anon_bytes - PLACES * PER_COMPACTION >= limit // 5
 
 
 def limit_memory() -> None:
@@ -70,7 +72,7 @@ def limit_memory() -> None:
 
     try:
         with open("/proc/self/status") as status:
-            size = next(int(line.split()[1]) * 1024 for line in status if line.startswith("VmSize:"))
-        resource.setrlimit(resource.RLIMIT_AS, (size + PER_COMPACTION, resource.RLIM_INFINITY))
+            address_space = next(int(line.split()[1]) * 1024 for line in status if line.startswith("VmSize:"))
+        resource.setrlimit(resource.RLIMIT_AS, (address_space + PER_COMPACTION, resource.RLIM_INFINITY))
     except (OSError, StopIteration, ValueError):
         pass
