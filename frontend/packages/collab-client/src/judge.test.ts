@@ -9,7 +9,10 @@ function typing(...words: string[]) {
   const doc = new Y.Doc()
   const rows: Uint8Array[] = []
   doc.on('update', (bytes: Uint8Array) => rows.push(bytes))
-  for (const word of words) doc.getText('t').insert(doc.getText('t').length, word)
+  const text = doc.getText('t')
+  for (const word of words) {
+    text.insert(text.length, word)
+  }
   return rows
 }
 

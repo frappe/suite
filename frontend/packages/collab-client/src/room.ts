@@ -9,7 +9,7 @@ import {
   type RoomKeys,
   type Row,
 } from './frames'
-import { Live } from './live'
+import { Live, type LiveHooks } from './live'
 import { holdLock, MAX_KEEPALIVE_BYTES, MAX_PUSH_BYTES, Outbox } from './outbox'
 import { PIECE_BYTES, putPieces, stageFor, type Staging } from './pieces'
 import type { DeviceStore, StoredSession } from './store'
@@ -17,6 +17,7 @@ import {
   recoverable,
   type Answer,
   type Blocked,
+  type Claim,
   type CollabRoom,
   type LiveState,
   type OpenOptions,
@@ -123,25 +124,37 @@ export class Room implements CollabRoom {
   async start(opening: Opening) {
     this.doc.on('update', this.capture)
     if (this.device && this.writable && this.bound) {
-      await this.device.store.saveSession(this.session()).catch(() => this.lostStore())
+      const session = this.session()
+      await this.device.store.saveSession(session).catch(() => this.lostStore())
     }
-    this.own.release = (await holdLock(this.lockName(this.own.sid))) ?? (() => {})
+
+    const ownLockName = this.lockName(this.own.sid)
+    const releaseOwnLock = await holdLock(ownLockName)
+    this.own.release = releaseOwnLock ?? (() => {})
+
     this.appliedThrough = opening.base
     this.unheard = !!opening.offline
     this.limits = opening.limits ?? null
     this.follow(opening.schema)
     this.apply(opening.rows, opening)
-    if (this.writable) await this.adopt()
+    if (this.writable) {
+      await this.adopt()
+    }
+
     if (this.options.socket && !this.closed) {
-      this.realtime = new Live(this.options.socket, this.lineage, {
+      const liveHooks: LiveHooks = {
         rows: this.heardRows,
         pull: () => void this.pull(),
         changed: () => this.changed(),
         at: () => this.appliedThrough,
         sends: () => this.canWrite && this.bound && !this.closed,
-      })
-      if (opening.rooms) this.realtime.refresh(opening.rooms)
+      }
+      this.realtime = new Live(this.options.socket, this.lineage, liveHooks)
+      if (opening.rooms) {
+        this.realtime.refresh(opening.rooms)
+      }
     }
+
     this.pollTimer = setInterval(() => void this.tick(), this.options.pollMs ?? 5000)
     document.addEventListener('visibilitychange', this.hidden)
     window.addEventListener('pagehide', this.sendNow)
@@ -169,7 +182,9 @@ export class Room implements CollabRoom {
 
   get atLimit() {
     const limits = this.limits
-    return !!limits && limits.state_bytes + limits.tail_bound >= limits.state_max
+    if (!limits) return false
+
+    return limits.state_bytes + limits.tail_bound >= limits.state_max
   }
 
   get unsent() {
@@ -178,9 +193,14 @@ export class Room implements CollabRoom {
 
   // A stopped tab stays failed while it holds work; once a refusal leaves nothing unsent there is nothing to fail
   get saveState(): SaveState {
-    if (this.failed && !(this.blocked && !this.unsent)) return 'failed'
+    const refusedWithNothingUnsent = !!this.blocked && !this.unsent
+    if (this.failed && !refusedWithNothingUnsent) return 'failed'
+
     if (this.inFlight) return 'saving'
-    return this.unsent ? 'unsaved' : 'clean'
+
+    if (this.unsent) return 'unsaved'
+
+    return 'clean'
   }
 
   onChange(listener: () => void) {
@@ -189,36 +209,52 @@ export class Room implements CollabRoom {
   }
 
   pull(): Promise<void> {
-    if (
-      this.closed ||
-      this.needsRebuild ||
-      this.blocked === 'other_user' ||
-      this.blocked === 'lost_read'
-    )
-      return Promise.resolve()
-    if (!this.bound) return this.dead ? Promise.resolve() : this.connect()
+    const readBlocked = this.blocked === 'other_user' || this.blocked === 'lost_read'
+    if (this.closed || this.needsRebuild || readBlocked) return Promise.resolve()
+
+    if (!this.bound) {
+      if (this.dead) return Promise.resolve()
+
+      return this.connect()
+    }
+
     return this.connecting ?? this.fetch()
   }
 
   private fetch(): Promise<void> {
     if (this.closed) return Promise.resolve()
+
+    const applyPull = (answer: Answer) => {
+      if (answer.status !== 200) {
+        const reply = readReply(answer)
+        this.refused(reply, 'lost_read')
+        return
+      }
+
+      const { header, rows } = decodeFrame<PullHeader>(answer.bytes)
+      this.heard()
+      if (header.rooms) {
+        this.realtime?.refresh(header.rooms)
+      }
+      if (header.limits) {
+        this.measure(header.limits)
+      }
+      if (header.state === 'rebuild') {
+        return this.outdated()
+      }
+
+      this.hold(header.held ?? null)
+      if (!this.follow(header.schema)) return
+
+      if (this.judging) {
+        return this.judged(header)
+      }
+
+      this.apply(rows)
+    }
     this.pulling ??= this.options.endpoints
       .pull(this.appliedThrough, this.epoch)
-      .then((answer) => {
-        if (answer.status !== 200) {
-          this.refused(readReply(answer), 'lost_read')
-          return
-        }
-        const { header, rows } = decodeFrame<PullHeader>(answer.bytes)
-        this.heard()
-        if (header.rooms) this.realtime?.refresh(header.rooms)
-        if (header.limits) this.measure(header.limits)
-        if (header.state === 'rebuild') return this.outdated()
-        this.hold(header.held ?? null)
-        if (!this.follow(header.schema)) return
-        if (this.judging) return this.judged(header)
-        this.apply(rows)
-      })
+      .then(applyPull)
       .catch(() => this.unreachable())
       .finally(() => (this.pulling = null))
     return this.pulling
@@ -239,91 +275,116 @@ export class Room implements CollabRoom {
 
   async close() {
     if (this.closed) return
-    if (this.inFlight) await this.inFlight
+
+    if (this.inFlight) {
+      await this.inFlight
+    }
     if (this.bound && this.unsent && this.saveState !== 'failed') {
       this.clearTimers()
       await this.send({ keepalive: true })
     }
+
     this.closed = true
     document.removeEventListener('visibilitychange', this.hidden)
     window.removeEventListener('pagehide', this.sendNow)
-    if (this.pollTimer) clearInterval(this.pollTimer)
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+    }
     this.realtime?.close()
     this.clearTimers()
     this.doc.off('update', this.capture)
     this.listeners.clear()
-    for (const box of this.boxes) box.release()
+    for (const box of this.boxes) {
+      box.release()
+    }
     if (this.device && !this.own.pending.length && !this.dead) {
       void this.device.store.release(this.device.doc, this.own.sid).catch(() => {})
     }
   }
 
   private tick() {
-    if (this.unsent && this.unsentSince && Date.now() - this.unsentSince > PERSIST_AFTER_MS)
+    const unsentForLong = !!this.unsentSince && Date.now() - this.unsentSince > PERSIST_AFTER_MS
+    if (this.unsent && unsentForLong) {
       this.persist()
+    }
     if (this.realtime?.live) return
+
     this.realtime?.retry()
     const coEditing =
       document.visibilityState === 'visible' && Date.now() - this.othersAt < CO_EDITING_MS
     // Work held while the server is out of reach goes out on the first tick that reaches it
     const waiting = this.unsent || this.unheard || !this.bound
-    if (coEditing || waiting || ++this.ticks % QUIET_TICKS === 0) void this.pull()
+    if (coEditing || waiting || ++this.ticks % QUIET_TICKS === 0) {
+      void this.pull()
+    }
   }
 
   // A row from the realtime service; one written by a newer editor is pulled, so the schema gate sees it
   private heardRows = (rows: Row[], schema = 0) => {
-    if (
-      this.closed ||
-      !this.bound ||
-      this.needsRebuild ||
-      this.judging ||
-      this.newerSchema ||
-      this.blocked === 'other_user' ||
-      this.blocked === 'lost_read'
-    )
+    const readBlocked = this.blocked === 'other_user' || this.blocked === 'lost_read'
+    const following = !this.needsRebuild && !this.judging && !this.newerSchema
+    if (this.closed || !this.bound || !following || readBlocked) return
+
+    if (schema > this.options.schema) {
+      void this.pull()
       return
-    if (schema > this.options.schema) return void this.pull()
-    for (const row of rows)
-      if (row.rev > this.appliedThrough && this.waiting.size < WAITING_MAX)
+    }
+
+    for (const row of rows) {
+      if (row.rev > this.appliedThrough && this.waiting.size < WAITING_MAX) {
         this.waiting.set(row.rev, row)
+      }
+    }
     this.apply([])
-    if (this.waiting.size) this.realtime?.hole(() => this.waiting.size > 0)
+    if (this.waiting.size) {
+      this.realtime?.hole(() => this.waiting.size > 0)
+    }
   }
 
   // Claim the clientID chosen offline, send what was typed, and only then take anyone else's rows
   private connect(): Promise<void> {
-    this.connecting ??= this.claim(this.own)
-      .then(async (answer) => {
-        if (answer === null || this.closed) return
-        if (answer !== 'ok') {
-          // Other tabs' work never used this clientID, so a later tab can still send it
-          for (const box of this.boxes) if (box.adopted) box.release()
-          this.boxes = [this.own]
-          await this.die(lost(answer))
-          return
+    const bindAfterClaim = async (answer: string | null) => {
+      if (answer === null || this.closed) return
+
+      if (answer !== 'ok') {
+        // Other tabs' work never used this clientID, so a later tab can still send it
+        for (const box of this.boxes) {
+          if (box.adopted) {
+            box.release()
+          }
         }
-        this.bound = true
-        this.heard()
-        await this.adopt()
-        await this.flush()
-        await this.fetch()
-      })
+        this.boxes = [this.own]
+        const reason = lost(answer)
+        await this.die(reason)
+        return
+      }
+
+      this.bound = true
+      this.heard()
+      await this.adopt()
+      await this.flush()
+      await this.fetch()
+    }
+    this.connecting ??= this.claim(this.own)
+      .then(bindAfterClaim)
       .finally(() => (this.connecting = null))
     return this.connecting
   }
 
   // `null` when the claim got no verdict this time; a refusal with a reason is final
   private async claim(box: Outbox): Promise<string | null> {
+    const claim: Claim = {
+      cid: box.cid,
+      lineage: this.lineage,
+    }
     let answer: Answer
     try {
-      answer = await this.options.endpoints.session(box.sid, {
-        cid: box.cid,
-        lineage: this.lineage,
-      })
+      answer = await this.options.endpoints.session(box.sid, claim)
     } catch {
       this.unreachable()
       return null
     }
+
     const reply = readReply(answer)
     if (reply.status === 200 && typeof reply.claim === 'string') {
       if (reply.claim === 'ok' && this.device) {
@@ -338,75 +399,132 @@ export class Room implements CollabRoom {
       }
       return reply.claim
     }
-    return this.refused(reply, 'lost_edit') ? null : (reply.collab ?? null)
+
+    const blocked = this.refused(reply, 'lost_edit')
+    if (blocked) return null
+
+    return reply.collab ?? null
   }
 
   // Unsent work other tabs of this document left on the device, once no live tab holds it
   private async adopt() {
     if (!this.device || this.dead) return
+
     const { store, doc: key } = this.device
     const sessions = await store.sessions(key).catch(() => [])
     for (const session of sessions) {
       if (this.boxes.some((box) => box.sid === session.sid)) continue
       if (!session.bound && !this.bound) continue
-      const release = await holdLock(this.lockName(session.sid))
+
+      const lockName = this.lockName(session.sid)
+      const release = await holdLock(lockName)
       if (!release) continue
-      if (this.closed) return release()
+      if (this.closed) {
+        return release()
+      }
+
       const entries = await store.entries(key, session.sid).catch(() => [])
       if (!entries.length) {
         await store.release(key, session.sid).catch(() => {})
         release()
         continue
       }
+
       const box = new Outbox(session.sid, session.cid, release, true, entries)
-      const verdict =
-        session.lineage !== this.lineage ? 'lineage' : session.bound ? 'ok' : await this.claim(box)
-      if (this.closed) return release()
+      let verdict: string | null = 'ok'
+      if (session.lineage !== this.lineage) {
+        verdict = 'lineage'
+      } else if (!session.bound) {
+        verdict = await this.claim(box)
+      }
+      if (this.closed) {
+        return release()
+      }
+
       if (verdict !== 'ok') {
-        if (verdict) await store.recover(key, session.sid, lost(verdict)).catch(() => {})
+        if (verdict) {
+          const reason = lost(verdict)
+          await store.recover(key, session.sid, reason).catch(() => {})
+        }
         release()
         continue
       }
-      Y.applyUpdate(this.doc, Y.mergeUpdates(box.pending.map((entry) => entry.bytes)), ADOPT)
+
+      const pendingUpdates = box.pending.map((entry) => entry.bytes)
+      const adoptedWork = Y.mergeUpdates(pendingUpdates)
+      Y.applyUpdate(this.doc, adoptedWork, ADOPT)
       this.boxes.splice(-1, 0, box)
     }
     this.counted()
-    if (this.unsent && this.bound) this.scheduleSend()
+    if (this.unsent && this.bound) {
+      this.scheduleSend()
+    }
   }
 
   // Rows are applied strictly in rev order; rows heard past a hole wait for it
   private apply(rows: Row[], opening?: Opening) {
-    const byRev = new Map(this.waiting)
-    for (const row of rows) byRev.set(row.rev, row)
-    const run: Row[] = []
-    for (let rev = this.appliedThrough + 1; byRev.has(rev); rev++) run.push(byRev.get(rev)!)
-    for (const row of run) this.waiting.delete(row.rev)
+    const run = this.takeRun(rows)
     if (!run.length && !opening) return
+
+    const checkpointParts = opening?.checkpoint ? [opening.checkpoint] : []
     // An empty row is a quarantined rev: it holds its place in the order and applies nothing
-    const parts = [
-      ...(opening?.checkpoint ? [opening.checkpoint] : []),
-      ...run.filter((row) => row.bytes.length).map((row) => row.bytes),
-    ]
+    const rowParts = run.filter((row) => row.bytes.length).map((row) => row.bytes)
+    const parts = [...checkpointParts, ...rowParts]
     let bytes: Uint8Array | null = null
     try {
-      bytes = parts.length ? Y.mergeUpdates(parts) : null
-      if (bytes) Y.applyUpdate(this.doc, bytes, REMOTE)
+      if (parts.length) {
+        bytes = Y.mergeUpdates(parts)
+      }
+      if (bytes) {
+        Y.applyUpdate(this.doc, bytes, REMOTE)
+      }
     } catch {
       // Yjs keeps what it applied, so this copy follows nothing more until the server judges the rows
-      return this.suspect(run.at(-1)?.rev ?? this.appliedThrough)
+      const suspectRev = run.at(-1)?.rev ?? this.appliedThrough
+      return this.suspect(suspectRev)
     }
-    if (run.length) this.appliedThrough = run[run.length - 1].rev
-    for (const rev of this.waiting.keys()) if (rev <= this.appliedThrough) this.waiting.delete(rev)
-    if (this.device) {
-      const copy = {
-        lineage: this.lineage,
-        rev: this.appliedThrough,
-        canWrite: this.writable,
-        epoch: this.epoch,
+
+    if (run.length) {
+      this.appliedThrough = run[run.length - 1].rev
+    }
+    for (const rev of this.waiting.keys()) {
+      if (rev <= this.appliedThrough) {
+        this.waiting.delete(rev)
       }
-      void this.device.store.commit(this.device.doc, copy, bytes).catch(() => {})
     }
-    if (bytes) this.changed()
+    this.storeCopy(bytes)
+    if (bytes) {
+      this.changed()
+    }
+  }
+
+  // The rows that continue from appliedThrough without a gap, taken out of `waiting`
+  private takeRun(rows: Row[]): Row[] {
+    const byRev = new Map(this.waiting)
+    for (const row of rows) {
+      byRev.set(row.rev, row)
+    }
+
+    const run: Row[] = []
+    for (let rev = this.appliedThrough + 1; byRev.has(rev); rev++) {
+      run.push(byRev.get(rev)!)
+    }
+    for (const row of run) {
+      this.waiting.delete(row.rev)
+    }
+    return run
+  }
+
+  private storeCopy(bytes: Uint8Array | null) {
+    if (!this.device) return
+
+    const copy = {
+      lineage: this.lineage,
+      rev: this.appliedThrough,
+      canWrite: this.writable,
+      epoch: this.epoch,
+    }
+    void this.device.store.commit(this.device.doc, copy, bytes).catch(() => {})
   }
 
   private suspect(rev: number) {
@@ -418,36 +536,49 @@ export class Room implements CollabRoom {
   private async report() {
     const judging = this.judging
     if (!judging || this.closed) return
+
     let reply: Reply
     try {
-      reply = readReply(await this.options.endpoints.suspect(judging.rev))
+      const answer = await this.options.endpoints.suspect(judging.rev)
+      reply = readReply(answer)
     } catch {
       this.unreachable()
       return this.reportAfter(backoff())
     }
-    if (reply.status === 202 && typeof reply.judged === 'number') judging.seen = reply.judged
-    else if (reply.status === 423) {
-      if (reply.reason === 'suspect') this.hold(this.held ?? 'change')
+
+    if (reply.status === 202 && typeof reply.judged === 'number') {
+      judging.seen = reply.judged
+    } else if (reply.status === 423) {
+      if (reply.reason === 'suspect') {
+        this.hold(this.held ?? 'change')
+      }
       this.reportAfter(reply.retry_ms ?? 1000)
-    } else if (reply.status === 200 && reply.verdict) await this.verdict(reply.verdict)
-    else {
+    } else if (reply.status === 200 && reply.verdict) {
+      await this.verdict(reply.verdict)
+    } else {
       // Only a verdict counts against this browser; a failing server or a lapsed sign-in is asked again
       const blocked = this.refused(reply, 'lost_read')
-      if (!blocked || recoverable(blocked)) this.reportAfter(backoff())
+      if (!blocked || recoverable(blocked)) {
+        this.reportAfter(backoff())
+      }
     }
   }
 
   private reportAfter(ms: number) {
     if (this.closed) return
-    this.reportTimer = setTimeout(() => {
+
+    const reportAgain = () => {
       this.reportTimer = null
       void this.report()
-    }, ms)
+    }
+    this.reportTimer = setTimeout(reportAgain, ms)
   }
 
   private async judged(header: PullHeader) {
     const judging = this.judging!
-    if (judging.seen === null || (header.judged ?? 0) <= judging.seen) return
+    const judgedCount = header.judged ?? 0
+    if (judging.seen === null || judgedCount <= judging.seen) return
+
     judging.seen = header.judged!
     await this.verdict(header.verdict ?? 'unjudged')
   }
@@ -455,83 +586,106 @@ export class Room implements CollabRoom {
   // A held document waits for an admin. Anything but a quarantine means this browser failed on rows the server takes
   private async verdict(verdict: string) {
     if (verdict === 'held') return
-    if (verdict !== 'quarantined' && strike(this.lineage) >= STRIKES) return this.die('browser')
+
+    if (verdict !== 'quarantined' && strike(this.lineage) >= STRIKES) {
+      return this.die('browser')
+    }
+
     // Unsent work kept nowhere else is sent from this copy before it is rebuilt
     this.judging = null
     this.pause(null)
     this.outdated()
-    if (this.unsent) this.scheduleSend()
+    if (this.unsent) {
+      this.scheduleSend()
+    }
   }
 
   private capture = (update: Uint8Array, origin: unknown) => {
-    if (origin === REMOTE) this.othersAt = Date.now()
-    if (origin === REMOTE || origin === ADOPT || this.closed) return
+    if (origin === REMOTE) {
+      this.othersAt = Date.now()
+    }
+    const fromElsewhere = origin === REMOTE || origin === ADOPT
+    if (fromElsewhere || this.closed) return
+
     // The editor turns read-only a moment after the verdict, so typing can still arrive
     if (this.dead) {
-      if (!this.device) return
-      const entry = this.own.mint(update)
-      void this.device.store
-        .recover(
-          this.device.doc,
-          this.own.sid,
-          this.dead,
-          this.own.stored(this.device.doc, [entry]),
-        )
-        .catch(() => {})
+      this.recoverLateTyping(update, this.dead)
       return
     }
+
     if (!this.writable) return
+
     const entry = this.own.add(update)
     if (this.device) {
-      void this.device.store
-        .capture(this.session(), this.own.stored(this.device.doc, [entry]))
-        .catch(() => this.lostStore())
+      const session = this.session()
+      const stored = this.own.stored(this.device.doc, [entry])
+      void this.device.store.capture(session, stored).catch(() => this.lostStore())
     }
     this.counted()
-    if (this.bound) this.scheduleSend()
-    else this.persist()
+    if (this.bound) {
+      this.scheduleSend()
+    } else {
+      this.persist()
+    }
+  }
+
+  private recoverLateTyping(update: Uint8Array, reason: string) {
+    if (!this.device) return
+
+    const entry = this.own.mint(update)
+    const stored = this.own.stored(this.device.doc, [entry])
+    void this.device.store.recover(this.device.doc, this.own.sid, reason, stored).catch(() => {})
   }
 
   private hidden = () => {
-    if (document.visibilityState === 'hidden') this.sendNow()
+    if (document.visibilityState === 'hidden') {
+      this.sendNow()
+    }
   }
 
   // A hidden or departing page may never run its send timer, its retry, or hear back from a save on its way
   private sendNow = () => {
-    if (this.sendTimer) clearTimeout(this.sendTimer)
+    if (this.sendTimer) {
+      clearTimeout(this.sendTimer)
+    }
     this.sendTimer = null
     if (this.inFlight) {
       const copy = this.batch(true)
-      if (copy && !copy.pieces)
+      if (copy && !copy.pieces) {
         void this.options.endpoints.push(copy.body, { keepalive: true }).catch(() => {})
+      }
       return
     }
+
     this.endRetry?.()
     void this.send({ keepalive: true })
   }
 
   private scheduleSend() {
     const now = Date.now()
-    if (!this.sendTimer) this.firstUnsentAt = now
-    else clearTimeout(this.sendTimer)
-    const delay = Math.min(
-      this.options.sendDelayMs ?? 1000,
-      this.firstUnsentAt + (this.options.sendMaxDelayMs ?? 3000) - now,
-    )
-    this.sendTimer = setTimeout(
-      () => {
-        this.sendTimer = null
-        void this.send()
-      },
-      Math.max(0, delay),
-    )
+    if (!this.sendTimer) {
+      this.firstUnsentAt = now
+    } else {
+      clearTimeout(this.sendTimer)
+    }
+
+    const sendDelay = this.options.sendDelayMs ?? 1000
+    const sendBy = this.firstUnsentAt + (this.options.sendMaxDelayMs ?? 3000)
+    const delay = Math.min(sendDelay, sendBy - now)
+    const sendQueued = () => {
+      this.sendTimer = null
+      void this.send()
+    }
+    this.sendTimer = setTimeout(sendQueued, Math.max(0, delay))
   }
 
   private batch(keepalive?: boolean) {
     const box = this.boxes.find((other) => other.pending.length) ?? this.own
     const held = this.closed || !this.bound || this.judging || this.saveState === 'failed'
     if (!box.pending.length || held) return null
-    const batch = box.batch(keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES)
+
+    const maxBytes = keepalive ? MAX_KEEPALIVE_BYTES : MAX_PUSH_BYTES
+    const batch = box.batch(maxBytes)
     const header = {
       proto: 1,
       lineage: this.lineage,
@@ -546,118 +700,199 @@ export class Room implements CollabRoom {
       // The tab is hiding or closing, so the server may compact now
       final: !!keepalive,
     }
-    const update = Y.mergeUpdates(batch.map((entry) => entry.bytes))
-    if (update.byteLength <= PIECE_BYTES) return { box, header, body: encodePush(header, update) }
+    const batchUpdates = batch.map((entry) => entry.bytes)
+    const update = Y.mergeUpdates(batchUpdates)
+    if (update.byteLength <= PIECE_BYTES) {
+      const body = encodePush(header, update)
+      return { box, header, body }
+    }
+
     // Staged pieces take several requests, which a departing page can't count on
     this.staging = stageFor(this.staging, header)
-    const staged = { ...header, final: false, stage_id: this.staging.id }
-    const pieces = { stage: this.staging.id, update }
-    return { box, header: staged, body: encodePush(staged, new Uint8Array()), pieces }
+    const staged = {
+      ...header,
+      final: false,
+      stage_id: this.staging.id,
+    }
+    const pieces = {
+      stage: this.staging.id,
+      update,
+    }
+    const body = encodePush(staged, new Uint8Array())
+    return {
+      box,
+      header: staged,
+      body,
+      pieces,
+    }
   }
 
   private send(request: { keepalive?: boolean } = {}): Promise<void> {
-    if (this.inFlight || this.retrying) return this.inFlight ?? this.retrying!
+    if (this.inFlight || this.retrying) {
+      return this.inFlight ?? this.retrying!
+    }
+
     const next = this.batch(request.keepalive)
     if (!next) return Promise.resolve()
+
     const { box, header, body, pieces } = next
     const { endpoints } = this.options
+    const push = async () => {
+      if (pieces) {
+        const refused = await putPieces(endpoints, pieces.stage, header, pieces.update)
+        if (refused) return refused
+      }
+
+      const pushOptions = pieces ? {} : request
+      const answer = await endpoints.push(body, pushOptions)
+      return readReply(answer)
+    }
+    const pushFailed = () => {
+      this.unreachable()
+      this.retryAfter(backoff())
+    }
+    const pushDone = () => {
+      this.inFlight = null
+      this.changed()
+    }
     this.inFlight = Promise.resolve()
-      .then(async () => {
-        const refused = pieces && (await putPieces(endpoints, pieces.stage, header, pieces.update))
-        return refused || readReply(await endpoints.push(body, pieces ? {} : request))
-      })
-      .then(
-        (reply) => this.settle(reply, box, header.to),
-        () => {
-          this.unreachable()
-          this.retryAfter(backoff())
-        },
-      )
-      .finally(() => {
-        this.inFlight = null
-        this.changed()
-      })
+      .then(push)
+      .then((reply) => this.settle(reply, box, header.to), pushFailed)
+      .finally(pushDone)
     this.changed()
     return this.inFlight
   }
 
   private async settle(reply: Reply, box: Outbox, to: number) {
-    if (reply.status !== 423) this.pause(null)
+    if (reply.status !== 423) {
+      this.pause(null)
+    }
     if (reply.status === 200) {
-      this.heard()
-      this.ack(box, reply.dup ? (reply.acked ?? to) : to)
-      if (!reply.dup && typeof reply.rev === 'number') this.realtime?.pushed(reply.rev)
-      const head = reply.head ?? 0
-      // Live, the rows come over the socket; one still missing in a second is pulled
-      if (head > this.appliedThrough && this.realtime?.live)
-        this.realtime.hole(() => this.appliedThrough < head)
-      else if (head > this.appliedThrough) void this.pull()
-      if (this.unsent) this.scheduleSend()
+      this.committed(reply, box, to)
       return
     }
+
     if (reply.status === 409 && reply.collab === 'seq' && typeof reply.acked === 'number') {
       // The server lost seqs it already acknowledged, so resending can't restore them
-      if (reply.acked < box.acked) return this.die('seq')
+      if (reply.acked < box.acked) {
+        return this.die('seq')
+      }
+
       this.ack(box, reply.acked)
-      if (box.gap) return this.die('seq')
+      if (box.gap) {
+        return this.die('seq')
+      }
+
       return this.retryAfter(0)
     }
+
     // Pieces the server dropped or never got are staged again; a stage it refused is replaced
-    if (
-      reply.status === 409 &&
-      (reply.collab === 'stage_conflict' || reply.collab === 'stage_incomplete')
-    ) {
-      if (reply.collab === 'stage_conflict') this.staging = null
+    const stageFailed = reply.collab === 'stage_conflict' || reply.collab === 'stage_incomplete'
+    if (reply.status === 409 && stageFailed) {
+      if (reply.collab === 'stage_conflict') {
+        this.staging = null
+      }
       return this.retryAfter(backoff())
     }
+
     // A change that adds content to a full document is never taken, so it waits in a recovery copy
     if (reply.status === 423 && reply.collab === 'doc_full') {
       await this.die('document_full')
       return this.outdated()
     }
+
     if (reply.status === 423) {
-      if (reply.reason === 'suspect') this.hold(this.held ?? 'change')
+      if (reply.reason === 'suspect') {
+        this.hold(this.held ?? 'change')
+      }
       this.pause(reply.reason ?? reply.collab ?? 'busy')
       return this.retryAfter(reply.retry_ms ?? 1000)
     }
+
     const blocked = this.refused(reply, 'lost_edit')
-    if (blocked && recoverable(blocked)) return this.retryAfter(backoff())
-    if (blocked) return
-    if (!reply.collab) {
-      // Only a proxy refuses a body without a reason; the change stays here until uploads get through
-      if (reply.status === 413) this.pause('upload_refused')
+    if (blocked && recoverable(blocked)) {
       return this.retryAfter(backoff())
     }
+
+    if (blocked) return
+
+    if (!reply.collab) {
+      // Only a proxy refuses a body without a reason; the change stays here until uploads get through
+      if (reply.status === 413) {
+        this.pause('upload_refused')
+      }
+      return this.retryAfter(backoff())
+    }
+
     await this.die(reply.collab)
     // The server quarantined a change of this session, which this copy still holds
-    if (reply.collab === 'client_closed') this.outdated()
+    if (reply.collab === 'client_closed') {
+      this.outdated()
+    }
+  }
+
+  private committed(reply: Reply, box: Outbox, to: number) {
+    this.heard()
+    const ackedThrough = reply.dup ? (reply.acked ?? to) : to
+    this.ack(box, ackedThrough)
+    if (!reply.dup && typeof reply.rev === 'number') {
+      this.realtime?.pushed(reply.rev)
+    }
+
+    const head = reply.head ?? 0
+    const rowsAhead = head > this.appliedThrough
+    // Live, the rows come over the socket; one still missing in a second is pulled
+    if (rowsAhead && this.realtime?.live) {
+      this.realtime.hole(() => this.appliedThrough < head)
+    } else if (rowsAhead) {
+      void this.pull()
+    }
+    if (this.unsent) {
+      this.scheduleSend()
+    }
   }
 
   // A refusal about who is asking, or a lost right once the signed-in person is confirmed unchanged
   private refused(reply: Reply, lost: 'lost_edit' | 'lost_read'): Blocked | null {
     let blocked: Blocked | null = null
-    if (reply.status === 401 && (reply.collab === 'signed_out' || reply.collab === 'locked'))
+    if (reply.status === 401 && (reply.collab === 'signed_out' || reply.collab === 'locked')) {
       blocked = reply.collab
-    else if (staleSession(reply)) blocked = 'stale_session'
-    else if (reply.status === 409 && reply.collab === 'principal_changed') blocked = 'other_user'
-    else if (reply.status === 403 || reply.status === 404) blocked = this.reconcile(lost)
-    if (blocked) this.block(blocked)
+    } else if (staleSession(reply)) {
+      blocked = 'stale_session'
+    } else if (reply.status === 409 && reply.collab === 'principal_changed') {
+      blocked = 'other_user'
+    } else if (reply.status === 403 || reply.status === 404) {
+      blocked = this.reconcile(lost)
+    }
+    if (blocked) {
+      this.block(blocked)
+    }
     return blocked
   }
 
   private reconcile(lost: Blocked): Blocked {
-    const now = this.options.signedIn()
-    if (now === 'Guest') return 'signed_out'
-    return now === this.options.principal ? lost : 'other_user'
+    const signedIn = this.options.signedIn()
+    if (signedIn === 'Guest') return 'signed_out'
+
+    if (signedIn !== this.options.principal) return 'other_user'
+
+    return lost
   }
 
   // A lost right keeps the unsent work only as a recovery copy; another person's or a stale sign-in leaves it for a later tab
   private block(reason: Blocked) {
-    if (this.blocked === reason || (this.blocked && !replaces(reason, this.blocked))) return
+    const sameReason = this.blocked === reason
+    const outranked = !!this.blocked && !replaces(reason, this.blocked)
+    if (sameReason || outranked) return
+
     if (!recoverable(reason)) {
       this.writable = false
-      if (this.unsent) this.failed = true
-      if (reason === 'lost_edit' || reason === 'lost_read') void this.toRecovery('lost_access')
+      if (this.unsent) {
+        this.failed = true
+      }
+      if (reason === 'lost_edit' || reason === 'lost_read') {
+        void this.toRecovery('lost_access')
+      }
     }
     this.blocked = reason
     this.changed()
@@ -674,18 +909,24 @@ export class Room implements CollabRoom {
 
   private async toRecovery(reason: string) {
     if (this.dead) return
+
     this.dead = reason
     if (!this.device) return
+
     const { store, doc: key } = this.device
-    for (const box of this.boxes)
-      await store.recover(key, box.sid, reason, box.stored(key)).catch(() => {})
+    for (const box of this.boxes) {
+      const stored = box.stored(key)
+      await store.recover(key, box.sid, reason, stored).catch(() => {})
+    }
   }
 
   // Without a device store nothing typed offline would survive the tab, so editing stops until the server answers
   private unreachable() {
     this.unheard = true
     if (this.device) {
-      if (this.unsent) this.persist()
+      if (this.unsent) {
+        this.persist()
+      }
     } else if (!this.blocked) {
       this.block('offline')
     }
@@ -693,30 +934,36 @@ export class Room implements CollabRoom {
 
   private outdated() {
     if (this.needsRebuild) return
+
     this.needsRebuild = true
     this.changed()
   }
 
   private lostStore() {
     if (!this.device) return
+
     this.device = null
     this.changed()
   }
 
   private persist() {
     if (this.persisted || !this.device) return
+
     this.persisted = true
     void globalThis.navigator?.storage?.persist?.().catch(() => {})
   }
 
   private measure(limits: Limits) {
-    const was = this.atLimit
+    const wasAtLimit = this.atLimit
     this.limits = limits
-    if (this.atLimit !== was) this.changed()
+    if (this.atLimit !== wasAtLimit) {
+      this.changed()
+    }
   }
 
   private pause(reason: string | null) {
     if (this.paused === reason) return
+
     this.paused = reason
     this.changed()
   }
@@ -724,7 +971,10 @@ export class Room implements CollabRoom {
   // An editor older than the document's rows may drop what it can't show; nothing it does from now on is sent.
   // Work typed before still goes out, as the server takes older schemas
   private follow(schema = 0) {
-    if (schema <= this.options.schema || this.newerSchema) return !this.newerSchema
+    if (this.newerSchema) return false
+
+    if (schema <= this.options.schema) return true
+
     this.newerSchema = true
     this.writable = false
     this.changed()
@@ -734,6 +984,7 @@ export class Room implements CollabRoom {
   // A held document's pushes wait minutes between tries, so its release sends at once
   private hold(held: string | null) {
     if (this.held === held) return
+
     const released = !held
     this.held = held
     this.changed()
@@ -748,6 +999,7 @@ export class Room implements CollabRoom {
     const wasUnheard = this.unheard
     this.unheard = false
     if (this.blocked && !recoverable(this.blocked)) return
+
     const wasBlocked = this.blocked !== null
     if (wasBlocked) {
       this.blocked = null
@@ -762,6 +1014,7 @@ export class Room implements CollabRoom {
   private ack(box: Outbox, through: number) {
     const committed = box.ack(through)
     if (!committed) return
+
     if (this.device) {
       void this.device.store
         .ack(this.device.doc, box.sid, box.acked, committed, this.lineage, this.epoch)
@@ -776,8 +1029,11 @@ export class Room implements CollabRoom {
   }
 
   private counted() {
-    if (!this.unsent) this.unsentSince = 0
-    else if (!this.unsentSince) this.unsentSince = Date.now()
+    if (!this.unsent) {
+      this.unsentSince = 0
+    } else if (!this.unsentSince) {
+      this.unsentSince = Date.now()
+    }
     this.changed()
   }
 
@@ -797,29 +1053,41 @@ export class Room implements CollabRoom {
 
   private retryAfter(ms: number) {
     if (this.closed) return
+
     this.endRetry?.()
-    this.retrying = new Promise((resolve) => {
+    const waitForRetry = (resolve: () => void) => {
       this.endRetry = () => {
-        if (this.retryTimer) clearTimeout(this.retryTimer)
+        if (this.retryTimer) {
+          clearTimeout(this.retryTimer)
+        }
         this.retryTimer = this.retrying = this.endRetry = null
         resolve()
       }
-      this.retryTimer = setTimeout(() => {
+
+      const retryNow = () => {
         this.endRetry?.()
         void this.send()
-      }, ms)
-    })
+      }
+      this.retryTimer = setTimeout(retryNow, ms)
+    }
+    this.retrying = new Promise<void>(waitForRetry)
   }
 
   private clearTimers() {
-    if (this.sendTimer) clearTimeout(this.sendTimer)
-    if (this.reportTimer) clearTimeout(this.reportTimer)
+    if (this.sendTimer) {
+      clearTimeout(this.sendTimer)
+    }
+    if (this.reportTimer) {
+      clearTimeout(this.reportTimer)
+    }
     this.sendTimer = this.reportTimer = null
     this.endRetry?.()
   }
 
   private changed() {
-    for (const listener of this.listeners) listener()
+    for (const listener of this.listeners) {
+      listener()
+    }
   }
 }
 
@@ -835,7 +1103,8 @@ const lost = (verdict: string) => (verdict === 'clash' ? 'id_clash' : verdict)
 
 function strike(lineage: string) {
   const now = Date.now()
-  const recent = (strikes.get(lineage) ?? []).filter((at) => now - at < STRIKE_WINDOW_MS)
+  const struck = strikes.get(lineage) ?? []
+  const recent = struck.filter((at) => now - at < STRIKE_WINDOW_MS)
   recent.push(now)
   strikes.set(lineage, recent)
   return recent.length

@@ -24,7 +24,9 @@ export interface Staging {
 
 export function stageFor(previous: Staging | null, { sid, from, to }: PieceHeader): Staging {
   const key = `${sid}:${from}:${to}`
-  return previous?.key === key ? previous : { key, id: randomHex(16) }
+  if (previous?.key === key) return previous
+
+  return { key, id: randomHex(16) }
 }
 
 // Stages every piece of `update`; the answer that stopped it, or null once the push may name the stage
@@ -44,12 +46,17 @@ export async function putPieces(
     total_len: update.byteLength,
     sha_total: hex(digest(update)),
   }
+
   for (let at = 0, idx = 0; at < update.byteLength; at += PIECE_BYTES, idx++) {
     const piece = update.subarray(at, at + PIECE_BYTES)
-    const reply = readReply(await endpoints.stage(stage, idx, encodePush(described, piece)))
+    const body = encodePush(described, piece)
+    const answer = await endpoints.stage(stage, idx, body)
+    const reply = readReply(answer)
     if (reply.status !== 200) return reply
+
     // The server already committed the change, and says so again to the push
     if (reply.dup) return null
   }
+
   return null
 }

@@ -27,7 +27,13 @@ function read(bytes: Uint8Array) {
   return doc.getText('t').toString()
 }
 
-const session = (sid: string) => ({ doc: 'D', sid, lineage: 'L', cid: 5, bound: true })
+const session = (sid: string) => ({
+  doc: 'D',
+  sid,
+  lineage: 'L',
+  cid: 5,
+  bound: true,
+})
 const entry = (sid: string, seq: number, bytes: Uint8Array) => ({
   doc: 'D',
   sid,
@@ -39,7 +45,12 @@ const entry = (sid: string, seq: number, bytes: Uint8Array) => ({
 describe('device store', () => {
   it('a quarantine replaces the copy, and a copy from before it is not written over the new one', async () => {
     const store = await fresh()
-    const copy = (rev: number, epoch: number) => ({ lineage: 'L', rev, canWrite: true, epoch })
+    const copy = (rev: number, epoch: number) => ({
+      lineage: 'L',
+      rev,
+      canWrite: true,
+      epoch,
+    })
     await store.commit('D', copy(2, 0), typed('quarantined').update)
     await store.commit('D', copy(1, 1), typed('rebuilt').update)
     await store.commit('D', copy(3, 0), typed('late').update)
@@ -52,11 +63,13 @@ describe('device store', () => {
     const store = await fresh()
     const late = typed('late')
     await store.capture(session('s'), [entry('s', 1, late.update)])
-    await store.commit(
-      'D',
-      { lineage: 'L', rev: 1, canWrite: true, epoch: 1 },
-      typed('rebuilt').update,
-    )
+    const rebuilt = {
+      lineage: 'L',
+      rev: 1,
+      canWrite: true,
+      epoch: 1,
+    }
+    await store.commit('D', rebuilt, typed('rebuilt').update)
 
     await store.ack('D', 's', 1, late.update, 'L', 0)
 
@@ -116,11 +129,12 @@ describe('device store', () => {
     const store = await fresh()
     const doc = new Y.Doc()
     for (let at = 0; at < 100; at++) {
-      await store.commit(
-        'D',
-        { lineage: 'L', rev: at + 1, canWrite: true },
-        typed('x', at, doc).update,
-      )
+      const copy = {
+        lineage: 'L',
+        rev: at + 1,
+        canWrite: true,
+      }
+      await store.commit('D', copy, typed('x', at, doc).update)
     }
 
     expect(read((await store.copy('D'))!.bytes)).toBe('x'.repeat(100))

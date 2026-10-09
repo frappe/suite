@@ -25,14 +25,35 @@ function setup({ sends = true, at = 4 } = {}) {
   const presence = new Presence(socket, hooks)
   const hear = (event: string, message: object) =>
     handlers.get(`suite_collab_presence${event}`)!(message)
-  const answer = (roster: object[] = [], carets: object[] = [], rooms = MINE) =>
-    presence.answered({ rooms, pid: ME, roster, count: roster.length, carets }, rooms)
-  const remote = () => new Map([...presence.awareness.getStates()].filter(([id]) => id !== 0))
+  const answer = (roster: object[] = [], carets: object[] = [], rooms = MINE) => {
+    const ack = {
+      rooms,
+      pid: ME,
+      roster,
+      count: roster.length,
+      carets,
+    }
+    presence.answered(ack, rooms)
+  }
+  const remote = () => {
+    const states = [...presence.awareness.getStates()]
+    return new Map(states.filter(([id]) => id !== 0))
+  }
   return { presence, hear, answer, emitted, ahead, handlers, remote }
 }
 
-const caret = { anchor: { type: null, tname: 'f', item: { client: 7, clock: 3 }, assoc: 0 } }
-const cursor = { ...caret, head: caret.anchor }
+const caret = {
+  anchor: {
+    type: null,
+    tname: 'f',
+    item: { client: 7, clock: 3 },
+    assoc: 0,
+  },
+}
+const cursor = {
+  ...caret,
+  head: caret.anchor,
+}
 
 afterEach(() => vi.useRealTimers())
 
@@ -71,10 +92,11 @@ describe('collab presence', () => {
     const { hear, answer, remote, presence } = setup()
     answer([{ room: MINE[0], pid: PEER, user: 'b@x.com' }])
 
-    hear('', {
+    const claimed = {
       room: MINE[0],
       states: [{ pid: PEER, user: 'b@x.com', n: 2, state: { cursor, user: { id: 'admin' } } }],
-    })
+    }
+    hear('', claimed)
 
     const state = remote().get(PEER)
     expect(state?.user.id).toBe('b@x.com')
@@ -93,24 +115,22 @@ describe('collab presence', () => {
       'here',
     ]
 
-    const drawn = weird.map((bad, n) => {
-      hear('', {
+    const drawnFor = (bad: unknown, n: number) => {
+      const batch = {
         room: MINE[0],
         states: [{ pid: PEER, user: 'b', n: n + 1, state: { cursor: bad } }],
-      })
+      }
+      hear('', batch)
       return remote().get(PEER)?.cursor
-    })
-    hear('', {
-      room: MINE[0],
-      states: [
-        {
-          pid: PEER,
-          user: 'b',
-          n: 9,
-          state: { cursor: { anchor: { ...caret.anchor, evil: 1 }, head: caret.anchor } },
-        },
-      ],
-    })
+    }
+    const drawn = weird.map(drawnFor)
+    const stray = {
+      pid: PEER,
+      user: 'b',
+      n: 9,
+      state: { cursor: { anchor: { ...caret.anchor, evil: 1 }, head: caret.anchor } },
+    }
+    hear('', { room: MINE[0], states: [stray] })
 
     expect(drawn).toEqual([null, null, null, null])
     expect(remote().get(PEER)?.cursor.anchor).toEqual(caret.anchor)
@@ -120,10 +140,11 @@ describe('collab presence', () => {
     const { hear, answer, remote } = setup()
     answer()
 
-    hear('', {
+    const elsewhere = {
       room: 'sc:other-document',
       states: [{ pid: PEER, user: 'b@x.com', n: 1, state: { cursor } }],
-    })
+    }
+    hear('', elsewhere)
     hear('', { room: MINE[0], states: [{ pid: ME, user: 'a@x.com', n: 1, state: { cursor } }] })
 
     expect(remote().size).toBe(0)
@@ -155,7 +176,9 @@ describe('collab presence', () => {
     hidden.answer()
     hidden.emitted.length = 0
 
-    for (const tab of [viewer, outside]) tab.presence.awareness.setLocalStateField('cursor', 1)
+    for (const tab of [viewer, outside]) {
+      tab.presence.awareness.setLocalStateField('cursor', 1)
+    }
     await vi.advanceTimersByTimeAsync(200)
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
     hidden.presence.awareness.setLocalStateField('cursor', 1)
