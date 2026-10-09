@@ -541,6 +541,26 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 self.assertEqual(frappe.db.get_value("Writer Document", self.docname(node), fields), before)
         self.assertEqual(self.text_of(self.body_of(node)), "one")
 
+    def test_a_generic_row_write_cannot_change_the_body_of_a_collab_document(self):
+        node = self.new_document()
+        self.type_into(node, ["one"])
+        self.compact(node)
+        name = self.docname(node)
+        fields = ("content", "html")
+        before = frappe.db.get_value("Writer Document", name, fields)
+
+        # frappe.client.set_value, and a REST PUT, which updates the row and saves it
+        for write in (
+            lambda: frappe.client.set_value("Writer Document", name, "content", "AAA="),
+            lambda: frappe.client.set_value("Writer Document", name, "html", "<p>older</p>"),
+            lambda: frappe.get_doc("Writer Document", name).update({"content": "AAA="}).save(),
+        ):
+            with self.subTest(), self.assertRaisesRegex(drive.DriveConflict, "reload it"):
+                write()
+            frappe.db.rollback()
+            self.assertEqual(frappe.db.get_value("Writer Document", name, fields), before)
+        self.assertEqual(self.text_of(self.body_of(node)), "one")
+
     def test_changing_settings_keeps_the_body_a_compaction_wrote_meanwhile(self):
         node = self.new_document()
         self.type_into(node, ["one"])

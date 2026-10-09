@@ -66,6 +66,10 @@ class WriterDocument(drive.DriveContent, Document):
         frappe.db.set_value("Writer Document", self.name, "html", html, update_modified=False)
         self.drive_touch()
 
+    def validate(self):
+        if not self.is_new() and (self.has_value_changed("content") or self.has_value_changed("html")):
+            self.refuse_logged()
+
     def apply_fieldlevel_read_permissions(self):
         """A document with a log is read through it; its row's body may be behind the edits after it."""
         super().apply_fieldlevel_read_permissions()
