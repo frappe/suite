@@ -198,17 +198,17 @@ def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
 
     try:
-        live = documents.live_checkpoint(ADAPTER, row.node)
+        live_checkpoint = documents.live_checkpoint(ADAPTER, row.node)
     except (content.ChainBroken, compaction.CompactionFailed) as unready:
         raise drive.DriveConflict(
             _("Version history is not available for this document right now")
         ) from unready
-    if live is not None:
-        read, state = live
-        payload = version_payload(read, state)
+    if live_checkpoint is not None:
+        snapshot, state = live_checkpoint
+        payload = version_payload(snapshot, state)
         with _readable_body():
-            loaded = compaction.load([state])
-            fragment = loaded.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
+            loaded_state = compaction.load_doc([state])
+            fragment = loaded_state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
             payload["media"] = sorted(_fragment_ids(fragment))
         payload_bytes = json.dumps(payload).encode("utf-8")
         return io.BytesIO(payload_bytes), VERSION_MIME
@@ -283,14 +283,14 @@ def used_nodes(docname: str) -> set[str]:
     if not row:
         return set()
 
-    found = _ids_in(row.html or "")
+    html_ids = _ids_in(row.html or "")
     with _readable_body():
         state = documents.live_state(ADAPTER, row.node)
         if state is None:
-            return found | _body_ids(row.content)
+            return html_ids | _body_ids(row.content)
 
         fragment = state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
-        return found | _fragment_ids(fragment)
+        return html_ids | _fragment_ids(fragment)
 
 
 def remap_media(docname: str, mapping: dict[str, str]) -> None:
@@ -301,13 +301,13 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
 
-    logged = content.find(ADAPTER, row.node)
+    log_row = content.find(ADAPTER, row.node)
     values = {"html": _remap_text(row.html or "", mapping)}
-    body = None if logged else _remap_body(row.content, mapping)
+    body = None if log_row else _remap_body(row.content, mapping)
     if body is not None:
         values["content"] = body
     frappe.db.set_value(DOCTYPE, docname, values, update_modified=False)
-    if logged:
+    if log_row:
         rule = remap_rule(mapping)
         try:
             documents.remap_log(ADAPTER, row.node, rule)

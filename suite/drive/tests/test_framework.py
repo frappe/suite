@@ -77,9 +77,9 @@ class TestShareLinkOpensContentDocuments(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         # A Writer document with a log refuses save_html, so these start without one
-        mode = frappe.db.get_single_value("Suite Collab Settings", "mode") or "off"
+        saved_mode = frappe.db.get_single_value("Suite Collab Settings", "mode") or "off"
         self.addCleanup(frappe.db.commit)
-        self.addCleanup(frappe.db.set_single_value, "Suite Collab Settings", "mode", mode)
+        self.addCleanup(frappe.db.set_single_value, "Suite Collab Settings", "mode", saved_mode)
         frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")

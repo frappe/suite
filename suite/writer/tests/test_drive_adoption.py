@@ -461,9 +461,9 @@ class TestWriterInDrive(IntegrationTestCase):
         activation.__enter__()
         self.addCleanup(activation.__exit__, None, None, None)
         # These tests keep the body in the document row, so no document may start a collab log
-        mode = frappe.db.get_single_value("Suite Collab Settings", "mode") or "off"
+        saved_mode = frappe.db.get_single_value("Suite Collab Settings", "mode") or "off"
         self.addCleanup(frappe.db.commit)
-        self.addCleanup(frappe.db.set_single_value, "Suite Collab Settings", "mode", mode)
+        self.addCleanup(frappe.db.set_single_value, "Suite Collab Settings", "mode", saved_mode)
         frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
 
         # Registered before the first row exists, so a `setUp` that dies half

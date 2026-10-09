@@ -21,8 +21,8 @@ OLD_COLUMNS = ("checkpoint_rev", "checkpoint_chain", "integrated_rev")
 
 
 def execute() -> None:
-    doc = table("writer", "doc")
-    if not exists(doc):
+    doc_table = table("writer", "doc")
+    if not table_exists(doc_table):
         return
 
     for column in (
@@ -30,36 +30,36 @@ def execute() -> None:
         "`body_chain` binary(32) NULL",
         "`body_sha` binary(32) NULL",
     ):
-        frappe.db.sql_ddl(f"ALTER TABLE `{doc}` ADD COLUMN IF NOT EXISTS {column}")
+        frappe.db.sql_ddl(f"ALTER TABLE `{doc_table}` ADD COLUMN IF NOT EXISTS {column}")
 
     counts: dict[str, int] = {}
-    doc_ids = frappe.db.sql(f"SELECT `id` FROM `{doc}` ORDER BY `id`")
+    doc_ids = frappe.db.sql(f"SELECT `id` FROM `{doc_table}` ORDER BY `id`")
     for (doc_id,) in doc_ids:
-        outcome = move(doc_id)
+        outcome = move_body(doc_id)
         counts[outcome] = counts.get(outcome, 0) + 1
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
     for column in OLD_COLUMNS:
-        frappe.db.sql_ddl(f"ALTER TABLE `{doc}` DROP COLUMN IF EXISTS `{column}`")
+        frappe.db.sql_ddl(f"ALTER TABLE `{doc_table}` DROP COLUMN IF EXISTS `{column}`")
     print(f"Writer bodies: {counts}")
 
 
-def move(doc_id: str) -> str:
+def move_body(doc_id: str) -> str:
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
-    docs = frappe.db.sql(
+    log_rows = frappe.db.sql(
         f"""SELECT `node`, `lineage`, `mode`, `body_rev` FROM `{table("writer", "doc")}`
         WHERE `id` = %s FOR UPDATE""",
         doc_id,
         as_dict=True,
     )
-    doc = docs[0]
-    if doc.mode == "purged":
+    log_row = log_rows[0]
+    if log_row.mode == "purged":
         frappe.db.rollback()
         return "purged"
 
     rows = frappe.db.sql(
         "SELECT `name`, `owner`, `content` FROM `tabWriter Document` WHERE `node` = %s FOR UPDATE",
-        doc.node,
+        log_row.node,
         as_dict=True,
     )
     if not rows:
@@ -67,38 +67,38 @@ def move(doc_id: str) -> str:
         return "no_row"
 
     row = rows[0]
-    newest = frappe.db.sql(
+    newest_checkpoint = frappe.db.sql(
         f"""SELECT `through_rev`, `chain`, `sha256`, `gz` FROM `{table("writer", "checkpoint")}`
         WHERE `doc_id` = %s AND `integrated` = 1 AND `through_rev` > %s ORDER BY `through_rev` DESC LIMIT 1""",
-        (doc_id, doc.body_rev),
+        (doc_id, log_row.body_rev),
     )
     outcome = "moved"
-    body_unset = not int(doc.body_rev)
+    body_unset = not int(log_row.body_rev)
     row_has_text = row.content not in (None, "", EMPTY_BODY)
-    if newest:
-        through, chain, sha, gz = newest[0]
-        state = gzip.decompress(bytes(gz))
-        matches_sha = hashlib.sha256(state).digest() == bytes(sha)
+    if newest_checkpoint:
+        through_rev, chain, sha256, gz_state = newest_checkpoint[0]
+        state = gzip.decompress(bytes(gz_state))
+        matches_sha = hashlib.sha256(state).digest() == bytes(sha256)
         if not matches_sha:
             # Kept for inspection, but no longer claimed as checked, so no open starts from it
             frappe.db.sql(
                 f"""UPDATE `{table("writer", "checkpoint")}` SET `integrated` = 0
                 WHERE `doc_id` = %s AND `through_rev` = %s""",
-                (doc_id, through),
+                (doc_id, through_rev),
             )
             frappe.db.commit()  # nosemgrep: frappe-manual-commit
             print(
-                f"Writer body not moved, its checkpoint does not match its sha and is marked unchecked: {doc.node}"
+                f"Writer body not moved, its checkpoint does not match its sha and is marked unchecked: {log_row.node}"
             )
             return "bad_checkpoint"
 
         body = base64.b64encode(state).decode("ascii")
-        keep(doc_id, doc, row, body)
-        edited = frappe.db.sql(
+        keep_recovery_copy(doc_id, log_row, row, body)
+        edit_rows = frappe.db.sql(
             f"SELECT `created` FROM `{table('writer', 'update')}` WHERE `doc_id` = %s AND `rev` = %s",
-            (doc_id, through),
+            (doc_id, through_rev),
         )
-        edited_at = edited[0][0] if edited else None
+        edited_at = edit_rows[0][0] if edit_rows else None
         frappe.db.sql(
             """UPDATE `tabWriter Document` SET `content` = %s,
             `modified` = GREATEST(`modified`, COALESCE(%s, `modified`)) WHERE `name` = %s""",
@@ -107,10 +107,10 @@ def move(doc_id: str) -> str:
         frappe.db.sql(
             f"""UPDATE `{table("writer", "doc")}` SET `body_rev` = %s, `body_chain` = UNHEX(%s), `body_sha` = UNHEX(%s)
             WHERE `id` = %s""",
-            (int(through), bytes(chain).hex(), bytes(sha).hex(), doc_id),
+            (int(through_rev), bytes(chain).hex(), bytes(sha256).hex(), doc_id),
         )
     elif body_unset and row_has_text:
-        keep(doc_id, doc, row, EMPTY_BODY)
+        keep_recovery_copy(doc_id, log_row, row, EMPTY_BODY)
         frappe.db.sql(
             "UPDATE `tabWriter Document` SET `content` = %s WHERE `name` = %s", (EMPTY_BODY, row.name)
         )
@@ -119,7 +119,7 @@ def move(doc_id: str) -> str:
         outcome = "kept"
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
-    moved_through = int(newest[0][0]) if newest else int(doc.body_rev)
+    moved_through = int(newest_checkpoint[0][0]) if newest_checkpoint else int(log_row.body_rev)
     frappe.db.sql(
         f"""DELETE FROM `{table("writer", "checkpoint")}`
         WHERE `doc_id` = %s AND `integrated` = 1 AND `through_rev` <= %s""",
@@ -129,14 +129,14 @@ def move(doc_id: str) -> str:
     return outcome
 
 
-def keep(doc_id: str, doc: frappe._dict, row: frappe._dict, body: str) -> None:
+def keep_recovery_copy(doc_id: str, log_row: frappe._dict, row: frappe._dict, body: str) -> None:
     """A recovery copy of the row's text for the document's owner, when the move would replace it."""
     if row.content in (None, "", EMPTY_BODY, body):
         return
 
     payload = row.content.encode()
     try:
-        owner = document_owner(doc.node) or row.owner
+        owner = document_owner(log_row.node) or row.owner
         payload_sha = hashlib.sha256(payload).hexdigest()
         frappe.db.sql(
             f"""INSERT INTO `{table("writer", "recovery")}`
@@ -145,9 +145,9 @@ def keep(doc_id: str, doc: frappe._dict, row: frappe._dict, body: str) -> None:
             (
                 frappe.generate_hash(length=20),
                 doc_id,
-                doc.node,
+                log_row.node,
                 owner,
-                doc.lineage,
+                log_row.lineage,
                 payload_sha,
                 len(payload),
                 payload.hex(),
@@ -160,12 +160,12 @@ def keep(doc_id: str, doc: frappe._dict, row: frappe._dict, body: str) -> None:
             raise
         return
 
-    print(f"Writer row text kept as a recovery copy before the move: {doc.node}")
+    print(f"Writer row text kept as a recovery copy before the move: {log_row.node}")
 
 
-def exists(name: str) -> bool:
-    found = frappe.db.sql(
+def table_exists(name: str) -> bool:
+    matches = frappe.db.sql(
         "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = %s",
         name,
     )
-    return bool(found)
+    return bool(matches)

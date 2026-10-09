@@ -34,7 +34,7 @@ class WriterDocument(drive.DriveContent, Document):
     def save_doc(self, data: str, html: str | None = None):
         """Store the merged collaborative body."""
         self.drive_check(drive.EDIT)
-        self.refuse_logged()
+        self.refuse_if_logged()
         values = {"content": data}
         if html is not None:
             values["html"] = html
@@ -62,14 +62,14 @@ class WriterDocument(drive.DriveContent, Document):
     def save_html(self, html: str):
         """Store the rendered body of a non-collaborative document."""
         self.drive_check(drive.EDIT)
-        self.refuse_logged()
+        self.refuse_if_logged()
         frappe.db.set_value("Writer Document", self.name, "html", html, update_modified=False)
         self.drive_touch()
 
     def validate(self):
         body_changed = self.has_value_changed("content") or self.has_value_changed("html")
         if not self.is_new() and body_changed:
-            self.refuse_logged()
+            self.refuse_if_logged()
 
     def apply_fieldlevel_read_permissions(self):
         """A document with a log is read through it; its row's body may be behind the edits after it."""
@@ -77,7 +77,7 @@ class WriterDocument(drive.DriveContent, Document):
         if content.find(ADAPTER, self.node):
             self.content = None
 
-    def refuse_logged(self):
+    def refuse_if_logged(self):
         """A document with a log saves through it, so an old tab cannot write an older body over the row."""
         if content.find(ADAPTER, self.node):
             raise drive.DriveConflict(frappe._("This document saves as you edit; reload it to keep editing"))

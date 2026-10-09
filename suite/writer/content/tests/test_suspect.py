@@ -27,7 +27,7 @@ from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
 from suite.writer.content.tests import test_checkpoints, test_quarantine
 from suite.writer.content.tests.test_checkpoints import WRITER, CheckpointCase
-from suite.writer.content.tests.test_collab import OUTSIDER, READER, answer, call, read_frame
+from suite.writer.content.tests.test_collab import OUTSIDER, READER, answer, call_route, read_frame
 from suite.writer.content.tests.test_kernel import BUNDLE, paragraph
 
 JUDGE = "suite.suite_core.content.documents.judge"
@@ -41,17 +41,17 @@ class Pen(test_quarantine.Tab):
 
     @property
     def text(self) -> pycrdt.XmlFragment:
-        return self.doc.get("default", type=pycrdt.XmlFragment)
+        return self.ydoc.get("default", type=pycrdt.XmlFragment)
 
-    def adds(self, node) -> int:
-        response = self.write(lambda body: body.children.append(node))
+    def append_block(self, node) -> int:
+        response = self.push_edit(lambda body: body.children.append(node))
         self.case.assertEqual(response.status_code, 200, response.get_data())
         return answer(response)["rev"]
 
 
 class TestSuspect(CheckpointCase):
-    recovered = test_quarantine.TestQuarantine.recovered
-    states = test_quarantine.TestQuarantine.states
+    recovery_copies = test_quarantine.TestQuarantine.recovery_copies
+    row_states = test_quarantine.TestQuarantine.row_states
     release_places = test_checkpoints.TestWriterCheckpoints.release_places
 
     @classmethod
@@ -73,25 +73,25 @@ class TestSuspect(CheckpointCase):
 
         self.requested = []
 
-        def enqueue(method, **kw):
-            self.requested.append((method, kw["doc_id"]))
+        def enqueue(method, **kwargs):
+            self.requested.append((method, kwargs["doc_id"]))
 
-        for stub in (
+        for patcher in (
             patch.object(frappe, "enqueue", enqueue),
             patch.object(frappe.local, "job", frappe._dict(job_name="test_suspect"), create=True),
         ):
-            stub.start()
-            self.addCleanup(stub.stop)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
-    def refusing(self, *markers: bytes):
+    def pycrdt_refusing(self, *markers: bytes):
         """pycrdt panics on any of `markers`, as it would on a row it can't integrate; Yjs takes them."""
-        real = compaction.compact
+        real_compact = compaction.compact
 
         def compact(checkpoint, rows, roots):
             if any(row in markers for row in rows):
                 raise compaction.CompactionFailed("unreadable")
 
-            return real(checkpoint, rows, roots)
+            return real_compact(checkpoint, rows, roots)
 
         return patch.object(compaction, "compact", compact)
 
@@ -104,29 +104,29 @@ class TestSuspect(CheckpointCase):
             writer_content.document_owner,
         )
 
-    def alerts(self, title: str) -> int:
+    def alert_count(self, title: str) -> int:
         return frappe.db.count("Error Log", {"method": f"Collab document {title}"})
 
     def test_a_row_only_pycrdt_refuses_is_quarantined_and_the_document_compacts_again(self):
         node = self.new_document()
-        a = Pen(self, node)
-        b = Pen(self, node)
-        a.adds(paragraph("alpha"))
-        b.adds(paragraph("beta"))
-        a.adds(paragraph("gamma"))
+        first_pen = Pen(self, node)
+        second_pen = Pen(self, node)
+        first_pen.append_block(paragraph("alpha"))
+        second_pen.append_block(paragraph("beta"))
+        first_pen.append_block(paragraph("gamma"))
         doc_id = self.doc_row(node).id
 
-        with self.refusing(a.sent[1]):
-            self.job(doc_id).run()
+        with self.pycrdt_refusing(first_pen.sent[1]):
+            self.compaction_job(doc_id).run()
             self.assertEqual((self.doc_row(node).suspect, self.checkpoints_of(node)), ("unreadable", []))
             self.assertEqual(self.requested, [(JUDGE, doc_id)])
 
             self.assertEqual(self.judge(node), "quarantined")
 
-        self.assertEqual(self.states(node), ["ok", "ok", "quarantined"])
-        self.assertEqual(self.recovered(node), [(3, WRITER, "pycrdt_refused", a.sent[1])])
+        self.assertEqual(self.row_states(node), ["ok", "ok", "quarantined"])
+        self.assertEqual(self.recovery_copies(node), [(3, WRITER, "pycrdt_refused", first_pen.sent[1])])
         self.assertEqual((self.doc_row(node).suspect, self.doc_row(node).suspect_held), (None, None))
-        self.job(doc_id).run()
+        self.compaction_job(doc_id).run()
         self.assertEqual((self.doc_row(node).body_rev, self.checkpoints_of(node)), (3, []))
         self.assertIn(
             self.text_of(self.body_of(node)),
@@ -138,32 +138,32 @@ class TestSuspect(CheckpointCase):
 
     def test_a_table_cell_straight_in_the_body_is_quarantined_with_what_its_writer_wrote_after(self):
         node = self.new_document()
-        a = Pen(self, node)
-        b = Pen(self, node)
-        a.adds(paragraph("abc"))
-        b.adds(paragraph("def"))
-        a.adds(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
-        a.adds(paragraph("after"))
+        first_pen = Pen(self, node)
+        second_pen = Pen(self, node)
+        first_pen.append_block(paragraph("abc"))
+        second_pen.append_block(paragraph("def"))
+        first_pen.append_block(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
+        first_pen.append_block(paragraph("after"))
         self.set_doc(node, suspect="client")
 
         self.assertEqual(self.judge(node), "quarantined")
 
-        self.assertEqual(self.states(node), ["ok", "ok", "quarantined", "quarantined"])
-        reasons = [reason for _rev, _owner, reason, _payload in self.recovered(node)]
+        self.assertEqual(self.row_states(node), ["ok", "ok", "quarantined", "quarantined"])
+        reasons = [reason for _rev, _owner, reason, _payload in self.recovery_copies(node)]
         self.assertEqual(reasons, ["editor_schema"] * 2)
-        read = routes.content.read(writer_content.ADAPTER, self.doc_row(node).id)
-        payloads = [payload for _rev, payload in read["rows"]]
-        verdict = kernel.judge(BUNDLE, read["checkpoint"], payloads)
+        snapshot = routes.content.read(writer_content.ADAPTER, self.doc_row(node).id)
+        payloads = [payload for _rev, payload in snapshot["rows"]]
+        verdict = kernel.judge(BUNDLE, snapshot["checkpoint"], payloads)
         self.assertEqual(verdict, kernel.Verdict(None))
         self.assertIsNone(self.doc_row(node).suspect)
 
     def test_without_node_the_document_is_held_keeps_its_rows_and_pauses_saving(self):
         node = self.new_document()
-        a = Pen(self, node)
-        a.adds(paragraph("alpha"))
-        with self.refusing(a.sent[0]):
-            self.job(self.doc_row(node).id).run()
-        before = self.alerts("suspect held: no_node")
+        first_pen = Pen(self, node)
+        first_pen.append_block(paragraph("alpha"))
+        with self.pycrdt_refusing(first_pen.sent[0]):
+            self.compaction_job(self.doc_row(node).id).run()
+        alerts_before = self.alert_count("suspect held: no_node")
 
         with patch.object(kernel, "usable_node", lambda: None):
             self.assertEqual(self.judge(node), "held")
@@ -171,52 +171,52 @@ class TestSuspect(CheckpointCase):
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held), ("unreadable", "no_node"))
         self.assertEqual(self.pulled(node)["held"], "change")
-        self.assertEqual(self.alerts("suspect held: no_node"), before + 1)
-        self.assertEqual(self.states(node), ["ok"])
-        response = a.write(lambda body: body.children.append(paragraph("beta")))
+        self.assertEqual(self.alert_count("suspect held: no_node"), alerts_before + 1)
+        self.assertEqual(self.row_states(node), ["ok"])
+        response = first_pen.push_edit(lambda body: body.children.append(paragraph("beta")))
         self.assertEqual(response.status_code, 423)
         self.assertEqual((answer(response)["reason"], self.row_count(node)), ("suspect", 1))
 
     def test_a_suspect_document_is_never_compacted_and_only_an_unheld_one_is_judged_by_the_sweep(self):
         node = self.new_document()
-        Pen(self, node).adds(paragraph("alpha"))
+        Pen(self, node).append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         self.set_doc(node, suspect="unreadable")
 
-        self.job(doc_id).run()
+        self.compaction_job(doc_id).run()
         documents.consider_compaction(writer_content.ADAPTER, doc_id)
         documents.sweep()
         self.assertEqual((self.checkpoints_of(node), self.doc_row(node).compaction_failures), ([], 0))
-        self.assertEqual([call for call in self.requested if call[1] == doc_id], [(JUDGE, doc_id)])
+        self.assertEqual([request for request in self.requested if request[1] == doc_id], [(JUDGE, doc_id)])
 
         self.set_doc(node, suspect_held="no_node")
         self.requested.clear()
         documents.sweep()
-        self.assertNotIn(doc_id, [doc for _method, doc in self.requested])
+        self.assertNotIn(doc_id, [requested_doc_id for _method, requested_doc_id in self.requested])
 
     def test_a_checkpoint_that_holds_the_bad_content_is_held(self):
         node = self.new_document()
-        a = Pen(self, node)
-        a.adds(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
-        self.job(self.doc_row(node).id).run()
-        a.adds(paragraph("after"))
+        first_pen = Pen(self, node)
+        first_pen.append_block(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
+        self.compaction_job(self.doc_row(node).id).run()
+        first_pen.append_block(paragraph("after"))
         self.set_doc(node, suspect="client")
 
         self.assertEqual(self.judge(node), "held")
 
         self.assertEqual(self.doc_row(node).suspect_held, "bad_checkpoint")
         self.assertEqual(self.pulled(node)["held"], "bad_checkpoint")
-        self.assertEqual(self.states(node), ["ok", "ok"])
+        self.assertEqual(self.row_states(node), ["ok", "ok"])
 
     def test_rows_pycrdt_still_refuses_after_the_quarantine_hold_the_document_once(self):
         node = self.new_document()
-        a = Pen(self, node)
-        a.adds(paragraph("alpha"))
+        first_pen = Pen(self, node)
+        first_pen.append_block(paragraph("alpha"))
         self.set_doc(node, suspect="unreadable")
         quarantined = []
 
         with (
-            self.refusing(a.sent[0]),
+            self.pycrdt_refusing(first_pen.sent[0]),
             patch.object(quarantine, "quarantine", lambda *args: quarantined.append(args) or []),
         ):
             self.assertEqual(self.judge(node), "held")
@@ -226,18 +226,18 @@ class TestSuspect(CheckpointCase):
 
     def report(self, node: str, rev) -> tuple[int, dict]:
         body = json.dumps({"rev": rev}).encode()
-        response = call(routes.suspect_post, node, body=body)
+        response = call_route(routes.suspect_post, node, body=body)
         return response.status_code, answer(response)
 
     def pulled(self, node: str) -> dict:
-        response = call(routes.updates_get, node)
+        response = call_route(routes.updates_get, node)
         return read_frame(response.get_data())[0]
 
     def test_a_tab_that_cannot_apply_a_row_reads_the_verdict_on_its_pull(self):
         node = self.new_document()
-        a = Pen(self, node)
-        a.adds(paragraph("abc"))
-        bad = a.adds(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
+        first_pen = Pen(self, node)
+        first_pen.append_block(paragraph("abc"))
+        bad = first_pen.append_block(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
         doc_id = self.doc_row(node).id
         self.assertNotIn("verdict", self.pulled(node))
 
@@ -247,9 +247,9 @@ class TestSuspect(CheckpointCase):
 
         pulled = self.pulled(node)
         self.assertEqual((pulled["judged"], pulled["verdict"], pulled["q_epoch"]), (1, "quarantined", 1))
-        self.assertEqual(self.states(node), ["ok", "quarantined"])
+        self.assertEqual(self.row_states(node), ["ok", "quarantined"])
 
-        fine = Pen(self, node).adds(paragraph("def"))
+        fine = Pen(self, node).append_block(paragraph("def"))
         self.set_doc(node, suspect_reported_at=now_datetime() - timedelta(seconds=61))
         self.assertEqual(self.report(node, fine), (202, {"collab": "judging", "judged": 1}))
         documents.judge(writer_content.ADAPTER, doc_id)
@@ -259,10 +259,10 @@ class TestSuspect(CheckpointCase):
 
     def test_a_report_is_heard_once_a_minute_and_a_row_in_the_checkpoint_is_clean_at_once(self):
         node = self.new_document()
-        a = Pen(self, node)
-        checked = a.adds(paragraph("alpha"))
-        self.job(self.doc_row(node).id).run()
-        later = a.adds(paragraph("beta"))
+        first_pen = Pen(self, node)
+        checked = first_pen.append_block(paragraph("alpha"))
+        self.compaction_job(self.doc_row(node).id).run()
+        later = first_pen.append_block(paragraph("beta"))
 
         self.assertEqual(self.report(node, checked), (200, {"verdict": "clean", "judged": 0}))
         self.assertEqual((self.doc_row(node).suspect, self.requested), (None, []))
@@ -275,7 +275,7 @@ class TestSuspect(CheckpointCase):
 
     def test_a_report_must_name_a_row_of_the_document_and_a_held_one_stays_paused(self):
         node = self.new_document()
-        rev = Pen(self, node).adds(paragraph("alpha"))
+        rev = Pen(self, node).append_block(paragraph("alpha"))
 
         for rev_sent in (0, rev + 1, str(rev), None, True):
             with self.subTest(rev=rev_sent):
@@ -289,7 +289,7 @@ class TestSuspect(CheckpointCase):
         ensure_user(READER)
         ensure_user(OUTSIDER)
         node = self.new_document()
-        rev = Pen(self, node).adds(paragraph("alpha"))
+        rev = Pen(self, node).append_block(paragraph("alpha"))
         writer_principals = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
         grant(node, READER, drive.READ, writer_principals)
         frappe.db.commit()
@@ -303,7 +303,7 @@ class TestSuspect(CheckpointCase):
     def test_a_reader_learns_only_whether_one_change_or_the_document_is_held(self):
         ensure_user(READER)
         node = self.new_document()
-        Pen(self, node).adds(paragraph("alpha"))
+        Pen(self, node).append_block(paragraph("alpha"))
         writer_principals = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
         grant(node, READER, drive.READ, writer_principals)
         frappe.db.commit()
@@ -318,18 +318,18 @@ class TestSuspect(CheckpointCase):
             self.assertEqual(self.pulled(node)["held"], shown)
 
     def test_a_report_the_judge_cannot_settle_clears_and_saving_goes_on(self):
-        def fails(*args):
+        def kernel_fails(*args):
             raise kernel.KernelFailed("killed")
 
         for why, stub in (
             ("no_node", lambda: patch.object(kernel, "usable_node", lambda: None)),
-            ("kernel_failed", lambda: patch.object(kernel, "judge", fails)),
+            ("kernel_failed", lambda: patch.object(kernel, "judge", kernel_fails)),
         ):
             with self.subTest(why=why):
                 node = self.new_document()
-                a = Pen(self, node)
-                rev = a.adds(paragraph("alpha"))
-                before = self.alerts(f"suspect unjudged: {why}")
+                first_pen = Pen(self, node)
+                rev = first_pen.append_block(paragraph("alpha"))
+                alerts_before = self.alert_count(f"suspect unjudged: {why}")
 
                 self.assertEqual(self.report(node, rev)[0], 202)
                 with stub():
@@ -337,25 +337,25 @@ class TestSuspect(CheckpointCase):
 
                 doc = self.doc_row(node)
                 self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "unjudged"))
-                self.assertEqual(self.alerts(f"suspect unjudged: {why}"), before + 1)
-                a.adds(paragraph("beta"))
-                self.assertEqual(self.states(node), ["ok", "ok"])
+                self.assertEqual(self.alert_count(f"suspect unjudged: {why}"), alerts_before + 1)
+                first_pen.append_block(paragraph("beta"))
+                self.assertEqual(self.row_states(node), ["ok", "ok"])
 
     def test_a_row_a_fallback_checkpoint_only_merged_is_still_judged(self):
         node = self.new_document()
-        a = Pen(self, node)
-        rev = a.adds(paragraph("alpha"))
+        first_pen = Pen(self, node)
+        rev = first_pen.append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
 
-        def merged(checkpoint, rows, roots):
+        def fallback_compact(checkpoint, rows, roots):
             merged_state = compaction.pycrdt.merge_updates(*rows)
             return compaction.Compacted(merged_state, integrated=False)
 
-        with patch.object(compaction, "compact", merged):
-            self.job(doc_id).run()
+        with patch.object(compaction, "compact", fallback_compact):
+            self.compaction_job(doc_id).run()
 
-        throughs = [through for through, _state, _integrated in self.checkpoints_of(node)]
-        self.assertEqual((throughs, self.doc_row(node).suspect), ([rev], "fallback"))
+        through_revs = [through for through, _state, _integrated in self.checkpoints_of(node)]
+        self.assertEqual((through_revs, self.doc_row(node).suspect), ([rev], "fallback"))
         self.set_doc(node, suspect=None)
         self.requested.clear()
 
@@ -372,23 +372,23 @@ class TestSuspect(CheckpointCase):
             ("unreadable", "judge_failed", "held", Panic),
         ):
 
-            def breaks(*args, error=error, **kwargs):
+            def read_fails(*args, error=error, **kwargs):
                 raise error("unexpected")
 
             with self.subTest(marked=marked, error=error.__name__):
                 node = self.new_document()
-                Pen(self, node).adds(paragraph("alpha"))
+                Pen(self, node).append_block(paragraph("alpha"))
                 doc_id = self.doc_row(node).id
                 self.set_doc(node, suspect=marked)
                 title = "suspect held: judge_failed" if held else "suspect unjudged: judge_failed"
-                before = self.alerts(title)
+                alerts_before = self.alert_count(title)
 
-                with patch.object(suspect, "read", breaks):
+                with patch.object(suspect, "read", read_fails):
                     self.assertEqual(self.judge(node), verdict)
 
                 doc = self.doc_row(node)
                 self.assertEqual((doc.suspect_held, doc.verdict), (held, verdict))
-                self.assertEqual(self.alerts(title), before + 1)
+                self.assertEqual(self.alert_count(title), alerts_before + 1)
                 logged = frappe.get_last_doc("Error Log", {"method": f"Collab document {title}"}).error
                 self.assertEqual((error.__name__ in logged, "unexpected" in logged), (True, False))
                 self.requested.clear()
@@ -397,44 +397,44 @@ class TestSuspect(CheckpointCase):
 
     def test_a_compaction_that_fails_again_after_a_clean_verdict_holds_the_document(self):
         node = self.new_document()
-        a = Pen(self, node)
-        a.adds(paragraph("alpha"))
+        first_pen = Pen(self, node)
+        first_pen.append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         failing = [True]
-        real = compaction.compact
+        real_compact = compaction.compact
 
         def compact(checkpoint, rows, roots):
             if failing[0]:
                 raise compaction.CompactionFailed("unreadable")
 
-            return real(checkpoint, rows, roots)
+            return real_compact(checkpoint, rows, roots)
 
         def fails_then_judged() -> str | None:
-            a.adds(paragraph("more"))
+            first_pen.append_block(paragraph("more"))
             failing[0] = True
-            self.job(doc_id).run()
+            self.compaction_job(doc_id).run()
             self.assertEqual(self.doc_row(node).suspect, "unreadable")
             failing[0] = False
             return self.judge(node)
 
         with patch.object(compaction, "compact", compact):
             self.assertEqual(fails_then_judged(), "clean")
-            a.adds(paragraph("beta"))
-            self.job(doc_id).run()
+            first_pen.append_block(paragraph("beta"))
+            self.compaction_job(doc_id).run()
             self.assertEqual(self.doc_row(node).compaction_failures, 0)
             self.assertEqual(fails_then_judged(), "clean")
-            before = self.alerts("suspect held: unreproduced")
+            alerts_before = self.alert_count("suspect held: unreproduced")
 
             self.assertEqual(fails_then_judged(), "held")
 
         self.assertEqual(self.doc_row(node).suspect_held, "unreproduced")
-        self.assertEqual(self.alerts("suspect held: unreproduced"), before + 1)
-        self.assertEqual(self.states(node), ["ok"] * 5)
+        self.assertEqual(self.alert_count("suspect held: unreproduced"), alerts_before + 1)
+        self.assertEqual(self.row_states(node), ["ok"] * 5)
 
     def test_a_reader_who_keeps_reporting_a_good_row_never_pauses_saving(self):
         node = self.new_document()
-        a = Pen(self, node)
-        rev = a.adds(paragraph("alpha"))
+        first_pen = Pen(self, node)
+        rev = first_pen.append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         self.set_doc(node, compaction_failures=5)
 
@@ -446,22 +446,22 @@ class TestSuspect(CheckpointCase):
             self.assertEqual(
                 (doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "clean", judged)
             )
-        a.adds(paragraph("beta"))
+        first_pen.append_block(paragraph("beta"))
 
     def test_a_report_judged_clean_does_not_count_toward_a_compaction_hold(self):
         node = self.new_document()
-        a = Pen(self, node)
-        rev = a.adds(paragraph("alpha"))
+        first_pen = Pen(self, node)
+        rev = first_pen.append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         self.assertEqual(self.report(node, rev)[0], 202)
         documents.judge(writer_content.ADAPTER, doc_id)
         self.assertEqual(self.doc_row(node).verdict, "clean")
 
         with patch.object(admission, "enough_memory", lambda: False):
-            self.job(doc_id).run()
+            self.compaction_job(doc_id).run()
         self.assertEqual((self.doc_row(node).suspect, self.doc_row(node).compaction_failures), (None, 1))
-        with self.refusing(a.sent[0]):
-            self.job(doc_id).run()
+        with self.pycrdt_refusing(first_pen.sent[0]):
+            self.compaction_job(doc_id).run()
         self.assertEqual(
             (self.doc_row(node).suspect, self.doc_row(node).compaction_failures), ("unreadable", 2)
         )
@@ -471,19 +471,19 @@ class TestSuspect(CheckpointCase):
 
     def test_a_fallback_judged_clean_is_not_judged_or_alerted_again_for_a_day(self):
         node = self.new_document()
-        a = Pen(self, node)
+        first_pen = Pen(self, node)
         doc_id = self.doc_row(node).id
 
-        def merged(checkpoint, rows, roots):
+        def fallback_compact(checkpoint, rows, roots):
             updates = [checkpoint, *rows] if checkpoint else rows
             merged_state = compaction.pycrdt.merge_updates(*updates)
             return compaction.Compacted(merged_state, integrated=False)
 
         def falls_back() -> tuple[str | None, int, list]:
-            a.adds(paragraph("more"))
+            first_pen.append_block(paragraph("more"))
             self.requested.clear()
-            with patch.object(compaction, "compact", merged):
-                self.job(doc_id).run()
+            with patch.object(compaction, "compact", fallback_compact):
+                self.compaction_job(doc_id).run()
             fallback_alerts = {
                 "method": "Collab compaction: fallback",
                 "error": ["like", f"%{doc_id}%"],
@@ -497,29 +497,29 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(falls_back(), (None, 1, []))
         self.set_doc(node, fallback_judged_clean_at=now_datetime() - timedelta(hours=23))
         self.assertEqual(falls_back(), (None, 1, []))
-        stamp = self.doc_row(node).fallback_judged_clean_at
-        a.adds(paragraph("unread"))
-        with self.refusing(a.sent[-1]):
-            self.job(doc_id).run()
+        judged_clean_at = self.doc_row(node).fallback_judged_clean_at
+        first_pen.append_block(paragraph("unread"))
+        with self.pycrdt_refusing(first_pen.sent[-1]):
+            self.compaction_job(doc_id).run()
         self.assertEqual(self.doc_row(node).suspect, "unreadable")
         self.assertEqual(self.judge(node), "clean")
-        self.assertEqual(self.doc_row(node).fallback_judged_clean_at, stamp)
+        self.assertEqual(self.doc_row(node).fallback_judged_clean_at, judged_clean_at)
 
         self.set_doc(node, fallback_judged_clean_at=now_datetime() - timedelta(hours=25))
         self.assertEqual(falls_back(), ("fallback", 2, [(JUDGE, doc_id)]))
-        self.assertEqual(self.states(node), ["ok"] * 5)
+        self.assertEqual(self.row_states(node), ["ok"] * 5)
 
     def held_document(self) -> tuple[str, str, Pen]:
         node = self.new_document()
-        a = Pen(self, node)
-        a.adds(paragraph("alpha"))
+        first_pen = Pen(self, node)
+        first_pen.append_block(paragraph("alpha"))
         self.set_doc(node, suspect="unreadable", suspect_held="no_node")
-        return node, self.doc_row(node).id, a
+        return node, self.doc_row(node).id, first_pen
 
     def test_a_system_manager_lists_suspect_documents_without_their_content_and_changes_nothing(self):
-        node, doc_id, _a = self.held_document()
+        node, doc_id, _ = self.held_document()
         clean = self.new_document()
-        Pen(self, clean).adds(paragraph("beta"))
+        Pen(self, clean).append_block(paragraph("beta"))
 
         frappe.set_user(SYSTEM_MANAGER)
         listed = {row.id: row for row in documents.suspect_documents(writer_content.ADAPTER)}
@@ -558,21 +558,21 @@ class TestSuspect(CheckpointCase):
 
     def test_listing_is_open_to_system_managers_and_acting_to_suite_admins_and_administrator(self):
         node = self.new_document()
-        Pen(self, node).adds(paragraph("alpha"))
+        Pen(self, node).append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         methods = (
             ("list", lambda: documents.suspect_documents(writer_content.ADAPTER)),
             ("rejudge", lambda: documents.rejudge_suspect(writer_content.ADAPTER, doc_id)),
             ("clear", lambda: documents.clear_suspect(writer_content.ADAPTER, doc_id)),
         )
-        may = {
+        allowed_by_role = {
             SYSTEM_MANAGER: (True, False, False),
             SUITE_ADMIN: (True, True, True),
             "Administrator": (True, True, True),
             NO_ROLE: (False, False, False),
             "Guest": (False, False, False),
         }
-        for user, allowed in may.items():
+        for user, allowed in allowed_by_role.items():
             for (name, method), expected in zip(methods, allowed, strict=True):
                 with self.subTest(user=user, method=name):
                     frappe.set_user(user)
@@ -583,8 +583,8 @@ class TestSuspect(CheckpointCase):
         self.assertEqual((self.doc_row(node).suspect, self.requested), (None, []))
 
     def test_a_suite_admin_asks_for_a_new_verdict_on_a_held_document(self):
-        node, doc_id, _a = self.held_document()
-        before = self.alerts("suspect re-judged")
+        node, doc_id, _ = self.held_document()
+        alerts_before = self.alert_count("suspect re-judged")
 
         frappe.set_user(SUITE_ADMIN)
         self.assertTrue(documents.rejudge_suspect(writer_content.ADAPTER, doc_id))
@@ -592,18 +592,18 @@ class TestSuspect(CheckpointCase):
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held), ("unreadable", None))
         self.assertEqual(self.requested, [(JUDGE, doc_id)])
-        self.assertEqual(self.alerts("suspect re-judged"), before + 1)
+        self.assertEqual(self.alert_count("suspect re-judged"), alerts_before + 1)
         documents.judge(writer_content.ADAPTER, doc_id)
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.verdict), (None, "clean"))
         self.assertFalse(documents.rejudge_suspect(writer_content.ADAPTER, doc_id))
-        self.assertEqual(self.alerts("suspect re-judged"), before + 1)
+        self.assertEqual(self.alert_count("suspect re-judged"), alerts_before + 1)
 
     def test_a_suite_admin_clears_a_held_document_and_saving_goes_on_with_its_rows(self):
-        node, doc_id, a = self.held_document()
-        response = a.write(lambda body: body.children.append(paragraph("blocked")))
+        node, doc_id, first_pen = self.held_document()
+        response = first_pen.push_edit(lambda body: body.children.append(paragraph("blocked")))
         self.assertEqual(response.status_code, 423)
-        before = self.alerts("suspect cleared")
+        alerts_before = self.alert_count("suspect cleared")
         backoff = (now_datetime() + timedelta(minutes=2)).replace(microsecond=0)
         self.set_doc(node, next_compaction_at=backoff)
 
@@ -615,53 +615,53 @@ class TestSuspect(CheckpointCase):
             (doc.suspect, doc.suspect_held, doc.verdict, doc.judged, doc.next_compaction_at),
             (None, None, "unjudged", 1, backoff),
         )
-        self.assertEqual(self.alerts("suspect cleared"), before + 1)
+        self.assertEqual(self.alert_count("suspect cleared"), alerts_before + 1)
         self.assertEqual(self.requested, [])
         self.assertFalse(documents.clear_suspect(writer_content.ADAPTER, doc_id))
         frappe.set_user(WRITER)
         self.assertNotIn("held", self.pulled(node))
-        Pen(self, node).adds(paragraph("beta"))
-        self.assertEqual(self.states(node), ["ok", "ok"])
+        Pen(self, node).append_block(paragraph("beta"))
+        self.assertEqual(self.row_states(node), ["ok", "ok"])
 
     def test_a_hold_and_each_way_out_of_it_tell_the_documents_live_room(self):
         node = self.new_document()
-        Pen(self, node).adds(paragraph("alpha"))
+        Pen(self, node).append_block(paragraph("alpha"))
         doc = self.doc_row(node)
         room = live.rooms(writer_content.ADAPTER, doc.id, doc.lineage)["keys"][0]
         self.set_doc(node, suspect="unreadable")
 
         with patch("frappe.publish_realtime") as publish:
-            suspect.hold(writer_content.ADAPTER, doc.id, "kernel_failed", "held by the test")
+            suspect.hold_document(writer_content.ADAPTER, doc.id, "kernel_failed", "held by the test")
             frappe.set_user(SUITE_ADMIN)
             documents.rejudge_suspect(writer_content.ADAPTER, doc.id)
-            suspect.hold(writer_content.ADAPTER, doc.id, "kernel_failed", "held by the test")
+            suspect.hold_document(writer_content.ADAPTER, doc.id, "kernel_failed", "held by the test")
             documents.clear_suspect(writer_content.ADAPTER, doc.id)
 
         published = [
-            (call.args[1]["kind"], call.kwargs["room"])
-            for call in publish.call_args_list
-            if call.args[0] == "suite_collab_ctl"
+            (published.args[1]["kind"], published.kwargs["room"])
+            for published in publish.call_args_list
+            if published.args[0] == "suite_collab_ctl"
         ]
         self.assertEqual(published, [("held", room), ("released", room), ("held", room), ("released", room)])
 
     def test_a_refused_row_whose_session_is_gone_is_quarantined_for_the_document_owner(self):
         node = self.new_document()
-        a = Pen(self, node)
-        a.adds(paragraph("alpha"))
-        frappe.db.sql("DELETE FROM `__writer_content_session` WHERE `sid` = %s", a.sid)
+        first_pen = Pen(self, node)
+        first_pen.append_block(paragraph("alpha"))
+        frappe.db.sql("DELETE FROM `__writer_content_session` WHERE `sid` = %s", first_pen.sid)
         self.set_doc(node, suspect="unreadable")
         frappe.set_user("Administrator")
 
-        with self.refusing(a.sent[0]):
+        with self.pycrdt_refusing(first_pen.sent[0]):
             self.assertEqual(self.judge(node), "quarantined")
 
-        self.assertEqual(self.recovered(node), [(1, WRITER, "pycrdt_refused", a.sent[0])])
+        self.assertEqual(self.recovery_copies(node), [(1, WRITER, "pycrdt_refused", first_pen.sent[0])])
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "quarantined"))
 
     def test_with_every_place_taken_a_judge_waits_for_the_sweep_and_frees_its_place(self):
         node = self.new_document()
-        Pen(self, node).adds(paragraph("alpha"))
+        Pen(self, node).append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         self.set_doc(node, suspect="unreadable")
         redis = get_redis_conn()
@@ -684,15 +684,15 @@ class TestSuspect(CheckpointCase):
         self.assertFalse(redis.exists(compacting_key))
 
     def test_a_re_judge_asked_while_the_judge_runs_is_judged_before_the_judge_ends(self):
-        node, doc_id, _a = self.held_document()
+        node, doc_id, _ = self.held_document()
         self.set_doc(node, suspect_held=None)
-        real = kernel.judge
-        calls = []
+        real_judge = kernel.judge
+        judge_calls = []
 
         def judged_while_asked(bundle, checkpoint, rows):
-            calls.append(1)
-            if len(calls) > 1:
-                return real(bundle, checkpoint, rows)
+            judge_calls.append(1)
+            if len(judge_calls) > 1:
+                return real_judge(bundle, checkpoint, rows)
 
             frappe.set_user(SUITE_ADMIN)
             documents.rejudge_suspect(writer_content.ADAPTER, doc_id)
@@ -704,12 +704,12 @@ class TestSuspect(CheckpointCase):
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict, doc.judged), (None, None, "clean", 2))
         self.assertEqual(self.judge(node), None)
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(judge_calls), 2)
 
     def test_a_judge_that_would_hold_a_document_an_admin_cleared_meanwhile_leaves_it_cleared(self):
-        node, doc_id, _a = self.held_document()
+        node, doc_id, _ = self.held_document()
         self.set_doc(node, suspect_held=None)
-        before = self.alerts("suspect held: no_node")
+        alerts_before = self.alert_count("suspect held: no_node")
 
         def cleared_meanwhile(bundle, checkpoint, rows):
             frappe.set_user(SUITE_ADMIN)
@@ -721,11 +721,11 @@ class TestSuspect(CheckpointCase):
 
         doc = self.doc_row(node)
         self.assertEqual((doc.suspect, doc.suspect_held, doc.verdict), (None, None, "unjudged"))
-        self.assertEqual(self.alerts("suspect held: no_node"), before)
+        self.assertEqual(self.alert_count("suspect held: no_node"), alerts_before)
 
     def test_a_re_judge_asked_before_the_judge_starts_is_judged_once(self):
-        node, doc_id, _a = self.held_document()
-        before = self.alerts("suspect held: no_node")
+        node, doc_id, _ = self.held_document()
+        alerts_before = self.alert_count("suspect held: no_node")
         frappe.set_user(SUITE_ADMIN)
         documents.rejudge_suspect(writer_content.ADAPTER, doc_id)
         frappe.set_user("Administrator")
@@ -733,7 +733,9 @@ class TestSuspect(CheckpointCase):
         with patch.object(kernel, "usable_node", lambda: None):
             self.assertEqual(self.judge(node), "held")
 
-        self.assertEqual((self.doc_row(node).judged, self.alerts("suspect held: no_node")), (1, before + 1))
+        self.assertEqual(
+            (self.doc_row(node).judged, self.alert_count("suspect held: no_node")), (1, alerts_before + 1)
+        )
 
     def test_a_kernel_naming_no_row_holds_the_document_and_quarantines_nothing(self):
         for index in ("-2", "3", "0.5", "true"):
@@ -741,7 +743,7 @@ class TestSuspect(CheckpointCase):
                 node = self.new_document()
                 pen = Pen(self, node)
                 for text in ("alpha", "beta", "gamma"):
-                    pen.adds(paragraph(text))
+                    pen.append_block(paragraph(text))
                 self.set_doc(node, suspect="unreadable")
                 bundle = Path(folder) / "kernel.cjs"
                 bundle.write_text(
@@ -752,11 +754,11 @@ class TestSuspect(CheckpointCase):
                     verdict = self.judge(node)
 
                 self.assertEqual((verdict, self.doc_row(node).suspect_held), ("held", "kernel_failed"))
-                self.assertEqual(self.states(node), ["ok", "ok", "ok"])
+                self.assertEqual(self.row_states(node), ["ok", "ok", "ok"])
 
     def test_a_judge_that_cannot_reach_redis_takes_no_place(self):
         node = self.new_document()
-        Pen(self, node).adds(paragraph("alpha"))
+        Pen(self, node).append_block(paragraph("alpha"))
         doc_id = self.doc_row(node).id
         self.set_doc(node, suspect="unreadable")
 
@@ -773,19 +775,19 @@ class TestSuspect(CheckpointCase):
         for verdict in ("quarantined", "clean"):
             with self.subTest(verdict), patch.object(scheduling, "TAIL_ROWS", 1):
                 node = self.new_document()
-                a = Pen(self, node)
-                b = Pen(self, node)
-                a.adds(paragraph("alpha"))
-                b.adds(paragraph("beta"))
-                a.adds(paragraph("gamma"))
+                first_pen = Pen(self, node)
+                second_pen = Pen(self, node)
+                first_pen.append_block(paragraph("alpha"))
+                second_pen.append_block(paragraph("beta"))
+                first_pen.append_block(paragraph("gamma"))
                 doc_id = self.doc_row(node).id
-                with self.refusing(a.sent[1]):
-                    self.job(doc_id).run()
+                with self.pycrdt_refusing(first_pen.sent[1]):
+                    self.compaction_job(doc_id).run()
                 self.assertGreater(self.doc_row(node).next_compaction_at, now_datetime())
                 self.requested.clear()
 
-                refused_row = a.sent[1] if verdict == "quarantined" else b""
-                with self.refusing(refused_row):
+                refused_row = first_pen.sent[1] if verdict == "quarantined" else b""
+                with self.pycrdt_refusing(refused_row):
                     documents.judge(writer_content.ADAPTER, doc_id)
 
                 doc = self.doc_row(node)

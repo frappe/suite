@@ -13,30 +13,30 @@ from suite.suite_core.content.compaction import compact
 from suite.suite_core.content.updates import rewrite_values
 from suite.writer.drive import remap_rule
 
-WRITER = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
+WRITER_ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 
 
-def run(trial: dict, rule) -> dict:
+def remap_trial(trial: dict, rule) -> dict:
     rows = [base64.b64decode(row) for row in trial["rows"]]
     try:
-        state = compact(None, rows, WRITER).state
+        state = compact(None, rows, WRITER_ROOTS).state
         remapped = rewrite_values(state, rule)
     except Exception as error:
         return {**trial, "error": repr(error)}
 
-    rerun = rewrite_values(remapped, rule)
+    remapped_twice = rewrite_values(remapped, rule)
     return {
         **trial,
         "remapped": base64.b64encode(remapped).decode(),
-        "rerun_unchanged": rerun == remapped,
+        "rerun_unchanged": remapped_twice == remapped,
     }
 
 
 if __name__ == "__main__":
     source, target = sys.argv[1:]
-    with open(source) as f:
-        given = json.load(f)
+    with open(source) as source_file:
+        generated = json.load(source_file)
 
-    rule = remap_rule(given["map"])
-    with open(target, "w") as f:
-        json.dump([run(trial, rule) for trial in given["trials"]], f)
+    rule = remap_rule(generated["map"])
+    with open(target, "w") as target_file:
+        json.dump([remap_trial(trial, rule) for trial in generated["trials"]], target_file)
