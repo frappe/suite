@@ -244,3 +244,19 @@ describe('worker host — rangeStats', () => {
     })
   })
 })
+
+describe('worker host — usedCells', () => {
+  it('lists non-empty cells row by row, skipping cleared ones', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', {
+      commands: [
+        setInput('Sheet1', 3, 2, 'x'),
+        setInput('Sheet1', 1, 4, '=1+1'),
+        setInput('Sheet1', 1, 1, 'a'),
+        setInput('Sheet1', 2, 2, 'gone'),
+        cmd(CommandTypes.clearContents, { sheet: 'Sheet1', range: { r1: 2, c1: 2, r2: 2, c2: 2 } }),
+      ],
+    })
+    expect(ok('usedCells', { sheet: 'Sheet1' }).cells).toEqual([1, 1, 1, 4, 3, 2])
+  })
+})

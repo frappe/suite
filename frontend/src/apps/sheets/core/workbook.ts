@@ -113,6 +113,8 @@ export interface Workbook {
    * order (row by row), at most `limit` of them.
    */
   findInputs(sheet: string, query: string, limit: number): FoundCell[]
+  /** Every non-empty cell as flat [row, col, row, col, …] (1-based), row by row. */
+  usedCells(sheet: string): number[]
   /** Count / numeric count / sum over a range (1-based, inclusive). */
   rangeStats(sheet: string, r1: number, c1: number, r2: number, c2: number): RangeStats
   toBytes(): Uint8Array
@@ -387,6 +389,18 @@ export function createWorkbook({
           }
         }
         return found
+      }),
+    usedCells: (sheet) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const out: number[] = []
+        for (let row = 1; row <= MAX_ROWS; row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            // A styled but empty cell is listed too.
+            if (model.getCellContent(idx, row, col) !== '') out.push(row, col)
+          }
+        }
+        return out
       }),
     // The status bar's Count / Sum / Avg. Same row scan as findInputs, so a
     // whole-column selection costs the used rows, not a million reads.

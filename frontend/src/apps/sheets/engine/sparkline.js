@@ -112,3 +112,41 @@ export function sparkGeometry(spec, w, h, pad = 3) {
   const points = data.map((v, i) => ({ x: pad + i * step, y: yOf(v) }))
   return { kind: 'line', points }
 }
+
+// IronCalc has no SPARKLINE function, so the editor reads the formula itself:
+// `=SPARKLINE(A1:A10)`, `=SPARKLINE(Data!B2:B9, "column", "#e11d48")` or a
+// quoted sheet name (`'My data'!A1:A5`). Type and colour are string literals.
+// Returns { sheet, r0, c0, r1, c1, type, color } (0-based; sheet is null for
+// the sparkline cell's own sheet), or null when the input is not a sparkline.
+const SPARK_RE =
+  /^=\s*SPARKLINE\s*\(\s*(?:('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!)?\$?([A-Z]+)\$?(\d+)(?::\$?([A-Z]+)\$?(\d+))?\s*(?:,\s*"([^"]*)"\s*)?(?:,\s*"([^"]*)"\s*)?\)\s*$/i
+
+function _colIndex(letters) {
+  let n = 0
+  for (const ch of letters.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64)
+  return n - 1
+}
+
+export function parseSparkline(input) {
+  const m = typeof input === 'string' ? SPARK_RE.exec(input) : null
+  if (!m) return null
+  const [, rawSheet, ca, ra, cb = ca, rb = ra, type, color] = m
+  const sheet = rawSheet
+    ? rawSheet.startsWith("'")
+      ? rawSheet.slice(1, -1).replace(/''/g, "'")
+      : rawSheet
+    : null
+  const c0 = _colIndex(ca),
+    c1 = _colIndex(cb)
+  const r0 = +ra - 1,
+    r1 = +rb - 1
+  return {
+    sheet,
+    r0: Math.min(r0, r1),
+    c0: Math.min(c0, c1),
+    r1: Math.max(r0, r1),
+    c1: Math.max(c0, c1),
+    type: type ?? null,
+    color: color ?? null,
+  }
+}

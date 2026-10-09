@@ -703,7 +703,7 @@
           :charts="chartList"
           :current-sheet="currentSheet"
           :get-matrix="getChartMatrix"
-          :data-version="chartDataVersion"
+          :data-version="chartMatrixVersion"
           :selected-id="selectedChartId"
           :suppressed="chartDialogOpen"
           @select="selectChart"
@@ -1521,7 +1521,8 @@
       <!-- Chart dialog -->
       <ChartDialog
         v-model="chartDialogOpen"
-        :sheet="sheet"
+        :read-range="_readDisplays"
+        :used-extent="_usedExtent"
         :current-sheet="currentSheet"
         :initial-range="chartInitialRange"
         :chart-id="chartEditId"
@@ -2218,6 +2219,7 @@ import { deleteMap, insertMap, moveMap } from '../../engine/ref-remap.js'
 import { createSheet } from '../../engine/sheet.js'
 import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
+import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { fetchLinkPreview } from '../../services/linkPreview.js'
 import { cellHistory as fetchCellHistory } from '../../services/versions.js'
@@ -3991,6 +3993,7 @@ const {
   charts: chartList,
   selectedChartId,
   chartDataVersion,
+  matrixVersion: chartMatrixVersion,
   openInsert: openChartDialog,
   openEdit: openChartEdit,
   onChartConfirm,
@@ -4002,7 +4005,7 @@ const {
   getMatrix: getChartMatrix,
 } = useChartIntegration({
   chart: charts,
-  sheet,
+  readRange: (sn, rect) => _readDisplays(sn, rect),
   currentSheet,
   contextMenu,
   history,
@@ -4627,7 +4630,7 @@ function _setupGridInstance() {
       // Non-empty cell ids for the current sheet — the lazy path's source for
       // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
       // own `data` keys.
-      getCellIds: () => Object.keys(sheet.getRawData()),
+      getCellIds: () => _usedIds,
       getMergeInfo: (id) => merge.getMasterInfo(id, currentSheet.value),
       isSlave: (id) => merge.isSlave(id, currentSheet.value),
       getMasterId: (id) => merge.getMasterId(id, currentSheet.value),
@@ -4637,11 +4640,7 @@ function _setupGridInstance() {
         condFormat.getFormatOverride(id, val, currentSheet.value, (cid) => _displayValue(cid)),
       // A SPARKLINE formula evaluates to a spec object; the painter draws it.
       // In show-formulas mode the cell shows its =SPARKLINE(...) text instead.
-      getSparkline: (id) => {
-        if (showFormulas.value) return null
-        const v = sheet.getCellValue(id, currentSheet.value)
-        return v && v.__spark ? v : null
-      },
+      getSparkline: (id) => (showFormulas.value ? null : _sparklineAt(id)),
       getRightInset: (id) => {
         const range = sortFilter.getRange(currentSheet.value)
         if (!range) return 0
@@ -8182,6 +8181,8 @@ const { pushEditOp: _pushEditOp } = useEditOps({
 // three render identical pixels. showFormulas mode paints raw formula text.
 function _cellDisplay(id) {
   if (showFormulas.value) return _inputAt(id) ?? ''
+  // A sparkline paints a chart, not IronCalc's #NAME?.
+  if (parseSparkline(_inputAt(id))) return ''
   const sn = currentSheet.value
   const fmt = formats.get(id, sn)
   const dv = _displayValue(id, sn)
@@ -8208,6 +8209,7 @@ async function _startEngine(snapshotBytes = null) {
     // cache their source matrix: both are stale after any edit.
     condFormat?.invalidate()
     chartDataVersion.value++
+    _refreshUsedCells()
     const sn = currentSheet.value
     if (!sortFilter.hasFilter(sn)) return
     sortFilter
@@ -8217,6 +8219,7 @@ async function _startEngine(snapshotBytes = null) {
   })
   _engine = { client, provider, offSheets, offVersion }
   syncNames()
+  _refreshUsedCells() // size the grid to the loaded data
   grid?.render?.()
 }
 
@@ -8311,6 +8314,13 @@ async function _readRect(sn, rect) {
     inputs.push(...(res.inputs ?? []))
     displays.push(...res.values)
   }
+  // A sparkline shows a chart, not IronCalc's #NAME?, to every reader
+  // (charts, copied text, filter lists), as it does in the grid.
+  inputs.forEach((row, i) =>
+    row.forEach((input, j) => {
+      if (parseSparkline(input)) displays[i][j] = ''
+    }),
+  )
   return { inputs, displays }
 }
 
@@ -8366,109 +8376,91 @@ function _expandGridTo(maxCol, maxRow) {
     grid.expandRows(neededRows - grid.getTotalRows())
 }
 
-// Sheet extent via a cheap char-code id-parse over the raw cell ids — no
-// formula eval or format work. The lazy path's fallback when the engine has
-// no load-time bounds hint (post-edit / never-visited sheet).
-function _scanBounds(sheetSn) {
-  const data = sheet.getRawData(sheetSn)
-  let maxCol = 0,
-    maxRow = 0
-  for (const id in data) {
-    let col = 0,
-      row = 0,
-      i = 0
-    const len = id.length
-    while (i < len) {
-      const c = id.charCodeAt(i)
-      if (c < 65 || c > 90) break
-      col = col * 26 + (c - 64)
-      i++
-    }
-    while (i < len) {
-      const c = id.charCodeAt(i)
-      if (c < 48 || c > 57) {
-        row = 0
-        break
-      }
-      row = row * 10 + (c - 48)
-      i++
-    }
-    if (col > 0 && row > 0) {
-      if (col - 1 > maxCol) maxCol = col - 1
-      if (row - 1 > maxRow) maxRow = row - 1
-    }
-  }
-  return {
-    maxCol,
-    maxRow,
-  }
-}
-function _repopulateGrid() {
-  if (!grid) return
-  const sheetSn = currentSheet.value
-
-  // Lazy path: the grid pulls each visible cell's display string on demand, so
-  // we materialise nothing here — switch/load no longer scale with cell count.
-  // Still size the grid to the sheet extent (cheap id-parse, or the engine's
-  // free load-time hint) and repaint.
-  if (grid.isLazyValues?.()) {
-    const b = sheet.consumeBounds?.(sheetSn) || _scanBounds(sheetSn)
-    _expandGridTo(b.maxCol, b.maxRow)
-    grid.render?.()
+// The open sheet's non-empty cells, from the worker: the grid's scroll extent,
+// Ctrl+A's extent and column autofit read them. Refreshed after every edit
+// and on switch; one read at a time, re-run when more changed meanwhile.
+let _usedIds = []
+let _usedMax = null // { maxRow, maxCol } (0-based), null when the sheet is empty
+let _usedReading = false
+let _usedStale = false
+function _refreshUsedCells() {
+  if (!_engine) return
+  if (_usedReading) {
+    _usedStale = true
     return
   }
-  grid.clearAll()
-  const data = sheet.getRawData()
-  const show = showFormulas.value
-  // Bounds: on load the engine hands us the sheet extent (derived cheaply from
-  // the packed payload), so we skip re-parsing every cell id here entirely —
-  // that scan was ~0.5s on a 2M-cell sheet. When bounds are unknown (post-edit
-  // repopulates) we fall back to the inline char-code parse below.
-  const bounds = sheet.consumeBounds?.(sheetSn)
-  let maxCol = bounds ? bounds.maxCol : 0
-  let maxRow = bounds ? bounds.maxRow : 0
-  // for-in avoids allocating a 2M-entry Object.keys array (alloc + GC was a
-  // measurable chunk of the cold-load task).
-  for (const id in data) {
-    if (!bounds) {
-      // Inline cellId parse — letters → col index, then digits → row number.
-      // No regex, no result object.
-      let col = 0,
-        row = 0,
-        i = 0
-      const len = id.length
-      while (i < len) {
-        const c = id.charCodeAt(i)
-        if (c < 65 || c > 90) break
-        col = col * 26 + (c - 64)
-        i++
+  _usedReading = true
+  const sn = currentSheet.value
+  _engine.client
+    .usedCells({ sheet: sn })
+    .then(({ cells }) => {
+      if (currentSheet.value !== sn) return // a switch queued its own read
+      const ids = []
+      let maxRow = -1,
+        maxCol = -1
+      for (let i = 0; i < cells.length; i += 2) {
+        const r = cells[i] - 1,
+          c = cells[i + 1] - 1
+        ids.push(cellId(r, c))
+        if (r > maxRow) maxRow = r
+        if (c > maxCol) maxCol = c
       }
-      while (i < len) {
-        const c = id.charCodeAt(i)
-        if (c < 48 || c > 57) {
-          row = 0
-          break
-        }
-        row = row * 10 + (c - 48)
-        i++
+      _usedIds = ids
+      _usedMax = ids.length ? { maxRow, maxCol } : null
+      if (grid && _usedMax) _expandGridTo(_usedMax.maxCol, _usedMax.maxRow)
+    })
+    .catch((e) => console.error('[sheets] reading used cells failed', e))
+    .finally(() => {
+      _usedReading = false
+      if (_usedStale) {
+        _usedStale = false
+        _refreshUsedCells()
       }
-      if (col > 0 && row > 0) {
-        if (col - 1 > maxCol) maxCol = col - 1
-        if (row - 1 > maxRow) maxRow = row - 1
-      }
-    }
-    if (show) {
-      grid.setCell(id, String(data[id] ?? ''))
-      continue
-    }
-    const fmt = formats.get(id, sheetSn)
-    const displayValue = sheet.getDisplayValue(id)
-    grid.setCell(
-      id,
-      fmt.numberFormat ? applyNumberFmt(displayValue, fmt.numberFormat) : displayValue,
-    )
-  }
-  _expandGridTo(maxCol, maxRow)
+    })
+}
+
+// The open sheet's data extent, or null when it is empty.
+function _usedExtent() {
+  return _usedMax
+}
+
+// A rect's shown values (charts read these).
+async function _readDisplays(sn, rect) {
+  return (await _readRect(sn, rect)).displays
+}
+
+// Repaints the grid and re-reads where the data is. The grid pulls each
+// visible cell's display on demand (lazy values), so nothing is copied in.
+function _repopulateGrid() {
+  if (!grid) return
+  grid.render?.()
+  _refreshUsedCells()
+}
+
+// =SPARKLINE(...) cells: IronCalc has no such function (the cell computes to
+// #NAME?), so the editor reads the range itself and hands the painter the
+// spec. One read per cell per data version; the grid repaints when it lands.
+const _sparks = new Map() // 'sheet\0id' → { key, spec, reading }
+function _sparklineAt(id) {
+  const sn = currentSheet.value
+  const input = _inputAt(id, sn)
+  const ref = parseSparkline(input)
+  if (!ref || !_engine) return null
+  const key = `${input}\0${_engine.client.getVersion()}`
+  const hit = _sparks.get(`${sn}\0${id}`)
+  if (hit && (hit.key === key || hit.reading)) return hit.spec
+  const entry = { key, spec: hit?.spec ?? null, reading: true }
+  _sparks.set(`${sn}\0${id}`, entry)
+  _readRect(ref.sheet ?? sn, ref)
+    .then(({ displays }) => {
+      entry.spec = sparkSpec(displays.flat(), ref.type, ref.color)
+      grid?.render?.()
+    })
+    .catch((e) => console.error('[sheets] sparkline read failed', e))
+    .finally(() => {
+      entry.reading = false
+    })
+  return entry.spec
 }
 function toggleShowFormulas() {
   showFormulas.value = !showFormulas.value

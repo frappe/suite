@@ -215,6 +215,10 @@ export function createWorkerHost(): WorkerHost {
     return { cells: workbook().findInputs(str(p, 'sheet'), str(p, 'query'), MAX_FIND_RESULTS) }
   }
 
+  function onUsedCells(p: unknown) {
+    return { cells: workbook().usedCells(str(p, 'sheet')) }
+  }
+
   function onRangeStats(p: unknown) {
     return workbook().rangeStats(
       str(p, 'sheet'),
@@ -249,6 +253,8 @@ export function createWorkerHost(): WorkerHost {
           return { reqId: id, result: onReadCells(payload) }
         case 'restore':
           return { reqId: id, result: onRestore(payload) }
+        case 'usedCells':
+          return { reqId: id, result: onUsedCells(payload) }
         case 'rangeStats':
           return { reqId: id, result: onRangeStats(payload) }
         case 'findCells':

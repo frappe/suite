@@ -108,6 +108,8 @@ export interface WorkbookClient {
   readCells(args: ReadCellsArgs): Promise<{ cells: CellRead[] }>
   /** Cells whose input contains `query`, row by row (1-based). */
   findCells(args: { sheet: string; query: string }): Promise<{ cells: FoundCell[] }>
+  /** Every non-empty cell as flat [row, col, …] (1-based), row by row. */
+  usedCells(args: { sheet: string }): Promise<{ cells: number[] }>
   /** Count / numeric count / sum over a range (1-based, inclusive). */
   rangeStats(args: {
     sheet: string
@@ -328,6 +330,10 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     async readCells(args) {
       await idle()
       return request<{ cells: CellRead[] }>('readCells', args)
+    },
+    async usedCells(args) {
+      await idle()
+      return request<{ cells: number[] }>('usedCells', args)
     },
     async rangeStats(args) {
       await idle()
