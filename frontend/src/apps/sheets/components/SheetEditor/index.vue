@@ -8260,6 +8260,7 @@ async function _startEngine(snapshotBytes = null) {
     chartDataVersion.value++
     _refreshUsedCells()
     computeSelectionStats() // the selected cells' values may have changed
+    _refreshFormulaBar() // an import, pivot or undo may have changed the active cell
     const sn = currentSheet.value
     if (!sortFilter.hasFilter(sn)) return
     sortFilter
@@ -8349,6 +8350,24 @@ function _showInputInFormulaBar(id, sn = currentSheet.value) {
       }
     })
     .catch((e) => console.error('[sheets] readCells failed', e))
+}
+
+// Re-reads the active cell's input after an edit that may have written it
+// (an import, a pivot, an undo). The bar changes only when the read lands, so
+// it never blanks in between, and never while someone is typing.
+function _refreshFormulaBar() {
+  const id = activeCell.value
+  const sn = currentSheet.value
+  const p = parseCellId(id)
+  if (!p || !_engine || _typedCell) return
+  _engine.client
+    .readCells({ sheet: sn, cells: [{ row: p.row + 1, col: p.col + 1 }], what: ['input'] })
+    .then(({ cells }) => {
+      if (activeCell.value === id && currentSheet.value === sn && !_typedCell) {
+        formulaValue.value = cells[0]?.input ?? ''
+      }
+    })
+    .catch(() => {}) // the next selection change shows it
 }
 
 // A rect's inputs and display strings (0-based rect), read from the worker in

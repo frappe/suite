@@ -58,8 +58,18 @@ describe('display cache — fill and read', () => {
 })
 
 describe('display cache — versions', () => {
-  it('clear keeps entries as stale, then drops one not refilled since', () => {
+  it('keeps a stale entry not refilled since while under the cap', () => {
     const cache = createDisplayCache()
+    cache.fill('Other', 1, 1, { values: [['kept']] }, 0)
+    cache.clear(1)
+    cache.clear(2)
+    cache.clear(3)
+    expect(cache.get('Other', 1, 1)).toEqual({ display: 'kept' }) // a sheet you left
+    expect(cache.isFresh('Other', 1, 1)).toBe(false)
+  })
+
+  it('clear keeps entries as stale; over the cap, drops one not refilled since', () => {
+    const cache = createDisplayCache(0, { maxEntries: 0 })
     cache.fill('Sheet1', 1, 1, { values: [['a']] }, 0)
     expect(cache.isFresh('Sheet1', 1, 1)).toBe(true)
     cache.clear(1)

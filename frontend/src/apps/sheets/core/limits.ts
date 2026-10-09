@@ -7,6 +7,11 @@
 // per-cell loop would stall the worker.
 export const MAX_VIEWPORT_CELLS = 100_000
 
+// Cells the display cache keeps before it drops entries off screen. Below
+// it, a sheet you leave keeps its last values, so switching back paints
+// them at once instead of blank.
+export const MAX_CACHED_CELLS = 200_000
+
 // Rows in a sheet (Excel's limit, which IronCalc uses).
 export const MAX_ROWS = 1_048_576
 

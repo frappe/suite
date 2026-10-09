@@ -11,7 +11,8 @@
 // exposes no changed-cell set, so any cell may have changed. Entries are
 // kept as stale rather than dropped, so the grid keeps painting the last
 // value until the refill lands instead of flashing blank; isFresh() tells
-// them apart. An entry not refilled for two clears (scrolled away) goes.
+// them apart. Once the cache holds more than MAX_CACHED_CELLS, an entry not
+// refilled for two clears (scrolled away, or on another sheet) goes.
 //
 // Optimistic echo: setProvisional() shows typed text before the worker
 // has applied it. A provisional entry survives clear() and fill() until
@@ -23,6 +24,7 @@
 import type { ExtendedCellStyle } from '@ironcalc/wasm'
 
 import type { EchoTarget, ViewportResult } from './client.js'
+import { MAX_CACHED_CELLS } from './limits.js'
 
 export interface CachedCell {
   display: string
@@ -50,7 +52,10 @@ export interface DisplayCache extends EchoTarget {
 
 const key = (sheet: string, row: number, col: number) => `${sheet}:${row}:${col}`
 
-export function createDisplayCache(initialVersion = 0): DisplayCache {
+export function createDisplayCache(
+  initialVersion = 0,
+  { maxEntries = MAX_CACHED_CELLS }: { maxEntries?: number } = {},
+): DisplayCache {
   const cells = new Map<string, CachedCell>()
   // Commands dispatched but not yet applied, per cell. The same cell can
   // be typed into twice while the first apply is in flight.
@@ -135,6 +140,7 @@ export function createDisplayCache(initialVersion = 0): DisplayCache {
   function clear(nextVersion: number): void {
     version = nextVersion
     generation++
+    if (cells.size <= maxEntries) return
     for (const k of cells.keys()) {
       if (pending.has(k)) continue
       // Not refilled since the clear before this one: off screen.
