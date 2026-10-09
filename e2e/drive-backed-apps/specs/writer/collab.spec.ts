@@ -111,7 +111,10 @@ test.describe("Writer collaboration", () => {
 		await expect.poll(() => editorBlocks(owner.page)).toEqual(before);
 	});
 
-	test("an edit reaches the other tab over the realtime socket, without a poll", async ({ owner, collaborator }) => {
+	test("an edit reaches the other tab over the realtime socket, without a poll", async ({
+		owner,
+		collaborator,
+	}) => {
 		const frames: string[] = [];
 		const recordFrames = (socket: WebSocket) => {
 			socket.on("framereceived", ({ payload }) => frames.push(String(payload)));
@@ -155,8 +158,12 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(owner.page, "Owner's caret");
 		await typeParagraph(collaborator.page, "Collaborator's caret");
 
-		await expect(owner.page.getByRole("button", { name: `${nameOf(collaborator.user)} is here` })).toBeVisible();
-		await expect(collaborator.page.getByRole("button", { name: `${nameOf(owner.user)} is here` })).toBeVisible();
+		await expect(
+			owner.page.getByRole("button", { name: `${nameOf(collaborator.user)} is here` }),
+		).toBeVisible();
+		await expect(
+			collaborator.page.getByRole("button", { name: `${nameOf(owner.user)} is here` }),
+		).toBeVisible();
 		await expect(labels(owner.page)).toHaveText([nameOf(collaborator.user)]);
 		await expect(labels(collaborator.page)).toHaveText([nameOf(owner.user)]);
 	});
@@ -300,7 +307,10 @@ test.describe("Writer collaboration", () => {
 		// Only this browser fails to read one character, as an older browser might
 		const failOnSectionSign = () => {
 			const decode = TextDecoder.prototype.decode;
-			TextDecoder.prototype.decode = function (this: TextDecoder, ...args: Parameters<TextDecoder["decode"]>) {
+			TextDecoder.prototype.decode = function (
+				this: TextDecoder,
+				...args: Parameters<TextDecoder["decode"]>
+			) {
 				const text = decode.apply(this, args);
 				if (text.includes("\u00a7")) {
 					throw new TypeError("This browser can't read the text");
@@ -322,7 +332,12 @@ test.describe("Writer collaboration", () => {
 		).toBeVisible({ timeout: 240_000 });
 		await expect(writerEditor(owner.page)).toHaveAttribute("contenteditable", "false");
 		await typeParagraph(collaborator.page, "Still saving");
-		await expectConverged(testApi, node, [collaborator.page], ["Marked \u00a7 here", "Still saving"]);
+		await expectConverged(
+			testApi,
+			node,
+			[collaborator.page],
+			["Marked \u00a7 here", "Still saving"],
+		);
 	});
 
 	test("a document held for an admin is read-only for everyone until it is released", async ({
@@ -353,10 +368,12 @@ test.describe("Writer collaboration", () => {
 		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "true");
 		await expect(owner.page.getByText("read-only while an admin reviews")).toBeHidden();
 		await typeParagraph(collaborator.page, "After the release");
-		await expectConverged(testApi, node, [owner.page, collaborator.page], [
-			"Before the hold",
-			"After the release",
-		]);
+		await expectConverged(
+			testApi,
+			node,
+			[owner.page, collaborator.page],
+			["Before the hold", "After the release"],
+		);
 	});
 
 	test("a quarantined change leaves every tab, and the writer's typing after it is kept aside", async ({
@@ -389,20 +406,27 @@ test.describe("Writer collaboration", () => {
 
 		await typeParagraph(collaborator.page, "After the cut");
 		await expect(
-			collaborator.page.getByText("Your last edits couldn't be saved here and were kept as a recovery copy."),
+			collaborator.page.getByText(
+				"Your last edits couldn't be saved here and were kept as a recovery copy.",
+			),
 		).toBeVisible();
 		letPullsThrough();
 		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "true");
 		await expectConverged(testApi, node, [owner.page, collaborator.page], ["Kept line"]);
 	});
 
-	test("an edit that waits for room is saved once a compaction makes it", async ({ owner, testApi }) => {
+	test("an edit that waits for room is saved once a compaction makes it", async ({
+		owner,
+		testApi,
+	}) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the cap");
 		await expectSaved(owner.page);
 		const waited: string[] = [];
 		const recordWait = async (response: Response) => {
-			const pushed = response.request().method() === "POST" && /\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
+			const pushed =
+				response.request().method() === "POST" &&
+				/\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
 			if (pushed && response.status() === 423) {
 				const refusal = (await response.json()) as { collab: string };
 				waited.push(refusal.collab);
@@ -414,12 +438,21 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(owner.page, "After the wait");
 
 		await expect.poll(() => waited, { timeout: 15_000 }).toContain("compacting");
-		await expectConverged(testApi, node, [owner.page], ["Before the cap", "After the wait"], 30_000);
+		await expectConverged(
+			testApi,
+			node,
+			[owner.page],
+			["Before the cap", "After the wait"],
+			30_000,
+		);
 		const state = await collabState(testApi, node);
 		expect(state.body_rev).toBeGreaterThan(0);
 	});
 
-	test("a change sent in pieces is saved whole and opens in the editor", async ({ owner, testApi }) => {
+	test("a change sent in pieces is saved whole and opens in the editor", async ({
+		owner,
+		testApi,
+	}) => {
 		const answer = await pushInPieces(owner.page.request, testApi, node, owner.user.user, 700_000);
 
 		expect(answer).toEqual({ pieces: 3, status: 200 });
@@ -428,12 +461,18 @@ test.describe("Writer collaboration", () => {
 		expect(rows.stage).toBe(0);
 		await openWriterDocument(owner.page, node);
 		await expect
-			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), { timeout: 15_000 })
+			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), {
+				timeout: 15_000,
+			})
 			.toContain(700_000);
 		expect((await serverText(testApi, node)).at(-1)).toBe("x".repeat(700_000));
 	});
 
-	test("a big paste through a proxy with a 1 MiB body limit is saved whole", async ({ owner, testApi, baseURL }) => {
+	test("a big paste through a proxy with a 1 MiB body limit is saved whole", async ({
+		owner,
+		testApi,
+		baseURL,
+	}) => {
 		const proxy = await bodyLimitProxy(baseURL!);
 		try {
 			await owner.page.goto(`${proxy.origin}/d/${node}`);
@@ -466,7 +505,9 @@ test.describe("Writer collaboration", () => {
 
 				await pasteText(owner.page, big);
 
-				const refusing = owner.page.getByText("Your network is refusing uploads, so your latest changes aren't saved.");
+				const refusing = owner.page.getByText(
+					"Your network is refusing uploads, so your latest changes aren't saved.",
+				);
 				await expect(refusing).toBeVisible();
 				expect(proxy.seen.refused).toBeGreaterThan(0);
 				expect((await serverText(testApi, node)).includes(big)).toBe(false);
@@ -474,7 +515,9 @@ test.describe("Writer collaboration", () => {
 				proxy.lift();
 
 				// The tab retries on its own backoff, up to half a minute
-				await expect(owner.page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 45_000 });
+				await expect(owner.page.getByText("Saved", { exact: true })).toBeVisible({
+					timeout: 45_000,
+				});
 				await expect(refusing).toBeHidden();
 				expect((await serverText(testApi, node)).includes(big)).toBe(true);
 			} finally {
@@ -497,17 +540,29 @@ test.describe("Writer collaboration", () => {
 		const started = Date.now();
 		await owner.page.goto(`/d/${node}`);
 		await expect
-			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), { intervals: [50] })
+			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), {
+				intervals: [50],
+			})
 			.toContain(length);
 		const took = Date.now() - started;
 
 		expect(took).toBeLessThan(3000);
 	});
 
-	test("a change over a quarter mebibyte sent whole is refused and saves nothing", async ({ owner, testApi }) => {
+	test("a change over a quarter mebibyte sent whole is refused and saves nothing", async ({
+		owner,
+		testApi,
+	}) => {
 		const before = await serverText(testApi, node);
 
-		const answer = await pushInPieces(owner.page.request, testApi, node, owner.user.user, 300_000, true);
+		const answer = await pushInPieces(
+			owner.page.request,
+			testApi,
+			node,
+			owner.user.user,
+			300_000,
+			true,
+		);
 
 		expect(answer).toEqual({ pieces: 0, status: 413, collab: "too_large" });
 		expect(await serverText(testApi, node)).toEqual(before);
@@ -516,7 +571,8 @@ test.describe("Writer collaboration", () => {
 	test("a big paste is saved in pieces and reads back whole", async ({ owner, testApi }) => {
 		const pieces: string[] = [];
 		const recordPiece = (request: Request) => {
-			const stagesPiece = request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url());
+			const stagesPiece =
+				request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url());
 			if (stagesPiece) {
 				pieces.push(request.url());
 			}
@@ -527,7 +583,9 @@ test.describe("Writer collaboration", () => {
 
 		await pasteText(owner.page, big);
 
-		await expect.poll(() => serverText(testApi, node), { timeout: 30_000 }).toContainEqual(expect.stringContaining(big));
+		await expect
+			.poll(() => serverText(testApi, node), { timeout: 30_000 })
+			.toContainEqual(expect.stringContaining(big));
 		await expectSaved(owner.page);
 		expect(pieces.length).toBeGreaterThanOrEqual(3);
 		const log = await logId(testApi, node);
@@ -535,21 +593,32 @@ test.describe("Writer collaboration", () => {
 		expect(rows.stage).toBe(0);
 	});
 
-	test("a paste too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
+	test("a paste too large for one save is refused before it enters the document", async ({
+		owner,
+		testApi,
+	}) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the huge paste");
 		await expectSaved(owner.page);
 
 		await pasteText(owner.page, "z".repeat(4.5 * 2 ** 20));
 
-		await expect(owner.page.getByText("This is too large to add in one go. Add it in smaller parts.")).toBeVisible();
+		await expect(
+			owner.page.getByText("This is too large to add in one go. Add it in smaller parts."),
+		).toBeVisible();
 		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
 		await expectSaved(owner.page);
 		const saved = (await serverText(testApi, node)).join("");
-		expect([saved.includes("Before the huge paste"), saved.includes("zzzz")]).toEqual([true, false]);
+		expect([saved.includes("Before the huge paste"), saved.includes("zzzz")]).toEqual([
+			true,
+			false,
+		]);
 	});
 
-	test("a .docx too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
+	test("a .docx too large for one save is refused before it enters the document", async ({
+		owner,
+		testApi,
+	}) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the huge import");
 		await expectSaved(owner.page);
@@ -566,10 +635,16 @@ test.describe("Writer collaboration", () => {
 		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
 		await expectSaved(owner.page);
 		const saved = (await serverText(testApi, node)).join("");
-		expect([saved.includes("Before the huge import"), saved.includes("zzzz")]).toEqual([true, false]);
+		expect([saved.includes("Before the huge import"), saved.includes("zzzz")]).toEqual([
+			true,
+			false,
+		]);
 	});
 
-	test("a paste into a full document is kept aside, and deletes save until there is room", async ({ owner, testApi }) => {
+	test("a paste into a full document is kept aside, and deletes save until there is room", async ({
+		owner,
+		testApi,
+	}) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the document filled");
 		await typeParagraph(owner.page, "Delete me");
@@ -603,7 +678,9 @@ test.describe("Writer collaboration", () => {
 			await owner.page.keyboard.press("Backspace");
 		}
 		await expect(writerEditor(owner.page)).not.toContainText("Delete me");
-		await expect.poll(async () => (await serverText(testApi, node)).join("")).not.toContain("Delete me");
+		await expect
+			.poll(async () => (await serverText(testApi, node)).join(""))
+			.not.toContain("Delete me");
 		await expect(owner.page.getByText(banner)).toBeVisible();
 		// Checked at once, as typing that went in would also leave once its refusal rebuilds the tab
 		await owner.page.keyboard.type("Typed while full");
@@ -616,7 +693,10 @@ test.describe("Writer collaboration", () => {
 		expect((await serverText(testApi, node)).join("")).toContain("Room again");
 	});
 
-	test("a tab opened on a full document takes only deletes until there is room", async ({ owner, testApi }) => {
+	test("a tab opened on a full document takes only deletes until there is room", async ({
+		owner,
+		testApi,
+	}) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the document filled");
 		await typeParagraph(owner.page, "Delete me");
@@ -637,7 +717,9 @@ test.describe("Writer collaboration", () => {
 		for (let i = 0; i < 3; i++) {
 			await tab.keyboard.press("Backspace");
 		}
-		await expect.poll(async () => (await serverText(testApi, node)).join("")).not.toContain("Delete me");
+		await expect
+			.poll(async () => (await serverText(testApi, node)).join(""))
+			.not.toContain("Delete me");
 		// Pushes go out in order, so typing the tab had taken would be saved by now
 		expect((await serverText(testApi, node)).join("")).not.toContain("typed while full");
 
@@ -649,7 +731,9 @@ test.describe("Writer collaboration", () => {
 		await tab.close();
 	});
 
-	test("a change the server finds too large stops saving and says to insert images as files", async ({ owner }) => {
+	test("a change the server finds too large stops saving and says to insert images as files", async ({
+		owner,
+	}) => {
 		// The paste guard keeps real changes under the cap, so the server's answer to a bigger one is played here
 		const tooLarge = {
 			status: 413,
@@ -662,7 +746,9 @@ test.describe("Writer collaboration", () => {
 		await pasteText(owner.page, "w".repeat(700_000));
 
 		await expect(
-			owner.page.getByText("A change in this tab is too large to save. Insert large images as files."),
+			owner.page.getByText(
+				"A change in this tab is too large to save. Insert large images as files.",
+			),
 		).toBeVisible();
 	});
 
@@ -685,7 +771,12 @@ test.describe("Writer collaboration", () => {
 		await openWriterDocument(collaborator.page, node);
 		await expect(collaborator.page.getByText(banner)).toBeVisible();
 		await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "false");
-		await expectConverged(testApi, node, [owner.page, collaborator.page], ["Before the newer Writer"]);
+		await expectConverged(
+			testApi,
+			node,
+			[owner.page, collaborator.page],
+			["Before the newer Writer"],
+		);
 	});
 
 	test("an edit made while another tab previews a version shows after Back to current", async ({
@@ -699,7 +790,10 @@ test.describe("Writer collaboration", () => {
 		await takeVersion(owner.context.request, node, "Before the preview");
 		await openWriterDocument(collaborator.page, node);
 
-		await owner.page.getByRole("button", { name: /versions/i }).first().click();
+		await owner.page
+			.getByRole("button", { name: /versions/i })
+			.first()
+			.click();
 		await owner.page
 			.getByRole("complementary", { name: "Versions" })
 			.getByRole("button", { name: /^Before the preview/ })
@@ -784,7 +878,10 @@ test.describe("Writer collaboration", () => {
 		};
 
 		const opening = track();
-		await page.getByRole("button", { name: /versions/i }).first().click();
+		await page
+			.getByRole("button", { name: /versions/i })
+			.first()
+			.click();
 		expectInStep(await opening);
 		const aside = page.getByRole("complementary", { name: "Versions" });
 		const row = aside.getByRole("button", { name: /^One/ });
@@ -798,10 +895,15 @@ test.describe("Writer collaboration", () => {
 		expect(first.x).toBe(heading.x);
 		expect(first.y - heading.y).toBe(tocGap);
 
-		await page.getByRole("button", { name: /comments/i }).first().click();
+		await page
+			.getByRole("button", { name: /comments/i })
+			.first()
+			.click();
 		const comments = page.getByRole("complementary", { name: "Comments" });
 		const input = (await comments.getByPlaceholder("Add a comment").boundingBox())!;
-		const commentsHeading = (await comments.getByRole("heading", { name: "Comments" }).boundingBox())!;
+		const commentsHeading = (await comments
+			.getByRole("heading", { name: "Comments" })
+			.boundingBox())!;
 		expect(input.x).toBe(commentsHeading.x);
 		expect(input.y - commentsHeading.y).toBe(tocGap);
 
@@ -823,7 +925,10 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(page, "Second version");
 		await expectSaved(page);
 		await takeVersion(owner.context.request, node, "Two");
-		await page.getByRole("button", { name: /versions/i }).first().click();
+		await page
+			.getByRole("button", { name: /versions/i })
+			.first()
+			.click();
 		const panel = page.getByRole("complementary", { name: "Versions" });
 		await expect.poll(async () => (await panel.boundingBox())?.width).toBe(320);
 		const editorText = page.getByLabel("Document editor");
@@ -841,10 +946,15 @@ test.describe("Writer collaboration", () => {
 		};
 		const look = (bar: ReturnType<typeof page.locator>) => bar.evaluate(readLook);
 		const themes = ["light", "dark"] as const;
-		const toolbar = page.getByRole("button", { name: "Bold" }).locator("xpath=ancestor::div[contains(@class, 'border-b')][1]");
+		const toolbar = page
+			.getByRole("button", { name: "Bold" })
+			.locator("xpath=ancestor::div[contains(@class, 'border-b')][1]");
 		const toolbarLooks = [];
 		for (const theme of themes) {
-			await page.evaluate((theme) => document.documentElement.setAttribute("data-theme", theme), theme);
+			await page.evaluate(
+				(theme) => document.documentElement.setAttribute("data-theme", theme),
+				theme,
+			);
 			toolbarLooks.push(await look(toolbar));
 		}
 
@@ -852,18 +962,31 @@ test.describe("Writer collaboration", () => {
 		await expect(previewText).toContainText("First version");
 		const bar = page.getByRole("status").filter({ hasText: "Viewing One" });
 		for (const [i, theme] of themes.entries()) {
-			await page.evaluate((theme) => document.documentElement.setAttribute("data-theme", theme), theme);
+			await page.evaluate(
+				(theme) => document.documentElement.setAttribute("data-theme", theme),
+				theme,
+			);
 			expect(await look(bar)).toEqual(toolbarLooks[i]);
 			const backToCurrent = bar.getByRole("button", { name: "Back to current" });
-			const backToCurrentFill = await backToCurrent.evaluate((el) => getComputedStyle(el).backgroundColor);
+			const backToCurrentFill = await backToCurrent.evaluate(
+				(el) => getComputedStyle(el).backgroundColor,
+			);
 			expect(backToCurrentFill).toBe("rgba(0, 0, 0, 0)");
 		}
 		// frappe-ui gives an empty read-only line a fixed height, so lines below one may sit a few px off.
-		expect(await place(previewText)).toMatchObject({ x: editing.x, width: editing.width, top: editing.top });
+		expect(await place(previewText)).toMatchObject({
+			x: editing.x,
+			width: editing.width,
+			top: editing.top,
+		});
 
 		await panel.getByRole("button", { name: /^Two/ }).click();
 		await expect(previewText).toContainText("Second version");
-		expect(await place(previewText)).toMatchObject({ x: editing.x, width: editing.width, top: editing.top });
+		expect(await place(previewText)).toMatchObject({
+			x: editing.x,
+			width: editing.width,
+			top: editing.top,
+		});
 
 		await page.getByRole("button", { name: "Back to current" }).click();
 		await expect(editorText).toBeVisible();

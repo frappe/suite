@@ -87,7 +87,8 @@ function connect(nsp, user = "a@example.com", faults = {}) {
 	return {
 		socket,
 		handlers,
-		rooms: (rooms) => new Promise((resolve) => handlers.get("suite_collab_rooms")({ rooms }, resolve)),
+		rooms: (rooms) =>
+			new Promise((resolve) => handlers.get("suite_collab_rooms")({ rooms }, resolve)),
 		presence: (rooms, state) => handlers.get("suite_collab_presence")({ rooms, state }),
 		close: () => handlers.get("disconnect")(),
 		heard: (event) => socket.heard.filter(([name]) => name === event).map(([, message]) => message),
@@ -365,7 +366,9 @@ test("a fault in every collab listener and timer leaves the process serving and 
 		for (const tab of tabs) {
 			answers.push(await tab.rooms([A]));
 			tab.handlers.get("suite_collab_rooms")(hostile, throwingAck);
-			tab.handlers.get("suite_collab_rooms")({ rooms: [A] }, () => Promise.reject(new Error("ack")));
+			tab.handlers.get("suite_collab_rooms")({ rooms: [A] }, () =>
+				Promise.reject(new Error("ack")),
+			);
 			tab.handlers.get("suite_collab_presence")(hostile);
 			tab.presence([A], { cursor: { big: 10n } });
 			tab.presence([A], { cursor: { at: 1 } });
@@ -387,7 +390,9 @@ test("a fault in every collab listener and timer leaves the process serving and 
 			meeting_id: "room-1",
 			guest_session_token: "proof",
 		};
-		const meet = await new Promise((resolve) => tabs[1].handlers.get("guest_subscribe")(subscription, resolve));
+		const meet = await new Promise((resolve) =>
+			tabs[1].handlers.get("guest_subscribe")(subscription, resolve),
+		);
 		healthy.presence([A], { cursor: { at: 2 } });
 		await tick();
 

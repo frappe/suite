@@ -289,7 +289,10 @@ function flush() {
 				if (flushed && writes > budget) continue;
 
 				site.dirty.delete(room);
-				const states = [...pids].map((pid) => members?.get(pid)).filter(Boolean).map(sent);
+				const states = [...pids]
+					.map((pid) => members?.get(pid))
+					.filter(Boolean)
+					.map(sent);
 				if (!states.length) continue;
 
 				budget -= writes;

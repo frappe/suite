@@ -28,7 +28,9 @@ type ParagraphChange = { change: string; lineage: string; head_rev: number };
 type PushOutcome = { pieces: number; status: number; collab?: string };
 
 async function hook<T>(api: APIRequestContext, name: string, node: string): Promise<T> {
-	const response = await api.post(`/api/method/suite.writer.content.e2e_api.${name}`, { form: { node } });
+	const response = await api.post(`/api/method/suite.writer.content.e2e_api.${name}`, {
+		form: { node },
+	});
 	return frappeData<T>(response);
 }
 
@@ -43,13 +45,20 @@ export const collabState = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "state", node);
 
 /** How big a document's compacted state is counted. */
-export const stateBytes = (api: APIRequestContext, node: string) => hook<number>(api, "state_bytes", node);
+export const stateBytes = (api: APIRequestContext, node: string) =>
+	hook<number>(api, "state_bytes", node);
 
 export const logId = (api: APIRequestContext, node: string) => hook<string>(api, "log_id", node);
 
 /** Hold a document for an admin; `why` is the judge's cause, and `bad_checkpoint` puts the whole document in question. */
-export async function holdDocument(api: APIRequestContext, node: string, why: string): Promise<CollabState> {
-	const response = await api.post("/api/method/suite.writer.content.e2e_api.hold", { form: { node, why } });
+export async function holdDocument(
+	api: APIRequestContext,
+	node: string,
+	why: string,
+): Promise<CollabState> {
+	const response = await api.post("/api/method/suite.writer.content.e2e_api.hold", {
+		form: { node, why },
+	});
 	return frappeData(response);
 }
 
@@ -58,7 +67,11 @@ export const releaseDocument = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "release", node);
 
 /** Quarantine a document's last row, as a judge that finds it bad does. */
-export async function quarantineLast(api: APIRequestContext, node: string, why: string): Promise<CollabState> {
+export async function quarantineLast(
+	api: APIRequestContext,
+	node: string,
+	why: string,
+): Promise<CollabState> {
 	const response = await api.post("/api/method/suite.writer.content.e2e_api.quarantine_last", {
 		form: { node, why },
 	});
@@ -70,15 +83,21 @@ export const leaveNoRoom = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "leave_no_room", node);
 
 /** Count a document as big as one may be, so the server takes no more adding changes. */
-export const fillUp = (api: APIRequestContext, node: string) => hook<CollabState>(api, "fill_up", node);
+export const fillUp = (api: APIRequestContext, node: string) =>
+	hook<CollabState>(api, "fill_up", node);
 
 /** Mark a document as written from here on by a Writer one schema newer than this site's. */
 export const writeNewerSchema = (api: APIRequestContext, node: string) =>
 	hook<CollabState>(api, "write_newer_schema", node);
 
 /** How many rows each collab table holds for a log, keyed by table kind. */
-export async function logRows(api: APIRequestContext, log: string): Promise<Record<string, number>> {
-	const response = await api.post("/api/method/suite.writer.content.e2e_api.log_rows", { form: { log } });
+export async function logRows(
+	api: APIRequestContext,
+	log: string,
+): Promise<Record<string, number>> {
+	const response = await api.post("/api/method/suite.writer.content.e2e_api.log_rows", {
+		form: { log },
+	});
 	return frappeData(response);
 }
 
@@ -146,9 +165,12 @@ export async function takeVersion(
 		kind: "named",
 		label,
 	};
-	const response = await request.post(`/api/suite/drive/nodes/${encodeURIComponent(node)}/versions`, {
-		data: version,
-	});
+	const response = await request.post(
+		`/api/suite/drive/nodes/${encodeURIComponent(node)}/versions`,
+		{
+			data: version,
+		},
+	);
 	expect(response.ok(), await response.text()).toBe(true);
 
 	const reply = (await response.json()) as VersionReply;
@@ -317,7 +339,9 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20, bare = fal
 		if (bare) {
 			outgoing.writeHead(413).end();
 		} else {
-			outgoing.writeHead(413, { "content-type": "text/html" }).end("<h1>413 Request Entity Too Large</h1>");
+			outgoing
+				.writeHead(413, { "content-type": "text/html" })
+				.end("<h1>413 Request Entity Too Large</h1>");
 		}
 	};
 
