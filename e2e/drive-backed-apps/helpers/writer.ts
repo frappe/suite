@@ -57,14 +57,13 @@ export function writerEditor(page: Page): Locator {
 export async function placeCaretIn(page: Page, text: string): Promise<void> {
 	await writerEditor(page).getByText(text).click();
 	// The editor reads a click's caret on the browser's next selection event, which can come after the next keys
-	await expect
-		.poll(() =>
-			page.evaluate(() => {
-				const root = document.querySelector(".ProseMirror") as { editor?: CaretEditor } | null;
-				return root?.editor?.state.selection.$from.parent.textContent;
-			}),
-		)
-		.toBe(text);
+	await expect.poll(() => page.evaluate(caretBlockText)).toBe(text);
+}
+
+// Runs in the page, so it reads nothing from this module
+function caretBlockText() {
+	const root = document.querySelector(".ProseMirror") as { editor?: CaretEditor } | null;
+	return root?.editor?.state.selection.$from.parent.textContent;
 }
 
 /** The document title field in the header; renames on Enter, reverts on Escape. */

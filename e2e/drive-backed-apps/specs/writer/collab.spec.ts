@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Page, Request, Response, Route, WebSocket } from "@playwright/test";
 import { expect, test } from "../../fixtures/test";
 import {
 	bodyLimitProxy,
@@ -43,6 +43,9 @@ import {
 	uniqueWriterTitle,
 	writerEditor,
 } from "../../helpers/writer";
+
+/** What Drive answers to a copy. */
+type CopyReply = { data: { name: string } };
 
 test.describe("Writer collaboration", () => {
 	let node = "";
@@ -110,13 +113,18 @@ test.describe("Writer collaboration", () => {
 
 	test("an edit reaches the other tab over the realtime socket, without a poll", async ({ owner, collaborator }) => {
 		const frames: string[] = [];
-		collaborator.page.on("websocket", (socket) =>
-			socket.on("framereceived", ({ payload }) => frames.push(String(payload))),
-		);
+		const recordFrames = (socket: WebSocket) => {
+			socket.on("framereceived", ({ payload }) => frames.push(String(payload)));
+		};
+		collaborator.page.on("websocket", recordFrames);
+
 		const polls: string[] = [];
-		collaborator.page.on("request", (request) => {
-			if (/\/api\/suite\/content\/[^/]+\/updates/.test(request.url())) polls.push(request.url());
-		});
+		const recordPoll = (request: Request) => {
+			if (/\/api\/suite\/content\/[^/]+\/updates/.test(request.url())) {
+				polls.push(request.url());
+			}
+		};
+		collaborator.page.on("request", recordPoll);
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
 		await expect.poll(() => frames.some((frame) => frame.includes('"roster"'))).toBe(true);
@@ -232,18 +240,15 @@ test.describe("Writer collaboration", () => {
 		// Closing with the edit still unsent sends it as the tab's final push, which asks for a compaction
 		await owner.page.close();
 
-		await expect
-			.poll(
-				async () => {
-					const state = await collabState(testApi, node);
-					return {
-						compacted: state.head_rev > 0 && state.body_rev === state.head_rev,
-						tail_rows: state.tail_rows,
-					};
-				},
-				{ timeout: 30_000 },
-			)
-			.toEqual({ compacted: true, tail_rows: 0 });
+		const compaction = async () => {
+			const state = await collabState(testApi, node);
+			const compacted = state.head_rev > 0 && state.body_rev === state.head_rev;
+			return {
+				compacted,
+				tail_rows: state.tail_rows,
+			};
+		};
+		await expect.poll(compaction, { timeout: 30_000 }).toEqual({ compacted: true, tail_rows: 0 });
 		const stored = await serverText(testApi, node);
 		expect(stored.join("\n")).toContain("Typed just before the last tab closed");
 
@@ -257,16 +262,15 @@ test.describe("Writer collaboration", () => {
 		testApi,
 	}) => {
 		// Only this tab is told its build is too old; the site setting would reach every spec
-		await collaborator.context.route("**/api/**", async (route) => {
+		const askForNewerBuild = async (route: Route) => {
 			const response = await route.fetch();
-			await route.fulfill({
-				response,
-				headers: {
-					...response.headers(),
-					"x-suite-min-builds": JSON.stringify({ writer: "99999999999999" }),
-				},
-			});
-		});
+			const headers = {
+				...response.headers(),
+				"x-suite-min-builds": JSON.stringify({ writer: "99999999999999" }),
+			};
+			await route.fulfill({ response, headers });
+		};
+		await collaborator.context.route("**/api/**", askForNewerBuild);
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
 
@@ -294,14 +298,18 @@ test.describe("Writer collaboration", () => {
 	}) => {
 		test.setTimeout(300_000);
 		// Only this browser fails to read one character, as an older browser might
-		await owner.page.addInitScript(() => {
+		const failOnSectionSign = () => {
 			const decode = TextDecoder.prototype.decode;
 			TextDecoder.prototype.decode = function (this: TextDecoder, ...args: Parameters<TextDecoder["decode"]>) {
 				const text = decode.apply(this, args);
-				if (text.includes("\u00a7")) throw new TypeError("This browser can't read the text");
+				if (text.includes("\u00a7")) {
+					throw new TypeError("This browser can't read the text");
+				}
+
 				return text;
 			};
-		});
+		};
+		await owner.page.addInitScript(failOnSectionSign);
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
 
@@ -369,10 +377,13 @@ test.describe("Writer collaboration", () => {
 		const pullsHeld = new Promise<void>((resolve) => {
 			letPullsThrough = resolve;
 		});
-		await collaborator.page.route("**/api/suite/content/*/updates**", async (route) => {
-			if (route.request().method() === "GET") await pullsHeld;
+		const holdPulls = async (route: Route) => {
+			if (route.request().method() === "GET") {
+				await pullsHeld;
+			}
 			await route.fallback();
-		});
+		};
+		await collaborator.page.route("**/api/suite/content/*/updates**", holdPulls);
 		await quarantineLast(testApi, node, "kernel_failed");
 		await expect(writerEditor(owner.page)).not.toContainText("Bad line");
 
@@ -390,11 +401,14 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(owner.page, "Before the cap");
 		await expectSaved(owner.page);
 		const waited: string[] = [];
-		owner.page.on("response", async (response) => {
+		const recordWait = async (response: Response) => {
 			const pushed = response.request().method() === "POST" && /\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
-			if (pushed && response.status() === 423)
-				waited.push(((await response.json()) as { collab: string }).collab);
-		});
+			if (pushed && response.status() === 423) {
+				const refusal = (await response.json()) as { collab: string };
+				waited.push(refusal.collab);
+			}
+		};
+		owner.page.on("response", recordWait);
 
 		await leaveNoRoom(testApi, node);
 		await typeParagraph(owner.page, "After the wait");
@@ -409,7 +423,9 @@ test.describe("Writer collaboration", () => {
 		const answer = await pushInPieces(owner.page.request, testApi, node, owner.user.user, 700_000);
 
 		expect(answer).toEqual({ pieces: 3, status: 200 });
-		expect((await logRows(testApi, await logId(testApi, node))).stage).toBe(0);
+		const log = await logId(testApi, node);
+		const rows = await logRows(testApi, log);
+		expect(rows.stage).toBe(0);
 		await openWriterDocument(owner.page, node);
 		await expect
 			.poll(async () => (await editorBlocks(owner.page)).map((block) => block.length), { timeout: 15_000 })
@@ -470,7 +486,8 @@ test.describe("Writer collaboration", () => {
 	test("a document at the cap opens in under three seconds", async ({ owner, testApi }) => {
 		test.setTimeout(120_000);
 		const length = 4 * 2 ** 20 - 64 * 2 ** 10;
-		expect(await pushInPieces(owner.page.request, testApi, node, owner.user.user, length)).toEqual({
+		const answer = await pushInPieces(owner.page.request, testApi, node, owner.user.user, length);
+		expect(answer).toEqual({
 			pieces: 16,
 			status: 200,
 		});
@@ -498,9 +515,13 @@ test.describe("Writer collaboration", () => {
 
 	test("a big paste is saved in pieces and reads back whole", async ({ owner, testApi }) => {
 		const pieces: string[] = [];
-		owner.page.on("request", (request) => {
-			if (request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url())) pieces.push(request.url());
-		});
+		const recordPiece = (request: Request) => {
+			const stagesPiece = request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url());
+			if (stagesPiece) {
+				pieces.push(request.url());
+			}
+		};
+		owner.page.on("request", recordPiece);
 		await openWriterDocument(owner.page, node);
 		const big = "y".repeat(700_000);
 
@@ -509,7 +530,9 @@ test.describe("Writer collaboration", () => {
 		await expect.poll(() => serverText(testApi, node), { timeout: 30_000 }).toContainEqual(expect.stringContaining(big));
 		await expectSaved(owner.page);
 		expect(pieces.length).toBeGreaterThanOrEqual(3);
-		expect((await logRows(testApi, await logId(testApi, node))).stage).toBe(0);
+		const log = await logId(testApi, node);
+		const rows = await logRows(testApi, log);
+		expect(rows.stage).toBe(0);
 	});
 
 	test("a paste too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
@@ -532,13 +555,11 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 
 		// One paragraph of 4.5 MiB of text, which zips to a few kilobytes
-		const [chooser] = await Promise.all([
-			owner.page.waitForEvent("filechooser"),
-			(async () => {
-				await documentMenuButton(owner.page).click();
-				await owner.page.getByRole("menuitem", { name: "Import DOCX" }).click();
-			})(),
-		]);
+		const chooseImport = async () => {
+			await documentMenuButton(owner.page).click();
+			await owner.page.getByRole("menuitem", { name: "Import DOCX" }).click();
+		};
+		const [chooser] = await Promise.all([owner.page.waitForEvent("filechooser"), chooseImport()]);
 		await chooser.setFiles(resolve(__dirname, "fixtures/import-too-large.docx"));
 
 		await expect(owner.page.getByText("This file is too large to import.")).toBeVisible();
@@ -559,10 +580,13 @@ test.describe("Writer collaboration", () => {
 		const pullsHeld = new Promise<void>((resolve) => {
 			letPullsThrough = resolve;
 		});
-		await owner.page.route("**/api/suite/content/*/updates**", async (route) => {
-			if (route.request().method() === "GET") await pullsHeld;
+		const holdPulls = async (route: Route) => {
+			if (route.request().method() === "GET") {
+				await pullsHeld;
+			}
 			await route.fallback();
-		});
+		};
+		await owner.page.route("**/api/suite/content/*/updates**", holdPulls);
 		await fillUp(testApi, node);
 		await pasteText(owner.page, "Pasted after it filled");
 
@@ -575,7 +599,9 @@ test.describe("Writer collaboration", () => {
 
 		await placeCaretIn(owner.page, "Delete me");
 		await owner.page.keyboard.press("End");
-		for (let i = 0; i < 3; i++) await owner.page.keyboard.press("Backspace");
+		for (let i = 0; i < 3; i++) {
+			await owner.page.keyboard.press("Backspace");
+		}
 		await expect(writerEditor(owner.page)).not.toContainText("Delete me");
 		await expect.poll(async () => (await serverText(testApi, node)).join("")).not.toContain("Delete me");
 		await expect(owner.page.getByText(banner)).toBeVisible();
@@ -608,7 +634,9 @@ test.describe("Writer collaboration", () => {
 
 		await placeCaretIn(tab, "Delete me");
 		await tab.keyboard.press("End");
-		for (let i = 0; i < 3; i++) await tab.keyboard.press("Backspace");
+		for (let i = 0; i < 3; i++) {
+			await tab.keyboard.press("Backspace");
+		}
 		await expect.poll(async () => (await serverText(testApi, node)).join("")).not.toContain("Delete me");
 		// Pushes go out in order, so typing the tab had taken would be saved by now
 		expect((await serverText(testApi, node)).join("")).not.toContain("typed while full");
@@ -623,9 +651,12 @@ test.describe("Writer collaboration", () => {
 
 	test("a change the server finds too large stops saving and says to insert images as files", async ({ owner }) => {
 		// The paste guard keeps real changes under the cap, so the server's answer to a bigger one is played here
-		await owner.page.route("**/api/suite/content/*/stage/**", (route) =>
-			route.fulfill({ status: 413, contentType: "application/json", body: JSON.stringify({ collab: "too_large" }) }),
-		);
+		const tooLarge = {
+			status: 413,
+			contentType: "application/json",
+			body: JSON.stringify({ collab: "too_large" }),
+		};
+		await owner.page.route("**/api/suite/content/*/stage/**", (route) => route.fulfill(tooLarge));
 		await openWriterDocument(owner.page, node);
 
 		await pasteText(owner.page, "w".repeat(700_000));
@@ -710,10 +741,15 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(page);
 		await takeVersion(owner.context.request, node, "One");
 		const showToc = page.getByRole("button", { name: "Show table of contents" });
-		if (await showToc.isVisible()) await showToc.click();
+		if (await showToc.isVisible()) {
+			await showToc.click();
+		}
+
 		const tocHeading = page.getByText("Table of contents", { exact: true });
 		const tocEntry = page.getByRole("link", { name: "First heading" });
-		const tocGap = (await tocEntry.boundingBox())!.y - (await tocHeading.boundingBox())!.y;
+		const tocEntryBox = (await tocEntry.boundingBox())!;
+		const tocHeadingBox = (await tocHeading.boundingBox())!;
+		const tocGap = tocEntryBox.y - tocHeadingBox.y;
 		const text = page.getByLabel("Document editor").locator("p", { hasText: "Centred text" });
 		let last = -1;
 		await expect
@@ -721,22 +757,26 @@ test.describe("Writer collaboration", () => {
 			.toBe(true);
 		const before = await text.boundingBox();
 		const column = await page.locator("#editor-scroll-container").boundingBox();
-		const track = () =>
-			page.evaluate(
-				() =>
-					new Promise<number[][]>((resolve) => {
-						const p = document.querySelector('[aria-label="Document editor"] p')!;
-						const frames: number[][] = [];
-						const start = performance.now();
-						const tick = () => {
-							const width = document.querySelector("aside")?.getBoundingClientRect().width ?? 0;
-							frames.push([p.getBoundingClientRect().x, width]);
-							if (performance.now() - start < 600) requestAnimationFrame(tick);
-							else resolve(frames);
-						};
+		const sampleFrames = () => {
+			const p = document.querySelector('[aria-label="Document editor"] p')!;
+			const frames: number[][] = [];
+			const start = performance.now();
+			const sampleUntilDone = (resolve: (frames: number[][]) => void) => {
+				const tick = () => {
+					const width = document.querySelector("aside")?.getBoundingClientRect().width ?? 0;
+					frames.push([p.getBoundingClientRect().x, width]);
+					if (performance.now() - start < 600) {
 						requestAnimationFrame(tick);
-					}),
-			);
+					} else {
+						resolve(frames);
+					}
+				};
+				requestAnimationFrame(tick);
+			};
+
+			return new Promise<number[][]>(sampleUntilDone);
+		};
+		const track = () => page.evaluate(sampleFrames);
 		const expectInStep = (frames: number[][]) => {
 			expect(frames.some(([, width]) => width > 10 && width < 310)).toBe(true);
 			const drift = Math.max(...frames.map(([x, width]) => Math.abs(before!.x - x - width / 2)));
@@ -789,15 +829,17 @@ test.describe("Writer collaboration", () => {
 		const editorText = page.getByLabel("Document editor");
 		const previewText = page.locator('[aria-label="Version preview"] .ProseMirror');
 		const place = async (text: typeof editorText) => {
-			const { x, y, width } = (await text.locator("p", { hasText: "First version" }).boundingBox())!;
-			return { x, width, top: (await text.boundingBox())!.y, y };
+			const line = text.locator("p", { hasText: "First version" });
+			const { x, y, width } = (await line.boundingBox())!;
+			const { y: top } = (await text.boundingBox())!;
+			return { x, width, top, y };
 		};
 		const editing = await place(editorText);
-		const look = (bar: ReturnType<typeof page.locator>) =>
-			bar.evaluate((el) => {
-				const style = getComputedStyle(el);
-				return [style.backgroundColor, style.borderBottomColor, el.getBoundingClientRect().height];
-			});
+		const readLook = (el: Element) => {
+			const style = getComputedStyle(el);
+			return [style.backgroundColor, style.borderBottomColor, el.getBoundingClientRect().height];
+		};
+		const look = (bar: ReturnType<typeof page.locator>) => bar.evaluate(readLook);
 		const themes = ["light", "dark"] as const;
 		const toolbar = page.getByRole("button", { name: "Bold" }).locator("xpath=ancestor::div[contains(@class, 'border-b')][1]");
 		const toolbarLooks = [];
@@ -812,7 +854,9 @@ test.describe("Writer collaboration", () => {
 		for (const [i, theme] of themes.entries()) {
 			await page.evaluate((theme) => document.documentElement.setAttribute("data-theme", theme), theme);
 			expect(await look(bar)).toEqual(toolbarLooks[i]);
-			expect(await bar.getByRole("button", { name: "Back to current" }).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+			const backToCurrent = bar.getByRole("button", { name: "Back to current" });
+			const backToCurrentFill = await backToCurrent.evaluate((el) => getComputedStyle(el).backgroundColor);
+			expect(backToCurrentFill).toBe("rgba(0, 0, 0, 0)");
 		}
 		// frappe-ui gives an empty read-only line a fixed height, so lines below one may sit a few px off.
 		expect(await place(previewText)).toMatchObject({ x: editing.x, width: editing.width, top: editing.top });
@@ -825,6 +869,7 @@ test.describe("Writer collaboration", () => {
 		await expect(editorText).toBeVisible();
 		expect(await place(editorText)).toEqual(editing);
 	});
+
 	test("a copy made in Drive keeps the text and its pictures, and takes its own edits", async ({
 		owner,
 		testApi,
@@ -840,10 +885,11 @@ test.describe("Writer collaboration", () => {
 
 		await page.goto("/drive");
 		const menu = await openRowMenu(page, title);
-		const copying = page.waitForResponse(
-			(response) =>
-				response.request().method() === "POST" && response.url().includes(`/nodes/${node}/copy`),
-		);
+		const isCopyAnswer = (response: Response) => {
+			const isPost = response.request().method() === "POST";
+			return isPost && response.url().includes(`/nodes/${node}/copy`);
+		};
+		const copying = page.waitForResponse(isCopyAnswer);
 		await menu.getByRole("menuitem", { name: "Make a copy", exact: true }).click();
 		await page
 			.getByRole("dialog", { name: "Make a copy" })
@@ -851,7 +897,8 @@ test.describe("Writer collaboration", () => {
 			.click();
 		const copied = await copying;
 		expect(copied.ok(), await copied.text()).toBe(true);
-		const copy = ((await copied.json()) as { data: { name: string } }).data.name;
+		const copyReply = (await copied.json()) as CopyReply;
+		const copy = copyReply.data.name;
 
 		try {
 			await openWriterDocument(page, copy);
