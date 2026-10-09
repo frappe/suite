@@ -29,10 +29,12 @@ def take_place(adapter: str, doc_id: str) -> tuple[str, list[str]] | None:
     own = f"suite:collab:compacting:{frappe.local.site}:{adapter}:{doc_id}"
     if not redis.set(own, token, nx=True, ex=LEASE):
         return None
+
     for index in range(PLACES):
         key = f"suite:collab:compaction:{index}"
         if redis.set(key, token, nx=True, ex=LEASE):
             return token, [key, own]
+
     redis.eval(RELEASE, 1, own, token)
     return None
 
@@ -53,8 +55,10 @@ def enough_memory() -> bool:
             anon = next(int(line.split()[1]) for line in stat_file if line.startswith("anon "))
     except (OSError, StopIteration, ValueError):
         return True
+
     if max_text == "max":
         return True
+
     limit = int(max_text)
     return limit - anon - PLACES * PER_COMPACTION >= limit // 5
 
@@ -63,6 +67,7 @@ def limit_memory() -> None:
     """Cap this work horse's address space, on Linux and only in a forked horse."""
     if sbool(os.environ.get("FRAPPE_BACKGROUND_WORKERS_NOFORK", False)):
         return
+
     try:
         with open("/proc/self/status") as status:
             size = next(int(line.split()[1]) * 1024 for line in status if line.startswith("VmSize:"))

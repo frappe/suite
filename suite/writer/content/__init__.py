@@ -17,7 +17,8 @@ ADAPTER = "writer"
 ROOTS = {"default": pycrdt.XmlFragment, "meta": pycrdt.Map}
 # The Node kernel `bench build` makes, which judges suspect documents with the browsers' Yjs and this schema
 KERNEL = Path(__file__).with_name("dist") / "kernel.cjs"
-DECLARED = json.loads(Path(__file__).with_name("features.json").read_text())
+FEATURES = Path(__file__).with_name("features.json")
+DECLARED = json.loads(FEATURES.read_text())
 # y-prosemirror writes only GC, deleted, string, format, type and any content, and only XmlElement and
 # XmlText shared types. `meta` holds only plain values; if it ever nests a Map, Array or Text,
 # `shared_types` must change in the same commit
@@ -36,7 +37,8 @@ def document_owner(node: str) -> str | None:
 
 
 def touch(node: str) -> None:
-    drive.touch("Writer Document", frappe.db.get_value("Writer Document", {"node": node}))
+    document_name = frappe.db.get_value("Writer Document", {"node": node})
+    drive.touch("Writer Document", document_name)
 
 
 SPEC = ContentAdapterSpec(
@@ -54,12 +56,14 @@ SPEC = ContentAdapterSpec(
 
 def version_payload(read: dict, state: bytes) -> dict:
     """`state` as a `writer-document/2` version. The readable copy is not built yet, so `html` is null."""
+    compressed = gzip.compress(state)
+    encoded_state = base64.b64encode(compressed).decode("ascii")
     return {
         "schema": "writer-document/2",
         "codec": "yjs1",
         "lineage": read["lineage"],
         "through_rev": read["head_rev"],
         "chain": read["head_chain"].hex(),
-        "state": base64.b64encode(gzip.compress(state)).decode("ascii"),
+        "state": encoded_state,
         "html": None,
     }

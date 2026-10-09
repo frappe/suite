@@ -34,7 +34,9 @@ def adapters() -> dict[str, ContentAdapterSpec]:
         spec = frappe.get_attr(path)
         if not isinstance(spec, ContentAdapterSpec) or spec.name in found:
             raise ValueError(f"Invalid content adapter {path}")
+
         found[spec.name] = spec
+
     return found
 
 
@@ -42,6 +44,7 @@ def spec_of(name: str) -> ContentAdapterSpec:
     found = adapters().get(name)
     if found is None:
         raise frappe.DoesNotExistError(f"Unknown content adapter {name}")
+
     return found
 
 

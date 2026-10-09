@@ -27,6 +27,7 @@ def typed(*edits) -> list[bytes]:
     doc.observe(lambda event: rows.append(event.update))
     for edit in edits:
         edit(body)
+
     return rows
 
 
@@ -45,7 +46,9 @@ class TestKernel(UnitTestCase):
             # A skip in CI would leave the job green with suspect documents never judged
             if os.environ.get("CI"):
                 self.fail(reason)
+
             self.skipTest(reason)
+
         job = patch.object(frappe.local, "job", frappe._dict(job_name="test_kernel"), create=True)
         job.start()
         self.addCleanup(job.stop)
@@ -118,11 +121,12 @@ class TestKernel(UnitTestCase):
                 ("long", "x" * 200, "x" * 80),
             ):
                 bundle = Path(folder) / f"{name}.cjs"
-                bundle.write_text(
-                    f"process.stdout.write(JSON.stringify({{ verdict: 'bad', index: 0, reason: {json.dumps(reason)} }}))"
-                )
+                quoted_reason = json.dumps(reason)
+                source = f"process.stdout.write(JSON.stringify({{ verdict: 'bad', index: 0, reason: {quoted_reason} }}))"
+                bundle.write_text(source)
                 with self.subTest(name):
                     self.assertEqual(kernel.judge(bundle, None, [b"x"]).reason, expected)
+
             bundle = Path(folder) / "loud.cjs"
             bundle.write_text("process.stderr.write('Error: <p>secret words</p>\\n'); process.exit(3)")
             with self.assertRaises(kernel.KernelFailed) as failed:
@@ -131,35 +135,42 @@ class TestKernel(UnitTestCase):
 
     def test_the_bundle_needs_only_crypto_and_drops_the_network_globals(self):
         code = BUNDLE.read_text()
-        self.assertEqual(set(re.findall(r'\brequire\("([^"$]+)"\)', code)), {"node:crypto"})
-        self.assertEqual(set(re.findall(r"[\"'`](node:[\w/]+)", code)), {"node:crypto"})
+        required = set(re.findall(r'\brequire\("([^"$]+)"\)', code))
+        node_imports = set(re.findall(r"[\"'`](node:[\w/]+)", code))
+        self.assertEqual(required, {"node:crypto"})
+        self.assertEqual(node_imports, {"node:crypto"})
+
         bundle = BUNDLE.resolve()
         probe = f"""
         require({json.dumps(str(bundle))})
         const names = ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']
         process.stdout.write(JSON.stringify(names.filter((name) => name in globalThis)) + '\\n')
         """
+        empty_request = json.dumps({"checkpoint": None, "rows": []})
         done = subprocess.run(
             [kernel.usable_node(), "--permission", f"--allow-fs-read={bundle}", "-e", probe],
-            input=json.dumps({"checkpoint": None, "rows": []}),
+            input=empty_request,
             capture_output=True,
             text=True,
             check=True,
         )
         found, verdict = done.stdout.splitlines()
-        self.assertEqual((found, json.loads(verdict)["verdict"]), ("[]", "clean"))
+        verdict_name = json.loads(verdict)["verdict"]
+        self.assertEqual((found, verdict_name), ("[]", "clean"))
 
     def test_the_bundle_runs_the_yjs_the_browsers_get(self):
         lockfile = (Path(__file__).parents[4] / "yarn.lock").read_text()
         locked = set(re.findall(r'^"?yjs@[^\n]*\n\s+version "([^"]+)"', lockfile, re.M))
+        empty_request = json.dumps({"checkpoint": None, "rows": []})
         done = subprocess.run(
             [kernel.usable_node(), str(BUNDLE)],
-            input=json.dumps({"checkpoint": None, "rows": []}),
+            input=empty_request,
             capture_output=True,
             text=True,
             check=True,
         )
-        self.assertEqual({json.loads(done.stdout)["yjs"]}, locked)
+        bundled_yjs = json.loads(done.stdout)["yjs"]
+        self.assertEqual({bundled_yjs}, locked)
 
     def test_a_child_that_hangs_or_crashes_fails_loudly(self):
         with tempfile.TemporaryDirectory() as folder:

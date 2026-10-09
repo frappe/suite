@@ -64,10 +64,12 @@ class Compaction:
     def run(self) -> None:
         if suspect.suspect_of(self.adapter, self.doc_id):
             return
+
         held = admission.take_place(self.adapter, self.doc_id)
         if held is None:
             self.defer(admission.LEASE)
             return
+
         try:
             self.attempt()
         finally:
@@ -79,23 +81,25 @@ class Compaction:
             self.count_attempt()
             if not admission.enough_memory():
                 raise compaction.CompactionFailed("insufficient_memory")
+
             admission.limit_memory()
             snapshot = self.fit_snapshot()
-            if snapshot is None or snapshot["head_rev"] == snapshot["base"]:
+            nothing_new = snapshot is None or snapshot["head_rev"] == snapshot["base"]
+            if nothing_new:
                 frappe.db.rollback()
                 self.settle()
                 return
+
             rows = [payload for _rev, payload in snapshot["rows"]]
             result = compaction.compact(snapshot["checkpoint"], rows, self.roots)
             result.ms = int((time.monotonic() - started) * 1000)
             self.install(snapshot, result)
         except Exception as error:
             frappe.db.rollback()
-            reason = (
-                error.reason
-                if isinstance(error, compaction.CompactionFailed | ChainBroken)
-                else type(error).__name__
-            )
+            if isinstance(error, compaction.CompactionFailed | ChainBroken):
+                reason = error.reason
+            else:
+                reason = type(error).__name__
             self.failed(reason, error)
             if reason in suspect.REASONS:
                 suspect.mark(self.adapter, self.doc_id, reason, self.judge_method)
@@ -106,17 +110,20 @@ class Compaction:
             snapshot = read(self.adapter, self.doc_id, integrated=True)
             if snapshot is None:
                 return None
+
             rows = [payload for _rev, payload in snapshot["rows"]]
             found = quarantine.first_unfit(snapshot["checkpoint"], rows, set(self.roots))
             if not found:
                 return snapshot
+
             index, reason = found
             if index < 0:
                 raise compaction.CompactionFailed(reason)
+
             frappe.db.rollback()
-            if not quarantine.quarantine(
-                self.adapter, self.doc_id, {snapshot["rows"][index][0]}, reason, self.owner_of
-            ):
+            unfit_rev = snapshot["rows"][index][0]
+            quarantined = quarantine.quarantine(self.adapter, self.doc_id, {unfit_rev}, reason, self.owner_of)
+            if not quarantined:
                 raise compaction.CompactionFailed(reason)
 
     def install(self, snapshot: dict, result: compaction.Compacted) -> None:
@@ -132,13 +139,13 @@ class Compaction:
                 break
             except Exception as error:
                 frappe.db.rollback()
-                if attempt == 2 or not (frappe.db.is_deadlocked(error) or frappe.db.is_timedout(error)):
+                last_attempt = attempt == 2
+                retryable = frappe.db.is_deadlocked(error) or frappe.db.is_timedout(error)
+                if last_attempt or not retryable:
                     raise
-        if (
-            installed
-            and not result.integrated
-            and not suspect.fallback_judged_lately(self.adapter, self.doc_id)
-        ):
+
+        kept_fallback = installed and not result.integrated
+        if kept_fallback and not suspect.fallback_judged_lately(self.adapter, self.doc_id):
             self.alert("fallback", "The compaction kept the merged rows as an open base only")
             suspect.mark(self.adapter, self.doc_id, "fallback", self.judge_method)
 
@@ -149,32 +156,40 @@ class Compaction:
         doc = self.lock()
         if doc is None or doc.mode == "purged":
             raise compaction.CompactionFailed("purged")
+
         row = body_row(self.adapter, doc.node, lock=True)
         if row is None:
             raise compaction.CompactionFailed("purged")
-        if doc.lineage != snapshot["lineage"] or int(doc.body_rev) >= through:
+
+        other_lineage = doc.lineage != snapshot["lineage"]
+        body_as_new = int(doc.body_rev) >= through
+        if other_lineage or body_as_new:
             frappe.db.rollback()
             return False
+
         spec = spec_of(self.adapter)
         edited = frappe.db.sql(
             f"SELECT `created` FROM `{self.table('update')}` WHERE `doc_id` = %s AND `rev` = %s",
             (self.doc_id, through),
         )[0][0]
+        body = base64.b64encode(result.state).decode("ascii")
         frappe.db.sql(
             f"""UPDATE `tab{spec.content_type}` SET `{spec.body_field}` = %s, `modified` = GREATEST(`modified`, %s)
             WHERE `name` = %s""",
-            (base64.b64encode(result.state).decode("ascii"), edited, row.name),
+            (body, edited, row.name),
         )
         frappe.db.sql(
             f"DELETE FROM `{self.table('checkpoint')}` WHERE `doc_id` = %s AND `through_rev` <= %s",
             (self.doc_id, through),
         )
+        state_sha = hashlib.sha256(result.state).hexdigest()
         frappe.db.sql(
             f"""UPDATE `{self.table("doc")}` SET `body_rev` = %s, `body_chain` = UNHEX(%s), `body_sha` = UNHEX(%s)
             WHERE `id` = %s""",
-            (through, snapshot["head_chain"].hex(), hashlib.sha256(result.state).hexdigest(), self.doc_id),
+            (through, snapshot["head_chain"].hex(), state_sha, self.doc_id),
         )
-        self.record(max(through, fallback_rev(self.adapter, self.doc_id)), result)
+        tail_base = max(through, fallback_rev(self.adapter, self.doc_id))
+        self.record(tail_base, result)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         frappe.clear_document_cache(spec.content_type, row.name)
         self.measured(doc)
@@ -187,23 +202,25 @@ class Compaction:
         doc = self.lock()
         if doc is None or doc.mode == "purged":
             raise compaction.CompactionFailed("purged")
-        if (
-            doc.lineage != snapshot["lineage"]
-            or int(doc.body_rev) >= through
-            or fallback_rev(self.adapter, self.doc_id) >= through
-        ):
+
+        other_lineage = doc.lineage != snapshot["lineage"]
+        body_as_new = int(doc.body_rev) >= through
+        if other_lineage or body_as_new or fallback_rev(self.adapter, self.doc_id) >= through:
             frappe.db.rollback()
             return False
+
         frappe.db.sql(f"DELETE FROM `{self.table('checkpoint')}` WHERE `doc_id` = %s", self.doc_id)
+        state_sha = hashlib.sha256(result.state).digest()
+        report = {**result.report, "ms": result.ms}
         insert_checkpoint(
             self.adapter,
             self.doc_id,
             through,
             snapshot["head_chain"],
-            hashlib.sha256(result.state).digest(),
+            state_sha,
             result.state,
             False,
-            {**result.report, "ms": result.ms},
+            report,
         )
         self.record(through, result)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
@@ -226,6 +243,14 @@ class Compaction:
         paced = len(result.state) >= PACED_FROM
         pause = timedelta(seconds=max(60, 10 * result.ms / 1000))
         updates = self.table("update")
+        values = {
+            "doc": self.doc_id,
+            "base": base,
+            "kernel": compaction.KERNEL,
+            "state_bytes": len(result.state),
+            "ms": result.ms,
+            "next": now_datetime() + pause if paced else None,
+        }
         frappe.db.sql(
             f"""UPDATE `{self.table("doc")}` SET
                 `kernel_schema` = %(kernel)s,
@@ -240,14 +265,7 @@ class Compaction:
                 `last_compaction_error` = NULL,
                 `next_compaction_at` = %(next)s
             WHERE `id` = %(doc)s""",
-            {
-                "doc": self.doc_id,
-                "base": base,
-                "kernel": compaction.KERNEL,
-                "state_bytes": len(result.state),
-                "ms": result.ms,
-                "next": now_datetime() + pause if paced else None,
-            },
+            values,
         )
 
     def measured(self, doc: frappe._dict) -> None:
@@ -257,10 +275,12 @@ class Compaction:
 
     def count_attempt(self) -> None:
         """Count the attempt as a failure, with its backoff, before pycrdt runs; an install resets it."""
+        failures = self.failures()
+        retry_at = backoff(failures + 1)
         frappe.db.sql(
             f"""UPDATE `{self.table("doc")}` SET `compaction_failures` = `compaction_failures` + 1,
             `next_compaction_at` = %s WHERE `id` = %s""",
-            (backoff(self.failures() + 1), self.doc_id),
+            (retry_at, self.doc_id),
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
@@ -272,7 +292,9 @@ class Compaction:
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         count = self.failures()
-        if count >= ALERT_AT or reason in ("kernel_version", "chain_break", "checkpoint_mismatch"):
+        repeated = count >= ALERT_AT
+        alert_at_once = reason in ("kernel_version", "chain_break", "checkpoint_mismatch")
+        if repeated or alert_at_once:
             self.alert(reason, f"Compaction failed {count} times in a row: {reason}", error)
 
     def settle(self) -> None:
@@ -291,18 +313,26 @@ class Compaction:
         return int(found[0][0]) if found else 0
 
     def defer(self, seconds: int) -> None:
+        retry_at = now_datetime() + timedelta(seconds=seconds)
+        values = {
+            "at": retry_at,
+            "doc": self.doc_id,
+        }
         frappe.db.sql(
             f"""UPDATE `{self.table("doc")}` SET `next_compaction_at` = %(at)s
             WHERE `id` = %(doc)s AND (`next_compaction_at` IS NULL OR `next_compaction_at` < %(at)s)""",
-            {"at": now_datetime() + timedelta(seconds=seconds), "doc": self.doc_id},
+            values,
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
     def alert(self, reason: str, message: str, error: Exception | None = None) -> None:
         detail = f"{self.adapter} document {self.doc_id}"
+        logged = f"{message}\n{detail}"
+        if error:
+            logged = f"{message}\n{detail}\n{error!r}"
         frappe.log_error(
             title=f"Collab compaction: {reason}",
-            message=f"{message}\n{detail}\n{error!r}" if error else f"{message}\n{detail}",
+            message=logged,
             reference_doctype="Suite Collab Settings",
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
@@ -338,13 +368,16 @@ def insert_checkpoint(
     )
     # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
     gz = gzip.compress(state)
-    part = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0]) // 4
+    max_packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
+    part = max_packet // 4
     for start in range(0, len(gz), part):
+        piece = gz[start : start + part]
         frappe.db.sql(
             f"""UPDATE `{checkpoint}` SET `gz` = CONCAT(`gz`, UNHEX(%s))
             WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = UNHEX(%s)""",
-            (gz[start : start + part].hex(), doc_id, through, sha.hex()),
+            (piece.hex(), doc_id, through, sha.hex()),
         )
+
     # A server not in strict mode empties a CONCAT past max_allowed_packet with only a warning
     stored = frappe.db.sql(
         f"SELECT LENGTH(`gz`) FROM `{checkpoint}` WHERE `doc_id` = %s AND `through_rev` = %s",
@@ -370,36 +403,42 @@ def replace_start(adapter: str, doc_id: str, state: bytes, schema: int) -> None:
     row = body_row(adapter, doc.node, lock=True)
     if row is None:
         raise ValueError("this log's document has no row")
+
     sessions = frappe.db.sql(
         f"SELECT 1 FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s LIMIT 1", doc_id
     )
     if int(doc.head_rev) > 1 or sessions or rows_after(adapter, doc_id, 0):
         raise ValueError("this log's start is already in use")
+
     sha = hashlib.sha256(state).digest()
-    chain = chain_next(chain_seed(doc.lineage), 1, sha)
+    seed = chain_seed(doc.lineage)
+    chain = chain_next(seed, 1, sha)
     spec = spec_of(adapter)
     frappe.db.sql(f"DELETE FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s", doc_id)
+    body = base64.b64encode(state).decode("ascii")
     frappe.db.sql(
         f"UPDATE `tab{spec.content_type}` SET `{spec.body_field}` = %s WHERE `name` = %s",
-        (base64.b64encode(state).decode("ascii"), row.name),
+        (body, row.name),
     )
+    values = {
+        "chain": chain.hex(),
+        "sha": sha.hex(),
+        "kernel": compaction.KERNEL,
+        "size": len(state),
+        "clocks": json.dumps(ingest.next_clocks([state])),
+        "steps": json.dumps([[1, schema]]),
+        "doc": doc_id,
+    }
     frappe.db.sql(
         f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = 1, `head_chain` = UNHEX(%(chain)s),
         `body_rev` = 1, `body_chain` = UNHEX(%(chain)s), `body_sha` = UNHEX(%(sha)s),
         `kernel_schema` = %(kernel)s, `state_bytes` = %(size)s, `start_clocks` = %(clocks)s,
         `schema_steps` = %(steps)s WHERE `id` = %(doc)s""",
-        {
-            "chain": chain.hex(),
-            "sha": sha.hex(),
-            "kernel": compaction.KERNEL,
-            "size": len(state),
-            "clocks": json.dumps(ingest.next_clocks([state])),
-            "steps": json.dumps([[1, schema]]),
-            "doc": doc_id,
-        },
+        values,
     )
     frappe.clear_document_cache(spec.content_type, row.name)
 
 
 def backoff(count: int):
-    return now_datetime() + timedelta(seconds=min(2**count * 60, 6 * 3600))
+    delay = min(2**count * 60, 6 * 3600)
+    return now_datetime() + timedelta(seconds=delay)

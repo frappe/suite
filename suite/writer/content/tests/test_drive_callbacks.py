@@ -38,14 +38,9 @@ def declaring(*names: str):
     editor does not write today."""
     features = {**writer_content.SCHEMA.features, **dict.fromkeys(names, 1)}
     shared_types = writer_content.SCHEMA.shared_types | {0, 1, 2}
-    return patch.object(
-        writer_content,
-        "SPEC",
-        replace(
-            writer_content.SPEC,
-            schema=replace(writer_content.SCHEMA, features=features, shared_types=shared_types),
-        ),
-    )
+    schema = replace(writer_content.SCHEMA, features=features, shared_types=shared_types)
+    spec = replace(writer_content.SPEC, schema=schema)
+    return patch.object(writer_content, "SPEC", spec)
 
 
 def embed(media: str) -> str:
@@ -56,31 +51,37 @@ class TestWriterDriveCallbacks(CheckpointCase):
     def edit(self, node: str, change, schema: int = 1) -> None:
         """A tab opened on the document makes `change` to its fragment and pushes it as one row stamped `schema`."""
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
-        header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
+        session_body = json.dumps({"sid": sid}).encode()
+        session = answer(call(routes.sessions_post, node, body=session_body))
+        cid = session["client_id"]
+        opened = call(routes.document_get, node).get_data()
+        header, checkpoint, rows = read_open(opened)
+
         doc = pycrdt.Doc(client_id=cid)
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
                 doc.apply_update(payload)
         seen = doc.get_state()
         change(doc.get("default", type=pycrdt.XmlFragment))
-        body = push_body(header["lineage"], sid, cid, 1, 0, doc.get_update(seen), schema=schema)
-        self.assertEqual(call(routes.updates_post, node, body=body).status_code, 200)
+
+        changes = doc.get_update(seen)
+        body = push_body(header["lineage"], sid, cid, 1, 0, changes, schema=schema)
+        pushed = call(routes.updates_post, node, body=body)
+        self.assertEqual(pushed.status_code, 200)
 
     def docname(self, node: str) -> str:
         return frappe.db.get_value("Drive Node", node, "content_docname")
 
     def test_used_nodes_reads_the_pictures_a_collab_document_holds_now(self):
         node = self.new_document()
+
+        def add_three_pictures(body):
+            body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-kept")}))
+            body.children.append(pycrdt.XmlElement("image", {"src": "", "data-node": "pic-bare"}))
+            body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-removed")}))
+
         with declaring("data-node"):
-            self.edit(
-                node,
-                lambda body: [
-                    body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-kept")})),
-                    body.children.append(pycrdt.XmlElement("image", {"src": "", "data-node": "pic-bare"})),
-                    body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-removed")})),
-                ],
-            )
+            self.edit(node, add_three_pictures)
         self.compact(node)
         self.edit(
             node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed("pic-new")}))
@@ -104,20 +105,21 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
     def test_the_media_sweep_keeps_a_picture_only_the_log_names(self):
         node = self.new_document()
-        named, unnamed = self.old_media(node, "named.png"), self.old_media(node, "unnamed.png")
+        named = self.old_media(node, "named.png")
+        unnamed = self.old_media(node, "unnamed.png")
         self.edit(node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(named)})))
 
         spec = drive_content.registry()[writer_drive.DOCTYPE]
-        trashed = drive_content._sweep_document(
-            spec, frappe._dict(name=node, content_docname=self.docname(node))
-        )
+        node_row = frappe._dict(name=node, content_docname=self.docname(node))
+        trashed = drive_content._sweep_document(spec, node_row)
 
         self.assertEqual(trashed, 1)
         self.assertEqual(frappe.db.get_value("Drive Node", named, "state"), "Active")
         self.assertEqual(frappe.db.get_value("Drive Node", unnamed, "state"), "Trashed")
 
     def old_media(self, document: str, title: str) -> str:
-        blob = put_blob(io.BytesIO(title.encode()), is_private=True, filename=title)
+        blob_stream = io.BytesIO(title.encode())
+        blob = put_blob(blob_stream, is_private=True, filename=title)
         with patch.object(frappe, "enqueue"):
             media = drive.create_file(
                 document, title, blob=blob.name, size=blob.file_size, mime=blob.mime_type
@@ -137,25 +139,21 @@ class TestWriterDriveCallbacks(CheckpointCase):
         version = version_of(self.docname(node))
 
         doc = self.doc_row(node)
-        self.assertEqual(
-            {
-                key: version[key]
-                for key in ("schema", "codec", "lineage", "through_rev", "chain", "html", "media")
-            },
-            {
-                "schema": "writer-document/2",
-                "codec": "yjs1",
-                "lineage": doc.lineage,
-                "through_rev": doc.head_rev,
-                "chain": bytes(doc.head_chain).hex(),
-                "html": None,
-                "media": ["pic"],
-            },
-        )
-        self.assertEqual(
-            self.text_of(gzip.decompress(base64.b64decode(version["state"]))),
-            f'one two three<image src="{embed("pic")}"></image>',
-        )
+        stamp_keys = ("schema", "codec", "lineage", "through_rev", "chain", "html", "media")
+        stamp = {key: version[key] for key in stamp_keys}
+        expected_stamp = {
+            "schema": "writer-document/2",
+            "codec": "yjs1",
+            "lineage": doc.lineage,
+            "through_rev": doc.head_rev,
+            "chain": bytes(doc.head_chain).hex(),
+            "html": None,
+            "media": ["pic"],
+        }
+        self.assertEqual(stamp, expected_stamp)
+        state_gz = base64.b64decode(version["state"])
+        state = gzip.decompress(state_gz)
+        self.assertEqual(self.text_of(state), f'one two three<image src="{embed("pic")}"></image>')
 
     def test_a_version_never_starts_from_a_fallback_checkpoint(self):
         node = self.new_document()
@@ -165,6 +163,7 @@ class TestWriterDriveCallbacks(CheckpointCase):
         doc = self.doc_row(node)
         fallback = pycrdt.Doc()
         fallback.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText("deleted words"))
+        fallback_gz = gzip.compress(fallback.get_update())
         frappe.db.sql(
             """INSERT INTO `__writer_content_checkpoint`
             (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `kernel_schema`, `created`)
@@ -174,14 +173,16 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 doc.head_rev,
                 bytes(doc.head_chain).hex(),
                 "00" * 32,
-                gzip.compress(fallback.get_update()).hex(),
+                fallback_gz.hex(),
             ),
         )
         frappe.db.commit()
 
         version = version_of(self.docname(node))
 
-        self.assertEqual(self.text_of(gzip.decompress(base64.b64decode(version["state"]))), "one two three")
+        state_gz = base64.b64decode(version["state"])
+        state = gzip.decompress(state_gz)
+        self.assertEqual(self.text_of(state), "one two three")
         self.assertEqual(version["through_rev"], doc.head_rev)
 
     def test_with_collaboration_off_a_version_is_still_the_logs_state(self):
@@ -193,7 +194,9 @@ class TestWriterDriveCallbacks(CheckpointCase):
         version = version_of(self.docname(node))
 
         self.assertEqual(version["schema"], "writer-document/2")
-        self.assertEqual(self.text_of(gzip.decompress(base64.b64decode(version["state"]))), "one")
+        state_gz = base64.b64decode(version["state"])
+        state = gzip.decompress(state_gz)
+        self.assertEqual(self.text_of(state), "one")
 
     def test_a_broken_log_refuses_a_version_instead_of_storing_a_wrong_one(self):
         node = self.new_document()
@@ -224,7 +227,9 @@ class TestWriterDriveCallbacks(CheckpointCase):
                 frappe.db.rollback()
 
         with patch.multiple(scheduling, STATE_MAX=size, TAIL_ROWS=2):
-            state = gzip.decompress(base64.b64decode(version_of(self.docname(node))["state"]))
+            version = version_of(self.docname(node))
+            state_gz = base64.b64decode(version["state"])
+            state = gzip.decompress(state_gz)
             self.assertEqual(self.text_of(state), "one two")
             copied = self.copy_of(node)
         self.assertEqual(self.text_of(self.opened(copied).get_update()), "one two")
@@ -292,13 +297,12 @@ class TestWriterDriveCallbacks(CheckpointCase):
     def test_a_copy_names_its_own_pictures_and_keeps_its_text(self):
         node = self.new_document()
         picture = self.old_media(node, "picture.png")
-        self.edit(
-            node,
-            lambda body: [
-                body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)})),
-                body.children.append(pycrdt.XmlText(f"see {embed(picture)}")),
-            ],
-        )
+
+        def add_picture_and_link(body):
+            body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)}))
+            body.children.append(pycrdt.XmlText(f"see {embed(picture)}"))
+
+        self.edit(node, add_picture_and_link)
 
         copied = self.copy_of(node)
 
@@ -314,11 +318,9 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         picture = self.old_media(node, "picture.png")
         self.type_into(node, ["one"])
-        with patch.object(
-            writer_content,
-            "SPEC",
-            replace(writer_content.SPEC, schema=replace(writer_content.SCHEMA, version=2)),
-        ):
+        schema_two = replace(writer_content.SCHEMA, version=2)
+        spec_at_schema_two = replace(writer_content.SPEC, schema=schema_two)
+        with patch.object(writer_content, "SPEC", spec_at_schema_two):
             self.edit(
                 node,
                 lambda body: body.children.append(pycrdt.XmlElement("image", {"src": embed(picture)})),
@@ -372,7 +374,8 @@ class TestWriterDriveCallbacks(CheckpointCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         copied = self.copy_of(node)
-        call(routes.sessions_post, copied, body=json.dumps({"sid": uuid.uuid4().hex}).encode())
+        session_body = json.dumps({"sid": uuid.uuid4().hex}).encode()
+        call(routes.sessions_post, copied, body=session_body)
 
         with self.assertRaises(ValueError):
             content.replace_start("writer", self.doc_row(copied).id, pycrdt.Doc().get_update(), 1)
@@ -406,13 +409,15 @@ class TestWriterDriveCallbacks(CheckpointCase):
         return doc_id
 
     def rows_of(self, doc_id: str) -> dict:
-        return {
-            kind: frappe.db.sql(
-                f"SELECT COUNT(*) FROM `__writer_content_{kind}` WHERE `{'id' if kind == 'doc' else 'doc_id'}` = %s",
+        counts = {}
+        for kind in ("doc", "update", "checkpoint", "session", "stage"):
+            doc_column = "id" if kind == "doc" else "doc_id"
+            counts[kind] = frappe.db.sql(
+                f"SELECT COUNT(*) FROM `__writer_content_{kind}` WHERE `{doc_column}` = %s",
                 doc_id,
             )[0][0]
-            for kind in ("doc", "update", "checkpoint", "session", "stage")
-        }
+
+        return counts
 
     def test_a_purge_marks_the_log_and_its_job_deletes_every_row_in_batches(self):
         node = self.new_document()
@@ -445,13 +450,12 @@ class TestWriterDriveCallbacks(CheckpointCase):
         with patch.object(scheduling, "enqueue") as enqueue:
             documents.sweep()
 
-        self.assertIn(
-            (
-                ("suite.suite_core.content.documents.delete_purged", f"suite-collab-purge-writer-{doc_id}"),
-                {"adapter": "writer", "doc_id": doc_id},
-            ),
-            [(call.args, call.kwargs) for call in enqueue.call_args_list],
+        purge_job = (
+            ("suite.suite_core.content.documents.delete_purged", f"suite-collab-purge-writer-{doc_id}"),
+            {"adapter": "writer", "doc_id": doc_id},
         )
+        enqueued = [(call.args, call.kwargs) for call in enqueue.call_args_list]
+        self.assertIn(purge_job, enqueued)
         documents.delete_purged(writer_content.ADAPTER, doc_id)
         self.assertEqual(self.rows_of(doc_id)["update"], 0)
 
@@ -506,14 +510,17 @@ class TestWriterDriveCallbacks(CheckpointCase):
         self.type_into(node, ["one"])
         doc_id = self.doc_row(node).id
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
+        session_body = json.dumps({"sid": sid}).encode()
+        session = answer(call(routes.sessions_post, node, body=session_body))
+        cid = session["client_id"]
         lineage = self.doc_row(node).lineage
         frappe.db.sql("UPDATE `__writer_content_doc` SET `mode` = 'purged' WHERE `id` = %s", doc_id)
         frappe.db.commit()
         self.addCleanup(documents.delete_purged, writer_content.ADAPTER, doc_id)
         doc = pycrdt.Doc(client_id=cid)
         doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText("two"))
-        header, payload = content.parse_push(push_body(lineage, sid, cid, 1, 1, doc.get_update()))
+        body = push_body(lineage, sid, cid, 1, 1, doc.get_update())
+        header, payload = content.parse_push(body)
 
         with self.assertRaises(content.Refusal) as refused:
             content.push(writer_content.ADAPTER, doc_id, header, payload, WRITER, writer_content.SCHEMA)
@@ -702,11 +709,10 @@ class TestWriterDriveCallbacks(CheckpointCase):
             for node in nodes:
                 with self.clock(start + timedelta(minutes=minutes)):
                     self.type_into(node, ["one"])
-        ids = dict(
-            frappe.db.sql(
-                "SELECT `node`, `id` FROM `__writer_content_doc` WHERE `node` IN %s", (tuple(nodes),)
-            )
+        node_ids = frappe.db.sql(
+            "SELECT `node`, `id` FROM `__writer_content_doc` WHERE `node` IN %s", (tuple(nodes),)
         )
+        ids = dict(node_ids)
         # The one a plain id scan reaches last
         waiting = max(nodes, key=ids.get)
         frappe.db.sql(
@@ -722,7 +728,6 @@ class TestWriterDriveCallbacks(CheckpointCase):
         ):
             documents.sweep()
 
-        self.assertEqual(
-            {node: self.changed(node) for node in nodes},
-            {node: start + timedelta(minutes=10) if node == waiting else start for node in nodes},
-        )
+        changed = {node: self.changed(node) for node in nodes}
+        expected = {node: start + timedelta(minutes=10) if node == waiting else start for node in nodes}
+        self.assertEqual(changed, expected)

@@ -18,7 +18,9 @@ def body(doc: pycrdt.Doc) -> pycrdt.XmlText:
 
 def written(text: str, client_id: int = 5) -> pycrdt.Doc:
     doc = pycrdt.Doc(client_id=client_id)
-    doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText()).insert(0, text)
+    fragment = doc.get("default", type=pycrdt.XmlFragment)
+    paragraph = fragment.children.append(pycrdt.XmlText())
+    paragraph.insert(0, text)
     return doc
 
 
@@ -32,7 +34,8 @@ def edited(base: pycrdt.Doc, client_id: int, edit) -> bytes:
 
 
 def row_bound(payload: bytes) -> int:
-    return capacity.bound(parse(payload), len(payload))
+    update = parse(payload)
+    return capacity.bound(update, len(payload))
 
 
 def doc_row(state=0, tail=0, rows=1, next_at=None, last_ms=None):
@@ -74,7 +77,8 @@ class TestBound(UnitTestCase):
 class TestAdmit(UnitTestCase):
     def setUp(self):
         self.adds = parse(written("x", 7).get_update())
-        self.deletes = parse(edited(written("abc"), 6, lambda text: text.__delitem__(slice(1, 2))))
+        deleting = edited(written("abc"), 6, lambda text: text.__delitem__(slice(1, 2)))
+        self.deletes = parse(deleting)
 
     def refusal(self, doc, update, bound):
         with self.assertRaises(capacity.Full) as raised:
@@ -85,7 +89,10 @@ class TestAdmit(UnitTestCase):
         capacity.admit(doc_row(state=CAP - 300, tail=200), self.adds, 100, NOW)
 
     def test_a_push_one_byte_past_the_cap_waits_for_the_next_compaction(self):
-        self.assertEqual(self.refusal(doc_row(state=CAP - 300, tail=200), self.adds, 101)[0], "compacting")
+        doc = doc_row(state=CAP - 300, tail=200)
+        reason = self.refusal(doc, self.adds, 101)[0]
+
+        self.assertEqual(reason, "compacting")
 
     def test_the_wait_runs_to_the_paced_compaction_plus_how_long_the_last_one_took(self):
         doc = doc_row(state=CAP - 10, tail=200, next_at=NOW + timedelta(seconds=3), last_ms=1500)
@@ -93,25 +100,28 @@ class TestAdmit(UnitTestCase):
         self.assertEqual(self.refusal(doc, self.adds, 100), ("compacting", 4500))
 
     def test_with_no_compaction_timed_the_wait_is_one_expected_compaction(self):
-        self.assertEqual(
-            self.refusal(doc_row(state=CAP, tail=0, rows=1), self.deletes, CAP), ("compacting", 2000)
-        )
+        doc = doc_row(state=CAP, tail=0, rows=1)
+
+        self.assertEqual(self.refusal(doc, self.deletes, CAP), ("compacting", 2000))
 
     def test_a_document_at_the_cap_is_full_for_anything_that_adds(self):
-        self.assertEqual(self.refusal(doc_row(state=CAP, tail=0, rows=5), self.adds, 1)[0], "doc_full")
+        doc = doc_row(state=CAP, tail=0, rows=5)
+        reason = self.refusal(doc, self.adds, 1)[0]
+
+        self.assertEqual(reason, "doc_full")
 
     def test_a_push_that_no_compaction_can_make_room_for_is_full(self):
-        self.assertEqual(
-            self.refusal(doc_row(state=CAP - 100, tail=0, rows=0), self.adds, 101)[0], "doc_full"
-        )
+        doc = doc_row(state=CAP - 100, tail=0, rows=0)
+        reason = self.refusal(doc, self.adds, 101)[0]
+
+        self.assertEqual(reason, "doc_full")
 
     def test_a_full_document_still_takes_deletes_up_to_half_a_mebibyte_past_the_cap(self):
         capacity.admit(doc_row(state=CAP, tail=200, rows=1), self.deletes, 512 * 2**10 - 200, NOW)
 
-        self.assertEqual(
-            self.refusal(doc_row(state=CAP, tail=200, rows=1), self.deletes, 512 * 2**10 - 199)[0],
-            "compacting",
-        )
+        doc = doc_row(state=CAP, tail=200, rows=1)
+        reason = self.refusal(doc, self.deletes, 512 * 2**10 - 199)[0]
+        self.assertEqual(reason, "compacting")
 
     def test_a_delete_is_never_full_for_good_however_far_past_the_cap(self):
         capacity.admit(doc_row(state=CAP + 2**20, tail=0, rows=0), self.deletes, 2**20, NOW)
@@ -119,7 +129,8 @@ class TestAdmit(UnitTestCase):
     def test_a_tail_of_twenty_thousand_rows_waits_for_a_compaction_however_small(self):
         capacity.admit(doc_row(rows=19_999), self.adds, 1, NOW)
 
-        self.assertEqual(self.refusal(doc_row(rows=20_000), self.adds, 1)[0], "compacting")
+        reason = self.refusal(doc_row(rows=20_000), self.adds, 1)[0]
+        self.assertEqual(reason, "compacting")
 
 
 class TestEditMax(UnitTestCase):

@@ -133,11 +133,16 @@ def unknown() -> None:
 
 def _open(node: str) -> Response:
     if not content.enabled():
-        return _frame({"state": "disabled", "proto": content.PROTO})
-    adapter = _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
+        disabled = {"state": "disabled", "proto": content.PROTO}
+        return _frame(disabled)
+
+    principal = frappe.get_request_header(PRINCIPAL_HEADER)
+    adapter = _authorize(node, drive.READ, principal)
     doc = content.find(adapter, node)
     if doc is None:
-        return _frame({"state": "unconverted", "proto": content.PROTO})
+        unconverted = {"state": "unconverted", "proto": content.PROTO}
+        return _frame(unconverted)
+
     can_write = frappe.session.user != "Guest" and _can(node, drive.EDIT)
     try:
         snapshot = content.read(adapter, doc.id)
@@ -145,22 +150,23 @@ def _open(node: str) -> Response:
         frappe.log_error(title="Collab open: chain_break", message=f"{adapter} document {doc.id}")
         raise content.Refusal(503, "chain_break") from None
     if snapshot is None:
-        return _frame({"state": "unconverted", "proto": content.PROTO})
+        unconverted = {"state": "unconverted", "proto": content.PROTO}
+        return _frame(unconverted)
+
     documents.consider_compaction(adapter, doc.id)
-    return _frame(
-        {
-            **content.open_header(snapshot, can_write=can_write),
-            "limits": content.limits(doc),
-            "rooms": content.rooms(adapter, doc.id, doc.lineage),
-        },
-        content.with_tombstones(snapshot),
-        snapshot["checkpoint"],
-    )
+    header = {
+        **content.open_header(snapshot, can_write=can_write),
+        "limits": content.limits(doc),
+        "rooms": content.rooms(adapter, doc.id, doc.lineage),
+    }
+    rows = content.with_tombstones(snapshot)
+    return _frame(header, rows, snapshot["checkpoint"])
 
 
 def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
     content.require_enabled()
-    adapter = _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
+    principal = frappe.get_request_header(PRINCIPAL_HEADER)
+    adapter = _authorize(node, drive.READ, principal)
     # The epoch is read before the rows, so a quarantine between them shows on the next pull
     doc = _doc(adapter, node)
     try:
@@ -171,15 +177,19 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
     epoch = int(doc.q_epoch)
     if seen_epoch is not None and seen_epoch < epoch:
         # The tab may hold a row now quarantined
-        return _frame({"state": "rebuild", "proto": content.PROTO, "q_epoch": epoch})
+        rebuild = {"state": "rebuild", "proto": content.PROTO, "q_epoch": epoch}
+        return _frame(rebuild)
+
     rows = content.rows_after(adapter, doc.id, max(after, 0))
     documents.consider_compaction(adapter, doc.id)
+    schema_steps = json.loads(doc.schema_steps)
+    schema = schema_steps[-1][1]
     header = {
         "state": "live",
         "proto": content.PROTO,
         "q_epoch": epoch,
         "judged": int(doc.judged),
-        "schema": json.loads(doc.schema_steps)[-1][1],
+        "schema": schema,
         "limits": content.limits(doc),
         "rooms": content.rooms(adapter, doc.id, doc.lineage),
     }
@@ -193,59 +203,73 @@ def _pull(node: str, since: str | None, q_epoch: str | None) -> Response:
 
 def _push(node: str) -> Response:
     content.require_enabled()
-    header, payload = content.parse_push(frappe.request.get_data())
+    body = frappe.request.get_data()
+    header, payload = content.parse_push(body)
     adapter = _authorize(node, drive.EDIT, header.get("principal"))
     doc = _doc(adapter, node)
     try:
-        answer = content.push(
-            adapter, doc.id, header, payload, frappe.session.user, adapters.spec_of(adapter).schema
-        )
+        schema = adapters.spec_of(adapter).schema
+        answer = content.push(adapter, doc.id, header, payload, frappe.session.user, schema)
     except content.Refusal as refusal:
         if refusal.body["collab"] == "compacting":
             documents.consider_compaction(adapter, doc.id, refused=True)
         raise
     documents.touch(adapter, doc.id)
-    documents.consider_compaction(
-        adapter, doc.id, final_from=header["sid"] if header.get("final") is True else None
-    )
+    final_from = header["sid"] if header.get("final") is True else None
+    documents.consider_compaction(adapter, doc.id, final_from=final_from)
     return _json(200, answer)
 
 
 def _stage(node: str, stage_id: str, idx: str) -> Response:
     content.require_enabled()
-    adapter = _authorize(node, drive.EDIT, frappe.get_request_header(PRINCIPAL_HEADER))
-    header, index, piece = content.parse_piece(frappe.request.get_data(), stage_id, idx)
+    principal = frappe.get_request_header(PRINCIPAL_HEADER)
+    adapter = _authorize(node, drive.EDIT, principal)
+    body = frappe.request.get_data()
+    header, index, piece = content.parse_piece(body, stage_id, idx)
     doc = _doc(adapter, node)
-    return _json(200, content.put_piece(adapter, doc.id, stage_id, header, index, piece, frappe.session.user))
+    answer = content.put_piece(adapter, doc.id, stage_id, header, index, piece, frappe.session.user)
+    return _json(200, answer)
 
 
 def _suspect(node: str) -> Response:
     """A tab's row threw when it applied it; anyone who can read the document may say so."""
     content.require_enabled()
-    adapter = _authorize(node, drive.READ, frappe.get_request_header(PRINCIPAL_HEADER))
+    principal = frappe.get_request_header(PRINCIPAL_HEADER)
+    adapter = _authorize(node, drive.READ, principal)
     doc = _doc(adapter, node)
     try:
-        rev = json.loads(frappe.request.get_data() or b"{}").get("rev")
+        body_bytes = frappe.request.get_data() or b"{}"
+        body = json.loads(body_bytes)
+        rev = body.get("rev")
     except (ValueError, AttributeError):
         rev = None
     if type(rev) is not int:
         raise content.Refusal(400, "malformed")
-    return _json(*documents.report_suspect(adapter, doc.id, rev))
+
+    status, answer = documents.report_suspect(adapter, doc.id, rev)
+    return _json(status, answer)
 
 
 def _session(node: str) -> Response:
     content.require_enabled()
-    adapter = _authorize(node, drive.EDIT, frappe.get_request_header(PRINCIPAL_HEADER))
+    principal = frappe.get_request_header(PRINCIPAL_HEADER)
+    adapter = _authorize(node, drive.EDIT, principal)
     doc = _doc(adapter, node)
     try:
-        body = json.loads(frappe.request.get_data() or b"{}")
-        sid, claim = body.get("sid"), body.get("claim")
+        body_bytes = frappe.request.get_data() or b"{}"
+        body = json.loads(body_bytes)
+        sid = body.get("sid")
+        claim = body.get("claim")
     except (ValueError, AttributeError):
         sid = claim = None
-    if not isinstance(sid, str) or len(sid) != 32 or not sid.isalnum():
+    well_formed_sid = isinstance(sid, str) and len(sid) == 32 and sid.isalnum()
+    if not well_formed_sid:
         raise content.Refusal(400, "malformed")
+
     if claim is not None:
-        return _json(200, {"claim": content.claim_session(adapter, doc, sid, claim, frappe.session.user)})
+        claimed = content.claim_session(adapter, doc, sid, claim, frappe.session.user)
+        return _json(200, {"claim": claimed})
+
     client_id = content.issue_session(adapter, doc.id, sid, frappe.session.user)
     return _json(200, {"client_id": client_id})
 
@@ -254,6 +278,7 @@ def _doc(adapter: str, node: str):
     doc = content.find(adapter, node)
     if doc is None:
         raise content.Refusal(409, "unconverted")
+
     return doc
 
 
@@ -263,6 +288,7 @@ def _authorize(node: str, role: int, principal) -> str:
     _require_principal(principal)
     if role == drive.EDIT and frappe.session.user == "Guest":
         raise content.Refusal(401, "signed_out")
+
     adapter = adapter_of(node)
     _check(node, role)
     return adapter
@@ -274,6 +300,7 @@ def adapter_of(node: str) -> str:
     spec = adapters.for_type(content_type) if content_type else None
     if spec is None:
         raise content.Refusal(404, "not_found")
+
     return spec.name
 
 
@@ -298,8 +325,10 @@ def _can(node: str, role: int) -> bool:
 def _require_principal(principal) -> None:
     if principal == frappe.session.user:
         return
+
     if frappe.session.user == "Guest":
         raise content.Refusal(401, "signed_out")
+
     raise content.Refusal(409, "principal_changed")
 
 
@@ -311,11 +340,13 @@ def _answer(handle) -> Response:
 
 
 def _frame(header: dict, rows=(), checkpoint: bytes | None = None) -> Response:
-    return Response(content.frame(header, rows, checkpoint), status=200, mimetype="application/octet-stream")
+    body = content.frame(header, rows, checkpoint)
+    return Response(body, status=200, mimetype="application/octet-stream")
 
 
 def _json(status: int, body: dict) -> Response:
-    return Response(json.dumps(body), status=status, mimetype="application/json")
+    text = json.dumps(body)
+    return Response(text, status=status, mimetype="application/json")
 
 
 HTTP = HttpOwner(

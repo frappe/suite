@@ -465,6 +465,7 @@ class TestWriterInDrive(IntegrationTestCase):
         self.addCleanup(frappe.db.commit)
         self.addCleanup(frappe.db.set_single_value, "Suite Collab Settings", "mode", mode)
         frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
+
         # Registered before the first row exists, so a `setUp` that dies half
         # way still hands its roots back.
         self.addCleanup(self._remove_fixture_rows)

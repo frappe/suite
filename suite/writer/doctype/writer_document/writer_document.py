@@ -67,7 +67,8 @@ class WriterDocument(drive.DriveContent, Document):
         self.drive_touch()
 
     def validate(self):
-        if not self.is_new() and (self.has_value_changed("content") or self.has_value_changed("html")):
+        body_changed = self.has_value_changed("content") or self.has_value_changed("html")
+        if not self.is_new() and body_changed:
             self.refuse_logged()
 
     def apply_fieldlevel_read_permissions(self):

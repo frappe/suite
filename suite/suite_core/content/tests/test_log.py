@@ -29,9 +29,11 @@ def header(**changes) -> dict:
 
 class TestParsePush(UnitTestCase):
     def test_a_push_names_one_sha_per_seq(self):
-        parsed, payload = parse_push(body(header()))
+        pushed = body(header())
+        parsed, payload = parse_push(pushed)
 
-        self.assertEqual(parsed["shas"], [hashlib.sha256(b"\x01").digest()])
+        expected_sha = hashlib.sha256(b"\x01").digest()
+        self.assertEqual(parsed["shas"], [expected_sha])
         self.assertEqual(payload, b"\x01")
 
     def test_malformed_pushes_are_refused_before_anything_is_read(self):
@@ -52,6 +54,7 @@ class TestParsePush(UnitTestCase):
         ):
             with self.subTest(case=case), self.assertRaises(Refusal) as refused:
                 parse_push(body(case))
+
             self.assertEqual(
                 (refused.exception.status, refused.exception.body), (400, {"collab": "malformed"})
             )

@@ -23,10 +23,12 @@ def run(trial: dict, rule) -> dict:
         remapped = rewrite_values(state, rule)
     except Exception as error:
         return {**trial, "error": repr(error)}
+
+    rerun = rewrite_values(remapped, rule)
     return {
         **trial,
         "remapped": base64.b64encode(remapped).decode(),
-        "rerun_unchanged": rewrite_values(remapped, rule) == remapped,
+        "rerun_unchanged": rerun == remapped,
     }
 
 
@@ -34,6 +36,7 @@ if __name__ == "__main__":
     source, target = sys.argv[1:]
     with open(source) as f:
         given = json.load(f)
+
     rule = remap_rule(given["map"])
     with open(target, "w") as f:
         json.dump([run(trial, rule) for trial in given["trials"]], f)

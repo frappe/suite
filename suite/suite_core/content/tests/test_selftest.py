@@ -62,9 +62,11 @@ class TestCollabSelfTest(IntegrationTestCase):
         self.addCleanup(frappe.set_user, "Administrator")
         with patch.object(frappe, "enqueue") as enqueue, self.assertRaises(frappe.PermissionError):
             selftest.run_self_test()
+
         enqueue.assert_not_called()
 
         frappe.set_user("Administrator")
         with patch.object(frappe, "enqueue") as enqueue:
             selftest.run_self_test()
+
         self.assertEqual(enqueue.call_args.args, ("suite.suite_core.content.selftest.self_test",))

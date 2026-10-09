@@ -49,9 +49,11 @@ def quarantine(
         if not locked or locked[0].mode == "purged":
             frappe.db.rollback()
             return []
+
         doc = locked[0]
         if min(revs) <= int(doc.body_rev):
             raise ValueError("a row in the body can't be quarantined")
+
         rows = frappe.db.sql(
             f"""SELECT `u`.`rev`, `u`.`client_id`, `u`.`payload`, `s`.`principal`
             FROM `{table(adapter, "update")}` `u` LEFT JOIN `{table(adapter, "session")}` `s`
@@ -61,37 +63,42 @@ def quarantine(
             as_dict=True,
         )
         tail = [TailRow(int(row.rev), int(row.client_id), readable(bytes(row.payload))) for row in rows]
-        picked, cut = dependents(tail, revs, floor(adapter, doc))
+        kept_clocks = floor(adapter, doc)
+        picked, cut = dependents(tail, revs, kept_clocks)
         if not picked:
             frappe.db.rollback()
             return []
+
         now = now_datetime()
         sessionless = [int(row.rev) for row in rows if int(row.rev) in picked and not row.principal]
         document_owner = owner_of(doc.node) if sessionless else None
         if sessionless and not document_owner:
             raise RuntimeError(f"revs {sessionless} have no session and the document no owner")
+
         for row in rows:
             if int(row.rev) not in picked:
                 continue
+
             payload = bytes(row.payload)
+            recovery_values = (
+                frappe.generate_hash(length=20),
+                doc_id,
+                doc.node,
+                row.principal or document_owner,
+                reason,
+                doc.lineage,
+                hashlib.sha256(payload).hexdigest(),
+                len(payload),
+                payload.hex(),
+                int(row.rev),
+                now,
+            )
             try:
                 frappe.db.sql(
                     f"""INSERT INTO `{table(adapter, "recovery")}`
                     (`id`, `doc_id`, `node`, `owner`, `reason`, `lineage`, `sha256`, `nbytes`, `payload`, `context_rev`, `created`)
                     VALUES (%s, %s, %s, %s, %s, %s, UNHEX(%s), %s, UNHEX(%s), %s, %s)""",
-                    (
-                        frappe.generate_hash(length=20),
-                        doc_id,
-                        doc.node,
-                        row.principal or document_owner,
-                        reason,
-                        doc.lineage,
-                        hashlib.sha256(payload).hexdigest(),
-                        len(payload),
-                        payload.hex(),
-                        int(row.rev),
-                        now,
-                    ),
+                    recovery_values,
                 )
             except Exception as error:
                 # The owner already has a copy of these exact bytes
@@ -113,6 +120,11 @@ def quarantine(
                 WHERE `doc_id` = %s AND `client_id` = %s""",
                 (clock, doc_id, client),
             )
+        base_rev = max(int(doc.body_rev), fallback_rev(adapter, doc_id))
+        tail_params = {
+            "doc": doc_id,
+            "base": base_rev,
+        }
         frappe.db.sql(
             f"""UPDATE `{table(adapter, "doc")}` SET `q_epoch` = `q_epoch` + 1,
             `tail_bytes` = (SELECT COALESCE(SUM(LENGTH(`payload`)), 0) FROM `{table(adapter, "update")}`
@@ -120,7 +132,7 @@ def quarantine(
             `tail_bound` = (SELECT COALESCE(SUM(COALESCE(`bound`, LENGTH(`payload`))), 0) FROM `{table(adapter, "update")}`
                 WHERE `doc_id` = %(doc)s AND `rev` > %(base)s)
             WHERE `id` = %(doc)s""",
-            {"doc": doc_id, "base": max(int(doc.body_rev), fallback_rev(adapter, doc_id))},
+            tail_params,
         )
         frappe.log_error(
             title=f"Collab rows quarantined: {reason}",
@@ -137,7 +149,9 @@ def quarantine(
     except BaseException:
         frappe.db.rollback()
         raise
-    live.publish_ctl(adapter, doc_id, doc.lineage, kind="quarantine", q_epoch=int(doc.q_epoch) + 1)
+
+    q_epoch = int(doc.q_epoch) + 1
+    live.publish_ctl(adapter, doc_id, doc.lineage, kind="quarantine", q_epoch=q_epoch)
     return sorted(picked)
 
 
@@ -151,14 +165,18 @@ def first_unfit(checkpoint: bytes | None, rows: list[bytes], roots: set[str]) ->
     found = compaction.unfit(parts + rows)
     if found and found[0] < len(parts):
         return -1, found[1]
+
     known = ingest.next_clocks(parts)
     for index, payload in enumerate(rows):
         if found and found[0] == len(parts) + index:
             return index, found[1]
+
         update = updates.parse(payload)
         cid = update.structs[0].client if update.structs else 0
-        if any(struct.root is not None and struct.root not in roots for struct in update.structs):
+        unknown_root = any(struct.root is not None and struct.root not in roots for struct in update.structs)
+        if unknown_root:
             return index, "unknown_root"
+
         try:
             row = ingest.admit(update, cid)
             ingest.follows(row, cid, known)
@@ -166,8 +184,10 @@ def first_unfit(checkpoint: bytes | None, rows: list[bytes], roots: set[str]) ->
             return index, "refused_row"
         except ingest.Unclosed as error:
             return index, error.reason
+
         if update.structs:
             known[cid] = row.clock_to
+
     return None
 
 
@@ -183,8 +203,10 @@ def floor(adapter: str, doc: frappe._dict) -> dict[int, int]:
     clocks = start_clocks(doc)
     row = body_row(adapter, doc.node) if int(doc.body_rev) else None
     if row is not None:
-        for client, clock in compaction.state_vector(pycrdt.get_state(row.body)).items():
+        body_state = pycrdt.get_state(row.body)
+        for client, clock in compaction.state_vector(body_state).items():
             clocks[client] = max(clocks.get(client, 0), clock)
+
     return clocks
 
 
@@ -206,21 +228,25 @@ def dependents(tail: list[TailRow], revs: set[int], floor: dict[int, int]) -> tu
         picked |= {row.rev for row in tail if row.client in first and row.rev > first[row.client]}
         cut = {client: floor.get(client, 0) for client in first}
         for row in tail:
-            if row.client in cut and row.rev not in picked and row.update and row.update.structs:
+            kept_with_structs = row.rev not in picked and row.update and row.update.structs
+            if row.client in cut and kept_with_structs:
                 last = row.update.structs[-1]
                 cut[row.client] = max(cut[row.client], last.clock + last.length)
         grown = {row.rev for row in tail if row.rev not in picked and row.update and reaches(row.update, cut)}
         if not grown:
             return picked, cut
+
         picked |= grown
 
 
 def reaches(update: updates.Update, cut: dict[int, int]) -> bool:
     """Whether `update` needs or deletes a writer's content at or past its clock in `cut`."""
-    return any(
+    needs_cut_content = any(
         client in cut and clock >= cut[client] for struct in update.structs for client, clock in struct.refs()
-    ) or any(
+    )
+    deletes_cut_content = any(
         client in cut and clock + length > cut[client]
         for client, ranges in update.deletes.items()
         for clock, length in ranges
     )
+    return needs_cut_content or deletes_cut_content

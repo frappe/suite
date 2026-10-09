@@ -50,25 +50,30 @@ class KernelFailed(Exception):
 def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict | None:
     if not getattr(frappe.local, "job", None):
         raise RuntimeError("the collab kernel runs only in background jobs")
+
     node = usable_node()
     if not node or not bundle.is_file():
         return None
+
     # Node checks the read permission against the real path
     bundle = bundle.resolve()
+    checkpoint_text = base64.b64encode(checkpoint).decode() if checkpoint else None
     request = {
-        "checkpoint": base64.b64encode(checkpoint).decode() if checkpoint else None,
+        "checkpoint": checkpoint_text,
         "rows": [base64.b64encode(row).decode() for row in rows],
     }
+    request_text = json.dumps(request)
+    command = [
+        node,
+        "--permission",
+        f"--allow-fs-read={bundle}",
+        f"--max-old-space-size={HEAP_MB}",
+        str(bundle),
+    ]
     try:
         done = subprocess.run(
-            [
-                node,
-                "--permission",
-                f"--allow-fs-read={bundle}",
-                f"--max-old-space-size={HEAP_MB}",
-                str(bundle),
-            ],
-            input=json.dumps(request),
+            command,
+            input=request_text,
             capture_output=True,
             text=True,
             timeout=TIMEOUT_S,
@@ -78,10 +83,13 @@ def judge(bundle: Path, checkpoint: bytes | None, rows: list[bytes]) -> Verdict 
         answer = json.loads(done.stdout)
         if answer["verdict"] == "clean":
             return Verdict(None)
+
         index = answer["index"]
         if type(index) is not int or not -1 <= index < len(rows):
             raise ValueError("the index names no row")
-        return Verdict(index, plain(str(answer["reason"])))
+
+        reason = plain(str(answer["reason"]))
+        return Verdict(index, reason)
     except subprocess.CalledProcessError as error:
         last = error.stderr.strip().rsplit("\n", 1)[-1]
         raise KernelFailed(f"exit {error.returncode}: {plain(last)}") from error
@@ -95,6 +103,11 @@ def plain(text: str) -> str:
 
 def usable_node() -> str | None:
     version = node_version()
-    if not version or int(version.lstrip("v").split(".")[0]) < NODE_MAJOR:
+    if not version:
         return None
+
+    major = int(version.lstrip("v").split(".")[0])
+    if major < NODE_MAJOR:
+        return None
+
     return shutil.which("node")

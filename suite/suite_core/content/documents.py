@@ -41,7 +41,10 @@ def live_state(adapter: str, node: str) -> pycrdt.Doc | None:
     read = content.read(adapter, doc.id, own_snapshot=False) if doc else None
     if read is None:
         return None
-    parts = ([read["checkpoint"]] if read["checkpoint"] else []) + [payload for _rev, payload in read["rows"]]
+
+    checkpoint_part = [read["checkpoint"]] if read["checkpoint"] else []
+    row_parts = [payload for _rev, payload in read["rows"]]
+    parts = checkpoint_part + row_parts
     return compaction.load(parts)
 
 
@@ -56,16 +59,23 @@ def live_checkpoint(adapter: str, node: str) -> tuple[dict, bytes] | None:
     read = content.read(adapter, doc.id, integrated=True, own_snapshot=False) if doc else None
     if read is None:
         return None
+
     rows = [payload for _rev, payload in read["rows"]]
     if not rows:
         return read, read["checkpoint"] or pycrdt.Doc().get_update()
+
     # pycrdt cannot be interrupted, so a web worker only takes on what a compaction job would
     size = len(read["checkpoint"] or b"") + sum(len(row) for row in rows)
-    if size > scheduling.STATE_MAX or len(rows) > scheduling.TAIL_ROWS:
+    too_big = size > scheduling.STATE_MAX
+    too_many_rows = len(rows) > scheduling.TAIL_ROWS
+    if too_big or too_many_rows:
         raise compaction.CompactionFailed("too_large")
-    result = compaction.compact(read["checkpoint"], rows, spec_of(adapter).roots)
+
+    roots = spec_of(adapter).roots
+    result = compaction.compact(read["checkpoint"], rows, roots)
     if not result.integrated:
         raise compaction.CompactionFailed("fallback")
+
     return read, result.state
 
 
@@ -74,7 +84,10 @@ def copy_log(adapter: str, source_node: str, node: str) -> bool:
     live = live_checkpoint(adapter, source_node)
     if live is None:
         return False
-    content.replace_start(adapter, content.create(adapter, node), live[1], live[0]["schema"])
+
+    read, state = live
+    doc_id = content.create(adapter, node)
+    content.replace_start(adapter, doc_id, state, read["schema"])
     return True
 
 
@@ -87,21 +100,26 @@ def remap_log(adapter: str, node: str, rewrite) -> None:
     doc = content.find(adapter, node)
     if not doc:
         return
+
     read = content.read(adapter, doc.id, own_snapshot=False)
     if read is None:
         return
+
     roots = spec_of(adapter).roots
     state = read["checkpoint"]
     remapped = updates.rewrite_values(state, rewrite)
     if remapped == state:
         return
-    before, after = compaction.load([state]), compaction.load([remapped])
+
+    before = compaction.load([state])
+    after = compaction.load([remapped])
     if (
         compaction.snapshot(after) != compaction.snapshot(before)
         or compaction.content(after, roots) != compaction.content(before, roots, rewrite)
         or updates.rewrite_values(remapped, rewrite) != remapped
     ):
         raise compaction.CompactionFailed("remap_mismatch")
+
     content.replace_start(adapter, doc.id, remapped, read["schema"])
 
 
@@ -129,7 +147,8 @@ def compact(adapter: str, doc_id: str) -> None:
 
 def judge(adapter: str, doc_id: str) -> None:
     spec = spec_of(adapter)
-    if suspect.judge(adapter, doc_id, spec.roots, spec.kernel, spec.owner) in {"clean", "quarantined"}:
+    verdict = suspect.judge(adapter, doc_id, spec.roots, spec.kernel, spec.owner)
+    if verdict in {"clean", "quarantined"}:
         consider_compaction(adapter, doc_id)
 
 
@@ -168,11 +187,13 @@ def consider_compaction(
 def sweep() -> None:
     for name in adapters():
         scheduling.sweep(name, COMPACT, purge_method=DELETE_PURGED, judge_method=JUDGE)
-        for (doc_id,) in frappe.db.sql(
+        touched_before = now_datetime() - TOUCH_EVERY
+        due = frappe.db.sql(
             f"""SELECT `id` FROM `{table(name, "doc")}` WHERE `touched_at` <= %s AND `head_rev` > `touched_rev`
             AND `mode` != 'purged' ORDER BY `touched_at` LIMIT %s""",
-            (now_datetime() - TOUCH_EVERY, TOUCH_BATCH),
-        ):
+            (touched_before, TOUCH_BATCH),
+        )
+        for (doc_id,) in due:
             touch(name, doc_id)
 
 
@@ -184,19 +205,22 @@ def touch(adapter: str, doc_id: str) -> None:
     due = """`id` = %s AND `mode` != 'purged' AND `head_rev` > `touched_rev`
         AND (`touched_at` IS NULL OR `touched_at` <= %s)"""
     now = now_datetime()
+    touched_before = now - TOUCH_EVERY
     doc = table(adapter, "doc")
-    before = frappe.db.sql(f"SELECT `touched_rev` FROM `{doc}` WHERE {due}", (doc_id, now - TOUCH_EVERY))
+    before = frappe.db.sql(f"SELECT `touched_rev` FROM `{doc}` WHERE {due}", (doc_id, touched_before))
     if not before:
         return
+
     frappe.db.sql(
         f"UPDATE `{doc}` SET `touched_at` = %s, `touched_rev` = `head_rev` WHERE {due}",
-        (now, doc_id, now - TOUCH_EVERY),
+        (now, doc_id, touched_before),
     )
     claimed = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
     node, rev = frappe.db.sql(f"SELECT `node`, `touched_rev` FROM `{doc}` WHERE `id` = %s", doc_id)[0]
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     if not claimed:
         return
+
     try:
         spec_of(adapter).touch(node)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit

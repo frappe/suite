@@ -74,18 +74,24 @@ class CheckpointCase(IntegrationTestCase):
         if doc:
             for kind in ("update", "session", "checkpoint", "recovery"):
                 frappe.db.sql(f"DELETE FROM `__writer_content_{kind}` WHERE `doc_id` = %s", doc.id)
+
             frappe.db.sql("DELETE FROM `__writer_content_doc` WHERE `id` = %s", doc.id)
             frappe.db.commit()
 
     def type_into(self, node: str, words: list[str]) -> str:
         """A tab opened on the document types each word as its own row; returns the whole text."""
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
-        header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
+        session_body = json.dumps({"sid": sid}).encode()
+        session = call(routes.sessions_post, node, body=session_body)
+        cid = answer(session)["client_id"]
+
+        opened_bytes = call(routes.document_get, node).get_data()
+        header, checkpoint, rows = read_open(opened_bytes)
         doc = pycrdt.Doc(client_id=cid)
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
                 doc.apply_update(payload)
+
         seen = doc.get_state()
         fragment = doc.get("default", type=pycrdt.XmlFragment)
         text = fragment.children[0] if len(fragment.children) else fragment.children.append(pycrdt.XmlText())
@@ -95,24 +101,24 @@ class CheckpointCase(IntegrationTestCase):
             seen = doc.get_state()
             body = body_for(node, header["lineage"], sid, cid, seq, update)
             self.assertEqual(call(routes.updates_post, node, body=body).status_code, 200)
+
         return str(text)
 
     def doc_row(self, node: str):
         return frappe.db.sql("SELECT * FROM `__writer_content_doc` WHERE `node` = %s", node, as_dict=True)[0]
 
     def checkpoints_of(self, node: str) -> list[tuple[int, bytes, int]]:
-        return [
-            (int(rev), gzip.decompress(bytes(gz)), int(integrated))
-            for rev, gz, integrated in frappe.db.sql(
-                """SELECT `through_rev`, `gz`, `integrated` FROM `__writer_content_checkpoint`
-                WHERE `doc_id` = %s ORDER BY `through_rev`""",
-                self.doc_row(node).id,
-            )
-        ]
+        stored = frappe.db.sql(
+            """SELECT `through_rev`, `gz`, `integrated` FROM `__writer_content_checkpoint`
+            WHERE `doc_id` = %s ORDER BY `through_rev`""",
+            self.doc_row(node).id,
+        )
+        return [(int(rev), gzip.decompress(bytes(gz)), int(integrated)) for rev, gz, integrated in stored]
 
     def body_of(self, node: str) -> bytes:
         """The body Writer's own row holds, as Drive and a version read it."""
-        return base64.b64decode(frappe.db.get_value("Writer Document", {"node": node}, "content") or "")
+        encoded_body = frappe.db.get_value("Writer Document", {"node": node}, "content") or ""
+        return base64.b64decode(encoded_body)
 
     def row_count(self, node: str) -> int:
         return frappe.db.sql(
@@ -121,15 +127,14 @@ class CheckpointCase(IntegrationTestCase):
 
     def set_doc(self, node: str, **values):
         assignments = ", ".join(f"`{key}` = %({key})s" for key in values)
-        frappe.db.sql(
-            f"UPDATE `__writer_content_doc` SET {assignments} WHERE `node` = %(node)s",
-            {**values, "node": node},
-        )
+        params = {**values, "node": node}
+        frappe.db.sql(f"UPDATE `__writer_content_doc` SET {assignments} WHERE `node` = %(node)s", params)
         frappe.db.commit()
 
     def text_of(self, state: bytes) -> str:
         doc = compaction.load([state])
-        return "".join(str(child) for child in doc.get("default", type=pycrdt.XmlFragment).children)
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        return "".join(str(child) for child in fragment.children)
 
     def compact(self, node: str):
         documents.compact(writer_content.ADAPTER, self.doc_row(node).id)
@@ -179,13 +184,13 @@ class TestWriterCheckpoints(CheckpointCase):
 
         modified = frappe.db.get_value("Writer Document", {"node": node}, "modified")
         self.assertEqual(str(modified), "2999-01-02 03:04:05")
+
         self.type_into(node, [" two"])
         frappe.db.sql(set_edited + " AND `rev` = 2", ("2000-01-01", self.doc_row(node).id))
         frappe.db.commit()
         self.compact(node)
-        self.assertEqual(
-            str(frappe.db.get_value("Writer Document", {"node": node}, "modified")), str(modified)
-        )
+        modified_after = frappe.db.get_value("Writer Document", {"node": node}, "modified")
+        self.assertEqual(str(modified_after), str(modified))
 
     def test_a_work_horse_killed_mid_compaction_leaves_every_row_and_commits_nothing(self):
         # A crash, the worker's timeout kill and a memory abort all end the horse with a signal
@@ -217,6 +222,7 @@ class TestWriterCheckpoints(CheckpointCase):
                     documents.compact(writer_content.ADAPTER, doc_id)
             finally:
                 os._exit(0)
+
         return os.waitpid(pid, 0)[1]
 
     def release_places(self):
@@ -247,7 +253,8 @@ class TestWriterCheckpoints(CheckpointCase):
         with patch.object(pycrdt, "__version__", "0.15.0"):
             for _ in range(3):
                 self.compact(node)
-                waits.append(self.doc_row(node).next_compaction_at - frappe.utils.now_datetime())
+                wait = self.doc_row(node).next_compaction_at - frappe.utils.now_datetime()
+                waits.append(wait)
         self.assertLess(waits[0], waits[1])
         self.assertLess(waits[1], waits[2])
 
@@ -289,11 +296,13 @@ class TestWriterCheckpoints(CheckpointCase):
     def test_a_compaction_of_another_lineage_changes_nothing(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two"])
-        snapshot = routes.content.read("writer", self.doc_row(node).id)
+        doc_id = self.doc_row(node).id
+        snapshot = routes.content.read("writer", doc_id)
         rows = [payload for _rev, payload in snapshot["rows"]]
         result = compaction.compact(None, rows, writer_content.ROOTS)
+        other_lineage = {**snapshot, "lineage": "0" * 32}
 
-        self.job(self.doc_row(node).id).install({**snapshot, "lineage": "0" * 32}, result)
+        self.job(doc_id).install(other_lineage, result)
 
         doc = self.doc_row(node)
         self.assertEqual((doc.body_rev, self.body_of(node)), (0, b"\x00\x00"))
@@ -332,9 +341,10 @@ class TestWriterCheckpoints(CheckpointCase):
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
         state = os.urandom(packet // 2 + 2**20)
         result = compaction.Compacted(state=state, integrated=False, report={})
-        snapshot = routes.content.read("writer", self.doc_row(node).id)
+        doc_id = self.doc_row(node).id
+        snapshot = routes.content.read("writer", doc_id)
 
-        self.job(self.doc_row(node).id).keep_fallback(snapshot, result)
+        self.job(doc_id).keep_fallback(snapshot, result)
 
         self.assertEqual(self.checkpoints_of(node), [(1, state, 0)])
 
@@ -342,7 +352,8 @@ class TestWriterCheckpoints(CheckpointCase):
         node = self.new_document()
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
         start = pycrdt.Doc()
-        start["blob"] = pycrdt.Map({"bytes": os.urandom(packet // 2 + 2**20)})
+        blob_bytes = os.urandom(packet // 2 + 2**20)
+        start["blob"] = pycrdt.Map({"bytes": blob_bytes})
         state = start.get_update()
 
         checkpoints.replace_start("writer", self.doc_row(node).id, state, 1)
@@ -356,11 +367,13 @@ class TestWriterCheckpoints(CheckpointCase):
         frappe.db.sql("SET SESSION sql_mode = ''")
         self.addCleanup(frappe.db.sql, "SET SESSION sql_mode = %s", mode)
         packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
-        result = compaction.Compacted(state=os.urandom(packet + 2**20), integrated=False, report={})
-        snapshot = routes.content.read("writer", self.doc_row(node).id)
+        state = os.urandom(packet + 2**20)
+        result = compaction.Compacted(state=state, integrated=False, report={})
+        doc_id = self.doc_row(node).id
+        snapshot = routes.content.read("writer", doc_id)
 
         with self.assertRaises(compaction.CompactionFailed) as failed:
-            self.job(self.doc_row(node).id).keep_fallback(snapshot, result)
+            self.job(doc_id).keep_fallback(snapshot, result)
         frappe.db.rollback()
 
         self.assertEqual(failed.exception.reason, "too_large")
@@ -372,7 +385,9 @@ class TestWriterCheckpoints(CheckpointCase):
         rows = [payload for _rev, payload in snapshot["rows"]]
         result = compaction.compact(snapshot["checkpoint"], rows, writer_content.ROOTS)
         if not integrated:
-            result = compaction.Compacted(compaction.pycrdt.merge_updates(*rows), integrated=False)
+            merged = compaction.pycrdt.merge_updates(*rows)
+            result = compaction.Compacted(merged, integrated=False)
+
         result.ms = 1
         return snapshot, result
 
@@ -382,15 +397,22 @@ class TestWriterCheckpoints(CheckpointCase):
         doc_id, site = self.doc_row(node).id, frappe.local.site
         snapshot, result = self.compacted(node)
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
-        header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
+        session_body = json.dumps({"sid": sid}).encode()
+        session = call(routes.sessions_post, node, body=session_body)
+        cid = answer(session)["client_id"]
+
+        opened_bytes = call(routes.document_get, node).get_data()
+        header, checkpoint, rows = read_open(opened_bytes)
         doc = pycrdt.Doc(client_id=cid)
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
                 doc.apply_update(payload)
+
         seen = doc.get_state()
-        doc.get("default", type=pycrdt.XmlFragment).children[0].insert(4, "two")
-        body = body_for(node, header["lineage"], sid, cid, 1, doc.get_update(seen))
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        fragment.children[0].insert(4, "two")
+        update = doc.get_update(seen)
+        body = body_for(node, header["lineage"], sid, cid, 1, update)
         answered = []
 
         def push_elsewhere():
@@ -398,7 +420,8 @@ class TestWriterCheckpoints(CheckpointCase):
             frappe.connect()
             frappe.set_user(WRITER)
             try:
-                answered.append(call(routes.updates_post, node, body=body).status_code)
+                response = call(routes.updates_post, node, body=body)
+                answered.append(response.status_code)
             finally:
                 frappe.destroy()
 
@@ -466,7 +489,8 @@ class TestWriterCheckpoints(CheckpointCase):
         purge = threading.Thread(target=purge_elsewhere)
 
         def purge_while_writing(query, *args, **kwargs):
-            if "FROM `tabWriter Document`" in str(query) and "FOR UPDATE" in str(query) and not purge.ident:
+            locks_writer_row = "FROM `tabWriter Document`" in str(query) and "FOR UPDATE" in str(query)
+            if locks_writer_row and not purge.ident:
                 purge.start()
                 marking.wait(10)
                 time.sleep(0.5)
@@ -508,6 +532,7 @@ class TestWriterCheckpoints(CheckpointCase):
                     documents.compact(writer_content.ADAPTER, doc_id)
             finally:
                 os._exit(0)
+
         os.waitpid(pid, 0)
         frappe.db.rollback()
         self.release_places()
@@ -521,10 +546,10 @@ class TestWriterCheckpoints(CheckpointCase):
     def test_a_fallback_is_replaced_by_an_integrated_result(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two"])
-        self.job(self.doc_row(node).id).keep_fallback(*self.compacted(node, integrated=False))
-        self.assertEqual(
-            [(rev, integrated) for rev, _state, integrated in self.checkpoints_of(node)], [(2, 0)]
-        )
+        snapshot, fallback = self.compacted(node, integrated=False)
+        self.job(self.doc_row(node).id).keep_fallback(snapshot, fallback)
+        stored = [(rev, integrated) for rev, _state, integrated in self.checkpoints_of(node)]
+        self.assertEqual(stored, [(2, 0)])
         self.set_doc(node, next_compaction_at=None)
         self.type_into(node, [" three"])
 
@@ -582,11 +607,10 @@ class TestWriterCheckpoints(CheckpointCase):
         """What a tab opening now gets: the header, the revs sent as rows, and the text it shows."""
         header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
         parts = [checkpoint] if checkpoint else []
-        return (
-            header,
-            [rev for rev, _ in rows],
-            self.text_of(compaction.pycrdt.merge_updates(*parts, *(p for _, p in rows))),
-        )
+        revs = [rev for rev, _ in rows]
+        state = compaction.pycrdt.merge_updates(*parts, *(p for _, p in rows))
+        text = self.text_of(state)
+        return header, revs, text
 
     def test_opening_a_long_edited_document_reads_its_body_plus_the_tail(self):
         node = self.new_document()
@@ -604,16 +628,19 @@ class TestWriterCheckpoints(CheckpointCase):
         self.type_into(node, ["one ", "two"])
         self.compact(node)
         self.type_into(node, [" three"])
-        snapshot = routes.content.read("writer", self.doc_row(node).id)
-        state = compaction.pycrdt.merge_updates(self.body_of(node), *(p for _rev, p in snapshot["rows"]))
-        self.job(self.doc_row(node).id).keep_fallback(snapshot, compaction.Compacted(state, integrated=False))
+        doc_id = self.doc_row(node).id
+        snapshot = routes.content.read("writer", doc_id)
+        body = self.body_of(node)
+        state = compaction.pycrdt.merge_updates(body, *(p for _rev, p in snapshot["rows"]))
+        fallback = compaction.Compacted(state, integrated=False)
+        self.job(doc_id).keep_fallback(snapshot, fallback)
 
         header, revs, text = self.opened(node)
         self.assertEqual((header["base"], revs, text), (3, [], "one two three"))
 
         frappe.db.sql(
             "UPDATE `__writer_content_checkpoint` SET `through_rev` = 1 WHERE `doc_id` = %s",
-            self.doc_row(node).id,
+            doc_id,
         )
         frappe.db.commit()
 
@@ -625,12 +652,16 @@ class TestWriterCheckpoints(CheckpointCase):
         self.type_into(node, ["one ", "two"])
         self.compact(node)
         self.type_into(node, [" three"])
-        snapshot = routes.content.read("writer", self.doc_row(node).id)
-        state = compaction.pycrdt.merge_updates(self.body_of(node), *(p for _rev, p in snapshot["rows"]))
-        self.job(self.doc_row(node).id).keep_fallback(snapshot, compaction.Compacted(state, integrated=False))
+        doc_id = self.doc_row(node).id
+        snapshot = routes.content.read("writer", doc_id)
+        body = self.body_of(node)
+        state = compaction.pycrdt.merge_updates(body, *(p for _rev, p in snapshot["rows"]))
+        fallback = compaction.Compacted(state, integrated=False)
+        self.job(doc_id).keep_fallback(snapshot, fallback)
+        older_body_gz = gzip.compress(body).hex()
         frappe.db.sql(
             "UPDATE `__writer_content_checkpoint` SET `gz` = UNHEX(%s) WHERE `doc_id` = %s",
-            (gzip.compress(self.body_of(node)).hex(), self.doc_row(node).id),
+            (older_body_gz, doc_id),
         )
         frappe.db.commit()
 
@@ -681,7 +712,8 @@ class TestWriterCheckpoints(CheckpointCase):
             finally:
                 frappe.destroy()
 
-        sql, installed = frappe.db.sql, []
+        sql = frappe.db.sql
+        installed = []
 
         def install_first(query, *args, **kwargs):
             # The install lands after the open read the control row and before it reads the body
@@ -721,9 +753,12 @@ class TestWriterCompactionTriggers(CheckpointCase):
 
     def push_bytes(self, node: str, sizes: list[int], *, final: bool = False) -> None:
         sid = uuid.uuid4().hex
-        cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))["client_id"]
+        session_body = json.dumps({"sid": sid}).encode()
+        session = call(routes.sessions_post, node, body=session_body)
+        cid = answer(session)["client_id"]
         lineage = self.doc_row(node).lineage
-        for seq, update in enumerate(typed(cid, ["x" * size for size in sizes]), start=1):
+        updates = typed(cid, ["x" * size for size in sizes])
+        for seq, update in enumerate(updates, start=1):
             body = body_for(node, lineage, sid, cid, seq, update)
             if final and seq == len(sizes):
                 length = int.from_bytes(body[:4], "big")
@@ -911,22 +946,25 @@ class TestWriterAdmission(CheckpointCase):
 
     def tab(self, node: str) -> tuple[str, int]:
         sid = uuid.uuid4().hex
-        return sid, answer(call(routes.sessions_post, node, body=json.dumps({"sid": sid}).encode()))[
-            "client_id"
-        ]
+        session_body = json.dumps({"sid": sid}).encode()
+        session = call(routes.sessions_post, node, body=session_body)
+        cid = answer(session)["client_id"]
+        return sid, cid
 
     def push(self, node: str, tab: tuple[str, int], seq: int, update: bytes):
-        response = call(
-            routes.updates_post, node, body=push_body(self.doc_row(node).lineage, *tab, seq, 0, update)
-        )
+        lineage = self.doc_row(node).lineage
+        body = push_body(lineage, *tab, seq, 0, update)
+        response = call(routes.updates_post, node, body=body)
         return response.status_code, answer(response)
 
     def editing(self, cid: int, rows: list[bytes], edit) -> bytes:
         doc = pycrdt.Doc(client_id=cid)
         for row in rows:
             doc.apply_update(row)
+
         before = doc.get_state()
-        edit(doc.get("default", type=pycrdt.XmlFragment).children[0])
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        edit(fragment.children[0])
         return doc.get_update(before)
 
     def test_each_row_adds_its_bytes_and_each_word_it_splits_to_the_tail(self):
@@ -983,14 +1021,12 @@ class TestWriterAdmission(CheckpointCase):
             self.assertEqual(self.push(node, tab, 2, de)[0], 200)
             self.compact(node)
 
-        self.assertEqual(
-            [
-                (call.args[1]["kind"], call.kwargs["room"])
-                for call in publish.call_args_list
-                if call.args[0] == "suite_collab_ctl"
-            ],
-            [("room", room)],
-        )
+        control_messages = [
+            (call.args[1]["kind"], call.kwargs["room"])
+            for call in publish.call_args_list
+            if call.args[0] == "suite_collab_ctl"
+        ]
+        self.assertEqual(control_messages, [("room", room)])
 
     def test_a_stale_push_to_a_full_document_is_told_it_is_stale(self):
         node = self.new_document()

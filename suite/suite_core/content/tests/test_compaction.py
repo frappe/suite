@@ -16,7 +16,8 @@ def typing(seed: int, edits: int = 12, client_id: int = 7):
     doc = pycrdt.Doc(client_id=client_id)
     updates = []
     doc.observe(lambda event: updates.append(event.update))
-    paragraph = doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlElement("paragraph"))
+    fragment = doc.get("default", type=pycrdt.XmlFragment)
+    paragraph = fragment.children.append(pycrdt.XmlElement("paragraph"))
     text = paragraph.children.append(pycrdt.XmlText())
     for _ in range(edits):
         length = len(str(text))
@@ -42,13 +43,17 @@ def crafted(*, insert=None, delete=None) -> bytes:
     if insert:
         client, clock, origin, right, text = insert
         encoded = text.encode()
-        out = number(1) + number(1) + number(client) + number(clock) + bytes([0x84 | (0x40 if right else 0)])
-        for found in (origin, right) if right else (origin,):
+        info = 0x84 | (0x40 if right else 0)
+        out = number(1) + number(1) + number(client) + number(clock) + bytes([info])
+        origins = (origin, right) if right else (origin,)
+        for found in origins:
             out += number(found[0]) + number(found[1])
         out += number(len(encoded)) + encoded
+
     if delete:
         client, clock, length = delete
         return out + number(1) + number(client) + number(1) + number(clock) + number(length)
+
     return out + number(0)
 
 
@@ -94,7 +99,8 @@ class TestCompaction(UnitTestCase):
             compact(None, rows[:4] + rows[5:], ROOTS)
         self.assertEqual(failed.exception.reason, "missing_dependency")
 
-        self.assertEqual(text_of(compact(None, rows, ROOTS).state), typed)
+        compacted = compact(None, rows, ROOTS)
+        self.assertEqual(text_of(compacted.state), typed)
 
     def test_another_pycrdt_version_is_refused(self):
         _typed, rows = typing(seed=3)
@@ -126,7 +132,8 @@ class TestCompaction(UnitTestCase):
 
     def test_deleting_content_shrinks_the_compacted_state(self):
         doc = pycrdt.Doc()
-        text = doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText())
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        text = fragment.children.append(pycrdt.XmlText())
         text.insert(0, "x" * 20_000)
         full = compact(None, [doc.get_update()], ROOTS).state
         del text[0:20_000]
@@ -147,7 +154,9 @@ class TestCompaction(UnitTestCase):
     def test_a_row_that_splits_an_emoji_leaves_the_log_uncompacted(self):
         # "a😀b": the text node is clock 0, "a" clock 1, the emoji clocks 2 and 3, "b" clock 4
         doc = pycrdt.Doc(client_id=1)
-        doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText()).insert(0, "a😀b")
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        text = fragment.children.append(pycrdt.XmlText())
+        text.insert(0, "a😀b")
         typed = doc.get_update()
 
         for name, row in (
@@ -160,13 +169,20 @@ class TestCompaction(UnitTestCase):
 
     def test_edits_beside_an_emoji_compact(self):
         doc = pycrdt.Doc(client_id=1)
-        doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText()).insert(0, "a😀b")
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        text = fragment.children.append(pycrdt.XmlText())
+        text.insert(0, "a😀b")
         typed = doc.get_update()
 
-        after = compact(None, [typed, crafted(insert=(2, 0, (1, 3), (1, 4), "x"))], ROOTS)
-        removed = compact(None, [typed, crafted(delete=(1, 2, 2))], ROOTS)
+        typing_after = crafted(insert=(2, 0, (1, 3), (1, 4), "x"))
+        deleting = crafted(delete=(1, 2, 2))
+        after = compact(None, [typed, typing_after], ROOTS)
+        removed = compact(None, [typed, deleting], ROOTS)
 
-        read = lambda state: str(load([state]).get("default", type=pycrdt.XmlFragment))  # noqa: E731
+        def read(state):
+            loaded = load([state])
+            return str(loaded.get("default", type=pycrdt.XmlFragment))
+
         self.assertEqual(read(after.state), "a😀xb")
         self.assertEqual(read(removed.state), "ab")
 
@@ -174,7 +190,8 @@ class TestCompaction(UnitTestCase):
         _typed, rows = typing(seed=3)
 
         with self.assertRaises(CompactionFailed) as failed:
-            compact(None, [*rows, rows[-1] + b"\x00"], ROOTS)
+            malformed = rows[-1] + b"\x00"
+            compact(None, [*rows, malformed], ROOTS)
         self.assertEqual(failed.exception.reason, "malformed_row")
 
     def test_a_result_any_check_disagrees_with_is_refused(self):
@@ -193,7 +210,10 @@ class TestCompaction(UnitTestCase):
             def disagreeing(*args, real=real, call=call, calls=calls):
                 calls.append(1)
                 found = real(*args)
-                return (*found[:-1], {"changed": True}) if len(calls) == call else found
+                if len(calls) == call:
+                    return (*found[:-1], {"changed": True})
+
+                return found
 
             with self.subTest(reason), patch.object(compaction, target, disagreeing):
                 with self.assertRaises(CompactionFailed) as failed:

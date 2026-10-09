@@ -70,11 +70,14 @@ class TestSuspect(CheckpointCase):
         super().setUp()
         if not kernel.usable_node() or not BUNDLE.is_file():
             self.skipTest(f"needs Node {kernel.NODE_MAJOR}+ and the built bundle at {BUNDLE}")
+
         self.requested = []
+
+        def enqueue(method, **kw):
+            self.requested.append((method, kw["doc_id"]))
+
         for stub in (
-            patch.object(
-                frappe, "enqueue", lambda method, **kw: self.requested.append((method, kw["doc_id"]))
-            ),
+            patch.object(frappe, "enqueue", enqueue),
             patch.object(frappe.local, "job", frappe._dict(job_name="test_suspect"), create=True),
         ):
             stub.start()
@@ -87,6 +90,7 @@ class TestSuspect(CheckpointCase):
         def compact(checkpoint, rows, roots):
             if any(row in markers for row in rows):
                 raise compaction.CompactionFailed("unreadable")
+
             return real(checkpoint, rows, roots)
 
         return patch.object(compaction, "compact", compact)
@@ -105,7 +109,8 @@ class TestSuspect(CheckpointCase):
 
     def test_a_row_only_pycrdt_refuses_is_quarantined_and_the_document_compacts_again(self):
         node = self.new_document()
-        a, b = Pen(self, node), Pen(self, node)
+        a = Pen(self, node)
+        b = Pen(self, node)
         a.adds(paragraph("alpha"))
         b.adds(paragraph("beta"))
         a.adds(paragraph("gamma"))
@@ -133,7 +138,8 @@ class TestSuspect(CheckpointCase):
 
     def test_a_table_cell_straight_in_the_body_is_quarantined_with_what_its_writer_wrote_after(self):
         node = self.new_document()
-        a, b = Pen(self, node), Pen(self, node)
+        a = Pen(self, node)
+        b = Pen(self, node)
         a.adds(paragraph("abc"))
         b.adds(paragraph("def"))
         a.adds(pycrdt.XmlElement("tableCell", contents=[paragraph("z")]))
@@ -143,14 +149,12 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.judge(node), "quarantined")
 
         self.assertEqual(self.states(node), ["ok", "ok", "quarantined", "quarantined"])
-        self.assertEqual(
-            [reason for _rev, _owner, reason, _payload in self.recovered(node)], ["editor_schema"] * 2
-        )
+        reasons = [reason for _rev, _owner, reason, _payload in self.recovered(node)]
+        self.assertEqual(reasons, ["editor_schema"] * 2)
         read = routes.content.read(writer_content.ADAPTER, self.doc_row(node).id)
-        self.assertEqual(
-            kernel.judge(BUNDLE, read["checkpoint"], [payload for _rev, payload in read["rows"]]),
-            kernel.Verdict(None),
-        )
+        payloads = [payload for _rev, payload in read["rows"]]
+        verdict = kernel.judge(BUNDLE, read["checkpoint"], payloads)
+        self.assertEqual(verdict, kernel.Verdict(None))
         self.assertIsNone(self.doc_row(node).suspect)
 
     def test_without_node_the_document_is_held_keeps_its_rows_and_pauses_saving(self):
@@ -221,11 +225,13 @@ class TestSuspect(CheckpointCase):
         self.assertEqual(self.requested, [])
 
     def report(self, node: str, rev) -> tuple[int, dict]:
-        response = call(routes.suspect_post, node, body=json.dumps({"rev": rev}).encode())
+        body = json.dumps({"rev": rev}).encode()
+        response = call(routes.suspect_post, node, body=body)
         return response.status_code, answer(response)
 
     def pulled(self, node: str) -> dict:
-        return read_frame(call(routes.updates_get, node).get_data())[0]
+        response = call(routes.updates_get, node)
+        return read_frame(response.get_data())[0]
 
     def test_a_tab_that_cannot_apply_a_row_reads_the_verdict_on_its_pull(self):
         node = self.new_document()
@@ -284,7 +290,8 @@ class TestSuspect(CheckpointCase):
         ensure_user(OUTSIDER)
         node = self.new_document()
         rev = Pen(self, node).adds(paragraph("alpha"))
-        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        writer_principals = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        grant(node, READER, drive.READ, writer_principals)
         frappe.db.commit()
 
         frappe.set_user(OUTSIDER)
@@ -297,7 +304,8 @@ class TestSuspect(CheckpointCase):
         ensure_user(READER)
         node = self.new_document()
         Pen(self, node).adds(paragraph("alpha"))
-        grant(node, READER, drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        writer_principals = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        grant(node, READER, drive.READ, writer_principals)
         frappe.db.commit()
         frappe.set_user(READER)
 
@@ -340,17 +348,14 @@ class TestSuspect(CheckpointCase):
         doc_id = self.doc_row(node).id
 
         def merged(checkpoint, rows, roots):
-            return compaction.Compacted(compaction.pycrdt.merge_updates(*rows), integrated=False)
+            merged_state = compaction.pycrdt.merge_updates(*rows)
+            return compaction.Compacted(merged_state, integrated=False)
 
         with patch.object(compaction, "compact", merged):
             self.job(doc_id).run()
-        self.assertEqual(
-            (
-                [through for through, _state, _integrated in self.checkpoints_of(node)],
-                self.doc_row(node).suspect,
-            ),
-            ([rev], "fallback"),
-        )
+
+        throughs = [through for through, _state, _integrated in self.checkpoints_of(node)]
+        self.assertEqual((throughs, self.doc_row(node).suspect), ([rev], "fallback"))
         self.set_doc(node, suspect=None)
         self.requested.clear()
 
@@ -401,6 +406,7 @@ class TestSuspect(CheckpointCase):
         def compact(checkpoint, rows, roots):
             if failing[0]:
                 raise compaction.CompactionFailed("unreadable")
+
             return real(checkpoint, rows, roots)
 
         def fails_then_judged() -> str | None:
@@ -470,16 +476,19 @@ class TestSuspect(CheckpointCase):
 
         def merged(checkpoint, rows, roots):
             updates = [checkpoint, *rows] if checkpoint else rows
-            return compaction.Compacted(compaction.pycrdt.merge_updates(*updates), integrated=False)
+            merged_state = compaction.pycrdt.merge_updates(*updates)
+            return compaction.Compacted(merged_state, integrated=False)
 
         def falls_back() -> tuple[str | None, int, list]:
             a.adds(paragraph("more"))
             self.requested.clear()
             with patch.object(compaction, "compact", merged):
                 self.job(doc_id).run()
-            alerts = frappe.db.count(
-                "Error Log", {"method": "Collab compaction: fallback", "error": ["like", f"%{doc_id}%"]}
-            )
+            fallback_alerts = {
+                "method": "Collab compaction: fallback",
+                "error": ["like", f"%{doc_id}%"],
+            }
+            alerts = frappe.db.count("Error Log", fallback_alerts)
             return self.doc_row(node).suspect, alerts, self.requested
 
         self.assertEqual(falls_back(), ("fallback", 1, [(JUDGE, doc_id)]))
@@ -592,7 +601,8 @@ class TestSuspect(CheckpointCase):
 
     def test_a_suite_admin_clears_a_held_document_and_saving_goes_on_with_its_rows(self):
         node, doc_id, a = self.held_document()
-        self.assertEqual(a.write(lambda body: body.children.append(paragraph("blocked"))).status_code, 423)
+        response = a.write(lambda body: body.children.append(paragraph("blocked")))
+        self.assertEqual(response.status_code, 423)
         before = self.alerts("suspect cleared")
         backoff = (now_datetime() + timedelta(minutes=2)).replace(microsecond=0)
         self.set_doc(node, next_compaction_at=backoff)
@@ -627,14 +637,12 @@ class TestSuspect(CheckpointCase):
             suspect.hold(writer_content.ADAPTER, doc.id, "kernel_failed", "held by the test")
             documents.clear_suspect(writer_content.ADAPTER, doc.id)
 
-        self.assertEqual(
-            [
-                (call.args[1]["kind"], call.kwargs["room"])
-                for call in publish.call_args_list
-                if call.args[0] == "suite_collab_ctl"
-            ],
-            [("held", room), ("released", room), ("held", room), ("released", room)],
-        )
+        published = [
+            (call.args[1]["kind"], call.kwargs["room"])
+            for call in publish.call_args_list
+            if call.args[0] == "suite_collab_ctl"
+        ]
+        self.assertEqual(published, [("held", room), ("released", room), ("held", room), ("released", room)])
 
     def test_a_refused_row_whose_session_is_gone_is_quarantined_for_the_document_owner(self):
         node = self.new_document()
@@ -672,17 +680,20 @@ class TestSuspect(CheckpointCase):
 
         self.release_places()
         self.assertEqual(self.judge(node), "clean")
-        self.assertFalse(redis.exists(f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}"))
+        compacting_key = f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}"
+        self.assertFalse(redis.exists(compacting_key))
 
     def test_a_re_judge_asked_while_the_judge_runs_is_judged_before_the_judge_ends(self):
         node, doc_id, _a = self.held_document()
         self.set_doc(node, suspect_held=None)
-        real, calls = kernel.judge, []
+        real = kernel.judge
+        calls = []
 
         def judged_while_asked(bundle, checkpoint, rows):
             calls.append(1)
             if len(calls) > 1:
                 return real(bundle, checkpoint, rows)
+
             frappe.set_user(SUITE_ADMIN)
             documents.rejudge_suspect(writer_content.ADAPTER, doc_id)
             frappe.set_user("Administrator")
@@ -755,15 +766,15 @@ class TestSuspect(CheckpointCase):
         ):
             self.judge(node)
 
-        self.assertFalse(
-            get_redis_conn().exists(f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}")
-        )
+        compacting_key = f"suite:collab:compacting:{frappe.local.site}:writer:{doc_id}"
+        self.assertFalse(get_redis_conn().exists(compacting_key))
 
     def test_a_verdict_on_a_compaction_suspect_asks_for_a_compaction_at_once(self):
         for verdict in ("quarantined", "clean"):
             with self.subTest(verdict), patch.object(scheduling, "TAIL_ROWS", 1):
                 node = self.new_document()
-                a, b = Pen(self, node), Pen(self, node)
+                a = Pen(self, node)
+                b = Pen(self, node)
                 a.adds(paragraph("alpha"))
                 b.adds(paragraph("beta"))
                 a.adds(paragraph("gamma"))
@@ -773,7 +784,8 @@ class TestSuspect(CheckpointCase):
                 self.assertGreater(self.doc_row(node).next_compaction_at, now_datetime())
                 self.requested.clear()
 
-                with self.refusing(a.sent[1] if verdict == "quarantined" else b""):
+                refused_row = a.sent[1] if verdict == "quarantined" else b""
+                with self.refusing(refused_row):
                     documents.judge(writer_content.ADAPTER, doc_id)
 
                 doc = self.doc_row(node)

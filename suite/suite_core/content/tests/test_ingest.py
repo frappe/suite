@@ -10,7 +10,8 @@ from suite.suite_core.content.updates import encoded_string, encoded_uint
 def typed(cid: int, texts: list[str]) -> list[bytes]:
     doc = pycrdt.Doc(client_id=cid)
     seen = doc.get_state()
-    text = doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText())
+    fragment = doc.get("default", type=pycrdt.XmlFragment)
+    text = fragment.children.append(pycrdt.XmlText())
     updates = []
     for each in texts:
         text.insert(len(str(text)), each)
@@ -45,24 +46,32 @@ def written(build) -> updates.Update:
     """The update `build` makes in a fresh document as client 5."""
     doc = pycrdt.Doc(client_id=5)
     build(doc)
-    return ingest.check(doc.get_update(), 5).update
+    pushed = doc.get_update()
+    row = ingest.check(pushed, 5)
+    return row.update
 
 
 class TestIngest(UnitTestCase):
     def test_a_tabs_own_typing_passes_with_the_clocks_it_adds(self):
         first, second = typed(5, ["ab", "cd"])
 
+        first_row = ingest.check(first, 5)
+        second_row = ingest.check(second, 5)
+
         # One clock for the text node, then one per character
-        self.assertEqual((ingest.check(first, 5).clock_from, ingest.check(first, 5).clock_to), (0, 3))
-        self.assertEqual((ingest.check(second, 5).clock_from, ingest.check(second, 5).clock_to), (3, 5))
+        self.assertEqual((first_row.clock_from, first_row.clock_to), (0, 3))
+        self.assertEqual((second_row.clock_from, second_row.clock_to), (3, 5))
 
     def test_a_delete_only_row_passes(self):
         doc = pycrdt.Doc(client_id=5)
-        doc.apply_update(typed(6, ["abc"])[0])
+        other_typing = typed(6, ["abc"])[0]
+        doc.apply_update(other_typing)
         before = doc.get_state()
-        del doc.get("default", type=pycrdt.XmlFragment).children[0][0:1]
+        text = doc.get("default", type=pycrdt.XmlFragment).children[0]
+        del text[0:1]
+        deleting = doc.get_update(before)
 
-        row = ingest.check(doc.get_update(before), 5)
+        row = ingest.check(deleting, 5)
 
         self.assertEqual((row.update.structs, row.update.deletes), ([], {6: [(1, 1)]}))
 
@@ -75,9 +84,10 @@ class TestIngest(UnitTestCase):
 
     def test_rows_no_tab_of_this_writer_could_send_are_malformed(self):
         first, _second, third = typed(5, ["a", "b", "c"])
+        other_typing = typed(6, ["a"])[0]
         cases = {
-            "another client's typing": typed(6, ["a"])[0],
-            "two writers": pycrdt.merge_updates(first, typed(6, ["a"])[0]),
+            "another client's typing": other_typing,
+            "two writers": pycrdt.merge_updates(first, other_typing),
             "a gap in the clocks": pycrdt.merge_updates(first, third),
             "unreadable": first[:-1],
             "empty": pycrdt.Doc().get_update(),
@@ -102,7 +112,8 @@ class TestIngest(UnitTestCase):
     def test_a_row_may_make_only_the_shared_types_the_editor_makes(self):
         schema = editor()
         doc = pycrdt.Doc(client_id=5)
-        doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlElement("paragraph"))
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        fragment.children.append(pycrdt.XmlElement("paragraph"))
         element_row = doc.get_update()
         rows = {}
         for name, shared in (("a map", pycrdt.Map()), ("a text", pycrdt.Text("x"))):
@@ -110,34 +121,43 @@ class TestIngest(UnitTestCase):
             doc.get("t", type=pycrdt.Array).append(shared)
             rows[name] = doc.get_update(before)
 
-        self.assertTrue(schema.could_write(ingest.check(element_row, 5).update))
-        self.assertTrue(schema.could_write(ingest.check(typed(5, ["a"])[0], 5).update))
+        element_update = ingest.check(element_row, 5).update
+        typing_update = ingest.check(typed(5, ["a"])[0], 5).update
+
+        self.assertTrue(schema.could_write(element_update))
+        self.assertTrue(schema.could_write(typing_update))
         for name, row in rows.items():
             with self.subTest(name):
-                self.assertFalse(schema.could_write(ingest.check(row, 5).update))
+                shared_update = ingest.check(row, 5).update
+                self.assertFalse(schema.could_write(shared_update))
 
     def test_a_row_may_use_each_name_only_in_its_role_and_hold_no_embed(self):
         schema = editor()
 
         def node(name):
-            return lambda doc: doc.get("default", type=pycrdt.XmlFragment).children.append(
-                pycrdt.XmlElement(name)
-            )
+            def build(doc):
+                fragment = doc.get("default", type=pycrdt.XmlFragment)
+                fragment.children.append(pycrdt.XmlElement(name))
+
+            return build
 
         def marked(key):
             def build(doc):
-                text = doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText())
+                fragment = doc.get("default", type=pycrdt.XmlFragment)
+                text = fragment.children.append(pycrdt.XmlText())
                 text.insert(0, "x", {key: {}})
 
             return build
 
         self.assertTrue(schema.could_write(written(node("paragraph"))))
         self.assertTrue(schema.could_write(written(marked("bold"))))
+
+        embed_row = one_struct(5, encoded_string("{}"))
         wrong = {
             "a mark name as a node": written(node("bold")),
             "a node name as a mark": written(marked("paragraph")),
             "an overlapping mark's key": written(marked("bold--abc")),
-            "an embed": ingest.check(one_struct(5, encoded_string("{}")), 5).update,
+            "an embed": ingest.check(embed_row, 5).update,
         }
         for case, update in wrong.items():
             with self.subTest(case):
@@ -148,5 +168,6 @@ class TestIngest(UnitTestCase):
 
         with patch.object(ingest, "MAX_BYTES", len(payload)):
             ingest.check(payload, 5)
+
         with patch.object(ingest, "MAX_BYTES", len(payload) - 1), self.assertRaises(ValueError):
             ingest.check(payload, 5)

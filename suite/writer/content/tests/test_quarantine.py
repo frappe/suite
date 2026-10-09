@@ -20,23 +20,30 @@ class Tab:
     """A tab with its own session that types into the document's first text."""
 
     def __init__(self, case: TestQuarantine, node: str):
-        self.case, self.node = case, node
+        self.case = case
+        self.node = node
         self.sid = uuid.uuid4().hex
-        self.cid = answer(call(routes.sessions_post, node, body=json.dumps({"sid": self.sid}).encode()))[
-            "client_id"
-        ]
-        self.header, checkpoint, rows = read_open(call(routes.document_get, node).get_data())
+        session_body = json.dumps({"sid": self.sid}).encode()
+        session = answer(call(routes.sessions_post, node, body=session_body))
+        self.cid = session["client_id"]
+        opened = call(routes.document_get, node).get_data()
+        self.header, checkpoint, rows = read_open(opened)
+
         self.doc = pycrdt.Doc(client_id=self.cid)
         for payload in [checkpoint, *(payload for _rev, payload in rows)]:
             if payload:
                 self.doc.apply_update(payload)
+
         self.seq = 0
         self.sent = []
 
     @property
     def text(self) -> pycrdt.XmlText:
         fragment = self.doc.get("default", type=pycrdt.XmlFragment)
-        return fragment.children[0] if len(fragment.children) else fragment.children.append(pycrdt.XmlText())
+        if len(fragment.children):
+            return fragment.children[0]
+
+        return fragment.children.append(pycrdt.XmlText())
 
     def write(self, edit) -> object:
         """Push what `edit(text)` changes, with only its own deletes, as a browser does; answers the response."""
@@ -45,6 +52,7 @@ class Tab:
         with self.doc.transaction():
             edit(self.text)
         self.doc.unobserve(subscription)
+
         [update] = updates
         self.seq += 1
         self.sent.append(update)
@@ -58,9 +66,8 @@ class Tab:
         return answer(response)["rev"]
 
     def catch_up(self):
-        for _rev, payload in routes.content.read(writer_content.ADAPTER, self.case.doc_row(self.node).id)[
-            "rows"
-        ]:
+        read = routes.content.read(writer_content.ADAPTER, self.case.doc_row(self.node).id)
+        for _rev, payload in read["rows"]:
             self.doc.apply_update(payload)
 
 
@@ -76,34 +83,31 @@ class TestQuarantine(CheckpointCase):
         for payload in [read["checkpoint"], *(payload for _rev, payload in read["rows"])]:
             if payload:
                 doc.apply_update(payload)
-        return "".join(str(child) for child in doc.get("default", type=pycrdt.XmlFragment).children)
+
+        fragment = doc.get("default", type=pycrdt.XmlFragment)
+        return "".join(str(child) for child in fragment.children)
 
     def recovered(self, node: str) -> list[tuple]:
-        return [
-            (int(rev), owner, reason, bytes(payload))
-            for rev, owner, reason, payload in frappe.db.sql(
-                """SELECT `context_rev`, `owner`, `reason`, `payload` FROM `__writer_content_recovery`
+        rows = frappe.db.sql(
+            """SELECT `context_rev`, `owner`, `reason`, `payload` FROM `__writer_content_recovery`
                 WHERE `doc_id` = %s ORDER BY `context_rev`""",
-                self.doc_row(node).id,
-            )
-        ]
+            self.doc_row(node).id,
+        )
+        return [(int(rev), owner, reason, bytes(payload)) for rev, owner, reason, payload in rows]
 
     def states(self, node: str) -> list[str]:
-        return [
-            state
-            for (state,) in frappe.db.sql(
-                "SELECT `state` FROM `__writer_content_update` WHERE `doc_id` = %s ORDER BY `rev`",
-                self.doc_row(node).id,
-            )
-        ]
+        rows = frappe.db.sql(
+            "SELECT `state` FROM `__writer_content_update` WHERE `doc_id` = %s ORDER BY `rev`",
+            self.doc_row(node).id,
+        )
+        return [state for (state,) in rows]
 
     def closed(self, node: str, tab: Tab) -> bool:
-        return bool(
-            frappe.db.sql(
-                "SELECT `closed` FROM `__writer_content_session` WHERE `doc_id` = %s AND `sid` = %s",
-                (self.doc_row(node).id, tab.sid),
-            )[0][0]
+        rows = frappe.db.sql(
+            "SELECT `closed` FROM `__writer_content_session` WHERE `doc_id` = %s AND `sid` = %s",
+            (self.doc_row(node).id, tab.sid),
         )
+        return bool(rows[0][0])
 
     def test_a_quarantined_row_takes_its_writers_later_rows_and_keeps_the_others(self):
         node = self.new_document()
@@ -143,16 +147,14 @@ class TestQuarantine(CheckpointCase):
             self.quarantine(node, {9})
             self.quarantine(node, {2})
 
-        self.assertEqual(
-            [call for call in publish.call_args_list if call.args[0].startswith("suite_collab")],
-            [
-                mock.call(
-                    "suite_collab_ctl",
-                    {"lineage": a.header["lineage"], "kind": "quarantine", "q_epoch": 1},
-                    room=room,
-                )
-            ],
-        )
+        collab_calls = [call for call in publish.call_args_list if call.args[0].startswith("suite_collab")]
+        epoch_message = {
+            "lineage": a.header["lineage"],
+            "kind": "quarantine",
+            "q_epoch": 1,
+        }
+        expected = [mock.call("suite_collab_ctl", epoch_message, room=room)]
+        self.assertEqual(collab_calls, expected)
 
     def test_rows_typed_into_quarantined_text_go_with_it(self):
         node = self.new_document()
@@ -274,9 +276,11 @@ class TestQuarantine(CheckpointCase):
         a.typed(5, " gamma")
         self.quarantine(node, {3})
 
-        header, _checkpoint, rows = read_open(call(routes.document_get, node).get_data())
+        opened = call(routes.document_get, node).get_data()
+        header, _checkpoint, rows = read_open(opened)
         self.assertEqual((header["q_epoch"], rows), (1, [(1, a.sent[0]), (2, b.sent[0]), (3, b"")]))
-        header, rows = read_frame(self.pull(node, q_epoch="1").get_data())
+        pulled = self.pull(node, q_epoch="1").get_data()
+        header, rows = read_frame(pulled)
         self.assertEqual(
             (header["state"], header["q_epoch"], [rev for rev, _ in rows]), ("live", 1, [1, 2, 3])
         )
@@ -290,10 +294,13 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual(Tab(self, node).header["q_epoch"], 0)
         self.quarantine(node, {2})
 
-        header, rows = read_frame(self.pull(node, q_epoch="0").get_data())
+        pulled = self.pull(node, q_epoch="0").get_data()
+        header, rows = read_frame(pulled)
         self.assertEqual((header["state"], header["q_epoch"], rows), ("rebuild", 1, []))
         # A tab that sends no epoch is served rows as before
-        self.assertEqual(read_frame(self.pull(node).get_data())[0]["state"], "live")
+        pulled_without_epoch = self.pull(node).get_data()
+        header_without_epoch, _rows = read_frame(pulled_without_epoch)
+        self.assertEqual(header_without_epoch["state"], "live")
         response = self.pull(node, q_epoch="one")
         self.assertEqual((response.status_code, answer(response)["collab"]), (400, "malformed"))
 
@@ -404,7 +411,7 @@ class TestQuarantine(CheckpointCase):
         def under(root: str, kind: int, content: bytes) -> bytes:
             return bytes([kind]) + number(1) + text(root) + content
 
-        for name, payload, reason in (
+        refused_rows = (
             ("empty", lambda cid: b"\x00\x00", "refused_row"),
             ("missing change", lambda cid: crafted(insert=(cid, 0, (cid + 1, 0), None, "x")), "missing_dep"),
             ("JSON", lambda cid: row(cid, under("default", 2, number(1) + text('"1"'))), "refused_row"),
@@ -421,12 +428,14 @@ class TestQuarantine(CheckpointCase):
             ),
             ("unknown root", lambda cid: row(cid, under("elsewhere", 4, text("z"))), "unknown_root"),
             ("clock gap", lambda cid: row(cid, under("default", 4, text("b")), clock=1), "clock_gap"),
-        ):
+        )
+        for name, payload, reason in refused_rows:
             with self.subTest(name):
                 node = self.new_document()
                 a = Tab(self, node)
                 a.typed(0, "alpha")
-                b, c = Tab(self, node), Tab(self, node)
+                b = Tab(self, node)
+                c = Tab(self, node)
                 self.store_raw(node, b, payload(b.cid))
                 c.typed(5, " gamma")
 
@@ -457,7 +466,8 @@ class TestQuarantine(CheckpointCase):
         self.assertEqual(self.stored_text(node), "beta alpha gamma")
 
     def test_a_log_whose_unreadable_row_has_no_owner_is_left_for_later_and_the_rest_are_read(self):
-        orphan, other = self.new_document(), self.new_document()
+        orphan = self.new_document()
+        other = self.new_document()
         a = Tab(self, orphan)
         a.typed(0, "alpha")
         self.store_raw(orphan, a, b"\x01\x01garbage")
@@ -475,7 +485,8 @@ class TestQuarantine(CheckpointCase):
         self.assertIsNotNone(self.doc_row(other).start_clocks)
 
     def test_a_log_purged_while_its_unreadable_row_is_quarantined_is_skipped_and_the_rest_are_read(self):
-        purged, other = self.new_document(), self.new_document()
+        purged = self.new_document()
+        other = self.new_document()
         a = Tab(self, purged)
         a.typed(0, "alpha")
         self.store_raw(purged, a, b"\x01\x01garbage")
@@ -494,16 +505,18 @@ class TestQuarantine(CheckpointCase):
         with patch.object(quarantine, "quarantine", purged_after):
             routes.content.backfill_clocks(writer_content.ADAPTER, writer_content.document_owner)
 
-        clocks = dict(
-            frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))
+        clock_rows = frappe.db.sql(
+            "SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,)
         )
+        clocks = dict(clock_rows)
         self.assertEqual((clocks[ids[0]], clocks[ids[1]] is not None), (None, True))
         self.assertEqual(
             frappe.db.count("Error Log", {"method": f"Collab clocks not read for writer log {ids[0]}"}), 0
         )
 
     def test_a_log_purged_before_its_clocks_are_read_is_skipped_and_the_rest_are_read(self):
-        purged, other = self.new_document(), self.new_document()
+        purged = self.new_document()
+        other = self.new_document()
         Tab(self, purged).typed(0, "alpha")
         Tab(self, other).typed(0, "beta")
         ids = (self.doc_row(purged).id, self.doc_row(other).id)
@@ -520,9 +533,10 @@ class TestQuarantine(CheckpointCase):
         with patch.object(backfill, "read", purged_first):
             routes.content.backfill_clocks(writer_content.ADAPTER, writer_content.document_owner)
 
-        clocks = dict(
-            frappe.db.sql("SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,))
+        clock_rows = frappe.db.sql(
+            "SELECT `id`, `start_clocks` FROM `__writer_content_doc` WHERE `id` IN %s", (ids,)
         )
+        clocks = dict(clock_rows)
         self.assertEqual((clocks[ids[0]], clocks[ids[1]] is not None), (None, True))
         self.assertEqual(
             frappe.db.count("Error Log", {"method": f"Collab clocks not read for writer log {ids[0]}"}), 0

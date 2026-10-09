@@ -31,26 +31,31 @@ def run(job: dict) -> dict:
     checkpoint = decode(job["cp"]) if job.get("cp") else None
     rows = [decode(row) for row in job["rows"]]
     stages = [[], [decode(job["heal"])]] if job.get("heal") else [[]]
-    roots = roots_of(([checkpoint] if checkpoint else []) + rows)
+    parts = ([checkpoint] if checkpoint else []) + rows
+    roots = roots_of(parts)
     outcomes = []
     for arriving in stages:
         rows += arriving
         try:
-            checkpoint, rows = compact(checkpoint, rows, roots).state, []
+            compacted = compact(checkpoint, rows, roots)
+            checkpoint, rows = compacted.state, []
             outcomes.append("compacted")
         except CompactionFailed as failed:
             outcomes.append(failed.reason)
+
+    fully_compacted = checkpoint and not rows
     return {
         "id": job["id"],
         "outcomes": outcomes,
-        "cp": base64.b64encode(checkpoint).decode() if checkpoint and not rows else None,
+        "cp": base64.b64encode(checkpoint).decode() if fully_compacted else None,
     }
 
 
 if __name__ == "__main__":
-    jobs = [
-        job
-        for name in ("robust", "emoji")
-        for job in json.loads(gzip.decompress((HERE / f"{name}.json.gz").read_bytes()))
-    ]
-    pathlib.Path(sys.argv[1]).write_text(json.dumps([run(job) for job in jobs]))
+    jobs = []
+    for name in ("robust", "emoji"):
+        compressed = (HERE / f"{name}.json.gz").read_bytes()
+        jobs += json.loads(gzip.decompress(compressed))
+
+    results = [run(job) for job in jobs]
+    pathlib.Path(sys.argv[1]).write_text(json.dumps(results))

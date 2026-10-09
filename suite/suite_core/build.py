@@ -12,7 +12,8 @@ import re
 
 import frappe
 
-PAGE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "www", "suite.html")
+PACKAGE_DIR = os.path.dirname(os.path.dirname(__file__))
+PAGE = os.path.join(PACKAGE_DIR, "www", "suite.html")
 STAMP = re.compile(r'<meta name="suite-build" content="(\d+)"')
 
 _page = {"mtime": None, "build": None}
@@ -23,10 +24,13 @@ def current_build() -> str | None:
         mtime = os.stat(PAGE).st_mtime
     except OSError:
         return None
+
     if _page["mtime"] != mtime:
         with open(PAGE) as page:
-            stamp = STAMP.search(page.read())
-        _page.update(mtime=mtime, build=stamp and stamp.group(1))
+            html = page.read()
+        stamp = STAMP.search(html)
+        build = stamp and stamp.group(1)
+        _page.update(mtime=mtime, build=build)
     return _page["build"]
 
 
@@ -34,6 +38,8 @@ def after_request(response):
     build = current_build()
     if build:
         response.headers["X-Suite-Build"] = build
-    min_builds = frappe.get_cached_doc("Suite Settings").get("min_builds")
+    settings = frappe.get_cached_doc("Suite Settings")
+    min_builds = settings.get("min_builds")
     if min_builds:
-        response.headers["X-Suite-Min-Builds"] = json.dumps(frappe.parse_json(min_builds))
+        parsed = frappe.parse_json(min_builds)
+        response.headers["X-Suite-Min-Builds"] = json.dumps(parsed)

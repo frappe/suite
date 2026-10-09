@@ -55,29 +55,45 @@ def parse_piece(body: bytes, idx: str) -> tuple[dict, int, bytes]:
     """Split `u32 hlen | header JSON | piece` and check the piece's place in its change."""
     if len(body) < 4:
         raise Malformed
+
     (length,) = struct.unpack(">I", body[:4])
     if length > HEADER_MAX or len(body) < 4 + length:
         raise Malformed
+
     try:
         header = json.loads(body[4 : 4 + length])
         sha_total = bytes.fromhex(header["sha_total"])
     except (ValueError, TypeError, KeyError):
         raise Malformed from None
-    if not isinstance(header, dict) or not all(
-        type(header.get(key)) is int for key in ("from", "to", "total_len")
-    ):
+
+    if not isinstance(header, dict):
         raise Malformed
-    if not isinstance(header.get("lineage"), str) or not valid_id(header.get("sid")) or len(sha_total) != 32:
+
+    seqs_are_ints = all(type(header.get(key)) is int for key in ("from", "to", "total_len"))
+    if not seqs_are_ints:
         raise Malformed
+
+    lineage_valid = isinstance(header.get("lineage"), str)
+    sid_valid = valid_id(header.get("sid"))
+    sha_valid = len(sha_total) == 32
+    if not (lineage_valid and sid_valid and sha_valid):
+        raise Malformed
+
     if header["from"] < 1 or header["to"] < header["from"] or header["total_len"] < 1:
         raise Malformed
+
     if header["total_len"] > capacity.edit_max():
         raise TooLarge
+
     if not idx.isdigit() or int(idx) >= count(header["total_len"]):
         raise Malformed
-    index, piece = int(idx), body[4 + length :]
-    if len(piece) != min(PIECE_MAX, header["total_len"] - index * PIECE_MAX):
+
+    index = int(idx)
+    piece = body[4 + length :]
+    expected_len = min(PIECE_MAX, header["total_len"] - index * PIECE_MAX)
+    if len(piece) != expected_len:
         raise Malformed
+
     header["sha_total"] = sha_total
     return header, index, piece
 
@@ -98,10 +114,13 @@ def store(
     for row in held:
         if (row.sid, row.seq_from, row.seq_to, row.total_len, bytes(row.sha_total)) != shape:
             raise Conflict
+
         if row.idx == index:
             if not row.same:
                 raise Conflict
+
             return touch(adapter, doc_id, stage_id)
+
     # Locked, so a principal's puts take turns and each sees what the one before it kept
     staged = frappe.db.sql(
         f"""SELECT COALESCE(SUM(LENGTH(`stage`.`bytes`)), 0) FROM `{stage}` `stage`
@@ -110,8 +129,10 @@ def store(
         WHERE `stage`.`doc_id` = %s AND `session`.`principal` = %s FOR UPDATE""",
         (doc_id, principal),
     )
-    if int(staged[0][0]) + len(piece) > DOC_MAX:
+    staged_bytes = int(staged[0][0])
+    if staged_bytes + len(piece) > DOC_MAX:
         raise Full
+
     frappe.db.sql(
         f"""INSERT IGNORE INTO `{stage}`
         (`doc_id`, `stage_id`, `idx`, `purpose`, `sid`, `seq_from`, `seq_to`, `total_len`, `sha_total`, `bytes`, `created`)
@@ -141,16 +162,23 @@ def assemble(adapter: str, doc_id: str, stage_id: str, header: dict) -> bytes:
     )
     if not rows:
         raise Incomplete
+
     first = rows[0]
     if (first.sid, first.seq_from, first.seq_to) != (header["sid"], header["from"], header["to"]):
         raise Conflict
-    if [row.idx for row in rows] != list(range(count(first.total_len))):
+
+    expected_indexes = list(range(count(first.total_len)))
+    if [row.idx for row in rows] != expected_indexes:
         raise Incomplete
+
     payload = b"".join(bytes(row.bytes) for row in rows)
-    if len(payload) != first.total_len or hashlib.sha256(payload).digest() != bytes(first.sha_total):
+    length_wrong = len(payload) != first.total_len
+    sha_wrong = hashlib.sha256(payload).digest() != bytes(first.sha_total)
+    if length_wrong or sha_wrong:
         drop(adapter, doc_id, stage_id)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         raise Incomplete
+
     return payload
 
 

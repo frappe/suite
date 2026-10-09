@@ -7,14 +7,17 @@ from suite.suite_core.content.updates import encoded_string, encoded_uint, parse
 
 def typed(text: str, client_id: int = 5) -> pycrdt.Doc:
     doc = pycrdt.Doc(client_id=client_id)
-    doc.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlText()).insert(0, text)
+    fragment = doc.get("default", type=pycrdt.XmlFragment)
+    paragraph = fragment.children.append(pycrdt.XmlText())
+    paragraph.insert(0, text)
     return doc
 
 
 class TestParse(UnitTestCase):
     def test_clocks_and_deletes_match_pycrdts_own_reading(self):
         doc = typed("hello 😀 wörld 中文")
-        del doc.get("default", type=pycrdt.XmlFragment).children[0][1:3]
+        text = doc.get("default", type=pycrdt.XmlFragment).children[0]
+        del text[1:3]
         doc.get("meta", type=pycrdt.Map)["k"] = [1, "two", {"three": None}]
 
         update = parse(doc.get_update())
@@ -26,7 +29,8 @@ class TestParse(UnitTestCase):
         self.assertEqual(update.deletes, {5: [(2, 2)]})
 
     def test_an_emoji_is_two_clocks_split_only_in_its_middle(self):
-        update = parse(typed("a😀b").get_update())
+        doc = typed("a😀b")
+        update = parse(doc.get_update())
 
         [_text_node, string] = update.structs
         self.assertEqual((string.clock, string.length, string.pairs), (1, 4, [3]))
@@ -40,7 +44,8 @@ class TestParse(UnitTestCase):
         text.insert(1, "x")
         del text[2:3]
 
-        update = parse(second.get_update(before))
+        edit = second.get_update(before)
+        update = parse(edit)
 
         self.assertEqual(update.split_points(), {(5, 2), (5, 3)})
 
@@ -49,7 +54,11 @@ class TestParse(UnitTestCase):
         body = doc.get("default", type=pycrdt.XmlFragment)
         paragraph = body.children.append(pycrdt.XmlElement("paragraph", {"textAlign": "left"}))
         text = paragraph.children.append(pycrdt.XmlText())
-        text.insert(0, "hi", {"link": {"href": "https://x"}, "comment--a1b2": {"id": "c1"}})
+        marks = {
+            "link": {"href": "https://x"},
+            "comment--a1b2": {"id": "c1"},
+        }
+        text.insert(0, "hi", marks)
         doc.get("meta", type=pycrdt.Map)["firstTabLabel"] = {"value": "One"}
 
         names = parse(doc.get_update()).names
@@ -75,11 +84,14 @@ class TestParse(UnitTestCase):
 
         # Only containers count: what the innermost one holds does not change its level
         for inner in ("", "1"):
-            for kind, payload in kinds(nested(100, inner)).items():
+            at_limit = kinds(nested(100, inner))
+            for kind, payload in at_limit.items():
                 with self.subTest(kind, inner=inner):
                     self.assertEqual(parse(payload).structs[0].length, 1)
+
             for depth in (101, 200_000):
-                for kind, payload in kinds(nested(depth, inner)).items():
+                past_limit = kinds(nested(depth, inner))
+                for kind, payload in past_limit.items():
                     with self.subTest(kind, inner=inner, depth=depth), self.assertRaises(ValueError):
                         parse(payload)
 
@@ -94,10 +106,12 @@ class TestParse(UnitTestCase):
             bytes([117, 1, 125, 1]),
             bytes([118, 1]) + encoded_string("k") + bytes([125, 1]),
         ):
+            at_limit = nested(100, inner)
+            past_limit = nested(101, inner)
             with self.subTest(inner=inner):
-                self.assertEqual(parse(nested(100, inner)).structs[0].length, 1)
+                self.assertEqual(parse(at_limit).structs[0].length, 1)
                 with self.assertRaises(ValueError):
-                    parse(nested(101, inner))
+                    parse(past_limit)
 
     def test_integers_past_what_yjs_holds_exactly_are_refused(self):
         def written(client=5, clock=0, origin=None) -> bytes:
@@ -156,14 +170,22 @@ def pictured(client_id: int = 5) -> pycrdt.Doc:
     """Every kind of value a remap must reach, and text that names the same id."""
     doc = pycrdt.Doc(client_id=client_id)
     body = doc.get("default", type=pycrdt.XmlFragment)
-    body.children.append(
-        pycrdt.XmlElement("image", {"src": "/embed.get?id=OLD", "data-node": "OLD", "alt": "x"})
-    )
+    image_attributes = {
+        "src": "/embed.get?id=OLD",
+        "data-node": "OLD",
+        "alt": "x",
+    }
+    body.children.append(pycrdt.XmlElement("image", image_attributes))
     text = body.children.append(pycrdt.XmlText())
     text.insert(0, "the OLD text stays")
     text.format(0, 3, {"link": {"href": "/embed.get?id=OLD"}})
     text.insert_embed(len(str(text)), {"src": "OLD"})
-    doc.get("meta", type=pycrdt.Map)["poster"] = {"src": "OLD", "sizes": ["OLD", 2], "keep": True}
+    poster = {
+        "src": "OLD",
+        "sizes": ["OLD", 2],
+        "keep": True,
+    }
+    doc.get("meta", type=pycrdt.Map)["poster"] = poster
     return doc
 
 
@@ -171,7 +193,9 @@ class TestRewriteValues(UnitTestCase):
     def test_values_are_rewritten_and_text_and_structs_are_not(self):
         doc = pictured()
 
-        rewritten = load([rewrite_values(doc.get_update(), swap)])
+        state = doc.get_update()
+        rewritten_state = rewrite_values(state, swap)
+        rewritten = load([rewritten_state])
 
         self.assertEqual(snapshot(rewritten), snapshot(doc))
         body = rewritten.get("default", type=pycrdt.XmlFragment)
@@ -191,26 +215,34 @@ class TestRewriteValues(UnitTestCase):
         )
 
     def test_concurrent_overwrites_leave_no_old_id_outside_the_text(self):
-        first, second = pictured(5), pycrdt.Doc(client_id=6)
+        first = pictured(5)
+        second = pycrdt.Doc(client_id=6)
         second.apply_update(first.get_update())
         before = first.get_state()
-        first.get("default", type=pycrdt.XmlFragment).children[0].attributes["src"] = "/embed.get?id=OLD&a"
-        second.get("default", type=pycrdt.XmlFragment).children[0].attributes["src"] = "/embed.get?id=OLD&b"
-        first.apply_update(second.get_update(before))
+        first_image = first.get("default", type=pycrdt.XmlFragment).children[0]
+        second_image = second.get("default", type=pycrdt.XmlFragment).children[0]
+        first_image.attributes["src"] = "/embed.get?id=OLD&a"
+        second_image.attributes["src"] = "/embed.get?id=OLD&b"
+        second_edit = second.get_update(before)
+        first.apply_update(second_edit)
 
         state = first.get_update()
         rewritten = rewrite_values(state, swap)
 
         self.assertEqual(rewritten.count(b"OLD"), 1, "only the text still says OLD")
-        self.assertEqual(snapshot(load([rewritten])), snapshot(first))
+        reloaded = load([rewritten])
+        self.assertEqual(snapshot(reloaded), snapshot(first))
 
     def test_nothing_to_rewrite_keeps_every_byte_and_a_rerun_changes_nothing(self):
         state = pictured().get_update()
 
         self.assertEqual(rewrite_values(state, lambda value: value), state)
+
         once = rewrite_values(state, swap)
         self.assertEqual(rewrite_values(once, swap), once)
 
     def test_a_malformed_update_is_refused(self):
+        truncated = pictured().get_update()[:-1]
+
         with self.assertRaises(ValueError):
-            rewrite_values(pictured().get_update()[:-1], swap)
+            rewrite_values(truncated, swap)

@@ -64,24 +64,33 @@ def check(payload: bytes, cid: int) -> Row:
     """The row `cid` pushed, or `ValueError` when it is malformed: too large, unreadable, or refused by `admit`."""
     if len(payload) > MAX_BYTES:
         raise ValueError("update too large")
-    return admit(updates.parse(payload), cid)
+
+    update = updates.parse(payload)
+    return admit(update, cid)
 
 
 def admit(update: updates.Update, cid: int) -> Row:
     """The row `update` makes for `cid`, or `ValueError` when it is empty, written by another client,
     holds a gap, or holds content no collab adapter writes."""
-    if not update.structs and not any(update.deletes.values()):
+    has_deletes = any(update.deletes.values())
+    if not update.structs and not has_deletes:
         raise ValueError("an empty row")
+
     for struct in update.structs:
         if struct.client != cid:
             raise ValueError("written by another client")
+
         if struct.kind == SKIP:
             raise ValueError("a gap in the writer's clocks")
+
         if struct.kind in REFUSED_KINDS:
             raise ValueError(f"refused content {struct.kind}")
+
     if not update.structs:
         return Row(update, 0, 0)
-    first, last = update.structs[0], update.structs[-1]
+
+    first = update.structs[0]
+    last = update.structs[-1]
     return Row(update, first.clock, last.clock + last.length)
 
 
@@ -89,15 +98,19 @@ def next_clocks(payloads: Iterable[bytes]) -> dict[int, int]:
     """Each writer's next clock once `payloads` are stored: every clock below it is in them."""
     clocks: dict[int, int] = {}
     for payload in payloads:
-        for struct in updates.parse(payload).structs:
+        update = updates.parse(payload)
+        for struct in update.structs:
             clocks[struct.client] = max(clocks.get(struct.client, 0), struct.clock + struct.length)
+
     return clocks
 
 
 def close(adapter: str, doc_id: str, row: Row, cid: int, start: dict[int, int]) -> None:
     """Refuse a row that does not continue its writer's clocks, or that needs a struct neither
     committed nor in the row. Run under the document's lock, which every clock change takes."""
-    follows(row, cid, committed_clocks(adapter, doc_id, referenced_clients(row, cid), start))
+    clients = referenced_clients(row, cid)
+    committed = committed_clocks(adapter, doc_id, clients, start)
+    follows(row, cid, committed)
 
 
 def follows(row: Row, cid: int, committed: dict[int, int]) -> None:
@@ -105,11 +118,13 @@ def follows(row: Row, cid: int, committed: dict[int, int]) -> None:
     known = dict(committed)
     if row.update.structs and row.clock_from != known.get(cid, 0):
         raise Unclosed("clock_gap", clock=known.get(cid, 0))
+
     for struct in row.update.structs:
         # A struct can only follow what is committed or earlier in the row, never itself or a later struct
         for ref in struct.refs():
             if ref[1] >= known.get(ref[0], 0):
                 raise Unclosed("missing_dep", client=ref[0], clock=ref[1])
+
         known[cid] = struct.clock + struct.length
     for client, ranges in row.update.deletes.items():
         for clock, length in ranges:
@@ -120,12 +135,14 @@ def follows(row: Row, cid: int, committed: dict[int, int]) -> None:
 def committed_clocks(adapter: str, doc_id: str, clients: set[int], start: dict[int, int]) -> dict[int, int]:
     """The next clock of each of `clients` in the log: from its session, or from the start a copy began with."""
     clocks = {client: start.get(client, 0) for client in clients}
-    for client, clock in frappe.db.sql(
+    sessions = frappe.db.sql(
         f"""SELECT `client_id`, `next_clock` FROM `{table(adapter, "session")}`
         WHERE `doc_id` = %s AND `client_id` IN %s""",
         (doc_id, tuple(clients)),
-    ):
+    )
+    for client, clock in sessions:
         clocks[int(client)] = max(clocks[int(client)], int(clock or 0))
+
     return clocks
 
 
@@ -133,4 +150,5 @@ def referenced_clients(row: Row, cid: int) -> set[int]:
     clients = {cid, *row.update.deletes}
     for struct in row.update.structs:
         clients.update(client for client, _clock in struct.refs())
+
     return clients

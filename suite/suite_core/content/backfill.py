@@ -20,31 +20,32 @@ def backfill_clocks(adapter: str, owner_of: Callable[[str], str | None]) -> None
             log = read(adapter, doc_id)
             if log is None:
                 continue
+
             unreadable = {rev for rev, payload in log["rows"] if quarantine.readable(payload) is None}
             if unreadable:
                 quarantine.quarantine(adapter, doc_id, unreadable, "malformed_row", owner_of)
                 log = read(adapter, doc_id)
                 if log is None:
                     continue
-            clocks = ingest.next_clocks(
-                ([log["checkpoint"]] if log["checkpoint"] else [])
-                + [payload for _rev, payload in log["rows"]]
-            )
+
+            checkpoint_payloads = [log["checkpoint"]] if log["checkpoint"] else []
+            row_payloads = [payload for _rev, payload in log["rows"]]
+            clocks = ingest.next_clocks(checkpoint_payloads + row_payloads)
         except (ChainBroken, ValueError, RuntimeError):
             frappe.log_error(f"Collab clocks not read for {adapter} log {doc_id}")
             continue
-        sessions = {
-            int(client)
-            for (client,) in frappe.db.sql(
-                f"SELECT `client_id` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s", doc_id
-            )
-        }
+
+        session_clients = frappe.db.sql(
+            f"SELECT `client_id` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s", doc_id
+        )
+        sessions = {int(client) for (client,) in session_clients}
         for client in sessions:
             frappe.db.sql(
                 f"""UPDATE `{table(adapter, "session")}` SET `next_clock` = %s
                 WHERE `doc_id` = %s AND `client_id` = %s AND `next_clock` IS NULL""",
                 (clocks.get(client, 0), doc_id, client),
             )
+
         start = {client: clock for client, clock in clocks.items() if client not in sessions}
         frappe.db.sql(
             f"UPDATE `{table(adapter, 'doc')}` SET `start_clocks` = %s WHERE `id` = %s",

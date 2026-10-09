@@ -24,7 +24,8 @@ EDIT_MAX = 4 * 2**20
 
 def edit_max() -> int:
     """The largest change one push may commit; escaping can double its bytes on the way to the database."""
-    packet = int(frappe.db.sql("SELECT @@max_allowed_packet")[0][0])
+    found = frappe.db.sql("SELECT @@max_allowed_packet")
+    packet = int(found[0][0])
     return min(EDIT_MAX, (packet - 2**20) // 2)
 
 
@@ -43,7 +44,9 @@ def bound(update: updates.Update, nbytes: int) -> int:
     for struct in update.structs:
         if struct.kind != ingest.SKIP:
             own |= {(struct.client, struct.clock), (struct.client, struct.clock + struct.length)}
-    return nbytes + SPLIT_COST * len(update.split_points() - own)
+
+    splits = update.split_points() - own
+    return nbytes + SPLIT_COST * len(splits)
 
 
 def admit(doc, update: updates.Update, row_bound: int, now: datetime) -> None:
@@ -53,17 +56,27 @@ def admit(doc, update: updates.Update, row_bound: int, now: datetime) -> None:
     to compact, nothing can make room, so a push that adds and doesn't fit is full
     for good; one that only deletes is taken, as it can name only structs the state holds.
     """
-    state, tail = int(doc.state_bytes), int(doc.tail_bound)
+    state = int(doc.state_bytes)
+    tail = int(doc.tail_bound)
     tail_rows = int(doc.tail_rows)
     adds = bool(update.structs)
     if adds and state >= STATE_MAX:
         raise Full("doc_full", FULL_RETRY_MS)
+
     cap = STATE_MAX if adds else STATE_MAX + DELETE_ROOM
-    if state + tail + row_bound <= cap and tail_rows < TAIL_ROWS_MAX:
+    under_cap = state + tail + row_bound <= cap
+    tail_has_room = tail_rows < TAIL_ROWS_MAX
+    if under_cap and tail_has_room:
         return
+
     if not tail_rows:
         if not adds:
             return
+
         raise Full("doc_full", FULL_RETRY_MS)
-    wait = max(0, (doc.next_compaction_at - now).total_seconds() * 1000) if doc.next_compaction_at else 0
-    raise Full("compacting", int(wait) + int(doc.last_compaction_ms or COMPACTION_MS))
+
+    wait = 0
+    if doc.next_compaction_at:
+        wait = max(0, (doc.next_compaction_at - now).total_seconds() * 1000)
+    compaction_ms = int(doc.last_compaction_ms or COMPACTION_MS)
+    raise Full("compacting", int(wait) + compaction_ms)

@@ -48,6 +48,7 @@ def consider(
     )
     if not doc:
         return
+
     closing = refused
     if final_from and not closing:
         closing = not frappe.db.sql(
@@ -55,6 +56,7 @@ def consider(
             AND `last_push_at` > %s LIMIT 1""",
             (doc_id, final_from, now_datetime() - QUIET),
         )
+
     if due(doc[0], now_datetime(), closing=closing):
         request(adapter, doc_id, method)
 
@@ -69,16 +71,17 @@ def due(doc, now, *, closing: bool = False) -> bool:
     """
     if int(doc.head_rev) == int(doc.base) or doc.get("suspect"):
         return False
+
     if doc.next_compaction_at and doc.next_compaction_at > now:
         return False
+
     state = int(doc.state_bytes)
-    return (
-        closing
-        or int(doc.tail_bytes) >= max(TAIL_MIN, min(state // 4, (STATE_MAX - state) // 2))
-        or int(doc.tail_bound) >= max(TAIL_MIN, (STATE_MAX - state) // 2)
-        or int(doc.tail_rows) >= TAIL_ROWS
-        or (doc.oldest is not None and doc.oldest <= now - AGE)
-    )
+    room_left = STATE_MAX - state
+    tail_bytes_big = int(doc.tail_bytes) >= max(TAIL_MIN, min(state // 4, room_left // 2))
+    tail_bound_big = int(doc.tail_bound) >= max(TAIL_MIN, room_left // 2)
+    tail_rows_many = int(doc.tail_rows) >= TAIL_ROWS
+    tail_old = doc.oldest is not None and doc.oldest <= now - AGE
+    return closing or tail_bytes_big or tail_bound_big or tail_rows_many or tail_old
 
 
 def sweep(
@@ -92,11 +95,13 @@ def sweep(
     """Request compactions for documents whose tail has waited too long, whatever their traffic,
     the deletion of purged logs and expired staged pieces and the judging of suspect documents a job has not finished."""
     stage.expire(adapter, now_datetime())
+
     if purge_method:
         for (doc_id,) in frappe.db.sql(
             f"SELECT `id` FROM `{table(adapter, 'doc')}` WHERE `mode` = 'purged' LIMIT %s", limit
         ):
             enqueue(purge_method, f"suite-collab-purge-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
+
     if judge_method:
         for (doc_id,) in frappe.db.sql(
             f"""SELECT `id` FROM `{table(adapter, "doc")}` WHERE `suspect` IS NOT NULL AND `suspect_held` IS NULL
@@ -104,6 +109,7 @@ def sweep(
             limit,
         ):
             enqueue(judge_method, f"suite-collab-judge-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
+
     now = now_datetime()
     for (doc_id,) in frappe.db.sql(
         f"""SELECT `d`.`id` FROM {based(adapter)} `d` JOIN `{table(adapter, "update")}` `u`
@@ -128,6 +134,7 @@ def request(adapter: str, doc_id: str, method: str) -> None:
     global paused_until
     if time.monotonic() < paused_until:
         return
+
     try:
         enqueue(method, f"suite-collab-compact-{adapter}-{doc_id}", adapter=adapter, doc_id=doc_id)
     except Exception:

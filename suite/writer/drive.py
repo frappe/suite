@@ -180,9 +180,12 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
+
     if content.find(ADAPTER, row.node):
         raise drive.DriveConflict(_("Open the document to download it"))
-    return io.BytesIO((row.html or "").encode("utf-8")), HTML_MIME
+
+    html_bytes = (row.html or "").encode("utf-8")
+    return io.BytesIO(html_bytes), HTML_MIME
 
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
@@ -193,6 +196,7 @@ def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html", "collab"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
+
     try:
         live = documents.live_checkpoint(ADAPTER, row.node)
     except (content.ChainBroken, compaction.CompactionFailed) as unready:
@@ -203,10 +207,12 @@ def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
         read, state = live
         payload = version_payload(read, state)
         with _readable_body():
-            payload["media"] = sorted(
-                _fragment_ids(compaction.load([state]).get(BODY_FRAGMENT, type=pycrdt.XmlFragment))
-            )
-        return io.BytesIO(json.dumps(payload).encode("utf-8")), VERSION_MIME
+            loaded = compaction.load([state])
+            fragment = loaded.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
+            payload["media"] = sorted(_fragment_ids(fragment))
+        payload_bytes = json.dumps(payload).encode("utf-8")
+        return io.BytesIO(payload_bytes), VERSION_MIME
+
     payload = {
         "schema": VERSION_SCHEMA,
         "content": row.content or EMPTY_BODY,
@@ -227,6 +233,7 @@ def restore_version(docname: str, stream) -> None:
     node = frappe.db.get_value(DOCTYPE, docname, "node")
     if content.find(ADAPTER, node):
         raise drive.DriveConflict(_("Open the document to restore this version"))
+
     payload = _version_payload(_read_bounded(stream))
     frappe.db.set_value(
         DOCTYPE,
@@ -275,12 +282,15 @@ def used_nodes(docname: str) -> set[str]:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         return set()
+
     found = _ids_in(row.html or "")
     with _readable_body():
         state = documents.live_state(ADAPTER, row.node)
         if state is None:
             return found | _body_ids(row.content)
-        return found | _fragment_ids(state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment))
+
+        fragment = state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
+        return found | _fragment_ids(fragment)
 
 
 def remap_media(docname: str, mapping: dict[str, str]) -> None:
@@ -290,6 +300,7 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
     row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
+
     logged = content.find(ADAPTER, row.node)
     values = {"html": _remap_text(row.html or "", mapping)}
     body = None if logged else _remap_body(row.content, mapping)
@@ -297,8 +308,9 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
         values["content"] = body
     frappe.db.set_value(DOCTYPE, docname, values, update_modified=False)
     if logged:
+        rule = remap_rule(mapping)
         try:
-            documents.remap_log(ADAPTER, row.node, remap_rule(mapping))
+            documents.remap_log(ADAPTER, row.node, rule)
         except (ValueError, compaction.CompactionFailed) as refused:
             raise drive.DriveConflict(_("The copy's pictures could not be moved to it")) from refused
 
@@ -371,8 +383,10 @@ def _version_payload(raw: bytes) -> dict:
     # restore its own source text as HTML.
     if not isinstance(payload, dict):
         return {"content": EMPTY_BODY, "html": text, "collab": 0}
+
     if payload.get("schema") == "writer-document/2":
         raise drive.DriveConflict(_("This version can be restored only while collaboration is on"))
+
     if payload.get("schema") != VERSION_SCHEMA:
         frappe.throw(
             _("This Writer version declares an unknown schema"),

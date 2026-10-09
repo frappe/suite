@@ -51,14 +51,12 @@ def self_test() -> dict:
         "nofork": bool(sbool(os.environ.get("FRAPPE_BACKGROUND_WORKERS_NOFORK", False))),
     }
     passed = report["pycrdt"] == compaction.PYCRDT and report["compaction"] == "pass"
-    frappe.db.set_single_value(
-        "Suite Collab Settings",
-        {
-            "self_test_at": now_datetime(),
-            "self_test_passed": int(passed),
-            "self_test_report": json.dumps(report, indent=1, ensure_ascii=False),
-        },
-    )
+    settings = {
+        "self_test_at": now_datetime(),
+        "self_test_passed": int(passed),
+        "self_test_report": json.dumps(report, indent=1, ensure_ascii=False),
+    }
+    frappe.db.set_single_value("Suite Collab Settings", settings)
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     return report
 
@@ -67,13 +65,18 @@ def fixture() -> list[bytes]:
     rows = []
     first: pycrdt.Doc = pycrdt.Doc(client_id=1)
     first.observe(lambda event: rows.append(event.update))
-    paragraph = first.get("default", type=pycrdt.XmlFragment).children.append(pycrdt.XmlElement("paragraph"))
+    first_fragment = first.get("default", type=pycrdt.XmlFragment)
+    paragraph = first_fragment.children.append(pycrdt.XmlElement("paragraph"))
     text = paragraph.children.append(pycrdt.XmlText())
     text.insert(0, "Hello world 😀")
+
     second: pycrdt.Doc = pycrdt.Doc(client_id=2)
     second.apply_update(first.get_update())
     second.observe(lambda event: rows.append(event.update))
-    second.get("default", type=pycrdt.XmlFragment).children[0].children[0].insert(0, "Oh, ")
+    second_fragment = second.get("default", type=pycrdt.XmlFragment)
+    second_text = second_fragment.children[0].children[0]
+    second_text.insert(0, "Oh, ")
+
     del text[6:11]
     text.insert(6, "there")
     first.get("meta", type=pycrdt.Map)["firstTabLabel"] = "Notes"
@@ -85,8 +88,10 @@ def compaction_check() -> str:
         compacted = compaction.compact(None, fixture(), ROOTS)
     except compaction.CompactionFailed as failed:
         return failed.reason
+
     if not compacted.integrated:
         return "fallback"
+
     doc = compaction.load([compacted.state])
     found = (
         str(doc.get("default", type=pycrdt.XmlFragment)),
@@ -94,7 +99,10 @@ def compaction_check() -> str:
         compaction.snapshot(doc),
     )
     expected = (EXPECTED_TEXT, {"firstTabLabel": "Notes"}, (EXPECTED_CLOCKS, EXPECTED_DELETED))
-    return "pass" if found == expected else "content_mismatch"
+    if found != expected:
+        return "content_mismatch"
+
+    return "pass"
 
 
 def node_version() -> str | None:
@@ -102,10 +110,10 @@ def node_version() -> str | None:
     node = shutil.which("node")
     if not node:
         return None
+
     try:
-        return subprocess.run(
-            [node, "--version"], capture_output=True, text=True, timeout=10, check=True
-        ).stdout.strip()
+        result = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=10, check=True)
+        return result.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
 

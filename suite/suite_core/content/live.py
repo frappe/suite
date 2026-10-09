@@ -25,29 +25,39 @@ def rooms(adapter: str, doc_id: str, lineage: str) -> dict:
     """The rooms a tab joins now: this epoch's and the next, with the server's clock to time them by."""
     now = time.time()
     epoch = int(now // EPOCH_SECONDS)
+    this_room = room(adapter, doc_id, lineage, epoch)
+    next_room = room(adapter, doc_id, lineage, epoch + 1)
     return {
         "epoch": epoch,
-        "keys": [room(adapter, doc_id, lineage, epoch), room(adapter, doc_id, lineage, epoch + 1)],
+        "keys": [this_room, next_room],
         "epoch_seconds": EPOCH_SECONDS,
         "server_time": now,
     }
 
 
 def room(adapter: str, doc_id: str, lineage: str, epoch: int) -> str:
-    key = hmac.new(get_encryption_key().encode(), b"suite-collab-rooms", hashlib.sha256).digest()
+    site_key = get_encryption_key().encode()
+    key = hmac.new(site_key, b"suite-collab-rooms", hashlib.sha256).digest()
     name = f"suite-collab-room|1|{adapter}|{doc_id}|{lineage}|{epoch}".encode()
     digest = hmac.new(key, name, hashlib.sha256).digest()
-    return "sc:" + base64.urlsafe_b64encode(digest).decode()[:32]
+    digest_text = base64.urlsafe_b64encode(digest).decode()
+    return "sc:" + digest_text[:32]
 
 
 def publish_row(adapter: str, doc_id: str, lineage: str, rev: int, schema: int, payload: bytes) -> None:
     inline = base64.b64encode(payload).decode() if len(payload) <= INLINE_MAX else None
-    message = {"lineage": lineage, "rev": rev, "schema": schema, "u": inline}
+    message = {
+        "lineage": lineage,
+        "rev": rev,
+        "schema": schema,
+        "u": inline,
+    }
     publish(adapter, doc_id, lineage, "suite_collab_row", message)
 
 
 def publish_ctl(adapter: str, doc_id: str, lineage: str, **message) -> None:
-    publish(adapter, doc_id, lineage, "suite_collab_ctl", {"lineage": lineage, **message})
+    ctl_message = {"lineage": lineage, **message}
+    publish(adapter, doc_id, lineage, "suite_collab_ctl", ctl_message)
 
 
 def publish_change(adapter: str, doc_id: str, kind: str) -> None:
@@ -59,8 +69,9 @@ def publish_change(adapter: str, doc_id: str, kind: str) -> None:
 
 def publish(adapter: str, doc_id: str, lineage: str, event: str, message: dict) -> None:
     epoch = int(time.time() // EPOCH_SECONDS)
+    room_name = room(adapter, doc_id, lineage, epoch)
     try:
-        frappe.publish_realtime(event, message, room=room(adapter, doc_id, lineage, epoch))
+        frappe.publish_realtime(event, message, room=room_name)
     except Exception:
         # The change is committed; tabs that miss it pull
         pass
