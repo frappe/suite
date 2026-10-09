@@ -323,19 +323,7 @@
     :open="mobileSelectionMode"
     :actions="selectActions"
     :extra-options="folderSelectionOptions"
-  >
-    <AdaptiveDropdown
-      v-model:open="showMoveToSheet"
-      :options="moveToOptions"
-      :title="__('Move To')"
-    />
-    <AdaptiveDropdown v-model:open="showAddToSheet" :options="addToOptions" :title="__('Add To')" />
-    <AdaptiveDropdown
-      v-model:open="showRemoveFromSheet"
-      :options="removeFromOptions"
-      :title="__('Remove From')"
-    />
-  </MobileSelectionBar>
+  />
 </template>
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown, usePageMeta } from 'frappe-ui'
@@ -396,7 +384,6 @@ import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectAct
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { appPageMeta } from '@/platform/page-meta'
 
 const {
@@ -533,36 +520,15 @@ const {
 })
 
 // The folder menus join the phone selection bar's More sheet, each opening as a sheet of its own.
-const showMoveToSheet = ref(false)
-const showAddToSheet = ref(false)
-const showRemoveFromSheet = ref(false)
 const folderSelectionOptions = computed(() => [
   ...(showMoveTo.value
-    ? [
-        {
-          label: __('Move To'),
-          icon: FolderInput,
-          onClick: () => (showMoveToSheet.value = true),
-        },
-      ]
+    ? [{ label: __('Move To'), icon: FolderInput, options: moveToOptions.value }]
     : []),
   ...(showAddTo.value
-    ? [
-        {
-          label: __('Add To'),
-          icon: FolderPlus,
-          onClick: () => (showAddToSheet.value = true),
-        },
-      ]
+    ? [{ label: __('Add To'), icon: FolderPlus, options: addToOptions.value }]
     : []),
   ...(showRemoveFrom.value
-    ? [
-        {
-          label: __('Remove From'),
-          icon: FolderMinus,
-          onClick: () => (showRemoveFromSheet.value = true),
-        },
-      ]
+    ? [{ label: __('Remove From'), icon: FolderMinus, options: removeFromOptions.value }]
     : []),
 ])
 // Selecting doesn't force a collapsed date group or stack open: ticking either one is how you act on

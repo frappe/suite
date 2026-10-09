@@ -3,7 +3,8 @@
 	     nav for thumb reach, fixed over it with safe-area padding so entering or leaving selection
 	     never shifts the list, and teleported to Mail's overlay layer: inside the layout's `isolate`
 	     stacking context, no z-index could beat the nav. Four labelled actions and More: unlabelled
-	     icons have no tooltips on touch. The rest, and any `extraOptions`, live in the More sheet. -->
+	     icons have no tooltips on touch. The rest, and any `extraOptions`, live in the More sheet; an
+	     extra option with `options` of its own opens them as a sheet chained from More. -->
   <Teleport :to="overlayLayer ?? 'body'">
     <div
       v-if="open"
@@ -32,7 +33,12 @@
       </div>
 
       <AdaptiveDropdown v-model:open="showMore" :options="moreOptions" />
-      <slot />
+      <AdaptiveDropdown
+        :open="!!chained"
+        :options="chained?.options ?? []"
+        :title="chained?.title"
+        @update:open="(open: boolean) => !open && (chained = null)"
+      />
     </div>
   </Teleport>
 </template>
@@ -43,8 +49,11 @@ import { Ellipsis } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import type { SelectAction } from '@/apps/mail/utils/selectActions'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
-type Option = { label: string; icon: unknown; onClick: () => void }
+type MenuOption = { label: string; icon?: unknown; onClick?: () => void }
+// A More entry: an action, or a menu of its own (the folder menus) that opens as a chained sheet.
+type Option = { label: string; icon: unknown; onClick?: () => void; options?: MenuOption[] }
 
 const {
   open,
@@ -54,10 +63,17 @@ const {
 
 const overlayLayer = usePortalTarget()
 const showMore = ref(false)
+const chained = ref<{ title: string; options: MenuOption[] } | null>(null)
 
 const visible = computed(() => actions.filter((a) => a.condition()))
 const moreOptions = computed(() => [
   ...visible.value.slice(4).map((a) => ({ label: a.label, icon: a.icon, onClick: a.onClick })),
-  ...extraOptions,
+  ...extraOptions.map((option) => ({
+    label: option.label,
+    icon: option.icon,
+    onClick: option.options
+      ? () => (chained.value = { title: option.label, options: option.options! })
+      : option.onClick,
+  })),
 ])
 </script>

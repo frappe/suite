@@ -391,6 +391,8 @@ const resetThreads = () => {
   // and hides its threads).
   collapsedGroups.value = []
   expandedStacks.value = new Set()
+  // Ticked threads belong to the list they were ticked in; another folder or filter starts clear.
+  resetSelections()
   void threads.refetch().catch(() => {})
   refreshCounts()
 }
@@ -1124,9 +1126,10 @@ const copyIds = (threads: Thread[]) =>
 const copySnapshot = (threads: Thread[]) =>
   threads.flatMap((t) => (t.messages ?? []).flatMap(mailCopies)).map(mailSnapshot)
 
-// Runs `request` once per account, and arms an Undo that puts each account's mail back exactly as it
-// was. The Undo waits for the action to land (an earlier restore would be overwritten by it) and does
-// nothing if it failed, since a failed action has already put the list back.
+// Runs `request` once per account, and arms an Undo that puts back exactly the accounts whose request
+// went through, as they were. The Undo waits for every account to answer (a restore that ran first
+// would be overwritten), so when one account fails the others can still be taken back: the error
+// toast offers the Undo too.
 const actPerAccount = (
   threads: Thread[],
   request: (account: string, rows: Thread[]) => Promise<unknown>,
@@ -1135,26 +1138,35 @@ const actPerAccount = (
 ) => {
   const groups = byAccount(threads)
   const snapshots = groups.map(([account, rows]) => [account, copySnapshot(rows)] as const)
-  const forward = Promise.all(groups.map(([account, rows]) => request(account, rows))).then(
-    refreshCounts,
-    (error) => {
-      refreshThreads()
-      throw error
-    },
+  const settled = Promise.allSettled(groups.map(([account, rows]) => request(account, rows)))
+  const landed = settled.then((results) =>
+    groups.filter((_, i) => results[i].status === 'fulfilled').map(([account]) => account),
   )
   const undoAction = () =>
-    void forward.then(
-      () =>
-        raiseOptimisticToast(
-          Promise.all(snapshots.map(([account, mails]) => restoreMails(account, mails))).then(() =>
-            refreshThreads(),
-          ),
-          undoSuccess,
+    void landed.then((accounts) => {
+      const restoring = snapshots.filter(([account]) => accounts.includes(account))
+      if (!restoring.length) return
+      raiseOptimisticToast(
+        Promise.all(restoring.map(([account, mails]) => restoreMails(account, mails))).then(() =>
+          refreshThreads(),
         ),
-      () => {},
-    )
+        undoSuccess,
+      )
+    })
   setUndoAction(undoAction)
-  raiseOptimisticToast(forward, done, undoAction)
+  void settled.then((results) => {
+    refreshCounts()
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    const undo = { label: __('Undo'), onClick: undoAction }
+    if (!failure) return raiseToast(done, 'success', undo)
+    refreshThreads()
+    const someLanded = results.some((r) => r.status === 'fulfilled')
+    raiseToast(
+      (failure.reason as Error)?.message || __('Action failed.'),
+      'error',
+      someLanded ? undo : undefined,
+    )
+  })
 }
 
 const setThreadsSeen = (threads: Thread[], seen: boolean) => {
