@@ -2217,7 +2217,6 @@ import { detectSeries } from '../../engine/patterns/index.js'
 import { createPivotEngine } from '../../engine/pivot.js'
 import { createProtectionEngine } from '../../engine/protection.js'
 import { deleteMap, insertMap, moveMap } from '../../engine/ref-remap.js'
-import { createSheet } from '../../engine/sheet.js'
 import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
@@ -2341,58 +2340,6 @@ const brandMenuOptions = computed(() => [
 
 // ── Engine instances ──────────────────────────────────────────────────────────
 
-const sheet = createSheet({
-  onCellChanged(id, displayValue) {
-    // Range-scoped cond-format rules (color-scale, data-bar, icon-set) cache
-    // per-rule min/max stats — any cell change can shift those bounds, so the
-    // cache must be cleared before the next paint.
-    condFormat?.invalidate()
-    // A chart may source from this cell — bump the chart data version so the
-    // overlay's matrix cache re-pulls. Drag/resize/scroll don't fire cell-change
-    // callbacks, so those keep hitting the cache (the reason it exists).
-    chartDataVersion.value++
-    if (showFormulas.value) {
-      grid?.setCell(id, String(sheet.getCell(id) ?? ''))
-      return
-    }
-    const fmt = formats.get(id, currentSheet.value)
-    const displayed = fmt.numberFormat
-      ? applyNumberFmt(displayValue, fmt.numberFormat)
-      : displayValue
-    grid?.setCell(id, displayed)
-  },
-  // Bulk-write callback. Two flavours:
-  //   - `affected = null` — wholesale rewrite (import / load / restore).
-  //     The whole sheet may have changed, so do a full _repopulateGrid.
-  //   - `affected = Set<cellId>` — incremental write (paste, future
-  //     fill/format ops). Only repaint the cells the engine flagged.
-  //     For a paste of 50 cells in a 5k-cell sheet this is 50 grid
-  //     updates instead of 5k, which is where the perf trace pinned
-  //     onCellsChanged at 181 ms self time after the snapshot fix.
-  onCellsChanged(_sheet, affected) {
-    condFormat?.invalidate()
-    // Source data for any chart may have moved — invalidate the overlay's matrix
-    // cache (kept stale on drag/scroll, which don't reach this callback).
-    chartDataVersion.value++
-    if (!affected) {
-      _repopulateGrid()
-      return
-    }
-    const sn = currentSheet.value
-    for (const id of affected) {
-      const fmt = formats.get(id, sn)
-      const displayValue = sheet.getDisplayValue(id)
-      grid?.setCell(
-        id,
-        fmt.numberFormat ? applyNumberFmt(displayValue, fmt.numberFormat) : displayValue,
-      )
-    }
-    // A bulk edit (paste/fill) can change a pivot's source data; recompute so
-    // pivot output cells don't lag. affectsPivot() short-circuits when this
-    // sheet feeds no pivot, keeping the cheap incremental path cheap.
-    recomputePivotsForSheet(sn)
-  },
-})
 // The open tab. The editor owns it; IronCalc's sheet list sets it on load.
 const currentSheet = ref('Sheet1')
 // IronCalc: { client, provider, offSheets, offVersion } once started (see _startEngine).
@@ -2429,10 +2376,6 @@ const _builtinFns = new Set(getFunctionNames())
 const namedRanges = createNamedRanges({
   isBuiltinFunction: (n) => _builtinFns.has(n),
 })
-
-// Plug the named-range resolver into the sheet engine so `=Revenue` etc.
-// resolve at evaluate-time without crossing engine boundaries via imports.
-sheet.setNamedRangeResolver?.((name) => namedRanges.resolve(name))
 
 // Dialog state — toolbar / context-menu entries flip this open. Changes
 // inside the dialog (add/edit/delete) mark the workbook dirty and push a
@@ -4046,7 +3989,6 @@ const {
 } = useCollaboration({
   sheetId: computed(() => props.id),
   currentSheet,
-  getSheet: () => sheet,
   repopulateGrid: _repopulateGrid,
   onRefused: () => emit('access-refused'),
   credentialFetch: props.credentialFetch,
@@ -6054,6 +5996,8 @@ function _afterHistoryNavigate() {
   grid?.setMarchingAnts(null)
   clipboard.clear()
   clipboardHas.value = false
+  // An undo or redo changes the document like any edit, so it is saved.
+  isDirty.value = true
 }
 function undo() {
   if (!history.undo()) return

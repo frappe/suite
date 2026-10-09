@@ -127,7 +127,8 @@ function _throttle(fn, wait) {
  * @param {{
  *   sheetId:        import('vue').Ref<string>,
  *   currentSheet:   import('vue').Ref<string>,
- *   getSheet:       () => object,
+ *   getSheet?:      () => object | null,  the engine cell sync binds to; none
+ *                   means presence and cursors only
  *   repopulateGrid: () => void,
  *   _self?:         string,
  *   _realtime?:     { on: Function, off: Function },
@@ -263,7 +264,9 @@ export function useCollaboration({
     if (_doc) _stop()
     _sheetId = docId
 
-    const sheet = getSheet()
+    // Cell sync patches a sheet engine's setCell. IronCalc has none to patch,
+    // so until collaboration moves to it, only presence and cursors run.
+    const sheet = getSheet?.() ?? null
     const identity = _readUserIdentity()
 
     // 1. Fresh Y.Doc. For v2 we leave hydration to the Hocuspocus client
@@ -277,14 +280,16 @@ export function useCollaboration({
     //    remote writes and apply them through the engine. Cross-sheet
     //    remote writes still need a full canvas repopulate because the
     //    engine's onCellChanged callback paints to the active grid only.
-    _binding = bindCells({
-      doc: _doc,
-      sheet,
-      getCurrentSheet: () => currentSheet.value,
-      onRemoteSheetChange(name) {
-        if (name !== currentSheet.value) repopulateGrid()
-      },
-    })
+    _binding = sheet
+      ? bindCells({
+          doc: _doc,
+          sheet,
+          getCurrentSheet: () => currentSheet.value,
+          onRemoteSheetChange(name) {
+            if (name !== currentSheet.value) repopulateGrid()
+          },
+        })
+      : null
 
     if (_collabV2Enabled()) {
       // Hocuspocus path. The client connects to the collab server over
