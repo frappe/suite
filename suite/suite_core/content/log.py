@@ -536,15 +536,18 @@ def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: b
                 None
                 if integrated
                 else frappe.db.sql(
-                    f"""SELECT `through_rev`, `gz`, `chain` FROM `{table(adapter, "checkpoint")}`
+                    f"""SELECT `through_rev`, `gz`, `chain`, `sha256` FROM `{table(adapter, "checkpoint")}`
                     WHERE `doc_id` = %s AND `through_rev` > %s ORDER BY `through_rev` DESC LIMIT 1""",
                     (doc_id, base),
                 )
             )
             if fallback:
-                through, gz, stored_chain = fallback[0]
-                base, checkpoint, chain = int(through), gzip.decompress(bytes(gz)), bytes(stored_chain)
-                whole = True
+                through, gz, stored_chain, stored_sha = fallback[0]
+                state = gzip.decompress(bytes(gz))
+                # A fallback that fails its sha is passed over; every edit after the body is still there
+                if hashlib.sha256(state).digest() == bytes(stored_sha):
+                    base, checkpoint, chain = int(through), state, bytes(stored_chain)
+                    whole = True
             stored = frappe.db.sql(
                 f"""SELECT `rev`, `payload`, `sha256`, `state` FROM `{table(adapter, "update")}`
                 WHERE `doc_id` = %s AND `rev` > %s ORDER BY `rev`""",

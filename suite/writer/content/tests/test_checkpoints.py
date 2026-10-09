@@ -620,6 +620,24 @@ class TestWriterCheckpoints(CheckpointCase):
         header, revs, text = self.opened(node)
         self.assertEqual((header["base"], revs, text), (2, [3], "one two three"))
 
+    def test_a_fallback_that_fails_its_sha_is_passed_over_for_the_body(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two"])
+        self.compact(node)
+        self.type_into(node, [" three"])
+        snapshot = routes.content.read("writer", self.doc_row(node).id)
+        state = compaction.pycrdt.merge_updates(self.body_of(node), *(p for _rev, p in snapshot["rows"]))
+        self.job(self.doc_row(node).id).keep_fallback(snapshot, compaction.Compacted(state, integrated=False))
+        frappe.db.sql(
+            "UPDATE `__writer_content_checkpoint` SET `gz` = UNHEX(%s) WHERE `doc_id` = %s",
+            (gzip.compress(self.body_of(node)).hex(), self.doc_row(node).id),
+        )
+        frappe.db.commit()
+
+        header, revs, text = self.opened(node)
+
+        self.assertEqual((header["base"], revs, text), (2, [3], "one two three"))
+
     def test_an_open_during_a_compaction_install_stays_continuous(self):
         node = self.new_document()
         self.type_into(node, ["one ", "two "])
