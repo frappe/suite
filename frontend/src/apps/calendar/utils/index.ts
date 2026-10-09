@@ -3,6 +3,10 @@ import { toast } from 'frappe-ui'
 
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 
+/** The server's own word for what went wrong, as a toast; its generic one where it gave none. */
+export const toastError = (error: { messages?: string[]; message?: string }) =>
+	raiseToast(error.messages?.[0] || error.message || __('Something went wrong.'), 'error')
+
 export const raiseToast = (message: string, type = 'success') => {
 	if (type === 'success') return toast.success(message)
 

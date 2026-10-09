@@ -141,7 +141,7 @@ import { Button, Dialog, FormControl, createDocumentResource, createResource } f
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
-import { raiseToast } from '@/apps/calendar/utils'
+import { raiseToast, toastError } from '@/apps/calendar/utils'
 import { userStore } from '@/apps/calendar/stores/user'
 
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
@@ -159,7 +159,7 @@ const getIdentity = () =>
 				raiseToast(__('Participant Identity updated.'))
 				participantIdentities.reload()
 			},
-			onError: (error) => raiseToast(error.messages[0], 'error'),
+			onError: toastError,
 		},
 	})
 
@@ -194,7 +194,7 @@ const addIdentity = createResource({
 		identityName.value = `${accountId}|${id}`
 		participantIdentities.reload()
 	},
-	onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
+	onError: toastError,
 })
 
 const deleteIdentity = createResource({
@@ -208,7 +208,7 @@ const deleteIdentity = createResource({
 	},
 	onError: (error) => {
 		showDeleteDialog.value = false
-		raiseToast(error.messages?.[0] || error.message, 'error')
+		toastError(error)
 	},
 })
 
