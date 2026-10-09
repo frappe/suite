@@ -58,12 +58,26 @@ describe('display cache — fill and read', () => {
 })
 
 describe('display cache — versions', () => {
-  it('clear empties the cache and moves to the new version', () => {
+  it('clear keeps entries as stale, then drops one not refilled since', () => {
+    const cache = createDisplayCache()
+    cache.fill('Sheet1', 1, 1, { values: [['a']] }, 0)
+    expect(cache.isFresh('Sheet1', 1, 1)).toBe(true)
+    cache.clear(1)
+    expect(cache.version).toBe(1)
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'a' }) // still paintable
+    expect(cache.isFresh('Sheet1', 1, 1)).toBe(false)
+    cache.clear(2)
+    expect(cache.size).toBe(0)
+  })
+
+  it('a refill makes a stale entry fresh again', () => {
     const cache = createDisplayCache()
     cache.fill('Sheet1', 1, 1, { values: [['a']] }, 0)
     cache.clear(1)
-    expect(cache.size).toBe(0)
-    expect(cache.version).toBe(1)
+    cache.fill('Sheet1', 1, 1, { values: [['b']] }, 1)
+    expect(cache.isFresh('Sheet1', 1, 1)).toBe(true)
+    cache.clear(2)
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'b' })
   })
 
   it('drops a fill read at an older version', () => {
@@ -94,9 +108,12 @@ describe('display cache — provisional echo', () => {
     cache.fill('Sheet1', 1, 1, { values: [['engine']] }, 1)
     expect(cache.get('Sheet1', 1, 1)?.display).toBe('typed')
 
-    cache.settleProvisional('Sheet1', 1, 1)
-    expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
-    cache.fill('Sheet1', 1, 1, { values: [['engine']] }, 1)
+    cache.settleProvisional('Sheet1', 1, 1, true)
+    cache.clear(2) // the version bump that comes with the apply
+    // The typed text stays on screen, stale, until the refill.
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'typed', input: 'typed' })
+    expect(cache.isFresh('Sheet1', 1, 1)).toBe(false)
+    cache.fill('Sheet1', 1, 1, { values: [['engine']] }, 2)
     expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'engine' })
   })
 
@@ -104,16 +121,24 @@ describe('display cache — provisional echo', () => {
     const cache = createDisplayCache()
     cache.setProvisional('Sheet1', 1, 1, 'one')
     cache.setProvisional('Sheet1', 1, 1, 'two')
-    cache.settleProvisional('Sheet1', 1, 1)
+    cache.settleProvisional('Sheet1', 1, 1, true)
     expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'two', input: 'two', provisional: true })
-    cache.settleProvisional('Sheet1', 1, 1)
+    cache.settleProvisional('Sheet1', 1, 1, true)
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'two', input: 'two' })
+  })
+
+  it('drops a rejected echo at once', () => {
+    const cache = createDisplayCache()
+    cache.fill('Sheet1', 1, 1, { values: [['old']] }, 0)
+    cache.setProvisional('Sheet1', 1, 1, 'typed')
+    cache.settleProvisional('Sheet1', 1, 1, false)
     expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
   })
 
   it('ignores a settle with nothing pending', () => {
     const cache = createDisplayCache()
     cache.fill('Sheet1', 1, 1, { values: [['a']] }, 0)
-    cache.settleProvisional('Sheet1', 1, 1)
+    cache.settleProvisional('Sheet1', 1, 1, true)
     expect(cache.get('Sheet1', 1, 1)).toEqual({ display: 'a' })
   })
 })

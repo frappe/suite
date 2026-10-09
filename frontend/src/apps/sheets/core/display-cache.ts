@@ -8,7 +8,10 @@
 // cell is an entry with display ''.
 //
 // Invalidation is wholesale: clear() on every version bump. IronCalc
-// exposes no changed-cell set, so any cell may have changed.
+// exposes no changed-cell set, so any cell may have changed. Entries are
+// kept as stale rather than dropped, so the grid keeps painting the last
+// value until the refill lands instead of flashing blank; isFresh() tells
+// them apart. An entry not refilled for two clears (scrolled away) goes.
 //
 // Optimistic echo: setProvisional() shows typed text before the worker
 // has applied it. A provisional entry survives clear() and fill() until
@@ -29,14 +32,17 @@ export interface CachedCell {
 }
 
 export interface DisplayCache extends EchoTarget {
+  /** The entry, fresh or stale. */
   get(sheet: string, row: number, col: number): CachedCell | undefined
+  /** True when the entry was filled since the last clear, or is provisional. */
+  isFresh(sheet: string, row: number, col: number): boolean
   /**
    * Inserts a readViewport result whose top-left cell is (r1, c1).
    * `version` is the engine version when the read was requested; a fill
    * from an older version is dropped and returns false.
    */
   fill(sheet: string, r1: number, c1: number, result: ViewportResult, version: number): boolean
-  /** Drops every settled entry and moves the cache to `version`. */
+  /** Marks every settled entry stale and moves the cache to `version`. */
   clear(version: number): void
   readonly version: number
   readonly size: number
@@ -50,9 +56,17 @@ export function createDisplayCache(initialVersion = 0): DisplayCache {
   // be typed into twice while the first apply is in flight.
   const pending = new Map<string, number>()
   let version = initialVersion
+  // Counts clears; an entry remembers the one it was filled in.
+  let generation = 0
+  const filledIn = new Map<string, number>()
 
   function get(sheet: string, row: number, col: number): CachedCell | undefined {
     return cells.get(key(sheet, row, col))
+  }
+
+  function isFresh(sheet: string, row: number, col: number): boolean {
+    const k = key(sheet, row, col)
+    return pending.has(k) || (cells.has(k) && filledIn.get(k) === generation)
   }
 
   function fill(
@@ -73,6 +87,7 @@ export function createDisplayCache(initialVersion = 0): DisplayCache {
         if (input !== undefined) cell.input = input
         if (style) cell.style = style
         cells.set(k, cell)
+        filledIn.set(k, generation)
       })
     })
     return true
@@ -88,10 +103,11 @@ export function createDisplayCache(initialVersion = 0): DisplayCache {
     cells.set(k, cell)
   }
 
-  // Called once per echoed command when its apply returns, whether it
-  // succeeded or failed. The last settle removes the entry; the next
-  // refill brings the evaluated value (or the old one, after a failure).
-  function settleProvisional(sheet: string, row: number, col: number): void {
+  // Called once per echoed command when its apply returns. After the last
+  // settle an applied edit leaves the typed text as a stale entry, painted
+  // until the refill brings the evaluated value; a rejected one is dropped
+  // at once, so the old value comes back instead of text that never landed.
+  function settleProvisional(sheet: string, row: number, col: number, applied: boolean): void {
     const k = key(sheet, row, col)
     const n = pending.get(k)
     if (n === undefined) return
@@ -100,18 +116,38 @@ export function createDisplayCache(initialVersion = 0): DisplayCache {
       return
     }
     pending.delete(k)
-    cells.delete(k)
+    const cell = cells.get(k)
+    if (!cell) return
+    if (!applied) {
+      cells.delete(k)
+      filledIn.delete(k)
+      return
+    }
+    const settled: CachedCell = { display: cell.display }
+    if (cell.input !== undefined) settled.input = cell.input
+    if (cell.style) settled.style = cell.style
+    cells.set(k, settled)
+    // The version bump that follows an applied edit makes it stale, and it
+    // keeps painting through that clear until the refill.
+    filledIn.set(k, generation)
   }
 
   function clear(nextVersion: number): void {
     version = nextVersion
+    generation++
     for (const k of cells.keys()) {
-      if (!pending.has(k)) cells.delete(k)
+      if (pending.has(k)) continue
+      // Not refilled since the clear before this one: off screen.
+      if ((filledIn.get(k) ?? -1) < generation - 1) {
+        cells.delete(k)
+        filledIn.delete(k)
+      }
     }
   }
 
   return {
     get,
+    isFresh,
     fill,
     setProvisional,
     settleProvisional,

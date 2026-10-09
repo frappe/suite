@@ -4732,6 +4732,9 @@ function _setupGridInstance() {
         }
         const before = _inputAt(id, writeSheet) ?? ''
         _writeInputs(writeSheet, { [id]: value })
+        // Delete clears the cell in place; the selection doesn't move, so
+        // nothing else refreshes the formula bar.
+        if (writeSheet === currentSheet.value && id === activeCell.value) formulaValue.value = value
         if (writeSheet !== currentSheet.value) {
           switchSheet(writeSheet, {
             preserveEdit: true,
@@ -4849,6 +4852,9 @@ function _setupGridInstance() {
           currentSheet.value,
           Object.fromEntries(cells.map(({ id, value }) => [id, value])),
         )
+        // The formula bar shows the active cell; Delete may have just cleared it.
+        const active = cells.find(({ id }) => id === activeCell.value)
+        if (active) formulaValue.value = active.value
         if (refs.length) {
           const op = {
             opType: 'edit',
@@ -4937,6 +4943,29 @@ function _setupEventListeners() {
   window.addEventListener('focus', _refocusGridIfIdle)
   document.addEventListener('visibilitychange', _refocusGridIfIdle)
 }
+// The tab each viewer had open, per document, kept in this browser only: a
+// convenience, so it never makes a save. Storage can be unavailable
+// (private windows, blocked site data), so every access is guarded.
+const _lastTabKey = () => `sheets:last-tab:${props.id}`
+function _lastTab() {
+  try {
+    return localStorage.getItem(_lastTabKey())
+  } catch {
+    return null
+  }
+}
+// Off until the load has reopened the saved tab, which loading could
+// otherwise overwrite with the first sheet.
+let _rememberTab = false
+watch(currentSheet, (sn) => {
+  if (!_rememberTab) return
+  try {
+    localStorage.setItem(_lastTabKey(), sn)
+  } catch {
+    // not remembered; the first tab opens next time
+  }
+})
+
 async function _loadInitialData() {
   history.init()
   syncFlags()
@@ -4966,6 +4995,10 @@ async function _loadInitialData() {
     // so a saved filter still shows its hidden rows on first load.
     _applyHiddenRows()
     syncNames()
+    // Reopen the tab this browser had open last.
+    const last = _lastTab()
+    if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
+    _rememberTab = true
     activeCell.value = 'A1'
     _showInputInFormulaBar('A1')
     refreshActiveFormat()
@@ -4979,6 +5012,7 @@ async function _loadInitialData() {
   } else {
     // A new sheet starts as an empty workbook.
     await _startEngine()
+    _rememberTab = true
     if (props.id === 'new') {
       // Google-Sheets model: create the doc immediately so there is never an
       // "unsaved" state.  The parent swaps the URL to ?id=<name> via onSaved.
@@ -8182,7 +8216,7 @@ const { pushEditOp: _pushEditOp } = useEditOps({
 function _cellDisplay(id) {
   if (showFormulas.value) return _inputAt(id) ?? ''
   // A sparkline paints a chart, not IronCalc's #NAME?.
-  if (parseSparkline(_inputAt(id))) return ''
+  if (parseSparkline(_paintedInput(id))) return ''
   const sn = currentSheet.value
   const fmt = formats.get(id, sn)
   const dv = _displayValue(id, sn)
@@ -8210,6 +8244,7 @@ async function _startEngine(snapshotBytes = null) {
     condFormat?.invalidate()
     chartDataVersion.value++
     _refreshUsedCells()
+    computeSelectionStats() // the selected cells' values may have changed
     const sn = currentSheet.value
     if (!sortFilter.hasFilter(sn)) return
     sortFilter
@@ -8270,6 +8305,13 @@ function _writeInputs(sn, map) {
 function _inputAt(id, sn = currentSheet.value) {
   const p = parseCellId(id)
   return p && _engine ? _engine.provider.getInput(sn, p.row + 1, p.col + 1) : undefined
+}
+
+// The input a cell is painted with, kept through a refresh: lets the grid
+// keep drawing a sparkline while its value is re-read. Not for edits.
+function _paintedInput(id, sn = currentSheet.value) {
+  const p = parseCellId(id)
+  return p && _engine ? _engine.provider.peekInput(sn, p.row + 1, p.col + 1) : undefined
 }
 
 // Shows a cell's input in the formula bar. A cell off screen (a jump to a far
@@ -8443,7 +8485,7 @@ function _repopulateGrid() {
 const _sparks = new Map() // 'sheet\0id' → { key, spec, reading }
 function _sparklineAt(id) {
   const sn = currentSheet.value
-  const input = _inputAt(id, sn)
+  const input = _paintedInput(id, sn)
   const ref = parseSparkline(input)
   if (!ref || !_engine) return null
   const key = `${input}\0${_engine.client.getVersion()}`

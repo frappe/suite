@@ -179,7 +179,8 @@ describe('client — optimistic echo', () => {
     expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', input: '=1+1', provisional: true })
 
     await wb.idle()
-    expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
+    // Applied: the typed text stays painted (no blank) until the refill.
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', input: '=1+1' })
     await refill(1, 1, 1, 1)
     expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '2' })
   })

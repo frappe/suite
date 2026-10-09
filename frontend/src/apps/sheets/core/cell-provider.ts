@@ -12,7 +12,10 @@
 //      with hits.
 //
 // It also clears the cache on every version bump and repaints, which
-// starts the cycle again for the visible area.
+// starts the cycle again for the visible area. Until the refill lands a
+// cell paints its last (stale) value, so an edit doesn't flash the grid
+// blank; inputs are only served fresh, since edits record them as the
+// value they replace.
 //
 // Rows and columns are 1-based, like the commands.
 
@@ -38,6 +41,12 @@ export interface CellProvider {
    * its input ready when the editor opens.
    */
   getInput(sheet: string, row: number, col: number): string | undefined
+  /**
+   * The input the cell is painted with, stale or fresh, without asking
+   * for a read. For drawing decisions only (is it a sparkline?), never as
+   * the value an edit replaces.
+   */
+  peekInput(sheet: string, row: number, col: number): string | undefined
   dispose(): void
 }
 
@@ -73,14 +82,14 @@ export function createCellProvider({
 
   function getDisplay(sheet: string, row: number, col: number): string {
     const hit = cache.get(sheet, row, col)
-    if (hit) return hit.display
+    if (hit && cache.isFresh(sheet, row, col)) return hit.display
     noteMiss(sheet, row, col)
-    return ''
+    return hit ? hit.display : ''
   }
 
   function getInput(sheet: string, row: number, col: number): string | undefined {
     const hit = cache.get(sheet, row, col)
-    if (hit) return hit.input
+    if (hit && cache.isFresh(sheet, row, col)) return hit.input
     noteMiss(sheet, row, col)
     return undefined
   }
@@ -147,6 +156,7 @@ export function createCellProvider({
   return {
     getDisplay,
     getInput,
+    peekInput: (sheet, row, col) => cache.get(sheet, row, col)?.input,
     dispose() {
       disposed = true
       offVersion()

@@ -32,11 +32,11 @@ export interface WorkerPort {
 /**
  * Where optimistic echoes go. DisplayCache implements this. Every
  * setProvisional is matched by exactly one settleProvisional, sent when
- * the command's apply returns (success or failure).
+ * the command's apply returns, saying whether it applied.
  */
 export interface EchoTarget {
   setProvisional(sheet: string, row: number, col: number, display: string): void
-  settleProvisional(sheet: string, row: number, col: number): void
+  settleProvisional(sheet: string, row: number, col: number, applied: boolean): void
 }
 
 export interface ClientOptions {
@@ -190,13 +190,15 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     for (const cb of versionListeners) cb(v)
   }
 
-  function settle(batch: Command[]): void {
+  // `results` are the apply's per-command results; none when the whole
+  // request failed.
+  function settle(batch: Command[], results: ApplyResult[] | null): void {
     if (!echo) return
-    for (const command of batch) {
-      if (command.type !== CommandTypes.setInput) continue
+    batch.forEach((command, i) => {
+      if (command.type !== CommandTypes.setInput) return
       const p = command.payload
-      echo.settleProvisional(p.sheet, p.row, p.col)
-    }
+      echo.settleProvisional(p.sheet, p.row, p.col, !!results?.[i]?.ok)
+    })
   }
 
   function reportFailure(command: Command, error: string): void {
@@ -277,8 +279,9 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
         commands: batch,
       })
       // Settle before the version listeners run, so their clear()
-      // drops these echoes and the refill shows evaluated values.
-      settle(batch)
+      // treats these echoes like any other cell and the refill shows
+      // evaluated values.
+      settle(batch, res.results)
       res.results.forEach((r, i) => {
         const command = batch[i]
         if (!r.ok && command) reportFailure(command, r.error ?? 'unknown error')
@@ -287,7 +290,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       setVersion(res.version)
     } catch (e) {
       // The whole request failed, so none of the batch applied.
-      settle(batch)
+      settle(batch, null)
       const message = e instanceof Error ? e.message : String(e)
       for (const command of batch) reportFailure(command, message)
     } finally {

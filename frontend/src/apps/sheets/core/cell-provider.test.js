@@ -100,14 +100,15 @@ describe('cell provider', () => {
     expect(client.reads).toHaveLength(1)
   })
 
-  it('clears and repaints on a version bump, then refetches', async () => {
-    const { provider, client, cache, requestRender } = setup()
+  it('on a version bump, paints the last value and refetches', async () => {
+    const { provider, client, requestRender } = setup()
     provider.getDisplay('Sheet1', 1, 1)
     await settle()
     client.bump()
-    expect(cache.size).toBe(0)
     expect(requestRender).toHaveBeenCalledTimes(2)
-    expect(provider.getDisplay('Sheet1', 1, 1)).toBe('')
+    expect(provider.getDisplay('Sheet1', 1, 1)).toBe('r1c1') // no blank flash
+    expect(provider.getInput('Sheet1', 1, 1)).toBeUndefined() // inputs only fresh
+    expect(provider.peekInput('Sheet1', 1, 1)).toBe('=r1c1') // painting may use the last one
     await settle()
     expect(client.reads).toHaveLength(2)
   })
