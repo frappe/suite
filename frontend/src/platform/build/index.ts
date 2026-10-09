@@ -16,36 +16,53 @@ let shown: string | null = null
 function showBanner(paused: string[] = []) {
   const state = paused.join()
   if (shown !== null && shown.length >= state.length) return
+
   shown = state
   const products = paused.map((product) => product[0].toUpperCase() + product.slice(1))
-  toast.info(translate('A newer version is available'), {
+  const description = products.length
+    ? translate('Reload to keep editing in {0}.', [products.join(', ')])
+    : undefined
+  const reload = {
+    label: translate('Reload'),
+    onClick: () => window.location.reload(),
+  }
+  const options = {
     id: 'suite-newer-build',
     duration: Infinity,
-    description: products.length
-      ? translate('Reload to keep editing in {0}.', [products.join(', ')])
-      : undefined,
-    action: { label: translate('Reload'), onClick: () => window.location.reload() },
-  })
+    description,
+    action: reload,
+  }
+  toast.info(translate('A newer version is available'), options)
 }
 
 function readHeaders(headers: Headers) {
   const min = headers.get('X-Suite-Min-Builds')
-  if (min) minBuilds.value = JSON.parse(min)
+  if (min) {
+    minBuilds.value = JSON.parse(min)
+  }
+
   const paused = Object.keys(minBuilds.value).filter(belowMinBuild)
-  if (paused.length) showBanner(paused)
-  else if (Number(headers.get('X-Suite-Build')) > BUILD) showBanner()
+  if (paused.length) {
+    showBanner(paused)
+  } else if (Number(headers.get('X-Suite-Build')) > BUILD) {
+    showBanner()
+  }
 }
 
 export function watchBuild() {
   if (import.meta.env.DEV) return
+
   const fetch = window.fetch
   window.fetch = async (...args) => {
     const response = await fetch(...args)
     readHeaders(response.headers)
     return response
   }
-  window.addEventListener('vite:preloadError', (event) => {
+
+  // A chunk of an older build is gone from the server
+  const offerReload = (event: Event) => {
     event.preventDefault()
     showBanner()
-  })
+  }
+  window.addEventListener('vite:preloadError', offerReload)
 }

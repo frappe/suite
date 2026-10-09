@@ -11,8 +11,10 @@ const schema = getSchema(writerSchema())
 export const writerFault: Fault = (doc) => {
   const body = doc.getXmlFragment(FIELD)
   if (!body.length) return null
+
   try {
-    yXmlFragmentToProseMirrorRootNode(body, schema).check()
+    const root = yXmlFragmentToProseMirrorRootNode(body, schema)
+    root.check()
     return null
   } catch (error) {
     return `schema: ${String(error)}`

@@ -14,16 +14,25 @@ vi.mock('@tiptap/vue-3', async (importOriginal) => {
       super(options)
       live.add(this)
     }
+
     destroy() {
       live.delete(this)
       super.destroy()
     }
   }
+
   return { ...tiptap, Editor }
 })
 
-const version = (html: string) =>
-  JSON.stringify({ schema: 'writer-document/1', content: 'AAA=', html, collab: 0 })
+function version(html: string) {
+  const stored = {
+    schema: 'writer-document/1',
+    content: 'AAA=',
+    html,
+    collab: 0,
+  }
+  return JSON.stringify(stored)
+}
 
 function deferred() {
   let resolve!: (response: Response) => void
@@ -31,10 +40,24 @@ function deferred() {
   return { promise, resolve }
 }
 
+// A session whose every fetch waits until the test answers it from `requests`
+function heldSession(requests: ReturnType<typeof deferred>[]) {
+  const fetchLater = () => {
+    const request = deferred()
+    requests.push(request)
+    return request.promise
+  }
+  return fakeSession(fetchLater)
+}
+
 function fakeSession(fetch: (url: string) => Promise<Response>) {
   return {
     versions: { contentUrl: (seq: string) => `/versions/${seq}` },
-    credentials: { fetch: vi.fn(fetch), fetchHeld: fetch, group: () => [] },
+    credentials: {
+      fetch: vi.fn(fetch),
+      fetchHeld: fetch,
+      group: () => [],
+    },
   } as unknown as DocumentSession
 }
 
@@ -42,11 +65,19 @@ function mountPreview(session: DocumentSession, seq = 1) {
   const shown = ref(seq)
   const root = document.createElement('div')
   document.body.append(root)
-  const app = createApp({
-    setup: () => () =>
-      h(VersionPreview, { session, seq: shown.value, label: 'Version', settings: {}, rail: 0 }),
-  })
+  const render = () => {
+    const props = {
+      session,
+      seq: shown.value,
+      label: 'Version',
+      settings: {},
+      rail: 0,
+    }
+    return h(VersionPreview, props)
+  }
+  const app = createApp({ setup: () => render })
   app.mount(root)
+
   return {
     root,
     shown,
@@ -79,7 +110,8 @@ describe('VersionPreview', () => {
     const html =
       '<table><colgroup><col><col></colgroup><tbody><tr><th><p>Owner</p></th><th><p>Due</p></th></tr>' +
       '<tr><td><p>Asha</p></td><td><p>Friday</p></td></tr></tbody></table>'
-    const preview = mountPreview(fakeSession(async () => new Response(version(html))))
+    const session = fakeSession(async () => new Response(version(html)))
+    const preview = mountPreview(session)
 
     await vi.waitFor(() => expect(preview.root.querySelectorAll('td')).toHaveLength(2))
     expect(preview.root.textContent).toContain('Friday')
@@ -89,13 +121,7 @@ describe('VersionPreview', () => {
 
   it('keeps the shown version, with no loading placeholder, until the next one replaces it', async () => {
     const requests: ReturnType<typeof deferred>[] = []
-    const preview = mountPreview(
-      fakeSession(() => {
-        const request = deferred()
-        requests.push(request)
-        return request.promise
-      }),
-    )
+    const preview = mountPreview(heldSession(requests))
     requests[0].resolve(new Response(version('<p>First</p>')))
     await vi.waitFor(() => expect(preview.root.textContent).toContain('First'))
 
@@ -114,7 +140,8 @@ describe('VersionPreview', () => {
 
   it('leaves no editor behind when closed before the version arrives', async () => {
     const pending = deferred()
-    const preview = mountPreview(fakeSession(() => pending.promise))
+    const session = fakeSession(() => pending.promise)
+    const preview = mountPreview(session)
 
     preview.unmount()
     pending.resolve(new Response(version('<p>Late</p>')))
@@ -126,14 +153,7 @@ describe('VersionPreview', () => {
 
   it('keeps one editor when the user goes back to a version while it still loads', async () => {
     const requests: ReturnType<typeof deferred>[] = []
-    const preview = mountPreview(
-      fakeSession(() => {
-        const request = deferred()
-        requests.push(request)
-        return request.promise
-      }),
-      1,
-    )
+    const preview = mountPreview(heldSession(requests), 1)
     preview.shown.value = 2
     await nextTick()
     preview.shown.value = 1

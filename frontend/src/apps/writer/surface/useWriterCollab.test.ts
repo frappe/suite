@@ -25,7 +25,12 @@ const fake = vi.hoisted(() => {
     },
     close: async () => {},
   })
-  return { room: make(), opens: 0, make }
+
+  return {
+    room: make(),
+    opens: 0,
+    make,
+  }
 })
 
 vi.mock('@/apps/writer/collab', () => ({
@@ -36,7 +41,8 @@ vi.mock('@/apps/writer/collab', () => ({
 }))
 
 async function opened(retainRecovery = () => false, mayEdit = () => true) {
-  const collab = useWriterCollab({ nodeId: 'node-1' } as DocumentSession, retainRecovery, mayEdit)
+  const session = { nodeId: 'node-1' } as DocumentSession
+  const collab = useWriterCollab(session, retainRecovery, mayEdit)
   await collab.open()
   return collab
 }
@@ -47,7 +53,9 @@ function becomes(change: Partial<typeof fake.room>) {
 
 function becomesOn(room: typeof fake.room, change: Partial<typeof fake.room>) {
   Object.assign(room, change)
-  for (const listener of room.listeners) listener()
+  for (const listener of room.listeners) {
+    listener()
+  }
 }
 
 describe('writer collab editing state', () => {
@@ -56,11 +64,13 @@ describe('writer collab editing state', () => {
     expect(collab.editingPaused.value).toBe(false)
 
     for (const blocked of ['signed_out', 'locked', 'offline', 'stale_session', 'other_user']) {
+      const keepsWriteRight =
+        blocked === 'signed_out' || blocked === 'locked' || blocked === 'offline'
       becomes({
         blocked,
         saveState: 'failed',
         unsent: 9,
-        canWrite: blocked === 'signed_out' || blocked === 'locked' || blocked === 'offline',
+        canWrite: keepsWriteRight,
       })
       expect(collab.allowsEditing.value).toBe(false)
       expect(collab.editingPaused.value).toBe(true)
@@ -235,7 +245,8 @@ describe('writer collab rebuild', () => {
     fake.room = fake.make()
     const collab = await opened(() => keeps-- > 0)
     const first = fake.room
-    const second = (fake.room = fake.make())
+    fake.room = fake.make()
+    const second = fake.room
     becomesOn(first, { needsRebuild: true, unsent: 2, onDevice: false })
     await vi.waitFor(() => expect(collab.room.value).toBe(second))
     fake.room = fake.make()
@@ -250,11 +261,13 @@ describe('writer collab rebuild', () => {
     fake.room = fake.make()
     const collab = await opened(() => true)
     const first = fake.room
-    const second = (fake.room = fake.make())
+    fake.room = fake.make()
+    const second = fake.room
     becomesOn(first, { stopped: 'client_closed', saveState: 'failed', unsent: 2 })
     becomesOn(first, { needsRebuild: true })
     await vi.waitFor(() => expect(collab.room.value).toBe(second))
-    const third = (fake.room = fake.make())
+    fake.room = fake.make()
+    const third = fake.room
 
     becomesOn(second, { needsRebuild: true })
     await vi.waitFor(() => expect(collab.room.value).toBe(third))
@@ -266,7 +279,8 @@ describe('writer collab rebuild', () => {
     fake.room = fake.make()
     const collab = await opened(() => true)
     const first = fake.room
-    const second = (fake.room = { ...fake.make(), atLimit: true })
+    fake.room = { ...fake.make(), atLimit: true }
+    const second = fake.room
     becomesOn(first, { stopped: 'document_full', saveState: 'failed', unsent: 1 })
     becomesOn(first, { needsRebuild: true })
     await vi.waitFor(() => expect(collab.room.value).toBe(second))

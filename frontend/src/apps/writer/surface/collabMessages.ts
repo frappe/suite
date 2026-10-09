@@ -10,7 +10,7 @@ export interface Banner {
   after?: string
 }
 
-interface Standing {
+export interface Standing {
   blocked: Blocked | null
   // Why the room will never save this tab's work
   stopped: string | null
@@ -56,7 +56,9 @@ function savingBanner(atLimit: boolean, setAside: boolean): Banner | null {
     const moved = setAside ? ' Your latest changes went to a recovery copy.' : ''
     return { text: `This document is at its size limit.${moved} Delete content to free space.` }
   }
+
   if (!setAside) return null
+
   return { text: "Your last edits couldn't be saved here and were kept as a recovery copy." }
 }
 
@@ -76,36 +78,49 @@ export function bannerFor({
   polling,
 }: Standing): Banner | null {
   const waiting = paused && Object.hasOwn(PAUSES, paused) ? PAUSES[paused] : null
-  if (!(blocked || held || newerSchema || waiting || failed))
-    return (
-      savingBanner(atLimit, setAside) ??
-      (polling ? { text: "Live updates are unavailable, so others' changes show up late." } : null)
-    )
+  const interrupted = blocked || held || newerSchema || waiting || failed
+  if (!interrupted) {
+    const late = polling
+      ? { text: "Live updates are unavailable, so others' changes show up late." }
+      : null
+    return savingBanner(atLimit, setAside) ?? late
+  }
+
   const copy = kept ? ' Unsent changes were kept as a recovery copy.' : ''
   // Without a device store the unsent changes live only in this tab
   const keepOpen = onDevice ? '' : ' Keep this tab open.'
-  if (newerSchema && !blocked && !stopped)
-    return {
-      text: `This document was edited in a newer version of Writer. Reload to ${editor ? 'edit it' : 'see its latest changes'}.`,
-    }
-  if (held && !blocked && !stopped) {
+  const unblocked = !blocked && !stopped
+  if (newerSchema && unblocked) {
+    const reloadTo = editor ? 'edit it' : 'see its latest changes'
+    return { text: `This document was edited in a newer version of Writer. Reload to ${reloadTo}.` }
+  }
+
+  if (held && unblocked) {
     const text =
       held === 'bad_checkpoint'
         ? 'This document is in question and read-only while an admin reviews it.'
         : 'This document is read-only while an admin reviews a change to it.'
     if (!unsent) return { text }
-    return {
-      text: onDevice
-        ? `${text} Your unsent changes are kept on this device and save once it is released.`
-        : `${text} Your unsent changes save once it is released.${keepOpen}`,
+
+    if (onDevice) {
+      return {
+        text: `${text} Your unsent changes are kept on this device and save once it is released.`,
+      }
     }
+
+    return { text: `${text} Your unsent changes save once it is released.${keepOpen}` }
   }
-  if (waiting && !blocked && !stopped)
-    return {
-      text: onDevice
-        ? `${waiting}, so your latest changes aren't saved. They're kept on this device.`
-        : `${waiting}, so your latest changes aren't saved.${keepOpen}`,
+
+  if (waiting && unblocked) {
+    if (onDevice) {
+      return {
+        text: `${waiting}, so your latest changes aren't saved. They're kept on this device.`,
+      }
     }
+
+    return { text: `${waiting}, so your latest changes aren't saved.${keepOpen}` }
+  }
+
   switch (blocked) {
     case 'signed_out':
       return {
@@ -128,19 +143,22 @@ export function bannerFor({
         text: `You signed in again in another tab.${onDevice ? '' : copy} Reload to keep saving.`,
       }
     case 'other_user':
-      return {
-        text: onDevice
-          ? 'Someone else is now signed in here. Your unsent changes are kept on this device.'
-          : `Someone else is now signed in here.${copy} Reload to continue.`,
+      if (onDevice) {
+        return {
+          text: 'Someone else is now signed in here. Your unsent changes are kept on this device.',
+        }
       }
+
+      return { text: `Someone else is now signed in here.${copy} Reload to continue.` }
     case 'lost_edit':
       return { text: `You can no longer edit this document.${copy}` }
     case 'lost_read':
       return { text: `You can no longer open this document.${copy}` }
     default: {
       const known = stopped && Object.hasOwn(STOPS, stopped) ? stopped : null
+      const reason = known ? STOPS[known] : 'Saving stopped in this tab.'
       const reload = known && LASTING.has(known) ? '' : ' Reload to keep editing.'
-      return { text: `${known ? STOPS[known] : 'Saving stopped in this tab.'}${copy}${reload}` }
+      return { text: `${reason}${copy}${reload}` }
     }
   }
 }

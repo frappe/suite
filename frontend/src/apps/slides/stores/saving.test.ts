@@ -405,7 +405,12 @@ describe('drafts', () => {
     const { openDrafts } = await import('@/apps/slides/utils/drafts')
     const legacy = await openDrafts('slides-db')
     const tx = legacy.transaction('presentations', 'readwrite')
-    tx.objectStore('presentations').put({ id: 'p-shared', content: [], dirty: true })
+    const unowned = {
+      id: 'p-shared',
+      content: [],
+      dirty: true,
+    }
+    tx.objectStore('presentations').put(unowned)
     await new Promise((resolve) => (tx.oncomplete = resolve))
     legacy.close()
 

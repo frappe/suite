@@ -23,6 +23,7 @@ export function resolveDocumentUnload(
   event: Event,
 ): void {
   if (options.state() === 'clean') return
+
   event.preventDefault()
   void options.retainRecovery()
 }

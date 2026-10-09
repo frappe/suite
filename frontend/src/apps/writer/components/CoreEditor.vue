@@ -239,25 +239,23 @@ const hasCollaboration = props.extensions?.some((ext) => ext?.name === 'collabor
 const { users } = useUsers()
 const renameDocument = inject(RENAME_DOCUMENT, null)
 
-const editorExtensions = [
-  ...writerEditorExtensions({
-    collaborative: hasCollaboration,
-    mentionItems: () => users.value,
-    onMentionQuery: searchMentions,
-    onCommentActivated,
-    onAnchors: (val) => (anchors.value = val),
-    scrollParent: () => scrollParent.value,
-    media: inject(DOCUMENT_MEDIA, null),
-    comments: props.comments,
-    ydoc: props.yjsDoc,
-    activeComment,
-    showComments,
-    showResolved,
-    edited,
-    onCommentsPainted: () => (commentsPainted.value = true),
-  }),
-  ...props.extensions,
-]
+const writerEditorOptions = {
+  collaborative: hasCollaboration,
+  mentionItems: () => users.value,
+  onMentionQuery: searchMentions,
+  onCommentActivated,
+  onAnchors: (val) => (anchors.value = val),
+  scrollParent: () => scrollParent.value,
+  media: inject(DOCUMENT_MEDIA, null),
+  comments: props.comments,
+  ydoc: props.yjsDoc,
+  activeComment,
+  showComments,
+  showResolved,
+  edited,
+  onCommentsPainted: () => (commentsPainted.value = true),
+}
+const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...props.extensions]
 
 const menuButtons = computed(() =>
   buildMenuButtons({

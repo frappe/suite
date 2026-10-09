@@ -74,18 +74,24 @@ describe('transport', () => {
       async () => new Response(new Uint8Array([255, 0, 1]), { status: 409 }),
     )
     const client = createTransport({ fetch: fetcher })
-    const push: Operation = { ...getNode, method: 'POST', path: 'nodes/{node}/bytes' }
+    const push: Operation = {
+      ...getNode,
+      method: 'POST',
+      path: 'nodes/{node}/bytes',
+    }
 
-    const answer = await client.requestBytes(
-      push,
-      { node: 'n1' },
-      { body: sent, keepalive: true, headers: { 'X-Drive-Links': 'c1' } },
-    )
+    const bytesOptions = {
+      body: sent,
+      keepalive: true,
+      headers: { 'X-Drive-Links': 'c1' },
+    }
+    const answer = await client.requestBytes(push, { node: 'n1' }, bytesOptions)
 
     expect([answer.status, [...answer.bytes]]).toEqual([409, [255, 0, 1]])
     const [url, init] = fetcher.mock.calls[0]!
     expect(url).toBe('/api/suite/drive/nodes/n1/bytes')
-    expect([...new Uint8Array(await new Response(init?.body).arrayBuffer())]).toEqual([...sent])
+    const sentBody = await new Response(init?.body).arrayBuffer()
+    expect([...new Uint8Array(sentBody)]).toEqual([...sent])
     expect(init?.keepalive).toBe(true)
     const headers = new Headers(init?.headers)
     expect([

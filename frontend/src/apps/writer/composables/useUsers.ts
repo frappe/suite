@@ -47,18 +47,23 @@ export function searchMentions(query: string): void {
 const learned = shallowRef(0)
 const lookups = new Map<string, Promise<void>>()
 
+function learn(found: WriterUser[]) {
+  for (const person of found) {
+    known.set(person.name, person)
+  }
+  learned.value++
+}
+
 /** Look a person up once by user id, for `fullName`. */
 export function lookUp(user: string): Promise<void> {
   let lookup = lookups.get(user)
   if (!lookup) {
     lookup = searchUsers(user)
-      .then((found) => {
-        for (const person of found) known.set(person.name, person)
-        learned.value++
-      })
+      .then(learn)
       .catch(() => {})
     lookups.set(user, lookup)
   }
+
   return lookup
 }
 
@@ -66,7 +71,10 @@ export function lookUp(user: string): Promise<void> {
 export function fullName(user: string): string {
   void learned.value
   const found = known.get(user)
-  if (!found) void lookUp(user)
+  if (!found) {
+    void lookUp(user)
+  }
+
   return found?.full_name || user
 }
 

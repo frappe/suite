@@ -43,6 +43,7 @@ export const claimSlidesCachesFor = async (user: string) => {
     await adoptLegacyDrafts(previous).catch(() => {})
   }
   if (previous === user) return
+
   await clearSlidesUserData()
   localStorage.setItem(CACHES_USER_KEY, user)
 }

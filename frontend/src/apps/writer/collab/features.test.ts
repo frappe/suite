@@ -6,17 +6,27 @@ import { describe, expect, it } from 'vitest'
 import { WRITER_SCHEMA } from '@/apps/writer/collab'
 import { writerSchema } from '@/apps/writer/schema'
 
+type Features = {
+  schema: number
+  features: Record<string, number>
+  nodes: string[]
+  marks: string[]
+}
+
 // The server refuses a row naming anything this file does not declare at or below the row's schema
-const declared = JSON.parse(
-  readFileSync(resolve(__dirname, '../../../../../suite/writer/content/features.json'), 'utf8'),
-) as { schema: number; features: Record<string, number>; nodes: string[]; marks: string[] }
+const featuresPath = resolve(__dirname, '../../../../../suite/writer/content/features.json')
+const featuresText = readFileSync(featuresPath, 'utf8')
+const declared = JSON.parse(featuresText) as Features
 
 const editorNames = () => {
   const schema = getSchema(writerSchema())
   const names = new Set<string>()
-  for (const type of [...Object.values(schema.nodes), ...Object.values(schema.marks)]) {
+  const types = [...Object.values(schema.nodes), ...Object.values(schema.marks)]
+  for (const type of types) {
     names.add(type.name)
-    for (const attribute of Object.keys(type.spec.attrs ?? {})) names.add(attribute)
+    for (const attribute of Object.keys(type.spec.attrs ?? {})) {
+      names.add(attribute)
+    }
   }
   return names
 }
@@ -37,12 +47,14 @@ describe('writer collab features', () => {
 
   it('has no mark that overlaps itself, so every mark key is a plain mark name', () => {
     const marks = Object.values(getSchema(writerSchema()).marks)
-    expect(marks.filter((mark) => !mark.excludes(mark)).map((mark) => mark.name)).toEqual([])
+    const overlapping = marks.filter((mark) => !mark.excludes(mark)).map((mark) => mark.name)
+    expect(overlapping).toEqual([])
   })
 
   it('declares the document roots and the tab label key', () => {
-    for (const name of ['default', 'meta', 'firstTabLabel'])
+    for (const name of ['default', 'meta', 'firstTabLabel']) {
       expect(declared.features).toHaveProperty(name)
+    }
   })
 
   it('introduces every name at a schema the server knows', () => {

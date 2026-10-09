@@ -35,7 +35,12 @@ import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
 
-import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
+import {
+  resolveDocumentUnload,
+  useDocumentLeaveGuard,
+  type DocumentSaveState,
+  type LeaveGuardOptions,
+} from './navigation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import { useWriterCollab } from './useWriterCollab'
 import VersionPreview from './VersionPreview.vue'
@@ -126,7 +131,8 @@ const {
 } = useWriterCollab(props.session, retainRecovery, () => writes.writable.value)
 
 const writes = createWriteGate(props.session, () => {
-  const unsaved = dirty.value || (collabLive.value && saveState.value !== 'clean')
+  const roomUnsaved = collabLive.value && saveState.value !== 'clean'
+  const unsaved = dirty.value || roomUnsaved
   if (unsaved) retainRecovery()
   editorSurface.value?.editor?.setEditable(false)
   if (!unsaved) {
@@ -167,12 +173,16 @@ const saving = computed(
 const saveFailed = computed(
   () => !!documentResource.saveDoc?.error || !!documentResource.saveHtml?.error,
 )
-const saveState = computed<DocumentSaveState>(
-  () =>
-    roomSaveState.value ??
-    (saving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean'),
+const resourceSaveState = computed<DocumentSaveState>(() =>
+  saving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean',
 )
+const saveState = computed<DocumentSaveState>(() => roomSaveState.value ?? resourceSaveState.value)
 const savingPaused = computed(() => !!roomPaused.value && saveState.value !== 'failed')
+const saveNote = computed(() =>
+  [savingPaused.value && 'Saving paused', roomUnsent.value && `${roomUnsent.value} unsent`]
+    .filter(Boolean)
+    .join(' · '),
+)
 const settings = computed(() => documentResource.doc?.settings ?? {})
 const editable = computed(
   () =>
@@ -196,15 +206,37 @@ const fakeFileResource = computed(() => ({
 const peers = computed(() => editorSurface.value?.peers ?? [])
 /** The editor that shows this document, with the props only it takes. */
 const editorView = computed(() => {
-  if (collabLive.value && room.value)
-    return { is: CollabTextEditor, props: { room: room.value, file: fakeFileResource.value } }
+  if (collabLive.value && room.value) {
+    return {
+      is: CollabTextEditor,
+      props: {
+        room: room.value,
+        file: fakeFileResource.value,
+      },
+    }
+  }
+
   const dirtyModel = {
     dirty: dirty.value,
     'onUpdate:dirty': (value: boolean) => (dirty.value = value),
   }
-  if (documentResource.doc?.collab === 0)
-    return { is: NonCollabEditor, props: { ...dirtyModel, file: fakeFileResource.value.doc } }
-  return { is: TextEditor, props: { ...dirtyModel, file: fakeFileResource.value } }
+  if (documentResource.doc?.collab === 0) {
+    return {
+      is: NonCollabEditor,
+      props: {
+        ...dirtyModel,
+        file: fakeFileResource.value.doc,
+      },
+    }
+  }
+
+  return {
+    is: TextEditor,
+    props: {
+      ...dirtyModel,
+      file: fakeFileResource.value,
+    },
+  }
 })
 
 provide('file', fakeFileResource)
@@ -259,12 +291,16 @@ async function closePreview() {
   const row = document.querySelector<HTMLElement>('aside button[aria-pressed="true"]')
   previewing.value = null
   await nextTick()
-  if (row) row.focus()
-  else editorSurface.value?.editor?.commands.focus()
+  if (row) {
+    row.focus()
+  } else {
+    editorSurface.value?.editor?.commands.focus()
+  }
 }
 
 async function loadMoreVersions() {
   if (!versionsCursor.value) return
+
   loadingMoreVersions.value = true
   try {
     const page = (await props.session.versions.list(versionsCursor.value)) as VersionPage
@@ -294,11 +330,13 @@ async function addComment() {
 function retainRecovery(): boolean {
   const html = editorSurface.value?.editor?.getHTML()
   if (!html) return false
+
   try {
     keepRecovery(props.session.nodeId, html)
   } catch {
     return false
   }
+
   hasRecovery.value = true
   return true
 }
@@ -311,21 +349,23 @@ function downloadChanges() {
 
 function flush(): Promise<void> {
   if (room.value) return withinTenSeconds(room.value.flush())
+
   if (!dirty.value && !saving.value) return Promise.resolve()
-  return withinTenSeconds(
-    new Promise((resolve) => {
-      emitter.emit('manual-save', () => resolve())
-    }),
-  )
+
+  const saved = new Promise<void>((resolve) => {
+    emitter.emit('manual-save', () => resolve())
+  })
+  return withinTenSeconds(saved)
 }
 
 useDocumentLeaveGuard({ state: () => saveState.value, flush, retainRecovery })
 
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload(
-    { state: () => (collabLive.value ? saveState.value : 'clean'), retainRecovery },
-    event,
-  )
+  const unloadGuard: Pick<LeaveGuardOptions, 'state' | 'retainRecovery'> = {
+    state: () => (collabLive.value ? saveState.value : 'clean'),
+    retainRecovery,
+  }
+  resolveDocumentUnload(unloadGuard, event)
 }
 
 function setOnline() {
@@ -377,11 +417,7 @@ onBeforeUnmount(() => {
           class="mr-1 whitespace-nowrap text-sm text-ink-gray-5"
           aria-live="polite"
         >
-          {{
-            [savingPaused && 'Saving paused', roomUnsent && `${roomUnsent} unsent`]
-              .filter(Boolean)
-              .join(' · ')
-          }}
+          {{ saveNote }}
         </span>
         <UsersBar v-if="peers.length" :users="peers" />
         <WriterDocumentMenu

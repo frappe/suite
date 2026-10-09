@@ -4,6 +4,7 @@ import Document from '@tiptap/extension-document'
 import Heading from '@tiptap/extension-heading'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
@@ -19,47 +20,66 @@ function open(state: Uint8Array) {
   const ydoc = new Y.Doc()
   Y.applyUpdate(ydoc, state, 'server')
   let writes = 0
-  ydoc.on('update', (_update: Uint8Array, origin: unknown) => {
-    if (origin !== 'server' && origin !== 'remote') writes++
-  })
+  const countWrite = (_update: Uint8Array, origin: unknown) => {
+    if (origin !== 'server' && origin !== 'remote') {
+      writes++
+    }
+  }
+  ydoc.on('update', countWrite)
+
   let anchors: { id: string; textContent: string }[] = []
   const element = document.createElement('div')
   document.body.append(element)
-  const editor = new Editor({
+  const collaboration = {
+    document: ydoc,
+    field: 'default',
+  }
+  const editorOptions = {
     element,
     extensions: [
       Document,
       Paragraph,
       Text,
       Heading,
-      Collaboration.configure({ document: ydoc, field: 'default' }),
+      Collaboration.configure(collaboration),
       HeadingAnchors.configure({ onUpdate: (items) => (anchors = items as never) }),
       ReceivedContentGuard,
     ],
-  })
+  }
+  const editor = new Editor(editorOptions)
   editors.push(editor)
-  return { ydoc, editor, writes: () => writes, anchors: () => anchors }
+  return {
+    ydoc,
+    editor,
+    writes: () => writes,
+    anchors: () => anchors,
+  }
 }
 
 function legacyDoc(...headings: string[]) {
   const ydoc = new Y.Doc()
-  const blocks = headings.flatMap((text) => {
+  const headingWithBody = (text: string) => {
     const heading = new Y.XmlElement('heading')
     heading.setAttribute('level', 2 as never)
     heading.insert(0, [new Y.XmlText(text)])
     const paragraph = new Y.XmlElement('paragraph')
     paragraph.insert(0, [new Y.XmlText('body')])
     return [heading, paragraph]
-  })
+  }
+  const blocks = headings.flatMap(headingWithBody)
   ydoc.getXmlFragment('default').insert(0, blocks)
   return Y.encodeStateAsUpdate(ydoc)
 }
 
 const headingIds = (editor: Editor) => {
   const ids: (string | null)[] = []
-  editor.state.doc.descendants((node) => {
-    if (node.type.name === 'heading') ids.push(node.attrs['data-toc-id'])
-  })
+  const collect = (node: ProseMirrorNode) => {
+    if (node.type.name === 'heading') {
+      ids.push(node.attrs['data-toc-id'])
+    }
+  }
+  editor.state.doc.descendants(collect)
+
   return ids
 }
 

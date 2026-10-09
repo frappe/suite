@@ -289,11 +289,12 @@ describe('DocumentHost', () => {
   })
 
   it("says why a document didn't open and opens it on retry", async () => {
-    testState.open
-      .mockRejectedValueOnce(
-        new TransportError({ type: 'ServerError', message: 'Internal Server Error', status: 500 }),
-      )
-      .mockResolvedValueOnce(session())
+    const serverError = new TransportError({
+      type: 'ServerError',
+      message: 'Internal Server Error',
+      status: 500,
+    })
+    testState.open.mockRejectedValueOnce(serverError).mockResolvedValueOnce(session())
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],

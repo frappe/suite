@@ -214,7 +214,9 @@ const tabs = ref([])
 const updateTabs = () => {
   tabs.value = listTabs(props.editor)
   // The first tab alone is just the document, so it shows as plain headings
-  if (tabs.value.length === 1 && tabs.value[0].id === FIRST_TAB_ID) tabs.value = []
+  if (tabs.value.length === 1 && tabs.value[0].id === FIRST_TAB_ID) {
+    tabs.value = []
+  }
 }
 
 // Get active tab ID
@@ -409,9 +411,11 @@ const activeAnchorId = computed(() => {
   return activeId
 })
 
-const tabActions = computed(() =>
-  [
-    props.editor.can().renameTab(activeTabId.value, '') && {
+const tabActions = computed(() => {
+  const canRename = props.editor.can().renameTab(activeTabId.value, '')
+  const onlyFirstTab = activeTabId.value === FIRST_TAB_ID && tabs.value.length === 1
+  const actions = [
+    canRename && {
       label: 'Rename',
       icon: LucidePencil,
       onClick: () => startRenaming(activeTabId.value),
@@ -422,7 +426,7 @@ const tabActions = computed(() =>
       onClick: () =>
         navigator.clipboard.writeText(window.location.href.split('#')[0] + '#' + activeTabId.value),
     },
-    !(activeTabId.value === FIRST_TAB_ID && tabs.value.length === 1) && {
+    !onlyFirstTab && {
       group: '',
       hideLabel: true,
       options: [
@@ -434,8 +438,9 @@ const tabActions = computed(() =>
         },
       ],
     },
-  ].filter(Boolean),
-)
+  ]
+  return actions.filter(Boolean)
+})
 </script>
 
 <style scoped>

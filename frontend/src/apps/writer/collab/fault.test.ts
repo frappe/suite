@@ -19,7 +19,8 @@ function body(build: (fragment: Y.XmlFragment) => void) {
 
 describe('writerFault', () => {
   it('passes a body the editor can hold', () => {
-    expect(writerFault(body((f) => f.insert(0, [paragraph('abc')])))).toBeNull()
+    const doc = body((f) => f.insert(0, [paragraph('abc')]))
+    expect(writerFault(doc)).toBeNull()
   })
 
   it('passes an empty document', () => {
@@ -27,20 +28,23 @@ describe('writerFault', () => {
   })
 
   it('refuses a table cell straight in the body', () => {
-    const doc = body((f) => {
+    const cellInBody = (f: Y.XmlFragment) => {
       const cell = new Y.XmlElement('tableCell')
       cell.insert(0, [paragraph('z')])
       f.insert(0, [paragraph('abc'), cell])
-    })
+    }
+    const doc = body(cellInBody)
     expect(writerFault(doc)).toMatch(/^schema: RangeError: Invalid content for node doc/)
   })
 
   it('refuses text straight in the body', () => {
-    expect(writerFault(body((f) => f.insert(0, [new Y.XmlText('loose')])))).toMatch(/^schema: /)
+    const doc = body((f) => f.insert(0, [new Y.XmlText('loose')]))
+    expect(writerFault(doc)).toMatch(/^schema: /)
   })
 
   it('passes an empty row on a body with content', () => {
-    const checkpoint = Y.encodeStateAsUpdate(body((f) => f.insert(0, [paragraph('abc')])))
+    const withContent = body((f) => f.insert(0, [paragraph('abc')]))
+    const checkpoint = Y.encodeStateAsUpdate(withContent)
     const empty = Y.encodeStateAsUpdate(new Y.Doc())
     expect(judge(checkpoint, [empty, empty], writerFault)).toEqual({ verdict: 'clean' })
   })

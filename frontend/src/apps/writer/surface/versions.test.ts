@@ -7,8 +7,11 @@ import { writerSchema } from '../schema'
 import { readVersion } from './versions'
 
 const schema = getSchema(writerSchema())
-const encode = (value: string | object) =>
-  new TextEncoder().encode(typeof value === 'string' ? value : JSON.stringify(value))
+
+function encode(value: string | object) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return new TextEncoder().encode(text)
+}
 
 const document = {
   type: 'doc',
@@ -26,22 +29,24 @@ const document = {
 }
 
 async function gzipBase64(bytes: Uint8Array) {
-  const stream = new Response(new Uint8Array(bytes)).body!.pipeThrough(
-    new CompressionStream('gzip'),
-  )
-  const zipped = new Uint8Array(await new Response(stream).arrayBuffer())
+  const raw = new Response(new Uint8Array(bytes)).body!
+  const stream = raw.pipeThrough(new CompressionStream('gzip'))
+  const buffer = await new Response(stream).arrayBuffer()
+  const zipped = new Uint8Array(buffer)
   return btoa(String.fromCharCode(...zipped))
 }
 
 async function collabVersion() {
   const ydoc = prosemirrorJSONToYDoc(schema, document, 'default')
+  const update = Y.encodeStateAsUpdate(ydoc)
+  const state = await gzipBase64(update)
   return {
     schema: 'writer-document/2',
     codec: 'yjs1',
     lineage: 'lineage-1',
     through_rev: 7,
     chain: 'chain-7',
-    state: await gzipBase64(Y.encodeStateAsUpdate(ydoc)),
+    state,
     html: null,
     media: [],
   }
@@ -66,14 +71,20 @@ describe('readVersion', () => {
   })
 
   it('shows a writer-document/2 version as the document its state holds', async () => {
-    const shown = await readVersion(encode(await collabVersion()))
+    const version = await collabVersion()
+    const shown = await readVersion(encode(version))
 
     expect(typeof shown).toBe('object')
     expect(schema.nodeFromJSON(shown).eq(schema.nodeFromJSON(document))).toBe(true)
   })
 
   it('refuses a writer-document/1 version that restoring it would refuse', async () => {
-    const saved = { schema: 'writer-document/1', content: 'AAA=', html: '<p>Saved</p>', collab: 0 }
+    const saved = {
+      schema: 'writer-document/1',
+      content: 'AAA=',
+      html: '<p>Saved</p>',
+      collab: 0,
+    }
 
     for (const broken of [
       { content: '' },
@@ -88,13 +99,20 @@ describe('readVersion', () => {
   })
 
   it('refuses a version with an unknown schema', async () => {
-    await expect(
-      readVersion(encode({ schema: 'writer-document/9', html: '<p>x</p>' })),
-    ).rejects.toThrow('This version cannot be read.')
+    const version = {
+      schema: 'writer-document/9',
+      html: '<p>x</p>',
+    }
+
+    await expect(readVersion(encode(version))).rejects.toThrow('This version cannot be read.')
   })
 
   it('refuses a writer-document/2 version whose state is not gzip', async () => {
-    const version = { ...(await collabVersion()), state: btoa('not gzip') }
+    const stored = await collabVersion()
+    const version = {
+      ...stored,
+      state: btoa('not gzip'),
+    }
 
     await expect(readVersion(encode(version))).rejects.toThrow()
   })

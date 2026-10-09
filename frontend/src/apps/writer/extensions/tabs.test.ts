@@ -19,11 +19,13 @@ afterEach(async () => {
 const tabHTML = (label: string, index: number) =>
   `<div data-tab-id="tab-${label}" data-tab-label="${label}" data-tab-order="${index}"><p>${label}</p></div>`
 
-const makeEditor = (labels: string[]) =>
-  new Editor({
+function makeEditor(labels: string[]) {
+  const editorOptions = {
     extensions: [Document, Paragraph, Text, TabsExtension],
     content: labels.map(tabHTML).join(''),
-  })
+  }
+  return new Editor(editorOptions)
+}
 
 const labelsOf = (editor: Editor) =>
   orderedTabs(editor.state.doc).map(({ node }) => node.attrs.label)
@@ -113,23 +115,24 @@ describe('ordered serialisation', () => {
 function open(ydoc = new Y.Doc()) {
   const element = document.createElement('div')
   document.body.append(element)
-  const editor = new Editor({
+  const collaboration = {
+    document: ydoc,
+    field: 'default',
+  }
+  const editorOptions = {
     element,
-    extensions: [
-      Document,
-      Paragraph,
-      Text,
-      TabsExtension,
-      Collaboration.configure({ document: ydoc, field: 'default' }),
-    ],
-  })
+    extensions: [Document, Paragraph, Text, TabsExtension, Collaboration.configure(collaboration)],
+  }
+  const editor = new Editor(editorOptions)
   editors.push(editor)
   return { ydoc, editor }
 }
 
 const sync = (a: Y.Doc, b: Y.Doc) => {
-  Y.applyUpdate(a, Y.encodeStateAsUpdate(b, Y.encodeStateVector(a)), 'remote')
-  Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)), 'remote')
+  const missingInA = Y.encodeStateAsUpdate(b, Y.encodeStateVector(a))
+  Y.applyUpdate(a, missingInA, 'remote')
+  const missingInB = Y.encodeStateAsUpdate(a, Y.encodeStateVector(b))
+  Y.applyUpdate(b, missingInB, 'remote')
 }
 
 const textOf = (editor: Editor) =>

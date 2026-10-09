@@ -4,6 +4,7 @@ import {
   type CollabEndpoints,
   type DeviceStore,
   type Opened,
+  type OpenOptions,
 } from '@suite/collab-client'
 
 import type { DocumentSession } from '@/apps/drive'
@@ -44,33 +45,49 @@ export function writerEndpoints(session: DocumentSession, principal: string): Co
   const headers = { 'X-Collab-Principal': principal }
   return {
     open: () => transport.requestBytes(OPEN, { node }, { headers }),
-    pull: (since, epoch) =>
-      transport.requestBytes(PULL, { node, since, q_epoch: epoch }, { headers }),
-    push: (body, options) =>
-      transport.requestBytes(PUSH, { node }, { body, keepalive: options?.keepalive, headers }),
-    stage: (stage, idx, body) =>
-      transport.requestBytes(STAGE, { node, stage_id: stage, idx }, { body, headers }),
-    session: (sid, claim) =>
-      transport.requestBytes(
-        SESSION,
-        { node },
-        {
-          body: new TextEncoder().encode(JSON.stringify(claim ? { sid, claim } : { sid })),
-          headers,
-        },
-      ),
-    suspect: (rev) =>
-      transport.requestBytes(
-        SUSPECT,
-        { node },
-        { body: new TextEncoder().encode(JSON.stringify({ rev })), headers },
-      ),
+    pull: (since, epoch) => {
+      const input = {
+        node,
+        since,
+        q_epoch: epoch,
+      }
+      return transport.requestBytes(PULL, input, { headers })
+    },
+    push: (body, options) => {
+      const bytesOptions = {
+        body,
+        keepalive: options?.keepalive,
+        headers,
+      }
+      return transport.requestBytes(PUSH, { node }, bytesOptions)
+    },
+    stage: (stage, idx, body) => {
+      const input = {
+        node,
+        stage_id: stage,
+        idx,
+      }
+      return transport.requestBytes(STAGE, input, { body, headers })
+    },
+    session: (sid, claim) => {
+      const sessionClaim = claim ? { sid, claim } : { sid }
+      const json = JSON.stringify(sessionClaim)
+      const body = new TextEncoder().encode(json)
+      return transport.requestBytes(SESSION, { node }, { body, headers })
+    },
+    suspect: (rev) => {
+      const json = JSON.stringify({ rev })
+      const body = new TextEncoder().encode(json)
+      return transport.requestBytes(SUSPECT, { node }, { body, headers })
+    },
   }
 }
 
 // Waits for slow work, but never longer than a person should be held up
-export const withinTenSeconds = (work: Promise<void>) =>
-  Promise.race([work, new Promise<void>((resolve) => setTimeout(resolve, 10_000))])
+export const withinTenSeconds = (work: Promise<void>) => {
+  const tenSeconds = new Promise<void>((resolve) => setTimeout(resolve, 10_000))
+  return Promise.race([work, tenSeconds])
+}
 
 const signedIn = () => getCookieSessionUser() ?? 'Guest'
 
@@ -79,20 +96,27 @@ const stores = new Map<string, Promise<DeviceStore | null>>()
 
 function deviceStore(principal: string) {
   const key = principal === 'Guest' ? 'guest' : principal
-  if (!stores.has(key))
+  if (!stores.has(key)) {
     stores.set(key, openDeviceStore(`suite-writer-collab:${location.host}:${key}`))
+  }
+
   return stores.get(key)!
 }
 
 export async function openWriterRoom(session: DocumentSession): Promise<Opened> {
   const principal = signedIn()
   const store = await deviceStore(principal)
-  return openCollabRoom({
+  const device = store && {
+    store,
+    doc: session.nodeId,
+  }
+  const options: OpenOptions = {
     endpoints: writerEndpoints(session, principal),
     principal,
     schema: WRITER_SCHEMA,
     signedIn,
-    device: store && { store, doc: session.nodeId },
+    device,
     socket: getRealtimeSocket(),
-  })
+  }
+  return openCollabRoom(options)
 }

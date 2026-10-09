@@ -26,20 +26,22 @@ afterEach(() => editor?.destroy())
 
 function guarded(limits: Limits | null, atLimit = false) {
   const said: string[] = []
-  editor = new Editor({
-    extensions: [
-      Document,
-      Paragraph,
-      Text,
-      PasteSizeGuard.configure({
-        limits: () => limits,
-        atLimit: () => atLimit,
-        tooLarge: () => said.push('too large'),
-        nearFull: () => said.push('nearly full'),
-      }),
-    ],
-  })
-  return { view: editor.view, said, text: () => editor!.state.doc.textContent }
+  const guardOptions = {
+    limits: () => limits,
+    atLimit: () => atLimit,
+    tooLarge: () => said.push('too large'),
+    nearFull: () => said.push('nearly full'),
+  }
+  const guard = PasteSizeGuard.configure(guardOptions)
+  const editorOptions = {
+    extensions: [Document, Paragraph, Text, guard],
+  }
+  editor = new Editor(editorOptions)
+  return {
+    view: editor.view,
+    said,
+    text: () => editor!.state.doc.textContent,
+  }
 }
 
 describe('paste size guard', () => {
@@ -90,46 +92,71 @@ function atLimit() {
   const full = { now: false }
   const element = document.createElement('div')
   document.body.append(element)
-  editor = new Editor({
+  const guardOptions = {
+    limits: () => empty,
+    atLimit: () => full.now,
+  }
+  const editorOptions = {
     element,
     extensions: [
       Document,
       Paragraph,
       Text,
       Collaboration.configure({ document: ydoc }),
-      PasteSizeGuard.configure({ limits: () => empty, atLimit: () => full.now }),
+      PasteSizeGuard.configure(guardOptions),
     ],
-  })
+  }
+  editor = new Editor(editorOptions)
   editor.commands.setContent('<p>alpha one</p><p>beta two</p><p></p><p>gamma three</p>')
   full.now = true
+
   const added: number[] = []
-  ydoc.on('update', (update: Uint8Array) => added.push(Y.decodeUpdate(update).structs.length))
+  const countStructs = (update: Uint8Array) => {
+    const { structs } = Y.decodeUpdate(update)
+    added.push(structs.length)
+  }
+  ydoc.on('update', countStructs)
+
   const blocks = () => editor!.getJSON().content!.map((block) => block.content?.[0]?.text ?? '')
-  return { ydoc, full, added, blocks, chain: () => editor!.chain() }
+  return {
+    ydoc,
+    full,
+    added,
+    blocks,
+    chain: () => editor!.chain(),
+  }
 }
 
 describe('a document at its size limit', () => {
   it('a tab opened on a full document shows its text', () => {
     const written = new Y.Doc()
-    const source = new Editor({
+    const sourceOptions = {
       extensions: [Document, Paragraph, Text, Collaboration.configure({ document: written })],
-    })
+    }
+    const source = new Editor(sourceOptions)
     source.commands.setContent('<p>alpha one</p><p>beta two</p>')
     source.destroy()
+
     const ydoc = new Y.Doc()
-    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(written))
+    const writtenState = Y.encodeStateAsUpdate(written)
+    Y.applyUpdate(ydoc, writtenState)
     const element = document.createElement('div')
     document.body.append(element)
-    editor = new Editor({
+    const guardOptions = {
+      limits: () => empty,
+      atLimit: () => true,
+    }
+    const editorOptions = {
       element,
       extensions: [
         Document,
         Paragraph,
         Text,
         Collaboration.configure({ document: ydoc }),
-        PasteSizeGuard.configure({ limits: () => empty, atLimit: () => true }),
+        PasteSizeGuard.configure(guardOptions),
       ],
-    })
+    }
+    editor = new Editor(editorOptions)
 
     expect(editor.getText({ blockSeparator: '|' })).toBe('alpha one|beta two')
   })
@@ -185,12 +212,14 @@ describe('a document at its size limit', () => {
   it("another writer's change still shows", () => {
     const { ydoc, blocks } = atLimit()
     const other = new Y.Doc()
-    Y.applyUpdate(other, Y.encodeStateAsUpdate(ydoc))
+    const fullState = Y.encodeStateAsUpdate(ydoc)
+    Y.applyUpdate(other, fullState)
     const before = Y.encodeStateVector(other)
     const first = other.getXmlFragment('default').get(0) as Y.XmlElement
     ;(first.get(0) as Y.XmlText).insert(0, 'new ')
 
-    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(other, before), 'remote')
+    const otherChange = Y.encodeStateAsUpdate(other, before)
+    Y.applyUpdate(ydoc, otherChange, 'remote')
 
     expect(blocks()[0]).toBe('new alpha one')
   })

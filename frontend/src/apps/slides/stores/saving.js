@@ -23,6 +23,7 @@ const draftsUser = () => getSessionUser() || 'Guest'
 const openDB = async () => {
   const user = draftsUser()
   if (db && dbUser === user) return db
+
   db?.close()
   db = await openDrafts(draftsDbName(user))
   dbUser = user
@@ -116,6 +117,7 @@ const getPresentationFromLocalDB = async (id) => {
     }
   })
   if (record || viewOnly.value) return record ?? null
+
   return takeUnownedDraft(id, draftsUser()).catch(() => null)
 }
 

@@ -26,15 +26,18 @@ const store = (db, mode) => db.transaction(STORE, mode).objectStore(STORE)
 
 // a newer draft already in the owner's database wins
 const putUnlessNewer = async (db, record) => {
-  const held = await settle(store(db, 'readonly').get(record.id))
+  const lookup = store(db, 'readonly').get(record.id)
+  const held = await settle(lookup)
   if (held && held.updatedAt >= record.updatedAt) return
+
   await settle(store(db, 'readwrite').put(record))
 }
 
 const moveTo = async (owner, record) => {
   const db = await openDrafts(draftsDbName(owner))
+  const owned = { ...record, user: owner }
   try {
-    await putUnlessNewer(db, { ...record, user: owner })
+    await putUnlessNewer(db, owned)
   } finally {
     db.close()
   }
@@ -46,9 +49,11 @@ const moveTo = async (owner, record) => {
 export const adoptLegacyDrafts = async (previousUser) => {
   const legacy = await openDrafts(DRAFTS_DB_NAME)
   try {
-    for (const record of await settle(store(legacy, 'readonly').getAll())) {
+    const records = await settle(store(legacy, 'readonly').getAll())
+    for (const record of records) {
       const owner = record.user || previousUser
       if (!owner) continue
+
       await moveTo(owner, record)
       await settle(store(legacy, 'readwrite').delete(record.id))
     }
@@ -57,16 +62,19 @@ export const adoptLegacyDrafts = async (previousUser) => {
   } finally {
     legacy.close()
   }
+
   indexedDB.deleteDatabase(DRAFTS_DB_NAME)
   legacyGone = true
 }
 
 export const takeUnownedDraft = async (id, user) => {
   if (legacyGone) return null
+
   const legacy = await openDrafts(DRAFTS_DB_NAME)
   try {
     const record = await settle(store(legacy, 'readonly').get(id))
     if (!record || record.user) return null
+
     await moveTo(user, record)
     await settle(store(legacy, 'readwrite').delete(id))
     return { ...record, user }

@@ -1,4 +1,5 @@
-import { Editor } from '@tiptap/core'
+import type { Peer } from '@suite/collab-client'
+import { Editor, type EditorOptions } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
@@ -15,6 +16,7 @@ vi.mock('@/apps/writer/drive', () => ({ searchUsers }))
 
 const PEER = 2 ** 31 + 7
 const editors: Editor[] = []
+
 afterEach(() => {
   editors.splice(0).forEach((editor) => editor.destroy())
   vi.useRealTimers()
@@ -28,7 +30,8 @@ function open() {
   const presence = { awareness, peers: [], onChange: () => () => true }
   const element = document.createElement('div')
   document.body.append(element)
-  const editor = new Editor({
+
+  const editorOptions: Partial<EditorOptions> = {
     element,
     extensions: [
       Document,
@@ -37,7 +40,8 @@ function open() {
       Collaboration.configure({ document: doc }),
       Carets.configure({ presence }),
     ],
-  })
+  }
+  const editor = new Editor(editorOptions)
   editors.push(editor)
   editor.commands.insertContent('hello')
   return { editor, awareness, doc }
@@ -53,10 +57,12 @@ function peer(awareness: Awareness) {
   const doc = new Y.Doc()
   doc.clientID = PEER
   const own = new Awareness(doc)
-  return (state: object | null) => {
+  const say = (state: object | null) => {
     own.setLocalState(state)
-    applyAwarenessUpdate(awareness, encodeAwarenessUpdate(own, [PEER]), 'remote')
+    const update = encodeAwarenessUpdate(own, [PEER])
+    applyAwarenessUpdate(awareness, update, 'remote')
   }
+  return say
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -65,6 +71,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 function caretAfter(editor: Editor) {
   const caret = editor.view.dom.querySelector('.collaboration-carets__caret')
   if (!caret) return null
+
   const range = document.createRange()
   range.setStart(editor.view.dom, 0)
   range.setEndBefore(caret)
@@ -94,9 +101,11 @@ describe('Writer carets', () => {
     editor.commands.setTextSelection(2)
 
     let answer = (_: object[]) => {}
-    searchUsers.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const lookup = new Promise((resolve) => (answer = resolve))
+    searchUsers.mockReturnValue(lookup)
+    const user = { id: 'bea@x.com', color: '#3E63DD' }
 
-    peerSays({ user: { id: 'bea@x.com', color: '#3E63DD' }, cursor: caretAt(editor, 3) })
+    peerSays({ user, cursor: caretAt(editor, 3) })
     await tick()
     const before = labels(editor)
     answer([{ name: 'bea@x.com', full_name: 'Bea Writer' }])
@@ -117,18 +126,22 @@ describe('Writer carets', () => {
     }
     const user = { id: 'bea@x.com', color: '#3E63DD' }
     const theirs = new Y.Doc()
-    Y.applyUpdate(theirs, Y.encodeStateAsUpdate(doc))
+    const ours = Y.encodeStateAsUpdate(doc)
+    Y.applyUpdate(theirs, ours)
     const before = Y.encodeStateVector(theirs)
-    const words = (theirs.getXmlFragment('default').get(0) as Y.XmlElement).get(0) as Y.XmlText
+    const paragraph = theirs.getXmlFragment('default').get(0) as Y.XmlElement
+    const words = paragraph.get(0) as Y.XmlText
     words.insert(5, ' world')
-    const within = Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(words, 8))
+    const position = Y.createRelativePositionFromTypeIndex(words, 8)
+    const within = Y.relativePositionToJSON(position)
     const ahead = { anchor: within, head: within }
 
     await peerSays({ user, cursor: caretAt(editor, 3) })
     const placed = caretAfter(editor)
     await peerSays({ user, cursor: ahead })
     const waiting = caretAfter(editor)
-    Y.applyUpdate(doc, Y.encodeStateAsUpdate(theirs, before))
+    const theirEdit = Y.encodeStateAsUpdate(theirs, before)
+    Y.applyUpdate(doc, theirEdit)
     const arrived = caretAfter(editor)
     await peerSays({ user, cursor: null })
     const cleared = caretAfter(editor)
@@ -177,12 +190,14 @@ describe('Writer carets', () => {
     searchUsers.mockResolvedValue([])
     const color = '#E5484D'
 
-    const people = peopleOf([
+    const peers: Peer[] = [
       { pid: PEER, user: 'cy@x.com', color },
       { pid: PEER + 1, user: 'cy@x.com', color },
       { pid: 2 ** 31 + 1_000_000, user: 'Guest', color },
       { pid: 2 ** 31 + 2_000_000, user: 'Guest', color },
-    ])
+    ]
+
+    const people = peopleOf(peers)
 
     expect(people.map((person) => person.id)).toEqual(['cy@x.com', 'Guest', 'Guest'])
     expect(people[1].name).toMatch(/^Guest [0-9A-Z]{4}$/)

@@ -4,7 +4,13 @@ import { openDrafts } from './drafts'
 
 vi.stubGlobal('caches', { delete: async () => true })
 
-const draft = (id: string, user?: string) => ({ id, user, content: [], updatedAt: 1, dirty: true })
+const draft = (id: string, user?: string) => ({
+  id,
+  user,
+  content: [],
+  updatedAt: 1,
+  dirty: true,
+})
 
 async function put(name: string, records: object[]) {
   const db = await openDrafts(name)
@@ -30,7 +36,9 @@ async function signIn(user: string) {
 
 beforeEach(async () => {
   localStorage.clear()
-  for (const { name } of await indexedDB.databases()) indexedDB.deleteDatabase(name!)
+  for (const { name } of await indexedDB.databases()) {
+    indexedDB.deleteDatabase(name!)
+  }
 })
 
 describe('drafts per user', () => {
@@ -43,7 +51,8 @@ describe('drafts per user', () => {
 
     expect(await ids('slides-db:a@x.com')).toEqual(['p1', 'p2'])
     expect(await ids('slides-db:b@x.com')).toEqual([])
-    expect((await indexedDB.databases()).map((db) => db.name)).not.toContain('slides-db')
+    const names = (await indexedDB.databases()).map((db) => db.name)
+    expect(names).not.toContain('slides-db')
   })
 
   it('keeps a draft with no known owner until someone takes it', async () => {

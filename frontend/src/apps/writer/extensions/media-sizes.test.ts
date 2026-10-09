@@ -1,12 +1,13 @@
 import { Editor, getSchema, type JSONContent } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
 import { prosemirrorJSONToYDoc, ySyncPluginKey } from '@tiptap/y-tiptap'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import * as Y from 'yjs'
 
-import { writerEditorExtensions } from '../editor-extensions'
+import { writerEditorExtensions, type WriterEditorOptions } from '../editor-extensions'
 import { writerSchema } from '../schema'
 
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
@@ -21,14 +22,13 @@ class MeasuredImage {
   onload: (() => void) | null = null
   onerror: ((error: unknown) => void) | null = null
   set src(src: string) {
-    measure(src).then(
-      ({ width, height }) => {
-        this.naturalWidth = width
-        this.naturalHeight = height
-        this.onload?.()
-      },
-      (error) => this.onerror?.(error),
-    )
+    const loaded = ({ width, height }: Size) => {
+      this.naturalWidth = width
+      this.naturalHeight = height
+      this.onload?.()
+    }
+    const failed = (error: unknown) => this.onerror?.(error)
+    measure(src).then(loaded, failed)
   }
 }
 
@@ -43,52 +43,79 @@ afterEach(() => {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const image = (src: string, attrs: object = {}) => ({ type: 'image', attrs: { src, ...attrs } })
+const image = (src: string, attrs: object = {}) => ({
+  type: 'image',
+  attrs: { src, ...attrs },
+})
 const pic = (src: string, attrs: object = {}) => ({
   type: 'paragraph',
   content: [image(src, attrs)],
 })
-const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
-const doc = (...content: object[]): JSONContent => ({ type: 'doc', content })
+const p = (text: string) => ({
+  type: 'paragraph',
+  content: [{ type: 'text', text }],
+})
+const doc = (...content: object[]): JSONContent => ({
+  type: 'doc',
+  content,
+})
 
 function extensions(ydoc: Y.Doc | null) {
   const comments = new Y.Doc()
-  return [
-    ...writerEditorExtensions({
-      collaborative: !!ydoc,
-      mentionItems: () => [],
-      onMentionQuery: () => {},
-      onCommentActivated: () => {},
-      onAnchors: () => {},
-      scrollParent: () => window,
-      media: null,
-      comments: comments.getMap('comments'),
-      ydoc: comments,
-      activeComment: ref(null),
-      showComments: ref(false),
-      showResolved: ref(false),
-      edited: ref(false),
-      onCommentsPainted: () => {},
-    }),
-    ...(ydoc ? [Collaboration.configure({ document: ydoc, field: 'default' })] : []),
-  ]
+  const options: WriterEditorOptions = {
+    collaborative: !!ydoc,
+    mentionItems: () => [],
+    onMentionQuery: () => {},
+    onCommentActivated: () => {},
+    onAnchors: () => {},
+    scrollParent: () => window,
+    media: null,
+    comments: comments.getMap('comments'),
+    ydoc: comments,
+    activeComment: ref(null),
+    showComments: ref(false),
+    showResolved: ref(false),
+    edited: ref(false),
+    onCommentsPainted: () => {},
+  }
+  const writer = writerEditorExtensions(options)
+  if (!ydoc) return writer
+
+  const collaboration = {
+    document: ydoc,
+    field: 'default',
+  }
+  return [...writer, Collaboration.configure(collaboration)]
 }
 
 function open(content: JSONContent | Y.Doc, collaborative = true) {
   let ydoc: Y.Doc | null = null
-  if (content instanceof Y.Doc) ydoc = content
-  else if (collaborative)
-    ydoc = prosemirrorJSONToYDoc(getSchema(writerSchema()), content, 'default')
+  if (content instanceof Y.Doc) {
+    ydoc = content
+  } else if (collaborative) {
+    const schema = getSchema(writerSchema())
+    ydoc = prosemirrorJSONToYDoc(schema, content, 'default')
+  }
+
   let writes = 0
-  ydoc?.on('update', (_update: Uint8Array, origin: unknown) => {
-    if (origin !== 'remote') writes++
-  })
-  const editor = new Editor({
+  const countWrite = (_update: Uint8Array, origin: unknown) => {
+    if (origin !== 'remote') {
+      writes++
+    }
+  }
+  ydoc?.on('update', countWrite)
+
+  const editorOptions = {
     extensions: extensions(ydoc),
     ...(!ydoc && { content: content as JSONContent }),
-  })
+  }
+  const editor = new Editor(editorOptions)
   editors.push(editor)
-  return { editor, ydoc, writes: () => writes }
+  return {
+    editor,
+    ydoc,
+    writes: () => writes,
+  }
 }
 
 const type = (editor: Editor, text = 'y') =>
@@ -96,9 +123,13 @@ const type = (editor: Editor, text = 'y') =>
 
 const sizes = (editor: Editor, name = 'image') => {
   const found: [unknown, unknown][] = []
-  editor.state.doc.descendants((node) => {
-    if (node.type.name === name) found.push([node.attrs.width, node.attrs.height])
-  })
+  const collect = (node: ProseMirrorNode) => {
+    if (node.type.name === name) {
+      found.push([node.attrs.width, node.attrs.height])
+    }
+  }
+  editor.state.doc.descendants(collect)
+
   return found
 }
 
@@ -133,9 +164,12 @@ describe.each([
     const { editor } = open(stored, collaborative)
     await settle()
     const sent: Transaction[] = []
-    editor.on('transaction', ({ transaction }) => {
-      if (transaction.docChanged) sent.push(transaction)
-    })
+    const recordChange = ({ transaction }: { transaction: Transaction }) => {
+      if (transaction.docChanged) {
+        sent.push(transaction)
+      }
+    }
+    editor.on('transaction', recordChange)
     type(editor)
     await Promise.resolve()
 
@@ -173,11 +207,11 @@ describe('media sizes', () => {
   it('leaves media alone when a collaborator changes the document', async () => {
     const { editor } = open(doc(pic('/files/old.png'), p('x')))
     await settle()
-    editor.view.dispatch(
-      editor.state.tr
-        .insert(1, editor.schema.nodes.image.create({ src: '/files/theirs.png' }))
-        .setMeta(ySyncPluginKey, { isChangeOrigin: true }),
-    )
+    const theirImage = editor.schema.nodes.image.create({ src: '/files/theirs.png' })
+    const received = editor.state.tr
+      .insert(1, theirImage)
+      .setMeta(ySyncPluginKey, { isChangeOrigin: true })
+    editor.view.dispatch(received)
     await settle()
 
     expect(sizes(editor)).toEqual([
@@ -191,11 +225,11 @@ describe('media sizes', () => {
     measure.mockImplementationOnce(() => new Promise((resolve) => (measured = resolve)))
     const { editor } = open(doc(pic('/files/old.png'), p('x')))
     type(editor)
-    editor.view.dispatch(
-      editor.state.tr
-        .insert(1, editor.schema.nodes.image.create({ src: '/files/theirs.png' }))
-        .setMeta(ySyncPluginKey, { isChangeOrigin: true }),
-    )
+    const theirImage = editor.schema.nodes.image.create({ src: '/files/theirs.png' })
+    const received = editor.state.tr
+      .insert(1, theirImage)
+      .setMeta(ySyncPluginKey, { isChangeOrigin: true })
+    editor.view.dispatch(received)
     await settle()
 
     measured({ width: 100, height: 50 })
@@ -210,11 +244,10 @@ describe('media sizes', () => {
   it('does not give an image the size of the file it replaced', async () => {
     measure.mockImplementationOnce(async () => ({ width: 7, height: 7 }))
     const { editor } = open(doc(pic('/files/old.png'), p('x')))
-    editor.view.dispatch(
-      editor.state.tr
-        .setNodeAttribute(1, 'src', '/files/new.png')
-        .setMeta(ySyncPluginKey, { isChangeOrigin: true }),
-    )
+    const replaced = editor.state.tr
+      .setNodeAttribute(1, 'src', '/files/new.png')
+      .setMeta(ySyncPluginKey, { isChangeOrigin: true })
+    editor.view.dispatch(replaced)
     await settle()
     type(editor)
     await settle()
@@ -313,11 +346,10 @@ describe('media sizes', () => {
     await settle()
     expect(measure).not.toHaveBeenCalled()
 
-    editor.view.dispatch(
-      editor.state.tr
-        .setNodeAttribute(1, 'src', '/files/done.png')
-        .setNodeAttribute(1, 'loading', false),
-    )
+    const uploaded = editor.state.tr
+      .setNodeAttribute(1, 'src', '/files/done.png')
+      .setNodeAttribute(1, 'loading', false)
+    editor.view.dispatch(uploaded)
     await settle()
 
     expect(sizes(editor)).toEqual([[100, 50]])
@@ -337,14 +369,21 @@ describe('media sizes', () => {
   })
 
   it('sizes a stored video right after the first edit', async () => {
-    vi.spyOn(HTMLVideoElement.prototype, 'src', 'set').mockImplementation(function (
-      this: HTMLVideoElement,
-    ) {
-      Object.defineProperties(this, { videoWidth: { value: 640 }, videoHeight: { value: 360 } })
+    const dimensions = {
+      videoWidth: { value: 640 },
+      videoHeight: { value: 360 },
+    }
+    function loadMetadata(this: HTMLVideoElement) {
+      Object.defineProperties(this, dimensions)
       queueMicrotask(() => this.onloadedmetadata?.(new Event('loadedmetadata')))
-    })
+    }
+    vi.spyOn(HTMLVideoElement.prototype, 'src', 'set').mockImplementation(loadMetadata)
     const stop = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
-    const { editor } = open(doc({ type: 'video', attrs: { src: '/files/clip.mp4' } }, p('x')))
+    const video = {
+      type: 'video',
+      attrs: { src: '/files/clip.mp4' },
+    }
+    const { editor } = open(doc(video, p('x')))
     await settle()
     expect(sizes(editor, 'video')).toEqual([[null, null]])
     expect(stop).toHaveBeenCalledTimes(1)
@@ -377,18 +416,20 @@ it('does not size an image that undo brings back with a fix-up', async () => {
 
 describe('media sizes with collaborators', () => {
   function pair(content: JSONContent) {
-    const stored = Y.encodeStateAsUpdate(
-      prosemirrorJSONToYDoc(getSchema(writerSchema()), content, 'default'),
-    )
+    const schema = getSchema(writerSchema())
+    const source = prosemirrorJSONToYDoc(schema, content, 'default')
+    const stored = Y.encodeStateAsUpdate(source)
     const [a, b] = [new Y.Doc(), new Y.Doc()]
     Y.applyUpdate(a, stored, 'remote')
     Y.applyUpdate(b, stored, 'remote')
-    a.on('update', (update: Uint8Array, origin: unknown) => {
-      if (origin !== 'remote') Y.applyUpdate(b, update, 'remote')
-    })
-    b.on('update', (update: Uint8Array, origin: unknown) => {
-      if (origin !== 'remote') Y.applyUpdate(a, update, 'remote')
-    })
+
+    const relayTo = (target: Y.Doc) => (update: Uint8Array, origin: unknown) => {
+      if (origin !== 'remote') {
+        Y.applyUpdate(target, update, 'remote')
+      }
+    }
+    a.on('update', relayTo(b))
+    b.on('update', relayTo(a))
     return [open(a), open(b)]
   }
 

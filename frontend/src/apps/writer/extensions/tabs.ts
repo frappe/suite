@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import { DOMSerializer, Fragment, Node as PMNode } from '@tiptap/pm/model'
-import { EditorState, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { EditorState, Plugin, PluginKey, TextSelection, type PluginSpec } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
@@ -39,9 +39,13 @@ const FIRST_TAB_LABEL = 'firstTabLabel'
 
 const firstTabBlocks = (doc: PMNode): TabMatch[] => {
   const blocks: TabMatch[] = []
-  doc.forEach((node, offset) => {
-    if (node.type.name !== 'tab') blocks.push({ node, pos: offset })
-  })
+  const collect = (node: PMNode, pos: number) => {
+    if (node.type.name !== 'tab') {
+      blocks.push({ node, pos })
+    }
+  }
+  doc.forEach(collect)
+
   return blocks
 }
 
@@ -53,7 +57,11 @@ const firstTabLabel = (state: EditorState): string | null =>
 export const tabIdAt = (doc: PMNode, pos: number): string => {
   const $pos = doc.resolve(pos)
   const block = $pos.depth ? $pos.node(1) : null
-  return block?.type.name === 'tab' ? block.attrs.id : FIRST_TAB_ID
+  if (block?.type.name !== 'tab') {
+    return FIRST_TAB_ID
+  }
+
+  return block.attrs.id
 }
 
 // Tabs are ordered by attribute, not by position: moving a node is a delete
@@ -71,9 +79,15 @@ const orderedHTML = (doc: PMNode, firstTabLabel: string | null): string => {
   const ordered = orderedTabs(doc)
   const blocks = firstTabBlocks(doc).map(({ node }) => node)
   let children: PMNode[] = ordered.map(({ node }) => node)
-  if (blocks.length && (ordered.length || firstTabLabel)) {
-    const label = firstTabLabel ?? 'Untitled'
-    children.unshift(doc.type.schema.nodes.tab.create({ id: FIRST_TAB_HTML_ID, label }, blocks))
+  const hasFirstTab = blocks.length > 0
+  const needsOwnTab = ordered.length > 0 || !!firstTabLabel
+  if (hasFirstTab && needsOwnTab) {
+    const firstTabAttrs = {
+      id: FIRST_TAB_HTML_ID,
+      label: firstTabLabel ?? 'Untitled',
+    }
+    const firstTab = doc.type.schema.nodes.tab.create(firstTabAttrs, blocks)
+    children.unshift(firstTab)
   } else {
     children = [...blocks, ...children]
   }
@@ -90,9 +104,12 @@ export const currentTabHTML = (editor: Editor): string => {
   const activeTabId = editor.storage.tab?.activeTabId
   const serializer = DOMSerializer.fromSchema(state.schema)
   const wrapper = document.createElement('div')
+
   if (activeTabId === FIRST_TAB_ID) {
     const blocks = firstTabBlocks(state.doc).map(({ node }) => node)
-    wrapper.appendChild(serializer.serializeFragment(Fragment.from(blocks)))
+    const blocksFragment = Fragment.from(blocks)
+    const blocksDom = serializer.serializeFragment(blocksFragment)
+    wrapper.appendChild(blocksDom)
     return wrapper.innerHTML
   }
 
@@ -127,22 +144,24 @@ export const TabsExtension = TabNode.extend({
 
   addProseMirrorPlugins() {
     const storage = this.storage
+
+    const hideFirstTab = (state: EditorState) => {
+      const active = storage.activeTabId
+      if (!active || active === FIRST_TAB_ID) return null
+
+      const hide = ({ node, pos }: TabMatch) =>
+        Decoration.node(pos, pos + node.nodeSize, { style: 'display: none' })
+      const hidden = firstTabBlocks(state.doc).map(hide)
+      return DecorationSet.create(state.doc, hidden)
+    }
+
+    const firstTabVisibility: PluginSpec<unknown> = {
+      key: new PluginKey('firstTabVisibility'),
+      props: { decorations: hideFirstTab },
+    }
+
     return [
-      new Plugin({
-        key: new PluginKey('firstTabVisibility'),
-        props: {
-          decorations: (state) => {
-            const active = storage.activeTabId
-            if (!active || active === FIRST_TAB_ID) return null
-            return DecorationSet.create(
-              state.doc,
-              firstTabBlocks(state.doc).map(({ node, pos }) =>
-                Decoration.node(pos, pos + node.nodeSize, { style: 'display: none' }),
-              ),
-            )
-          },
-        },
-      }),
+      new Plugin(firstTabVisibility),
       new Plugin({
         key: new PluginKey('tabIntegrity'),
         filterTransaction(tr, state) {
@@ -162,7 +181,11 @@ export const TabsExtension = TabNode.extend({
   // `create` fires a tick late, so patch the serialiser before anything can
   // call it
   onBeforeCreate() {
-    this.editor.getHTML = () => orderedHTML(this.editor.state.doc, firstTabLabel(this.editor.state))
+    this.editor.getHTML = () => {
+      const { state } = this.editor
+      const label = firstTabLabel(state)
+      return orderedHTML(state.doc, label)
+    }
   },
 
   onCreate() {
@@ -180,8 +203,12 @@ export const TabsExtension = TabNode.extend({
       if (tabs.includes(this.storage.activeTabId)) return
 
       let tabToChange = window.location.hash.slice(1)
-      if (!tabs.includes(tabToChange)) tabToChange = tabs[0]
-      if (tabToChange) this.editor.commands.changeTab(tabToChange, false)
+      if (!tabs.includes(tabToChange)) {
+        tabToChange = tabs[0]
+      }
+      if (tabToChange) {
+        this.editor.commands.changeTab(tabToChange, false)
+      }
     }
 
     selectFirstTab()
@@ -224,7 +251,9 @@ export const TabsExtension = TabNode.extend({
         (tabId: string, newIndex: number) =>
         ({ tr, dispatch, state }) => {
           const tabs = orderedTabs(state.doc)
-          if (firstTabBlocks(state.doc).length) newIndex--
+          if (firstTabBlocks(state.doc).length) {
+            newIndex--
+          }
           const tabIndex = tabs.findIndex((t) => t.node.attrs.id === tabId)
 
           if (tabIndex === -1 || tabIndex === newIndex) return false
@@ -255,14 +284,19 @@ export const TabsExtension = TabNode.extend({
           if (tabId === FIRST_TAB_ID) {
             const meta = metaMap(state)
             if (!meta) return false
+
             if (!dispatch) return true
+
             meta.doc!.transact(() => meta.set(FIRST_TAB_LABEL, newLabel), this.name)
-            if (refocus) this.editor.commands.focusTab(tabId)
+            if (refocus) {
+              this.editor.commands.focusTab(tabId)
+            }
             return true
           }
 
           const tab = findTab(state.doc, tabId)
           if (!tab) return false
+
           if (!dispatch) return true
 
           tr.setNodeMarkup(tab.pos, undefined, {
@@ -280,12 +314,14 @@ export const TabsExtension = TabNode.extend({
 
           if (tabId === FIRST_TAB_ID) {
             if (!tabsIn(state.doc).length) return false
+
             firstTabBlocks(state.doc)
               .reverse()
               .forEach(({ node, pos }) => tr.delete(pos, pos + node.nodeSize))
           } else {
             const tab = findTab(state.doc, tabId)
             if (!tab) return false
+
             tr.delete(tab.pos, tab.pos + tab.node.nodeSize)
           }
           dispatch(tr)
@@ -327,12 +363,15 @@ export const TabsExtension = TabNode.extend({
         if (activeTabId === FIRST_TAB_ID) {
           const blocks = firstTabBlocks(state.doc)
           if (!tabsIn(state.doc).length || !blocks.length) return false
+
           const last = blocks[blocks.length - 1]
           const from = state.doc.resolve(blocks[0].pos)
           const to = state.doc.resolve(last.pos + last.node.nodeSize)
-          view.dispatch(state.tr.setSelection(TextSelection.between(from, to)))
+          const firstTabContent = TextSelection.between(from, to)
+          view.dispatch(state.tr.setSelection(firstTabContent))
           return true
         }
+
         const tab = findTab(state.doc, activeTabId)
         if (!tab) return false
 
@@ -391,11 +430,16 @@ export const TabsExtension = TabNode.extend({
 
 export const listTabs = (editor: Editor): { id: string; label: string }[] => {
   const { doc } = editor.state
-  const tabs = orderedTabs(doc).map(({ node }) => ({
+  const tabEntry = ({ node }: TabMatch) => ({
     id: node.attrs.id,
     label: node.attrs.label,
-  }))
+  })
+  const tabs = orderedTabs(doc).map(tabEntry)
   if (!firstTabBlocks(doc).length) return tabs
-  const label = firstTabLabel(editor.state) ?? 'Untitled'
-  return [{ id: FIRST_TAB_ID, label }, ...tabs]
+
+  const firstTab = {
+    id: FIRST_TAB_ID,
+    label: firstTabLabel(editor.state) ?? 'Untitled',
+  }
+  return [firstTab, ...tabs]
 }

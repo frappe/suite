@@ -9,37 +9,42 @@ export type VersionContent = string | JSONContent
 
 /** Reads a stored Writer version by its schema. Throws on bytes it cannot show. */
 export async function readVersion(bytes: Uint8Array): Promise<VersionContent> {
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  const text = decoder.decode(bytes)
   let payload: unknown = null
   try {
     payload = JSON.parse(text)
   } catch {
     // Migrated history is raw HTML.
   }
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return text
+
+  const isRecord = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
+  if (!isRecord) return text
+
   const version = payload as Record<string, unknown>
-  if (
-    version.schema === 'writer-document/1' &&
-    typeof version.content === 'string' &&
-    version.content &&
-    typeof version.html === 'string' &&
-    [0, 1, false, true, undefined].includes(version.collab as number | boolean | undefined)
-  ) {
+  const isHtmlVersion = version.schema === 'writer-document/1'
+  const hasContent = typeof version.content === 'string' && version.content !== ''
+  const knownCollab = [0, 1, false, true, undefined].includes(
+    version.collab as number | boolean | undefined,
+  )
+  if (isHtmlVersion && hasContent && typeof version.html === 'string' && knownCollab) {
     return version.html
   }
-  if (
-    version.schema === 'writer-document/2' &&
-    version.codec === 'yjs1' &&
-    typeof version.state === 'string'
-  ) {
+
+  const isYjsVersion = version.schema === 'writer-document/2' && version.codec === 'yjs1'
+  if (isYjsVersion && typeof version.state === 'string') {
     const ydoc = new Y.Doc()
     try {
-      Y.applyUpdate(ydoc, await gunzip(fromBase64(version.state)))
-      return yXmlFragmentToProsemirrorJSON(ydoc.getXmlFragment(FIELD))
+      const compressed = fromBase64(version.state)
+      const update = await gunzip(compressed)
+      Y.applyUpdate(ydoc, update)
+      const fragment = ydoc.getXmlFragment(FIELD)
+      return yXmlFragmentToProsemirrorJSON(fragment)
     } finally {
       ydoc.destroy()
     }
   }
+
   throw new Error('This version cannot be read.')
 }
 
@@ -49,6 +54,8 @@ function fromBase64(text: string): Uint8Array<ArrayBuffer> {
 }
 
 async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
-  const stream = new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
+  const compressed = new Response(bytes).body!
+  const stream = compressed.pipeThrough(new DecompressionStream('gzip'))
+  const buffer = await new Response(stream).arrayBuffer()
+  return new Uint8Array(buffer)
 }

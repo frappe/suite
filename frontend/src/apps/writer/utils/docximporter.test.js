@@ -421,28 +421,31 @@ describe('importDocx into a document with a size limit', () => {
 
   function guarded(content) {
     const tooLarge = vi.fn()
-    const editor = new Editor({
-      extensions: [
-        Document,
-        Paragraph,
-        Text,
-        TabsExtension,
-        PasteSizeGuard.configure({ limits: () => limits, tooLarge, nearFull: () => {} }),
-      ],
-      content,
-    })
+    const extensions = [
+      Document,
+      Paragraph,
+      Text,
+      TabsExtension,
+      PasteSizeGuard.configure({ limits: () => limits, tooLarge, nearFull: () => {} }),
+    ]
+    const editor = new Editor({ extensions, content })
     return { editor, tooLarge }
   }
 
   it('refuses a document too large for one save, keeps what was there and takes its images back', async () => {
     uploadMock.mockResolvedValue({ file_url: '/api/method/suite.writer.api.embed.get?id=embed-1' })
-    convertToHtmlMock.mockImplementation(async (_input, options) => {
-      await options.convertImage({
+    const convertWithImage = async (_input, options) => {
+      const image = {
         readAsArrayBuffer: async () => new ArrayBuffer(1),
         contentType: 'image/png',
-      })
-      return { value: `<p>${'x'.repeat(3000)}</p>`, messages: [] }
-    })
+      }
+      await options.convertImage(image)
+      return {
+        value: `<p>${'x'.repeat(3000)}</p>`,
+        messages: [],
+      }
+    }
+    convertToHtmlMock.mockImplementation(convertWithImage)
     const { editor, tooLarge } = guarded('<p>Original text</p>')
 
     await importDocx(fakeFile('huge.docx'), { editor: { value: editor }, currentFileId: 'file-1' })

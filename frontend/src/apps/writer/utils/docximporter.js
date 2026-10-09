@@ -141,12 +141,17 @@ function _insertInNewTab(editor, content, label) {
   const id = uuidv4()
   editor.commands.createTab({ id, label })
   const tab = findTab(editor.state.doc, id)
-  if (!tab) return _insertAtEnd(editor, content) // shouldn't happen; don't lose content
+  if (!tab) {
+    // shouldn't happen; don't lose content
+    return _insertAtEnd(editor, content)
+  }
+
   // createTab() adds an empty paragraph — swap it for the imported content.
-  editor.commands.insertContentAt(
-    { from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 },
-    content,
-  )
+  const emptyParagraph = {
+    from: tab.pos + 1,
+    to: tab.pos + tab.node.nodeSize - 1,
+  }
+  editor.commands.insertContentAt(emptyParagraph, content)
 }
 
 /**
@@ -167,17 +172,23 @@ export async function importDocx(file, { editor, currentFileId }) {
       return
     }
     // Parsed as the insert would, so what is measured is what goes in
-    const content = createNodeFromContent(html, ed.schema, {
-      parseOptions: { preserveWhitespace: 'full', ...ed.options.parseOptions },
-    })
+    const parseOptions = {
+      preserveWhitespace: 'full',
+      ...ed.options.parseOptions,
+    }
+    const content = createNodeFromContent(html, ed.schema, { parseOptions })
     const tooLarge = () => nToast.error('This file is too large to import.')
     // Only a collaborative document has a size limit
     if (ed.storage.pasteSizeGuard?.refuses(content, tooLarge)) {
       await _discardUploads(uploaded)
       return
     }
-    if (ed.isEmpty) _insertAtEnd(ed, content)
-    else _insertInNewTab(ed, content, file.name.replace(/\.docx$/i, ''))
+
+    if (ed.isEmpty) {
+      _insertAtEnd(ed, content)
+    } else {
+      _insertInNewTab(ed, content, file.name.replace(/\.docx$/i, ''))
+    }
 
     if (messages?.some((m) => m.type === 'error')) {
       nToast.error('Document imported, but some content could not be converted.')

@@ -166,10 +166,10 @@ function present(next: DocumentSession | null, nextSurface: Component | null) {
 }
 
 function failureMessage(reason: unknown) {
-  const described = describeFailure(reason instanceof TransportError ? reason.status : null)
-  return (
-    described ?? (reason instanceof Error ? reason.message : 'This document could not be opened.')
-  )
+  const status = reason instanceof TransportError ? reason.status : null
+  const described = describeFailure(status)
+  const fallback = reason instanceof Error ? reason.message : 'This document could not be opened.'
+  return described ?? fallback
 }
 
 async function replaceDecorativeSlug(opened: DocumentSession) {

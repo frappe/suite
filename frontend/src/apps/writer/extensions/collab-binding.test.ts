@@ -33,17 +33,21 @@ describe('owned collab binding', () => {
   it('matches the published package plus our recorded changes', () => {
     for (const [file, sha] of Object.entries(SHA256)) {
       const bytes = fs.readFileSync(path.join(VENDORED, file))
-      expect(createHash('sha256').update(bytes).digest('hex'), file).toBe(sha)
+      const actual = createHash('sha256').update(bytes).digest('hex')
+      expect(actual, file).toBe(sha)
     }
   })
 
   it('is the one copy every importer gets', () => {
     const root = path.resolve(VENDORED, '../../..')
-    expect(fs.realpathSync(path.join(root, 'node_modules/@tiptap/y-tiptap'))).toBe(VENDORED)
+    const installed = path.join(root, 'node_modules/@tiptap/y-tiptap')
+    expect(fs.realpathSync(installed)).toBe(VENDORED)
 
-    const editor = new Editor({
-      extensions: [Document, Paragraph, Text, Collaboration.configure({ document: new Y.Doc() })],
-    })
+    const collaboration = Collaboration.configure({ document: new Y.Doc() })
+    const editorOptions = {
+      extensions: [Document, Paragraph, Text, collaboration],
+    }
+    const editor = new Editor(editorOptions)
     expect(ySyncPluginKey.getState(editor.state)).toBeDefined()
     editor.destroy()
   })
@@ -55,10 +59,11 @@ afterEach(() => editors.splice(0).forEach((editor) => editor.destroy()))
 function open(ydoc: Y.Doc) {
   const element = document.createElement('div')
   document.body.append(element)
-  const editor = new Editor({
+  const editorOptions = {
     element,
     extensions: [Document, Paragraph, Text, Collaboration.configure({ document: ydoc })],
-  })
+  }
+  const editor = new Editor(editorOptions)
   editors.push(editor)
   return editor
 }
@@ -66,8 +71,11 @@ function open(ydoc: Y.Doc) {
 const syncAll = (docs: Y.Doc[]) => {
   for (const to of docs) {
     for (const from of docs) {
-      if (from !== to)
-        Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)), 'remote')
+      if (from !== to) {
+        const known = Y.encodeStateVector(to)
+        const missing = Y.encodeStateAsUpdate(from, known)
+        Y.applyUpdate(to, missing, 'remote')
+      }
     }
   }
 }
@@ -91,8 +99,10 @@ describe('typing at the same time', () => {
       const before = Y.encodeStateVector(a)
       typeAtEnd(editorA, 'TOKA')
       typeAtEnd(editorB, 'TOKB')
-      Y.applyUpdate(c, Y.encodeStateAsUpdate(a, before), 'remote')
-      Y.applyUpdate(c, Y.encodeStateAsUpdate(b, before), 'remote')
+      const fromA = Y.encodeStateAsUpdate(a, before)
+      Y.applyUpdate(c, fromA, 'remote')
+      const fromB = Y.encodeStateAsUpdate(b, before)
+      Y.applyUpdate(c, fromB, 'remote')
       typeAtEnd(editorC, 'TOKC')
       syncAll(docs)
       syncAll(docs)

@@ -11,7 +11,7 @@ import type { DocumentSession } from '@/apps/drive'
 import { openWriterRoom } from '@/apps/writer/collab'
 import { TransportError } from '@/platform/transport'
 
-import { bannerFor, openFailureFor } from './collabMessages'
+import { bannerFor, openFailureFor, type Standing } from './collabMessages'
 import type { DocumentSaveState } from './navigation'
 
 export type CollabMode = 'opening' | 'legacy' | 'live' | 'failed'
@@ -66,38 +66,56 @@ export function useWriterCollab(
     mode.value = 'opening'
     openReason.value = null
     openStatus.value = null
+
     try {
       const opened = await openWriterRoom(session)
       if (closed) {
-        if (opened.state === 'live') void opened.room.close()
+        if (opened.state === 'live') {
+          void opened.room.close()
+        }
         return
       }
+
       if (opened.state !== 'live') {
         mode.value = 'legacy'
         return
       }
+
       const live = opened.room
       room.value = live
       kept.value = false
-      const sync = () => {
-        if (live.needsRebuild) {
-          if (live.unsent && !live.onDevice && !kept.value) kept.value = retainRecovery()
-          // Unsent work held nowhere else stays on screen in the old room until it is sent
-          if (!live.unsent || live.onDevice || kept.value) return void rebuild(live)
-        }
-        const stopped = live.saveState === 'failed' || (live.blocked && !recoverable(live.blocked))
-        if (stopped && live.unsent && !kept.value) kept.value = retainRecovery()
-        status.value = snapshot(live)
-      }
-      stopWatching = live.onChange(sync)
-      sync()
+      stopWatching = live.onChange(() => sync(live))
+      sync(live)
       mode.value = 'live'
     } catch (error) {
-      openReason.value = error instanceof CollabOpenError ? error.reason : null
-      openStatus.value =
-        error instanceof CollabOpenError || error instanceof TransportError ? error.status : null
+      const hasReason = error instanceof CollabOpenError
+      const hasStatus = hasReason || error instanceof TransportError
+      openReason.value = hasReason ? error.reason : null
+      openStatus.value = hasStatus ? error.status : null
       mode.value = 'failed'
     }
+  }
+
+  // Mirrors the room's state for the page, or rebuilds the room once it asks for that
+  function sync(live: CollabRoom) {
+    if (live.needsRebuild) {
+      const unsentNowhereElse = live.unsent && !live.onDevice
+      if (unsentNowhereElse && !kept.value) {
+        kept.value = retainRecovery()
+      }
+
+      // Unsent work held nowhere else stays on screen in the old room until it is sent
+      if (!unsentNowhereElse || kept.value) {
+        void rebuild(live)
+        return
+      }
+    }
+
+    const stopped = live.saveState === 'failed' || (live.blocked && !recoverable(live.blocked))
+    if (stopped && live.unsent && !kept.value) {
+      kept.value = retainRecovery()
+    }
+    status.value = snapshot(live)
   }
 
   // The editor goes before the old room, so nothing typed lands in a room that no longer sends.
@@ -109,7 +127,9 @@ export function useWriterCollab(
     mode.value = 'opening'
     await nextTick()
     await old.close()
-    if (!closed) await open()
+    if (!closed) {
+      await open()
+    }
   }
 
   function close() {
@@ -122,12 +142,21 @@ export function useWriterCollab(
   // Whether the person can type: "paused" for a reason that clears, "closed" when they can't (or lost the right to).
   // "editing" while there is no room to ask
   const standing = computed<'editing' | 'paused' | 'closed'>(() => {
-    const now = status.value
-    if (!live.value || !now) return 'editing'
-    if (now.blocked === 'lost_edit' || now.blocked === 'lost_read') return 'closed'
-    const stopped = now.saveState === 'failed' || now.blocked === 'offline'
-    if (now.canWrite) return stopped ? 'paused' : 'editing'
-    return stopped || now.blocked || now.paused || now.held ? 'paused' : 'closed'
+    const roomStatus = status.value
+    if (!live.value || !roomStatus) return 'editing'
+
+    const lostAccess = roomStatus.blocked === 'lost_edit' || roomStatus.blocked === 'lost_read'
+    if (lostAccess) return 'closed'
+
+    const stopped = roomStatus.saveState === 'failed' || roomStatus.blocked === 'offline'
+    if (stopped) return 'paused'
+
+    if (roomStatus.canWrite) return 'editing'
+
+    const waiting = roomStatus.blocked || roomStatus.paused || roomStatus.held
+    if (waiting) return 'paused'
+
+    return 'closed'
   })
   const allowsEditing = computed(() => standing.value === 'editing')
   const editingPaused = computed(() => standing.value === 'paused')
@@ -135,16 +164,18 @@ export function useWriterCollab(
   const unsent = computed(() => (live.value ? (status.value?.unsent ?? 0) : 0))
   const paused = computed(() => (live.value ? (status.value?.paused ?? null) : null))
   const banner = computed(() => {
-    const now = status.value
-    if (!live.value || !now) return null
-    return bannerFor({
-      ...now,
+    const roomStatus = status.value
+    if (!live.value || !roomStatus) return null
+
+    const roomStanding: Standing = {
+      ...roomStatus,
       editor: mayEdit(),
-      failed: now.saveState === 'failed',
+      failed: roomStatus.saveState === 'failed',
       kept: kept.value,
       setAside: setAside.value,
-      polling: now.live === 'polling',
-    })
+      polling: roomStatus.live === 'polling',
+    }
+    return bannerFor(roomStanding)
   })
   const openFailure = computed(() => openFailureFor(openReason.value, openStatus.value))
 

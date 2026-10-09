@@ -175,9 +175,13 @@ export async function openDriveDocumentSession(
       access.value = fresh.access ?? {}
     } catch (error) {
       const status = error instanceof TransportError ? error.status : 0
-      if (status < 400 || status >= 500 || status === 408 || status === 429) return
+      const refusal = status >= 400 && status < 500
+      const transient = status === 408 || status === 429
+      if (!refusal || transient) return
+
       // A guest is refused everything; that says nothing about this person's access
       if (!signedIn()) return
+
       state.value = 'Refused'
       access.value = {}
     }

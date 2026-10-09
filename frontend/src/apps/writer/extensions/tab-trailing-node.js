@@ -20,17 +20,20 @@ const TabTrailingNode = Extension.create({
               const lastChild = node.lastChild
               const endPos = offset + node.nodeSize - 1
               if (lastChild.type === schema.nodes.table && touches(changed, endPos)) {
-                tr.insert(tr.mapping.map(endPos), schema.nodes.paragraph.create())
+                const insertAt = tr.mapping.map(endPos)
+                tr.insert(insertAt, schema.nodes.paragraph.create())
                 modified = true
               }
-            } else if (
-              node.type === schema.nodes.table &&
-              doc.maybeChild(index + 1)?.type.name === 'tab' &&
-              touches(changed, offset + node.nodeSize)
-            ) {
-              // The first tab's content ends here, before the other tabs
-              tr.insert(tr.mapping.map(offset + node.nodeSize), schema.nodes.paragraph.create())
-              modified = true
+            } else {
+              const tableEnd = offset + node.nodeSize
+              const isTable = node.type === schema.nodes.table
+              const tabFollows = doc.maybeChild(index + 1)?.type.name === 'tab'
+              if (isTable && tabFollows && touches(changed, tableEnd)) {
+                // The first tab's content ends here, before the other tabs
+                const insertAt = tr.mapping.map(tableEnd)
+                tr.insert(insertAt, schema.nodes.paragraph.create())
+                modified = true
+              }
             }
           })
 

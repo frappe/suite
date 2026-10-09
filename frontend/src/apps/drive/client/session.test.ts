@@ -181,16 +181,18 @@ describe('document session access refresh', () => {
           ? Promise.reject(answer)
           : Promise.resolve(documentNode((input as { node: string }).node) as never),
     }
-    const session = await openDriveDocumentSession('root', {
+    const dependencies = {
       client: testClient(requester),
       signedIn: () => 'Administrator',
-    })
+    }
+    const session = await openDriveDocumentSession('root', dependencies)
 
-    for (const error of [
+    const passingFailures = [
       failure('NetworkError', 0),
       failure('ServerError', 500),
       failure('Timeout', 408),
-    ]) {
+    ]
+    for (const error of passingFailures) {
       answer = error
       await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
       expect(session.state.value).toBe('Active')
@@ -211,23 +213,27 @@ describe('document session access refresh', () => {
     const target = new EventTarget()
     const requester: Transport = {
       request: (operation, input) => {
-        if (operation.id !== 'node_get' || !answer)
+        if (operation.id !== 'node_get' || !answer) {
           return Promise.resolve(documentNode((input as { node: string }).node) as never)
+        }
+
         refused += 1
         return Promise.reject(answer)
       },
     }
-    const session = await openDriveDocumentSession('root', {
+    const dependencies = {
       client: testClient(requester),
       window: target as Window,
       signedIn: () => user,
-    })
+    }
+    const session = await openDriveDocumentSession('root', dependencies)
     user = null
-    for (const error of [
+    const refusals = [
       failure('DriveNotFound', 404),
       failure('SessionExpired', 401),
       failure('PermissionError', 403),
-    ]) {
+    ]
+    for (const error of refusals) {
       answer = error
       const before = refused
       target.dispatchEvent(new Event('focus'))

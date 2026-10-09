@@ -18,6 +18,7 @@ export const JoinAdjacentLists = Extension.create({
         key: new PluginKey('joinAdjacentLists'),
         appendTransaction(transactions, oldState, newState) {
           if (!transactions.some((tr) => tr.docChanged)) return
+
           const changed = changedRanges(transactions)
 
           // Boundary position (start of `child`) for every pair of adjacent
@@ -27,12 +28,11 @@ export const JoinAdjacentLists = Extension.create({
           const collect = (node, pos) => {
             node.forEach((child, offset, index) => {
               if (index === 0) return
+
               const boundary = pos + 1 + offset
-              if (
-                JOINABLE.has(child.type.name) &&
-                child.type === node.child(index - 1).type &&
-                touches(changed, boundary - 1, boundary + 1)
-              ) {
+              const sameListType =
+                JOINABLE.has(child.type.name) && child.type === node.child(index - 1).type
+              if (sameListType && touches(changed, boundary - 1, boundary + 1)) {
                 boundaries.push(boundary)
               }
             })

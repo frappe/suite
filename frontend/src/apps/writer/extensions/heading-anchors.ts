@@ -1,6 +1,6 @@
 import TableOfContents from '@tiptap/extension-table-of-contents'
 import type { Node } from '@tiptap/pm/model'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type PluginSpec } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 // Opening or watching a document must never write to it. Ids are assigned
@@ -17,43 +17,60 @@ type Anchor = {
 
 function renderedId(text: string, occurrence: number) {
   let hash = 0
-  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) | 0
+  }
   return `h-${(hash >>> 0).toString(36)}-${occurrence}`
 }
 
 function renderedAnchors(doc: Node) {
   const seen = new Map<string, number>()
   const decorations: Decoration[] = []
-  doc.descendants((node, pos) => {
+  const anchorHeading = (node: Node, pos: number) => {
     if (node.type.name !== 'heading') return
+
     if (!node.textContent || node.attrs['data-toc-id']) return false
+
     const occurrence = seen.get(node.textContent) ?? 0
     seen.set(node.textContent, occurrence + 1)
     const id = renderedId(node.textContent, occurrence)
-    decorations.push(Decoration.node(pos, pos + node.nodeSize, { id, 'data-toc-id': id }))
+    const attrs = {
+      id,
+      'data-toc-id': id,
+    }
+    const decoration = Decoration.node(pos, pos + node.nodeSize, attrs)
+    decorations.push(decoration)
     return false
-  })
+  }
+  doc.descendants(anchorHeading)
+
   return DecorationSet.create(doc, decorations)
 }
 
 function withRenderedIds(anchors: Anchor[], scrollPosition: number) {
   if (anchors.every((anchor) => anchor.id)) return anchors
+
   const seen = new Map<string, number>()
-  const items = anchors.map((anchor) => {
+  const withId = (anchor: Anchor) => {
     let id = anchor.id
     if (!id) {
       const occurrence = seen.get(anchor.textContent) ?? 0
       seen.set(anchor.textContent, occurrence + 1)
       id = renderedId(anchor.textContent, occurrence)
     }
-    return { ...anchor, id, isScrolledOver: scrollPosition >= anchor.dom.offsetTop }
-  })
+    return {
+      ...anchor,
+      id,
+      isScrolledOver: scrollPosition >= anchor.dom.offsetTop,
+    }
+  }
+  const items = anchors.map(withId)
   const active = items.findLast((item) => item.isScrolledOver)
   return items.map((item) => ({ ...item, isActive: item === active }))
 }
 
-const anchorDecorations = () =>
-  new Plugin({
+function anchorDecorations() {
+  const spec: PluginSpec<DecorationSet> = {
     key: new PluginKey('headingAnchorDecorations'),
     state: {
       init: (_config, state) => renderedAnchors(state.doc),
@@ -64,24 +81,28 @@ const anchorDecorations = () =>
         return this.getState(state)
       },
     },
-  })
+  }
+  return new Plugin(spec)
+}
 
 export const HeadingAnchors = TableOfContents.extend({
   onBeforeCreate() {
     const onUpdate = this.options.onUpdate
-    this.options.onUpdate = (anchors, isInitial) =>
-      onUpdate?.(
-        withRenderedIds(anchors as Anchor[], this.storage.scrollPosition) as never,
-        isInitial,
-      )
+    this.options.onUpdate = (anchors, isInitial) => {
+      const anchorsWithIds = withRenderedIds(anchors as Anchor[], this.storage.scrollPosition)
+      onUpdate?.(anchorsWithIds as never, isInitial)
+    }
   },
 
   onCreate(event) {
     const { view } = this.editor
     const dispatch = view.dispatch
     view.dispatch = (tr) => {
-      if (!tr.docChanged) dispatch(tr)
+      if (!tr.docChanged) {
+        dispatch(tr)
+      }
     }
+
     try {
       this.parent?.(event)
     } finally {

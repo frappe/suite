@@ -51,7 +51,11 @@ describe('closing the tab', () => {
     for (const state of ['unsaved', 'saving', 'failed'] as const) {
       const retainRecovery = vi.fn()
       const event = new Event('beforeunload', { cancelable: true })
-      resolveDocumentUnload({ state: () => state, retainRecovery }, event)
+      const guard = {
+        state: () => state,
+        retainRecovery,
+      }
+      resolveDocumentUnload(guard, event)
       expect([event.defaultPrevented, retainRecovery.mock.calls.length]).toEqual([true, 1])
     }
   })
@@ -61,14 +65,23 @@ describe('closing the tab', () => {
     const retainRecovery = () => {
       throw new DOMException('full', 'QuotaExceededError')
     }
-    expect(() => resolveDocumentUnload({ state: () => 'unsaved', retainRecovery }, event)).toThrow()
+    const guard = {
+      state: () => 'unsaved' as const,
+      retainRecovery,
+    }
+
+    expect(() => resolveDocumentUnload(guard, event)).toThrow()
     expect(event.defaultPrevented).toBe(true)
   })
 
   it('closes a clean document without asking', () => {
     const retainRecovery = vi.fn()
     const event = new Event('beforeunload', { cancelable: true })
-    resolveDocumentUnload({ state: () => 'clean', retainRecovery }, event)
+    const guard = {
+      state: () => 'clean' as const,
+      retainRecovery,
+    }
+    resolveDocumentUnload(guard, event)
     expect([event.defaultPrevented, retainRecovery.mock.calls.length]).toEqual([false, 0])
   })
 })

@@ -66,7 +66,10 @@ const extensions = [
 
 async function save(_manual: boolean, _html: string | null, done?: () => void) {
   await withinTenSeconds(props.room.flush())
-  if (props.room.saveState === 'clean') done?.()
-  else if (done) toast.warning('Not saved yet. Your changes are kept in this tab.')
+  if (props.room.saveState === 'clean') {
+    done?.()
+  } else if (done) {
+    toast.warning('Not saved yet. Your changes are kept in this tab.')
+  }
 }
 </script>

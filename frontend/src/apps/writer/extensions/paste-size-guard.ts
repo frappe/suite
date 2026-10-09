@@ -2,7 +2,7 @@ import { sizeCheck, type Limits } from '@suite/collab-client'
 import { Extension } from '@tiptap/core'
 import { isChangeOrigin } from '@tiptap/extension-collaboration'
 import type { Fragment, Node, Slice } from '@tiptap/pm/model'
-import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type PluginSpec, type Transaction } from '@tiptap/pm/state'
 import { ReplaceStep, type Step } from '@tiptap/pm/transform'
 
 export interface PasteSizeGuardOptions {
@@ -13,20 +13,28 @@ export interface PasteSizeGuardOptions {
 }
 
 // No less than what content costs once saved, bar the splits of another writer's text the server adds
-const contentBytes = (content: Fragment) =>
-  new TextEncoder().encode(JSON.stringify(content.toJSON() ?? [])).byteLength
+function contentBytes(content: Fragment) {
+  const json = JSON.stringify(content.toJSON() ?? [])
+  const bytes = new TextEncoder().encode(json)
+  return bytes.byteLength
+}
 
 // Removes content and writes none: text kept after the range would join another block, which Yjs writes anew
 function removesOnly(step: Step, doc: Node) {
   if (!(step instanceof ReplaceStep) || step.from >= step.to) return false
+
   let writes = false
-  step.slice.content.descendants((node) => {
+  const noteInline = (node: Node) => {
     writes ||= node.isInline
-  })
+  }
+  step.slice.content.descendants(noteInline)
+
   const $from = doc.resolve(step.from)
   const $to = doc.resolve(step.to)
-  const joins =
-    $to.parent.isTextblock && !$to.sameParent($from) && $to.parentOffset < $to.parent.content.size
+  const endsInText = $to.parent.isTextblock
+  const crossesBlocks = !$to.sameParent($from)
+  const keepsTextAfter = $to.parentOffset < $to.parent.content.size
+  const joins = endsInText && crossesBlocks && keepsTextAfter
   return !writes && !joins
 }
 
@@ -42,7 +50,12 @@ export const PasteSizeGuard = Extension.create<PasteSizeGuardOptions, PasteSizeG
   priority: 1000,
 
   addOptions() {
-    return { limits: () => null, atLimit: () => false, tooLarge: () => {}, nearFull: () => {} }
+    return {
+      limits: () => null,
+      atLimit: () => false,
+      tooLarge: () => {},
+      nearFull: () => {},
+    }
   },
 
   // An import asks here before it inserts, as a paste does
@@ -51,9 +64,13 @@ export const PasteSizeGuard = Extension.create<PasteSizeGuardOptions, PasteSizeG
     return {
       refuses: (content: Fragment, tell = tooLarge) => {
         const fit = sizeCheck(limits(), contentBytes(content))
-        if (fit === 'too_large') tell()
+        if (fit === 'too_large') {
+          tell()
+        }
         // At the limit the banner already says so
-        if (fit === 'near_full' && !atLimit()) nearFull()
+        if (fit === 'near_full' && !atLimit()) {
+          nearFull()
+        }
         return fit === 'too_large'
       },
     }
@@ -63,16 +80,19 @@ export const PasteSizeGuard = Extension.create<PasteSizeGuardOptions, PasteSizeG
   addProseMirrorPlugins() {
     const refuse = (slice: Slice) => this.storage.refuses(slice.content)
     const { atLimit } = this.options
-    return [
-      new Plugin({
-        key: new PluginKey('pasteSizeGuard'),
-        filterTransaction: (tr) =>
-          !tr.docChanged || !atLimit() || isChangeOrigin(tr) || deletesOnly(tr),
-        props: {
-          handlePaste: (_view, _event, slice) => refuse(slice),
-          handleDrop: (_view, _event, slice, moved) => !moved && refuse(slice),
-        },
-      }),
-    ]
+    const spec: PluginSpec<unknown> = {
+      key: new PluginKey('pasteSizeGuard'),
+      filterTransaction: (tr) => {
+        if (!tr.docChanged || !atLimit()) return true
+
+        return isChangeOrigin(tr) || deletesOnly(tr)
+      },
+      props: {
+        handlePaste: (_view, _event, slice) => refuse(slice),
+        handleDrop: (_view, _event, slice, moved) => !moved && refuse(slice),
+      },
+    }
+
+    return [new Plugin(spec)]
   },
 })

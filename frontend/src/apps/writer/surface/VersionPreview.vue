@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { EditorOptions } from '@tiptap/core'
 import { Editor, EditorContent } from '@tiptap/vue-3'
 import { Skeleton } from 'frappe-ui'
 import { inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
@@ -13,7 +14,7 @@ import {
   type LayoutSettings,
 } from '@/apps/writer/utils/editor-layout'
 
-import { readVersion } from './versions'
+import { readVersion, type VersionContent } from './versions'
 
 const props = defineProps<{
   session: DocumentSession
@@ -30,33 +31,49 @@ let request = 0
 async function show(seq: number) {
   const current = ++request
   loading.value = !editor.value
+
   try {
-    const response = await props.session.credentials.fetch(
-      props.session.versions.contentUrl(String(seq)),
-    )
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const content = await readVersion(new Uint8Array(await response.arrayBuffer()))
+    const content = await fetchVersion(seq)
     if (current !== request) return
+
     const shown = editor.value
     failed.value = false
-    editor.value = new Editor({
-      extensions: [...writerSchema(), DriveMedia.configure({ media })],
-      content,
-      editable: false,
-      editorProps: { attributes: { class: `${EDITOR_TEXT_CLASS} max-w-none` } },
-      // HTML parses as loosely as the live editor; only Yjs state is checked.
-      enableContentCheck: typeof content !== 'string',
-      onContentError: () => {
-        failed.value = true
-      },
-    })
+    editor.value = previewEditor(content)
     await nextTick()
     shown?.destroy()
   } catch {
-    if (current === request) failed.value = true
+    if (current === request) {
+      failed.value = true
+    }
   } finally {
-    if (current === request) loading.value = false
+    if (current === request) {
+      loading.value = false
+    }
   }
+}
+
+async function fetchVersion(seq: number) {
+  const url = props.session.versions.contentUrl(String(seq))
+  const response = await props.session.credentials.fetch(url)
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+  const buffer = await response.arrayBuffer()
+  return readVersion(new Uint8Array(buffer))
+}
+
+function previewEditor(content: VersionContent) {
+  const options: Partial<EditorOptions> = {
+    extensions: [...writerSchema(), DriveMedia.configure({ media })],
+    content,
+    editable: false,
+    editorProps: { attributes: { class: `${EDITOR_TEXT_CLASS} max-w-none` } },
+    // HTML parses as loosely as the live editor; only Yjs state is checked.
+    enableContentCheck: typeof content !== 'string',
+    onContentError: () => {
+      failed.value = true
+    },
+  }
+  return new Editor(options)
 }
 
 watch(() => props.seq, show, { immediate: true })

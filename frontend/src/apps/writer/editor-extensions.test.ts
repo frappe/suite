@@ -3,32 +3,31 @@ import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import * as Y from 'yjs'
 
-import { writerEditorExtensions } from './editor-extensions'
+import { writerEditorExtensions, type WriterEditorOptions } from './editor-extensions'
 
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
 
 const writerEditor = (content: string) => {
   const ydoc = new Y.Doc()
-  return new Editor({
-    content,
-    extensions: writerEditorExtensions({
-      collaborative: false,
-      mentionItems: () => [],
-      onMentionQuery: () => {},
-      onCommentActivated: () => {},
-      onAnchors: () => {},
-      scrollParent: () => null,
-      media: null,
-      comments: ydoc.getMap('comments'),
-      ydoc,
-      activeComment: ref(null),
-      showComments: ref(false),
-      showResolved: ref(false),
-      edited: ref(false),
-      onCommentsPainted: () => {},
-    }),
-  })
+  const options: WriterEditorOptions = {
+    collaborative: false,
+    mentionItems: () => [],
+    onMentionQuery: () => {},
+    onCommentActivated: () => {},
+    onAnchors: () => {},
+    scrollParent: () => null,
+    media: null,
+    comments: ydoc.getMap('comments'),
+    ydoc,
+    activeComment: ref(null),
+    showComments: ref(false),
+    showResolved: ref(false),
+    edited: ref(false),
+    onCommentsPainted: () => {},
+  }
+  const extensions = writerEditorExtensions(options)
+  return new Editor({ content, extensions })
 }
 
 describe('writer editor', () => {

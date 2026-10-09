@@ -14,8 +14,9 @@ export const EDITOR_TEXT_CLASS =
 
 /** The editor's three columns: margin, text, and the comments margin. */
 export function editorColumns(settings?: LayoutSettings) {
+  const textWidth = settings?.wide ? '100ch' : '48rem'
   return {
-    gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${settings?.wide ? '100ch' : '48rem'}) minmax(0, 1fr)`,
+    gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${textWidth}) minmax(0, 1fr)`,
   }
 }
 

@@ -1,5 +1,5 @@
 import type { Node } from '@tiptap/pm/model'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, type PluginSpec } from '@tiptap/pm/state'
 import { canJoin } from '@tiptap/pm/transform'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { ListJoin as StockListJoin } from 'frappe-ui/editor'
@@ -14,13 +14,16 @@ const isList = (node: Node) =>
 // Joinable list boundaries next to `changed`, back to front so earlier ones stay valid
 function boundariesNear(doc: Node, changed: [number, number][]) {
   const found: number[] = []
-  doc.descendants((node, pos, parent, index) => {
+  const collect = (node: Node, pos: number, parent: Node | null, index: number) => {
     const before = index > 0 ? parent?.child(index - 1) : null
-    if (before && isList(before) && before.sameMarkup(node) && touches(changed, pos - 1, pos + 1)) {
+    const continuesList = !!before && isList(before) && before.sameMarkup(node)
+    if (continuesList && touches(changed, pos - 1, pos + 1)) {
       found.push(pos)
     }
     return !node.type.inlineContent
-  })
+  }
+  doc.descendants(collect)
+
   return found.sort((a, b) => b - a).filter((pos) => canJoin(doc, pos))
 }
 
@@ -30,19 +33,22 @@ function boundariesNear(doc: Node, changed: [number, number][]) {
 export const ListJoin = StockListJoin.extend({
   addProseMirrorPlugins() {
     const [stock] = this.parent!()
-    return [
-      new Plugin({
-        ...stock.spec,
-        view: (view) => (ySyncPluginKey.getState(view.state) ? {} : stock.spec.view!(view)),
-        appendTransaction: (transactions, _oldState, newState) => {
-          if (!transactions.some((tr) => tr.docChanged)) return null
-          const boundaries = boundariesNear(newState.doc, changedRanges(transactions))
-          if (!boundaries.length) return null
-          const tr = newState.tr
-          boundaries.forEach((pos) => tr.join(pos))
-          return tr
-        },
-      }),
-    ]
+    const spec: PluginSpec<unknown> = {
+      ...stock.spec,
+      view: (view) => (ySyncPluginKey.getState(view.state) ? {} : stock.spec.view!(view)),
+      appendTransaction: (transactions, _oldState, newState) => {
+        if (!transactions.some((tr) => tr.docChanged)) return null
+
+        const changed = changedRanges(transactions)
+        const boundaries = boundariesNear(newState.doc, changed)
+        if (!boundaries.length) return null
+
+        const tr = newState.tr
+        boundaries.forEach((pos) => tr.join(pos))
+        return tr
+      },
+    }
+
+    return [new Plugin(spec)]
   },
 })

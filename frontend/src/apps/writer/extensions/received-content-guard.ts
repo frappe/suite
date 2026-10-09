@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core'
 import type { Node } from '@tiptap/pm/model'
-import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type PluginSpec, type Transaction } from '@tiptap/pm/state'
 import {
   AddMarkStep,
   AddNodeMarkStep,
@@ -19,12 +19,15 @@ const key = new PluginKey<Range[] | null>('receivedContentGuard')
 
 function touched(tr: Transaction) {
   const ranges: Range[] = []
-  tr.steps.forEach((step, i) => {
+  const collect = (step: Step, i: number) => {
     const after = tr.mapping.slice(i + 1)
-    step
-      .getMap()
-      .forEach((_from, _to, from, to) => ranges.push([after.map(from, -1), after.map(to, 1)]))
-  })
+    const addRange = (_from: number, _to: number, from: number, to: number) => {
+      ranges.push([after.map(from, -1), after.map(to, 1)])
+    }
+    step.getMap().forEach(addRange)
+  }
+  tr.steps.forEach(collect)
+
   return ranges
 }
 
@@ -41,24 +44,24 @@ export const touches = (ranges: Range[], from: number, to = from) =>
 
 // Attributes and marks settle to one value in Yjs, so these may follow up anywhere
 function settlesToOneValue(step: Step, doc: Node) {
-  if (
+  const setsAttrOrMark =
     step instanceof AttrStep ||
     step instanceof AddMarkStep ||
     step instanceof RemoveMarkStep ||
     step instanceof AddNodeMarkStep ||
     step instanceof RemoveNodeMarkStep
-  )
+  if (setsAttrOrMark) {
     return true
+  }
+
   if (!(step instanceof ReplaceAroundStep)) return false
+
   const { from, to, gapFrom, gapTo, insert, slice } = step
   const node = slice.content.firstChild
-  return (
-    gapFrom === from + 1 &&
-    gapTo === to - 1 &&
-    insert === 1 &&
-    slice.content.childCount === 1 &&
-    node?.type === doc.nodeAt(from)?.type
-  )
+  const replacesOnlyWrapper =
+    gapFrom === from + 1 && gapTo === to - 1 && insert === 1 && slice.content.childCount === 1
+  const keepsNodeType = node?.type === doc.nodeAt(from)?.type
+  return replacesOnlyWrapper && keepsNodeType
 }
 
 // Every viewer runs the same normalizers, and Yjs keeps each viewer's copy of
@@ -81,37 +84,48 @@ export const ReceivedContentGuard = Extension.create<object, { root: Transaction
 
   addProseMirrorPlugins() {
     const storage = this.storage
-    return [
-      new Plugin<Range[] | null>({
-        key,
-        state: {
-          init: () => null,
-          apply: (tr, ranges) => {
-            const { root } = storage
-            if (tr === root)
-              return root.docChanged && !root.getMeta(ySyncPluginKey)?.isChangeOrigin
-                ? touched(tr)
-                : null
-            if (!root || !ranges) return null
-            return changedRanges([tr], ranges)
-          },
-        },
-        filterTransaction: (tr, state) => {
+    const spec: PluginSpec<Range[] | null> = {
+      key,
+      state: {
+        init: () => null,
+        apply: (tr, ranges) => {
           const { root } = storage
-          if (!root || tr === root || !tr.docChanged) return true
-          const ranges = key.getState(state)
-          if (!ranges) return false
-          return tr.steps.every((step, i) => {
-            if (settlesToOneValue(step, tr.docs[i])) return true
-            const allowed = mapRanges(ranges, tr.mapping.slice(0, i))
-            let inside = true
-            step.getMap().forEach((from, to) => {
-              inside &&= touches(allowed, from, to)
-            })
-            return inside
-          })
+          if (tr === root) {
+            const ownEdit = root.docChanged && !root.getMeta(ySyncPluginKey)?.isChangeOrigin
+            if (!ownEdit) return null
+
+            return touched(tr)
+          }
+
+          if (!root || !ranges) return null
+
+          return changedRanges([tr], ranges)
         },
-      }),
-    ]
+      },
+      filterTransaction: (tr, state) => {
+        const { root } = storage
+        if (!root || tr === root || !tr.docChanged) return true
+
+        const ranges = key.getState(state)
+        if (!ranges) return false
+
+        const staysInside = (step: Step, i: number) => {
+          if (settlesToOneValue(step, tr.docs[i])) return true
+
+          const mappingBefore = tr.mapping.slice(0, i)
+          const allowed = mapRanges(ranges, mappingBefore)
+          let inside = true
+          const checkRange = (from: number, to: number) => {
+            inside &&= touches(allowed, from, to)
+          }
+          step.getMap().forEach(checkRange)
+          return inside
+        }
+
+        return tr.steps.every(staysInside)
+      },
+    }
+
+    return [new Plugin(spec)]
   },
 })
