@@ -12,6 +12,7 @@ describe('canonical route metadata', () => {
 
   it('holds every area entry URL', () => {
     expect(canonicalRoutes.map((route) => route.path)).toEqual([
+      '/admin/:pathMatch(.*)*',
       '/home',
       '/drive',
       '/drive/organization',

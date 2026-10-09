@@ -82,6 +82,8 @@ execute:frappe.db.set_single_value("Mail Settings", "enable_email_classification
 # (no patches)
 # --- suite_core ---
 # Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
+suite.suite_core.patches.grant_suite_admin_to_system_managers
+suite.composition.patches.initialize_account_states
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user

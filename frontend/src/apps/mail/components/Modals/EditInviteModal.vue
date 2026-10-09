@@ -26,7 +26,23 @@
   >
     <template #default>
       <div class="space-y-4">
-        <FormControl :label="__('Assigned Email')" :value="draft.account" disabled />
+        <FormControl
+          v-model="draft.account"
+          type="email"
+          :label="__('Assigned business email')"
+          :disabled="!isEditableInvite"
+          :description="
+            __(
+              'Changing the address or role invalidates the previous acceptance link. Send a new invitation afterwards.',
+            )
+          "
+        />
+        <FormControl
+          v-model="inviteAdmin"
+          type="checkbox"
+          :label="__('Business Admin')"
+          :disabled="!isEditableInvite"
+        />
         <FormControl
           v-if="draft.aliases"
           type="textarea"
@@ -38,8 +54,8 @@
           v-model="inviteQuota"
           type="number"
           :min="0"
-          :label="__('Quota (GB, 0 = unlimited)')"
-          :description="__('Leave blank to use the configured default disk quota.')"
+          :label="__('Combined personal cap (GB)')"
+          :description="__('Leave blank for uncapped. This limits Drive growth, never Mail.')"
           :disabled="!isEditableInvite"
         />
         <!-- Fixed when the request was created (set_only_once on the doctype), so the roles the
@@ -99,7 +115,6 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
-import dayjs from '@/apps/mail/utils/dayjs'
 
 const show = defineModel<boolean>()
 const { inviteID } = defineProps<{ inviteID: string }>()
@@ -108,6 +123,12 @@ const invitation = useQuery(api.mail.admin.invites.get, () =>
   show.value ? { name: inviteID } : false,
 )
 const draft = ref<OutputOf<typeof api.mail.admin.invites.get>>()
+const inviteAdmin = computed({
+  get: () => !!draft.value?.is_admin,
+  set: (value) => {
+    if (draft.value) draft.value.is_admin = value ? 1 : 0
+  },
+})
 watch(
   () => invitation.data,
   (data) => {
@@ -121,9 +142,11 @@ const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(in
 const roleLabel = computed(() => (draft.value?.is_admin ? __('Admin') : __('User')))
 const isEditableInvite = computed(() => draft.value && !draft.value.is_verified)
 const inviteQuota = computed<number | string>({
-  get: () => draft.value?.quota_gb ?? '',
+  get: () =>
+    draft.value?.combined_cap_bytes == null ? '' : draft.value.combined_cap_bytes / 1_000_000_000,
   set: (value) => {
-    if (draft.value) draft.value.quota_gb = value === '' ? null : Number(value)
+    if (draft.value)
+      draft.value.combined_cap_bytes = value === '' ? null : Number(value) * 1_000_000_000
   },
 })
 const inviteExpiresAt = computed({
@@ -132,15 +155,8 @@ const inviteExpiresAt = computed({
     if (draft.value) draft.value.expires_at = fromLocalInput(value)
   },
 })
-const isExpired = computed(() =>
-  Boolean(draft.value?.expires_at && dayjs(draft.value.expires_at).isBefore(dayjs())),
-)
 const canSendInvite = computed(
-  () =>
-    isEditableInvite.value &&
-    !isExpired.value &&
-    !isDirty.value &&
-    Boolean(draft.value?.invited_by),
+  () => isEditableInvite.value && !isDirty.value && Boolean(draft.value?.invited_by),
 )
 const groups = useQuery(api.mail.admin.groups.list, () =>
   show.value ? { page_length: 500 } : false,
@@ -168,7 +184,9 @@ async function saveInvite() {
   await save.run({
     name: inviteID,
     expires_at: draft.value.expires_at,
-    quota_gb: draft.value.quota_gb,
+    combined_cap_bytes: draft.value.combined_cap_bytes,
+    account: draft.value.account,
+    is_admin: !!draft.value.is_admin,
   })
   show.value = false
   raiseToast(__('Invite updated.'))

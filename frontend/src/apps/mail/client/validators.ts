@@ -989,6 +989,10 @@ export const operationInvite: Validators<InviteInput, InviteOutput> = {
           invited_by: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Invited By' },
           expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
           quota_gb: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Quota Gb' },
+          combined_cap_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Combined Cap Bytes',
+          },
           send_invite: { enum: [0, 1], title: 'Send Invite', type: 'integer' },
           disable_receiving: { enum: [0, 1], title: 'Disable Receiving', type: 'integer' },
           is_verified: { enum: [0, 1], title: 'Is Verified', type: 'integer' },
@@ -1004,6 +1008,7 @@ export const operationInvite: Validators<InviteInput, InviteOutput> = {
           'invited_by',
           'expires_at',
           'quota_gb',
+          'combined_cap_bytes',
           'send_invite',
           'disable_receiving',
           'is_verified',
@@ -1027,9 +1032,14 @@ export const operationUpdateInvite: Validators<UpdateInviteInput, UpdateInviteOu
         properties: {
           name: { title: 'Name', type: 'string' },
           expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
-          quota_gb: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Quota Gb' },
+          combined_cap_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Combined Cap Bytes',
+          },
+          account: { title: 'Account', type: 'string' },
+          is_admin: { title: 'Is Admin', type: 'boolean' },
         },
-        required: ['name', 'expires_at', 'quota_gb'],
+        required: ['name', 'expires_at', 'combined_cap_bytes'],
         additionalProperties: false,
         $defs: {},
       },
@@ -4148,7 +4158,26 @@ export const operationAddMember: Validators<AddMemberInput, AddMemberOutput> = {
     )
   },
   validateOutput(value: unknown): asserts value is AddMemberOutput {
-    assertSchema(value, { type: 'null' }, 'add_member output')
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'add_member output',
+    )
   },
 }
 
@@ -4338,7 +4367,10 @@ export const operationDeleteMembers: Validators<DeleteMembersInput, DeleteMember
       value,
       {
         type: 'object',
-        properties: { names: { items: { type: 'string' }, title: 'Names', type: 'array' } },
+        properties: {
+          names: { items: { type: 'string' }, title: 'Names', type: 'array' },
+          confirmation: { title: 'Confirmation', type: 'string' },
+        },
         required: ['names'],
         additionalProperties: false,
         $defs: {},

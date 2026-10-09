@@ -66,6 +66,10 @@ def authenticate(request: Request) -> str:
     if frappe.get_system_settings("disable_user_pass_login"):
         raise Forbidden("Password login is disabled on this site, so WebDAV is unavailable.")
 
+    from suite import mail
+
+    user = mail.resolve_business_user(user) or user
+
     canonical = _verify_cached(user, password)
     verified_now = False
     if not canonical:

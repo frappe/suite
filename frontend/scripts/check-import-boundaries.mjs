@@ -27,8 +27,6 @@ const boundaryDebtGroups = [
       'mail/components/CalendarInviteBanner.vue|@/apps/calendar/utils/dayjs',
       'mail/components/CalendarInviteBanner.vue|@/apps/calendar/utils/eventTime',
       'mail/components/DefaultLayout.vue|@/apps/calendar/utils/dayjs',
-      'mail/components/UpcomingEvents.vue|@/apps/calendar/utils/dayjs',
-      'mail/components/UpcomingEvents.vue|@/apps/calendar/components/UpcomingEvents.vue',
       'mail/composables/useUpcomingEvents.ts|@/apps/calendar/utils/dayjs',
       'mail/composables/useUpcomingEvents.ts|@/apps/calendar/utils/eventTime',
       'mail/composables/useUpcomingEvents.ts|@/apps/calendar/stores/user',

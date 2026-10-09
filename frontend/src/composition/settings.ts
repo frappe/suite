@@ -1,7 +1,7 @@
 import { loadCalendarSettings } from '@/apps/calendar'
 import { loadDriveSettings } from '@/apps/drive'
 import { loadMailSettings } from '@/apps/mail'
-import { loadAccountSettings, loadWorkspaceSettings } from '@/shell/settings/accountSettings'
+import { loadAccountSettings } from '@/shell/settings/accountSettings'
 import type { SettingsGroupLoader, SettingsTabIdOf } from '@/shell/settings/settings'
 
 /**
@@ -16,7 +16,6 @@ export const settingsGroups = [
   loadDriveSettings,
   loadMailSettings,
   loadCalendarSettings,
-  loadWorkspaceSettings,
 ] as const satisfies readonly SettingsGroupLoader[]
 
 type CompositionTabId = SettingsTabIdOf<(typeof settingsGroups)[number]>

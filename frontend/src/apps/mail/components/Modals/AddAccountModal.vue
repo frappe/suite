@@ -6,19 +6,32 @@
     :dismissible="!addMember.isPending"
     :show-close-button="!addMember.isPending"
     v-bind="{
-      title: __('Add Account'),
-      actions: [
-        {
-          label: __(accountRequest.send_invite ? 'Send Invite' : 'Add Account'),
-          variant: 'solid' as const,
-          loading: addMember.isPending,
-          onClick: addMemberSubmit,
-        },
-      ],
+      title: __('Add user'),
+      actions: temporaryPassword
+        ? []
+        : [
+            {
+              label: __(accountRequest.send_invite ? 'Send invitation' : 'Add user'),
+              variant: 'solid' as const,
+              loading: addMember.isPending,
+              onClick: addMemberSubmit,
+            },
+          ],
     }"
   >
     <template #default>
-      <div class="relative">
+      <div v-if="temporaryPassword" class="space-y-4">
+        <p class="text-base text-ink-gray-7">
+          {{
+            __(
+              'Share this temporary password privately with the new user. It is shown once, expires after seven days, and cannot be used by Mail clients. The user must change it before normal access.',
+            )
+          }}
+        </p>
+        <FormControl :value="temporaryPassword" readonly :label="__('Temporary password')" />
+        <Button :label="__('I have saved it securely')" @click="show = false" />
+      </div>
+      <div v-else class="relative">
         <div
           v-if="addMember.isPending"
           class="bg-surface-white/60 absolute inset-0 z-10 flex items-center justify-center rounded-4"
@@ -76,18 +89,12 @@
             :options="ROLE_OPTIONS"
           />
           <FormControl
+            v-if="accountRequest.send_invite"
             v-model="accountRequest.backup_email"
             type="email"
-            :label="__('Backup Email')"
+            :label="__('Existing contact email')"
             placeholder="johndoe@personal.com"
             :description="__('Password resets and the invitation email are sent to this address.')"
-          />
-          <FormControl
-            v-model="accountRequest.quota_gb"
-            type="number"
-            :min="0"
-            :label="__('Quota (GB)')"
-            :description="__('Leave blank to use the configured default disk quota.')"
           />
           <div class="space-y-1.5">
             <label class="text-ink-gray-5 block text-xs">{{ __('Groups') }}</label>
@@ -132,13 +139,13 @@
               :label="__('Last Name')"
               placeholder="Doe"
             />
-            <FormControl
-              v-model="accountRequest.password"
-              type="password"
-              :label="__('Password')"
-              placeholder="••••••••"
-              :description="__('The user can change this later in their account settings.')"
-            />
+            <p class="text-sm text-ink-gray-6">
+              {{
+                __(
+                  'Suite generates a temporary password and shows it once after setup. No contact email is required.',
+                )
+              }}
+            </p>
             <!-- Only set here when the account is created right away; an invited user picks
 					their own on the setup form. -->
             <div class="space-y-1.5">
@@ -160,6 +167,7 @@
           </template>
           <ErrorMessage
             :message="
+              setupError ||
               domainsError ||
               (addMember.error &&
                 (addMember.error?.messages?.[0] ||
@@ -194,10 +202,12 @@ import { raiseToast } from '@/apps/mail/utils'
 import { fromLocalInput, toLocalInput, utcFromNow } from '@/apps/mail/utils/datetime'
 
 const show = defineModel<boolean>()
+const temporaryPassword = ref('')
+const setupError = ref('')
 const { domains, domainsError } = useEnabledDomains(show)
 const ROLE_OPTIONS = [
   {
-    label: __('User'),
+    label: __('Normal User'),
     value: 'user',
   },
   {
@@ -215,7 +225,6 @@ const defaultAccountRequest = {
   disable_receiving: false,
   first_name: '',
   last_name: '',
-  password: '',
   locale: '',
   time_zone: '',
 }
@@ -272,11 +281,14 @@ watch(
   () => addMember.reset(),
 )
 watch(show, () => {
+  temporaryPassword.value = ''
+  setupError.value = ''
+  addMember.reset()
   if (show.value) {
     // Shown and typed in the user's zone (converted to UTC on submit), and seeded here rather
     // than in the default shape so a dialog opened later gets a fresh expiry.
     Object.assign(accountRequest, defaultAccountRequest, {
-      expires_at: toLocalInput(utcFromNow(1, 'day')),
+      expires_at: toLocalInput(utcFromNow(7, 'day')),
     })
     emails.value = [
       {
@@ -303,15 +315,20 @@ async function addMemberSubmit() {
     groups: groupIds.value,
     mailing_lists: mailingListIds.value,
     expires_at: fromLocalInput(accountRequest.expires_at),
-    quota_gb: accountRequest.quota_gb === '' ? null : Number(accountRequest.quota_gb),
+    quota_gb: 0,
     // Blank means "server default" for both, which the API spells as null.
     locale: accountRequest.locale || null,
     time_zone: accountRequest.time_zone || null,
     is_admin: accountRequest.role === 'admin',
   }
-  await addMember.run(input)
+  const result = await addMember.run(input)
+  if (!result.success) {
+    setupError.value = result.error || __('Account setup failed. Retry to resume this creation.')
+    return
+  }
+  temporaryPassword.value = result.temporary_password || ''
   raiseToast(accountRequest.send_invite ? __('Invitation sent.') : __('Account added.'))
   emit('reload')
-  show.value = false
+  if (!temporaryPassword.value) show.value = false
 }
 </script>

@@ -14,6 +14,7 @@ from suite.drive._core.quota import (
     RELEASE_SQL,
     admit,
     bind_legacy_storage_reservation,
+    consume_storage_reservation,
     create_storage_reservation,
     effective_quota,
     get_storage_reservation,
@@ -260,6 +261,18 @@ class TestSiteDefaultQuota(IntegrationTestCase):
 
 
 class TestRootReservationsAndRecompute(IntegrationTestCase):
+    def test_consuming_previously_admitted_bytes_does_not_recheck_a_lowered_quota(self):
+        create_storage_reservation(self.root, "consume-lowered", 40)
+        frappe.db.set_value("Drive Root", self.root, "quota_bytes", 10)
+        consume_storage_reservation(self.root, "consume-lowered", 40)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 40)
+        self.assertFalse(frappe.db.exists("Drive Storage Reservation", "consume-lowered"))
+
+    def test_consuming_less_than_reserved_releases_only_unused_bytes(self):
+        create_storage_reservation(self.root, "consume-smaller", 40)
+        consume_storage_reservation(self.root, "consume-smaller", 25)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 25)
+
     user = "drive-quota-reservations@example.com"
     other_user = "drive-quota-other@example.com"
 

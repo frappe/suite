@@ -198,7 +198,7 @@ async function downloadDNSJsonSubmit() {
 const BREADCRUMBS = computed(() => [
   {
     label: __('Domains'),
-    route: '/mail/dashboard/domains',
+    route: '/admin/mail/domains',
   },
   {
     label: domain.data?.name || domainId,

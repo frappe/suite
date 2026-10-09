@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Edit Quota'),
+      title: __('Combined personal storage cap'),
       actions: [
         {
           label: __('Save'),
@@ -19,8 +19,17 @@
           v-model="quotaGb"
           type="number"
           :min="0"
-          :label="__('Quota (GB)')"
-          :description="__('Every account has a quota; it must be above zero.')"
+          :label="__('Personal cap (GB)')"
+          :description="
+            __(
+              'Leave blank for uncapped. Mail continues regardless of usage; this limits new Drive growth.',
+            )
+          "
+        />
+        <FormControl
+          v-model="buffer"
+          type="checkbox"
+          :label="__('Grant persistent 10% personal headroom')"
         />
         <ErrorMessage
           :message="
@@ -39,7 +48,7 @@
 import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
-import { api, useMutation, type InputOf } from '@/api'
+import { api, useMutation, useQuery } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 
 type MemberData = {
@@ -53,22 +62,29 @@ const { member } = defineProps<{
   member: MemberData
 }>()
 const emit = defineEmits(['reload'])
-const quotaGb = ref(0)
-watch(show, () => {
-  if (show.value && member) {
-    quotaGb.value = member.quota?.total ? Math.round(member.quota.total / 1024 ** 3) : 0
-    updateQuota.reset()
-  }
-})
-const updateQuota = useMutation(api.mail.admin.members.update)
+const quotaGb = ref<number | string>('')
+const buffer = ref(false)
+const storage = useQuery(api.suite.storage.get, () => (show.value ? {} : false))
+watch(
+  () => storage.data,
+  (data) => {
+    const user = data?.users.find((user) => user.name === member.name)
+    if (user) {
+      quotaGb.value = user.cap_bytes == null ? '' : user.cap_bytes / 1_000_000_000
+      buffer.value = user.buffer
+      updateQuota.reset()
+    }
+  },
+)
+const updateQuota = useMutation(api.suite.storage.setLimits)
 async function updateQuotaSubmit() {
-  const input: InputOf<typeof api.mail.admin.members.update> = {
-    member_id: member.name,
-    quota_gb: Number(quotaGb.value) || 0,
-  }
-  await updateQuota.run(input)
+  await updateQuota.run({
+    users: [member.name],
+    cap_bytes: quotaGb.value === '' ? null : Number(quotaGb.value) * 1_000_000_000,
+    buffer: buffer.value,
+  })
   show.value = false
   emit('reload')
-  raiseToast(__('Quota updated.'))
+  raiseToast(__('Combined storage cap updated.'))
 }
 </script>

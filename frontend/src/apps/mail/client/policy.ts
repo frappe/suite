@@ -182,8 +182,7 @@ export const registration: OwnerRegistration = {
     if (reference.id === 'subscribe_mailbox')
       return { effects: { invalidates: ['mail.get_mailboxes', 'mail.get_unified_folders'] } }
     if (reference.kind === 'mutation' && reference.publicName?.startsWith('admin.')) {
-      if (reference.id === 'change_member_password' || reference.id === 'send_invite')
-        return { effects: 'none' }
+      if (reference.id === 'change_member_password') return { effects: 'none' }
       const domain = reference.publicName.startsWith('admin.domains.')
       const readers = domain
         ? [
@@ -209,7 +208,12 @@ export const registration: OwnerRegistration = {
           ]
       return {
         effects: {
-          invalidates: [...readers, 'get_overview'].map((id) => `mail.${id}`),
+          invalidates: [
+            ...[...readers, 'get_overview'].map((id) => `mail.${id}`),
+            'suite.users_get',
+            'suite.account_get',
+            'suite.storage_get',
+          ],
           matches: matchingAdminTarget,
         },
       }

@@ -73,6 +73,7 @@ describe('app registry', () => {
       'calendar',
       'meet',
       'people',
+      'admin',
     ])
   })
 
@@ -89,6 +90,17 @@ describe('app registry', () => {
       'meet',
       'people',
     ])
+  })
+
+  it('shows Admin only to a Suite Admin, not a System Manager alone', () => {
+    const capabilities = ref({ jmap: false, systemManager: true, suiteAdmin: false })
+    const session = {
+      capabilities,
+    } as unknown as Session
+    const registry = useAppRegistry(session)
+    expect(registry.areas.some((area) => area.id === 'admin')).toBe(false)
+    capabilities.value = { jmap: false, systemManager: false, suiteAdmin: true }
+    expect(registry.areas.some((area) => area.id === 'admin')).toBe(true)
   })
 
   it('derives the Mail badge from the inbox unread summary', () => {

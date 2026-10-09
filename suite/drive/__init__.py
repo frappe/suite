@@ -164,6 +164,56 @@ until the caller commits, so a caller must not keep a Drive transaction open
 across a network call.
 """
 
+
+def administration_usage() -> list[dict]:
+    """Read root accounting for authorized cross-product administration."""
+    from suite.suite_core.administration import require_admin
+
+    require_admin()
+    from suite.drive._core.quota import administration_usage as read
+
+    return read()
+
+
+def set_user_active(user: str, *, active: bool) -> str:
+    """Archive or restore the same personal root during Suite's authorized User lifecycle.
+
+    Takes the User identity lock before root-node/root metadata locks. Explicit grants,
+    retained versions and trash remain unchanged. No new root is substituted on reactivation.
+    """
+    from suite.suite_core.administration import require_admin
+
+    require_admin()
+    from suite.drive._core.roots import set_user_active as transition
+
+    return transition(user, active=active)
+
+
+def preview_user_transfer(user: str, destination: str) -> dict:
+    """Preview retained bytes and destination inheritance without exposing content bodies."""
+    from suite.suite_core.administration import require_admin
+
+    require_admin()
+    from suite.drive._core.offboarding import preview
+
+    return preview(user, destination, _principals())
+
+
+def transfer_user_drive(user: str, destination: str, fingerprint: str, *, confirm_access: bool) -> dict:
+    """Move up to fifty retained top-level subtrees and report per-item outcomes.
+
+    The caller's transaction commits successful items. Failures roll back only
+    their subtree; a fresh preview/retry includes remaining items, preserving
+    stable links, versions, explicit grants and still-deleted trash.
+    """
+    from suite.suite_core.administration import require_admin
+
+    require_admin()
+    from suite.drive._core.offboarding import transfer
+
+    return transfer(user, destination, fingerprint, _principals(), confirm_access=confirm_access)
+
+
 from collections.abc import Iterable
 from datetime import datetime
 from typing import IO
@@ -484,6 +534,7 @@ __all__ = (
     "DriveNotFound",
     "DriveOverQuota",
     "Satellite",
+    "administration_usage",
     "adopt_media",
     "bind_legacy_storage_reservation",
     "check",
@@ -501,6 +552,7 @@ __all__ = (
     "list_versions",
     "node_url",
     "personal_root_for",
+    "preview_user_transfer",
     "push_preview",
     "read_file",
     "record_comment",
@@ -511,7 +563,9 @@ __all__ = (
     "release_storage_reservation",
     "resolve_share_link",
     "rollback_savepoint",
+    "set_user_active",
     "store_file",
     "take_version",
     "touch",
+    "transfer_user_drive",
 )
