@@ -1510,7 +1510,8 @@
       <!-- Pivot dialog -->
       <PivotDialog
         v-model="pivotDialogOpen"
-        :sheet="sheet"
+        :read-range="_readSourceRange"
+        :sheet-names="sheetNames"
         :current-sheet="currentSheet"
         :initial-range="pivotInitialRange"
         :pivot-id="pivotEditId"
@@ -3974,7 +3975,15 @@ const {
   createPastedPivot,
 } = usePivotIntegration({
   pivot,
-  sheet,
+  cells: {
+    readRange: _readSourceRange,
+    readSheet: _readWholeSheet,
+    write: _writeInputs,
+    clear: _clearRect,
+    addSheet: (name) => _engine?.client.dispatch(_command('addSheet', { name })),
+    idle: () => (_engine ? _engine.client.idle() : Promise.resolve()),
+  },
+  sheetNames: () => sheetNames.value,
   formats,
   currentSheet,
   activeCell,
@@ -8485,6 +8494,25 @@ async function _readWholeSheet(sn) {
   const ext = await _sheetExtent(sn)
   if (!ext) return { inputs: [], displays: [] }
   return _readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol })
+}
+
+// A user-typed source range's shown values, cut to the sheet's data: a range
+// like A1:Z1048576 reads only the rows that hold something.
+async function _readSourceRange(sn, rect) {
+  const ext = await _sheetExtent(sn)
+  const r1 = Math.min(rect.r1, ext?.maxRow ?? rect.r0)
+  const c1 = Math.min(rect.c1, ext?.maxCol ?? rect.c0)
+  return _readDisplays(sn, { ...rect, r1: Math.max(r1, rect.r0), c1: Math.max(c1, rect.c0) })
+}
+
+// Empties a rect's cells (0-based; contents only, formats stay).
+function _clearRect(sn, rect) {
+  _engine?.client.dispatch(
+    _command('clearContents', {
+      sheet: sn,
+      range: { r1: rect.r0 + 1, c1: rect.c0 + 1, r2: rect.r1 + 1, c2: rect.c1 + 1 },
+    }),
+  )
 }
 
 // Empties a sheet's cells (contents only; formats stay).
