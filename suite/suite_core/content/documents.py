@@ -185,14 +185,15 @@ def touch(adapter: str, doc_id: str) -> None:
         AND (`touched_at` IS NULL OR `touched_at` <= %s)"""
     now = now_datetime()
     doc = table(adapter, "doc")
-    if not frappe.db.sql(f"SELECT 1 FROM `{doc}` WHERE {due}", (doc_id, now - TOUCH_EVERY)):
+    before = frappe.db.sql(f"SELECT `touched_rev` FROM `{doc}` WHERE {due}", (doc_id, now - TOUCH_EVERY))
+    if not before:
         return
     frappe.db.sql(
         f"UPDATE `{doc}` SET `touched_at` = %s, `touched_rev` = `head_rev` WHERE {due}",
         (now, doc_id, now - TOUCH_EVERY),
     )
     claimed = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
-    node = frappe.db.sql(f"SELECT `node` FROM `{doc}` WHERE `id` = %s", doc_id)[0][0]
+    node, rev = frappe.db.sql(f"SELECT `node`, `touched_rev` FROM `{doc}` WHERE `id` = %s", doc_id)[0]
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     if not claimed:
         return
@@ -201,7 +202,13 @@ def touch(adapter: str, doc_id: str) -> None:
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
     except Exception:
         frappe.db.rollback()
-        # The edits are committed; a lost touch leaves only Drive's date behind until the next one
+        # The edits are committed; the sweep retries the touch once TOUCH_EVERY passes
+        with suppress(Exception):
+            frappe.db.sql(
+                f"UPDATE `{doc}` SET `touched_rev` = %s WHERE `id` = %s AND `touched_at` = %s AND `touched_rev` = %s",
+                (before[0][0], doc_id, now, rev),
+            )
+            frappe.db.commit()  # nosemgrep: frappe-manual-commit
         with suppress(Exception):
             frappe.log_error(
                 title="Collab: Drive touch failed",

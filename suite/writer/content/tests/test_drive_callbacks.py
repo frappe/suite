@@ -661,6 +661,20 @@ class TestWriterDriveCallbacks(CheckpointCase):
 
         self.assertEqual(self.changed(node), before)
 
+    def test_the_sweep_retries_a_touch_that_drive_failed(self):
+        node = self.new_document()
+        before = self.changed(node)
+        start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+        with self.clock(start), patch.object(writer_content.drive, "touch", side_effect=RuntimeError):
+            self.type_into(node, ["one"])
+        self.assertEqual(self.changed(node), before)
+
+        frappe.set_user("Administrator")
+        with self.clock(start + timedelta(minutes=10)), patch.object(scheduling, "enqueue"):
+            documents.sweep()
+
+        self.assertEqual(self.changed(node), start + timedelta(minutes=10))
+
     def test_the_sweep_touches_the_longest_waiting_documents_first(self):
         start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
         nodes = [self.new_document(), self.new_document()]
