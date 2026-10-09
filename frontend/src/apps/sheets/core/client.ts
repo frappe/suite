@@ -121,10 +121,20 @@ export interface WorkbookClient {
   /** Sends queued commands first, so the bytes include them. */
   toBytes(): Promise<Uint8Array>
   /**
+   * The workbook's bytes at this point of the dispatch order: commands
+   * dispatched before it are in them, ones dispatched after are not. With
+   * nothing dispatched or restored since the last call, returns that same
+   * promise, so taking one per undo step costs nothing when only side
+   * state changed.
+   */
+  snapshot(): Promise<Uint8Array>
+  /**
    * Replaces the workbook with `bytes`, in order with dispatch: commands
    * dispatched before it apply first, ones dispatched after wait for it.
+   * Takes a snapshot() promise as it is; it is settled by the time the
+   * restore reaches the worker.
    */
-  restore(bytes: Uint8Array): Promise<void>
+  restore(bytes: Uint8Array | Promise<Uint8Array>): Promise<void>
   /** Resolves once no command is queued or in flight. */
   idle(): Promise<void>
   terminate(): void
@@ -207,14 +217,27 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
 
   // --- dispatch queue ----------------------------------------------------
 
-  // A restore waits in the queue like a command, so it keeps its place.
+  // A restore or a snapshot waits in the queue like a command, so it keeps
+  // its place.
   interface RestoreJob {
-    restore: Uint8Array
+    restore: Uint8Array | Promise<Uint8Array>
     done(error?: Error): void
   }
-  const isRestore = (job: Command | RestoreJob): job is RestoreJob => 'restore' in job
+  interface SnapshotJob {
+    snapshot: true
+    resolve(bytes: Uint8Array): void
+    reject(error: Error): void
+  }
+  type Job = Command | RestoreJob | SnapshotJob
+  const isRestore = (job: Job): job is RestoreJob => 'restore' in job
+  const isSnapshot = (job: Job): job is SnapshotJob => 'snapshot' in job
+  const isControl = (job: Job) => isRestore(job) || isSnapshot(job)
 
-  const queue: (Command | RestoreJob)[] = []
+  const queue: Job[] = []
+  // Dispatches and restores so far: a snapshot taken at the same count is
+  // still the workbook's state.
+  let mutations = 0
+  let lastSnapshot: { at: number; bytes: Promise<Uint8Array> } | null = null
   let inFlight = false
   let flushScheduled = false
   let idleWaiters: (() => void)[] = []
@@ -226,6 +249,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       echo.setProvisional(p.sheet, p.row, p.col, p.input)
     }
     queue.push(cmd)
+    mutations++
     scheduleFlush()
   }
 
@@ -250,11 +274,23 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     }
     inFlight = true
     const head = queue[0]
+    if (head && isSnapshot(head)) {
+      queue.shift()
+      try {
+        head.resolve((await request<{ bytes: Uint8Array }>('toBytes')).bytes)
+      } catch (e) {
+        head.reject(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        inFlight = false
+      }
+      await flush()
+      return
+    }
     if (head && isRestore(head)) {
       queue.shift()
       try {
         const res = await request<{ version: number; sheets: string[] }>('restore', {
-          bytes: head.restore,
+          bytes: await head.restore,
         })
         setSheets(res.sheets)
         setVersion(res.version)
@@ -267,8 +303,8 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       await flush()
       return
     }
-    // Commands up to the next restore go out together.
-    const stop = queue.findIndex(isRestore)
+    // Commands up to the next restore or snapshot go out together.
+    const stop = queue.findIndex(isControl)
     const batch = queue.splice(0, stop === -1 ? queue.length : stop) as Command[]
     try {
       const res = await request<{
@@ -346,7 +382,21 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       await idle()
       return request<{ cells: FoundCell[] }>('findCells', args)
     },
+    snapshot() {
+      if (lastSnapshot?.at === mutations) return lastSnapshot.bytes
+      const bytes = new Promise<Uint8Array>((resolve, reject) => {
+        queue.push({ snapshot: true, resolve, reject })
+        scheduleFlush()
+      })
+      const taken = { at: mutations, bytes }
+      lastSnapshot = taken
+      bytes.catch(() => {
+        if (lastSnapshot === taken) lastSnapshot = null // the next call tries again
+      })
+      return bytes
+    },
     restore(bytes) {
+      mutations++
       return new Promise<void>((resolve, reject) => {
         queue.push({ restore: bytes, done: (e) => (e ? reject(e) : resolve()) })
         scheduleFlush()

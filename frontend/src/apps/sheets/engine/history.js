@@ -77,7 +77,7 @@ export function createHistory({
       index--
       if (stack[index].kind === 'snap') {
         // Previous entry is itself a snapshot — restore it directly.
-        restore?.(stack[index].snap, { touches: undoingTouches })
+        _restoreSnap(index, undoingTouches)
       } else {
         // Previous entry is an op, which stores only a {before,after}
         // diff — there is no full snapshot of that point to restore.
@@ -105,7 +105,7 @@ export function createHistory({
   function _rebuildTo(target) {
     let base = target
     while (base >= 0 && stack[base].kind !== 'snap') base--
-    if (base >= 0) restore?.(stack[base].snap, { touches: null })
+    if (base >= 0) _restoreSnap(base, null)
     for (let k = base + 1; k <= target; k++) {
       if (stack[k].kind === 'op') applyOp?.(stack[k].op)
     }
@@ -116,8 +116,19 @@ export function createHistory({
     index++
     const entry = stack[index]
     if (entry.kind === 'op') applyOp?.(entry.op)
-    else restore?.(entry.snap, { touches: null })
+    else _restoreSnap(index, null)
     return true
+  }
+
+  // A snapshot holds the whole state at its place in the stack: every op
+  // before it is in that state and none after it. An op that tracks whether
+  // the engine holds it (an `applied` flag, as structural ops do) is told so,
+  // and replaying it afterwards sends it again.
+  function _restoreSnap(i, touches) {
+    restore?.(stack[i].snap, { touches })
+    stack.forEach((e, k) => {
+      if (e.kind === 'op' && 'applied' in e.op) e.op.applied = k < i
+    })
   }
 
   function canUndo() {

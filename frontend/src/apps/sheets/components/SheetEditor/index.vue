@@ -2523,20 +2523,18 @@ function _restoreSide(snap) {
 }
 
 const history = createHistory({
+  // A snapshot step holds IronCalc's bytes (cells, sheets and their order),
+  // taken in dispatch order, plus every side engine. The bytes promise is
+  // shared with the previous step when no command ran in between, so a
+  // format-only step serializes nothing.
   snapshot() {
-    return { sheet: sheet.snapshot(), ..._sideSnapshot() }
+    return { bytes: _engine ? _engine.client.snapshot() : null, ..._sideSnapshot() }
   },
-  restore(snap, opts = {}) {
-    // Cell-level restore: in collab mode, the history hands us a `touches`
-    // set listing exactly which cells THIS client touched in the undone
-    // op. We revert only those — anything a remote peer changed in the
-    // interim stays put. Non-collab mode (or initial snapshot with no
-    // touches) falls back to the wholesale sheet.restore() to preserve
-    // long-standing behaviour.
-    if (opts.touches && opts.touches.size > 0) {
-      _restoreTouchedCells(snap.sheet, opts.touches)
-    } else {
-      sheet.restore(snap.sheet)
+  restore(snap) {
+    if (snap.bytes && _engine) {
+      _engine.client
+        .restore(snap.bytes)
+        .catch((e) => console.error('[sheets] restoring an undo step failed', e))
     }
     _restoreSide(snap)
     // Caller (undo/redo) repopulates the canvas + reapplies hidden rows.
@@ -2661,22 +2659,6 @@ function _applyRowHeightMap(map, sheetName) {
 let _collabDrainLocalTouches = () => new Set()
 function _drainCollabLocalTouches() {
   return _collabDrainLocalTouches()
-}
-
-// Revert just the cells in `touches` to their values from `sheetSnap`.
-// `touches` is a Set of "sheetName|cellId" keys. Going through sheet.setCell
-// keeps deps + the Y.Doc mirror + the engine notify-callbacks in sync, so
-// peers see our undo as a regular write.
-function _restoreTouchedCells(sheetSnap, touches) {
-  const allSheets = sheetSnap?.sheets || sheetSnap || {}
-  for (const key of touches) {
-    const idx = key.indexOf('|')
-    if (idx < 0) continue
-    const sn = key.slice(0, idx)
-    const id = key.slice(idx + 1)
-    const original = allSheets[sn]?.[id] ?? ''
-    sheet.setCell(id, original, sn)
-  }
 }
 
 // ── Vue state ─────────────────────────────────────────────────────────────────
@@ -5027,6 +5009,8 @@ async function _loadInitialData() {
   } else {
     // A new sheet starts as an empty workbook.
     await _startEngine()
+    history.reset() // the baseline holds the engine's bytes, which init() could not
+    syncFlags()
     _rememberTab = true
     if (props.id === 'new') {
       // Google-Sheets model: create the doc immediately so there is never an
@@ -7423,13 +7407,15 @@ function _onDocMouseDown(e) {
 // pointing at them now read #REF!), so its undo restores IronCalc's bytes
 // from just before it.
 //
-// `op.applied` says whether IronCalc holds the change now. History replays
-// ops after restoring a snapshot (which never touches IronCalc), so a
-// replay must not send the command again.
+// `op.applied` says whether IronCalc holds the change now. Restoring a
+// snapshot step sets it from the op's place in history (the bytes hold the
+// ops before the step, not after), so a replay sends the command only when
+// IronCalc lacks it.
 async function _applyStructural(axis, map, forward, inverse = null) {
   const sn = currentSheet.value
   const sideBefore = _sideSnapshot()
-  const beforeBytes = inverse ? null : await _engineBytes()
+  // Taken in dispatch order, so it is the workbook just before this command.
+  const beforeBytes = inverse ? null : (_engine?.client.snapshot() ?? null)
   const op = {
     opType: 'structural',
     subSheet: sn,

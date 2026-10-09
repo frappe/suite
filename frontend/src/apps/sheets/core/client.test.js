@@ -269,6 +269,32 @@ describe('client — restore', () => {
     expect(versions).toEqual([before + 1])
   })
 
+  it('snapshot holds the commands dispatched before it and none after', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'before'))
+    const snap = wb.snapshot()
+    wb.dispatch(setInput('Sheet1', 2, 1, 'after'))
+    await wb.restore(snap) // takes the promise; it settles first
+    expect(await inputAt(wb, 1, 1)).toBe('before')
+    expect(await inputAt(wb, 2, 1)).toBe('')
+  })
+
+  it('reuses the last snapshot until something is dispatched or restored', async () => {
+    const wb = await createWorkbookClient({ port })
+    const a = wb.snapshot()
+    expect(wb.snapshot()).toBe(a)
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    const b = wb.snapshot()
+    expect(b).not.toBe(a)
+    await wb.restore(a)
+    expect(wb.snapshot()).not.toBe(b)
+    await wb.idle()
+    // Bytes are copied to the worker, so one snapshot restores twice.
+    await wb.restore(b)
+    await wb.restore(b)
+    expect(await inputAt(wb, 1, 1)).toBe('x')
+  })
+
   it('rejects bad bytes and leaves the workbook as it was', async () => {
     const wb = await createWorkbookClient({ port })
     wb.dispatch(setInput('Sheet1', 1, 1, 'kept'))
