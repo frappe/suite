@@ -117,7 +117,7 @@ def load_manifest(path: Path) -> list[dict]:
             raise ValueError("Name hints must be unique after normalization")
         end = entry.get("speech_end_seconds")
         if end is not None and (
-            isinstance(end, bool) or not isinstance(end, (int, float)) or not math.isfinite(end) or end < 0
+            isinstance(end, bool) or not isinstance(end, int | float) or not math.isfinite(end) or end < 0
         ):
             raise ValueError("Annotate nonnegative speech_end_seconds (last spoken sound)")
         clips.append(
@@ -172,7 +172,7 @@ def score_clip(clip: dict, prediction: dict) -> dict:
         value = prediction.get(field)
         if value is not None and (
             isinstance(value, bool)
-            or not isinstance(value, (int, float))
+            or not isinstance(value, int | float)
             or not math.isfinite(value)
             or value < 0
         ):

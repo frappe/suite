@@ -10,12 +10,14 @@
       <div class="text-p-sm text-ink-gray-8 min-w-0 flex-1 truncate" :title="emails">
         {{ __('Do you want mail from') }}
         <template v-if="senders.length === 1">
-          <span class="!font-medium">{{ senders[0].email }}</span>?
+          <span class="!font-medium">{{ senders[0].email }}</span
+          >?
         </template>
         <template v-else-if="senders.length === 2">
           <span class="!font-medium">{{ nameOf(senders[0]) }}</span>
           {{ __('and') }}
-          <span class="!font-medium">{{ nameOf(senders[1]) }}</span>?
+          <span class="!font-medium">{{ nameOf(senders[1]) }}</span
+          >?
         </template>
         <template v-else>
           <span class="!font-medium">{{ nameOf(senders[0]) }}</span>

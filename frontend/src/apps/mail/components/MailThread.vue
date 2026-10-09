@@ -376,7 +376,9 @@
                         >
                           <Ban class="text-ink-gray-5 size-4 shrink-0" />
                           <div class="text-p-sm text-ink-gray-8 min-w-0 flex-1">
-                            <span class="!font-medium">{{ mail.from_name || mail.from_email }}</span>
+                            <span class="!font-medium">{{
+                              mail.from_name || mail.from_email
+                            }}</span>
                             {{ __('is on your') }}
                             <button
                               type="button"
@@ -575,17 +577,17 @@ import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
+import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
-import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import {
   closeComposeWindow,
   composeWindowDraft,
   isComposeWindowOpen,
 } from '@/apps/mail/composables/useComposeWindow'
+import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import { isMailRoute } from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'

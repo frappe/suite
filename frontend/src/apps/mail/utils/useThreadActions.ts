@@ -217,9 +217,7 @@ export function useThreadActions(deps: {
   )
   const addToOptions = computed(() =>
     mailboxes.data
-      ?.filter(
-        (m) => !m.role || ['inbox', 'archive'].includes(m.role),
-      )
+      ?.filter((m) => !m.role || ['inbox', 'archive'].includes(m.role))
       .filter(
         (m) =>
           !selectedRows.value.every((t: Thread) =>

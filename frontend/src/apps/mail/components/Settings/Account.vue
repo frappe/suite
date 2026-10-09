@@ -87,7 +87,6 @@
         <StorageMeter :used-percentage :label :limited="isLimited" />
 
         <ErrorMessage :message="savePreferences.error?.message" />
-
       </div>
     </template>
   </AppSettingsBody>

@@ -133,7 +133,9 @@ const createShared = () => {
     {
       account = store.accountId,
       destination = 'inbox',
-      message = emails.length === 1 ? __('Sender marked as trusted.') : __('Senders marked as trusted.'),
+      message = emails.length === 1
+        ? __('Sender marked as trusted.')
+        : __('Senders marked as trusted.'),
     }: { account?: string; destination?: Destination; message?: string } = {},
   ) => {
     decide(account, emails)
