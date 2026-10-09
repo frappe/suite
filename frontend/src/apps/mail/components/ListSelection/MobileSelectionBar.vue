@@ -19,9 +19,7 @@
           @click="action.onClick"
         >
           <component :is="action.icon" class="h-5 w-5" />
-          <span class="max-w-full truncate">{{
-            action.shortLabel ?? stripShortcutHint(action.label)
-          }}</span>
+          <span class="max-w-full truncate">{{ action.shortLabel }}</span>
         </button>
         <button
           v-if="moreOptions.length"
@@ -45,7 +43,6 @@ import { Ellipsis } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import type { SelectAction } from '@/apps/mail/utils/selectActions'
-import { stripShortcutHint } from '@/utils/actionLabel'
 
 type Option = { label: string; icon: unknown; onClick: () => void }
 

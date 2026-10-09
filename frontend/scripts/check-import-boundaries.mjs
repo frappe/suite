@@ -143,7 +143,6 @@ const moduleGraphDebtGroups = [
       'mail/pages/MailLayout.vue|@/boot/config',
       'mail/pages/MailLayout.vue|@/stores/root',
       'mail/pages/MailboxView.vue|@/components/AdaptiveDropdown.vue',
-      'mail/pages/MailboxView.vue|@/utils/actionLabel',
       'mail/pages/OutboxView.vue|@/components/AdaptiveDropdown.vue',
       'mail/pages/ProfileView.vue|@/components/MobileProfilePage.vue',
       'mail/pages/ScreenerView.vue|@/components/AdaptiveDropdown.vue',

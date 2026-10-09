@@ -13,8 +13,9 @@ import type { Thread } from '@/apps/mail/types'
 
 export interface SelectAction {
   label: string
-  // One word for the phone's selection bar; verb phrases stay in menus and tooltips.
-  shortLabel?: string
+  // One word for the phone's selection bar; verb phrases and shortcut hints stay in menus and
+  // tooltips.
+  shortLabel: string
   onClick: () => void
   icon: typeof Star
   condition: () => boolean
@@ -48,18 +49,21 @@ export const selectActions = (
   return [
     {
       label: __('Star'),
+      shortLabel: __('Star'),
       onClick: run.star,
       icon: Star,
       condition: some((t) => t.flagged === 0),
     },
     {
       label: __('Unstar'),
+      shortLabel: __('Unstar'),
       onClick: run.unstar,
       icon: StarOff,
       condition: some((t) => t.flagged === 1),
     },
     {
       label: __('Archive (E)'),
+      shortLabel: __('Archive'),
       onClick: run.archive,
       icon: Archive,
       condition: () => !folder().archive,
