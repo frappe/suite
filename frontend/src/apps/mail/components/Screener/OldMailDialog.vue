@@ -7,10 +7,7 @@
         <p class="text-p-base text-ink-gray-7">
           {{
             shown?.emails.length === 1
-              ? __('{0} has {1} more emails in your Inbox.', [
-                  shown.emails[0],
-                  String(shown.count),
-                ])
+              ? __('{0} has {1} more emails in your Inbox.', [shown.emails[0], String(shown.count)])
               : __('These senders have {0} more emails in your Inbox.', [String(shown?.count)])
           }}
           {{ __('Their mail in other folders stays where it is.') }}

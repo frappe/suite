@@ -86,24 +86,12 @@
             <!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
             <!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
 						     axis and the count text starts where the title does. -->
-            <div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
-              <Button
-                variant="ghost"
-                class="!h-10 !w-10 !rounded-full"
-                @click="toggleSelectAll(false)"
-              >
-                <template #icon><X class="icon !h-5 !w-5" /></template>
-              </Button>
-              <span class="flex-1 truncate text-base !font-medium">
-                {{ __('{0} selected', [String(selections.length)]) }}
-              </span>
-              <button
-                class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
-                @click="toggleSelectAll(!isAllSelected)"
-              >
-                {{ isAllSelected ? __('Unselect All') : __('Select All') }}
-              </button>
-            </div>
+            <MobileSelectionHeader
+              v-if="selections.length"
+              :count="selections.length"
+              :all-selected="isAllSelected"
+              @toggle-all="toggleSelectAll"
+            />
             <!-- No `loading`: the bar below spans this whole header block, so it
 						     also covers selection mode and search, where this row is absent. -->
             <MailListToolbar
@@ -129,44 +117,16 @@
           >
             <template #lead>
               <div v-if="!isAllAccountsSearch" class="mr-5">
-                <Tooltip
-                  :text="
-                    isAllSelected ? __('Clear All (Esc)') : __('Select All ({0}+A)', [modifier])
-                  "
-                >
-                  <div
-                    class="checkbox-hitbox -m-3 cursor-pointer p-3"
-                    @click.stop.prevent="toggleSelectAll(!isAllSelected)"
-                  >
-                    <Checkbox :model-value="isAllSelected" size="md" class="pointer-events-none" />
-                  </div>
-                </Tooltip>
+                <SelectAllCheckbox :selected="isAllSelected" @toggle="toggleSelectAll" />
               </div>
             </template>
 
             <template #actions>
-              <template v-if="selections.length">
-                <Dropdown v-if="showReadingPane" :options="selectActions">
-                  <Button variant="ghost" :tooltip="__('Actions')">
-                    <template #icon>
-                      <Ellipsis class="icon" />
-                    </template>
-                  </Button>
-                </Dropdown>
-                <template v-else>
-                  <Button
-                    v-for="action in selectActions.filter((a) => a.condition())"
-                    :key="action.label"
-                    :tooltip="action.label"
-                    variant="ghost"
-                    @click="action.onClick"
-                  >
-                    <template #icon>
-                      <component :is="action.icon" class="icon" />
-                    </template>
-                  </Button>
-                </template>
-              </template>
+              <SelectActionButtons
+                v-if="selections.length"
+                :actions="selectActions"
+                :collapsed="showReadingPane"
+              />
 
               <Dropdown v-if="showMoveTo" :options="moveToOptions">
                 <Button variant="ghost" :tooltip="__('Move To')">
@@ -234,7 +194,7 @@
                     v-if="row.type === 'stack'"
                     :threads="row.threads"
                     :expanded="row.expanded"
-                    :is-selected="isStackSelected(row.threads)"
+                    :is-selected="isStackSelected(row.threads.map((t) => t.thread_id))"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @toggle="toggleStack(row)"
@@ -358,96 +318,26 @@
 
   <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
   <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
-  <!-- Selection action bar (design: 5·Selection) — covers the shell's bottom nav
-	     while selecting: thumb reach, Delete last and red. -->
-  <!-- Fixed over the nav with safe-area padding, so entering/leaving selection mode
-	     never shifts the list. Teleported to Mail's overlay layer: inside
-	     the layout's `isolate` stacking context, no z-index could beat the nav. -->
-  <Teleport :to="overlayLayer ?? 'body'">
-    <div
-      v-if="mobileSelectionMode"
-      class="bg-surface-base fixed inset-x-0 bottom-0 z-20 border-t pb-[env(safe-area-inset-bottom)]"
-    >
-      <!-- Four labeled actions + More: seven unlabeled icons were the old screener
-		     trap (no labels, no tooltips on touch). Overflow actions and the folder
-		     menus live in the More sheet, which chains into the folder sheets. -->
-      <!-- flex-1 columns (like the nav underneath): equal widths keep the icon
-		     centers evenly spaced regardless of label length. -->
-      <div class="flex h-15 items-stretch">
-        <button
-          v-for="action in visibleSelectActions.slice(0, 4)"
-          :key="action.label"
-          class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
-          @click="action.onClick"
-        >
-          <component :is="action.icon" class="h-5 w-5" />
-          <span class="max-w-full truncate">{{
-            action.shortLabel ?? stripShortcutHint(action.label)
-          }}</span>
-        </button>
-        <button
-          v-if="moreSelectionOptions.length"
-          class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
-          @click="showMoreActions = true"
-        >
-          <Ellipsis class="h-5 w-5" />
-          <span>{{ __('More') }}</span>
-        </button>
-      </div>
-
-      <AdaptiveDropdown v-model:open="showMoreActions" :options="moreSelectionOptions" />
-      <AdaptiveDropdown
-        v-model:open="showMoveToSheet"
-        :options="moveToOptions"
-        :title="__('Move To')"
-      />
-      <AdaptiveDropdown
-        v-model:open="showAddToSheet"
-        :options="addToOptions"
-        :title="__('Add To')"
-      />
-      <AdaptiveDropdown
-        v-model:open="showRemoveFromSheet"
-        :options="removeFromOptions"
-        :title="__('Remove From')"
-      />
-    </div>
-  </Teleport>
+  <!-- The phone's selection bar; the folder menus open from its More sheet as sheets of their own. -->
+  <MobileSelectionBar
+    :open="mobileSelectionMode"
+    :actions="selectActions"
+    :extra-options="folderSelectionOptions"
+  />
 </template>
 <script setup lang="ts">
-import {
-  Breadcrumbs,
-  Button,
-  Checkbox,
-  Dialog,
-  Dropdown,
-  Tooltip,
-  usePageMeta,
-  usePortalTarget,
-} from 'frappe-ui'
-import {
-  Archive,
-  CircleAlert,
-  CircleCheck,
-  Ellipsis,
-  FolderInput,
-  FolderMinus,
-  FolderPlus,
-  LoaderCircle,
-  Mail as MailIcon,
-  MailOpen,
-  RefreshCw,
-  Star,
-  StarOff,
-  Trash2,
-  X,
-} from 'lucide-vue-next'
+import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown, usePageMeta } from 'frappe-ui'
+import { FolderInput, FolderMinus, FolderPlus, LoaderCircle } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
+import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
+import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
+import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
@@ -458,6 +348,7 @@ import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
+import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
@@ -473,7 +364,6 @@ import {
 import {
   useListReload,
   useMobileSearch,
-  useMobileSelection,
   useReadingPane,
   useScreenSize,
   useSwipeNav,
@@ -490,12 +380,11 @@ import {
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
+import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { appPageMeta } from '@/platform/page-meta'
-import { stripShortcutHint } from '@/utils/actionLabel'
 
 const {
   accountId,
@@ -510,11 +399,9 @@ const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
-const { setMobileSelectionActive } = useMobileSelection()
 const { dropViewUndo } = useUndo()
 const socket = inject('$socket')
 // MailLayout's overlay layer; see the selection bar's Teleport.
-const overlayLayer = usePortalTarget()
 const store = userStore()
 const { mailboxes, mailboxIds } = store
 
@@ -604,12 +491,6 @@ const rowThreadIDs = (row: NavRow): string[] =>
       ? row.threads.map((t) => t.thread_id)
       : (getGroupThreads(row.dateKey) ?? [])
 
-// Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
-// every existing path that mutates them (Cmd+A, Esc, resetSelections, shift+arrow, a member's own
-// checkbox) keeps the stack checkbox honest for free.
-const isStackSelected = (threads: Thread[]) =>
-  threads.every((t) => selections.value.includes(t.thread_id))
-
 // A deep link or a step to the next thread can land inside a collapsed stack or a folded day — surface
 // it either way, and leave the cursor on it (see revealThread).
 watch(
@@ -623,110 +504,41 @@ watch(
 // Selection
 
 const mailThreadRef = useTemplateRef('mailThread')
-const selections = ref<string[]>([])
+// The ticked threads, and the phone's selection mode (see useListSelection).
+const {
+  selections,
+  isAllSelected,
+  mobileSelectionMode,
+  toggleSelect,
+  toggleSelectAll,
+  resetSelections,
+  isGroupSelected,
+  isStackSelected,
+} = useListSelection({
+  keys: () => threadIDs.value,
+  groupKeys: (dateKey) => getGroupThreads(dateKey),
+})
 
-// Mobile selection mode (design: 5·Selection): rows show checkboxes, the toolbar
-// turns contextual, and the action bar covers the bottom nav; the compose button hides (via the composable).
-const mobileSelectionMode = computed(() => isMobile.value && selections.value.length > 0)
-watch(mobileSelectionMode, (active) => setMobileSelectionActive(active))
-onUnmounted(() => setMobileSelectionActive(false))
-
-// Selection bar: first four condition-passing actions get labeled slots; the rest,
-// plus the folder menus, overflow into the More sheet (chained sheet opens).
-const showMoreActions = ref(false)
-const showMoveToSheet = ref(false)
-const showAddToSheet = ref(false)
-const showRemoveFromSheet = ref(false)
-const visibleSelectActions = computed(() => selectActions.value.filter((a) => a.condition()))
-const moreSelectionOptions = computed(() => [
-  ...visibleSelectActions.value.slice(4).map((a) => ({
-    label: a.label,
-    icon: a.icon,
-    onClick: a.onClick,
-  })),
+// The folder menus join the phone selection bar's More sheet, each opening as a sheet of its own.
+const folderSelectionOptions = computed(() => [
   ...(showMoveTo.value
-    ? [
-        {
-          label: __('Move To'),
-          icon: FolderInput,
-          onClick: () => (showMoveToSheet.value = true),
-        },
-      ]
+    ? [{ label: __('Move To'), icon: FolderInput, options: moveToOptions.value }]
     : []),
   ...(showAddTo.value
-    ? [
-        {
-          label: __('Add To'),
-          icon: FolderPlus,
-          onClick: () => (showAddToSheet.value = true),
-        },
-      ]
+    ? [{ label: __('Add To'), icon: FolderPlus, options: addToOptions.value }]
     : []),
   ...(showRemoveFrom.value
-    ? [
-        {
-          label: __('Remove From'),
-          icon: FolderMinus,
-          onClick: () => (showRemoveFromSheet.value = true),
-        },
-      ]
+    ? [{ label: __('Remove From'), icon: FolderMinus, options: removeFromOptions.value }]
     : []),
 ])
-const lastSelected = ref<string[]>()
-const isAllSelected = computed(
-  () => threadIDs.value.length && selections.value.length === threadIDs.value.length,
-)
-
-// Selecting no longer forces a collapsed date group or stack open. Ticking either one is how you act
-// on the whole set at once — collapse the pile, tick, archive — and expanding it on tick would undo
-// exactly the thing being asked for, at the worst moment. Nothing is concealed by staying collapsed:
-// the header or stack row shows its own checkbox ticked, and the toolbar counts individual threads.
-
-const toggleSelect = (
-  threadIDs: string[],
-  selected: boolean,
-  isKeyboardSelect: boolean = false,
-) => {
-  const allIDs = new Set([
-    ...threadIDs,
-    ...(isKeyboardSelect ? [] : getShiftSelectedIDs(threadIDs[0])),
-  ])
-  if (selected) selections.value = [...new Set([...selections.value, ...allIDs])]
-  else selections.value = selections.value.filter((id) => !allIDs.has(id))
-  lastSelected.value = threadIDs
-}
-const getShiftSelectedIDs = (thread: string) => {
-  if (!(isShiftPressed.value && lastSelected.value?.length)) return []
-  const currentIndex = threadIDs.value.indexOf(thread)
-  const firstIndex = threadIDs.value.indexOf(lastSelected.value[0])
-  const lastIndex = threadIDs.value.indexOf(lastSelected.value.at(-1))
-  const farthestIndex =
-    Math.abs(currentIndex - firstIndex) > Math.abs(currentIndex - lastIndex)
-      ? firstIndex
-      : lastIndex
-  const [lower, higher] = [farthestIndex, currentIndex].sort((a, b) => a - b)
-  return threadIDs.value.slice(lower, higher + 1)
-}
-const toggleSelectAll = (selected: boolean) => {
-  if (selected) selections.value = [...threadIDs.value]
-  else selections.value = []
-  lastSelected.value = undefined
-}
-const resetSelections = () => {
-  selections.value = []
-  lastSelected.value = undefined
-}
-const isGroupSelected = (key: string) =>
-  getGroupThreads(key).every((id) => selections.value.includes(id))
+// Selecting doesn't force a collapsed date group or stack open: ticking either one is how you act on
+// the whole set at once — collapse the pile, tick, archive.
 
 // Shortcuts
 
-const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
-const isShiftPressed = ref(false)
 const gPrefix = useGPrefix()
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 const handleKeyDown = (e: KeyboardEvent) => {
-  isShiftPressed.value = e.shiftKey
   const key = e.key.toLowerCase()
 
   // Handle Ctrl/Cmd+A (Select All)
@@ -842,121 +654,33 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 
   // Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
   // takes its whole run and onto a header takes the day — the same sets their checkboxes select.
-  if (!(isShiftPressed.value && newIDs.length)) return
+  if (!(e.shiftKey && newIDs.length)) return
   const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
   toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
 }
-const handleKeyUp = (e: KeyboardEvent) => {
-  if (e.key === 'Shift') isShiftPressed.value = false
-}
-interface SelectAction {
-  label: string
-  // One-word label for the mobile selection bar; verb phrases stay in menus/tooltips.
-  shortLabel?: string
-  onClick: () => void
-  icon: typeof RefreshCw
-  condition: () => boolean
-}
-const selectActions = computed((): SelectAction[] => [
+// The actions on the ticked threads, the same set the All accounts list offers (see selectActions).
+const selectActions = buildSelectActions(
+  () => selectedRows.value,
+  () => ({
+    archive: mailbox === mailboxIds.archive,
+    trash: mailbox === mailboxIds.trash,
+    drafts: mailbox === mailboxIds.drafts,
+  }),
   {
-    label: __('Star'),
-    onClick: () => setFlaggedByThreadIDs(selections.value, true),
-    icon: Star,
-    condition: () =>
-      selections.value.some(
-        (threadID) =>
-          threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.flagged === 0,
-      ),
-  },
-  {
-    label: __('Unstar'),
-    onClick: () => setFlaggedByThreadIDs(selections.value, false),
-    icon: StarOff,
-    condition: () =>
-      selections.value.some(
-        (threadID) =>
-          threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.flagged === 1,
-      ),
-  },
-  {
-    label: __('Archive (E)'),
-    onClick: () =>
+    star: () => setFlaggedByThreadIDs(selections.value, true),
+    unstar: () => setFlaggedByThreadIDs(selections.value, false),
+    archive: () =>
       mailbox === mailboxIds.sent
         ? handleAddThreadsToMailbox(mailboxIds.archive, selections.value)
-        : handleMoveThreads({
-            [mailboxIds.archive]: selections.value,
-          }),
-    icon: Archive,
-    condition: () => mailbox !== mailboxIds.archive,
+        : handleMoveThreads({ [mailboxIds.archive]: selections.value }),
+    junk: () => junkOrDeleteThreads(selections.value, true),
+    notJunk: () => handleSetSpamStatus({ 0: selections.value }),
+    trash: () => handleMoveThreads({ [mailboxIds.trash]: selections.value }),
+    delete: () => junkOrDeleteThreads(selections.value, false),
+    read: () => handleSetSeen({ 1: selections.value }),
+    unread: () => handleSetSeen({ 0: selections.value }),
   },
-  {
-    label: __('Mark as Junk (!)'),
-    shortLabel: __('Junk'),
-    onClick: () => junkOrDeleteThreads(selections.value, true),
-    icon: CircleAlert,
-    condition: () =>
-      mailbox !== mailboxIds.drafts &&
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.junk === 0,
-      ),
-  },
-  {
-    label: __('Mark as Not Junk'),
-    shortLabel: __('Not Junk'),
-    onClick: () =>
-      handleSetSpamStatus({
-        0: selections.value,
-      }),
-    icon: CircleCheck,
-    condition: () =>
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.junk === 1,
-      ),
-  },
-  {
-    label: __('Move to Trash (Delete)'),
-    shortLabel: __('Trash'),
-    onClick: () =>
-      handleMoveThreads({
-        [mailboxIds.trash]: selections.value,
-      }),
-    icon: Trash2,
-    condition: () => mailbox !== mailboxIds.trash,
-  },
-  {
-    label: __('Delete Threads (Shift+Delete)'),
-    shortLabel: __('Delete'),
-    onClick: () => junkOrDeleteThreads(selections.value, false),
-    icon: Trash2,
-    condition: () => mailbox === mailboxIds.trash,
-  },
-  {
-    label: __('Mark as Read (Shift+U)'),
-    shortLabel: __('Read'),
-    onClick: () =>
-      handleSetSeen({
-        1: selections.value,
-      }),
-    icon: MailOpen,
-    condition: () =>
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.seen === 0,
-      ),
-  },
-  {
-    label: __('Mark as Unread (U)'),
-    shortLabel: __('Unread'),
-    onClick: () =>
-      handleSetSeen({
-        0: selections.value,
-      }),
-    icon: MailIcon,
-    condition: () =>
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.seen === 1,
-      ),
-  },
-])
+)
 
 // Search
 
@@ -1186,7 +910,6 @@ const pollForChanges = async () => {
 const onMailChanged = () => refreshThreads()
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
-  window.addEventListener('keyup', handleKeyUp)
   reloadInterval.value = setInterval(pollForChanges, 30000)
   socket.on('new_mail_created', (updatedMailboxes: string[]) => {
     if (updatedMailboxes.includes(mailbox)) refreshThreads()
@@ -1201,7 +924,6 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
-  window.removeEventListener('keyup', handleKeyUp)
   if (reloadInterval.value) clearInterval(reloadInterval.value)
   socket.off('mail_changed', onMailChanged)
   // Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.

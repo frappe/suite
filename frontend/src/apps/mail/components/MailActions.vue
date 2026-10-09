@@ -50,6 +50,7 @@ import { h, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useMutation, type InputOf } from '@/api'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
 import {
@@ -61,7 +62,6 @@ import {
 } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
-import { useScreener } from '@/apps/mail/composables/useScreener'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
@@ -393,7 +393,11 @@ const blockSender = async () => {
     () => {
       putBack()
       const back = Promise.all([
-        client.mutation(api.mail.screening.remove, { account, emails: from_emails }, { silent: true }),
+        client.mutation(
+          api.mail.screening.remove,
+          { account, emails: from_emails },
+          { silent: true },
+        ),
         client.mutation(api.mail.messages.spam, { account, ids, spam: false }, { silent: true }),
       ]).then(() => reloadMails(true))
       raiseOptimisticToast(back, __('Sender unblocked.'))
@@ -402,5 +406,4 @@ const blockSender = async () => {
     account,
   )
 }
-
 </script>
