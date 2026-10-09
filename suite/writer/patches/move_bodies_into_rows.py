@@ -70,8 +70,16 @@ def move(doc_id: str) -> str:
         through, chain, sha, gz = newest[0]
         state = gzip.decompress(bytes(gz))
         if hashlib.sha256(state).digest() != bytes(sha):
-            frappe.db.rollback()
-            print(f"Writer body not moved, its checkpoint does not match its sha: {doc.node}")
+            # Kept for inspection, but no longer claimed as checked, so no open starts from it
+            frappe.db.sql(
+                f"""UPDATE `{table("writer", "checkpoint")}` SET `integrated` = 0
+                WHERE `doc_id` = %s AND `through_rev` = %s""",
+                (doc_id, through),
+            )
+            frappe.db.commit()  # nosemgrep: frappe-manual-commit
+            print(
+                f"Writer body not moved, its checkpoint does not match its sha and is marked unchecked: {doc.node}"
+            )
             return "bad_checkpoint"
         body = base64.b64encode(state).decode("ascii")
         keep(doc_id, doc, row, body)
