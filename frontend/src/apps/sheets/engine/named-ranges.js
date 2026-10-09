@@ -24,6 +24,24 @@ const _RESERVED = new Set(['TRUE', 'FALSE', 'NULL'])
 const _CELL_RE = /^[A-Z]+\d+$/
 const _NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
+// An entry as an IronCalc defined-name formula: absolute, sheet-qualified,
+// no leading '=' ({ sheet: 'My Data', range: 'B2:B9' } → 'My Data'!$B$2:$B$9).
+// IronCalc evaluates `=Revenue` from these; the store stays the source the
+// dialog edits and the document saves.
+export function definedNameFormula({ sheet, range }) {
+  const quoted = `'${String(sheet).replace(/'/g, "''")}'`
+  const abs = String(range)
+    .split(':')
+    .map((ref) =>
+      ref
+        .trim()
+        .toUpperCase()
+        .replace(/^([A-Z]+)(\d+)$/, '$$$1$$$2'),
+    )
+    .join(':')
+  return `${quoted}!${abs}`
+}
+
 /**
  * @param {{ isBuiltinFunction?: (name: string) => boolean }} [opts]
  *   Optional hook to detect collisions with built-in formula functions

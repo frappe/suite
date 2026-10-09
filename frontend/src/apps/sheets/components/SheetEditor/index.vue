@@ -2212,7 +2212,7 @@ import { getFunctionNames } from '../../engine/formula.js'
 import { createHistory } from '../../engine/history.js'
 import { detectHyperlink, isAutoLinkText } from '../../engine/links.js'
 import { createMergeEngine } from '../../engine/merge.js'
-import { createNamedRanges } from '../../engine/named-ranges.js'
+import { createNamedRanges, definedNameFormula } from '../../engine/named-ranges.js'
 import { detectSeries } from '../../engine/patterns/index.js'
 import { createPivotEngine } from '../../engine/pivot.js'
 import { createProtectionEngine } from '../../engine/protection.js'
@@ -2385,7 +2385,28 @@ function openNamedRangesDialog() {
   contextMenu.open = false
   namedRangesDialogOpen.value = true
 }
+// Named ranges live in their own store (the dialog edits it, the document
+// saves it); IronCalc evaluates `=Name` from defined names. This sends
+// IronCalc whatever differs from what it was last sent, so calling it after
+// anything that may change the store (dialog, undo, load, sheet rename,
+// row/column ops) is cheap.
+let _namesInEngine = new Map() // name → formula
+function _syncDefinedNames() {
+  if (!_engine) return
+  const want = new Map(namedRanges.list().map((e) => [e.name, definedNameFormula(e)]))
+  const commands = []
+  for (const name of _namesInEngine.keys())
+    if (!want.has(name)) commands.push(_command('deleteDefinedName', { name }))
+  for (const [name, formula] of want)
+    if (_namesInEngine.get(name) !== formula)
+      commands.push(_command('setDefinedName', { name, formula }))
+  _namesInEngine = want
+  if (commands.length === 1) _engine.client.dispatch(commands[0])
+  else if (commands.length > 1) _engine.client.dispatch(_command('batch', { commands }))
+}
+
 function _onNamedRangesChanged() {
+  _syncDefinedNames()
   // The engine notifies via onChange too, but we explicitly push history
   // here so each batched add/edit/delete becomes its own undoable event.
   history.push()
@@ -2461,7 +2482,10 @@ function _restoreSide(snap) {
   if (snap.condFormat) condFormat.restore(snap.condFormat)
   if (snap.pivot) pivot.restore(snap.pivot)
   if (snap.charts) charts.restore(snap.charts)
-  if (snap.namedRanges) namedRanges.restore(snap.namedRanges)
+  if (snap.namedRanges) {
+    namedRanges.restore(snap.namedRanges)
+    _syncDefinedNames()
+  }
   if (snap.view && grid?.viewRestore) grid.viewRestore(snap.view)
 }
 
@@ -7300,6 +7324,7 @@ function confirmRename() {
   // Keep named-range bindings pointed at the renamed sheet — without this,
   // `=Revenue` defined on "Sheet1" breaks after renaming Sheet1.
   namedRanges.renameSheet(oldName, newName)
+  _syncDefinedNames()
   showRenameDialog.value = false
   history.push()
   isDirty.value = true
@@ -7394,10 +7419,12 @@ function _remapSide(axis, map, sn) {
   ]
   if (axis === 'row') {
     for (const e of engines) e.remapRows(map, sn)
+    _syncDefinedNames()
     grid.remapRowsMeta(map)
   } else {
     // Slicers are column-bound only.
     for (const e of [...engines, slicers]) e.remapCols(map, sn)
+    _syncDefinedNames()
     grid.remapColsMeta(map)
   }
 }
@@ -8199,6 +8226,9 @@ async function _startEngine(snapshotBytes = null) {
       .catch(() => {}) // the next filter action reads again
   })
   _engine = { client, provider, offSheets, offVersion }
+  // The saved bytes may predate names being sent to IronCalc: send them all.
+  _namesInEngine = new Map()
+  _syncDefinedNames()
   syncNames()
   _refreshUsedCells() // size the grid to the loaded data
   grid?.render?.()
