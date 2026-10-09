@@ -2486,26 +2486,44 @@ async function runSmartFill() {
 // widths, freeze, hidden rows/cols, zoom, total rows) is captured. Anything
 // not snapshotted here is invisible to undo — that was the bug behind
 // "filter doesn't undo".
+// Everything undo restores apart from the cells: every engine beside the
+// cell engine, and the grid's view state.
+function _sideSnapshot() {
+  return {
+    formats: formats.snapshot(),
+    merge: merge.snapshot(),
+    sortFilter: sortFilter.snapshot(),
+    slicers: slicers.snapshot(),
+    comments: comments.snapshot(),
+    validation: validation.snapshot(),
+    protection: protection.snapshot(),
+    condFormat: condFormat.snapshot(),
+    pivot: pivot.snapshot(),
+    charts: charts.snapshot(),
+    namedRanges: namedRanges.snapshot(),
+    view: grid?.viewSnapshot?.() ?? null,
+  }
+}
+function _restoreSide(snap) {
+  formats.restore(snap.formats)
+  if (snap.merge) merge.restore(snap.merge)
+  if (snap.sortFilter) sortFilter.restore(snap.sortFilter)
+  if (snap.slicers) slicers.restore(snap.slicers)
+  if (snap.comments) comments.restore(snap.comments)
+  if (snap.validation) validation.restore(snap.validation)
+  if (snap.protection) protection.restore(snap.protection)
+  if (snap.condFormat) condFormat.restore(snap.condFormat)
+  if (snap.pivot) pivot.restore(snap.pivot)
+  if (snap.charts) charts.restore(snap.charts)
+  if (snap.namedRanges) namedRanges.restore(snap.namedRanges)
+  if (snap.view && grid?.viewRestore) grid.viewRestore(snap.view)
+}
+
 const history = createHistory({
   snapshot() {
-    return {
-      sheet: sheet.snapshot(),
-      formats: formats.snapshot(),
-      merge: merge.snapshot(),
-      sortFilter: sortFilter.snapshot(),
-      slicers: slicers.snapshot(),
-      comments: comments.snapshot(),
-      validation: validation.snapshot(),
-      protection: protection.snapshot(),
-      condFormat: condFormat.snapshot(),
-      pivot: pivot.snapshot(),
-      charts: charts.snapshot(),
-      namedRanges: namedRanges.snapshot(),
-      view: grid?.viewSnapshot?.() ?? null,
-    }
+    return { sheet: sheet.snapshot(), ..._sideSnapshot() }
   },
   restore(snap, opts = {}) {
-    formats.restore(snap.formats)
     // Cell-level restore: in collab mode, the history hands us a `touches`
     // set listing exactly which cells THIS client touched in the undone
     // op. We revert only those — anything a remote peer changed in the
@@ -2517,17 +2535,7 @@ const history = createHistory({
     } else {
       sheet.restore(snap.sheet)
     }
-    if (snap.merge) merge.restore(snap.merge)
-    if (snap.sortFilter) sortFilter.restore(snap.sortFilter)
-    if (snap.slicers) slicers.restore(snap.slicers)
-    if (snap.comments) comments.restore(snap.comments)
-    if (snap.validation) validation.restore(snap.validation)
-    if (snap.protection) protection.restore(snap.protection)
-    if (snap.condFormat) condFormat.restore(snap.condFormat)
-    if (snap.pivot) pivot.restore(snap.pivot)
-    if (snap.charts) charts.restore(snap.charts)
-    if (snap.namedRanges) namedRanges.restore(snap.namedRanges)
-    if (snap.view && grid?.viewRestore) grid.viewRestore(snap.view)
+    _restoreSide(snap)
     // Caller (undo/redo) repopulates the canvas + reapplies hidden rows.
   },
   // Cheap op-based undo/redo. The op shape mirrors what _queueOp already
@@ -2543,6 +2551,10 @@ const history = createHistory({
   // so the full paste effect (values + formats + validation) round-trips
   // through undo/redo without the 320 ms snapshot tax.
   revertOp(op) {
+    if (op.opType === 'structural') {
+      _revertStructural(op)
+      return
+    }
     // Structural op: undo of "add sheet" is just deleting the (empty) sheet.
     if (op.opType === 'sheet_add') {
       _deleteSheet(op.name)
@@ -2562,6 +2574,10 @@ const history = createHistory({
     if (op.beforeRowH) _applyRowHeightMap(op.beforeRowH, op.subSheet)
   },
   applyOp(op) {
+    if (op.opType === 'structural') {
+      _redoStructural(op)
+      return
+    }
     // Structural op: redo of "add sheet" recreates the same empty sheet.
     if (op.opType === 'sheet_add') {
       _addSheet(op.name)
@@ -6058,7 +6074,7 @@ function _afterHistoryNavigate() {
   // close it so a stale index can't delete the wrong reply after undo/redo.
   commentPanel.open = false
   activeCell.value = 'A1'
-  formulaValue.value = sheet.getCell('A1')
+  _showInputInFormulaBar('A1')
   refreshActiveFormat()
   _syncNumberFormat('A1')
   syncFlags()
@@ -7396,31 +7412,107 @@ function _onDocMouseDown(e) {
   }
 }
 
-// Row twin of _applyColStructural — same reference-correct path for row ops.
-// Slicers are column-bound only, so they take no row remap.
-function _applyRowStructural(mapRow) {
+// ── Row / column insert, delete, move ──────────────────────────────────────
+// IronCalc moves the cells and rewrites formulas pointing at them. Every
+// side engine remaps its own state with the same index map, as does the
+// grid's view metadata (sizes, hidden rows/cols). Insert and move undo with
+// their inverse command; a delete has none (its cells are gone and formulas
+// pointing at them now read #REF!), so its undo restores IronCalc's bytes
+// from just before it.
+//
+// `op.applied` says whether IronCalc holds the change now. History replays
+// ops after restoring a snapshot (which never touches IronCalc), so a
+// replay must not send the command again.
+async function _applyStructural(axis, map, forward, inverse = null) {
   const sn = currentSheet.value
-  sheet.remapRows(mapRow, sn)
-  formats.remapRows(mapRow, sn)
-  merge.remapRows(mapRow, sn)
-  comments.remapRows(mapRow, sn)
-  validation.remapRows(mapRow, sn)
-  protection.remapRows(mapRow, sn)
-  condFormat.remapRows(mapRow, sn)
-  sortFilter.remapRows(mapRow, sn)
-  namedRanges.remapRows(mapRow, sn)
-  charts.remapRows(mapRow, sn)
-  pivot.remapRows(mapRow, sn)
-  grid.remapRowsMeta(mapRow)
+  const sideBefore = _sideSnapshot()
+  const beforeBytes = inverse ? null : await _engineBytes()
+  const op = {
+    opType: 'structural',
+    subSheet: sn,
+    forward: { type: forward.type, payload: { sheet: sn, ...forward.payload } },
+    inverse: inverse && { type: inverse.type, payload: { sheet: sn, ...inverse.payload } },
+    beforeBytes,
+    sideBefore,
+    sideAfter: null,
+    applied: true,
+  }
+  _engine?.client.dispatch(_command(op.forward.type, op.forward.payload))
+  _remapSide(axis, map, sn)
+  op.sideAfter = _sideSnapshot()
+  history.pushOp(op)
+  syncFlags()
+  isDirty.value = true
+  _afterStructural(sn)
+}
+
+function _remapSide(axis, map, sn) {
+  const engines = [
+    formats,
+    merge,
+    comments,
+    validation,
+    protection,
+    condFormat,
+    sortFilter,
+    namedRanges,
+    charts,
+    pivot,
+  ]
+  if (axis === 'row') {
+    for (const e of engines) e.remapRows(map, sn)
+    grid.remapRowsMeta(map)
+  } else {
+    // Slicers are column-bound only.
+    for (const e of [...engines, slicers]) e.remapCols(map, sn)
+    grid.remapColsMeta(map)
+  }
+}
+
+function _afterStructural(sn) {
   _repopulateGrid()
   _applyHiddenRows()
-  markEdited()
+  grid?.render?.()
   recomputePivotsForSheet(sn)
 }
+
+function _revertStructural(op) {
+  if (op.applied) {
+    if (op.inverse) _engine?.client.dispatch(_command(op.inverse.type, op.inverse.payload))
+    else
+      _engine?.client
+        .restore(op.beforeBytes)
+        .catch((e) => console.error('[sheets] undo of delete failed', e))
+    op.applied = false
+  }
+  _restoreSide(op.sideBefore)
+  _afterStructural(op.subSheet)
+}
+
+function _redoStructural(op) {
+  if (!op.applied) {
+    _engine?.client.dispatch(_command(op.forward.type, op.forward.payload))
+    op.applied = true
+  }
+  _restoreSide(op.sideAfter)
+  _afterStructural(op.subSheet)
+}
+
+function _structural(axis, map, forward, inverse) {
+  _applyStructural(axis, map, forward, inverse).catch((e) =>
+    console.error('[sheets] row/column change failed', e),
+  )
+}
+
 function doInsertRow(below = false, count = 1) {
   contextMenu.open = false
   const atRow = contextMenu.targetRow + (below ? 1 : 0)
-  _applyRowStructural(insertMap(atRow, count))
+  _structural(
+    'row',
+    insertMap(atRow, count),
+    { type: 'insertRows', payload: { row: atRow + 1, count } },
+    { type: 'deleteRows', payload: { row: atRow + 1, count } },
+  )
 }
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
@@ -7781,38 +7873,21 @@ function doDeleteRow() {
   const within = rowSpan && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
   const start = within ? sel.r0 : contextMenu.targetRow
   const count = within ? sel.r1 - sel.r0 + 1 : 1
-  _applyRowStructural(deleteMap(start, count))
+  _structural('row', deleteMap(start, count), {
+    type: 'deleteRows',
+    payload: { row: start + 1, count },
+  })
 }
 
-// Fan one column index-map across every engine and the grid's view metadata,
-// then refresh. This is the single structural-column path behind insert, delete
-// AND move — every one is reference-correct because sheet.remapCols rewrites
-// formulas workbook-wide. The workbook-level engines (merge/charts/pivot/named)
-// filter internally to the op sheet, so passing `sn` is safe.
-function _applyColStructural(mapCol) {
-  const sn = currentSheet.value
-  sheet.remapCols(mapCol, sn)
-  formats.remapCols(mapCol, sn)
-  merge.remapCols(mapCol, sn)
-  comments.remapCols(mapCol, sn)
-  validation.remapCols(mapCol, sn)
-  protection.remapCols(mapCol, sn)
-  condFormat.remapCols(mapCol, sn)
-  sortFilter.remapCols(mapCol, sn)
-  slicers.remapCols(mapCol, sn)
-  namedRanges.remapCols(mapCol, sn)
-  charts.remapCols(mapCol, sn)
-  pivot.remapCols(mapCol, sn)
-  grid.remapColsMeta(mapCol)
-  _repopulateGrid()
-  _applyHiddenRows()
-  markEdited()
-  recomputePivotsForSheet(sn)
-}
 function doInsertCol(right = false, count = 1) {
   contextMenu.open = false
   const atCol = contextMenu.targetCol + (right ? 1 : 0)
-  _applyColStructural(insertMap(atCol, count))
+  _structural(
+    'col',
+    insertMap(atCol, count),
+    { type: 'insertColumns', payload: { col: atCol + 1, count } },
+    { type: 'deleteColumns', payload: { col: atCol + 1, count } },
+  )
 }
 function doDeleteCol() {
   contextMenu.open = false
@@ -7825,7 +7900,10 @@ function doDeleteCol() {
   const within = colSpan && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
   const start = within ? sel.c0 : contextMenu.targetCol
   const count = within ? sel.c1 - sel.c0 + 1 : 1
-  _applyColStructural(deleteMap(start, count))
+  _structural('col', deleteMap(start, count), {
+    type: 'deleteColumns',
+    payload: { col: start + 1, count },
+  })
 }
 
 // Move a column block so its new start sits before column `toCol` (an index in
@@ -7833,10 +7911,16 @@ function doDeleteCol() {
 function doMoveCol(fromCol, toCol, count = 1) {
   contextMenu.open = false
   if (toCol >= fromCol && toCol <= fromCol + count) return
-  _applyColStructural(moveMap(fromCol, toCol, count))
+  const dest = toCol <= fromCol ? toCol : toCol - count
+  const delta = dest - fromCol
+  _structural(
+    'col',
+    moveMap(fromCol, toCol, count),
+    { type: 'moveColumns', payload: { col: fromCol + 1, count, delta } },
+    { type: 'moveColumns', payload: { col: dest + 1, count, delta: -delta } },
+  )
   // Keep the moved column(s) selected at their new home (Google behaviour), so
   // the header highlight and the status-bar summary track the data that moved.
-  const dest = toCol <= fromCol ? toCol : toCol - count
   grid.setSelection({
     r0: 0,
     c0: dest,

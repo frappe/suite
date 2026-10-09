@@ -240,3 +240,38 @@ describe('client — snapshots', () => {
     await expect(read).rejects.toThrow(/terminated/)
   })
 })
+
+describe('client — restore', () => {
+  const inputAt = async (wb, row, col) =>
+    (await wb.readCells({ sheet: 'Sheet1', cells: [{ row, col }], what: ['input'] })).cells[0].input
+
+  it('replaces the workbook, keeping its place among dispatched commands', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'saved'))
+    const bytes = await wb.toBytes()
+    wb.dispatch(setInput('Sheet1', 1, 1, 'changed'))
+    const restored = wb.restore(bytes)
+    wb.dispatch(setInput('Sheet1', 2, 1, 'after'))
+    await restored
+    expect(await inputAt(wb, 1, 1)).toBe('saved') // 'changed' went first, then was replaced
+    expect(await inputAt(wb, 2, 1)).toBe('after') // dispatched later, applied on top
+  })
+
+  it('keeps versions increasing, so cached values are dropped', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    const bytes = await wb.toBytes()
+    const versions = []
+    wb.onVersion((v) => versions.push(v))
+    const before = wb.getVersion()
+    await wb.restore(bytes)
+    expect(versions).toEqual([before + 1])
+  })
+
+  it('rejects bad bytes and leaves the workbook as it was', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'kept'))
+    await expect(wb.restore(new Uint8Array([1, 2, 3]))).rejects.toThrow()
+    expect(await inputAt(wb, 1, 1)).toBe('kept')
+  })
+})

@@ -62,6 +62,8 @@ export interface CreateWorkbookOptions {
   name?: string
   locale?: string
   timezone?: string
+  /** The version to count on from, so a restore keeps versions increasing. */
+  startVersion?: number
 }
 
 export interface VersionResult {
@@ -102,6 +104,7 @@ export function createWorkbook({
   name = 'Workbook',
   locale = 'en',
   timezone = 'UTC',
+  startVersion = 0,
 }: CreateWorkbookOptions = {}): Workbook {
   let model: Model
   try {
@@ -112,7 +115,7 @@ export function createWorkbook({
     throw asWorkbookError(e, null)
   }
 
-  let version = 0
+  let version = startVersion
 
   function sheetIndex(sheetName: string): number {
     const i = model.getWorksheetsProperties().findIndex((p) => p.name === sheetName)

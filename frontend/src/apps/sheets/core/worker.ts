@@ -115,6 +115,16 @@ export function createWorkerHost(): WorkerHost {
     return { version: wb.getVersion(), sheets: wb.getSheets() }
   }
 
+  // Replaces the workbook with `bytes` (undo of a row/column delete). The
+  // version keeps counting up, so the client sees a change.
+  function onRestore(p: unknown) {
+    const bytes = field(p, 'bytes')
+    if (!isBytes(bytes)) throw new ProtocolError('"bytes" must be a Uint8Array')
+    const startVersion = workbook().getVersion() + 1
+    wb = createWorkbook({ loadBytes: bytes, startVersion })
+    return { version: wb.getVersion(), sheets: wb.getSheets() }
+  }
+
   // Each command succeeds or fails on its own; one bad command does not
   // stop the rest of the batch. A failed command leaves the workbook as
   // it was (workbook.apply restores multi-call commands on error).
@@ -227,6 +237,8 @@ export function createWorkerHost(): WorkerHost {
           return { reqId: id, result: onReadViewport(payload) }
         case 'readCells':
           return { reqId: id, result: onReadCells(payload) }
+        case 'restore':
+          return { reqId: id, result: onRestore(payload) }
         case 'findCells':
           return { reqId: id, result: onFindCells(payload) }
         case 'toBytes':

@@ -110,6 +110,11 @@ export interface WorkbookClient {
   findCells(args: { sheet: string; query: string }): Promise<{ cells: FoundCell[] }>
   /** Sends queued commands first, so the bytes include them. */
   toBytes(): Promise<Uint8Array>
+  /**
+   * Replaces the workbook with `bytes`, in order with dispatch: commands
+   * dispatched before it apply first, ones dispatched after wait for it.
+   */
+  restore(bytes: Uint8Array): Promise<void>
   /** Resolves once no command is queued or in flight. */
   idle(): Promise<void>
   terminate(): void
@@ -190,7 +195,14 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
 
   // --- dispatch queue ----------------------------------------------------
 
-  let queue: Command[] = []
+  // A restore waits in the queue like a command, so it keeps its place.
+  interface RestoreJob {
+    restore: Uint8Array
+    done(error?: Error): void
+  }
+  const isRestore = (job: Command | RestoreJob): job is RestoreJob => 'restore' in job
+
+  const queue: (Command | RestoreJob)[] = []
   let inFlight = false
   let flushScheduled = false
   let idleWaiters: (() => void)[] = []
@@ -225,8 +237,27 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       return
     }
     inFlight = true
-    const batch = queue
-    queue = []
+    const head = queue[0]
+    if (head && isRestore(head)) {
+      queue.shift()
+      try {
+        const res = await request<{ version: number; sheets: string[] }>('restore', {
+          bytes: head.restore,
+        })
+        setSheets(res.sheets)
+        setVersion(res.version)
+        head.done()
+      } catch (e) {
+        head.done(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        inFlight = false
+      }
+      await flush()
+      return
+    }
+    // Commands up to the next restore go out together.
+    const stop = queue.findIndex(isRestore)
+    const batch = queue.splice(0, stop === -1 ? queue.length : stop) as Command[]
     try {
       const res = await request<{
         version: number
@@ -293,6 +324,12 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     async findCells(args) {
       await idle()
       return request<{ cells: FoundCell[] }>('findCells', args)
+    },
+    restore(bytes) {
+      return new Promise<void>((resolve, reject) => {
+        queue.push({ restore: bytes, done: (e) => (e ? reject(e) : resolve()) })
+        scheduleFlush()
+      })
     },
     async toBytes() {
       await idle()
