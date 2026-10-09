@@ -703,7 +703,7 @@
           :charts="chartList"
           :current-sheet="currentSheet"
           :get-matrix="getChartMatrix"
-          :data-version="chartDataVersion"
+          :data-version="chartMatrixVersion"
           :selected-id="selectedChartId"
           :suppressed="chartDialogOpen"
           @select="selectChart"
@@ -1510,7 +1510,8 @@
       <!-- Pivot dialog -->
       <PivotDialog
         v-model="pivotDialogOpen"
-        :sheet="sheet"
+        :read-range="_readSourceRange"
+        :sheet-names="sheetNames"
         :current-sheet="currentSheet"
         :initial-range="pivotInitialRange"
         :pivot-id="pivotEditId"
@@ -1521,7 +1522,8 @@
       <!-- Chart dialog -->
       <ChartDialog
         v-model="chartDialogOpen"
-        :sheet="sheet"
+        :read-range="_readDisplays"
+        :used-extent="_usedExtent"
         :current-sheet="currentSheet"
         :initial-range="chartInitialRange"
         :chart-id="chartEditId"
@@ -1559,8 +1561,8 @@
       <FindReplace
         v-if="showFindReplace"
         ref="findReplaceRef"
-        :sheet="sheet"
-        :grid="grid"
+        :find="_findCells"
+        :write="_replaceCells"
         :is-protected="(id) => _cellSilentlyProtected(id)"
         @close="closeFindReplace"
         @navigate-to="onNavigateTo"
@@ -2194,32 +2196,36 @@ import { confirmLeave } from '@/utils/confirmLeave'
 import { chipColor, chipPaletteColor } from '../../canvas/chip-geometry'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants'
 import { createGrid } from '../../canvas/index'
+import { createCellProvider } from '../../core/cell-provider'
+import { createWorkbookClient } from '../../core/client'
+import { createDisplayCache } from '../../core/display-cache'
+import { MAX_VIEWPORT_CELLS } from '../../core/limits'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
-import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
+import { planFill } from '../../engine/fill-series.js'
 import { formatScope } from '../../engine/format-scope.js'
 import { createFormatsEngine } from '../../engine/formats.js'
 import { adjustFormula } from '../../engine/formula-adjust.js'
-import { getFunctionNames } from '../../engine/formula.js'
 import { createHistory } from '../../engine/history.js'
 import { detectHyperlink, isAutoLinkText } from '../../engine/links.js'
 import { createMergeEngine } from '../../engine/merge.js'
-import { createNamedRanges } from '../../engine/named-ranges.js'
+import { createNamedRanges, definedNameFormula } from '../../engine/named-ranges.js'
 import { detectSeries } from '../../engine/patterns/index.js'
 import { createPivotEngine } from '../../engine/pivot.js'
 import { createProtectionEngine } from '../../engine/protection.js'
 import { deleteMap, insertMap, moveMap } from '../../engine/ref-remap.js'
-import { createSheet } from '../../engine/sheet.js'
 import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
+import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { fetchLinkPreview } from '../../services/linkPreview.js'
 import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
 import { isCanvasClipboardTarget } from '../../utils/clipboard-target.js'
 import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/format-number.js'
+import { AC_FUN_KEYS } from '../../utils/formula-ac.js'
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
 import { overlayRectStyle } from '../../utils/overlay-rect.js'
 import { userInitials } from '../../utils/session.js'
@@ -2334,68 +2340,25 @@ const brandMenuOptions = computed(() => [
 
 // ── Engine instances ──────────────────────────────────────────────────────────
 
-const sheet = createSheet({
-  onCellChanged(id, displayValue) {
-    // Range-scoped cond-format rules (color-scale, data-bar, icon-set) cache
-    // per-rule min/max stats — any cell change can shift those bounds, so the
-    // cache must be cleared before the next paint.
-    condFormat?.invalidate()
-    // A chart may source from this cell — bump the chart data version so the
-    // overlay's matrix cache re-pulls. Drag/resize/scroll don't fire cell-change
-    // callbacks, so those keep hitting the cache (the reason it exists).
-    chartDataVersion.value++
-    if (showFormulas.value) {
-      grid?.setCell(id, String(sheet.getCell(id) ?? ''))
-      return
-    }
-    const fmt = formats.get(id, sheet.getCurrentSheet())
-    const displayed = fmt.numberFormat
-      ? applyNumberFmt(displayValue, fmt.numberFormat)
-      : displayValue
-    grid?.setCell(id, displayed)
-  },
-  // Bulk-write callback. Two flavours:
-  //   - `affected = null` — wholesale rewrite (import / load / restore).
-  //     The whole sheet may have changed, so do a full _repopulateGrid.
-  //   - `affected = Set<cellId>` — incremental write (paste, future
-  //     fill/format ops). Only repaint the cells the engine flagged.
-  //     For a paste of 50 cells in a 5k-cell sheet this is 50 grid
-  //     updates instead of 5k, which is where the perf trace pinned
-  //     onCellsChanged at 181 ms self time after the snapshot fix.
-  onCellsChanged(_sheet, affected) {
-    condFormat?.invalidate()
-    // Source data for any chart may have moved — invalidate the overlay's matrix
-    // cache (kept stale on drag/scroll, which don't reach this callback).
-    chartDataVersion.value++
-    if (!affected) {
-      _repopulateGrid()
-      return
-    }
-    const sn = sheet.getCurrentSheet()
-    for (const id of affected) {
-      const fmt = formats.get(id, sn)
-      const displayValue = sheet.getDisplayValue(id)
-      grid?.setCell(
-        id,
-        fmt.numberFormat ? applyNumberFmt(displayValue, fmt.numberFormat) : displayValue,
-      )
-    }
-    // A bulk edit (paste/fill) can change a pivot's source data; recompute so
-    // pivot output cells don't lag. affectsPivot() short-circuits when this
-    // sheet feeds no pivot, keeping the cheap incremental path cheap.
-    recomputePivotsForSheet(sn)
-  },
-})
+// The open tab. The editor owns it; IronCalc's sheet list sets it on load.
+const currentSheet = ref('Sheet1')
+// IronCalc: { client, provider, offSheets, offVersion } once started (see _startEngine).
+// Declared up here because setup code (the sheet tabs) reads it.
+let _engine = null
 const formats = createFormatsEngine()
 const merge = createMergeEngine()
-const sortFilter = createSortFilter(sheet)
+const sortFilter = createSortFilter({
+  read: (sn, rect) => _readRect(sn, rect),
+  write: (sn, map) => _writeInputs(sn, map),
+})
 const slicers = createSlicerEngine()
 const comments = createCommentsEngine()
 const validation = createValidationEngine()
 const protection = createProtectionEngine()
 const condFormat = createCondFormatEngine()
 const clipboard = createClipboard({
-  sheet,
+  cells: { read: (sn, rect) => _readRect(sn, rect), write: (sn, map) => _writeInputs(sn, map) },
+  getCurrentSheet: () => currentSheet.value,
   formats,
   condFormat,
   validation,
@@ -2409,14 +2372,12 @@ const pivot = createPivotEngine()
 const charts = createChartEngine()
 // Named ranges: the validator hook prevents users from defining names that
 // collide with the formula engine's built-in functions (SUM, VLOOKUP, etc.).
-const _builtinFns = new Set(getFunctionNames())
+// The functions autocomplete offers (each one IronCalc evaluates; see
+// core/function-catalog.test.js).
+const _builtinFns = new Set(AC_FUN_KEYS)
 const namedRanges = createNamedRanges({
   isBuiltinFunction: (n) => _builtinFns.has(n),
 })
-
-// Plug the named-range resolver into the sheet engine so `=Revenue` etc.
-// resolve at evaluate-time without crossing engine boundaries via imports.
-sheet.setNamedRangeResolver?.((name) => namedRanges.resolve(name))
 
 // Dialog state — toolbar / context-menu entries flip this open. Changes
 // inside the dialog (add/edit/delete) mark the workbook dirty and push a
@@ -2426,7 +2387,28 @@ function openNamedRangesDialog() {
   contextMenu.open = false
   namedRangesDialogOpen.value = true
 }
+// Named ranges live in their own store (the dialog edits it, the document
+// saves it); IronCalc evaluates `=Name` from defined names. This sends
+// IronCalc whatever differs from what it was last sent, so calling it after
+// anything that may change the store (dialog, undo, load, sheet rename,
+// row/column ops) is cheap.
+let _namesInEngine = new Map() // name → formula
+function _syncDefinedNames() {
+  if (!_engine) return
+  const want = new Map(namedRanges.list().map((e) => [e.name, definedNameFormula(e)]))
+  const commands = []
+  for (const name of _namesInEngine.keys())
+    if (!want.has(name)) commands.push(_command('deleteDefinedName', { name }))
+  for (const [name, formula] of want)
+    if (_namesInEngine.get(name) !== formula)
+      commands.push(_command('setDefinedName', { name, formula }))
+  _namesInEngine = want
+  if (commands.length === 1) _engine.client.dispatch(commands[0])
+  else if (commands.length > 1) _engine.client.dispatch(_command('batch', { commands }))
+}
+
 function _onNamedRangesChanged() {
+  _syncDefinedNames()
   // The engine notifies via onChange too, but we explicitly push history
   // here so each batched add/edit/delete becomes its own undoable event.
   history.push()
@@ -2440,17 +2422,16 @@ function _onNamedRangesChanged() {
 // selected column, detects a heuristic transform (case / concat / word /
 // substring / email-part), and fills the rest.
 const { runSmartFill: _runSmartFill } = useSmartFill({
-  getSheet: () => sheet,
+  readInputs: (rect, sn) => _readInputs(rect, sn),
+  writeInputs: (sn, map) => _writeInputs(sn, map),
+  currentSheet,
   getGrid: () => grid,
   queueOp: (...a) => _queueOp(...a),
-  captureRange: (...a) => _captureRange(...a),
-  diffRefs: (...a) => _diffRefs(...a),
   getHistory: () => history,
   getIsDirty: () => isDirty,
-  repopulateGrid: () => _repopulateGrid(),
 })
-function runSmartFill() {
-  const result = _runSmartFill()
+async function runSmartFill() {
+  const result = await _runSmartFill()
   if (!result.ok) {
     // Hint the user when there's nothing to fill — quiet failure feels broken.
     const hints = {
@@ -2474,48 +2455,57 @@ function runSmartFill() {
 // widths, freeze, hidden rows/cols, zoom, total rows) is captured. Anything
 // not snapshotted here is invisible to undo — that was the bug behind
 // "filter doesn't undo".
+// Everything undo restores apart from the cells: every engine beside the
+// cell engine, and the grid's view state.
+function _sideSnapshot() {
+  return {
+    formats: formats.snapshot(),
+    merge: merge.snapshot(),
+    sortFilter: sortFilter.snapshot(),
+    slicers: slicers.snapshot(),
+    comments: comments.snapshot(),
+    validation: validation.snapshot(),
+    protection: protection.snapshot(),
+    condFormat: condFormat.snapshot(),
+    pivot: pivot.snapshot(),
+    charts: charts.snapshot(),
+    namedRanges: namedRanges.snapshot(),
+    view: grid?.viewSnapshot?.() ?? null,
+  }
+}
+function _restoreSide(snap) {
+  formats.restore(snap.formats)
+  if (snap.merge) merge.restore(snap.merge)
+  if (snap.sortFilter) sortFilter.restore(snap.sortFilter)
+  if (snap.slicers) slicers.restore(snap.slicers)
+  if (snap.comments) comments.restore(snap.comments)
+  if (snap.validation) validation.restore(snap.validation)
+  if (snap.protection) protection.restore(snap.protection)
+  if (snap.condFormat) condFormat.restore(snap.condFormat)
+  if (snap.pivot) pivot.restore(snap.pivot)
+  if (snap.charts) charts.restore(snap.charts)
+  if (snap.namedRanges) {
+    namedRanges.restore(snap.namedRanges)
+    _syncDefinedNames()
+  }
+  if (snap.view && grid?.viewRestore) grid.viewRestore(snap.view)
+}
+
 const history = createHistory({
+  // A snapshot step holds IronCalc's bytes (cells, sheets and their order),
+  // taken in dispatch order, plus every side engine. The bytes promise is
+  // shared with the previous step when no command ran in between, so a
+  // format-only step serializes nothing.
   snapshot() {
-    return {
-      sheet: sheet.snapshot(),
-      formats: formats.snapshot(),
-      merge: merge.snapshot(),
-      sortFilter: sortFilter.snapshot(),
-      slicers: slicers.snapshot(),
-      comments: comments.snapshot(),
-      validation: validation.snapshot(),
-      protection: protection.snapshot(),
-      condFormat: condFormat.snapshot(),
-      pivot: pivot.snapshot(),
-      charts: charts.snapshot(),
-      namedRanges: namedRanges.snapshot(),
-      view: grid?.viewSnapshot?.() ?? null,
-    }
+    return { bytes: _engine ? _engine.client.snapshot() : null, ..._sideSnapshot() }
   },
-  restore(snap, opts = {}) {
-    formats.restore(snap.formats)
-    // Cell-level restore: in collab mode, the history hands us a `touches`
-    // set listing exactly which cells THIS client touched in the undone
-    // op. We revert only those — anything a remote peer changed in the
-    // interim stays put. Non-collab mode (or initial snapshot with no
-    // touches) falls back to the wholesale sheet.restore() to preserve
-    // long-standing behaviour.
-    if (opts.touches && opts.touches.size > 0) {
-      _restoreTouchedCells(snap.sheet, opts.touches)
-    } else {
-      sheet.restore(snap.sheet)
+  restore(snap) {
+    if (snap.bytes && _engine) {
+      _engine.client
+        .restore(snap.bytes)
+        .catch((e) => console.error('[sheets] restoring an undo step failed', e))
     }
-    if (snap.merge) merge.restore(snap.merge)
-    if (snap.sortFilter) sortFilter.restore(snap.sortFilter)
-    if (snap.slicers) slicers.restore(snap.slicers)
-    if (snap.comments) comments.restore(snap.comments)
-    if (snap.validation) validation.restore(snap.validation)
-    if (snap.protection) protection.restore(snap.protection)
-    if (snap.condFormat) condFormat.restore(snap.condFormat)
-    if (snap.pivot) pivot.restore(snap.pivot)
-    if (snap.charts) charts.restore(snap.charts)
-    if (snap.namedRanges) namedRanges.restore(snap.namedRanges)
-    if (snap.view && grid?.viewRestore) grid.viewRestore(snap.view)
+    _restoreSide(snap)
     // Caller (undo/redo) repopulates the canvas + reapplies hidden rows.
   },
   // Cheap op-based undo/redo. The op shape mirrors what _queueOp already
@@ -2531,12 +2521,18 @@ const history = createHistory({
   // so the full paste effect (values + formats + validation) round-trips
   // through undo/redo without the 320 ms snapshot tax.
   revertOp(op) {
+    if (op.opType === 'structural') {
+      _revertStructural(op)
+      return
+    }
     // Structural op: undo of "add sheet" is just deleting the (empty) sheet.
     if (op.opType === 'sheet_add') {
       _deleteSheet(op.name)
       return
     }
     _applyCellMap(op.before, op.subSheet)
+    // A cut pasted onto another sheet: put its source cells back.
+    if (op.source) _applyCellMap(op.source.before, op.source.sheet)
     if (op.beforeFormats) _applyFormatMap(op.beforeFormats, op.subSheet)
     if (op.beforeCols) _applyAxisFormatMap('col', op.beforeCols, op.subSheet)
     if (op.beforeRows) _applyAxisFormatMap('row', op.beforeRows, op.subSheet)
@@ -2548,12 +2544,17 @@ const history = createHistory({
     if (op.beforeRowH) _applyRowHeightMap(op.beforeRowH, op.subSheet)
   },
   applyOp(op) {
+    if (op.opType === 'structural') {
+      _redoStructural(op)
+      return
+    }
     // Structural op: redo of "add sheet" recreates the same empty sheet.
     if (op.opType === 'sheet_add') {
       _addSheet(op.name)
       return
     }
     _applyCellMap(op.after, op.subSheet)
+    if (op.source) _applyCellMap(op.source.after, op.source.sheet)
     if (op.afterFormats) _applyFormatMap(op.afterFormats, op.subSheet)
     if (op.afterCols) _applyAxisFormatMap('col', op.afterCols, op.subSheet)
     if (op.afterRows) _applyAxisFormatMap('row', op.afterRows, op.subSheet)
@@ -2567,29 +2568,11 @@ const history = createHistory({
   getLocalTouches: () => _drainCollabLocalTouches(),
 })
 
-// Used by op-based undo/redo to write a {cellId: value} diff back to the
-// engine. Routes through the engine's bulk write so a big op (delete-all,
-// 25k-cell paste) doesn't freeze the main thread the same way the import
-// hot loop used to. For small ops the per-cell setCell path is still
-// fine and keeps the collab Y.Doc mirror in sync; the batch path is only
-// taken when the op is large enough that the per-cell cascade would be
-// the bottleneck.
-//
-// Threshold is conservative — 25 cells is well below the point where
-// per-cell setCell starts to feel slow, but above any typical single-cell
-// edit so collab sync stays exact for normal undo/redo.
-const _BATCH_THRESHOLD = 25
+// Used by op-based undo/redo to write a {cellId: value} diff back, as one
+// command.
 function _applyCellMap(map, sheetName) {
   if (!map) return
-  const ids = Object.keys(map)
-  if (ids.length === 0) return
-  if (ids.length > _BATCH_THRESHOLD && sheet.batchSetCells) {
-    sheet.batchSetCells(map, sheetName, {
-      replace: false,
-    })
-    return
-  }
-  for (const id of ids) sheet.setCell(id, map[id] ?? '', sheetName)
+  _writeInputs(sheetName || currentSheet.value, map)
 }
 
 // Apply a {cellId: format|null} diff. Used by paste/fill undo/redo to
@@ -2600,16 +2583,12 @@ function _applyCellMap(map, sheetName) {
 // affect the display string, so its apply is just the store mutation.
 function _applyFormatMap(map, sheetName) {
   if (!map) return
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (const [id, fmt] of Object.entries(map)) {
     if (fmt && Object.keys(fmt).length) formats.set(id, fmt, sn)
     else formats.clear(id, sn)
   }
-  for (const id of Object.keys(map)) {
-    const f = formats.get(id, sn)
-    const dv = sheet.getDisplayValue(id, sn)
-    grid?.setCell(id, f.numberFormat ? applyNumberFmt(dv, f.numberFormat) : dv)
-  }
+  grid?.render?.() // the grid applies number formats as it paints
 }
 
 // Apply a { colIdx|rowIdx: format|null } diff to the column or row format
@@ -2617,14 +2596,14 @@ function _applyFormatMap(map, sheetName) {
 // restores the captured layer precisely. One render covers the whole axis.
 function _applyAxisFormatMap(axis, map, sheetName) {
   if (!map) return
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   const replace = axis === 'col' ? formats.replaceCol : formats.replaceRow
   for (const [k, fmt] of Object.entries(map)) replace(+k, fmt || {}, sn)
   grid?.render?.()
 }
 function _applyValidationMap(map, sheetName) {
   if (!map) return
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (const [id, rule] of Object.entries(map)) {
     if (rule) validation.set(id, rule, sn)
     else validation.clear(id, sn)
@@ -2638,7 +2617,7 @@ function _applyValidationMap(map, sheetName) {
 // canvas view state scoped to the current sheet, so cross-sheet undo skips
 // them rather than resizing the wrong sheet's rows.
 function _applyRowHeightMap(map, sheetName) {
-  if ((sheetName || sheet.getCurrentSheet()) !== sheet.getCurrentSheet()) return
+  if ((sheetName || currentSheet.value) !== currentSheet.value) return
   for (const [r, h] of Object.entries(map)) grid?.setRowHeight?.(+r, h)
 }
 
@@ -2649,22 +2628,6 @@ function _applyRowHeightMap(map, sheetName) {
 let _collabDrainLocalTouches = () => new Set()
 function _drainCollabLocalTouches() {
   return _collabDrainLocalTouches()
-}
-
-// Revert just the cells in `touches` to their values from `sheetSnap`.
-// `touches` is a Set of "sheetName|cellId" keys. Going through sheet.setCell
-// keeps deps + the Y.Doc mirror + the engine notify-callbacks in sync, so
-// peers see our undo as a regular write.
-function _restoreTouchedCells(sheetSnap, touches) {
-  const allSheets = sheetSnap?.sheets || sheetSnap || {}
-  for (const key of touches) {
-    const idx = key.indexOf('|')
-    if (idx < 0) continue
-    const sn = key.slice(0, idx)
-    const id = key.slice(idx + 1)
-    const original = allSheets[sn]?.[id] ?? ''
-    sheet.setCell(id, original, sn)
-  }
 }
 
 // ── Vue state ─────────────────────────────────────────────────────────────────
@@ -3242,7 +3205,7 @@ async function onAskSubmit(promptText) {
       c1: 0,
     }
     const selection = JSON.stringify({
-      sheet: sheet.getCurrentSheet(),
+      sheet: currentSheet.value,
       r0: sel.r0,
       c0: sel.c0,
       r1: sel.r1,
@@ -3257,7 +3220,7 @@ async function onAskSubmit(promptText) {
     const actions = Array.isArray(res?.actions) ? res.actions : []
     const answers = actions.filter((a) => a.type === 'answer')
     if (answers.length) askAnswer.value = answers.map((a) => a.text).join('\n\n')
-    const applied = _applyAiActions(actions)
+    const applied = await _applyAiActions(actions)
     if (applied > 0)
       aiPending.value = {
         count: applied,
@@ -3272,8 +3235,8 @@ async function onAskSubmit(promptText) {
 
 // Apply setCell actions as ONE undoable op (mirrors the fill/paste path).
 // Returns the number of cells written.
-function _applyAiActions(actions) {
-  const sn = sheet.getCurrentSheet()
+async function _applyAiActions(actions) {
+  const sn = currentSheet.value
   let setCells = actions.filter((a) => a.type === 'setCell')
   // Drop writes that land on protected cells (rest still apply).
   const allowed = setCells.filter((a) => !_cellSilentlyProtected(a.cell, sn))
@@ -3282,11 +3245,15 @@ function _applyAiActions(actions) {
   if (!setCells.length) return 0
   const before = {}
   const after = {}
-  for (const a of setCells) before[a.cell] = sheet.getCell(a.cell, sn) ?? ''
-  for (const a of setCells) {
-    sheet.setCell(a.cell, a.formula, sn)
-    after[a.cell] = a.formula
-  }
+  Object.assign(
+    before,
+    await _readIds(
+      setCells.map((a) => a.cell),
+      sn,
+    ),
+  )
+  for (const a of setCells) after[a.cell] = String(a.formula ?? '')
+  _writeInputs(sn, after)
   const refs = setCells.map((a) => a.cell)
 
   // Undo (op-based, like fill) + server sync (op-log on next save).
@@ -3369,12 +3336,19 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
 )
 onScopeDispose(unregisterPaletteGroups)
 const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
-  getSheet: () => sheet,
+  cells: {
+    readSheet: _readWholeSheet,
+    write: _writeInputs,
+    clear: _clearSheet,
+    addSheet: (name) => _engine?.client.dispatch(_command('addSheet', { name })),
+    idle: () => (_engine ? _engine.client.idle() : Promise.resolve()),
+  },
+  // Lazy: useSheetTabs defines sheetNames further down.
+  sheetNames: () => sheetNames.value,
+  currentSheet,
   getCurrentTitle: () => currentTitle.value,
-  getGrid: () => grid,
   getFormats: () => formats,
   getMerge: () => merge,
-  queueOp: _queueOp,
   repopulateGrid: _repopulateGrid,
   // Defined later by useSheetTabs — lazy-wrapped so they resolve at call time.
   syncNames: () => syncNames(),
@@ -3471,24 +3445,10 @@ function selectionIds() {
 // selection change (arrow nav, click, drag-extend, Enter advancing), so
 // it has to be cheap.
 //
-// Old impl walked Object.entries(sheet.getRawData()) — every cell in the
-// whole sheet — and parseCellId-tested each one against the rect. On a
-// 5k-row sheet that was ~25k cells × regex match per call, fires twice
-// per keyup (once from onSelect, once from the keyup listener), so each
-// arrow press paid ~50k cell scans. The perf trace pinned this at 886 ms
-// in onSelect.
-//
-// New impl iterates the *selection rect* directly via sheet.getCell. For
-// a 5×5 selection that's 25 reads instead of 25k. Worst case is Ctrl+A
-// (whole sheet) which is the same as before. RAF-coalesced so a drag-
-// extend that fires onSelect 1000× still computes stats once per frame.
-// Stats run ASYNC and chunked. Selecting to the end of a big sheet
-// (Cmd+Shift+Down → ~2M cells) used to compute Count/Sum/Avg synchronously in
-// one RAF, freezing the interaction for ~6s. The status bar is a non-critical
-// readout, so we yield every CHUNK_CELLS and bail the instant a newer
-// selection supersedes us — the selection paints immediately and the numbers
-// fill in a moment later.
-const _STATS_CHUNK_CELLS = 50000
+// The worker adds the range up (rangeStats), visiting only rows that hold
+// data, so a whole-column selection costs the used rows. RAF-coalesced so a
+// drag-extend that fires onSelect 1000× still asks once per frame, and a
+// newer selection's token drops an older answer.
 let _statsRAF = null
 let _statsToken = 0
 function computeSelectionStats() {
@@ -3507,43 +3467,18 @@ async function _computeSelectionStatsAsync(token) {
     selectionStats.value = null
     return
   }
-  const sn = sheet.getCurrentSheet()
-  // Precompute column labels once instead of rebuilding each cell id's prefix
-  // 2M times (colLabel walks characters per call).
-  const labels = []
-  for (let c = c0; c <= c1; c++) labels.push(colLabel(c))
-  const rowWidth = c1 - c0 + 1
-  let count = 0,
-    numCount = 0,
-    sum = 0,
-    since = 0
-  for (let r = r0; r <= r1; r++) {
-    const rowSuffix = r + 1
-    for (let c = c0; c <= c1; c++) {
-      const id = labels[c - c0] + rowSuffix
-      const raw = sheet.getCell(id, sn)
-      if (raw === '' || raw == null) continue
-      count++
-      // Aggregate the computed value, not the raw text: a formula cell holds
-      // "=SUM(...)" in getCell but evaluates to a number via getCellValue, so
-      // parseFloat on the raw string would drop it from Sum/Avg (but not Count).
-      const val = sheet.getCellValue(id, sn)
-      const n = typeof val === 'number' ? val : parseFloat(val)
-      if (!isNaN(n)) {
-        numCount++
-        sum += n
-      }
-    }
-    since += rowWidth
-    if (since >= _STATS_CHUNK_CELLS) {
-      since = 0
-      await new Promise((res) => setTimeout(res, 0))
-      if (token !== _statsToken) return // a newer selection took over
-    }
-  }
+  const sn = currentSheet.value
+  if (!_engine) return
+  const { count, numCount, sum } = await _engine.client.rangeStats({
+    sheet: sn,
+    r1: r0 + 1,
+    c1: c0 + 1,
+    r2: r1 + 1,
+    c2: c1 + 1,
+  })
   if (token !== _statsToken) return
   selectionStats.value =
-    count === 0 && numCount === 0
+    count === 0
       ? null
       : {
           count,
@@ -3564,7 +3499,7 @@ function formatStat(n) {
 // were previously set.
 function adjustDecimals(delta) {
   const ids = selectionIds()
-  const sh = sheet.getCurrentSheet()
+  const sh = currentSheet.value
   _recordFormatOp(ids, sh, () => {
     for (const id of ids) {
       const cur = formats.get(id, sh).numberFormat || ''
@@ -3585,10 +3520,9 @@ function adjustDecimals(delta) {
         },
         sh,
       )
-      const raw = sheet.getDisplayValue(id)
-      grid?.setCell(id, applyNumberFmt(raw, next))
     }
   })
+  grid?.render?.() // the grid applies number formats as it paints
   _syncNumberFormat(activeCell.value)
   syncFlags()
   isDirty.value = true
@@ -3608,7 +3542,7 @@ const {
   getLastAction,
   recordAction,
 } = useToolbar({
-  sheet,
+  currentSheet,
   formats,
   getGrid: () => grid,
   history,
@@ -3777,7 +3711,7 @@ function setTextWrap(mode) {
     {
       textWrap: mode,
     },
-    sheet.getCurrentSheet(),
+    currentSheet.value,
   )
   refreshActiveFormat()
   isDirty.value = true
@@ -3838,7 +3772,7 @@ const {
   retrySave,
   workbookJson,
 } = usePersistence({
-  sheet,
+  engine: { start: _startEngine, toBytes: _engineBytes },
   formats,
   merge,
   comments,
@@ -3903,19 +3837,21 @@ if (props.embedded) {
   )
 }
 _sheetTabs = useSheetTabs({
-  sheet,
+  names: () => _engine?.client.sheets ?? [currentSheet.value],
+  run: (type, payload) => _engine?.client.dispatch(_command(type, payload)),
+  currentSheet,
   formats,
   extras: [merge, comments, validation, protection, condFormat, sortFilter, slicers],
   getGrid: () => grid,
   activeCell,
-  formulaValue,
+  showInput: (id) => _showInputInFormulaBar(id),
   refreshActiveFormat,
   onSwitch: () => {
     filterPanel.open = false // close any open filter popover so it doesn't carry stale state
     _repopulateGrid()
+    // The cut/copy stays pending so it can be pasted on this tab; only its
+    // marching ants, drawn for the other tab, go.
     grid?.setMarchingAnts(null)
-    clipboard.clear()
-    clipboardHas.value = false
     _applyHiddenRows() // refresh filter-driven row hides for the new sheet
     // Re-mirror freeze / hidden refs into the Vue state so the context-menu
     // predicates and toolbar reflect the new sheet's restored view.
@@ -3924,7 +3860,6 @@ _sheetTabs = useSheetTabs({
 })
 const {
   sheetNames,
-  currentSheet,
   switchSheet,
   addSheet: _addSheet,
   renameSheet: _renameSheet,
@@ -3991,7 +3926,15 @@ const {
   createPastedPivot,
 } = usePivotIntegration({
   pivot,
-  sheet,
+  cells: {
+    readRange: _readSourceRange,
+    readSheet: _readWholeSheet,
+    write: _writeInputs,
+    clear: _clearRect,
+    addSheet: (name) => _engine?.client.dispatch(_command('addSheet', { name })),
+    idle: () => (_engine ? _engine.client.idle() : Promise.resolve()),
+  },
+  sheetNames: () => sheetNames.value,
   formats,
   currentSheet,
   activeCell,
@@ -4016,6 +3959,7 @@ const {
   charts: chartList,
   selectedChartId,
   chartDataVersion,
+  matrixVersion: chartMatrixVersion,
   openInsert: openChartDialog,
   openEdit: openChartEdit,
   onChartConfirm,
@@ -4027,7 +3971,7 @@ const {
   getMatrix: getChartMatrix,
 } = useChartIntegration({
   chart: charts,
-  sheet,
+  readRange: (sn, rect) => _readDisplays(sn, rect),
   currentSheet,
   contextMenu,
   history,
@@ -4071,7 +4015,6 @@ const {
 } = useCollaboration({
   sheetId: computed(() => props.id),
   currentSheet,
-  getSheet: () => sheet,
   repopulateGrid: _repopulateGrid,
   onRefused: () => emit('access-refused'),
   credentialFetch: props.credentialFetch,
@@ -4091,17 +4034,13 @@ const {
   revertSplitPreview: _revertSplitPreview,
   closeSplit: _closeSplit,
 } = useSplitText({
-  getSheet: () => sheet,
+  readInputs: (rect, sn) => _readInputs(rect, sn),
+  writeInputs: (sn, map) => _writeInputs(sn, map),
   getGrid: () => grid,
   getGridWrap: () => gridWrapRef.value,
   contextMenu,
   currentSheet,
-  queueOp: _queueOp,
-  markEdited,
-  repopulateGrid: _repopulateGrid,
-  syncFlags,
-  captureRange: _captureRange,
-  diffRefs: _diffRefs,
+  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
   blockProtected: (rect, sn) => _rectBlocked(rect, sn),
 })
 
@@ -4114,7 +4053,9 @@ const showSortFilter = computed({
     return sortFilter.hasFilter(currentSheet.value)
   },
   set(v) {
-    v ? _createFilterOnSelection() : _removeFilter()
+    v
+      ? _createFilterOnSelection().catch((e) => console.error('[sheets] filter failed', e))
+      : _removeFilter()
   },
 })
 
@@ -4160,7 +4101,7 @@ function onTabMousedown(e, _name) {
 function onTabClick(name) {
   if (_isEditingFormula()) {
     if (!editingHomeSheet.value) {
-      editingHomeSheet.value = sheet.getCurrentSheet()
+      editingHomeSheet.value = currentSheet.value
       editingHomeCell.value = activeCell.value
     }
     switchSheet(name, {
@@ -4417,18 +4358,21 @@ function _fillValidation(src, total, sn) {
 }
 
 // _runFill modes: 'auto' | 'series' | 'copy' | 'format-only' | 'without-format'
-function _runFill(src, total, mode) {
-  const sheetName = sheet.getCurrentSheet()
-  const fillBefore = _captureRange(total, sheetName)
+async function _runFill(src, total, mode) {
+  const sheetName = currentSheet.value
+  // `total` includes `src`, so this one read is also the fill's source.
+  const fillBefore = await _readInputs(total, sheetName)
   const beforeFmt = _captureFormatsRange(total, sheetName)
   const beforeVal = _captureValidationRange(total, sheetName)
   const beforeMergeSnap = merge.snapshot?.()
   const cfBefore = condFormat?.getRules?.(sheetName)?.length ?? 0
+  let writes = {}
   if (mode === 'format-only') {
     _fillFormatsOnly(src, total, sheetName)
   } else {
     const valueMode = mode === 'without-format' ? 'auto' : mode
-    _fillValues(src, total, sheetName, valueMode)
+    writes = planFill(src, total, (r, c) => fillBefore[cellId(r, c)] ?? '', valueMode)
+    _writeInputs(sheetName, writes)
     if (mode === 'without-format') _clearFormats(src, total, sheetName)
   }
   if (mode !== 'format-only') {
@@ -4441,7 +4385,7 @@ function _runFill(src, total, mode) {
   if (mode !== 'without-format') {
     _fillMerges(src, total, sheetName)
   }
-  const fillAfter = _captureRange(total, sheetName)
+  const fillAfter = { ...fillBefore, ...writes }
   const afterFmt = _captureFormatsRange(total, sheetName)
   const afterVal = _captureValidationRange(total, sheetName)
   const afterMergeSnap = merge.snapshot?.()
@@ -4501,81 +4445,6 @@ function _fillSummary(mode, n) {
   if (mode === 'format-only') return `Filled formats into ${n} cell${n === 1 ? '' : 's'}`
   if (mode === 'without-format') return `Filled (no format) ${n} cell${n === 1 ? '' : 's'}`
   return `Filled ${n} cell${n === 1 ? '' : 's'}`
-}
-
-// Read every cell value inside `src` into a 2D array shaped [rows][cols].
-function _readSrcGrid(src) {
-  const data = []
-  for (let r = src.r0; r <= src.r1; r++) {
-    const row = []
-    for (let c = src.c0; c <= src.c1; c++) row.push(sheet.getCell(cellId(r, c)))
-    data.push(row)
-  }
-  return data
-}
-function _fillValues(src, total, sheetName, valueMode) {
-  const goDown = total.r1 > src.r1,
-    goUp = total.r0 < src.r0
-  const goRight = total.c1 > src.c1,
-    goLeft = total.c0 < src.c0
-
-  // Diagonal drags extend `total` in BOTH axes. The original 1D branch ran
-  // only the vertical OR horizontal path, leaving the off-axis columns/rows
-  // empty (the user's report: drag A1 → C10 only filled A1:A10). Run the
-  // vertical phase first; then, treating the now-grown column as the new
-  // source, run the horizontal phase. Re-read srcData between phases so
-  // computeFillRight sees the freshly written values in each column.
-
-  let workSrc = src
-  let srcData = _readSrcGrid(workSrc)
-  let srcRows = workSrc.r1 - workSrc.r0 + 1
-  const srcCols = workSrc.c1 - workSrc.c0 + 1
-  if (goDown || goUp) {
-    const count = goDown ? total.r1 - workSrc.r1 : workSrc.r0 - total.r0
-    const dir = goDown ? 1 : -1
-    const filled = computeFillDown(srcData, count, dir, {
-      mode: valueMode,
-    })
-    const startR = goDown ? workSrc.r1 + 1 : total.r0
-    filled.forEach((row, rOff) =>
-      row.forEach((val, cOff) => {
-        if (typeof val === 'string' && val.startsWith('=')) {
-          const srcRowOff =
-            dir > 0 ? rOff % srcRows : (((srcRows - 1 - rOff) % srcRows) + srcRows) % srcRows
-          val = adjustFormula(val, startR + rOff - (workSrc.r0 + srcRowOff), 0)
-        }
-        sheet.setCell(cellId(startR + rOff, workSrc.c0 + cOff), val)
-      }),
-    )
-    // Expand the working source vertically — phase 2 will spread these full
-    // columns sideways across the rest of the destination.
-    workSrc = {
-      r0: Math.min(workSrc.r0, total.r0),
-      r1: Math.max(workSrc.r1, total.r1),
-      c0: workSrc.c0,
-      c1: workSrc.c1,
-    }
-    srcData = _readSrcGrid(workSrc)
-    srcRows = workSrc.r1 - workSrc.r0 + 1
-  }
-  if (goRight || goLeft) {
-    const count = goRight ? total.c1 - workSrc.c1 : workSrc.c0 - total.c0
-    const dir = goRight ? 1 : -1
-    const filled = computeFillRight(srcData, count, dir, {
-      mode: valueMode,
-    })
-    const startC = goRight ? workSrc.c1 + 1 : total.c0
-    filled.forEach((row, rOff) =>
-      row.forEach((val, cOff) => {
-        if (typeof val === 'string' && val.startsWith('=')) {
-          const srcColOff =
-            dir > 0 ? cOff % srcCols : (((srcCols - 1 - cOff) % srcCols) + srcCols) % srcCols
-          val = adjustFormula(val, 0, startC + cOff - (workSrc.c0 + srcColOff))
-        }
-        sheet.setCell(cellId(workSrc.r0 + rOff, startC + cOff), val)
-      }),
-    )
-  }
 }
 
 // Replicate every merge whose master AND span lie entirely inside `src` into
@@ -4683,20 +4552,28 @@ function _clearFormats(src, total, sn) {
     }
   }
 }
-function _previewSeriesKind(src) {
-  const sn = sheet.getCurrentSheet()
+// The series a fill from `src` would continue (null = plain copy).
+async function _previewSeriesKind(src) {
+  const sn = currentSheet.value
   const sel = grid?.getSelection()
   const goingDown = sel ? sel.r1 > src.r1 : false
   const goingRight = sel ? sel.c1 > src.c1 : false
   const sampleAlongCol = goingDown || !goingRight
+  const inputs = await _readInputs(src, sn)
   const vals = []
   if (sampleAlongCol) {
-    for (let r = src.r0; r <= src.r1; r++) vals.push(sheet.getCell(cellId(r, src.c0), sn))
+    for (let r = src.r0; r <= src.r1; r++) vals.push(inputs[cellId(r, src.c0)])
   } else {
-    for (let c = src.c0; c <= src.c1; c++) vals.push(sheet.getCell(cellId(src.r0, c), sn))
+    for (let c = src.c0; c <= src.c1; c++) vals.push(inputs[cellId(src.r0, c)])
   }
   const series = detectSeries(vals.map((v) => (v == null ? '' : String(v))))
   return series ? series.kind : null
+}
+
+// Cmd/Ctrl held inverts the auto-detected mode — Google Sheets behaviour.
+async function _fillFromHandle(src, total, withModifier) {
+  const mode = withModifier ? ((await _previewSeriesKind(src)) ? 'copy' : 'series') : 'auto'
+  await _runFill(src, total, mode)
 }
 
 // ── Mount phases ─────────────────────────────────────────────────────────────
@@ -4705,7 +4582,7 @@ function _setupGridInstance() {
   grid = createGrid(canvasRef.value, {
     // What the grid reads about cells (CellProvider).
     cells: {
-      getStyle: (id) => formats.get(id, sheet.getCurrentSheet()),
+      getStyle: (id) => formats.get(id, currentSheet.value),
       // Lazy render value source (Phase 1, off by default). Mirrors exactly what
       // _repopulateGrid / onCellChanged bake into the grid's eager `data` cache,
       // so the lazy and eager render paths produce identical pixels. When enabled
@@ -4714,41 +4591,37 @@ function _setupGridInstance() {
       getDisplay: _cellDisplay,
       // The in-cell editor opens with the raw input (the formula, not its
       // result), matching the formula bar set in onSelect.
-      getEditValue: (id) => sheet.getCell(id),
+      getEditValue: (id) => _inputAt(id) ?? (id === activeCell.value ? formulaValue.value : ''),
       // Non-empty cell ids for the current sheet — the lazy path's source for
       // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
       // own `data` keys.
-      getCellIds: () => Object.keys(sheet.getRawData()),
-      getMergeInfo: (id) => merge.getMasterInfo(id, sheet.getCurrentSheet()),
-      isSlave: (id) => merge.isSlave(id, sheet.getCurrentSheet()),
-      getMasterId: (id) => merge.getMasterId(id, sheet.getCurrentSheet()),
-      getComment: (id) => comments.hasOpenComment(id, sheet.getCurrentSheet()),
-      getValidation: (id) => validation.get(id, sheet.getCurrentSheet()),
+      getCellIds: () => _usedIds,
+      getMergeInfo: (id) => merge.getMasterInfo(id, currentSheet.value),
+      isSlave: (id) => merge.isSlave(id, currentSheet.value),
+      getMasterId: (id) => merge.getMasterId(id, currentSheet.value),
+      getComment: (id) => comments.hasOpenComment(id, currentSheet.value),
+      getValidation: (id) => validation.get(id, currentSheet.value),
       getCondFormat: (id, val) =>
-        condFormat.getFormatOverride(id, val, sheet.getCurrentSheet(), (cid) => _displayValue(cid)),
+        condFormat.getFormatOverride(id, val, currentSheet.value, (cid) => _displayValue(cid)),
       // A SPARKLINE formula evaluates to a spec object; the painter draws it.
       // In show-formulas mode the cell shows its =SPARKLINE(...) text instead.
-      getSparkline: (id) => {
-        if (showFormulas.value) return null
-        const v = sheet.getCellValue(id, sheet.getCurrentSheet())
-        return v && v.__spark ? v : null
-      },
+      getSparkline: (id) => (showFormulas.value ? null : _sparklineAt(id)),
       getRightInset: (id) => {
-        const range = sortFilter.getRange(sheet.getCurrentSheet())
+        const range = sortFilter.getRange(currentSheet.value)
         if (!range) return 0
         const p = parseCellId(id)
         if (!p) return 0
         // Reserve 19px right-padding in the filter header row inside the active range.
         return p.row === range.r0 && p.col >= range.c0 && p.col <= range.c1 ? 19 : 0
       },
-      isCellEditable: (r, c) => !protection.isProtected(r, c, sheet.getCurrentSheet()),
+      isCellEditable: (r, c) => !protection.isProtected(r, c, currentSheet.value),
     },
     // What the grid reports, and the app state it asks for (GridHost).
     host: {
       onSelect(id) {
         activeCell.value = id
-        formulaValue.value = sheet.getCell(id)
         _typedCell = null
+        _showInputInFormulaBar(id)
         refreshActiveFormat()
         _syncNumberFormat(id)
         computeSelectionStats()
@@ -4766,7 +4639,7 @@ function _setupGridInstance() {
                 c1: sel.c1,
               }
             : null
-          broadcastCursor(p.row, p.col, sheet.getCurrentSheet(), range)
+          broadcastCursor(p.row, p.col, currentSheet.value, range)
         }
       },
       onCommit(id, value) {
@@ -4776,7 +4649,7 @@ function _setupGridInstance() {
         // so the next-row move-down on Enter lands on the home sheet too.
         const homeSheet = editingHomeSheet.value
         const writeSheet =
-          homeSheet && homeSheet !== sheet.getCurrentSheet() ? homeSheet : sheet.getCurrentSheet()
+          homeSheet && homeSheet !== currentSheet.value ? homeSheet : currentSheet.value
 
         // Protection first — blocks writes AND clears (empty value) on a locked
         // cell. Nothing was written, so repaint the pre-edit value and bail.
@@ -4822,9 +4695,12 @@ function _setupGridInstance() {
             }, 3500)
           }
         }
-        const before = sheet.getCell(id, writeSheet)
-        sheet.setCell(id, value, writeSheet)
-        if (writeSheet !== sheet.getCurrentSheet()) {
+        const before = _inputAt(id, writeSheet) ?? ''
+        _writeInputs(writeSheet, { [id]: value })
+        // Delete clears the cell in place; the selection doesn't move, so
+        // nothing else refreshes the formula bar.
+        if (writeSheet === currentSheet.value && id === activeCell.value) formulaValue.value = value
+        if (writeSheet !== currentSheet.value) {
           switchSheet(writeSheet, {
             preserveEdit: true,
           })
@@ -4850,7 +4726,7 @@ function _setupGridInstance() {
           // _queueOp destructures only the known keys, so server sync is
           // unaffected. Row heights live in the current sheet's canvas view,
           // hence the writeSheet guard.
-          if (writeSheet === sheet.getCurrentSheet()) {
+          if (writeSheet === currentSheet.value) {
             const p = parseCellId(id)
             const grow = p && grid?.autoGrowRowFor?.(p.row, p.col, value)
             if (grow) {
@@ -4888,19 +4764,19 @@ function _setupGridInstance() {
       onInput(id, value) {
         formulaValue.value = value
         _typedCell = {
-          sheet: sheet.getCurrentSheet(),
+          sheet: currentSheet.value,
           cell: id,
         }
       },
       onCancel(id) {
         const homeSheet = editingHomeSheet.value
-        if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
+        if (homeSheet && homeSheet !== currentSheet.value) {
           switchSheet(homeSheet) // full reset so canvas snaps back to home cell
         }
         editingHomeSheet.value = null
         editingHomeCell.value = null
         _typedCell = null
-        formulaValue.value = sheet.getCell(id)
+        _showInputInFormulaBar(id)
       },
       onHyperlinkClick(url) {
         window.open(url, '_blank', 'noopener,noreferrer')
@@ -4922,27 +4798,32 @@ function _setupGridInstance() {
       // when it differs from the edit's home sheet. Home is null outside of an
       // active cross-sheet edit, in which case the prefix is omitted.
       getCurrentSheet() {
-        return sheet.getCurrentSheet()
+        return currentSheet.value
       },
       getEditingHomeSheet() {
         return editingHomeSheet.value
       },
-      onBlockedEdit: () => _flashProtected(sheet.getCurrentSheet()),
+      onBlockedEdit: () => _flashProtected(currentSheet.value),
       onFill(src, total, { withModifier = false } = {}) {
         if (_fillDestBlocked(src, total)) return // only the destination cells, not the source
-        const series = _previewSeriesKind(src)
-        // Cmd/Ctrl held inverts the auto-detected mode — Google Sheets behaviour.
-        const mode = withModifier ? (series ? 'copy' : 'series') : 'auto'
-        _runFill(src, total, mode)
+        _fillFromHandle(src, total, withModifier).catch((e) =>
+          console.error('[sheets] fill failed', e),
+        )
       },
       onBatchCommit(cells) {
         if (_cellsBlocked(cells.map((c) => c.id))) return
-        const { before, after, refs } = diffCells(cells, (id) => sheet.getCell(id))
-        for (const { id, value } of cells) sheet.setCell(id, value)
+        const { before, after, refs } = diffCells(cells, (id) => _inputAt(id) ?? '')
+        _writeInputs(
+          currentSheet.value,
+          Object.fromEntries(cells.map(({ id, value }) => [id, value])),
+        )
+        // The formula bar shows the active cell; Delete may have just cleared it.
+        const active = cells.find(({ id }) => id === activeCell.value)
+        if (active) formulaValue.value = active.value
         if (refs.length) {
           const op = {
             opType: 'edit',
-            subSheet: sheet.getCurrentSheet(),
+            subSheet: currentSheet.value,
             cellRefs: refs,
             before,
             after,
@@ -4951,7 +4832,7 @@ function _setupGridInstance() {
           _queueOp(op)
           history.pushOp(op)
           broadcastBatchChange(
-            sheet.getCurrentSheet(),
+            currentSheet.value,
             refs.map((id) => ({
               id,
               value: after[id],
@@ -4964,11 +4845,11 @@ function _setupGridInstance() {
             value,
             before: before[id] !== undefined ? before[id] : value,
           })),
-          sheet.getCurrentSheet(),
+          currentSheet.value,
         )
         syncFlags()
         isDirty.value = true
-        recomputePivotsForSheet(sheet.getCurrentSheet())
+        recomputePivotsForSheet(currentSheet.value)
       },
       onResizeEnd() {
         history.push()
@@ -4983,9 +4864,7 @@ function _setupGridInstance() {
       // selection, navigation and copy.
       canEdit: () => !readOnly.value,
     },
-    // Lazy render is the default; eager `data` cache stays as an opt-out
-    // fallback (`?lazy=0`). See _lazyValuesEnabled.
-    lazyValues: _lazyValuesEnabled(),
+    lazyValues: true,
   })
   // Keep DOM overlays (filter chevrons) in sync with canvas scroll/resize/freeze.
   grid.onRender(() => {
@@ -5029,6 +4908,29 @@ function _setupEventListeners() {
   window.addEventListener('focus', _refocusGridIfIdle)
   document.addEventListener('visibilitychange', _refocusGridIfIdle)
 }
+// The tab each viewer had open, per document, kept in this browser only: a
+// convenience, so it never makes a save. Storage can be unavailable
+// (private windows, blocked site data), so every access is guarded.
+const _lastTabKey = () => `sheets:last-tab:${props.id}`
+function _lastTab() {
+  try {
+    return localStorage.getItem(_lastTabKey())
+  } catch {
+    return null
+  }
+}
+// Off until the load has reopened the saved tab, which loading could
+// otherwise overwrite with the first sheet.
+let _rememberTab = false
+watch(currentSheet, (sn) => {
+  if (!_rememberTab) return
+  try {
+    localStorage.setItem(_lastTabKey(), sn)
+  } catch {
+    // not remembered; the first tab opens next time
+  }
+})
+
 async function _loadInitialData() {
   history.init()
   syncFlags()
@@ -5048,7 +4950,7 @@ async function _loadInitialData() {
       // baked the active sheet's filter rows into hiddenRows. Strip the
       // sheet's current filter rows so they aren't mistaken for manual hides
       // and re-applied to every sheet. Harmless for clean docs.
-      const filterHidden = new Set(sortFilter.computeHiddenRows(sheet.getCurrentSheet()))
+      const filterHidden = new Set(sortFilter.computeHiddenRows(currentSheet.value))
       manualHiddenRows.clear()
       for (const r of restored.hiddenRows || []) if (!filterHidden.has(r)) manualHiddenRows.add(r)
       manualHiddenCols.clear()
@@ -5058,8 +4960,12 @@ async function _loadInitialData() {
     // so a saved filter still shows its hidden rows on first load.
     _applyHiddenRows()
     syncNames()
+    // Reopen the tab this browser had open last.
+    const last = _lastTab()
+    if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
+    _rememberTab = true
     activeCell.value = 'A1'
-    formulaValue.value = sheet.getCell('A1')
+    _showInputInFormulaBar('A1')
     refreshActiveFormat()
     _syncNumberFormat('A1')
     // Re-baseline history to the loaded state. The pre-load init() above
@@ -5068,11 +4974,18 @@ async function _loadInitialData() {
     // blank the sheet on the first snapshot-based undo (e.g. insert column).
     history.reset()
     syncFlags()
-  } else if (props.id === 'new') {
-    // Google-Sheets model: create the doc immediately so there is never an
-    // "unsaved" state.  The parent swaps the URL to ?id=<name> via onSaved.
-    const name = await autoCreate(currentTitle.value || 'Untitled Sheet')
-    if (name) emit('saved', name)
+  } else {
+    // A new sheet starts as an empty workbook.
+    await _startEngine()
+    history.reset() // the baseline holds the engine's bytes, which init() could not
+    syncFlags()
+    _rememberTab = true
+    if (props.id === 'new') {
+      // Google-Sheets model: create the doc immediately so there is never an
+      // "unsaved" state.  The parent swaps the URL to ?id=<name> via onSaved.
+      const name = await autoCreate(currentTitle.value || 'Untitled Sheet')
+      if (name) emit('saved', name)
+    }
   }
 }
 
@@ -5089,13 +5002,6 @@ onMounted(async () => {
   } finally {
     isInitialLoad.value = false
   }
-  if (_ironcalcEnabled() && grid?.isLazyValues?.()) {
-    try {
-      await _startIronCalc()
-    } catch (e) {
-      console.error('[sheets] IronCalc preview failed to start', e)
-    }
-  }
   // Focus the grid on open so arrow-key nav and Cmd+V work immediately, without
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
   _refocusGridIfIdle()
@@ -5107,16 +5013,17 @@ onBeforeUnmount(() => {
   // debounce window) silently drops the most recent changes — exactly the
   // "data is lost when I come back" report. The fetch uses `keepalive: true`
   // so the request survives the unmount.
-  if (isDirty.value && !readOnly.value && props.id && props.id !== 'new') {
-    void saveExisting(props.id, currentTitle.value, {
-      keepalive: true,
-    }).catch(() => {})
-  }
+  const lastSave =
+    isDirty.value && !readOnly.value && props.id && props.id !== 'new'
+      ? saveExisting(props.id, currentTitle.value, {
+          keepalive: true,
+        }).catch(() => {})
+      : null
+  // That save reads the workbook from the worker, so stop it only after.
+  if (lastSave) void lastSave.finally(_stopEngine)
+  else _stopEngine()
   gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
-  _ironcalc?.provider.dispose()
-  _ironcalc?.client.terminate()
-  _ironcalc = null
   grid?.destroy()
   window.removeEventListener('keydown', onGlobalKey)
   document.removeEventListener('paste', onDocPaste)
@@ -5171,21 +5078,6 @@ function _queueOp({
   })
 }
 
-// Snapshot {id → value} for a rectangular cell range, used before/after each
-// write so ops carry their own diff.  Caller passes the active sub-sheet.
-function _captureRange(rect, sheetName) {
-  const out = {}
-  if (!rect) return out
-  const sn = sheetName || sheet.getCurrentSheet()
-  for (let r = rect.r0; r <= rect.r1; r++) {
-    for (let c = rect.c0; c <= rect.c1; c++) {
-      const id = cellId(r, c)
-      out[id] = sheet.getCell(id, sn)
-    }
-  }
-  return out
-}
-
 // Snapshot {id → format} for the rect. Used by paste/fill ops so undo
 // can revert the format changes too — without this the value-only op
 // shape would leave pasted formats stuck on undo, contradicting the
@@ -5193,7 +5085,7 @@ function _captureRange(rect, sheetName) {
 function _captureFormatsRange(rect, sheetName) {
   const out = {}
   if (!rect) return out
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const id = cellId(r, c)
@@ -5229,7 +5121,7 @@ function _recordFormatOp(ids, sn, mutate) {
 // "set font on the whole sheet" stays tiny and instant. `ops` supplies the
 // three mutation variants: { cols, rows, cells }.
 function _recordScopedFormatOp(ops) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const info = _selectionScope()
   const scope = info
     ? formatScope(info.rect, info.totalRows, info.totalCols)
@@ -5267,7 +5159,7 @@ function _captureAxis(axis, keys, sn) {
 function _captureValidationRange(rect, sheetName) {
   const out = {}
   if (!rect) return out
-  const sn = sheetName || sheet.getCurrentSheet()
+  const sn = sheetName || currentSheet.value
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const id = cellId(r, c)
@@ -5286,6 +5178,7 @@ function _captureValidationRange(rect, sheetName) {
 //      and any outside the destination would otherwise be lost on undo.
 // Returns an array of rects; callers merge per-cell captures across them.
 // Must be called BEFORE clipboard.paste(), which consumes the cut buffer.
+// A cut from another sheet is covered by _cutSourceElsewhere instead.
 function _pasteAffectedRects(destSel) {
   const rects = destSel ? [destSel] : []
   const src = clipboard.getSourceSel()
@@ -5298,9 +5191,18 @@ function _pasteAffectedRects(destSel) {
         r1: anch.row + (src.r1 - src.r0),
         c1: anch.col + (src.c1 - src.c0),
       })
-    if (clipboard.getMode() === 'cut') rects.push(src)
+    if (clipboard.getMode() === 'cut' && clipboard.getSourceSheet() === currentSheet.value)
+      rects.push(src)
   }
   return rects
+}
+
+// A cut pasted onto another sheet clears its source on the sheet it came
+// from, so undo needs that sheet's cells too. Call before clipboard.paste().
+function _cutSourceElsewhere(sn) {
+  const sheetName = clipboard.getSourceSheet()
+  if (clipboard.getMode() !== 'cut' || !sheetName || sheetName === sn) return null
+  return { sheet: sheetName, rect: clipboard.getSourceSel() }
 }
 
 // ── Protection enforcement ────────────────────────────────────────────────────
@@ -5321,23 +5223,23 @@ function _flashProtected(sn) {
     if (protectionNotice.value === msg) protectionNotice.value = ''
   }, 3500)
 }
-function _rectBlocked(rect, sn = sheet.getCurrentSheet()) {
+function _rectBlocked(rect, sn = currentSheet.value) {
   if (!rect || !protection.isAnyProtected(rect, sn)) return false
   _flashProtected(sn)
   return true
 }
-function _cellBlocked(id, sn = sheet.getCurrentSheet()) {
+function _cellBlocked(id, sn = currentSheet.value) {
   const p = parseCellId(id)
   if (!p || !protection.isProtected(p.row, p.col, sn)) return false
   _flashProtected(sn)
   return true
 }
-function _cellsBlocked(ids, sn = sheet.getCurrentSheet()) {
+function _cellsBlocked(ids, sn = currentSheet.value) {
   const hit = ids.some((id) => _cellSilentlyProtected(id, sn))
   if (hit) _flashProtected(sn)
   return hit
 }
-function _cellSilentlyProtected(id, sn = sheet.getCurrentSheet()) {
+function _cellSilentlyProtected(id, sn = currentSheet.value) {
   const p = parseCellId(id)
   return !!(p && protection.isProtected(p.row, p.col, sn))
 }
@@ -5345,7 +5247,7 @@ function _cellSilentlyProtected(id, sn = sheet.getCurrentSheet()) {
 // Checking the whole extent would wrongly block a fill that merely *starts*
 // from a protected cell (reading a protected source is fine; only writes are
 // guarded). A fill extends in one direction, so at most one strip is non-empty.
-function _fillDestBlocked(src, total, sn = sheet.getCurrentSheet()) {
+function _fillDestBlocked(src, total, sn = currentSheet.value) {
   const strips = []
   if (total.r1 > src.r1)
     strips.push({
@@ -5385,7 +5287,7 @@ function protectSelection() {
   contextMenu.open = false
   const sel = grid?.getSelection?.()
   if (!sel) return
-  protection.addRange(sel, '', sheet.getCurrentSheet())
+  protection.addRange(sel, '', currentSheet.value)
   history.push()
   isDirty.value = true
   grid?.render?.()
@@ -5394,7 +5296,7 @@ function unprotectSelection() {
   contextMenu.open = false
   const sel = grid?.getSelection?.()
   if (!sel) return
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // Drop every protected range that overlaps the selection.
   for (const r of [...protection.getRanges(sn)]) {
     if (sel.r0 <= r.r1 && sel.r1 >= r.r0 && sel.c0 <= r.c1 && sel.c1 >= r.c0) {
@@ -5421,7 +5323,7 @@ function toggleSheetProtection(name) {
 function selectionHasProtectedRange() {
   const sel = grid?.getSelection?.()
   if (!sel) return false
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   return protection
     .getRanges(sn)
     .some((r) => sel.r0 <= r.r1 && sel.r1 >= r.r0 && sel.c0 <= r.c1 && sel.c1 >= r.c0)
@@ -5613,7 +5515,7 @@ function onSave() {
 function onFormulaInput(e) {
   formulaValue.value = e.target.value
   _typedCell = {
-    sheet: sheet.getCurrentSheet(),
+    sheet: currentSheet.value,
     cell: activeCell.value,
   }
   updateAc(e.target.value, e.target.selectionStart)
@@ -5667,37 +5569,48 @@ function onFormulaKey(e) {
 function _commitFormulaBar() {
   const homeSheet = editingHomeSheet.value
   const homeCell = editingHomeCell.value
-  const targetSheet = homeSheet || sheet.getCurrentSheet()
+  const targetSheet = homeSheet || currentSheet.value
   const targetId = homeCell || activeCell.value
   // Protected target — discard the edit and restore the bar to the cell value.
   if (_cellBlocked(targetId, targetSheet)) {
     editingHomeSheet.value = null
     editingHomeCell.value = null
     _typedCell = null
-    formulaValue.value = sheet.getCell(targetId, targetSheet)
+    _showInputInFormulaBar(targetId, targetSheet)
     return
   }
-  const before = {
-    [targetId]: sheet.getCell(targetId, targetSheet),
-  }
-  if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
+  const value = formulaValue.value
+  const before = _inputAt(targetId, targetSheet) ?? ''
+  if (homeSheet && homeSheet !== currentSheet.value) {
     switchSheet(homeSheet, {
       preserveEdit: true,
     })
-    sheet.setCell(homeCell, formulaValue.value, homeSheet)
-  } else {
-    sheet.setCell(activeCell.value, formulaValue.value)
   }
+  _writeInputs(targetSheet, { [targetId]: value })
   editingHomeSheet.value = null
   editingHomeCell.value = null
   _typedCell = null
-  _pushEditOp(targetSheet, before, 'Edit cell')
+  if (before !== value) {
+    const op = {
+      opType: 'edit',
+      subSheet: targetSheet,
+      cellRefs: [targetId],
+      before: { [targetId]: before },
+      after: { [targetId]: value },
+      summary: 'Edit cell',
+    }
+    _queueOp(op)
+    history.pushOp(op)
+    broadcastCellChange(targetSheet, targetId, value)
+    syncFlags()
+    isDirty.value = true
+  }
   _maybeAutoLink(
     [
       {
         id: targetId,
-        value: formulaValue.value,
-        before: before[targetId],
+        value,
+        before,
       },
     ],
     targetSheet,
@@ -5706,15 +5619,15 @@ function _commitFormulaBar() {
 function _cancelFormulaBar() {
   const homeSheet = editingHomeSheet.value
   const homeCell = editingHomeCell.value
-  if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
+  if (homeSheet && homeSheet !== currentSheet.value) {
     // Return to the home sheet *without* preserveEdit so activeCell snaps
     // back to where the user started and formulaValue reflects the cell's
     // committed contents (i.e. the edit is discarded cleanly).
     switchSheet(homeSheet)
     activeCell.value = homeCell
-    formulaValue.value = sheet.getCell(homeCell, homeSheet)
+    _showInputInFormulaBar(homeCell, homeSheet)
   } else {
-    formulaValue.value = sheet.getCell(activeCell.value)
+    _showInputInFormulaBar(activeCell.value)
   }
   editingHomeSheet.value = null
   editingHomeCell.value = null
@@ -5723,77 +5636,34 @@ function _cancelFormulaBar() {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
-function fillDown() {
+// Ctrl+D / Ctrl+R: copy the selection's first row down (or first column
+// right) across the rest of it.
+async function _fillFromEdge(down) {
   if (!grid) return
-  const { r0, c0, r1, c1 } = grid.getSelection()
-  if (r1 <= r0) return
-  const sn = sheet.getCurrentSheet()
-  if (
-    _rectBlocked(
-      {
-        r0: r0 + 1,
-        c0,
-        r1,
-        c1,
-      },
-      sn,
-    )
-  )
-    return
-  const before = {}
-  for (let c = c0; c <= c1; c++) {
-    for (let r = r0 + 1; r <= r1; r++) {
-      const id = colLabel(c) + (r + 1)
-      before[id] = sheet.getCell(id, sn)
+  const sel = grid.getSelection()
+  const { r0, c0, r1, c1 } = sel
+  if (down ? r1 <= r0 : c1 <= c0) return
+  const sn = currentSheet.value
+  const dest = down ? { r0: r0 + 1, c0, r1, c1 } : { r0, c0: c0 + 1, r1, c1 }
+  if (_rectBlocked(dest, sn)) return
+  const before = await _readInputs(sel, sn)
+  const after = {}
+  for (let r = dest.r0; r <= dest.r1; r++) {
+    for (let c = dest.c0; c <= dest.c1; c++) {
+      const srcVal = before[down ? cellId(r0, c) : cellId(r, c0)] ?? ''
+      after[cellId(r, c)] = srcVal.startsWith('=')
+        ? adjustFormula(srcVal, down ? r - r0 : 0, down ? 0 : c - c0)
+        : srcVal
     }
   }
-  for (let c = c0; c <= c1; c++) {
-    const srcVal = sheet.getCell(colLabel(c) + (r0 + 1))
-    for (let r = r0 + 1; r <= r1; r++) {
-      const val =
-        typeof srcVal === 'string' && srcVal.startsWith('=')
-          ? adjustFormula(srcVal, r - r0, 0)
-          : srcVal
-      sheet.setCell(colLabel(c) + (r + 1), val)
-    }
-  }
-  _pushEditOp(sn, before, 'Fill down')
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, down ? 'Fill down' : 'Fill right')
+}
+function fillDown() {
+  _fillFromEdge(true).catch((e) => console.error('[sheets] fill down failed', e))
 }
 function fillRight() {
-  if (!grid) return
-  const { r0, c0, r1, c1 } = grid.getSelection()
-  if (c1 <= c0) return
-  const sn = sheet.getCurrentSheet()
-  if (
-    _rectBlocked(
-      {
-        r0,
-        c0: c0 + 1,
-        r1,
-        c1,
-      },
-      sn,
-    )
-  )
-    return
-  const before = {}
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0 + 1; c <= c1; c++) {
-      const id = colLabel(c) + (r + 1)
-      before[id] = sheet.getCell(id, sn)
-    }
-  }
-  for (let r = r0; r <= r1; r++) {
-    const srcVal = sheet.getCell(colLabel(c0) + (r + 1))
-    for (let c = c0 + 1; c <= c1; c++) {
-      const val =
-        typeof srcVal === 'string' && srcVal.startsWith('=')
-          ? adjustFormula(srcVal, 0, c - c0)
-          : srcVal
-      sheet.setCell(colLabel(c) + (r + 1), val)
-    }
-  }
-  _pushEditOp(sn, before, 'Fill right')
+  _fillFromEdge(false).catch((e) => console.error('[sheets] fill right failed', e))
 }
 
 // Mirrors `clipboard.hasData()` reactively so the context menu can show /
@@ -5891,7 +5761,7 @@ function onDocCopy(e) {
   if (!_canvasActive()) return
   e.preventDefault()
   const src = grid.getSelection()
-  clipboard.copy(src)
+  clipboard.copy(src).catch((err) => console.error('[sheets] copy failed', err))
   clipboardHas.value = true
   grid.setMarchingAnts(src)
 }
@@ -5901,21 +5771,20 @@ function onDocCut(e) {
 
   e.preventDefault()
   const src = grid.getSelection()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // Cut moves content out of the source — block it when the source is protected.
   if (_rectBlocked(src, sn)) return
-  const before = _captureRange(src, sn)
-  clipboard.cut(src)
+  // Nothing changes until the paste, which records the move for undo.
+  clipboard.cut(src).catch((err) => console.error('[sheets] cut failed', err))
   clipboardHas.value = true
   grid.setMarchingAnts(src)
-  _pushEditOp(sn, before, 'Cut')
 }
 async function onDocPaste(e) {
   if (!_canvasActive()) return
   if (readOnly.value) return // viewers can't write pasted cells
   e.preventDefault()
   const destSel = grid.getSelection()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
 
   // Pasting a copied pivot mints a new live pivot at the anchor rather than
   // writing cells, so the op-based cell-diff undo below can't capture it (it
@@ -5927,7 +5796,7 @@ async function onDocPaste(e) {
     await clipboard.paste(activeCell.value, () => {}, 'all', destSel)
     clipboardHas.value = clipboard.hasData()
     grid.setMarchingAnts(null)
-    formulaValue.value = sheet.getCell(activeCell.value) // fx bar tracks the pasted anchor
+    _showInputInFormulaBar(activeCell.value) // fx bar tracks the pasted anchor
     history.push()
     isDirty.value = true
     return
@@ -5961,7 +5830,9 @@ async function onDocPaste(e) {
   // and — for a cut — the vacated source) so undo restores all of it.
   const rects = _pasteAffectedRects(destSel)
   if (externalRect) rects.push(externalRect)
-  const before = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+  const before = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+  const cutSrc = _cutSourceElsewhere(sn)
+  const srcBefore = cutSrc && (await _readInputs(cutSrc.rect, cutSrc.sheet))
   const beforeFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
   const beforeVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
   const cfBefore = condFormat?.getRules?.(sn)?.length ?? 0
@@ -5971,7 +5842,7 @@ async function onDocPaste(e) {
     // history entry from out here. clipboard still does its mutations.
     // A protected destination returns { blocked } and writes nothing; leave
     // the marching ants + cut buffer intact so the user can retry elsewhere.
-    if (clipboard.paste(activeCell.value, () => {}, 'all', destSel)?.blocked) {
+    if ((await clipboard.paste(activeCell.value, () => {}, 'all', destSel))?.blocked) {
       _flashProtected(sn)
       return
     }
@@ -6003,9 +5874,15 @@ async function onDocPaste(e) {
     // notified for cell-value changes, but format changes happened AFTER
     // batchSetCells so the canvas painted those cells with the old
     // format, and a cut's vacated source needs to repaint as empty.
-    for (const r of rects) _refreshDisplayForRange(r, sn)
-    formulaValue.value = sheet.getCell(activeCell.value) // fx bar tracks the pasted anchor
-    const after = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+    grid?.render?.() // pasted formats
+    // Reads wait for the paste's write, so `after` holds the pasted inputs.
+    const after = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+    const source = cutSrc && {
+      sheet: cutSrc.sheet,
+      before: srcBefore,
+      after: await _readInputs(cutSrc.rect, cutSrc.sheet),
+    }
+    _showInputInFormulaBar(activeCell.value) // fx bar tracks the pasted anchor
     const afterFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
     const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
     const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
@@ -6018,6 +5895,7 @@ async function onDocPaste(e) {
         before,
         after,
         summary: `Pasted into ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
+        ...(source && { source }),
       })
       _pushPasteHistory({
         opType: 'paste',
@@ -6030,6 +5908,7 @@ async function onDocPaste(e) {
         beforeValidation: beforeVal,
         afterValidation: afterVal,
         cfChanged: cfBefore !== cfAfter,
+        ...(source && { source }),
       })
       syncFlags()
     }
@@ -6038,25 +5917,33 @@ async function onDocPaste(e) {
 }
 
 // Right-click → Paste special. `kind` ∈ {'values', 'formats', 'formulas'}.
-function doPasteSpecial(kind) {
+async function doPasteSpecial(kind) {
   contextMenu.open = false
   if (!clipboard.hasData()) return
   const destSel = grid.getSelection()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const rects = _pasteAffectedRects(destSel)
-  const before = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+  const before = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+  const cutSrc = _cutSourceElsewhere(sn)
+  const srcBefore = cutSrc && (await _readInputs(cutSrc.rect, cutSrc.sheet))
   const beforeFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
   const beforeVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
   const cfBefore = condFormat?.getRules?.(sn)?.length ?? 0
-  if (clipboard.paste(activeCell.value, () => {}, kind, destSel)?.blocked) {
+  if ((await clipboard.paste(activeCell.value, () => {}, kind, destSel))?.blocked) {
     _flashProtected(sn)
     return // keep the pending cut/copy + its marching ants
   }
-  for (const r of rects) _refreshDisplayForRange(r, sn)
-  formulaValue.value = sheet.getCell(activeCell.value) // fx bar tracks the pasted anchor
+  grid?.render?.() // pasted formats
   clipboardHas.value = clipboard.hasData()
   grid?.setMarchingAnts(null)
-  const after = Object.assign({}, ...rects.map((r) => _captureRange(r, sn)))
+  // Reads wait for the paste's write, so `after` holds the pasted inputs.
+  const after = Object.assign({}, ...(await Promise.all(rects.map((r) => _readInputs(r, sn)))))
+  const source = cutSrc && {
+    sheet: cutSrc.sheet,
+    before: srcBefore,
+    after: await _readInputs(cutSrc.rect, cutSrc.sheet),
+  }
+  _showInputInFormulaBar(activeCell.value) // fx bar tracks the pasted anchor
   const afterFmt = Object.assign({}, ...rects.map((r) => _captureFormatsRange(r, sn)))
   const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
   const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
@@ -6069,6 +5956,7 @@ function doPasteSpecial(kind) {
       before,
       after,
       summary: `Pasted ${kind} into ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
+      ...(source && { source }),
     })
     _pushPasteHistory({
       opType: 'paste',
@@ -6081,6 +5969,7 @@ function doPasteSpecial(kind) {
       beforeValidation: beforeVal,
       afterValidation: afterVal,
       cfChanged: cfBefore !== cfAfter,
+      ...(source && { source }),
     })
     syncFlags()
   }
@@ -6099,23 +5988,6 @@ function _pushPasteHistory(op) {
     return
   }
   history.pushOp(op)
-}
-
-// Re-push display strings for every cell in `rect`. Used after paste
-// since format changes that happen AFTER batchSetCells don't fire the
-// engine's onCellsChanged callback — the canvas has the right value
-// but the wrong format-applied display.
-function _refreshDisplayForRange(rect, sheetName) {
-  if (!rect || !grid) return
-  const sn = sheetName || sheet.getCurrentSheet()
-  for (let r = rect.r0; r <= rect.r1; r++) {
-    for (let c = rect.c0; c <= rect.c1; c++) {
-      const id = cellId(r, c)
-      const fmt = formats.get(id, sn)
-      const dv = sheet.getDisplayValue(id, sn)
-      grid.setCell(id, fmt.numberFormat ? applyNumberFmt(dv, fmt.numberFormat) : dv)
-    }
-  }
 }
 
 // ── History ───────────────────────────────────────────────────────────────────
@@ -6143,13 +6015,15 @@ function _afterHistoryNavigate() {
   // close it so a stale index can't delete the wrong reply after undo/redo.
   commentPanel.open = false
   activeCell.value = 'A1'
-  formulaValue.value = sheet.getCell('A1')
+  _showInputInFormulaBar('A1')
   refreshActiveFormat()
   _syncNumberFormat('A1')
   syncFlags()
   grid?.setMarchingAnts(null)
   clipboard.clear()
   clipboardHas.value = false
+  // An undo or redo changes the document like any edit, so it is saved.
+  isDirty.value = true
 }
 function undo() {
   if (!history.undo()) return
@@ -6163,7 +6037,7 @@ function redo() {
 // ── Number format ─────────────────────────────────────────────────────────────
 
 function _syncNumberFormat(id) {
-  const fmt = formats.get(id, sheet.getCurrentSheet())
+  const fmt = formats.get(id, currentSheet.value)
   activeNumberFormat.value = fmt.numberFormat || ''
 }
 function toggleNumberFmt(type) {
@@ -6181,7 +6055,7 @@ function toggleFormatPainter() {
   }
   const srcId = activeCell.value
   _copiedFormat = {
-    ...formats.get(srcId, sheet.getCurrentSheet()),
+    ...formats.get(srcId, currentSheet.value),
   }
   isPaintingFormat.value = true
 }
@@ -6195,7 +6069,7 @@ function _applyPaintedFormat() {
   refreshActiveFormat()
 }
 function onNumberFormatChange(value) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const ids = selectionIds()
   _recordFormatOp(ids, sn, () =>
     formats.applyToRange(
@@ -6206,10 +6080,7 @@ function onNumberFormatChange(value) {
       sn,
     ),
   )
-  for (const id of ids) {
-    const raw = sheet.getDisplayValue(id)
-    grid?.setCell(id, value ? applyNumberFmt(raw, value) : raw)
-  }
+  grid?.render?.() // the grid applies number formats as it paints
   _syncNumberFormat(activeCell.value)
   syncFlags()
   isDirty.value = true
@@ -6255,7 +6126,7 @@ function openCommentPanel() {
 
 // Mirror the engine's thread for `commentPanel.id` into the reactive panel.
 function _loadCommentThread() {
-  const t = comments.getThread(commentPanel.id, sheet.getCurrentSheet())
+  const t = comments.getThread(commentPanel.id, currentSheet.value)
   commentPanel.thread = t ? t.thread : []
   commentPanel.resolved = t ? t.resolved : false
 }
@@ -6279,22 +6150,22 @@ function addCommentReply() {
       name: userFullName.value || userEmail.value,
       text,
     },
-    sheet.getCurrentSheet(),
+    currentSheet.value,
   )
   commentPanel.draft = ''
   _afterCommentChange()
 }
 function toggleResolveComment() {
-  comments.resolve(commentPanel.id, !commentPanel.resolved, sheet.getCurrentSheet())
+  comments.resolve(commentPanel.id, !commentPanel.resolved, currentSheet.value)
   _afterCommentChange()
 }
 function deleteCommentReply(i) {
-  comments.removeReply(commentPanel.id, i, sheet.getCurrentSheet())
+  comments.removeReply(commentPanel.id, i, currentSheet.value)
   _afterCommentChange()
   if (!commentPanel.thread.length) commentPanel.open = false
 }
 function deleteComment() {
-  comments.clear(commentPanel.id, sheet.getCurrentSheet())
+  comments.clear(commentPanel.id, currentSheet.value)
   commentPanel.open = false
   notesPanel.rev++
   grid?.render()
@@ -6321,7 +6192,7 @@ function commentTime(ts) {
 // itself isn't reactive.
 const allNotes = computed(() => {
   notesPanel.rev // dep for re-run
-  const cur = sheet.getCurrentSheet()
+  const cur = currentSheet.value
   const list = []
   for (const name of sheetNames.value) {
     const map = comments.getAll(name) || {}
@@ -6375,7 +6246,7 @@ function jumpToNote(n) {
   if (!grid) return
   const p = parseCellId(n.id)
   if (!p) return
-  if (n.sheet !== sheet.getCurrentSheet()) switchSheet(n.sheet)
+  if (n.sheet !== currentSheet.value) switchSheet(n.sheet)
   nextTick(() => {
     grid.moveTo(p.row, p.col)
     activeCell.value = n.id
@@ -6389,7 +6260,7 @@ function goToCell(sheetName, id) {
   if (!grid || !sheetNames.value.includes(sheetName)) return false
   const p = parseCellId(id)
   if (!p) return false
-  if (sheetName !== sheet.getCurrentSheet()) switchSheet(sheetName)
+  if (sheetName !== currentSheet.value) switchSheet(sheetName)
   nextTick(() => {
     grid.moveTo(p.row, p.col)
     activeCell.value = id
@@ -6408,7 +6279,7 @@ function _draftEdit() {
       }
     : _typedCell
   if (!target) return null
-  const committed = sheet.getCell(target.cell, target.sheet)
+  const committed = _inputAt(target.cell, target.sheet) ?? ''
   if (String(committed ?? '') === String(formulaValue.value ?? '')) return null
   return {
     ...target,
@@ -6442,7 +6313,7 @@ function fromContextMenu(action) {
 // ── Data validation ───────────────────────────────────────────────────────────
 
 function openValidationDialog() {
-  const e = validation.get(activeCell.value, sheet.getCurrentSheet())
+  const e = validation.get(activeCell.value, currentSheet.value)
   validationDialog.type = e?.type || 'list'
   validationDialog.operator = e?.operator || 'between'
   validationDialog.val1 = String(e?.min ?? '')
@@ -6513,9 +6384,9 @@ async function focusListItem(i) {
   await nextTick()
   vdListEl.value?.querySelectorAll('.sn-vd-item-input')?.[i]?.focus()
 }
-function confirmValidation() {
+async function confirmValidation() {
   const ids = selectionIds()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const msg = validationDialog.message.trim() || undefined
   // 'warn' only differs from the default when the value fails, and a checkbox
   // is TRUE/FALSE-only where "allow anyway" makes no sense — so scope it out.
@@ -6563,37 +6434,54 @@ function confirmValidation() {
       severity,
     }
   }
-  for (const id of ids) validation.set(id, rule, sn)
-
+  validationDialog.open = false
+  if (validationDialog.type !== 'checkbox') {
+    for (const id of ids) validation.set(id, rule, sn)
+    grid?.render()
+    history.push()
+    isDirty.value = true
+    return
+  }
   // Checkbox cells need a concrete value to render as unchecked and to feed
   // formulas (SUM / COUNTIF) right away — fill blanks with FALSE, à la Sheets.
-  // The rule + these values ride in the single history.push() snapshot below,
-  // so one undo reverts the whole "apply checkboxes" action.
-  if (validationDialog.type === 'checkbox') {
-    const filled = []
-    for (const id of ids) {
-      const cur = sheet.getCell(id, sn)
-      if (cur == null || String(cur) === '') {
-        sheet.setCell(id, 'FALSE', sn)
-        filled.push({
-          id,
-          value: 'FALSE',
-        })
-      }
-    }
-    if (filled.length) {
-      broadcastBatchChange(sn, filled)
-      recomputePivotsForSheet(sn)
-    }
+  // The rule and these values are one op, so one undo reverts both.
+  const inputs = await _readIds(ids, sn)
+  const beforeValidation = {}
+  const afterValidation = {}
+  for (const id of ids) {
+    beforeValidation[id] = validation.get(id, sn) || null
+    validation.set(id, rule, sn)
+    afterValidation[id] = rule
   }
-  validationDialog.open = false
+  const blanks = ids.filter((id) => (inputs[id] ?? '') === '')
+  const before = Object.fromEntries(blanks.map((id) => [id, '']))
+  const after = Object.fromEntries(blanks.map((id) => [id, 'FALSE']))
+  if (blanks.length) _writeInputs(sn, after)
+  const op = {
+    opType: 'edit',
+    subSheet: sn,
+    cellRefs: blanks,
+    before,
+    after,
+    beforeValidation,
+    afterValidation,
+    summary: 'Insert checkboxes',
+  }
+  if (blanks.length) {
+    _queueOp(op)
+    broadcastBatchChange(
+      sn,
+      blanks.map((id) => ({ id, value: 'FALSE' })),
+    )
+  }
+  history.pushOp(op)
   grid?.render()
-  history.push() // rule + any FALSE-fill live in the snapshot; record for undo
+  syncFlags()
   isDirty.value = true
 }
 function removeValidation() {
   const ids = selectionIds()
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   for (const id of ids) validation.clear(id, sn)
   validationDialog.open = false
   grid?.render()
@@ -6605,38 +6493,32 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.id = id
   dropdownPanel.options = rule.options
   dropdownPanel.rule = rule
-  dropdownPanel.value = String(sheet.getCell(id, sheet.getCurrentSheet()) ?? '')
+  dropdownPanel.value = _inputAt(id) ?? ''
   dropdownPanel.x = pos.x ?? 0
   dropdownPanel.y = pos.y ?? 0
   dropdownPanel.w = pos.w ?? 120
   dropdownPanel.open = true
 }
-function pickDropdownOption(opt) {
+async function pickDropdownOption(opt) {
   const id = dropdownPanel.id
-  const sn = sheet.getCurrentSheet()
-  if (_cellBlocked(id, sn)) {
-    dropdownPanel.open = false
-    return
-  }
-  const before = {
-    [id]: sheet.getCell(id, sn),
-  }
-  sheet.setCell(id, opt)
+  const sn = currentSheet.value
   dropdownPanel.open = false
-  _pushEditOp(sn, before, 'Edit cell')
+  if (_cellBlocked(id, sn)) return
+  const before = { [id]: await _readInput(id, sn) }
+  const after = { [id]: String(opt) }
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Edit cell')
   recomputePivotsForSheet(sn)
 }
 
 // Clicking a checkbox cell's tickbox flips TRUE ↔ FALSE (empty → TRUE). Routed
 // through the same edit-op path as a dropdown pick so undo + collab match.
-function toggleCheckbox(id) {
-  const sn = sheet.getCurrentSheet()
-  const before = {
-    [id]: sheet.getCell(id, sn),
-  }
-  const next = String(before[id]).toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE'
-  sheet.setCell(id, next, sn)
-  _pushEditOp(sn, before, 'Toggle checkbox')
+async function toggleCheckbox(id) {
+  const sn = currentSheet.value
+  const before = { [id]: await _readInput(id, sn) }
+  const after = { [id]: before[id].toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE' }
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Toggle checkbox')
   recomputePivotsForSheet(sn)
 }
 
@@ -6772,7 +6654,7 @@ function openCfDialog(existingId) {
   // If we're editing an existing rule, hydrate the dialog state from it so
   // the user sees their previous selections instead of the blank defaults.
   if (existingId !== null) {
-    const existing = condFormat.getRules(sheet.getCurrentSheet()).find((r) => r.id === existingId)
+    const existing = condFormat.getRules(currentSheet.value).find((r) => r.id === existingId)
     if (existing) {
       cfDialog.range = {
         ...existing.range,
@@ -6865,7 +6747,7 @@ function _buildCfRule() {
   }
 }
 function saveCfRule() {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const rule = _buildCfRule()
   history.push()
   if (cfDialog.editId !== null) condFormat.updateRule(cfDialog.editId, rule, sn)
@@ -6878,7 +6760,7 @@ function saveCfRule() {
 }
 function deleteCfRule() {
   history.push()
-  condFormat.removeRule(cfDialog.editId, sheet.getCurrentSheet())
+  condFormat.removeRule(cfDialog.editId, currentSheet.value)
   history.push()
   syncFlags()
   cfDialog.open = false
@@ -6890,7 +6772,7 @@ function deleteCfRule() {
 // in edit mode first. Same history bracketing as deleteCfRule.
 function deleteCfRuleById(id) {
   history.push()
-  condFormat.removeRule(id, sheet.getCurrentSheet())
+  condFormat.removeRule(id, currentSheet.value)
   history.push()
   syncFlags()
   grid?.render()
@@ -6919,7 +6801,7 @@ function cfRuleLabel(rule) {
 const cfRulesForSheet = computed(() => {
   // Touch renderVersion so the list re-evaluates when rules are mutated.
   renderVersion.value
-  return condFormat.getRules(sheet.getCurrentSheet())
+  return condFormat.getRules(currentSheet.value)
 })
 
 // ── Cell edit history ─────────────────────────────────────────────────────────
@@ -6934,7 +6816,7 @@ async function openCellHistory() {
   cellHistory.error = ''
   cellHistory.entries = []
   try {
-    cellHistory.entries = await fetchCellHistory(props.id, id, sheet.getCurrentSheet(), {
+    cellHistory.entries = await fetchCellHistory(props.id, id, currentSheet.value, {
       context: props.requestContext,
     })
   } catch (err) {
@@ -6946,6 +6828,18 @@ async function openCellHistory() {
 
 // ── Find & Replace ────────────────────────────────────────────────────────────
 
+// Cells on the open sheet whose input contains `query`, as [{ id, input }].
+async function _findCells(query) {
+  if (!_engine) return []
+  const { cells } = await _engine.client.findCells({ sheet: currentSheet.value, query })
+  return cells.map(({ row, col, input }) => ({ id: cellId(row - 1, col - 1), input }))
+}
+// Replacements as one write and one undo step.
+function _replaceCells(before, after) {
+  const sn = currentSheet.value
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Replace')
+}
 function closeFindReplace() {
   showFindReplace.value = false
   canvasRef.value?.focus?.()
@@ -6964,9 +6858,32 @@ function onNavigateTo(id) {
 // the adjacent cell down/right that has data — the empty anchor then becomes
 // the header row/col of the resulting block. Returns null only when nothing
 // adjacent has data either.
-function _detectContiguousBlock(r, c) {
-  const hasVal = (rr, cc) =>
-    rr >= 0 && cc >= 0 && String(sheet.getCell(cellId(rr, cc)) ?? '').length > 0
+// The contiguous block of non-empty cells around (r, c), as a rect, or null
+// when the anchor and its right/lower neighbours are empty. Reads a window
+// around the anchor in one go and widens it while the block reaches its edge.
+async function _detectContiguousBlock(r, c) {
+  const sn = currentSheet.value
+  for (let rows = 1000, cols = 26; ; rows *= 8, cols *= 8) {
+    const win = { r0: Math.max(0, r - rows), c0: Math.max(0, c - cols), r1: r + rows, c1: c + cols }
+    const { inputs } = await _readRect(sn, win)
+    const hasVal = (rr, cc) =>
+      rr >= win.r0 &&
+      cc >= win.c0 &&
+      rr <= win.r1 &&
+      cc <= win.c1 &&
+      (inputs[rr - win.r0]?.[cc - win.c0] ?? '') !== ''
+    const block = _blockAround(r, c, hasVal)
+    if (!block) return null
+    const atEdge =
+      (block.r0 === win.r0 && win.r0 > 0) ||
+      block.r1 === win.r1 ||
+      (block.c0 === win.c0 && win.c0 > 0) ||
+      block.c1 === win.c1
+    if (!atEdge || rows >= 1_000_000) return block
+  }
+}
+
+function _blockAround(r, c, hasVal) {
   const anchorEmpty = !hasVal(r, c)
   let ar = r,
     ac = c
@@ -7008,12 +6925,12 @@ function _detectContiguousBlock(r, c) {
 // would produce a header-only range (r1 === r0): chevrons appear, but the
 // value list scans zero data rows and comes up empty. A genuine multi-row
 // block is taken verbatim.
-function _createFilterOnSelection() {
+async function _createFilterOnSelection() {
   if (!grid) return
   const sel = grid.getSelection()
   const noDataRows = sel.r0 === sel.r1
   const range = noDataRows
-    ? _detectContiguousBlock(sel.r0, sel.c0) || {
+    ? (await _detectContiguousBlock(sel.r0, sel.c0)) || {
         r0: sel.r0,
         c0: sel.c0,
         r1: sel.r0,
@@ -7025,7 +6942,7 @@ function _createFilterOnSelection() {
         r1: sel.r1,
         c1: sel.c1,
       }
-  sortFilter.setRange(range, sheet.getCurrentSheet())
+  sortFilter.setRange(range, currentSheet.value)
   filterPanel.open = false
   _applyHiddenRows()
   grid?.render?.()
@@ -7033,7 +6950,7 @@ function _createFilterOnSelection() {
   isDirty.value = true
 }
 function _removeFilter() {
-  sortFilter.clearRange(sheet.getCurrentSheet())
+  sortFilter.clearRange(currentSheet.value)
   filterPanel.open = false
   _applyHiddenRows()
   grid?.render?.()
@@ -7083,7 +7000,7 @@ const activeSlicers = computed(() => {
 function _slicerColumnOptions(range, sn) {
   const opts = []
   for (let c = range.c0; c <= range.c1; c++) {
-    const header = sheet.getDisplayValue(colLabel(c) + (range.r0 + 1), sn)
+    const header = sortFilter.getHeader(c, sn)
     opts.push({
       label: header || colLabel(c),
       value: c,
@@ -7102,16 +7019,16 @@ function slicerColMenu(sl) {
   }))
 }
 function slicerValues(sl) {
-  return sortFilter.getColumnValues(sl.col, sheet.getCurrentSheet())
+  return sortFilter.getColumnValues(sl.col, currentSheet.value)
 }
-function slicerLabel(sl, sn = sheet.getCurrentSheet()) {
+function slicerLabel(sl, sn = currentSheet.value) {
   const range = sortFilter.getRange(sn)
-  const header = range ? sheet.getDisplayValue(colLabel(sl.col) + (range.r0 + 1), sn) : ''
+  const header = range ? sortFilter.getHeader(sl.col, sn) : ''
   return header || colLabel(sl.col)
 }
 // The set of values currently kept visible, or null when the column is unfiltered.
 function _slicerCheckedSet(sl) {
-  const spec = sortFilter.getFilterConfig(sheet.getCurrentSheet())[sl.col]
+  const spec = sortFilter.getFilterConfig(currentSheet.value)[sl.col]
   return spec?.operator === 'inSet' ? new Set(spec.values) : null
 }
 function toggleSlicerValue(sl, v) {
@@ -7123,7 +7040,7 @@ function toggleSlicerValue(sl, v) {
 // "Select all" always shows everything — it clears the column's filter outright
 // rather than toggling, so it can never surprise-hide the data.
 function selectAllSlicer(sl) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   sortFilter.clearFilter(sl.col, sn)
   _repopulateGrid()
   _applyHiddenRows()
@@ -7133,7 +7050,7 @@ function selectAllSlicer(sl) {
 // "Clear" empties the selection (an inSet with no values) so the user can then
 // pick just the values they want — the Google-Sheets filter idiom.
 function clearSlicerValues(sl) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   sortFilter.setFilter(
     sl.col,
     {
@@ -7150,7 +7067,7 @@ function clearSlicerValues(sl) {
 // Re-point a slicer at a different column of the filter range; the old column's
 // filter is released so it stops hiding rows with no visible control.
 function changeSlicerColumn(sl, value) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const newCol = Number(value)
   if (Number.isNaN(newCol) || newCol === sl.col) return
   // Bail before touching anything if another slicer already owns the target —
@@ -7164,7 +7081,7 @@ function changeSlicerColumn(sl, value) {
   isDirty.value = true
 }
 function _applySlicerFilter(sl, set, all) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   // All-checked is identical to no filter — clear the column instead of storing
   // every value (mirrors applyFilter).
   if (set.size === all.length) sortFilter.clearFilter(sl.col, sn)
@@ -7183,16 +7100,16 @@ function _applySlicerFilter(sl, set, all) {
   isDirty.value = true
   slicerVersion.value++
 }
-function insertSlicer() {
+async function insertSlicer() {
   contextMenu.open = false
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const p = parseCellId(activeCell.value)
   const col = p ? p.col : 0
   if (slicers.list(sn).some((s) => s.col === col)) return // column already has a slicer
   // A slicer reads distinct values from the filter range — auto-create one over
   // the surrounding data block if the sheet isn't filtered yet.
   if (!sortFilter.getRange(sn)) {
-    const block = _detectContiguousBlock(p?.row ?? 0, col)
+    const block = await _detectContiguousBlock(p?.row ?? 0, col)
     if (!block) return // no data to slice
     sortFilter.setRange(block, sn)
   }
@@ -7208,7 +7125,7 @@ function insertSlicer() {
   isDirty.value = true
 }
 function removeSlicer(sl) {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   slicers.remove(sl.id, sn)
   // The slicer IS the filter control for its column — clear the filter it
   // applied so removing it doesn't strand hidden rows with no visible control.
@@ -7236,7 +7153,7 @@ function _onSlicerDrag(e) {
     id,
     Math.max(0, ox + e.clientX - sx),
     Math.max(0, oy + e.clientY - sy),
-    sheet.getCurrentSheet(),
+    currentSheet.value,
   )
   slicerVersion.value++
 }
@@ -7249,8 +7166,9 @@ function _endSlicerDrag() {
   window.removeEventListener('mousemove', _onSlicerDrag)
   window.removeEventListener('mouseup', _endSlicerDrag)
 }
-function openFilterPanel(colIdx) {
-  const sn = sheet.getCurrentSheet()
+async function openFilterPanel(colIdx) {
+  const sn = currentSheet.value
+  await sortFilter.refresh(sn)
   const cfg = sortFilter.getFilterConfig(sn)
   const existing = cfg[colIdx]
   const allValues = sortFilter.getColumnValues(colIdx, sn)
@@ -7293,19 +7211,19 @@ function clampFilterLeft(left, wrapWidth) {
 // Alt+↓ on a canvas cell opens the filter panel for that cell's column. Forces
 // the filter row visible first (so chevrons exist) and anchors the popover at
 // the column's row-0 cell rather than at a click target.
-function openQuickFilterForActive() {
+async function openQuickFilterForActive() {
   const id = activeCell.value
   const p = parseCellId(id)
   if (!p) return
-  if (!sortFilter.hasFilter(sheet.getCurrentSheet())) _createFilterOnSelection()
+  if (!sortFilter.hasFilter(currentSheet.value)) await _createFilterOnSelection()
   nextTick(() => {
-    const range = sortFilter.getRange(sheet.getCurrentSheet())
+    const range = sortFilter.getRange(currentSheet.value)
     if (!range || p.col < range.c0 || p.col > range.c1) return
     const rects = grid?.getColumnHeaderRects?.() || []
     const colRect = rects.find((r) => r.c === p.col)
     const rowRect = grid?.getRowRect?.(range.r0)
     if (!colRect || !rowRect) return
-    const cfg = sortFilter.getFilterConfig(sheet.getCurrentSheet())
+    const cfg = sortFilter.getFilterConfig(currentSheet.value)
     filterPanel.open = true
     filterPanel.col = p.col
     filterPanel.operator = cfg[p.col]?.operator || 'contains'
@@ -7315,7 +7233,7 @@ function openQuickFilterForActive() {
   })
 }
 function applyFilter() {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   if (filterPanel.mode === 'values') {
     // No-op safety: an all-checked selection is identical to no filter at
     // all, so clear the column entry instead of saving every value.
@@ -7348,26 +7266,23 @@ function applyFilter() {
   isDirty.value = true
 }
 function clearFilterCol() {
-  sortFilter.clearFilter(filterPanel.col, sheet.getCurrentSheet())
+  sortFilter.clearFilter(filterPanel.col, currentSheet.value)
   filterPanel.open = false
   _repopulateGrid()
   _applyHiddenRows()
   history.push()
   isDirty.value = true
 }
-function doSort(colIdx, dir) {
-  const sn = sheet.getCurrentSheet()
+async function doSort(colIdx, dir) {
+  const sn = currentSheet.value
   // Sorting permutes values across the filter range — refuse if it overlaps
   // protection, matching Google Sheets (a protected range blocks the sort).
   const range = sortFilter.getRange(sn)
   if (range && _rectBlocked(range, sn)) return
-  sortFilter.sort(colIdx, dir, sn)
   filterPanel.open = false
-  _repopulateGrid()
+  const sorted = await sortFilter.sort(colIdx, dir, sn)
+  if (sorted) _pushEditOp(sn, sorted.before, sorted.after, 'Sort')
   _applyHiddenRows()
-  history.push() // post-mutate snapshot
-  syncFlags()
-  isDirty.value = true // sort mutates cell values
 }
 // ── Context menu ──────────────────────────────────────────────────────────────
 
@@ -7411,6 +7326,7 @@ function confirmRename() {
   // Keep named-range bindings pointed at the renamed sheet — without this,
   // `=Revenue` defined on "Sheet1" breaks after renaming Sheet1.
   namedRanges.renameSheet(oldName, newName)
+  _syncDefinedNames()
   showRenameDialog.value = false
   history.push()
   isDirty.value = true
@@ -7454,31 +7370,111 @@ function _onDocMouseDown(e) {
   }
 }
 
-// Row twin of _applyColStructural — same reference-correct path for row ops.
-// Slicers are column-bound only, so they take no row remap.
-function _applyRowStructural(mapRow) {
-  const sn = sheet.getCurrentSheet()
-  sheet.remapRows(mapRow, sn)
-  formats.remapRows(mapRow, sn)
-  merge.remapRows(mapRow, sn)
-  comments.remapRows(mapRow, sn)
-  validation.remapRows(mapRow, sn)
-  protection.remapRows(mapRow, sn)
-  condFormat.remapRows(mapRow, sn)
-  sortFilter.remapRows(mapRow, sn)
-  namedRanges.remapRows(mapRow, sn)
-  charts.remapRows(mapRow, sn)
-  pivot.remapRows(mapRow, sn)
-  grid.remapRowsMeta(mapRow)
+// ── Row / column insert, delete, move ──────────────────────────────────────
+// IronCalc moves the cells and rewrites formulas pointing at them. Every
+// side engine remaps its own state with the same index map, as does the
+// grid's view metadata (sizes, hidden rows/cols). Insert and move undo with
+// their inverse command; a delete has none (its cells are gone and formulas
+// pointing at them now read #REF!), so its undo restores IronCalc's bytes
+// from just before it.
+//
+// `op.applied` says whether IronCalc holds the change now. Restoring a
+// snapshot step sets it from the op's place in history (the bytes hold the
+// ops before the step, not after), so a replay sends the command only when
+// IronCalc lacks it.
+async function _applyStructural(axis, map, forward, inverse = null) {
+  const sn = currentSheet.value
+  const sideBefore = _sideSnapshot()
+  // Taken in dispatch order, so it is the workbook just before this command.
+  const beforeBytes = inverse ? null : (_engine?.client.snapshot() ?? null)
+  const op = {
+    opType: 'structural',
+    subSheet: sn,
+    forward: { type: forward.type, payload: { sheet: sn, ...forward.payload } },
+    inverse: inverse && { type: inverse.type, payload: { sheet: sn, ...inverse.payload } },
+    beforeBytes,
+    sideBefore,
+    sideAfter: null,
+    applied: true,
+  }
+  _engine?.client.dispatch(_command(op.forward.type, op.forward.payload))
+  _remapSide(axis, map, sn)
+  op.sideAfter = _sideSnapshot()
+  history.pushOp(op)
+  syncFlags()
+  isDirty.value = true
+  _afterStructural(sn)
+}
+
+function _remapSide(axis, map, sn) {
+  const engines = [
+    formats,
+    merge,
+    comments,
+    validation,
+    protection,
+    condFormat,
+    sortFilter,
+    namedRanges,
+    charts,
+    pivot,
+  ]
+  if (axis === 'row') {
+    for (const e of engines) e.remapRows(map, sn)
+    _syncDefinedNames()
+    grid.remapRowsMeta(map)
+  } else {
+    // Slicers are column-bound only.
+    for (const e of [...engines, slicers]) e.remapCols(map, sn)
+    _syncDefinedNames()
+    grid.remapColsMeta(map)
+  }
+}
+
+function _afterStructural(sn) {
   _repopulateGrid()
   _applyHiddenRows()
-  markEdited()
+  grid?.render?.()
   recomputePivotsForSheet(sn)
 }
+
+function _revertStructural(op) {
+  if (op.applied) {
+    if (op.inverse) _engine?.client.dispatch(_command(op.inverse.type, op.inverse.payload))
+    else
+      _engine?.client
+        .restore(op.beforeBytes)
+        .catch((e) => console.error('[sheets] undo of delete failed', e))
+    op.applied = false
+  }
+  _restoreSide(op.sideBefore)
+  _afterStructural(op.subSheet)
+}
+
+function _redoStructural(op) {
+  if (!op.applied) {
+    _engine?.client.dispatch(_command(op.forward.type, op.forward.payload))
+    op.applied = true
+  }
+  _restoreSide(op.sideAfter)
+  _afterStructural(op.subSheet)
+}
+
+function _structural(axis, map, forward, inverse) {
+  _applyStructural(axis, map, forward, inverse).catch((e) =>
+    console.error('[sheets] row/column change failed', e),
+  )
+}
+
 function doInsertRow(below = false, count = 1) {
   contextMenu.open = false
   const atRow = contextMenu.targetRow + (below ? 1 : 0)
-  _applyRowStructural(insertMap(atRow, count))
+  _structural(
+    'row',
+    insertMap(atRow, count),
+    { type: 'insertRows', payload: { row: atRow + 1, count } },
+    { type: 'deleteRows', payload: { row: atRow + 1, count } },
+  )
 }
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
@@ -7636,25 +7632,34 @@ function _maybeAutoLink(cells, sn) {
 }
 function openHyperlinkDialog() {
   const id = activeCell.value
-  const cur = sheet.getCell(id)
-  const fmt = formats.get(id, sheet.getCurrentSheet())
-  hyperlinkText.value = String(cur ?? '')
+  const fmt = formats.get(id, currentSheet.value)
+  hyperlinkText.value = _inputAt(id) ?? ''
   hyperlinkUrl.value = fmt.hyperlink || ''
   showHyperlinkDialog.value = true
 }
-function confirmHyperlink() {
+async function confirmHyperlink() {
   const url = (hyperlinkUrl.value || '').trim()
   if (!url) {
     showHyperlinkDialog.value = false
     return
   }
   const id = activeCell.value
-  const sh = sheet.getCurrentSheet()
+  const sh = currentSheet.value
   if (_cellBlocked(id, sh)) {
     showHyperlinkDialog.value = false
     return
   }
-  if (hyperlinkText.value !== sheet.getCell(id)) sheet.setCell(id, hyperlinkText.value)
+  showHyperlinkDialog.value = false
+  // The text and the link are one undo step.
+  const text = hyperlinkText.value
+  const before = { [id]: await _readInput(id, sh) }
+  const after = { [id]: text }
+  const fmtOf = () => {
+    const f = formats.getCellFormat(id, sh)
+    return f ? { ...f } : null
+  }
+  const beforeFormats = { [id]: fmtOf() }
+  if (text !== before[id]) _writeInputs(sh, after)
   formats.applyToRange(
     [id],
     {
@@ -7662,7 +7667,18 @@ function confirmHyperlink() {
     },
     sh,
   )
-  history.push() // post-mutate
+  const op = {
+    opType: 'edit',
+    subSheet: sh,
+    cellRefs: [id],
+    before,
+    after,
+    beforeFormats,
+    afterFormats: { [id]: fmtOf() },
+    summary: 'Insert link',
+  }
+  _queueOp(op)
+  history.pushOp(op)
   refreshActiveFormat()
   grid?.render()
   syncFlags()
@@ -7671,7 +7687,7 @@ function confirmHyperlink() {
 }
 function removeHyperlink() {
   const id = activeCell.value
-  const sh = sheet.getCurrentSheet()
+  const sh = currentSheet.value
   formats.applyToRange(
     [id],
     {
@@ -7772,7 +7788,7 @@ function _openLinkCard(info) {
     linkCard.offerReplace =
       !readOnly.value &&
       !!res.title &&
-      isAutoLinkText(sheet.getCell(linkCard.id), linkCard.url) &&
+      isAutoLinkText(_inputAt(linkCard.id) ?? '', linkCard.url) &&
       !_cellSilentlyProtected(linkCard.id)
   })
 }
@@ -7785,7 +7801,7 @@ function editLinkCardCell() {
   openHyperlinkDialog()
 }
 function unlinkLinkCardCell() {
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const id = linkCard.id
   linkCard.open = false
   if (!id || readOnly.value || _cellBlocked(id, sn)) return
@@ -7803,17 +7819,16 @@ function unlinkLinkCardCell() {
   syncFlags()
   isDirty.value = true
 }
-function replaceLinkWithTitle() {
-  const sn = sheet.getCurrentSheet()
+async function replaceLinkWithTitle() {
+  const sn = currentSheet.value
   const id = linkCard.id
   const title = linkCard.preview?.title
   linkCard.open = false
   if (!id || !title || readOnly.value || _cellBlocked(id, sn)) return
-  const before = {
-    [id]: sheet.getCell(id, sn),
-  }
-  sheet.setCell(id, title, sn)
-  _pushEditOp(sn, before, 'Replace URL with title')
+  const before = { [id]: await _readInput(id, sn) }
+  const after = { [id]: title }
+  _writeInputs(sn, after)
+  _pushEditOp(sn, before, after, 'Replace URL with title')
   if (activeCell.value === id) formulaValue.value = title
 }
 function openInsertMany(kind, below = false) {
@@ -7840,38 +7855,21 @@ function doDeleteRow() {
   const within = rowSpan && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
   const start = within ? sel.r0 : contextMenu.targetRow
   const count = within ? sel.r1 - sel.r0 + 1 : 1
-  _applyRowStructural(deleteMap(start, count))
+  _structural('row', deleteMap(start, count), {
+    type: 'deleteRows',
+    payload: { row: start + 1, count },
+  })
 }
 
-// Fan one column index-map across every engine and the grid's view metadata,
-// then refresh. This is the single structural-column path behind insert, delete
-// AND move — every one is reference-correct because sheet.remapCols rewrites
-// formulas workbook-wide. The workbook-level engines (merge/charts/pivot/named)
-// filter internally to the op sheet, so passing `sn` is safe.
-function _applyColStructural(mapCol) {
-  const sn = sheet.getCurrentSheet()
-  sheet.remapCols(mapCol, sn)
-  formats.remapCols(mapCol, sn)
-  merge.remapCols(mapCol, sn)
-  comments.remapCols(mapCol, sn)
-  validation.remapCols(mapCol, sn)
-  protection.remapCols(mapCol, sn)
-  condFormat.remapCols(mapCol, sn)
-  sortFilter.remapCols(mapCol, sn)
-  slicers.remapCols(mapCol, sn)
-  namedRanges.remapCols(mapCol, sn)
-  charts.remapCols(mapCol, sn)
-  pivot.remapCols(mapCol, sn)
-  grid.remapColsMeta(mapCol)
-  _repopulateGrid()
-  _applyHiddenRows()
-  markEdited()
-  recomputePivotsForSheet(sn)
-}
 function doInsertCol(right = false, count = 1) {
   contextMenu.open = false
   const atCol = contextMenu.targetCol + (right ? 1 : 0)
-  _applyColStructural(insertMap(atCol, count))
+  _structural(
+    'col',
+    insertMap(atCol, count),
+    { type: 'insertColumns', payload: { col: atCol + 1, count } },
+    { type: 'deleteColumns', payload: { col: atCol + 1, count } },
+  )
 }
 function doDeleteCol() {
   contextMenu.open = false
@@ -7884,7 +7882,10 @@ function doDeleteCol() {
   const within = colSpan && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
   const start = within ? sel.c0 : contextMenu.targetCol
   const count = within ? sel.c1 - sel.c0 + 1 : 1
-  _applyColStructural(deleteMap(start, count))
+  _structural('col', deleteMap(start, count), {
+    type: 'deleteColumns',
+    payload: { col: start + 1, count },
+  })
 }
 
 // Move a column block so its new start sits before column `toCol` (an index in
@@ -7892,10 +7893,16 @@ function doDeleteCol() {
 function doMoveCol(fromCol, toCol, count = 1) {
   contextMenu.open = false
   if (toCol >= fromCol && toCol <= fromCol + count) return
-  _applyColStructural(moveMap(fromCol, toCol, count))
+  const dest = toCol <= fromCol ? toCol : toCol - count
+  const delta = dest - fromCol
+  _structural(
+    'col',
+    moveMap(fromCol, toCol, count),
+    { type: 'moveColumns', payload: { col: fromCol + 1, count, delta } },
+    { type: 'moveColumns', payload: { col: dest + 1, count, delta: -delta } },
+  )
   // Keep the moved column(s) selected at their new home (Google behaviour), so
   // the header highlight and the status-bar summary track the data that moved.
-  const dest = toCol <= fromCol ? toCol : toCol - count
   grid.setSelection({
     r0: 0,
     c0: dest,
@@ -7934,7 +7941,7 @@ function doAutoFitRow() {
 function applyBorder(preset) {
   if (!grid) return
   const { r0, c0, r1, c1 } = grid.getSelection()
-  const sheetName = sheet.getCurrentSheet()
+  const sheetName = currentSheet.value
   const b = {
     style: borderStyle.value,
     color: borderColor.value,
@@ -7991,7 +7998,7 @@ function applyBorder(preset) {
 
 function toggleMerge() {
   if (!grid) return
-  const sn = sheet.getCurrentSheet()
+  const sn = currentSheet.value
   const { r0, c0, r1, c1 } = grid.getSelection()
   // Resolve the anchor cell to its master — clicking inside the merged
   // region (slave or master) should target the existing merge so the
@@ -8075,8 +8082,18 @@ function doUnfreezeCols() {
 // pushing to the canvas via _applyHiddenRows().
 const manualHiddenRows = reactive(new Set())
 const manualHiddenCols = reactive(new Set())
+// Re-reads the filter range's values, then repaints the hidden rows.
 function _applyHiddenRows() {
-  const filterHidden = sortFilter.computeHiddenRows(sheet.getCurrentSheet())
+  const sn = currentSheet.value
+  sortFilter
+    .refresh(sn)
+    .then(() => {
+      if (currentSheet.value === sn) _paintHiddenRows()
+    })
+    .catch((e) => console.error('[sheets] filter refresh failed', e))
+}
+function _paintHiddenRows() {
+  const filterHidden = sortFilter.computeHiddenRows(currentSheet.value)
   const union = new Set([...filterHidden, ...manualHiddenRows])
   grid?.setHiddenRows(union)
   // Tag the filter subset so grid-painter can render those gaps with the
@@ -8156,7 +8173,7 @@ function markEdited() {
 // ./useEditOps.js so the contract is unit-testable in isolation;
 // see that file for the rationale on op-based vs snapshot history.
 const { pushEditOp: _pushEditOp } = useEditOps({
-  sheet,
+  currentSheet,
   history,
   queueOp: _queueOp,
   broadcastBatchChange: (sn, cells) => broadcastBatchChange(sn, cells),
@@ -8166,134 +8183,229 @@ const { pushEditOp: _pushEditOp } = useEditOps({
 
 // ── Repopulate ────────────────────────────────────────────────────────────────
 
-// Lazy render path is the default (Phase 3 cutover): the grid pulls each
-// visible cell's display string on demand, so switch/load cost no longer scales
-// with cell count. The eager `data`-cache path is kept intact as a fallback —
-// disable lazy per-browser with `?lazy=0` or localStorage['sheets:lazy']='0' if
-// a rendering regression turns up on a real sheet.
-function _lazyValuesEnabled() {
-  try {
-    if (new URLSearchParams(window.location.search).get('lazy') === '0') return false
-    if (window.localStorage?.getItem('sheets:lazy') === '0') return false
-  } catch {
-    /* no window/storage — fall through to default */
-  }
-  return true
-}
-
 // Display string for a single cell — the formatted value the canvas paints.
 // Single source of truth shared by the eager repopulate (below), the per-cell
 // onCellChanged repaint, and the lazy render path (grid `getDisplay`), so all
 // three render identical pixels. showFormulas mode paints raw formula text.
 function _cellDisplay(id) {
-  if (showFormulas.value) return String(sheet.getCell(id) ?? '')
-  const sn = sheet.getCurrentSheet()
+  // The fresh input, or the last one painted while it is re-read (asking
+  // for it is what queues the read), so the mode doesn't flash blank.
+  if (showFormulas.value) return _inputAt(id) ?? _paintedInput(id) ?? ''
+  // A sparkline paints a chart, not IronCalc's #NAME?.
+  if (parseSparkline(_paintedInput(id))) return ''
+  const sn = currentSheet.value
   const fmt = formats.get(id, sn)
   const dv = _displayValue(id, sn)
   return fmt.numberFormat ? applyNumberFmt(dv, fmt.numberFormat) : dv
 }
 
-// A cell's computed display string, from whichever engine is active: IronCalc
-// in the preview, else the old engine. Readers that run during a paint use
-// this, so values and conditional formats come from the same engine.
-function _displayValue(id, sn = sheet.getCurrentSheet()) {
-  return _ironcalc ? _ironcalcDisplay(id, sn) : sheet.getDisplayValue(id, sn)
-}
+// ── IronCalc ─────────────────────────────────────────────────────────────────
+// IronCalc (core/: worker, client, display cache) holds every cell. The grid
+// reads display values and inputs through the cell provider; every write is a
+// command sent with client.dispatch. Features that still read the old engine
+// (sheet.*) move over one at a time.
 
-// ── IronCalc preview (?engine=ironcalc) ──────────────────────────────────────
-// Runs the new core (core/: worker, client, display cache) beside the old
-// engine. The grid's lazy getDisplay reads values from IronCalc; the old
-// engine still owns saving, undo and every feature layer. Cell writes are
-// mirrored by wrapping the old engine's setCell / batchSetCells, so every
-// write path (in-cell editor, formula bar, paste, fill, checkboxes) reaches
-// IronCalc. Structural edits (insert/delete/move rows and columns, sheet
-// add/rename/delete) are not mirrored and diverge until editing moves to
-// commands. Needs the lazy render path (the default).
-
-let _ironcalc = null // { client, provider } once started
-
-function _ironcalcEnabled() {
-  try {
-    return new URLSearchParams(window.location.search).get('engine') === 'ironcalc'
-  } catch {
-    return false
-  }
-}
-
-async function _startIronCalc() {
-  // Dynamic imports: without the flag, none of the core is downloaded.
-  const [{ createWorkbookClient }, { createDisplayCache }, { createCellProvider }, { importV1 }] =
-    await Promise.all([
-      import('../../core/client'),
-      import('../../core/display-cache'),
-      import('../../core/cell-provider'),
-      import('../../core/import-v1'),
-    ])
+async function _startEngine(snapshotBytes = null) {
+  _stopEngine()
   const cache = createDisplayCache()
-  const client = await createWorkbookClient({ echo: cache })
+  const client = await createWorkbookClient({ echo: cache, snapshotBytes })
   client.onCommandError((f) => console.error('[sheets] IronCalc rejected', f.command.type, f.error))
-
-  const t0 = performance.now()
-  const names = sheet.getSheetNames()
-  const { command, skipped } = importV1(
-    names.map((name) => ({ name, cells: sheet.getRawData(name) })),
-  )
-  client.dispatch(command)
-  await client.idle()
-  console.info(
-    `[sheets] IronCalc loaded ${command.payload.commands.length} commands in ${Math.round(performance.now() - t0)} ms`,
-  )
-  if (Object.keys(skipped).length) console.warn('[sheets] IronCalc skipped cells', skipped)
-
   const provider = createCellProvider({ client, cache, requestRender: () => grid?.render?.() })
-  _ironcalc = { client, provider }
-  _mirrorOldEngineWrites()
+  // Tabs follow the workbook: its sheets on load, and any later change.
+  const offSheets = client.onSheets(() => syncNames())
+  // Edits change the values a filter's lists show.
+  const offVersion = client.onVersion(() => {
+    // Range rules (colour scales, data bars) cache min/max, and charts
+    // cache their source matrix: both are stale after any edit.
+    condFormat?.invalidate()
+    chartDataVersion.value++
+    _refreshUsedCells()
+    computeSelectionStats() // the selected cells' values may have changed
+    _refreshFormulaBar() // an import, pivot or undo may have changed the active cell
+    const sn = currentSheet.value
+    if (!sortFilter.hasFilter(sn)) return
+    sortFilter
+      .refresh(sn)
+      .then(() => slicerVersion.value++)
+      .catch(() => {}) // the next filter action reads again
+  })
+  _engine = { client, provider, offSheets, offVersion }
+  // The saved bytes may predate names being sent to IronCalc: send them all.
+  _namesInEngine = new Map()
+  _syncDefinedNames()
+  syncNames()
+  _refreshUsedCells() // size the grid to the loaded data
   grid?.render?.()
 }
 
-// The old engine's two write entry points. Internal calls inside sheet.js
-// bypass these wrappers, but every caller in this component goes through
-// the object.
-function _mirrorOldEngineWrites() {
-  const setCell = sheet.setCell
-  sheet.setCell = (id, value, sn = sheet.getCurrentSheet()) => {
-    setCell(id, value, sn)
-    _ironcalcMirrorInput(id, value, sn)
-  }
-  const batchSetCells = sheet.batchSetCells
-  sheet.batchSetCells = (map, sn = sheet.getCurrentSheet(), opts) => {
-    const diff = batchSetCells(map, sn, opts)
-    // `after` holds every cell the batch changed, '' for cleared ones.
-    for (const [id, value] of Object.entries(diff?.after ?? {})) _ironcalcMirrorInput(id, value, sn)
-    return diff
-  }
+function _stopEngine() {
+  _engine?.offSheets()
+  _engine?.offVersion()
+  _engine?.provider.dispose()
+  _engine?.client.terminate()
+  _engine = null
 }
 
-let _ironcalcSeq = 0
+function _engineBytes() {
+  if (!_engine) return Promise.reject(new Error('IronCalc is not running'))
+  return _engine.client.toBytes()
+}
 
-function _ironcalcMirrorInput(id, value, sn) {
-  if (!_ironcalc) return
+let _commandSeq = 0
+
+function _command(type, payload) {
+  return { id: `ui-${Date.now()}-${_commandSeq++}`, actor: 'local', ts: Date.now(), type, payload }
+}
+
+// One cell's write: setInput, or clearContents when the value is empty.
+function _inputCommand(sn, id, value) {
   const p = parseCellId(id)
-  if (!p) return
-  const row = p.row + 1,
-    col = p.col + 1
+  if (!p) return null
+  const row = p.row + 1
+  const col = p.col + 1
   const input = value == null ? '' : String(value)
-  _ironcalc.client.dispatch({
-    id: `ui-${Date.now()}-${_ironcalcSeq++}`,
-    actor: 'local',
-    ts: Date.now(),
-    ...(input === ''
-      ? {
-          type: 'clearContents',
-          payload: { sheet: sn, range: { r1: row, c1: col, r2: row, c2: col } },
-        }
-      : { type: 'setInput', payload: { sheet: sn, row, col, input } }),
-  })
+  return input === ''
+    ? _command('clearContents', { sheet: sn, range: { r1: row, c1: col, r2: row, c2: col } })
+    : _command('setInput', { sheet: sn, row, col, input })
 }
 
-function _ironcalcDisplay(id, sn) {
+// Writes a {cellId: value} map as one command, so a multi-cell edit or an
+// undo recalculates once.
+function _writeInputs(sn, map) {
+  if (!_engine) return
+  const commands = Object.entries(map)
+    .map(([id, value]) => _inputCommand(sn, id, value))
+    .filter(Boolean)
+  if (commands.length === 1) _engine.client.dispatch(commands[0])
+  else if (commands.length > 1) _engine.client.dispatch(_command('batch', { commands }))
+}
+
+// The cell's input (a formula, not its result) when its area is on screen,
+// else undefined. Writes use it as the value they replace.
+function _inputAt(id, sn = currentSheet.value) {
   const p = parseCellId(id)
-  return p ? _ironcalc.provider.getDisplay(sn, p.row + 1, p.col + 1) : ''
+  return p && _engine ? _engine.provider.getInput(sn, p.row + 1, p.col + 1) : undefined
+}
+
+// The input a cell is painted with, kept through a refresh: lets the grid
+// keep drawing a sparkline while its value is re-read. Not for edits.
+function _paintedInput(id, sn = currentSheet.value) {
+  const p = parseCellId(id)
+  return p && _engine ? _engine.provider.peekInput(sn, p.row + 1, p.col + 1) : undefined
+}
+
+// Shows a cell's input in the formula bar. A cell off screen (a jump to a far
+// cell) takes one round trip to the worker.
+function _showInputInFormulaBar(id, sn = currentSheet.value) {
+  const known = _inputAt(id, sn)
+  if (known !== undefined) {
+    formulaValue.value = known
+    return
+  }
+  formulaValue.value = ''
+  const p = parseCellId(id)
+  if (!p || !_engine) return
+  _engine.client
+    .readCells({ sheet: sn, cells: [{ row: p.row + 1, col: p.col + 1 }], what: ['input'] })
+    .then(({ cells }) => {
+      // Still the active cell, and nobody has started typing into it.
+      if (activeCell.value === id && currentSheet.value === sn && !_typedCell) {
+        formulaValue.value = cells[0]?.input ?? ''
+      }
+    })
+    .catch((e) => {
+      // Stopping the engine (leaving the page) rejects reads still in flight.
+      if (_engine) console.error('[sheets] readCells failed', e)
+    })
+}
+
+// Re-reads the active cell's input after an edit that may have written it
+// (an import, a pivot, an undo). The bar changes only when the read lands, so
+// it never blanks in between, and never while someone is typing.
+function _refreshFormulaBar() {
+  const id = activeCell.value
+  const sn = currentSheet.value
+  const p = parseCellId(id)
+  if (!p || !_engine || _typedCell) return
+  _engine.client
+    .readCells({ sheet: sn, cells: [{ row: p.row + 1, col: p.col + 1 }], what: ['input'] })
+    .then(({ cells }) => {
+      if (activeCell.value === id && currentSheet.value === sn && !_typedCell) {
+        formulaValue.value = cells[0]?.input ?? ''
+      }
+    })
+    .catch(() => {}) // the next selection change shows it
+}
+
+// A rect's inputs and display strings (0-based rect), read from the worker in
+// chunks of rows that fit one readViewport.
+async function _readRect(sn, rect) {
+  const inputs = []
+  const displays = []
+  if (!_engine) return { inputs, displays }
+  const cols = rect.c1 - rect.c0 + 1
+  const step = Math.max(1, Math.floor(MAX_VIEWPORT_CELLS / cols))
+  for (let r = rect.r0; r <= rect.r1; r += step) {
+    const res = await _engine.client.readViewport({
+      sheet: sn,
+      r1: r + 1,
+      c1: rect.c0 + 1,
+      r2: Math.min(r + step - 1, rect.r1) + 1,
+      c2: rect.c1 + 1,
+      includeInputs: true,
+    })
+    inputs.push(...(res.inputs ?? []))
+    displays.push(...res.values)
+  }
+  // A sparkline shows a chart, not IronCalc's #NAME?, to every reader
+  // (charts, copied text, filter lists), as it does in the grid.
+  inputs.forEach((row, i) =>
+    row.forEach((input, j) => {
+      if (parseSparkline(input)) displays[i][j] = ''
+    }),
+  )
+  return { inputs, displays }
+}
+
+// {cellId: input} for a rect: an edit op's before or after.
+async function _readInputs(rect, sn = currentSheet.value) {
+  const out = {}
+  if (!rect) return out
+  const { inputs } = await _readRect(sn, rect)
+  for (let r = rect.r0; r <= rect.r1; r++)
+    for (let c = rect.c0; c <= rect.c1; c++)
+      out[cellId(r, c)] = inputs[r - rect.r0]?.[c - rect.c0] ?? ''
+  return out
+}
+
+// Inputs of scattered cells, {cellId: input}, in one round trip.
+async function _readIds(ids, sn = currentSheet.value) {
+  const out = {}
+  const cells = []
+  for (const id of ids) {
+    const p = parseCellId(id)
+    if (p) cells.push({ row: p.row + 1, col: p.col + 1 })
+  }
+  if (!_engine || !cells.length) return out
+  const res = await _engine.client.readCells({ sheet: sn, cells, what: ['input'] })
+  for (const c of res.cells) out[cellId(c.row - 1, c.col - 1)] = c.input ?? ''
+  return out
+}
+
+// One cell's input: from the cache when on screen, else from the worker.
+async function _readInput(id, sn = currentSheet.value) {
+  const known = _inputAt(id, sn)
+  if (known !== undefined) return known
+  const p = parseCellId(id)
+  if (!p) return ''
+  return (await _readInputs({ r0: p.row, c0: p.col, r1: p.row, c1: p.col }, sn))[id] ?? ''
+}
+
+// A cell's computed display string. Readers that run during a paint use this,
+// so values and conditional formats come from the same place.
+function _displayValue(id, sn = currentSheet.value) {
+  const p = parseCellId(id)
+  return p && _engine ? _engine.provider.getDisplay(sn, p.row + 1, p.col + 1) : ''
 }
 
 // Grow the grid's scrollable area to cover a sheet's used extent so the user
@@ -8307,109 +8419,144 @@ function _expandGridTo(maxCol, maxRow) {
     grid.expandRows(neededRows - grid.getTotalRows())
 }
 
-// Sheet extent via a cheap char-code id-parse over the raw cell ids — no
-// formula eval or format work. The lazy path's fallback when the engine has
-// no load-time bounds hint (post-edit / never-visited sheet).
-function _scanBounds(sheetSn) {
-  const data = sheet.getRawData(sheetSn)
-  let maxCol = 0,
-    maxRow = 0
-  for (const id in data) {
-    let col = 0,
-      row = 0,
-      i = 0
-    const len = id.length
-    while (i < len) {
-      const c = id.charCodeAt(i)
-      if (c < 65 || c > 90) break
-      col = col * 26 + (c - 64)
-      i++
-    }
-    while (i < len) {
-      const c = id.charCodeAt(i)
-      if (c < 48 || c > 57) {
-        row = 0
-        break
-      }
-      row = row * 10 + (c - 48)
-      i++
-    }
-    if (col > 0 && row > 0) {
-      if (col - 1 > maxCol) maxCol = col - 1
-      if (row - 1 > maxRow) maxRow = row - 1
-    }
-  }
-  return {
-    maxCol,
-    maxRow,
-  }
-}
-function _repopulateGrid() {
-  if (!grid) return
-  const sheetSn = sheet.getCurrentSheet()
-
-  // Lazy path: the grid pulls each visible cell's display string on demand, so
-  // we materialise nothing here — switch/load no longer scale with cell count.
-  // Still size the grid to the sheet extent (cheap id-parse, or the engine's
-  // free load-time hint) and repaint.
-  if (grid.isLazyValues?.()) {
-    const b = sheet.consumeBounds?.(sheetSn) || _scanBounds(sheetSn)
-    _expandGridTo(b.maxCol, b.maxRow)
-    grid.render?.()
+// The open sheet's non-empty cells, from the worker: the grid's scroll extent,
+// Ctrl+A's extent and column autofit read them. Refreshed after every edit
+// and on switch; one read at a time, re-run when more changed meanwhile.
+let _usedIds = []
+let _usedMax = null // { maxRow, maxCol } (0-based), null when the sheet is empty
+let _usedReading = false
+let _usedStale = false
+function _refreshUsedCells() {
+  if (!_engine) return
+  if (_usedReading) {
+    _usedStale = true
     return
   }
-  grid.clearAll()
-  const data = sheet.getRawData()
-  const show = showFormulas.value
-  // Bounds: on load the engine hands us the sheet extent (derived cheaply from
-  // the packed payload), so we skip re-parsing every cell id here entirely —
-  // that scan was ~0.5s on a 2M-cell sheet. When bounds are unknown (post-edit
-  // repopulates) we fall back to the inline char-code parse below.
-  const bounds = sheet.consumeBounds?.(sheetSn)
-  let maxCol = bounds ? bounds.maxCol : 0
-  let maxRow = bounds ? bounds.maxRow : 0
-  // for-in avoids allocating a 2M-entry Object.keys array (alloc + GC was a
-  // measurable chunk of the cold-load task).
-  for (const id in data) {
-    if (!bounds) {
-      // Inline cellId parse — letters → col index, then digits → row number.
-      // No regex, no result object.
-      let col = 0,
-        row = 0,
-        i = 0
-      const len = id.length
-      while (i < len) {
-        const c = id.charCodeAt(i)
-        if (c < 65 || c > 90) break
-        col = col * 26 + (c - 64)
-        i++
+  _usedReading = true
+  const sn = currentSheet.value
+  _engine.client
+    .usedCells({ sheet: sn })
+    .then(({ cells }) => {
+      if (currentSheet.value !== sn) return // a switch queued its own read
+      const ids = []
+      let maxRow = -1,
+        maxCol = -1
+      for (let i = 0; i < cells.length; i += 2) {
+        const r = cells[i] - 1,
+          c = cells[i + 1] - 1
+        ids.push(cellId(r, c))
+        if (r > maxRow) maxRow = r
+        if (c > maxCol) maxCol = c
       }
-      while (i < len) {
-        const c = id.charCodeAt(i)
-        if (c < 48 || c > 57) {
-          row = 0
-          break
-        }
-        row = row * 10 + (c - 48)
-        i++
+      _usedIds = ids
+      _usedMax = ids.length ? { maxRow, maxCol } : null
+      if (grid && _usedMax) _expandGridTo(_usedMax.maxCol, _usedMax.maxRow)
+    })
+    .catch((e) => {
+      if (_engine) console.error('[sheets] reading used cells failed', e) // see readCells
+    })
+    .finally(() => {
+      _usedReading = false
+      if (_usedStale) {
+        _usedStale = false
+        _refreshUsedCells()
       }
-      if (col > 0 && row > 0) {
-        if (col - 1 > maxCol) maxCol = col - 1
-        if (row - 1 > maxRow) maxRow = row - 1
-      }
-    }
-    if (show) {
-      grid.setCell(id, String(data[id] ?? ''))
-      continue
-    }
-    const fmt = formats.get(id, sheetSn)
-    const displayValue = sheet.getDisplayValue(id)
-    grid.setCell(
-      id,
-      fmt.numberFormat ? applyNumberFmt(displayValue, fmt.numberFormat) : displayValue,
-    )
+    })
+}
+
+// Any sheet's data extent (0-based), read from the worker; null when empty.
+async function _sheetExtent(sn) {
+  if (!_engine) return null
+  const { cells } = await _engine.client.usedCells({ sheet: sn })
+  let maxRow = -1,
+    maxCol = -1
+  for (let i = 0; i < cells.length; i += 2) {
+    if (cells[i] - 1 > maxRow) maxRow = cells[i] - 1
+    if (cells[i + 1] - 1 > maxCol) maxCol = cells[i + 1] - 1
   }
-  _expandGridTo(maxCol, maxRow)
+  return maxRow < 0 ? null : { maxRow, maxCol }
+}
+
+// A whole sheet's inputs and displays, A1 to its last used cell.
+async function _readWholeSheet(sn) {
+  const ext = await _sheetExtent(sn)
+  if (!ext) return { inputs: [], displays: [] }
+  return _readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol })
+}
+
+// A user-typed source range's shown values, cut to the sheet's data: a range
+// like A1:Z1048576 reads only the rows that hold something.
+async function _readSourceRange(sn, rect) {
+  const ext = await _sheetExtent(sn)
+  const r1 = Math.min(rect.r1, ext?.maxRow ?? rect.r0)
+  const c1 = Math.min(rect.c1, ext?.maxCol ?? rect.c0)
+  return _readDisplays(sn, { ...rect, r1: Math.max(r1, rect.r0), c1: Math.max(c1, rect.c0) })
+}
+
+// Empties a rect's cells (0-based; contents only, formats stay).
+function _clearRect(sn, rect) {
+  _engine?.client.dispatch(
+    _command('clearContents', {
+      sheet: sn,
+      range: { r1: rect.r0 + 1, c1: rect.c0 + 1, r2: rect.r1 + 1, c2: rect.c1 + 1 },
+    }),
+  )
+}
+
+// Empties a sheet's cells (contents only; formats stay).
+async function _clearSheet(sn) {
+  const ext = await _sheetExtent(sn)
+  if (!ext || !_engine) return
+  _engine.client.dispatch(
+    _command('clearContents', {
+      sheet: sn,
+      range: { r1: 1, c1: 1, r2: ext.maxRow + 1, c2: ext.maxCol + 1 },
+    }),
+  )
+}
+
+// The open sheet's data extent, or null when it is empty.
+function _usedExtent() {
+  return _usedMax
+}
+
+// A rect's shown values (charts read these).
+async function _readDisplays(sn, rect) {
+  return (await _readRect(sn, rect)).displays
+}
+
+// Repaints the grid and re-reads where the data is. The grid pulls each
+// visible cell's display on demand (lazy values), so nothing is copied in.
+function _repopulateGrid() {
+  if (!grid) return
+  grid.render?.()
+  _refreshUsedCells()
+}
+
+// =SPARKLINE(...) cells: IronCalc has no such function (the cell computes to
+// #NAME?), so the editor reads the range itself and hands the painter the
+// spec. One read per cell per data version; the grid repaints when it lands.
+const _sparks = new Map() // 'sheet\0id' → { key, spec, reading }
+function _sparklineAt(id) {
+  const sn = currentSheet.value
+  const input = _paintedInput(id, sn)
+  const ref = parseSparkline(input)
+  if (!ref || !_engine) return null
+  const key = `${input}\0${_engine.client.getVersion()}`
+  const hit = _sparks.get(`${sn}\0${id}`)
+  if (hit && (hit.key === key || hit.reading)) return hit.spec
+  const entry = { key, spec: hit?.spec ?? null, reading: true }
+  _sparks.set(`${sn}\0${id}`, entry)
+  _readRect(ref.sheet ?? sn, ref)
+    .then(({ displays }) => {
+      entry.spec = sparkSpec(displays.flat(), ref.type, ref.color)
+      grid?.render?.()
+    })
+    .catch((e) => console.error('[sheets] sparkline read failed', e))
+    .finally(() => {
+      entry.reading = false
+    })
+  return entry.spec
 }
 function toggleShowFormulas() {
   showFormulas.value = !showFormulas.value

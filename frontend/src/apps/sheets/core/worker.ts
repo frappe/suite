@@ -12,7 +12,8 @@
 
 import init, { type ExtendedCellStyle } from '@ironcalc/wasm'
 
-import { MAX_VIEWPORT_CELLS } from './limits.js'
+import type { ViewportResult } from './client.js'
+import { MAX_FIND_RESULTS, MAX_VIEWPORT_CELLS } from './limits.js'
 import { createWorkbook, WorkbookError, type Workbook } from './workbook.js'
 
 export type ReadWhat = 'display' | 'input' | 'style'
@@ -114,6 +115,16 @@ export function createWorkerHost(): WorkerHost {
     return { version: wb.getVersion(), sheets: wb.getSheets() }
   }
 
+  // Replaces the workbook with `bytes` (undo of a row/column delete). The
+  // version keeps counting up, so the client sees a change.
+  function onRestore(p: unknown) {
+    const bytes = field(p, 'bytes')
+    if (!isBytes(bytes)) throw new ProtocolError('"bytes" must be a Uint8Array')
+    const startVersion = workbook().getVersion() + 1
+    wb = createWorkbook({ loadBytes: bytes, startVersion })
+    return { version: wb.getVersion(), sheets: wb.getSheets() }
+  }
+
   // Each command succeeds or fails on its own; one bad command does not
   // stop the rest of the batch. A failed command leaves the workbook as
   // it was (workbook.apply restores multi-call commands on error).
@@ -132,7 +143,8 @@ export function createWorkerHost(): WorkerHost {
       }
       return result
     })
-    return { version: w.getVersion(), results }
+    // The sheet list rides along, so tabs follow adds, renames and moves.
+    return { version: w.getVersion(), results, sheets: w.getSheets() }
   }
 
   // One message per screen instead of one per cell: IronCalc has no batch
@@ -149,20 +161,28 @@ export function createWorkerHost(): WorkerHost {
       throw new ProtocolError(`range exceeds ${MAX_VIEWPORT_CELLS} cells`)
     }
     const includeStyles = field(p, 'includeStyles') === true
+    const includeInputs = field(p, 'includeInputs') === true
 
     const values: string[][] = []
     const styles: ExtendedCellStyle[][] = []
+    const inputs: string[][] = []
     for (let r = r1; r <= r2; r++) {
       const valueRow: string[] = []
       const styleRow: ExtendedCellStyle[] = []
+      const inputRow: string[] = []
       for (let c = c1; c <= c2; c++) {
         valueRow.push(w.getDisplayValue(sheet, r, c))
         if (includeStyles) styleRow.push(w.getStyle(sheet, r, c))
+        if (includeInputs) inputRow.push(w.getInput(sheet, r, c))
       }
       values.push(valueRow)
       if (includeStyles) styles.push(styleRow)
+      if (includeInputs) inputs.push(inputRow)
     }
-    return includeStyles ? { values, styles } : { values }
+    const result: ViewportResult = { values }
+    if (includeStyles) result.styles = styles
+    if (includeInputs) result.inputs = inputs
+    return result
   }
 
   // Scattered reads for cold paths (editor open, Cmd+Arrow, autofit).
@@ -190,6 +210,25 @@ export function createWorkerHost(): WorkerHost {
     }
   }
 
+  // Every cell of a sheet whose input contains the query (Find & Replace).
+  function onFindCells(p: unknown) {
+    return { cells: workbook().findInputs(str(p, 'sheet'), str(p, 'query'), MAX_FIND_RESULTS) }
+  }
+
+  function onUsedCells(p: unknown) {
+    return { cells: workbook().usedCells(str(p, 'sheet')) }
+  }
+
+  function onRangeStats(p: unknown) {
+    return workbook().rangeStats(
+      str(p, 'sheet'),
+      int(p, 'r1'),
+      int(p, 'c1'),
+      int(p, 'r2'),
+      int(p, 'c2'),
+    )
+  }
+
   function onToBytes() {
     return { bytes: workbook().toBytes() }
   }
@@ -212,6 +251,14 @@ export function createWorkerHost(): WorkerHost {
           return { reqId: id, result: onReadViewport(payload) }
         case 'readCells':
           return { reqId: id, result: onReadCells(payload) }
+        case 'restore':
+          return { reqId: id, result: onRestore(payload) }
+        case 'usedCells':
+          return { reqId: id, result: onUsedCells(payload) }
+        case 'rangeStats':
+          return { reqId: id, result: onRangeStats(payload) }
+        case 'findCells':
+          return { reqId: id, result: onFindCells(payload) }
         case 'toBytes':
           return { reqId: id, result: onToBytes() }
         default:

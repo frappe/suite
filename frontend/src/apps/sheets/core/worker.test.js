@@ -66,6 +66,7 @@ describe('worker host — apply', () => {
         { id: a.id, ok: true },
         { id: b.id, ok: true },
       ],
+      sheets: ['Sheet1'],
     })
   })
 
@@ -115,6 +116,23 @@ describe('worker host — reads', () => {
         ['30', '15', ''],
       ],
     })
+  })
+
+  it('readViewport includes inputs only when asked', () => {
+    const { inputs } = ok('readViewport', {
+      sheet: 'Sheet1',
+      r1: 1,
+      c1: 1,
+      r2: 2,
+      c2: 3,
+      includeInputs: true,
+    })
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).toHaveLength(3)
+    expect(inputs[0][2]).toBe('')
+    expect(
+      ok('readViewport', { sheet: 'Sheet1', r1: 1, c1: 1, r2: 1, c2: 1 }).inputs,
+    ).toBeUndefined()
   })
 
   it('readViewport includes styles only when asked', () => {
@@ -177,5 +195,68 @@ describe('worker host — protocol errors', () => {
   it('answers a request without reqId with reqId -1', () => {
     expect(host.handle({ type: 'init', payload: {} }).reqId).toBe(-1)
     expect(host.handle(null).reqId).toBe(-1)
+  })
+})
+
+describe('worker host — findCells', () => {
+  it('returns cells whose input contains the query, row by row', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', {
+      commands: [
+        setInput('Sheet1', 3, 1, 'apple pie'),
+        setInput('Sheet1', 1, 2, 'Apple'),
+        setInput('Sheet1', 2, 1, 'banana'),
+        setInput('Sheet1', 900000, 5, 'crab apple'),
+        setInput('Sheet1', 4, 1, '=UPPER("apple")'),
+      ],
+    })
+    expect(ok('findCells', { sheet: 'Sheet1', query: 'APPLE' }).cells).toEqual([
+      { row: 1, col: 2, input: 'Apple' },
+      { row: 3, col: 1, input: 'apple pie' },
+      { row: 4, col: 1, input: '=UPPER("apple")' },
+      { row: 900000, col: 5, input: 'crab apple' },
+    ])
+  })
+
+  it('finds nothing for an empty query', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', { commands: [setInput('Sheet1', 1, 1, 'x')] })
+    expect(ok('findCells', { sheet: 'Sheet1', query: '' }).cells).toEqual([])
+  })
+})
+
+describe('worker host — rangeStats', () => {
+  it('counts non-empty cells and sums the numbers, formula results included', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', {
+      commands: [
+        setInput('Sheet1', 1, 1, '5'),
+        setInput('Sheet1', 2, 1, 'hi'),
+        setInput('Sheet1', 3, 1, '=2*3'),
+        setInput('Sheet1', 4, 1, '50%'),
+        setInput('Sheet1', 5, 2, '100'), // outside the columns asked for
+      ],
+    })
+    expect(ok('rangeStats', { sheet: 'Sheet1', r1: 1, c1: 1, r2: 1048576, c2: 1 })).toEqual({
+      count: 4,
+      numCount: 3,
+      sum: 11.5,
+    })
+  })
+})
+
+describe('worker host — usedCells', () => {
+  it('lists non-empty cells row by row, skipping cleared ones', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', {
+      commands: [
+        setInput('Sheet1', 3, 2, 'x'),
+        setInput('Sheet1', 1, 4, '=1+1'),
+        setInput('Sheet1', 1, 1, 'a'),
+        setInput('Sheet1', 2, 2, 'gone'),
+        cmd(CommandTypes.clearContents, { sheet: 'Sheet1', range: { r1: 2, c1: 2, r2: 2, c2: 2 } }),
+      ],
+    })
+    expect(ok('usedCells', { sheet: 'Sheet1' }).cells).toEqual([1, 1, 1, 4, 3, 2])
   })
 })

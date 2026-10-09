@@ -3,6 +3,8 @@
 // date / named-sequence / copy fallback) and extended by the matching
 // detector's next() function.
 
+import { cellId } from '../utils/cells.js'
+import { adjustFormula } from './formula-adjust.js'
 import { detectSeries } from './patterns/index.js'
 import { _asNumbers, _detectStep as numericStep } from './patterns/numeric.js'
 
@@ -103,4 +105,79 @@ function _fillHorizontalFromRows(srcData, count, dir, mode = 'auto') {
       return rowVals[i]
     })
   })
+}
+
+// ── Fill plan ─────────────────────────────────────────────────────────────
+
+// The cells a fill-handle drag from `src` to `total` writes, as a
+// {cellId: input} map. `inputAt(r, c)` reads the cell's current input
+// (0-based). Formulas shift their references by how far they moved.
+//
+// A diagonal drag fills vertically first, then spreads the grown columns
+// sideways, so the off-axis block is filled too.
+export function planFill(src, total, inputAt, mode = 'auto') {
+  const writes = {}
+  const at = (r, c) => {
+    const id = cellId(r, c)
+    return id in writes ? writes[id] : inputAt(r, c)
+  }
+  const readGrid = (s) => {
+    const data = []
+    for (let r = s.r0; r <= s.r1; r++) {
+      const row = []
+      for (let c = s.c0; c <= s.c1; c++) row.push(at(r, c))
+      data.push(row)
+    }
+    return data
+  }
+  const put = (r, c, val) => {
+    writes[cellId(r, c)] = val == null ? '' : String(val)
+  }
+  const goDown = total.r1 > src.r1,
+    goUp = total.r0 < src.r0
+  const goRight = total.c1 > src.c1,
+    goLeft = total.c0 < src.c0
+
+  let workSrc = src
+  const srcCols = src.c1 - src.c0 + 1
+  if (goDown || goUp) {
+    const srcRows = src.r1 - src.r0 + 1
+    const count = goDown ? total.r1 - src.r1 : src.r0 - total.r0
+    const dir = goDown ? 1 : -1
+    const filled = computeFillDown(readGrid(src), count, dir, { mode })
+    const startR = goDown ? src.r1 + 1 : total.r0
+    filled.forEach((row, rOff) =>
+      row.forEach((val, cOff) => {
+        if (typeof val === 'string' && val.startsWith('=')) {
+          const srcRowOff =
+            dir > 0 ? rOff % srcRows : (((srcRows - 1 - rOff) % srcRows) + srcRows) % srcRows
+          val = adjustFormula(val, startR + rOff - (src.r0 + srcRowOff), 0)
+        }
+        put(startR + rOff, src.c0 + cOff, val)
+      }),
+    )
+    workSrc = {
+      r0: Math.min(src.r0, total.r0),
+      r1: Math.max(src.r1, total.r1),
+      c0: src.c0,
+      c1: src.c1,
+    }
+  }
+  if (goRight || goLeft) {
+    const count = goRight ? total.c1 - workSrc.c1 : workSrc.c0 - total.c0
+    const dir = goRight ? 1 : -1
+    const filled = computeFillRight(readGrid(workSrc), count, dir, { mode })
+    const startC = goRight ? workSrc.c1 + 1 : total.c0
+    filled.forEach((row, rOff) =>
+      row.forEach((val, cOff) => {
+        if (typeof val === 'string' && val.startsWith('=')) {
+          const srcColOff =
+            dir > 0 ? cOff % srcCols : (((srcCols - 1 - cOff) % srcCols) + srcCols) % srcCols
+          val = adjustFormula(val, 0, startC + cOff - (workSrc.c0 + srcColOff))
+        }
+        put(workSrc.r0 + rOff, startC + cOff, val)
+      }),
+    )
+  }
+  return writes
 }

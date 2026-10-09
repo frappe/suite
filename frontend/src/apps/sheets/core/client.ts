@@ -19,6 +19,7 @@
 import type { ExtendedCellStyle } from '@ironcalc/wasm'
 
 import { CommandTypes, validateCommand, type Command } from './commands.js'
+import type { FoundCell, RangeStats } from './workbook.js'
 import type { ApplyResult, CellRead, ReadWhat, WorkerResponse } from './worker.js'
 
 /** The part of a Worker the client uses. Tests pass a fake. */
@@ -31,11 +32,11 @@ export interface WorkerPort {
 /**
  * Where optimistic echoes go. DisplayCache implements this. Every
  * setProvisional is matched by exactly one settleProvisional, sent when
- * the command's apply returns (success or failure).
+ * the command's apply returns, saying whether it applied.
  */
 export interface EchoTarget {
   setProvisional(sheet: string, row: number, col: number, display: string): void
-  settleProvisional(sheet: string, row: number, col: number): void
+  settleProvisional(sheet: string, row: number, col: number, applied: boolean): void
 }
 
 export interface ClientOptions {
@@ -62,11 +63,14 @@ export interface ViewportArgs {
   r2: number
   c2: number
   includeStyles?: boolean
+  /** Also return each cell's input (the formula, not its result). */
+  includeInputs?: boolean
 }
 
 export interface ViewportResult {
   values: string[][]
   styles?: ExtendedCellStyle[][]
+  inputs?: string[][]
 }
 
 export interface ReadCellsArgs {
@@ -91,7 +95,10 @@ export class WorkerRequestError extends Error {
 }
 
 export interface WorkbookClient {
+  /** Sheet names in tab order, as of the last apply. */
   readonly sheets: string[]
+  /** Called when an apply changes the sheet list. Returns an unsubscribe. */
+  onSheets(cb: (sheets: string[]) => void): () => void
   /** Throws on an invalid command; it never reaches the worker. */
   dispatch(cmd: unknown): void
   onVersion(cb: (version: number) => void): () => void
@@ -99,8 +106,35 @@ export interface WorkbookClient {
   getVersion(): number
   readViewport(args: ViewportArgs): Promise<ViewportResult>
   readCells(args: ReadCellsArgs): Promise<{ cells: CellRead[] }>
+  /** Cells whose input contains `query`, row by row (1-based). */
+  findCells(args: { sheet: string; query: string }): Promise<{ cells: FoundCell[] }>
+  /** Every non-empty cell as flat [row, col, …] (1-based), row by row. */
+  usedCells(args: { sheet: string }): Promise<{ cells: number[] }>
+  /** Count / numeric count / sum over a range (1-based, inclusive). */
+  rangeStats(args: {
+    sheet: string
+    r1: number
+    c1: number
+    r2: number
+    c2: number
+  }): Promise<RangeStats>
   /** Sends queued commands first, so the bytes include them. */
   toBytes(): Promise<Uint8Array>
+  /**
+   * The workbook's bytes at this point of the dispatch order: commands
+   * dispatched before it are in them, ones dispatched after are not. With
+   * nothing dispatched or restored since the last call, returns that same
+   * promise, so taking one per undo step costs nothing when only side
+   * state changed.
+   */
+  snapshot(): Promise<Uint8Array>
+  /**
+   * Replaces the workbook with `bytes`, in order with dispatch: commands
+   * dispatched before it apply first, ones dispatched after wait for it.
+   * Takes a snapshot() promise as it is; it is settled by the time the
+   * restore reaches the worker.
+   */
+  restore(bytes: Uint8Array | Promise<Uint8Array>): Promise<void>
   /** Resolves once no command is queued or in flight. */
   idle(): Promise<void>
   terminate(): void
@@ -117,6 +151,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   // --- request / response correlation -----------------------------------
 
   let nextReqId = 1
+  let terminated = false
   const waiting = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>()
 
   port.onmessage = (event: MessageEvent) => {
@@ -130,6 +165,8 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   }
 
   function request<T>(type: string, payload: unknown = {}): Promise<T> {
+    // A read that waited for pending edits can reach here after terminate().
+    if (terminated) return Promise.reject(new WorkerRequestError('worker terminated'))
     const reqId = nextReqId++
     return new Promise<T>((resolve, reject) => {
       waiting.set(reqId, { resolve: resolve as (v: unknown) => void, reject })
@@ -148,6 +185,14 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   let version = init.version
   const versionListeners = new Set<(version: number) => void>()
   const errorListeners = new Set<(failure: CommandFailure) => void>()
+  let sheets = init.sheets
+  const sheetListeners = new Set<(sheets: string[]) => void>()
+
+  function setSheets(next: string[] | undefined): void {
+    if (!next || next.join('\u0000') === sheets.join('\u0000')) return
+    sheets = next
+    for (const cb of sheetListeners) cb(next)
+  }
 
   function setVersion(v: number): void {
     if (v === version) return
@@ -155,13 +200,15 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     for (const cb of versionListeners) cb(v)
   }
 
-  function settle(batch: Command[]): void {
+  // `results` are the apply's per-command results; none when the whole
+  // request failed.
+  function settle(batch: Command[], results: ApplyResult[] | null): void {
     if (!echo) return
-    for (const command of batch) {
-      if (command.type !== CommandTypes.setInput) continue
+    batch.forEach((command, i) => {
+      if (command.type !== CommandTypes.setInput) return
       const p = command.payload
-      echo.settleProvisional(p.sheet, p.row, p.col)
-    }
+      echo.settleProvisional(p.sheet, p.row, p.col, !!results?.[i]?.ok)
+    })
   }
 
   function reportFailure(command: Command, error: string): void {
@@ -170,7 +217,27 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
 
   // --- dispatch queue ----------------------------------------------------
 
-  let queue: Command[] = []
+  // A restore or a snapshot waits in the queue like a command, so it keeps
+  // its place.
+  interface RestoreJob {
+    restore: Uint8Array | Promise<Uint8Array>
+    done(error?: Error): void
+  }
+  interface SnapshotJob {
+    snapshot: true
+    resolve(bytes: Uint8Array): void
+    reject(error: Error): void
+  }
+  type Job = Command | RestoreJob | SnapshotJob
+  const isRestore = (job: Job): job is RestoreJob => 'restore' in job
+  const isSnapshot = (job: Job): job is SnapshotJob => 'snapshot' in job
+  const isControl = (job: Job) => isRestore(job) || isSnapshot(job)
+
+  const queue: Job[] = []
+  // Dispatches and restores so far: a snapshot taken at the same count is
+  // still the workbook's state.
+  let mutations = 0
+  let lastSnapshot: { at: number; bytes: Promise<Uint8Array> } | null = null
   let inFlight = false
   let flushScheduled = false
   let idleWaiters: (() => void)[] = []
@@ -182,6 +249,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       echo.setProvisional(p.sheet, p.row, p.col, p.input)
     }
     queue.push(cmd)
+    mutations++
     scheduleFlush()
   }
 
@@ -205,23 +273,60 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       return
     }
     inFlight = true
-    const batch = queue
-    queue = []
+    const head = queue[0]
+    if (head && isSnapshot(head)) {
+      queue.shift()
+      try {
+        head.resolve((await request<{ bytes: Uint8Array }>('toBytes')).bytes)
+      } catch (e) {
+        head.reject(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        inFlight = false
+      }
+      await flush()
+      return
+    }
+    if (head && isRestore(head)) {
+      queue.shift()
+      try {
+        const res = await request<{ version: number; sheets: string[] }>('restore', {
+          bytes: await head.restore,
+        })
+        setSheets(res.sheets)
+        setVersion(res.version)
+        head.done()
+      } catch (e) {
+        head.done(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        inFlight = false
+      }
+      await flush()
+      return
+    }
+    // Commands up to the next restore or snapshot go out together.
+    const stop = queue.findIndex(isControl)
+    const batch = queue.splice(0, stop === -1 ? queue.length : stop) as Command[]
     try {
-      const res = await request<{ version: number; results: ApplyResult[] }>('apply', {
+      const res = await request<{
+        version: number
+        results: ApplyResult[]
+        sheets?: string[]
+      }>('apply', {
         commands: batch,
       })
       // Settle before the version listeners run, so their clear()
-      // drops these echoes and the refill shows evaluated values.
-      settle(batch)
+      // treats these echoes like any other cell and the refill shows
+      // evaluated values.
+      settle(batch, res.results)
       res.results.forEach((r, i) => {
         const command = batch[i]
         if (!r.ok && command) reportFailure(command, r.error ?? 'unknown error')
       })
+      setSheets(res.sheets)
       setVersion(res.version)
     } catch (e) {
       // The whole request failed, so none of the batch applied.
-      settle(batch)
+      settle(batch, null)
       const message = e instanceof Error ? e.message : String(e)
       for (const command of batch) reportFailure(command, message)
     } finally {
@@ -238,7 +343,13 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   // --- public API --------------------------------------------------------
 
   return {
-    sheets: init.sheets,
+    get sheets() {
+      return sheets
+    },
+    onSheets(cb) {
+      sheetListeners.add(cb)
+      return () => sheetListeners.delete(cb)
+    },
     dispatch,
     onVersion(cb) {
       versionListeners.add(cb)
@@ -249,14 +360,55 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       return () => errorListeners.delete(cb)
     },
     getVersion: () => version,
-    readViewport: (args) => request<ViewportResult>('readViewport', args),
-    readCells: (args) => request<{ cells: CellRead[] }>('readCells', args),
+    // Reads wait for the edits already dispatched, so they see them: a sheet
+    // just added exists, a cell just typed holds its new input.
+    async readViewport(args) {
+      await idle()
+      return request<ViewportResult>('readViewport', args)
+    },
+    async readCells(args) {
+      await idle()
+      return request<{ cells: CellRead[] }>('readCells', args)
+    },
+    async usedCells(args) {
+      await idle()
+      return request<{ cells: number[] }>('usedCells', args)
+    },
+    async rangeStats(args) {
+      await idle()
+      return request<RangeStats>('rangeStats', args)
+    },
+    async findCells(args) {
+      await idle()
+      return request<{ cells: FoundCell[] }>('findCells', args)
+    },
+    snapshot() {
+      if (lastSnapshot?.at === mutations) return lastSnapshot.bytes
+      const bytes = new Promise<Uint8Array>((resolve, reject) => {
+        queue.push({ snapshot: true, resolve, reject })
+        scheduleFlush()
+      })
+      const taken = { at: mutations, bytes }
+      lastSnapshot = taken
+      bytes.catch(() => {
+        if (lastSnapshot === taken) lastSnapshot = null // the next call tries again
+      })
+      return bytes
+    },
+    restore(bytes) {
+      mutations++
+      return new Promise<void>((resolve, reject) => {
+        queue.push({ restore: bytes, done: (e) => (e ? reject(e) : resolve()) })
+        scheduleFlush()
+      })
+    },
     async toBytes() {
       await idle()
       return (await request<{ bytes: Uint8Array }>('toBytes')).bytes
     },
     idle,
     terminate() {
+      terminated = true
       port.terminate?.()
       for (const entry of waiting.values())
         entry.reject(new WorkerRequestError('worker terminated'))

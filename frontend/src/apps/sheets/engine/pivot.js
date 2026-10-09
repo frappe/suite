@@ -44,6 +44,42 @@ function _keyParts(key) {
   return key.split('\x00')
 }
 
+// ── Source reading ───────────────────────────────────────────────────────────
+
+// "A1:C10" (or one cell) → 0-based { r0, c0, r1, c1 }, or null.
+export function parseRangeRect(range) {
+  const text = String(range || '')
+  const [start, end] = text.includes(':') ? text.split(':') : [text, text]
+  const s = parseCellId(start.trim()),
+    e = parseCellId(end.trim())
+  if (!s || !e) return null
+  return {
+    r0: Math.min(s.row, e.row),
+    c0: Math.min(s.col, e.col),
+    r1: Math.max(s.row, e.row),
+    c1: Math.max(s.col, e.col),
+  }
+}
+
+// A getRangeValues over values already read from the workbook: `data` holds
+// `rect`'s rows; cells outside it read as ''. Lets the pure pivot code stay
+// synchronous while the read itself is async.
+export function rangeReader(rect, data) {
+  return (startId, endId) => {
+    const s = parseCellId(startId),
+      e = parseCellId(endId)
+    if (!s || !e) return []
+    const rows = []
+    for (let r = Math.min(s.row, e.row); r <= Math.max(s.row, e.row); r++) {
+      const row = []
+      for (let c = Math.min(s.col, e.col); c <= Math.max(s.col, e.col); c++)
+        row.push(data[r - rect.r0]?.[c - rect.c0] ?? '')
+      rows.push(row)
+    }
+    return rows
+  }
+}
+
 // ── Pivot computation (pure) ─────────────────────────────────────────────────
 
 export function computePivot(config, getRangeValues) {

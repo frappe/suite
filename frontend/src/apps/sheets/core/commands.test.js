@@ -59,6 +59,8 @@ describe('validateCommand — payloads', () => {
       [CommandTypes.deleteSheet, { sheet: 'S' }],
       [CommandTypes.renameSheet, { sheet: 'S', name: 'T' }],
       [CommandTypes.duplicateSheet, { sheet: 'S' }],
+      [CommandTypes.duplicateSheet, { sheet: 'S', name: 'S copy' }],
+      [CommandTypes.moveSheet, { sheet: 'S', index: 0 }],
       [CommandTypes.setDefinedName, { name: 'TAX', formula: 'Sheet1!$A$1' }],
       [CommandTypes.setDefinedName, { name: 'TAX', scope: 'S', formula: 'Sheet1!$A$1' }],
       [CommandTypes.deleteDefinedName, { name: 'TAX', scope: null }],
@@ -98,6 +100,13 @@ describe('validateCommand — payloads', () => {
         cmd(CommandTypes.setRangeStyle, { sheet: 'S', range, style: { 'font.b': { b: 1 } } }),
       ),
     ).toThrow(/string, number, or boolean/)
+  })
+
+  it('rejects a moveSheet without a position', () => {
+    expect(() => validateCommand(cmd(CommandTypes.moveSheet, { sheet: 'S' }))).toThrow(/"index"/)
+    expect(() => validateCommand(cmd(CommandTypes.moveSheet, { sheet: 'S', index: -1 }))).toThrow(
+      /"index"/,
+    )
   })
 
   it('rejects a zero delta for move commands', () => {

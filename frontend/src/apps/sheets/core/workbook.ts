@@ -11,6 +11,7 @@
 import { Model, type ExtendedCellStyle } from '@ironcalc/wasm'
 
 import { CommandTypes, validateCommand, type Command, type CommandType } from './commands.js'
+import { MAX_ROWS } from './limits.js'
 
 const LANGUAGE = 'en'
 
@@ -52,6 +53,7 @@ const MULTI_CALL: ReadonlySet<CommandType> = new Set<CommandType>([
   CommandTypes.setFrozen,
   CommandTypes.setRangeStyle,
   CommandTypes.addSheet,
+  CommandTypes.duplicateSheet,
   CommandTypes.setDefinedName,
 ])
 
@@ -60,10 +62,36 @@ export interface CreateWorkbookOptions {
   name?: string
   locale?: string
   timezone?: string
+  /** The version to count on from, so a restore keeps versions increasing. */
+  startVersion?: number
 }
 
 export interface VersionResult {
   version: number
+}
+
+export interface FoundCell {
+  row: number
+  col: number
+  input: string
+}
+
+export interface RangeStats {
+  /** Non-empty cells. */
+  count: number
+  /** Cells holding a number (a formula result included). */
+  numCount: number
+  sum: number
+}
+
+// IronCalc's cell type for a number (getCellType).
+const NUMBER_CELL = 1
+
+// A number cell's value from its shown text: IronCalc exposes no raw value,
+// so drop grouping and currency marks and read a trailing % as /100.
+export function numberFromShown(shown: string): number {
+  const t = shown.replace(/[,\s$€£¥₹]/g, '')
+  return t.endsWith('%') ? parseFloat(t) / 100 : parseFloat(t)
 }
 
 export interface Workbook {
@@ -80,6 +108,15 @@ export interface Workbook {
   getFrozen(sheet: string): { rows: number; cols: number }
   getColumnWidth(sheet: string, col: number): number
   getRowHeight(sheet: string, row: number): number
+  /**
+   * Cells whose input contains `query` (case-insensitive), in reading
+   * order (row by row), at most `limit` of them.
+   */
+  findInputs(sheet: string, query: string, limit: number): FoundCell[]
+  /** Every non-empty cell as flat [row, col, row, col, …] (1-based), row by row. */
+  usedCells(sheet: string): number[]
+  /** Count / numeric count / sum over a range (1-based, inclusive). */
+  rangeStats(sheet: string, r1: number, c1: number, r2: number, c2: number): RangeStats
   toBytes(): Uint8Array
   getVersion(): number
 }
@@ -89,6 +126,7 @@ export function createWorkbook({
   name = 'Workbook',
   locale = 'en',
   timezone = 'UTC',
+  startVersion = 0,
 }: CreateWorkbookOptions = {}): Workbook {
   let model: Model
   try {
@@ -99,7 +137,7 @@ export function createWorkbook({
     throw asWorkbookError(e, null)
   }
 
-  let version = 0
+  let version = startVersion
 
   function sheetIndex(sheetName: string): number {
     const i = model.getWorksheetsProperties().findIndex((p) => p.name === sheetName)
@@ -260,8 +298,19 @@ export function createWorkbook({
       case CommandTypes.renameSheet:
         model.renameSheet(sheetIndex(cmd.payload.sheet), cmd.payload.name)
         return
-      case CommandTypes.duplicateSheet:
-        model.duplicateSheet(sheetIndex(cmd.payload.sheet))
+      // IronCalc names the copy itself; find it and rename it when asked.
+      case CommandTypes.duplicateSheet: {
+        const p = cmd.payload
+        const before = new Set(model.getWorksheetsProperties().map((s) => s.name))
+        model.duplicateSheet(sheetIndex(p.sheet))
+        if (p.name) {
+          const i = model.getWorksheetsProperties().findIndex((s) => !before.has(s.name))
+          model.renameSheet(i, p.name)
+        }
+        return
+      }
+      case CommandTypes.moveSheet:
+        model.moveSheet(sheetIndex(cmd.payload.sheet), cmd.payload.index)
         return
       // Upsert: IronCalc splits create/update, the command does not.
       case CommandTypes.setDefinedName: {
@@ -324,6 +373,56 @@ export function createWorkbook({
       }),
     getColumnWidth: (sheet, col) => read(() => model.getColumnWidth(sheetIndex(sheet), col)),
     getRowHeight: (sheet, row) => read(() => model.getRowHeight(sheetIndex(sheet), row)),
+    // IronCalc has no "all cells" call; asking each row for its used
+    // columns is cheap (about 130 ms for every row of a sheet).
+    findInputs: (sheet, query, limit) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const q = query.toLowerCase()
+        const found: FoundCell[] = []
+        if (!q) return found
+        for (let row = 1; row <= MAX_ROWS && found.length < limit; row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            const input = model.getCellContent(idx, row, col)
+            if (input.toLowerCase().includes(q)) found.push({ row, col, input })
+            if (found.length >= limit) break
+          }
+        }
+        return found
+      }),
+    usedCells: (sheet) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const out: number[] = []
+        for (let row = 1; row <= MAX_ROWS; row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            // A styled but empty cell is listed too.
+            if (model.getCellContent(idx, row, col) !== '') out.push(row, col)
+          }
+        }
+        return out
+      }),
+    // The status bar's Count / Sum / Avg. Same row scan as findInputs, so a
+    // whole-column selection costs the used rows, not a million reads.
+    rangeStats: (sheet, r1, c1, r2, c2) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const stats: RangeStats = { count: 0, numCount: 0, sum: 0 }
+        for (let row = Math.max(1, r1); row <= Math.min(r2, MAX_ROWS); row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            // A styled but empty cell is listed too.
+            if (col < c1 || col > c2 || model.getCellContent(idx, row, col) === '') continue
+            stats.count++
+            if (model.getCellType(idx, row, col) !== NUMBER_CELL) continue
+            const n = numberFromShown(model.getFormattedCellValue(idx, row, col))
+            if (Number.isFinite(n)) {
+              stats.numCount++
+              stats.sum += n
+            }
+          }
+        }
+        return stats
+      }),
     toBytes: () => read(() => model.toBytes()),
     getVersion: () => version,
   }

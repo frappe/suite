@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isSparkSpec, sparkGeometry, sparkSpec, sparkType } from './sparkline.js'
+import { isSparkSpec, parseSparkline, sparkGeometry, sparkSpec, sparkType } from './sparkline.js'
 
 describe('sparkType', () => {
   it('accepts known types, defaults to line', () => {
@@ -79,5 +79,45 @@ describe('sparkGeometry — nothing to draw', () => {
   })
   it('returns null when the box is too small', () => {
     expect(sparkGeometry(sparkSpec([1, 2]), 4, 4)).toBe(null)
+  })
+})
+
+describe('parseSparkline', () => {
+  it('reads the range and options', () => {
+    expect(parseSparkline('=SPARKLINE(A1:A10)')).toEqual({
+      sheet: null,
+      r0: 0,
+      c0: 0,
+      r1: 9,
+      c1: 0,
+      type: null,
+      color: null,
+    })
+    expect(parseSparkline('=sparkline(Data!$B$2:B9, "column", "#e11d48")')).toMatchObject({
+      sheet: 'Data',
+      r0: 1,
+      c0: 1,
+      r1: 8,
+      c1: 1,
+      type: 'column',
+      color: '#e11d48',
+    })
+  })
+
+  it('handles a quoted sheet name and a single cell', () => {
+    expect(parseSparkline("=SPARKLINE('My data'!C3)")).toMatchObject({
+      sheet: 'My data',
+      r0: 2,
+      c0: 2,
+      r1: 2,
+      c1: 2,
+    })
+  })
+
+  it('is null for anything else', () => {
+    expect(parseSparkline('=SUM(A1:A3)')).toBeNull()
+    expect(parseSparkline('SPARKLINE(A1:A3)')).toBeNull()
+    expect(parseSparkline('=SPARKLINE(A1:A3, B1)')).toBeNull() // options must be literals
+    expect(parseSparkline(null)).toBeNull()
   })
 })

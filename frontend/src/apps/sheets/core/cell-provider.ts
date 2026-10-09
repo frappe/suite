@@ -12,7 +12,10 @@
 //      with hits.
 //
 // It also clears the cache on every version bump and repaints, which
-// starts the cycle again for the visible area.
+// starts the cycle again for the visible area. Until the refill lands a
+// cell paints its last (stale) value, so an edit doesn't flash the grid
+// blank; inputs are only served fresh, since edits record them as the
+// value they replace.
 //
 // Rows and columns are 1-based, like the commands.
 
@@ -32,6 +35,18 @@ export interface CellProviderOptions {
 
 export interface CellProvider {
   getDisplay(sheet: string, row: number, col: number): string
+  /**
+   * The cell's input, or undefined until its area has been read. Every
+   * read brings inputs with the display values, so a cell on screen has
+   * its input ready when the editor opens.
+   */
+  getInput(sheet: string, row: number, col: number): string | undefined
+  /**
+   * The input the cell is painted with, stale or fresh, without asking
+   * for a read. For drawing decisions only (is it a sparkline?), never as
+   * the value an edit replaces.
+   */
+  peekInput(sheet: string, row: number, col: number): string | undefined
   dispose(): void
 }
 
@@ -67,9 +82,16 @@ export function createCellProvider({
 
   function getDisplay(sheet: string, row: number, col: number): string {
     const hit = cache.get(sheet, row, col)
-    if (hit) return hit.display
+    if (hit && cache.isFresh(sheet, row, col)) return hit.display
     noteMiss(sheet, row, col)
-    return ''
+    return hit ? hit.display : ''
+  }
+
+  function getInput(sheet: string, row: number, col: number): string | undefined {
+    const hit = cache.get(sheet, row, col)
+    if (hit && cache.isFresh(sheet, row, col)) return hit.input
+    noteMiss(sheet, row, col)
+    return undefined
   }
 
   function noteMiss(sheet: string, row: number, col: number): void {
@@ -102,7 +124,7 @@ export function createCellProvider({
     inFlight = true
     const version = client.getVersion()
     try {
-      const result = await client.readViewport(box)
+      const result = await client.readViewport({ ...box, includeInputs: true })
       if (disposed) return
       // false: the version moved while the read was in flight. The
       // clear() that came with it already asked for a repaint, which
@@ -133,6 +155,8 @@ export function createCellProvider({
 
   return {
     getDisplay,
+    getInput,
+    peekInput: (sheet, row, col) => cache.get(sheet, row, col)?.input,
     dispose() {
       disposed = true
       offVersion()

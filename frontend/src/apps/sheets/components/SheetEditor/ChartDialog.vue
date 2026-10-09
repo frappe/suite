@@ -236,6 +236,7 @@ import {
   CHART_TYPES,
   ESPRESSO_PALETTE,
 } from '../../engine/charts.js'
+import { parseCellId } from '../../utils/cells.js'
 
 // Lazy-load — same rationale as in ChartOverlay.
 const ChartView = defineAsyncComponent(() => import('./ChartView.vue'))
@@ -250,7 +251,10 @@ const CHART_ICONS = {
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
-  sheet: { type: Object, required: true },
+  // (sheetName, rect) → Promise<string[][]>: the range's shown values.
+  readRange: { type: Function, required: true },
+  // () → { maxRow, maxCol } (0-based) of the open sheet's data, or null.
+  usedExtent: { type: Function, required: true },
   currentSheet: { type: String, default: '' },
   initialRange: { type: String, default: '' },
   chartId: { type: String, default: '' },
@@ -332,7 +336,11 @@ watch(show, (open) => {
 
 // ── Range detection ────────────────────────────────────────────────────────-
 
-function detect() {
+// Only the newest detect may set the preview; typing a range fires several.
+let _detectSeq = 0
+
+async function detect() {
+  const mine = ++_detectSeq
   let range = rangeInput.value.trim()
   // Empty range → try to auto-find the data block on the source sheet so
   // the user gets useful behaviour out of the Detect button instead of just
@@ -348,7 +356,18 @@ function detect() {
     rangeInput.value = range
   }
   const [start, end] = range.includes(':') ? range.split(':') : [range, range]
-  const data = props.sheet.getRangeValues(start, end, props.currentSheet)
+  const a = parseCellId(start.trim().toUpperCase()),
+    b = parseCellId(end.trim().toUpperCase())
+  const data =
+    a && b
+      ? await props.readRange(props.currentSheet, {
+          r0: Math.min(a.row, b.row),
+          c0: Math.min(a.col, b.col),
+          r1: Math.max(a.row, b.row),
+          c1: Math.max(a.col, b.col),
+        })
+      : null
+  if (mine !== _detectSeq) return
   if (!data || !data.length) {
     rangeError.value = 'Could not read range.'
     matrix.value = []
@@ -567,28 +586,11 @@ function _colLetter(idx) {
   return s
 }
 
-// Scan A1..AZ500 on the current sheet for the bounding box of non-empty
-// cells, return it as "A1:<col><row>". Uses the raw `getCell` (not the
-// formula-evaluating `getRangeValues`) so a literal 0 reads as data and an
-// empty cell reads as empty. 500×52 ≈ 26k lookups — a fraction of a ms.
+// The bounding box of the sheet's data from A1, as "A1:<col><row>".
 function _autoDetectRange() {
-  if (!props.sheet?.getCell) return ''
-  const sheetName = props.currentSheet
-  const ROWS = 500,
-    COLS = 52
-  let maxRow = -1,
-    maxCol = -1
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const v = props.sheet.getCell(_colLetter(c) + (r + 1), sheetName)
-      if (v !== '' && v !== undefined && v !== null) {
-        if (r > maxRow) maxRow = r
-        if (c > maxCol) maxCol = c
-      }
-    }
-  }
-  if (maxRow < 0) return ''
-  return `A1:${_colLetter(maxCol)}${maxRow + 1}`
+  const ext = props.usedExtent()
+  if (!ext) return ''
+  return `A1:${_colLetter(ext.maxCol)}${ext.maxRow + 1}`
 }
 </script>
 

@@ -23,6 +23,7 @@ export const CommandTypes = Object.freeze({
   deleteSheet: 'deleteSheet',
   renameSheet: 'renameSheet',
   duplicateSheet: 'duplicateSheet',
+  moveSheet: 'moveSheet',
   setDefinedName: 'setDefinedName',
   deleteDefinedName: 'deleteDefinedName',
   batch: 'batch',
@@ -113,6 +114,16 @@ export interface RenameSheetPayload {
   sheet: string
   name: string
 }
+// name: the copy's name. Without it IronCalc picks one.
+export interface DuplicateSheetPayload {
+  sheet: string
+  name?: string
+}
+// index: the sheet's new 0-based position among the tabs.
+export interface MoveSheetPayload {
+  sheet: string
+  index: number
+}
 // scope is a sheet name for sheet-scoped names, or null/absent for
 // workbook-global names.
 export interface SetDefinedNamePayload {
@@ -153,7 +164,8 @@ export type NonBatchCommand =
   | Envelope<'addSheet', AddSheetPayload>
   | Envelope<'deleteSheet', SheetRefPayload>
   | Envelope<'renameSheet', RenameSheetPayload>
-  | Envelope<'duplicateSheet', SheetRefPayload>
+  | Envelope<'duplicateSheet', DuplicateSheetPayload>
+  | Envelope<'moveSheet', MoveSheetPayload>
   | Envelope<'setDefinedName', SetDefinedNamePayload>
   | Envelope<'deleteDefinedName', DeleteDefinedNamePayload>
 
@@ -328,6 +340,11 @@ const validators: Readonly<Record<Exclude<CommandType, 'batch'>, Validator>> = {
   },
   duplicateSheet(t, p) {
     reqSheet(t, p)
+    if (prop(p, 'name') !== undefined) reqName(t, p)
+  },
+  moveSheet(t, p) {
+    reqSheet(t, p)
+    reqNonNegInt(t, p, 'index')
   },
   setDefinedName(t, p) {
     reqName(t, p)

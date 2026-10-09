@@ -44,6 +44,28 @@ describe('client — init and reads', () => {
     expect(port.sent[0]).toMatchObject({ reqId: 1, type: 'init', payload: { snapshotBytes: null } })
   })
 
+  it('keeps the sheet list current and reports changes to it', async () => {
+    const wb = await createWorkbookClient({ port })
+    const seen = []
+    wb.onSheets((s) => seen.push(s))
+    wb.dispatch(cmd(CommandTypes.addSheet, { name: 'Data' }))
+    await wb.idle()
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    await wb.idle()
+    expect(wb.sheets).toEqual(['Sheet1', 'Data'])
+    expect(seen).toEqual([['Sheet1', 'Data']])
+  })
+
+  it('reads after the edits already dispatched, so a new sheet can be read at once', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    await Promise.resolve()
+    // The first apply is now in flight; this one waits in the queue.
+    wb.dispatch(cmd(CommandTypes.addSheet, { name: 'New' }))
+    const read = wb.readViewport({ sheet: 'New', r1: 1, c1: 1, r2: 1, c2: 1 })
+    await expect(read).resolves.toEqual({ values: [['']] })
+  })
+
   it('round-trips readViewport and readCells', async () => {
     const wb = await createWorkbookClient({ port })
     wb.dispatch(setInput('Sheet1', 1, 1, '10'))
@@ -154,10 +176,11 @@ describe('client — optimistic echo', () => {
   it('echoes setInput before the worker replies, then shows the evaluated value', async () => {
     const { wb, cache, refill } = await connected()
     wb.dispatch(setInput('Sheet1', 1, 1, '=1+1'))
-    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', provisional: true })
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', input: '=1+1', provisional: true })
 
     await wb.idle()
-    expect(cache.get('Sheet1', 1, 1)).toBeUndefined()
+    // Applied: the typed text stays painted (no blank) until the refill.
+    expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '=1+1', input: '=1+1' })
     await refill(1, 1, 1, 1)
     expect(cache.get('Sheet1', 1, 1)).toEqual({ display: '2' })
   })
@@ -169,7 +192,11 @@ describe('client — optimistic echo', () => {
     wb.dispatch(setInput('Sheet1', 2, 1, 'second'))
 
     await new Promise((resolve) => wb.onVersion(resolve)) // first apply's bump
-    expect(cache.get('Sheet1', 2, 1)).toEqual({ display: 'second', provisional: true })
+    expect(cache.get('Sheet1', 2, 1)).toEqual({
+      display: 'second',
+      input: 'second',
+      provisional: true,
+    })
     await wb.idle()
   })
 
@@ -212,5 +239,66 @@ describe('client — snapshots', () => {
     const read = wb.readViewport({ sheet: 'Sheet1', r1: 1, c1: 1, r2: 1, c2: 1 })
     wb.terminate()
     await expect(read).rejects.toThrow(/terminated/)
+  })
+})
+
+describe('client — restore', () => {
+  const inputAt = async (wb, row, col) =>
+    (await wb.readCells({ sheet: 'Sheet1', cells: [{ row, col }], what: ['input'] })).cells[0].input
+
+  it('replaces the workbook, keeping its place among dispatched commands', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'saved'))
+    const bytes = await wb.toBytes()
+    wb.dispatch(setInput('Sheet1', 1, 1, 'changed'))
+    const restored = wb.restore(bytes)
+    wb.dispatch(setInput('Sheet1', 2, 1, 'after'))
+    await restored
+    expect(await inputAt(wb, 1, 1)).toBe('saved') // 'changed' went first, then was replaced
+    expect(await inputAt(wb, 2, 1)).toBe('after') // dispatched later, applied on top
+  })
+
+  it('keeps versions increasing, so cached values are dropped', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    const bytes = await wb.toBytes()
+    const versions = []
+    wb.onVersion((v) => versions.push(v))
+    const before = wb.getVersion()
+    await wb.restore(bytes)
+    expect(versions).toEqual([before + 1])
+  })
+
+  it('snapshot holds the commands dispatched before it and none after', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'before'))
+    const snap = wb.snapshot()
+    wb.dispatch(setInput('Sheet1', 2, 1, 'after'))
+    await wb.restore(snap) // takes the promise; it settles first
+    expect(await inputAt(wb, 1, 1)).toBe('before')
+    expect(await inputAt(wb, 2, 1)).toBe('')
+  })
+
+  it('reuses the last snapshot until something is dispatched or restored', async () => {
+    const wb = await createWorkbookClient({ port })
+    const a = wb.snapshot()
+    expect(wb.snapshot()).toBe(a)
+    wb.dispatch(setInput('Sheet1', 1, 1, 'x'))
+    const b = wb.snapshot()
+    expect(b).not.toBe(a)
+    await wb.restore(a)
+    expect(wb.snapshot()).not.toBe(b)
+    await wb.idle()
+    // Bytes are copied to the worker, so one snapshot restores twice.
+    await wb.restore(b)
+    await wb.restore(b)
+    expect(await inputAt(wb, 1, 1)).toBe('x')
+  })
+
+  it('rejects bad bytes and leaves the workbook as it was', async () => {
+    const wb = await createWorkbookClient({ port })
+    wb.dispatch(setInput('Sheet1', 1, 1, 'kept'))
+    await expect(wb.restore(new Uint8Array([1, 2, 3]))).rejects.toThrow()
+    expect(await inputAt(wb, 1, 1)).toBe('kept')
   })
 })

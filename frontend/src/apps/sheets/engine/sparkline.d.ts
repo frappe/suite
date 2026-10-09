@@ -28,3 +28,16 @@ export function sparkGeometry(
   h: number,
   pad?: number,
 ): SparkGeometry | null
+
+export interface SparklineRef {
+  /** null: the sparkline cell's own sheet. */
+  sheet: string | null
+  r0: number
+  c0: number
+  r1: number
+  c1: number
+  type: string | null
+  color: string | null
+}
+/** The range and options of a `=SPARKLINE(...)` input, or null. */
+export function parseSparkline(input: unknown): SparklineRef | null

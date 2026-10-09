@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { COL_HEADER_H, DEFAULT_ROW_H } from '../../canvas/constants'
 import { DEFAULT_CHART_SIZE } from '../../engine/charts.js'
@@ -14,7 +14,7 @@ import { parseCellId } from '../../utils/cells.js'
  *
  * @param {{
  *   chart:          object,                       // createChartEngine()
- *   sheet:          object,                       // sheet engine
+ *   readRange:      (sheetName: string, rect: object) => Promise<string[][]>,
  *   currentSheet:   import('vue').Ref<string>,
  *   contextMenu:    { open: boolean },
  *   history:        { push: () => void },
@@ -24,7 +24,7 @@ import { parseCellId } from '../../utils/cells.js'
  */
 export function useChartIntegration({
   chart,
-  sheet,
+  readRange,
   currentSheet,
   contextMenu,
   history,
@@ -42,6 +42,10 @@ export function useChartIntegration({
   // chart over a 100k-row source doesn't re-materialise the matrix every frame,
   // while edits to the source range still refresh the chart.
   const chartDataVersion = ref(0)
+  // What the overlay keys its matrix cache on: bumps on a data change and
+  // again when a background read lands, so the chart repaints with it.
+  const matrixVersion = ref(0)
+  watch(chartDataVersion, () => matrixVersion.value++)
   const selectedChartId = ref('')
 
   // One source of reactive truth — bumped on every engine mutation so
@@ -170,10 +174,38 @@ export function useChartIntegration({
   }
 
   // ── Adapter used by the overlay to pull the source matrix ─────────────-
+  // Cells are read from the worker in the background, so this returns the
+  // last matrix read for the source (empty at first) and starts a read when
+  // the data changed since. When it lands, matrixVersion repaints the chart.
+  const _matrices = new Map() // 'sheet\0range' → { version, matrix, reading }
   function getMatrix(sheetName, range) {
     if (!sheetName || !range) return []
+    const key = `${sheetName}\0${range}`
+    const hit = _matrices.get(key)
+    const version = chartDataVersion.value
+    if (hit && (hit.version === version || hit.reading)) return hit.matrix
     const [start, end] = range.includes(':') ? range.split(':') : [range, range]
-    return sheet.getRangeValues(start, end, sheetName)
+    const a = parseCellId(start),
+      b = parseCellId(end)
+    if (!a || !b) return []
+    const entry = { version, matrix: hit?.matrix ?? [], reading: true }
+    _matrices.set(key, entry)
+    const rect = {
+      r0: Math.min(a.row, b.row),
+      c0: Math.min(a.col, b.col),
+      r1: Math.max(a.row, b.row),
+      c1: Math.max(a.col, b.col),
+    }
+    readRange(sheetName, rect)
+      .then((matrix) => {
+        entry.matrix = matrix
+        matrixVersion.value++
+      })
+      .catch((e) => console.error('[sheets] chart data read failed', e))
+      .finally(() => {
+        entry.reading = false
+      })
+    return entry.matrix
   }
 
   return {
@@ -185,6 +217,7 @@ export function useChartIntegration({
     selectedChartId,
     chartVersion,
     chartDataVersion,
+    matrixVersion,
     openInsert,
     openEdit,
     onChartConfirm,

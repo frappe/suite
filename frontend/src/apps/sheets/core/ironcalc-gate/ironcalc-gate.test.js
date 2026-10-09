@@ -1,29 +1,27 @@
-// IronCalc differential gate. IronCalc (@ironcalc/wasm) is the calculation
-// core per ADR 0001 (docs/adr/0001-sheets-ironcalc-calculation-core.md). This
-// gate holds it to the numbers measured in IRONCALC-REPORT.md:
+// IronCalc upgrade gate. IronCalc (@ironcalc/wasm) is the calculation core
+// per ADR 0001 (docs/adr/0001-sheets-ironcalc-calculation-core.md). This
+// gate holds it to:
 //
 //   - curated known-Excel cases: 15/16 (the single miss is the Google-Sheets
 //     AVERAGE convention, not a defect),
-//   - seeded random corpus vs the old engine (formula.js): 90.70% at
-//     N=2000, floored here at 90% — the divergence is dominated by the old
-//     engine's known operator/function bugs, so the floor only guards against
-//     an IronCalc adapter or upgrade regression.
+//   - a seeded random corpus of 2000 formulas, whose answers are recorded
+//     from IronCalc 0.8.4 in the snapshot beside this file. An upgrade that
+//     changes any answer fails here; review the diff, then update the
+//     snapshot (vitest -u) if the new answer is right.
 //
-// The corpus is SEEDED (mulberry32, seed 12345), so runs are deterministic,
-// not flaky. Unlike the retired HyperFormula differential, this gate never
-// skips: @ironcalc/wasm is a committed dependency of the app itself.
+// The corpus used to be compared with the old engine (formula.js), measured
+// in docs/sheets-ironcalc/IRONCALC-REPORT.md; that engine is gone, so the
+// baseline is IronCalc's own answers. The corpus is SEEDED (mulberry32,
+// seed 12345), so runs are deterministic, not flaky.
 
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { initSync, Model } from '@ironcalc/wasm'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { evaluate } from '../formula.js'
 import { CURATED, genFormula, rng } from './corpus.js'
 
-// ── Fixture grid + canon/compare, replicated from grid.js ────────────────────
-// grid.js imports the optional 'hyperformula' devDependency at module scope,
-// so this always-on gate carries its own copy of the fixture and comparison.
+// ── Fixture grid + canon/compare ─────────────────────────────────────────────
 const GRID = [
   //  A      B      C      D       E
   [1, 10, -1, 2.5, 'apple'],
@@ -38,48 +36,6 @@ const GRID = [
   [10, 100, 100, -12345, 'apple'],
 ]
 const COLS = 5
-const colIdx = (l) => {
-  let n = 0
-  for (const c of l) n = n * 26 + (c.charCodeAt(0) - 64)
-  return n - 1
-}
-const colLbl = (i) => {
-  let s = '',
-    n = i + 1
-  while (n > 0) {
-    const r = (n - 1) % 26
-    s = String.fromCharCode(65 + r) + s
-    n = Math.floor((n - 1) / 26)
-  }
-  return s
-}
-function cellAt(id) {
-  const m = String(id).match(/^([A-Z]+)(\d+)$/)
-  if (!m) return ''
-  const c = colIdx(m[1]),
-    r = parseInt(m[2], 10) - 1
-  if (r < 0 || r >= GRID.length || c < 0 || c >= COLS) return ''
-  const v = GRID[r][c]
-  return v === null || v === undefined ? '' : v
-}
-const getRangeValues = (a, b) => {
-  const m1 = String(a).match(/^([A-Z]+)(\d+)$/),
-    m2 = String(b).match(/^([A-Z]+)(\d+)$/)
-  if (!m1 || !m2) return []
-  const c1 = colIdx(m1[1]),
-    r1 = +m1[2],
-    c2 = colIdx(m2[1]),
-    r2 = +m2[2]
-  const rows = []
-  const rEnd = Math.min(Math.max(r1, r2), 100000)
-  for (let r = Math.min(r1, r2); r <= rEnd; r++) {
-    const row = []
-    for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) row.push(cellAt(colLbl(c) + r))
-    rows.push(row)
-  }
-  return rows
-}
-
 const isErrTok = (v) => typeof v === 'string' && /^#.+[!?]$/.test(v)
 function canon(raw) {
   if (raw && typeof raw === 'object' && '__throw' in raw) return { kind: 'throw', v: raw.__throw }
@@ -109,22 +65,6 @@ function compare(a, b, eps = 1e-9) {
   if (ca.kind === 'text') return { match: ca.v === cb.v, reason: 'text' }
   if (ca.kind === 'blank') return { match: true, reason: 'blank' }
   return { match: false, reason: ca.kind === 'throw' ? 'both-throw' : 'unknown' }
-}
-
-// ── Old-engine adapter (same shape as grid.js sheetsEval) ────────────────────
-function oldEval(f) {
-  try {
-    return evaluate(
-      f.replace(/^=/, ''),
-      cellAt,
-      getRangeValues,
-      () => '',
-      () => [],
-      () => null,
-    )
-  } catch (e) {
-    return { __throw: e.message }
-  }
 }
 
 // ── IronCalc adapter ─────────────────────────────────────────────────────────
@@ -172,13 +112,11 @@ beforeAll(() => {
   }
 })
 
-describe('IronCalc differential gate (seeded, always on)', () => {
+describe('IronCalc upgrade gate (seeded, always on)', () => {
   const N = 2000
   const SEED = 12345
-  // Floors from IRONCALC-REPORT.md, re-measured at N=2000:
-  // curated 15/16; old-vs-IronCalc agreement 90.70% -> floor 90%.
+  // From IRONCALC-REPORT.md: curated 15/16.
   const CURATED_FLOOR = 15
-  const RANDOM_FLOOR = 0.9
 
   it(`matches at least ${CURATED_FLOOR}/16 curated Excel-verified answers`, () => {
     let scored = 0,
@@ -196,23 +134,17 @@ describe('IronCalc differential gate (seeded, always on)', () => {
     expect(right).toBeGreaterThanOrEqual(CURATED_FLOOR)
   })
 
-  it(`agrees with formula.js on >= ${RANDOM_FLOOR * 100}% of ${N} seeded random formulas`, () => {
+  it(`gives the recorded answers on ${N} seeded random formulas`, () => {
     const r = rng(SEED)
     const seen = new Set()
-    let ran = 0,
-      agree = 0
-    while (ran < N) {
+    const answers = []
+    while (answers.length < N) {
       const f = genFormula(r)
       if (seen.has(f)) continue
       seen.add(f)
-      ran++
-      if (compare(oldEval(f), ironEval(f)).match) agree++
+      const { kind, v } = canon(ironEval(f))
+      answers.push(`${f}  →  ${kind} ${typeof v === 'number' ? v.toPrecision(12) : v}`)
     }
-    const rate = agree / ran
-    // eslint-disable-next-line no-console
-    console.log(
-      `  ironcalc random: ${(rate * 100).toFixed(2)}% agreement with formula.js (${agree}/${ran}, seed ${SEED})`,
-    )
-    expect(rate).toBeGreaterThanOrEqual(RANDOM_FLOOR)
+    expect(answers.join('\n')).toMatchSnapshot()
   })
 })

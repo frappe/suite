@@ -2,7 +2,9 @@
 // pinned there, and commits or cancels what was typed.
 //
 // Two modes, as in Excel / Google Sheets:
-//   'enter' (typing straight into a cell): arrow keys commit and move;
+//   'enter' (typing straight into a cell): arrow keys commit and move, or
+//           inside a formula pick a reference where one can go and else
+//           move the caret;
 //   'edit'  (F2, double-click, Enter on a filled cell): arrows move the caret.
 // While editing, F2 switches between the two and a click in the text picks 'edit'.
 // Inside a formula, arrows pick cell references instead (range-picker.ts).
@@ -196,18 +198,22 @@ export function createEditor(o: EditorOptions): Editor {
     const arrow = ARROWS[e.key]
     if (mode === 'enter' && arrow) {
       const [dr, dc] = arrow
-      e.preventDefault()
       if (o.picker.isKeyPicking()) {
+        e.preventDefault()
         o.picker.keyMove(dr, dc, e.shiftKey, e.ctrlKey || e.metaKey)
         return
       }
       // In a formula, arrows pick where a ref can go (after `=`, `(`, `,`,
       // an operator); keyStart decides whether to replace a partial ref or
-      // insert a new one. After `)` etc. they commit and move, like Sheets.
+      // insert a new one. Elsewhere in a formula (a function name, after
+      // `)`) they move the caret, like Sheets. Plain text commits and moves.
       if (canInsertRef(el.value, el.selectionStart ?? el.value.length)) {
+        e.preventDefault()
         o.picker.keyStart(el, dr, dc, e.shiftKey)
         return
       }
+      if (el.value.startsWith('=')) return
+      e.preventDefault()
       commitAndLeave({ kind: 'arrow', dr, dc })
       return
     }
