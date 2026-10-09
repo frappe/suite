@@ -20,7 +20,12 @@ function site(on = true) {
 		asked: 0,
 		on,
 		to(name) {
-			return { emit: (event, message) => [...(rooms.get(name) ?? [])].forEach((socket) => socket.heard.push([event, message])) };
+			const emit = (event, message) => {
+				for (const socket of rooms.get(name) ?? []) {
+					socket.heard.push([event, message]);
+				}
+			};
+			return { emit };
 		},
 	};
 	return nsp;
@@ -37,27 +42,44 @@ function connect(nsp, user = "a@example.com", faults = {}) {
 			handlers.set(event, handler);
 		},
 		join(name) {
-			if (faults.join) throw new Error("join");
-			if (!nsp.adapter.rooms.has(name)) nsp.adapter.rooms.set(name, new Set());
+			if (faults.join) {
+				throw new Error("join");
+			}
+
+			if (!nsp.adapter.rooms.has(name)) {
+				nsp.adapter.rooms.set(name, new Set());
+			}
 			nsp.adapter.rooms.get(name).add(socket);
 		},
 		leave(name) {
 			nsp.adapter.rooms.get(name)?.delete(socket);
-			if (!nsp.adapter.rooms.get(name)?.size) nsp.adapter.rooms.delete(name);
+			if (!nsp.adapter.rooms.get(name)?.size) {
+				nsp.adapter.rooms.delete(name);
+			}
 		},
 		to(name) {
-			if (faults.to) throw new Error("to");
-			return {
-				emit: (event, message) =>
-					[...(nsp.adapter.rooms.get(name) ?? [])]
-						.filter((other) => other !== socket)
-						.forEach((other) => other.heard.push([event, message])),
+			if (faults.to) {
+				throw new Error("to");
+			}
+
+			const emit = (event, message) => {
+				const others = [...(nsp.adapter.rooms.get(name) ?? [])].filter((other) => other !== socket);
+				for (const other of others) {
+					other.heard.push([event, message]);
+				}
 			};
+			return { emit };
 		},
 		frappe_request: async (url) => {
-			if (url.endsWith("validate_guest_session")) return { json: async () => ({ data: { valid: true } }) };
+			if (url.endsWith("validate_guest_session")) {
+				return { json: async () => ({ data: { valid: true } }) };
+			}
+
 			nsp.asked++;
-			if (faults.request) throw new Error("request");
+			if (faults.request) {
+				throw new Error("request");
+			}
+
 			return { json: async () => ({ data: nsp.on }) };
 		},
 	};
@@ -155,7 +177,9 @@ test("a room hears a tab's latest presence once per tick", async () => {
 	await writer.rooms([A]);
 	await watcher.rooms([A]);
 
-	for (const at of [1, 2, 3]) writer.presence([A], { cursor: { at } });
+	for (const at of [1, 2, 3]) {
+		writer.presence([A], { cursor: { at } });
+	}
 	await tick();
 
 	const batches = watcher.heard("suite_collab_presence");
@@ -176,10 +200,13 @@ test("presence past fifty messages a second, over 2 KiB or for a room not joined
 	await watcher.rooms([A]);
 
 	const start = Date.now();
-	for (let at = 1; at <= 500; at++) flooder.presence([A], { cursor: { at } });
+	for (let at = 1; at <= 500; at++) {
+		flooder.presence([A], { cursor: { at } });
+	}
 	flooder.presence([A, B], { cursor: { at: "elsewhere" } });
 	await tick();
-	await new Promise((resolve) => setTimeout(resolve, 1000 - ((Date.now() - start) % 1000) + 10));
+	const untilNextSecond = 1000 - ((Date.now() - start) % 1000) + 10;
+	await new Promise((resolve) => setTimeout(resolve, untilNextSecond));
 	flooder.presence([A], { cursor: { at: "big" }, padding: "x".repeat(2048) });
 	await tick();
 
@@ -219,7 +246,9 @@ test("a room shows at most fifty carets, ten of them guests", async () => {
 		...Array.from({ length: 20 }, () => connect(nsp, "Guest")),
 		...Array.from({ length: 50 }, (_, index) => connect(nsp, `user${index}@example.com`)),
 	];
-	for (const tab of tabs) await tab.rooms([A]);
+	for (const tab of tabs) {
+		await tab.rooms([A]);
+	}
 
 	tabs.forEach((tab) => tab.presence([A], { cursor: { anchor: 1, head: 1 } }));
 	await tick();
@@ -239,7 +268,10 @@ test("a room named over and over or a huge state is turned away before any work,
 	await flooder.rooms([A]);
 	await watcher.rooms([A]);
 	const repeated = Array(26000).fill(A);
-	const huge = { cursor: { at: "huge" }, padding: Array(100000).fill("x".repeat(10)) };
+	const huge = {
+		cursor: { at: "huge" },
+		padding: Array(100000).fill("x".repeat(10)),
+	};
 
 	const start = process.hrtime.bigint();
 	for (let at = 0; at < 24; at++) {
@@ -268,10 +300,15 @@ test("a tab that keeps changing its room set is held to the presence budget", as
 
 	const start = Date.now();
 	const settled = [];
-	for (let round = 0; round < 200; round++) settled.push(await toggler.rooms(round % 2 ? [] : [A]));
+	for (let round = 0; round < 200; round++) {
+		const rooms = round % 2 ? [] : [A];
+		settled.push(await toggler.rooms(rooms));
+	}
 	const within = Date.now() - start < 1000;
 
-	const churn = watcher.heard("suite_collab_presence_join").length + watcher.heard("suite_collab_presence_gone").length;
+	const joins = watcher.heard("suite_collab_presence_join").length;
+	const leaves = watcher.heard("suite_collab_presence_gone").length;
+	const churn = joins + leaves;
 	assert.ok(!within || churn <= 50, `${churn} joins and leaves heard`);
 	assert.ok(settled.filter((answer) => answer.error === "rate_limited").length >= 150);
 	toggler.close();
@@ -308,14 +345,15 @@ test("a fault in every collab listener and timer leaves the process serving and 
 	process.on("unhandledRejection", record);
 	try {
 		const nsp = site();
-		const hostile = new Proxy(
-			{},
-			{
-				get() {
-					throw new Error("payload");
-				},
+		const throwOnRead = {
+			get() {
+				throw new Error("payload");
 			},
-		);
+		};
+		const hostile = new Proxy({}, throwOnRead);
+		const throwingAck = () => {
+			throw new Error("ack");
+		};
 		const tabs = [
 			connect(nsp, "a@example.com", { join: true }),
 			connect(nsp, "b@example.com", { to: true }),
@@ -326,9 +364,7 @@ test("a fault in every collab listener and timer leaves the process serving and 
 		const answers = [];
 		for (const tab of tabs) {
 			answers.push(await tab.rooms([A]));
-			tab.handlers.get("suite_collab_rooms")(hostile, () => {
-				throw new Error("ack");
-			});
+			tab.handlers.get("suite_collab_rooms")(hostile, throwingAck);
 			tab.handlers.get("suite_collab_rooms")({ rooms: [A] }, () => Promise.reject(new Error("ack")));
 			tab.handlers.get("suite_collab_presence")(hostile);
 			tab.presence([A], { cursor: { big: 10n } });
@@ -341,15 +377,17 @@ test("a fault in every collab listener and timer leaves the process serving and 
 		};
 		await tick();
 		nsp.to = emit;
-		for (const tab of tabs) tab.handlers.get("disconnect")();
+		for (const tab of tabs) {
+			tab.handlers.get("disconnect")();
+		}
 		healthy.handlers.get("disconnect")();
 
-		const meet = await new Promise((resolve) =>
-			tabs[1].handlers.get("guest_subscribe")(
-				{ guest_id: "guest_12345", meeting_id: "room-1", guest_session_token: "proof" },
-				resolve,
-			),
-		);
+		const subscription = {
+			guest_id: "guest_12345",
+			meeting_id: "room-1",
+			guest_session_token: "proof",
+		};
+		const meet = await new Promise((resolve) => tabs[1].handlers.get("guest_subscribe")(subscription, resolve));
 		healthy.presence([A], { cursor: { at: 2 } });
 		await tick();
 

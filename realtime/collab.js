@@ -19,6 +19,8 @@ const sites = new Map();
 const allowed = new Map();
 let timer = null;
 
+const is_room = (room) => typeof room === "string" && ROOM.test(room);
+
 const collab_handlers = (socket) => {
 	const pid = 2 ** 31 + crypto.randomInt(2 ** 31);
 	const user = socket.user;
@@ -33,27 +35,29 @@ const collab_handlers = (socket) => {
 				answer(acknowledge, { error: "rate_limited" });
 				return;
 			}
+
 			const rooms = payload?.rooms;
-			if (
-				!Array.isArray(rooms) ||
-				rooms.length > ROOMS_MAX ||
-				!rooms.every((room) => typeof room === "string" && ROOM.test(room))
-			) {
+			const valid = Array.isArray(rooms) && rooms.length <= ROOMS_MAX && rooms.every(is_room);
+			if (!valid) {
 				answer(acknowledge, { error: "invalid_request" });
 				return;
 			}
+
 			const ask = ++asked;
+			const enterIfJoinable = (canJoin) => {
+				if (ask !== asked) return;
+
+				if (!canJoin) {
+					enter([]);
+					answer(acknowledge, { error: "disabled" });
+					return;
+				}
+
+				enter(rooms);
+				answer(acknowledge, ack(rooms));
+			};
 			joinable(socket)
-				.then((allowed) => {
-					if (ask !== asked) return;
-					if (!allowed) {
-						enter([]);
-						answer(acknowledge, { error: "disabled" });
-						return;
-					}
-					enter(rooms);
-					answer(acknowledge, ack(rooms));
-				})
+				.then(enterIfJoinable)
 				.catch(() => answer(acknowledge, { error: "failed" }));
 		} catch {
 			answer(acknowledge, { error: "failed" });
@@ -63,22 +67,35 @@ const collab_handlers = (socket) => {
 	socket.on("suite_collab_presence", (payload) => {
 		try {
 			if (!spend()) return;
+
 			const rooms = payload?.rooms;
-			if (!Array.isArray(rooms) || !rooms.length || rooms.length > ROOMS_MAX) return;
+			const roomCount = Array.isArray(rooms) ? rooms.length : 0;
+			if (!roomCount || roomCount > ROOMS_MAX) return;
+
 			const named = new Set(rooms);
-			if (![...named].every((room) => joined.has(room))) return;
+			const allJoined = [...named].every((room) => joined.has(room));
+			if (!allJoined) return;
+
 			const state = payload?.state;
-			if (!state || typeof state !== "object" || Array.isArray(state)) return;
-			if (!fits(state, STATE_MAX) || Buffer.byteLength(JSON.stringify(state)) > STATE_MAX) return;
+			const isObject = !!state && typeof state === "object" && !Array.isArray(state);
+			if (!isObject) return;
+
+			const small = fits(state, STATE_MAX) && Buffer.byteLength(JSON.stringify(state)) <= STATE_MAX;
+			if (!small) return;
+
 			const site = site_of(socket);
 			for (const room of named) {
-				const entry = site.rooms.get(room)?.get(pid);
+				const members = site.rooms.get(room);
+				const entry = members?.get(pid);
 				if (!entry) continue;
-				const caret = state.cursor != null && has_caret_slot(site.rooms.get(room), entry);
+
+				const caret = state.cursor != null && has_caret_slot(members, entry);
 				entry.state = caret || state.cursor == null ? state : { ...state, cursor: null };
 				entry.caret = caret;
 				entry.n++;
-				if (!site.dirty.has(room)) site.dirty.set(room, new Set());
+				if (!site.dirty.has(room)) {
+					site.dirty.set(room, new Set());
+				}
 				site.dirty.get(room).add(pid);
 			}
 			schedule();
@@ -88,7 +105,10 @@ const collab_handlers = (socket) => {
 	// Room sets and presence share one budget per socket
 	function spend() {
 		const now = Math.floor(Date.now() / 1000);
-		if (rate.second !== now) Object.assign(rate, { second: now, count: 0 });
+		if (rate.second !== now) {
+			rate.second = now;
+			rate.count = 0;
+		}
 		return ++rate.count <= RATE_PER_SECOND;
 	}
 
@@ -102,25 +122,44 @@ const collab_handlers = (socket) => {
 	function enter(rooms) {
 		const site = site_of(socket);
 		const wanted = new Set(rooms);
+
 		for (const room of [...joined]) {
 			if (wanted.has(room)) continue;
+
 			joined.delete(room);
 			const members = site.rooms.get(room);
 			members?.delete(pid);
 			site.dirty.get(room)?.delete(pid);
-			if (members && !members.size) site.rooms.delete(room);
+			if (members && !members.size) {
+				site.rooms.delete(room);
+			}
 			socket.leave(room);
 			socket.to(room).emit("suite_collab_presence_gone", { room, pid });
 		}
+
 		for (const room of wanted) {
 			if (joined.has(room)) continue;
+
 			joined.add(room);
-			if (!site.rooms.has(room)) site.rooms.set(room, new Map());
-			site.rooms.get(room).set(pid, { pid, user, guest, state: null, caret: false, n: 0 });
+			if (!site.rooms.has(room)) {
+				site.rooms.set(room, new Map());
+			}
+			const entry = {
+				pid,
+				user,
+				guest,
+				state: null,
+				caret: false,
+				n: 0,
+			};
+			site.rooms.get(room).set(pid, entry);
 			socket.join(room);
 			socket.to(room).emit("suite_collab_presence_join", { room, pid, user });
 		}
-		if (!site.rooms.size && !site.dirty.size) sites.delete(socket.nsp.name);
+
+		if (!site.rooms.size && !site.dirty.size) {
+			sites.delete(socket.nsp.name);
+		}
 	}
 
 	function ack(rooms) {
@@ -131,9 +170,19 @@ const collab_handlers = (socket) => {
 		for (const room of rooms) {
 			for (const entry of site.rooms.get(room)?.values() ?? []) {
 				if (entry.pid === pid) continue;
+
 				count++;
-				if (roster.length < ROSTER_MAX) roster.push({ room, pid: entry.pid, user: entry.user });
-				if (entry.state) carets.push({ room, ...sent(entry) });
+				if (roster.length < ROSTER_MAX) {
+					const member = {
+						room,
+						pid: entry.pid,
+						user: entry.user,
+					};
+					roster.push(member);
+				}
+				if (entry.state) {
+					carets.push({ room, ...sent(entry) });
+				}
 			}
 		}
 		return { rooms, pid, roster, count, carets };
@@ -142,14 +191,20 @@ const collab_handlers = (socket) => {
 
 function has_caret_slot(members, entry) {
 	if (entry.caret) return true;
+
 	let carets = 0;
 	let guests = 0;
 	for (const other of members.values()) {
 		if (!other.caret) continue;
+
 		carets++;
-		if (other.guest) guests++;
+		if (other.guest) {
+			guests++;
+		}
 	}
-	return carets < CARETS_MAX && (!entry.guest || guests < GUEST_CARETS_MAX);
+
+	const guestFits = !entry.guest || guests < GUEST_CARETS_MAX;
+	return carets < CARETS_MAX && guestFits;
 }
 
 // Whether a value's JSON can fit in `budget` bytes, reading no further than that
@@ -158,9 +213,12 @@ function fits(value, budget) {
 	while (pending.length && budget >= 0) {
 		const item = pending.pop();
 		budget -= 2;
-		if (typeof item === "string") budget -= item.length > budget ? item.length : Buffer.byteLength(item);
-		else if (Array.isArray(item)) {
-			for (let at = 0; at < item.length && budget >= 0; at++, budget--) pending.push(item[at]);
+		if (typeof item === "string") {
+			budget -= item.length > budget ? item.length : Buffer.byteLength(item);
+		} else if (Array.isArray(item)) {
+			for (let at = 0; at < item.length && budget >= 0; at++, budget--) {
+				pending.push(item[at]);
+			}
 		} else if (item && typeof item === "object") {
 			for (const key in item) {
 				budget -= key.length + 4;
@@ -176,27 +234,46 @@ function joinable(socket) {
 	const now = Date.now();
 	const known = allowed.get(socket.nsp.name);
 	if (known && known.until > now) return known.answer;
+
 	const answer = socket
 		.frappe_request("/api/v2/method/suite.suite_core.content.live.joinable", {}, { method: "POST" })
 		.then((response) => response.json())
 		.then((body) => body?.data === true)
 		.catch(() => false);
-	allowed.set(socket.nsp.name, { answer, until: now + JOINABLE_MS });
+	const cached = {
+		answer,
+		until: now + JOINABLE_MS,
+	};
+	allowed.set(socket.nsp.name, cached);
 	return answer;
 }
 
 function site_of(socket) {
 	const name = socket.nsp.name;
-	if (!sites.has(name)) sites.set(name, { nsp: socket.nsp, rooms: new Map(), dirty: new Map() });
+	if (!sites.has(name)) {
+		const site = {
+			nsp: socket.nsp,
+			rooms: new Map(),
+			dirty: new Map(),
+		};
+		sites.set(name, site);
+	}
 	return sites.get(name);
 }
 
 function sent(entry) {
-	return { pid: entry.pid, user: entry.user, n: entry.n, state: entry.state };
+	return {
+		pid: entry.pid,
+		user: entry.user,
+		n: entry.n,
+		state: entry.state,
+	};
 }
 
 function schedule() {
-	if (!timer) timer = setTimeout(flush, FLUSH_MS);
+	if (!timer) {
+		timer = setTimeout(flush, FLUSH_MS);
+	}
 }
 
 // One combined message per changed room; past the write budget the rest wait for the next tick
@@ -210,36 +287,44 @@ function flush() {
 				const members = site.rooms.get(room);
 				const writes = site.nsp.adapter?.rooms?.get(room)?.size ?? members?.size ?? 0;
 				if (flushed && writes > budget) continue;
+
 				site.dirty.delete(room);
 				const states = [...pids].map((pid) => members?.get(pid)).filter(Boolean).map(sent);
 				if (!states.length) continue;
+
 				budget -= writes;
 				flushed = true;
 				site.nsp.to(room).emit("suite_collab_presence", { room, states });
 			}
-			if (!site.rooms.size && !site.dirty.size) sites.delete(name);
+			if (!site.rooms.size && !site.dirty.size) {
+				sites.delete(name);
+			}
 		}
 	} catch {}
+
 	try {
-		if ([...sites.values()].some((site) => site.dirty.size)) schedule();
+		if ([...sites.values()].some((site) => site.dirty.size)) {
+			schedule();
+		}
 	} catch {}
 }
 
 function answer(acknowledge, value) {
 	if (typeof acknowledge !== "function") return;
+
 	try {
 		Promise.resolve(acknowledge(value)).catch(() => {});
 	} catch {}
 }
 
-const held = () =>
-	[...sites.values()].reduce(
-		(sum, site) =>
-			sum +
-			[...site.dirty.values()].reduce((count, pids) => count + 1 + pids.size, 0) +
-			[...site.rooms.values()].reduce((count, members) => count + 1 + members.size, 0),
-		0,
-	);
+// Entries a site holds: one per room and one per pid, in both its dirty and member maps
+function held_in(site) {
+	const dirty = [...site.dirty.values()].reduce((count, pids) => count + 1 + pids.size, 0);
+	const rooms = [...site.rooms.values()].reduce((count, members) => count + 1 + members.size, 0);
+	return dirty + rooms;
+}
+
+const held = () => [...sites.values()].reduce((sum, site) => sum + held_in(site), 0);
 
 module.exports = collab_handlers;
 module.exports.held = held;
