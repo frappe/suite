@@ -61,7 +61,7 @@
   "src/apps/mail/pages/ContactsExchangesView.vue": 1,
   "src/apps/mail/pages/MailExchangeView.vue": 2,
   "src/apps/mail/pages/MailExchangesView.vue": 1,
-  "src/apps/mail/pages/MailboxView.vue": 11,
+  "src/apps/mail/pages/MailboxView.vue": 10,
   "src/apps/mail/pages/MimeMessageView.vue": 6,
   "src/apps/mail/pages/SubmissionDetailsView.vue": 1,
   "src/apps/mail/pages/UnifiedFolderView.vue": 4,
