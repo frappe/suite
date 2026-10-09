@@ -63,8 +63,10 @@ export function openError(answer: Answer, options: OpenOptions) {
   if (signedIn === 'Guest') {
     return new CollabOpenError(401, 'signed_out')
   }
+
   if (signedIn !== options.principal) {
     return new CollabOpenError(reply.status, 'principal_changed')
   }
+
   return new CollabOpenError(reply.status, reason)
 }

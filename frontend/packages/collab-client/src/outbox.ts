@@ -33,7 +33,12 @@ export class Outbox {
 
   // The next seq's entry, not yet queued
   mint(bytes: Uint8Array): Entry {
-    return { seq: this.nextSeq++, bytes, sha: hex(digest(bytes)) }
+    const sha = hex(digest(bytes))
+    return {
+      seq: this.nextSeq++,
+      bytes,
+      sha,
+    }
   }
 
   add(bytes: Uint8Array): Entry {
@@ -47,6 +52,7 @@ export class Outbox {
     this.acked = Math.max(this.acked, through)
     const committed = this.pending.filter((entry) => entry.seq <= this.acked)
     if (!committed.length) return null
+
     this.pending = this.pending.filter((entry) => entry.seq > this.acked)
     return Y.mergeUpdates(committed.map((entry) => entry.bytes))
   }
@@ -61,8 +67,11 @@ export class Outbox {
     const run: Entry[] = []
     let size = 0
     for (const entry of this.pending) {
-      if (run.length && (run.length >= MAX_ENTRIES || size + entry.bytes.byteLength > maxBytes))
+      const tooMany = run.length >= MAX_ENTRIES
+      const tooBig = size + entry.bytes.byteLength > maxBytes
+      if (run.length && (tooMany || tooBig)) {
         break
+      }
       run.push(entry)
       size += entry.bytes.byteLength
     }
@@ -70,21 +79,35 @@ export class Outbox {
   }
 
   stored(doc: string, entries: Entry[] = this.pending): StoredEntry[] {
-    return entries.map((entry) => ({ doc, sid: this.sid, ...entry }))
+    const toStored = (entry: Entry): StoredEntry => ({
+      doc,
+      sid: this.sid,
+      ...entry,
+    })
+    return entries.map(toStored)
   }
 }
 
 // Web Locks only cut duplicate sends between tabs; where they are missing, every session counts as free
 export function holdLock(name: string): Promise<(() => void) | null> {
   const locks = globalThis.navigator?.locks
-  if (!locks) return Promise.resolve(() => {})
+  const free = () => {}
+  if (!locks) return Promise.resolve(free)
+
   return new Promise((resolve) => {
-    void locks
-      .request(name, { ifAvailable: true }, (lock) => {
-        if (!lock) return resolve(null)
-        return new Promise<void>((release) => resolve(release))
-      })
-      .catch(() => resolve(() => {}))
+    const options: LockOptions = { ifAvailable: true }
+    // The lock is held until the promise it returns settles, which is when the caller releases it
+    const hold = (lock: Lock | null) => {
+      if (!lock) {
+        resolve(null)
+        return
+      }
+
+      return new Promise<void>((release) => resolve(release))
+    }
+
+    const lockFailed = () => resolve(free)
+    void locks.request(name, options, hold).catch(lockFailed)
   })
 }
 
@@ -92,4 +115,7 @@ export function hex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export const randomHex = (bytes: number) => hex(crypto.getRandomValues(new Uint8Array(bytes)))
+export function randomHex(bytes: number) {
+  const random = crypto.getRandomValues(new Uint8Array(bytes))
+  return hex(random)
+}

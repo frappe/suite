@@ -14,8 +14,12 @@ export function judge(checkpoint: Uint8Array | null, rows: Uint8Array[], fault: 
   const probe = (count: number): string | null => {
     const doc = new Y.Doc()
     try {
-      if (checkpoint) Y.applyUpdate(doc, checkpoint)
-      for (const row of rows.slice(0, count)) Y.applyUpdate(doc, row)
+      if (checkpoint) {
+        Y.applyUpdate(doc, checkpoint)
+      }
+      for (const row of rows.slice(0, count)) {
+        Y.applyUpdate(doc, row)
+      }
       return fault(doc)
     } catch (error) {
       return `throws: ${String(error)}`
@@ -23,9 +27,18 @@ export function judge(checkpoint: Uint8Array | null, rows: Uint8Array[], fault: 
       doc.destroy()
     }
   }
+
   if (!probe(rows.length)) return { verdict: 'clean' }
+
   const before = probe(0)
-  if (before) return { verdict: 'bad', index: -1, reason: before }
+  if (before) {
+    return {
+      verdict: 'bad',
+      index: -1,
+      reason: before,
+    }
+  }
+
   // Every prefix up to `good` is fine and the prefix of `bad` rows is not
   let good = 0
   let bad = rows.length
@@ -33,8 +46,17 @@ export function judge(checkpoint: Uint8Array | null, rows: Uint8Array[], fault: 
   while (bad - good > 1) {
     const middle = Math.floor((good + bad) / 2)
     const found = probe(middle)
-    if (found) [bad, reason] = [middle, found]
-    else good = middle
+    if (found) {
+      bad = middle
+      reason = found
+    } else {
+      good = middle
+    }
   }
-  return { verdict: 'bad', index: bad - 1, reason: reason || probe(bad)! }
+
+  return {
+    verdict: 'bad',
+    index: bad - 1,
+    reason: reason || probe(bad)!,
+  }
 }
