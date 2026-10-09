@@ -53,6 +53,11 @@ def site_quota_bytes(value, label: str) -> int:
 
 def effective_quota(root: Mapping) -> int:
     """Return the root override or its current site default. Zero is unlimited."""
+    from suite.suite_core.utils import is_suite_cloud_configured
+
+    if is_suite_cloud_configured():
+        # Configured sites use combined policy; legacy root/default caps do not stack.
+        return 0
     kind = root.get("kind")
     if kind not in ("Personal", "Shared"):
         frappe.throw(_("Drive root kind must be Personal or Shared"), frappe.ValidationError)
@@ -80,13 +85,18 @@ def root_for_node(node: Mapping, *, for_update: bool = False) -> frappe._dict:
 def preflight(root: Mapping, declared_bytes: int) -> None:
     """Refuse an obvious upload overshoot without mutating the root counter."""
     declared_bytes = _nonnegative_bytes(declared_bytes, _("Declared upload size"))
+    from suite.suite_core.utils import is_suite_cloud_configured
+
+    if is_suite_cloud_configured():
+        _check_combined(root.get("name"), declared_bytes, lock=False)
+        return
     limit = effective_quota(root)
     used = _nonnegative_bytes(root.get("used_bytes") or 0, _("Drive root usage"))
     if limit and declared_bytes > max(limit - used, 0):
         raise DriveOverQuota(_("This upload exceeds the Drive root quota"))
 
 
-def admit(root: str, delta: int) -> None:
+def admit(root: str, delta: int, *, source_root: str | None = None) -> None:
     """Atomically add bytes to a root if its effective quota permits them."""
     delta = _nonnegative_bytes(delta, _("Drive quota admission"))
     if delta == 0:
@@ -99,12 +109,60 @@ def admit(root: str, delta: int) -> None:
     )
     if not root_row:
         raise DriveNotFound(_("Drive root {0} was not found").format(root))
+    from suite.suite_core.utils import is_suite_cloud_configured
+
+    if is_suite_cloud_configured():
+        _check_combined(root, delta, lock=True, source_root=source_root)
     frappe.db.sql(
         ADMIT_SQL,
         {"root": root, "delta": delta, "effective_quota": effective_quota(root_row)},
     )
     if not frappe.db.sql("SELECT ROW_COUNT()")[0][0]:
         raise DriveOverQuota(_("This write exceeds the Drive root quota"))
+
+
+def _check_combined(root: str, delta: int, *, lock: bool, source_root: str | None = None) -> None:
+    from suite.suite_core.storage import check_addition, state
+
+    _, policy, measurements = state(lock=lock)
+    # Current reads under a site lock prevent separate roots spending the same
+    # headroom. Existing Drive savepoints propagate deadlock errors for retry.
+    rows = frappe.db.sql(
+        "SELECT name, user, kind, used_bytes FROM `tabDrive Root` ORDER BY name"
+        + (" FOR UPDATE" if lock else ""),
+        as_dict=True,
+    )
+    target = next((row for row in rows if row.name == root), None)
+    if target is None:
+        raise DriveNotFound(_("The Drive root was not found"))
+    user = target.user if target.kind == "Personal" else None
+    source = next((row for row in rows if row.name == source_root), None) if source_root else None
+    if source_root and (source is None or int(source.used_bytes or 0) < delta):
+        raise DriveConflict(_("The source root cannot supply the transferred bytes"))
+    try:
+        check_addition(
+            policy,
+            measurements,
+            user=user,
+            delta=delta,
+            site_delta=0 if source is not None else delta,
+            site_drive=sum(int(row.used_bytes or 0) for row in rows),
+            personal_drive=sum(int(row.used_bytes or 0) for row in rows if user and row.user == user),
+        )
+    except frappe.ValidationError as exc:
+        raise DriveOverQuota(str(exc)) from exc
+
+
+def administration_usage() -> list[dict]:
+    rows = frappe.get_all("Drive Root", fields=["name", "user", "kind", "used_bytes", "state", "quota_bytes"])
+    reservations = dict(
+        frappe.db.sql("SELECT root, SUM(reserved_bytes) FROM `tabDrive Storage Reservation` GROUP BY root")
+    )
+    for row in rows:
+        row["reserved_bytes"] = int(reservations.get(row.name, 0))
+        row["stored_bytes"] = max(int(row.used_bytes or 0) - row.reserved_bytes, 0)
+        row["effective_quota_bytes"] = effective_quota(row)
+    return rows
 
 
 def release(root: str, delta: int) -> None:
@@ -237,6 +295,24 @@ def release_storage_reservation(root: str | None, key: str) -> None:
             _require_reservation_root(current, root)
             frappe.db.delete("Drive Storage Reservation", key)
             release(root, int(current.reserved_bytes))
+
+
+def consume_storage_reservation(root: str, key: str, charged_bytes: int) -> None:
+    """Replace already admitted promises with stored bytes; admit only excess growth."""
+    charged_bytes = _nonnegative_bytes(charged_bytes, _("Stored bytes"))
+    _validate_reservation_key(key)
+    with _reservation_transaction():
+        validate_root_pair(root, for_update=True)
+        current = _reservation(key, for_update=True)
+        if not current:
+            raise DriveNotFound(_("The storage reservation was not found"))
+        _require_reservation_root(current, root)
+        reserved = int(current.reserved_bytes)
+        if charged_bytes > reserved:
+            admit(root, charged_bytes - reserved)
+        elif charged_bytes < reserved:
+            release(root, reserved - charged_bytes)
+        frappe.db.delete("Drive Storage Reservation", key)
 
 
 def recompute_usage(root: str) -> frappe._dict:

@@ -42,6 +42,11 @@ function placeholder(
  * area's route group the first time a URL under it is visited.
  */
 export const canonicalRoutes: RouteRecordRaw[] = [
+  placeholder(
+    '/admin/:pathMatch(.*)*',
+    'area-placeholder-admin',
+    areaMeta('admin', 'Admin', { scroll: 'content' }),
+  ),
   placeholder('/home', 'area-placeholder-home', areaMeta('home', 'Home')),
   placeholder('/drive', 'area-placeholder-files-root', areaMeta('files', 'My files')),
   placeholder(
@@ -106,6 +111,18 @@ export const canonicalRoutes: RouteRecordRaw[] = [
 
 export const routes: RouteRecordRaw[] = [
   ...canonicalRoutes,
+  {
+    path: '/suite/change-password',
+    name: 'suite-change-password',
+    component: () => import('@/shell/AccountAccessView.vue'),
+    meta: { frame: 'none', scroll: 'content', title: 'Change password' },
+  },
+  {
+    path: '/suite/account-unavailable',
+    name: 'suite-account-unavailable',
+    component: () => import('@/shell/AccountAccessView.vue'),
+    meta: { frame: 'none', scroll: 'content', title: 'Account setup required' },
+  },
   {
     path: '/suite/setup',
     name: 'suite-setup',

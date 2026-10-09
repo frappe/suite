@@ -29,12 +29,16 @@
         </DashboardCard>
 
         <!-- Quota Usage -->
-        <DashboardCard
-          :title="__('Quota Usage')"
-          :button-label="__('Edit')"
-          @action="showEditQuota = true"
-        >
-          <QuotaDonut :quota="member.data.quota" />
+        <DashboardCard :title="__('Mail storage usage')">
+          <p class="p-5 text-base text-ink-gray-7">
+            {{
+              member.data.used_bytes == null
+                ? __('Mail usage unavailable')
+                : __('{0} GB · Mail has no storage limit', [
+                    (member.data.used_bytes / 1_000_000_000).toLocaleString(),
+                  ])
+            }}
+          </p>
         </DashboardCard>
 
         <!-- Email Addresses -->
@@ -144,12 +148,6 @@
     :group="member.data"
     @reload="member.refetch().catch(() => {})"
   />
-  <EditGroupQuotaModal
-    v-if="member.data"
-    v-model="showEditQuota"
-    :group="member.data"
-    @reload="member.refetch().catch(() => {})"
-  />
   <AddGroupEmailModal
     v-model="showAddEmail"
     :group-id="groupId"
@@ -176,8 +174,6 @@ import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.
 import AddGroupEmailModal from '@/apps/mail/components/Modals/AddGroupEmailModal.vue'
 import AddGroupMembersModal from '@/apps/mail/components/Modals/AddGroupMembersModal.vue'
 import EditGroupModal from '@/apps/mail/components/Modals/EditGroupModal.vue'
-import EditGroupQuotaModal from '@/apps/mail/components/Modals/EditGroupQuotaModal.vue'
-import QuotaDonut from '@/apps/mail/components/QuotaDonut.vue'
 import type { QuotaUsage } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
@@ -210,7 +206,6 @@ const { groupId } = defineProps<{
 const router = useRouter()
 usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || groupId, 'Mail'))
 const showEdit = ref(false)
-const showEditQuota = ref(false)
 const showAddEmail = ref(false)
 const showAddMembers = ref(false)
 const showToggleReceiving = ref(false)
@@ -246,7 +241,7 @@ const memberCountLabel = computed(() => {
 const breadcrumbs = computed(() => [
   {
     label: __('Groups'),
-    route: '/mail/dashboard/groups',
+    route: '/admin/mail/groups',
   },
   {
     label: data.value?.email || groupId,

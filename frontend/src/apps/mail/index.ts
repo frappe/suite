@@ -19,6 +19,9 @@ export type { MailSettingsTabId } from '@/apps/mail/utils/composables'
 export const loadMailSettings = () =>
   import('@/apps/mail/settings').then((module) => module.mailSettings)
 
+export const loadMailAdminRoutes = () => import('@/apps/mail/adminRoutes')
+export const loadMailAdminUsers = () => import('@/apps/mail/pages/dashboard/AdminUsersView.vue')
+
 export function useInboxSummary(enabled: () => boolean = () => true) {
   return useQuery(api.mail.inbox.summary, () => (enabled() ? {} : false))
 }

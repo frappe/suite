@@ -35,7 +35,7 @@
               <StorageBar
                 v-else-if="column.key === 'quota_gb'"
                 :used-bytes="row.used_bytes"
-                :quota-gb="row.quota_gb"
+                :quota-gb="0"
               />
             </ListRowItem>
           </ListRow>

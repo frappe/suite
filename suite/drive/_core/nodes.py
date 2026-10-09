@@ -46,7 +46,7 @@ from suite.drive._core.errors import (
     rollback_savepoint as _rollback_savepoint,
 )
 from suite.drive._core.principals import Principals
-from suite.drive._core.quota import admit, release, release_storage_reservation, root_for_node
+from suite.drive._core.quota import admit, consume_storage_reservation, release, root_for_node
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
 from suite.drive._core.roots import (
     lock_trees,
@@ -1197,6 +1197,7 @@ def create_file(
     content_modified: datetime | int | float | str | None = None,
     _via_link: str | None = None,
     _client_named_blob: bool = False,
+    _reservation: str | None = None,
 ) -> str:
     """Create one private blob-backed file and charge its root atomically.
 
@@ -1230,12 +1231,17 @@ def create_file(
             # for the framework GC; nothing here points at it.
             reused = content.reuse_media(parent_row.name, blob_row.name, for_update=True)
             if reused is not None:
+                if _reservation is not None:
+                    consume_storage_reservation(root_for_node(parent_row).name, _reservation, 0)
                 frappe.db.release_savepoint(savepoint)
                 return reused
         _refuse_sibling_collision(parent_row.name, title)
         root = root_for_node(parent_row).name
         path = "" if parent_row.kind == "root" else f"{parent_row.path or '/'}{parent_row.name}/"
-        admit(root, blob_row.file_size)
+        if _reservation is not None:
+            consume_storage_reservation(root, _reservation, blob_row.file_size)
+        else:
+            admit(root, blob_row.file_size)
         node = frappe.get_doc(
             {
                 "doctype": "Drive Node",
@@ -1313,8 +1319,6 @@ def store_file(
     frappe.db.savepoint(savepoint)
     try:
         _lock_create_parent(parent)
-        if reservation is not None:
-            release_storage_reservation(None, reservation)
         node = create_file(
             principals,
             parent,
@@ -1323,6 +1327,7 @@ def store_file(
             size=blob.file_size,
             mime=blob.mime_type,
             content_modified=content_modified,
+            _reservation=reservation,
         )
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
@@ -1554,15 +1559,31 @@ def _rename(principals: Principals, node_id: str, title: str, *, keep_extension:
 
 
 def _move(
-    principals: Principals, node_id: str, destination_id: str, *, expect_parent_node: str | None = None
+    principals: Principals,
+    node_id: str,
+    destination_id: str,
+    *,
+    expect_parent_node: str | None = None,
+    retained_transfer: bool = False,
 ) -> dict:
     savepoint = f"drive_move_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
         current, destination, subtree = _lock_move_rows(node_id, destination_id)
+        if retained_transfer:
+            source = root_for_node(current, for_update=True)
+            if (
+                not principals.is_admin
+                or source.kind != "Personal"
+                or source.state != "Archived"
+                or frappe.db.get_value("User", source.user, "enabled")
+            ):
+                raise DriveForbidden(
+                    _("Retained transfers require an Admin and a disabled user's archived Personal Root")
+                )
         reject_illegal_root_operation(current, "move")
         source_link = require(current, EDIT, principals)
-        if current.state != "Active":
+        if current.state != "Active" and not retained_transfer:
             raise DriveForbidden(_("A trashed Drive node must be restored, not moved"))
         # Checked on the locked row, after the READ gate hides the node from a
         # caller who cannot see it, and before any write.
@@ -1573,13 +1594,14 @@ def _move(
         _validate_generic_destination(current, destination, operation="move")
         _validate_subtree(current, subtree)
         _validate_move_depth(current, destination, subtree)
-        _refuse_sibling_collision(destination.name, current.title, exclude=current.name)
+        if current.state == "Active":
+            _refuse_sibling_collision(destination.name, current.title, exclude=current.name)
 
         source_root = current.root
         destination_root = root_for_node(destination, for_update=True).name
         delta = _subtree_charge(current)
         if source_root != destination_root:
-            admit(destination_root, delta)
+            admit(destination_root, delta, source_root=source_root)
         # The old parent-chain holders must refresh too. After the rewrite,
         # the ordinary activity emission can only see the destination chain.
         from suite.drive._core.changes import emit_for_node

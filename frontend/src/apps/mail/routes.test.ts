@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter, type RouteLocation, type Router } from 'vue-router'
 
+import { routes as adminRoutes } from './adminRoutes'
 import { routes } from './routes'
 
 // routes.ts imports Mail's runtime, which installs the mail guard on the whole suite router,
@@ -13,7 +14,10 @@ const Stub = { render: () => null }
 const makeRouter = () =>
   createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/mail', component: Stub, children: routes }],
+    routes: [
+      { path: '/mail', component: Stub, children: routes },
+      { path: '/admin', component: Stub, children: adminRoutes },
+    ],
   })
 
 /** resolve() never follows `redirect`; hop once so assertions see the landing route. */
@@ -54,17 +58,17 @@ describe('mail route matching', () => {
 
   it('dashboard DMARC routes resolve as dashboard pages', () => {
     const router = makeRouter()
-    const list = router.resolve('/mail/dashboard/dmarc')
+    const list = router.resolve('/admin/mail/dmarc')
     expect([list.name, list.meta.isDashboard]).toEqual(['mail-dmarc-reports', true])
-    const detail = router.resolve('/mail/dashboard/dmarc/c1-dma1')
+    const detail = router.resolve('/admin/mail/dmarc/c1-dma1')
     expect([detail.name, detail.params.reportId]).toEqual(['mail-dmarc-report', 'c1-dma1'])
   })
 
   it('dashboard TLS routes resolve as dashboard pages', () => {
     const router = makeRouter()
-    const list = router.resolve('/mail/dashboard/tls')
+    const list = router.resolve('/admin/mail/tls')
     expect([list.name, list.meta.isDashboard]).toEqual(['mail-tls-reports', true])
-    const detail = router.resolve('/mail/dashboard/tls/c1-tls1')
+    const detail = router.resolve('/admin/mail/tls/c1-tls1')
     expect([detail.name, detail.params.reportId]).toEqual(['mail-tls-report', 'c1-tls1'])
   })
 

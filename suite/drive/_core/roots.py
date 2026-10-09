@@ -206,6 +206,22 @@ def archive_personal_root(user: str) -> str | None:
     return root
 
 
+def set_user_active(user: str, *, active: bool) -> str:
+    """Preserve root identity and grants across suspension/reactivation (admin spec §4.2)."""
+    _lock_identity(PERSONAL, user)
+    roots = frappe.get_all("Drive Root", filters={"kind": PERSONAL, "user": user}, pluck="name")
+    if len(roots) != 1:
+        raise DriveConflict(_("The user must have exactly one retained Personal Root before changing access"))
+    pair = validate_root_pair(roots[0], for_update=True)
+    state = ACTIVE if active else "Archived"
+    if pair.root.state != state:
+        frappe.db.set_value("Drive Root", pair.root.name, "state", state, update_modified=False)
+        from suite.drive._core.changes import emit_for_node
+
+        emit_for_node(pair.root.name)
+    return pair.root.name
+
+
 def update_root(
     root: str,
     principals: Principals,

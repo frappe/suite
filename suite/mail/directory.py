@@ -106,6 +106,7 @@ def create_account(
     locale: str | None = None,
     time_zone: str | None = None,
     disable_receiving: bool = False,
+    operation: str | None = None,
 ) -> dict:
     """Creates the account and returns its payload, including the app password (shown once).
 
@@ -124,7 +125,26 @@ def create_account(
         locale=locale,
         time_zone=time_zone,
         disable_receiving=disable_receiving or None,
+        description=f"Suite setup {operation}" if operation else None,
     )
+
+
+def provision_account(email: str, password: str, *, operation: str, **options) -> dict:
+    """Retry only an account positively identified as this operation's resource.
+
+    A durable non-secret description bridges provider/local transactions. A lost
+    response is recovered by rotating the app credential, never deleting an
+    account whose ownership is uncertain or retrieving a previous secret.
+    """
+    client = get_client()
+    try:
+        existing = client.call("mail.accounts.get_account", email=email)
+    except frappe.DoesNotExistError:
+        return create_account(email, password, operation=operation, **options)
+    if existing.get("description") != f"Suite setup {operation}":
+        frappe.throw(_("This business address is already claimed by another account"), frappe.ValidationError)
+    client.call("mail.accounts.set_password", email=email, password=password)
+    return {**existing, **client.call("mail.accounts.rotate_app_password", email=email)}
 
 
 def update_password(user: str | None = None, new_password: str | None = None) -> None:

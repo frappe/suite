@@ -114,10 +114,15 @@ class MailAccountRequest(Document):
         Unset in both places, Suite Cloud applies the site's own default.
         """
 
-        return flt(self.quota_gb) or flt(get_config("default_disk_quota_gb")) or None
+        # §6.3: Mail is unlimited, regardless of historical quota/default settings.
+        return 0
 
     def before_insert(self) -> None:
         is_suite_cloud_configured(raise_exception=True)
+        if not self.flags.self_signup:
+            from suite.suite_core.administration import require_admin
+
+            require_admin()
         self.validate_backup_email()
         self.set_request_key()
         self.set_expires_at()
@@ -127,6 +132,10 @@ class MailAccountRequest(Document):
         self.validate_aliases()
         self.validate_groups()
         self.validate_mailing_lists()
+        from suite.suite_core.storage import state
+
+        _doc, policy, _measurements = state()
+        self.combined_cap_bytes = policy.get("default_cap") or 0
 
     def after_insert(self) -> None:
         if self.send_invite:
@@ -136,10 +145,38 @@ class MailAccountRequest(Document):
         """Validates the backup email."""
 
         if not self.backup_email:
-            frappe.throw(_("Backup Email is required."))
+            if self.send_invite or self.flags.self_signup:
+                frappe.throw(_("A separate contact email is required for invitations."))
+            return
 
         self.backup_email = self.backup_email.strip().lower()
         validate_email_address(self.backup_email, throw=True)
+        if self.backup_email == (self.account or "").strip().lower():
+            frappe.throw(
+                _("Send the invitation to an existing contact address, not the new business account.")
+            )
+
+    def validate(self) -> None:
+        self.validate_backup_email()
+        if self.expires_at and get_datetime(self.expires_at) > add_to_date(now_datetime(), days=7):
+            frappe.throw(_("Invitation links cannot remain valid for more than seven days"))
+        if not self.is_new() and (self.has_value_changed("account") or self.has_value_changed("is_admin")):
+            from suite.suite_core.administration import require_admin
+
+            require_admin()
+            if self.is_verified:
+                frappe.throw(_("Completed invitation identity cannot be changed"))
+            self.set_request_key()
+            self.expires_at = add_to_date(now_datetime(), days=7)
+            self.validate_account()
+        elif not self.is_new() and self.has_value_changed("expires_at"):
+            previous = self.get_doc_before_save()
+            if (
+                previous
+                and previous.expires_at
+                and get_datetime(self.expires_at) > get_datetime(previous.expires_at)
+            ):
+                self.set_request_key()
 
     def set_request_key(self) -> None:
         """Sets a random key for the request.
@@ -155,7 +192,7 @@ class MailAccountRequest(Document):
         """Sets the expiry date of the account request."""
 
         if not self.expires_at:
-            self.expires_at = add_to_date(now(), days=1)
+            self.expires_at = add_to_date(now(), days=7)
 
     def set_ip_address(self) -> None:
         """Sets the IP address of the request."""
@@ -184,8 +221,11 @@ class MailAccountRequest(Document):
         validate_email_address(self.account, throw=True)
         is_subaddressed_email(self.account, raise_exception=True)
 
-        if frappe.db.exists("User", {"email": self.account}):
-            frappe.throw(_("User with email {0} already exists.").format(frappe.bold(self.account)))
+        claim = frappe.db.get_value("User Settings", {"username": self.account}, "user")
+        if claim and claim != self.suite_user:
+            frappe.throw(_("This business address is already assigned to a Suite user"))
+        if frappe.db.exists("Suite Account State", {"account": self.account, "status": "Deletion failed"}):
+            frappe.throw(_("Finish the failed Mail deletion before reusing this address"))
 
     def validate_aliases(self) -> None:
         """Validates the additional email aliases and normalizes them.
@@ -326,21 +366,39 @@ class MailAccountRequest(Document):
         self,
         first_name: str,
         last_name: str | None,
-        password: str,
+        password: str | None = None,
         locale: str | None = None,
         time_zone: str | None = None,
-    ) -> None:
+    ) -> dict:
         """Force verify and create account for invited user."""
 
-        user = frappe.session.user
-        if not is_system_manager(user) and not is_suite_admin(user):
-            frappe.throw(_("You are not authorized to perform this action."))
+        from suite.suite_core.administration import require_admin
 
+        require_admin()
+
+        import secrets
+
+        from suite.mail.account_lifecycle import replace_temporary_password
+        from suite.suite_core.storage import state
+
+        state(lock=True)
+        frappe.db.get_value("Mail Account Request", self.name, "name", for_update=True)
+        self.reload()
         if self.is_verified:
-            frappe.throw(_("This account request is already verified."))
-
-        self.db_set("is_verified", 1)
-        self.create_account(first_name, last_name, password, locale, time_zone)
+            frappe.throw(
+                _("This account request is already completed. Replace its temporary password instead.")
+            )
+        if self.is_expired:
+            self.set_request_key()
+            self.expires_at = add_to_date(now_datetime(), days=7)
+        # Never accept an Admin-chosen permanent password. The Mail secret is
+        # unrelated to the temporary Suite secret and never disclosed.
+        self.is_verified = 1
+        self.create_account(
+            first_name, last_name, secrets.token_urlsafe(48), locale, time_zone, temporary=True
+        )
+        self.save(ignore_permissions=True)
+        return replace_temporary_password(self.suite_user)
 
     def create_account(
         self,
@@ -349,6 +407,8 @@ class MailAccountRequest(Document):
         password: str,
         locale: str | None = None,
         time_zone: str | None = None,
+        *,
+        temporary: bool = False,
     ) -> None:
         """Create mail account for the user.
 
@@ -368,38 +428,57 @@ class MailAccountRequest(Document):
         # The account is created through Suite Cloud, then its credentials are checked against the
         # JMAP server on save; without one that would fail halfway and undo the creation.
         is_jmap_server_configured(raise_exception=True)
+        from suite.mail.account_lifecycle import invalidate_measurements, provision
+        from suite.mail.directory import set_account_enabled
+        from suite.suite_core.account_state import read, write
+
         self.validate_account()
-
-        account = self._create_cluster_account(password, first_name, last_name, locale, time_zone)
-        app_password = account["app_password"]
-
-        # Steps 3 and 4 happen on this site, outside the cluster's transaction: if either fails, the
-        # cluster account is removed again so a retry does not run into "already exists".
-        try:
+        identity = self.suite_user or self.account
+        if not self.suite_user and frappe.db.exists("User", identity):
+            # Reusing a deleted business address never reuses its old Suite
+            # identity, password, API keys, Drive root, or private records.
+            identity = f"suite-{self.name}@identity.invalid"
+        existing = read(identity)
+        if not frappe.db.exists("User", identity):
             # Step - 3: Create User
-            user = execute_with_logging(
-                func=lambda: create_user(
-                    self.account,
-                    first_name,
-                    last_name,
-                    password,
-                    ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
-                ),
-                title="Failed to create user",
-                user_message=_("Failed to create user, check error log for details."),
-                module="Mail",
+            user = create_user(
+                identity,
+                first_name,
+                last_name,
+                password,
+                ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
             )
+        else:
+            user = identity
+        self.suite_user = user
+        self.db_set("suite_user", user)
+        write(user, account=self.account, operation=self.name, status="Setup failed")
+        provision(
+            user,
+            self.account,
+            password=password,
+            operation=self.name,
+            display_name=f"{first_name} {last_name}" if last_name else first_name,
+            aliases=self._aliases,
+            groups=self._surviving("mail.groups.list_groups", self._groups),
+            mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
+            locale=locale,
+            time_zone=time_zone,
+            disable_receiving=bool(self.disable_receiving),
+        )
+        settings = frappe.get_doc("User Settings", {"user": user})
+        frappe.db.set_value("User Settings", settings.name, "backup_email", self.backup_email)
+        if not temporary:
+            from suite.mail.directory import update_password
 
-            # Step - 4: Update User Settings
-            execute_with_logging(
-                func=lambda: self._update_user_settings(user, app_password),
-                title="Failed to update user settings",
-                user_message=_("Failed to update user settings, check error log for details."),
-                module="Mail",
-            )
-        except Exception:
-            self._discard_cluster_account()
-            raise
+            update_password(user, password)
+            set_account_enabled(user, True)
+        write(user, status="Active", must_change_password=0, temporary_expires_at=None)
+        invalidate_measurements(user, self.account)
+        if not existing:
+            from suite.suite_core.storage import initialize_user_limit
+
+            initialize_user_limit(user, cap=self.combined_cap_bytes or None, use_default=False)
 
         # Step - 5: Create Push Subscription
         if frappe.utils.get_url().startswith("https"):

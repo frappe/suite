@@ -30,13 +30,6 @@
           :options="domainOptions"
         />
         <FormControl v-model="description" :label="__('Description')" />
-        <FormControl
-          v-model="quotaGb"
-          type="number"
-          :min="0"
-          :label="__('Quota (GB)')"
-          :description="__('Leave blank to use the configured default disk quota.')"
-        />
         <div class="space-y-1.5">
           <label class="text-ink-gray-5 block text-xs">{{ __('Members') }}</label>
           <MultiSelect
@@ -86,7 +79,6 @@ const emit = defineEmits(['reload'])
 const name = ref('')
 const domain = ref('')
 const description = ref('')
-const quotaGb = ref<string | number>('')
 const memberIds = ref<string[]>([])
 const disableReceiving = ref(false)
 
@@ -102,7 +94,6 @@ watch(show, () => {
     name.value = ''
     domain.value = ''
     description.value = ''
-    quotaGb.value = ''
     memberIds.value = []
     disableReceiving.value = false
     picker.reset()
@@ -117,7 +108,7 @@ async function addGroupSubmit() {
     domain: domain.value,
     description: description.value?.trim() || undefined,
     members: memberIds.value,
-    quota_gb: quotaGb.value === '' ? null : Number(quotaGb.value),
+    quota_gb: 0,
     disable_receiving: disableReceiving.value,
   }
 

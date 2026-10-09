@@ -158,7 +158,7 @@ usePageMeta(() =>
 )
 
 const BREADCRUMBS = computed(() => [
-  { label: __('DMARC Reports'), route: '/mail/dashboard/dmarc' },
+  { label: __('DMARC Reports'), route: '/admin/mail/dmarc' },
   { label: data.value ? `${data.value.domain} · ${data.value.reporter}` : reportId },
 ])
 

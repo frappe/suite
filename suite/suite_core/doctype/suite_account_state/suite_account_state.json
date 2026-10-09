@@ -1,0 +1,19 @@
+{
+ "doctype": "DocType",
+ "name": "Suite Account State",
+ "module": "Suite Core",
+ "autoname": "field:user",
+ "field_order": ["user", "account", "operation", "status", "must_change_password", "temporary_expires_at"],
+ "fields": [
+  {"fieldname": "user", "fieldtype": "Link", "options": "User", "label": "User", "unique": 1, "reqd": 1},
+  {"fieldname": "account", "fieldtype": "Data", "label": "Mail account"},
+  {"fieldname": "operation", "fieldtype": "Data", "label": "Setup operation"},
+  {"fieldname": "status", "fieldtype": "Select", "options": "Active\nSetup failed\nPassword change required\nDeleted\nDeletion failed", "label": "Status", "default": "Setup failed"},
+  {"fieldname": "must_change_password", "fieldtype": "Check", "label": "Password change required"},
+  {"fieldname": "temporary_expires_at", "fieldtype": "Datetime", "label": "Temporary password expiry"}
+ ],
+ "permissions": [],
+ "engine": "InnoDB",
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

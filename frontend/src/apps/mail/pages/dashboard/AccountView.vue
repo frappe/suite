@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!member.data">
+  <DashboardLayout area="admin" :breadcrumbs="BREADCRUMBS" :loading="!member.data">
     <template v-if="member.data">
       <DashboardDetailHeader
         :title="member.data.description || member.data.name"
@@ -37,11 +37,27 @@
 
         <!-- Quota Usage -->
         <DashboardCard
-          :title="__('Quota Usage')"
+          :title="__('Combined storage usage')"
           :button-label="__('Edit')"
           @action="showEditQuota = true"
         >
-          <QuotaDonut :quota="member.data.quota" />
+          <div class="space-y-2 p-5 text-base text-ink-gray-7">
+            <p>
+              {{
+                storageUser?.combined_bytes == null
+                  ? __('Usage unavailable')
+                  : __('{0} GB', [(storageUser.combined_bytes / 1_000_000_000).toLocaleString()])
+              }}
+            </p>
+            <p>
+              {{
+                storageUser?.cap_bytes == null
+                  ? __('Uncapped')
+                  : __('Personal cap: {0} GB', [storageUser.cap_bytes / 1_000_000_000])
+              }}
+            </p>
+            <p v-if="storageUser?.buffer">{{ __('10% personal headroom granted') }}</p>
+          </div>
         </DashboardCard>
 
         <!-- Email Addresses -->
@@ -176,8 +192,44 @@
   <Dialog v-model:open="showResetPassword" v-bind="RESET_PASSWORD_OPTIONS" />
   <Dialog v-model:open="showToggleEnabled" v-bind="TOGGLE_ENABLED_OPTIONS" />
   <Dialog v-model:open="showToggleReceiving" v-bind="TOGGLE_RECEIVING_OPTIONS" />
-  <Dialog v-model:open="showDeleteMember" v-bind="DELETE_MEMBER_OPTIONS" />
-  <ChangeAccountPasswordModal v-model="showChangePassword" :member-id="accountId" />
+  <Dialog v-model:open="showDeleteMember" v-bind="DELETE_MEMBER_OPTIONS">
+    <template #default>
+      <FormControl
+        v-model="deletionConfirmation"
+        :label="__('Type the account address')"
+        :description="
+          __(
+            'Messages, aliases, and memberships are permanently removed. The Suite user and Drive files remain.',
+          )
+        "
+      />
+      <ErrorMessage :message="deletionError || deleteMember.error?.message" />
+    </template>
+  </Dialog>
+  <Dialog
+    v-model:open="showTemporaryPassword"
+    :title="__('One-time temporary password')"
+    @update:open="
+      (value) => {
+        if (!value) {
+          temporaryPassword = ''
+          replaceTemporary.reset()
+        }
+      }
+    "
+  >
+    <template #default
+      ><div class="space-y-4">
+        <p class="text-base text-ink-gray-6">
+          {{
+            __(
+              'Share this password privately. It is shown once, expires after seven days, and requires a password change before Suite or Mail-client access.',
+            )
+          }}
+        </p>
+        <FormControl :value="temporaryPassword" readonly :label="__('Temporary password')" /></div
+    ></template>
+  </Dialog>
   <EditAccountModal
     v-if="data"
     v-model="showEdit"
@@ -210,7 +262,16 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, Dropdown, Switch, Tooltip, usePageMeta } from 'frappe-ui'
+import {
+  Button,
+  Dialog,
+  Dropdown,
+  ErrorMessage,
+  FormControl,
+  Switch,
+  Tooltip,
+  usePageMeta,
+} from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -220,10 +281,8 @@ import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.
 import AddAccountEmailModal from '@/apps/mail/components/Modals/AddAccountEmailModal.vue'
 import AddAccountGroupsModal from '@/apps/mail/components/Modals/AddAccountGroupsModal.vue'
 import AddAccountMailingListsModal from '@/apps/mail/components/Modals/AddAccountMailingListsModal.vue'
-import ChangeAccountPasswordModal from '@/apps/mail/components/Modals/ChangeAccountPasswordModal.vue'
 import EditAccountModal from '@/apps/mail/components/Modals/EditAccountModal.vue'
 import EditAccountQuotaModal from '@/apps/mail/components/Modals/EditAccountQuotaModal.vue'
-import QuotaDonut from '@/apps/mail/components/QuotaDonut.vue'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import type { QuotaUsage } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
@@ -265,8 +324,16 @@ const router = useRouter()
 const { localeLabel } = useAccountOptions()
 usePageMeta(() => appPageMeta(accountId, 'Mail'))
 const showDeleteMember = ref(false)
+const deletionConfirmation = ref('')
 const showResetPassword = ref(false)
-const showChangePassword = ref(false)
+const showTemporaryPassword = ref(false)
+const temporaryPassword = ref('')
+const replaceTemporary = useMutation(api.suite.users.replaceTemporaryPassword)
+async function replaceTemporaryPassword() {
+  const result = await replaceTemporary.run({ user: accountId })
+  temporaryPassword.value = result.temporary_password
+  showTemporaryPassword.value = true
+}
 const showToggleEnabled = ref(false)
 const showToggleReceiving = ref(false)
 const showEdit = ref(false)
@@ -288,6 +355,8 @@ watch(
   },
 )
 const data = computed(() => member.data as MemberData | undefined)
+const storage = useQuery(api.suite.storage.get)
+const storageUser = computed(() => storage.data?.users.find((user) => user.name === accountId))
 const currentGroupIds = computed(() => data.value?.groups.map((g) => g.id) || [])
 const currentListIds = computed(() => data.value?.mailing_lists.map((l) => l.id) || [])
 const toggleEmailEnabled = async (
@@ -347,8 +416,8 @@ const lastActive = computed(() => formatDate(data.value?.last_active) || __('Nev
 const joinedOn = computed(() => formatDate(data.value?.joined_on))
 const BREADCRUMBS = computed(() => [
   {
-    label: __('Accounts'),
-    route: '/mail/dashboard/accounts',
+    label: __('Users'),
+    route: '/admin/users',
   },
   {
     label: data.value?.name || accountId,
@@ -431,21 +500,27 @@ const RESET_PASSWORD_OPTIONS = {
     },
   ],
 }
-const deleteMember = useMutation(api.mail.admin.members.delete)
+const deletionError = ref('')
+const deleteMember = useMutation(api.suite.users.deleteMail)
 async function deleteMemberSubmit() {
-  const input: InputOf<typeof api.mail.admin.members.delete> = {
-    names: [accountId],
+  const input: InputOf<typeof api.suite.users.deleteMail> = {
+    user: accountId,
+    confirmation: deletionConfirmation.value,
   }
-  await deleteMember.run(input)
+  const result = await deleteMember.run(input)
+  if (!result.success) {
+    deletionError.value = result.error || __('Deletion failed. Retry before reusing the address.')
+    return
+  }
   showDeleteMember.value = false
-  raiseToast(__('Account deleted.'))
-  router.push({
-    name: 'mail-accounts',
-  })
+  raiseToast(__('Mail account deleted. Suite user and Drive files were preserved.'))
+  router.push('/admin/users')
 }
 const DELETE_MEMBER_OPTIONS = {
-  title: __('Delete Account'),
-  message: __('Are you sure you want to delete this account? This action cannot be undone.'),
+  title: __('Delete Mail account'),
+  message: __(
+    'Disable this user first. Mail account deletion is permanent; the address can be reused.',
+  ),
   size: 'xl' as const,
   icon: 'lucide-alert-triangle',
   theme: 'amber' as const,
@@ -468,9 +543,9 @@ const dropdownOptions = computed(() => [
         onClick: () => (showResetPassword.value = true),
       },
       {
-        label: __('Change Password'),
+        label: __('Replace temporary password'),
         icon: 'lucide-key',
-        onClick: () => (showChangePassword.value = true),
+        onClick: replaceTemporaryPassword,
       },
     ],
   },
@@ -500,7 +575,7 @@ const dropdownOptions = computed(() => [
             onClick: () => (showToggleEnabled.value = true),
           },
       {
-        label: __('Delete'),
+        label: __('Delete Mail account'),
         icon: 'lucide-trash-2',
         onClick: () => (showDeleteMember.value = true),
       },

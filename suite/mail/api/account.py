@@ -164,6 +164,15 @@ def create_account(
     """Create a new mail account"""
 
     account_request = frappe.get_last_doc("Mail Account Request", {"request_key": request_key})
+    from suite.suite_core.storage import state
+
+    state(lock=True)
+    frappe.db.get_value("Mail Account Request", account_request.name, "name", for_update=True)
+    account_request.reload()
+    if account_request.request_key != request_key:
+        frappe.throw(_("This invitation link has been replaced"))
+    if account_request.is_verified:
+        frappe.throw(_("This invitation has already been accepted"))
     account_request.validate_expired()
     account_request.is_verified = 1
     account_request.save(ignore_permissions=True)

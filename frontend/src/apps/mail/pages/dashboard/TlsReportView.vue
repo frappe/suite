@@ -174,7 +174,7 @@ usePageMeta(() =>
 )
 
 const BREADCRUMBS = computed(() => [
-  { label: __('TLS Reports'), route: '/mail/dashboard/tls' },
+  { label: __('TLS Reports'), route: '/admin/mail/tls' },
   { label: data.value ? `${data.value.domain} · ${data.value.reporter}` : reportId },
 ])
 

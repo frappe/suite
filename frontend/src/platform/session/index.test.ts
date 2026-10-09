@@ -29,7 +29,11 @@ describe('session', () => {
     await session.refresh()
     expect(session.status.value).toBe('authenticated')
     expect(session.user.value).toMatchObject({ id: 'user@example.com', fullName: 'Server Name' })
-    expect(session.capabilities.value).toEqual({ jmap: true, systemManager: true })
+    expect(session.capabilities.value).toEqual({
+      jmap: true,
+      systemManager: true,
+      suiteAdmin: false,
+    })
     expect(hasCapabilities(['jmap'], session)).toBe(true)
     expect(missingCapabilities(['jmap', 'systemManager'], session)).toEqual([])
   })
@@ -43,7 +47,25 @@ describe('session', () => {
     expect(session.capabilities.value).toEqual({ jmap: false, systemManager: false })
     answer({ name: 'user@example.com', roles: [] })
     await session.refresh()
-    expect(session.capabilities.value).toEqual({ jmap: false, systemManager: false })
+    expect(session.capabilities.value).toEqual({
+      jmap: false,
+      systemManager: false,
+      suiteAdmin: false,
+    })
+  })
+
+  it('grants business administration from Suite Admin independently of System Manager', async () => {
+    document.cookie = 'user_id=admin%40example.com; path=/'
+    const request = vi.fn(async () => ({
+      name: 'admin@example.com',
+      roles: { suite_admin: true, system_manager: false },
+    }))
+    const session = createSession({ request } as unknown as Transport)
+    await session.refresh()
+    expect(hasCapabilities(['suiteAdmin'], session)).toBe(true)
+    expect(hasCapabilities(['systemManager'], session)).toBe(false)
+    session.expire()
+    expect(hasCapabilities(['suiteAdmin'], session)).toBe(false)
   })
 
   it('logs in, refreshes, and logs out through transport', async () => {

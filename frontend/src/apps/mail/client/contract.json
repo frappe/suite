@@ -1245,6 +1245,17 @@
             ],
             "title": "Quota Gb"
           },
+          "combined_cap_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Combined Cap Bytes"
+          },
           "send_invite": {
             "enum": [
               0,
@@ -1301,6 +1312,7 @@
           "invited_by",
           "expires_at",
           "quota_gb",
+          "combined_cap_bytes",
           "send_invite",
           "disable_receiving",
           "is_verified",
@@ -1348,22 +1360,30 @@
             ],
             "title": "Expires At"
           },
-          "quota_gb": {
+          "combined_cap_bytes": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Quota Gb"
+            "title": "Combined Cap Bytes"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
           }
         },
         "required": [
           "name",
           "expires_at",
-          "quota_gb"
+          "combined_cap_bytes"
         ],
         "title": "UpdateInvite",
         "type": "object"
@@ -8408,7 +8428,63 @@
         "type": "object"
       },
       "output": {
-        "type": "null"
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "success",
+          "user",
+          "status",
+          "error",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "CreationResult",
+        "type": "object"
       },
       "errors": [
         "PermissionError",
@@ -8763,6 +8839,10 @@
             },
             "title": "Names",
             "type": "array"
+          },
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
           }
         },
         "required": [
