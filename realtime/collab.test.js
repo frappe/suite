@@ -2,23 +2,23 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
 const registerHandlers = require("./handlers");
-const { held } = require("./collab");
+const { held_entries } = require("./collab");
 
 const room = (letter) => `sc:${letter.repeat(32)}`;
-const A = room("A");
-const B = room("B");
-const C = room("C");
-const tick = () => new Promise((resolve) => setTimeout(resolve, 150));
+const roomA = room("A");
+const roomB = room("B");
+const roomC = room("C");
+const waitForFlush = () => new Promise((resolve) => setTimeout(resolve, 150));
 
-let sites = 0;
+let siteCount = 0;
 // A site's namespace: its rooms, and what the site answers when asked whether collab is on
-function site(on = true) {
+function fakeSite(collabEnabled = true) {
 	const rooms = new Map();
 	const nsp = {
-		name: `/site-${sites++}.localhost`,
+		name: `/site-${siteCount++}.localhost`,
 		adapter: { rooms },
-		asked: 0,
-		on,
+		joinableAsks: 0,
+		collabEnabled,
 		to(name) {
 			const emit = (event, message) => {
 				for (const socket of rooms.get(name) ?? []) {
@@ -75,60 +75,60 @@ function connect(nsp, user = "a@example.com", faults = {}) {
 				return { json: async () => ({ data: { valid: true } }) };
 			}
 
-			nsp.asked++;
+			nsp.joinableAsks++;
 			if (faults.request) {
 				throw new Error("request");
 			}
 
-			return { json: async () => ({ data: nsp.on }) };
+			return { json: async () => ({ data: nsp.collabEnabled }) };
 		},
 	};
 	registerHandlers(socket);
 	return {
 		socket,
 		handlers,
-		rooms: (rooms) =>
+		joinRooms: (rooms) =>
 			new Promise((resolve) => handlers.get("suite_collab_rooms")({ rooms }, resolve)),
-		presence: (rooms, state) => handlers.get("suite_collab_presence")({ rooms, state }),
+		sendPresence: (rooms, state) => handlers.get("suite_collab_presence")({ rooms, state }),
 		close: () => handlers.get("disconnect")(),
 		heard: (event) => socket.heard.filter(([name]) => name === event).map(([, message]) => message),
 	};
 }
 
 test("a socket's room set replaces the last one and it is told who is already there", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const first = connect(nsp, "first@example.com");
 	const second = connect(nsp, "second@example.com");
-	await first.rooms([A, B]);
+	await first.joinRooms([roomA, roomB]);
 
-	const ack = await second.rooms([A]);
-	await first.rooms([B, C]);
+	const joinReply = await second.joinRooms([roomA]);
+	await first.joinRooms([roomB, roomC]);
 
-	assert.ok(ack.pid >= 2 ** 31 && ack.pid < 2 ** 32);
-	assert.deepEqual(ack.rooms, [A]);
+	assert.ok(joinReply.pid >= 2 ** 31 && joinReply.pid < 2 ** 32);
+	assert.deepEqual(joinReply.rooms, [roomA]);
 	assert.deepEqual(
-		ack.roster.map((entry) => [entry.room, entry.user]),
-		[[A, "first@example.com"]],
+		joinReply.roster.map((entry) => [entry.room, entry.user]),
+		[[roomA, "first@example.com"]],
 	);
-	assert.deepEqual([...nsp.adapter.rooms.keys()].sort(), [A, B, C].sort());
-	assert.equal(nsp.adapter.rooms.get(A).has(first.socket), false);
+	assert.deepEqual([...nsp.adapter.rooms.keys()].sort(), [roomA, roomB, roomC].sort());
+	assert.equal(nsp.adapter.rooms.get(roomA).has(first.socket), false);
 	assert.deepEqual(
 		second.heard("suite_collab_presence_gone").map((gone) => gone.room),
-		[A],
+		[roomA],
 	);
 	first.close();
 	second.close();
 });
 
 test("a room set that is too big or names something other than a collab room joins nothing", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const tab = connect(nsp);
 
 	const answers = [
-		await tab.rooms([..."ABCDEFGHI"].map(room)),
-		await tab.rooms(["guest:guest_12345"]),
-		await tab.rooms(`${A}`),
-		await tab.rooms([`${A}x`]),
+		await tab.joinRooms([..."ABCDEFGHI"].map(room)),
+		await tab.joinRooms(["guest:guest_12345"]),
+		await tab.joinRooms(`${roomA}`),
+		await tab.joinRooms([`${roomA}x`]),
 	];
 
 	assert.deepEqual(answers, Array(4).fill({ error: "invalid_request" }));
@@ -137,29 +137,29 @@ test("a room set that is too big or names something other than a collab room joi
 });
 
 test("with collaboration off every join is refused, and the site is asked once per half minute", async () => {
-	const nsp = site(false);
+	const nsp = fakeSite(false);
 	const tabs = Array.from({ length: 20 }, () => connect(nsp));
 
-	const answers = await Promise.all(tabs.map((tab) => tab.rooms([A])));
+	const answers = await Promise.all(tabs.map((tab) => tab.joinRooms([roomA])));
 
 	assert.deepEqual(answers, Array(20).fill({ error: "disabled" }));
 	assert.equal(nsp.adapter.rooms.size, 0);
-	assert.equal(nsp.asked, 1);
+	assert.equal(nsp.joinableAsks, 1);
 	tabs.forEach((tab) => tab.close());
 });
 
 test("presence carries the user the server verified, never one the tab names", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const writer = connect(nsp, "writer@example.com");
 	const guest = connect(nsp, "Guest");
 	const watcher = connect(nsp, "watcher@example.com");
-	await watcher.rooms([A]);
-	await writer.rooms([A]);
-	await guest.rooms([A]);
+	await watcher.joinRooms([roomA]);
+	await writer.joinRooms([roomA]);
+	await guest.joinRooms([roomA]);
 
-	writer.presence([A], { user: { name: "Someone else" }, cursor: { anchor: 1, head: 1 } });
-	guest.presence([A], { user: "admin@example.com", cursor: null });
-	await tick();
+	writer.sendPresence([roomA], { user: { name: "Someone else" }, cursor: { anchor: 1, head: 1 } });
+	guest.sendPresence([roomA], { user: "admin@example.com", cursor: null });
+	await waitForFlush();
 
 	const joins = watcher.heard("suite_collab_presence_join").map((join) => join.user);
 	const states = watcher.heard("suite_collab_presence").flatMap((batch) => batch.states);
@@ -172,16 +172,16 @@ test("presence carries the user the server verified, never one the tab names", a
 });
 
 test("a room hears a tab's latest presence once per tick", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const writer = connect(nsp);
 	const watcher = connect(nsp, "watcher@example.com");
-	await writer.rooms([A]);
-	await watcher.rooms([A]);
+	await writer.joinRooms([roomA]);
+	await watcher.joinRooms([roomA]);
 
 	for (const at of [1, 2, 3]) {
-		writer.presence([A], { cursor: { at } });
+		writer.sendPresence([roomA], { cursor: { at } });
 	}
-	await tick();
+	await waitForFlush();
 
 	const batches = watcher.heard("suite_collab_presence");
 	assert.equal(batches.length, 1);
@@ -194,22 +194,22 @@ test("a room hears a tab's latest presence once per tick", async () => {
 });
 
 test("presence past fifty messages a second, over 2 KiB or for a room not joined is ignored", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const flooder = connect(nsp);
 	const watcher = connect(nsp, "watcher@example.com");
-	await flooder.rooms([A]);
-	await watcher.rooms([A]);
+	await flooder.joinRooms([roomA]);
+	await watcher.joinRooms([roomA]);
 
 	const start = Date.now();
 	for (let at = 1; at <= 500; at++) {
-		flooder.presence([A], { cursor: { at } });
+		flooder.sendPresence([roomA], { cursor: { at } });
 	}
-	flooder.presence([A, B], { cursor: { at: "elsewhere" } });
-	await tick();
+	flooder.sendPresence([roomA, roomB], { cursor: { at: "elsewhere" } });
+	await waitForFlush();
 	const untilNextSecond = 1000 - ((Date.now() - start) % 1000) + 10;
 	await new Promise((resolve) => setTimeout(resolve, untilNextSecond));
-	flooder.presence([A], { cursor: { at: "big" }, padding: "x".repeat(2048) });
-	await tick();
+	flooder.sendPresence([roomA], { cursor: { at: "big" }, padding: "x".repeat(2048) });
+	await waitForFlush();
 
 	const states = watcher.heard("suite_collab_presence").flatMap((batch) => batch.states);
 	assert.ok(states.at(-1).n <= 2 * 50, `${states.at(-1).n} messages counted`);
@@ -222,37 +222,37 @@ test("presence past fifty messages a second, over 2 KiB or for a room not joined
 });
 
 test("a tab that joins late is answered with the carets already in its rooms, each naming its room", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const writer = connect(nsp, "writer@example.com");
-	await writer.rooms([A, B]);
-	writer.presence([A], { cursor: { at: 1 } });
-	await tick();
+	await writer.joinRooms([roomA, roomB]);
+	writer.sendPresence([roomA], { cursor: { at: 1 } });
+	await waitForFlush();
 
 	const late = connect(nsp, "late@example.com");
-	const ack = await late.rooms([A, B]);
+	const joinReply = await late.joinRooms([roomA, roomB]);
 
 	assert.deepEqual(
-		ack.carets.map((caret) => [caret.room, caret.user, caret.state.cursor.at]),
-		[[A, "writer@example.com", 1]],
+		joinReply.carets.map((caret) => [caret.room, caret.user, caret.state.cursor.at]),
+		[[roomA, "writer@example.com", 1]],
 	);
 	writer.close();
 	late.close();
 });
 
 test("a room shows at most fifty carets, ten of them guests", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const watcher = connect(nsp, "watcher@example.com");
-	await watcher.rooms([A]);
+	await watcher.joinRooms([roomA]);
 	const tabs = [
 		...Array.from({ length: 20 }, () => connect(nsp, "Guest")),
 		...Array.from({ length: 50 }, (_, index) => connect(nsp, `user${index}@example.com`)),
 	];
 	for (const tab of tabs) {
-		await tab.rooms([A]);
+		await tab.joinRooms([roomA]);
 	}
 
-	tabs.forEach((tab) => tab.presence([A], { cursor: { anchor: 1, head: 1 } }));
-	await tick();
+	tabs.forEach((tab) => tab.sendPresence([roomA], { cursor: { anchor: 1, head: 1 } }));
+	await waitForFlush();
 
 	const states = watcher.heard("suite_collab_presence").flatMap((batch) => batch.states);
 	const carets = states.filter((state) => state.state.cursor);
@@ -263,12 +263,12 @@ test("a room shows at most fifty carets, ten of them guests", async () => {
 });
 
 test("a room named over and over or a huge state is turned away before any work, and a room named twice counts once", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const flooder = connect(nsp);
 	const watcher = connect(nsp, "watcher@example.com");
-	await flooder.rooms([A]);
-	await watcher.rooms([A]);
-	const repeated = Array(26000).fill(A);
+	await flooder.joinRooms([roomA]);
+	await watcher.joinRooms([roomA]);
+	const repeated = Array(26000).fill(roomA);
 	const huge = {
 		cursor: { at: "huge" },
 		padding: Array(100000).fill("x".repeat(10)),
@@ -277,14 +277,14 @@ test("a room named over and over or a huge state is turned away before any work,
 	const start = process.hrtime.bigint();
 	for (let at = 0; at < 24; at++) {
 		flooder.handlers.get("suite_collab_presence")({ rooms: repeated, state: { cursor: { at } } });
-		flooder.presence([A], huge);
+		flooder.sendPresence([roomA], huge);
 	}
-	const spent = Number(process.hrtime.bigint() - start) / 1e6;
-	flooder.presence([A, A], { cursor: { at: "twice" } });
-	await tick();
+	const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+	flooder.sendPresence([roomA, roomA], { cursor: { at: "twice" } });
+	await waitForFlush();
 
 	const states = watcher.heard("suite_collab_presence").flatMap((batch) => batch.states);
-	assert.ok(spent < 20, `${spent} ms for 48 hostile messages`);
+	assert.ok(elapsedMs < 20, `${elapsedMs} ms for 48 hostile messages`);
 	assert.deepEqual(
 		states.map((state) => [state.n, state.state.cursor.at]),
 		[[1, "twice"]],
@@ -294,64 +294,67 @@ test("a room named over and over or a huge state is turned away before any work,
 });
 
 test("a tab that keeps changing its room set is held to the presence budget", async () => {
-	const nsp = site();
+	const nsp = fakeSite();
 	const toggler = connect(nsp);
 	const watcher = connect(nsp, "watcher@example.com");
-	await watcher.rooms([A]);
+	await watcher.joinRooms([roomA]);
 
 	const start = Date.now();
-	const settled = [];
+	const replies = [];
 	for (let round = 0; round < 200; round++) {
-		const rooms = round % 2 ? [] : [A];
-		settled.push(await toggler.rooms(rooms));
+		const rooms = round % 2 ? [] : [roomA];
+		replies.push(await toggler.joinRooms(rooms));
 	}
-	const within = Date.now() - start < 1000;
+	const withinOneSecond = Date.now() - start < 1000;
 
 	const joins = watcher.heard("suite_collab_presence_join").length;
 	const leaves = watcher.heard("suite_collab_presence_gone").length;
 	const churn = joins + leaves;
-	assert.ok(!within || churn <= 50, `${churn} joins and leaves heard`);
-	assert.ok(settled.filter((answer) => answer.error === "rate_limited").length >= 150);
+	assert.ok(!withinOneSecond || churn <= 50, `${churn} joins and leaves heard`);
+	assert.ok(replies.filter((answer) => answer.error === "rate_limited").length >= 150);
 	toggler.close();
 	watcher.close();
 });
 
 test("presence held stays bounded over a thousand reconnects and is gone when everyone leaves", async () => {
-	const nsp = site();
-	const empty = held();
+	const nsp = fakeSite();
+	const heldWhenEmpty = held_entries();
 	const writer = connect(nsp);
-	await writer.rooms([A, B]);
-	const before = held();
+	await writer.joinRooms([roomA, roomB]);
+	const heldWithWriter = held_entries();
 
 	for (let round = 0; round < 1000; round++) {
 		const tab = connect(nsp, round % 2 ? "Guest" : "reader@example.com");
-		await tab.rooms([A, B]);
-		tab.presence([A, B], { cursor: { at: round } });
+		await tab.joinRooms([roomA, roomB]);
+		tab.sendPresence([roomA, roomB], { cursor: { at: round } });
 		tab.close();
 	}
-	const during = held();
-	await tick();
+	const heldAfterReconnects = held_entries();
+	await waitForFlush();
 	writer.close();
-	await tick();
+	await waitForFlush();
 
-	assert.ok(during <= before + 2, `${during} held after reconnects, ${before} before`);
-	assert.equal(held(), empty);
+	assert.ok(
+		heldAfterReconnects <= heldWithWriter + 2,
+		`${heldAfterReconnects} held after reconnects, ${heldWithWriter} before`,
+	);
+	assert.equal(held_entries(), heldWhenEmpty);
 	assert.deepEqual(writer.heard("suite_collab_presence_gone").length, 2000);
 });
 
 test("a fault in every collab listener and timer leaves the process serving and Meet answering", async () => {
 	const escaped = [];
-	const record = (error) => escaped.push(error);
-	process.on("uncaughtException", record);
-	process.on("unhandledRejection", record);
+	const recordEscape = (error) => escaped.push(error);
+	process.on("uncaughtException", recordEscape);
+	process.on("unhandledRejection", recordEscape);
 	try {
-		const nsp = site();
+		const nsp = fakeSite();
 		const throwOnRead = {
 			get() {
 				throw new Error("payload");
 			},
 		};
-		const hostile = new Proxy({}, throwOnRead);
+		const throwingPayload = new Proxy({}, throwOnRead);
 		const throwingAck = () => {
 			throw new Error("ack");
 		};
@@ -361,25 +364,25 @@ test("a fault in every collab listener and timer leaves the process serving and 
 			connect(nsp, "c@example.com", { request: true }),
 		];
 		const healthy = connect(nsp, "d@example.com");
-		await healthy.rooms([A]);
+		await healthy.joinRooms([roomA]);
 		const answers = [];
 		for (const tab of tabs) {
-			answers.push(await tab.rooms([A]));
-			tab.handlers.get("suite_collab_rooms")(hostile, throwingAck);
-			tab.handlers.get("suite_collab_rooms")({ rooms: [A] }, () =>
+			answers.push(await tab.joinRooms([roomA]));
+			tab.handlers.get("suite_collab_rooms")(throwingPayload, throwingAck);
+			tab.handlers.get("suite_collab_rooms")({ rooms: [roomA] }, () =>
 				Promise.reject(new Error("ack")),
 			);
-			tab.handlers.get("suite_collab_presence")(hostile);
-			tab.presence([A], { cursor: { big: 10n } });
-			tab.presence([A], { cursor: { at: 1 } });
+			tab.handlers.get("suite_collab_presence")(throwingPayload);
+			tab.sendPresence([roomA], { cursor: { big: 10n } });
+			tab.sendPresence([roomA], { cursor: { at: 1 } });
 		}
-		healthy.presence([A], { cursor: { at: 1 } });
-		const emit = nsp.to;
+		healthy.sendPresence([roomA], { cursor: { at: 1 } });
+		const originalTo = nsp.to;
 		nsp.to = () => {
 			throw new Error("flush");
 		};
-		await tick();
-		nsp.to = emit;
+		await waitForFlush();
+		nsp.to = originalTo;
 		for (const tab of tabs) {
 			tab.handlers.get("disconnect")();
 		}
@@ -390,17 +393,17 @@ test("a fault in every collab listener and timer leaves the process serving and 
 			meeting_id: "room-1",
 			guest_session_token: "proof",
 		};
-		const meet = await new Promise((resolve) =>
+		const meetReply = await new Promise((resolve) =>
 			tabs[1].handlers.get("guest_subscribe")(subscription, resolve),
 		);
-		healthy.presence([A], { cursor: { at: 2 } });
-		await tick();
+		healthy.sendPresence([roomA], { cursor: { at: 2 } });
+		await waitForFlush();
 
 		assert.deepEqual(escaped, []);
-		assert.deepEqual(meet, { ok: true });
+		assert.deepEqual(meetReply, { ok: true });
 		assert.ok(answers.every((answer) => answer.error || answer.pid));
 	} finally {
-		process.off("uncaughtException", record);
-		process.off("unhandledRejection", record);
+		process.off("uncaughtException", recordEscape);
+		process.off("unhandledRejection", recordEscape);
 	}
 });

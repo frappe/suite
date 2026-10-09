@@ -27,83 +27,84 @@ type ParagraphChange = { change: string; lineage: string; head_rev: number };
 /** What `pushInPieces` saw: how many pieces it staged, the push's status, and its refusal if any. */
 type PushOutcome = { pieces: number; status: number; collab?: string };
 
-async function hook<T>(api: APIRequestContext, name: string, node: string): Promise<T> {
-	const response = await api.post(`/api/method/suite.writer.content.e2e_api.${name}`, {
+async function callTestHook<T>(testApi: APIRequestContext, name: string, node: string): Promise<T> {
+	const response = await testApi.post(`/api/method/suite.writer.content.e2e_api.${name}`, {
 		form: { node },
 	});
 	return frappeData<T>(response);
 }
 
 /** Turn collaboration on for the site and give `node` a collab log. Call before the document opens. */
-export const enableCollab = (api: APIRequestContext, node: string) =>
-	hook<CollabState>(api, "enable_collab", node);
+export const enableCollab = (testApi: APIRequestContext, node: string) =>
+	callTestHook<CollabState>(testApi, "enable_collab", node);
 
-export const compactNow = (api: APIRequestContext, node: string) =>
-	hook<CollabState>(api, "compact_now", node);
+export const compactNow = (testApi: APIRequestContext, node: string) =>
+	callTestHook<CollabState>(testApi, "compact_now", node);
 
-export const collabState = (api: APIRequestContext, node: string) =>
-	hook<CollabState>(api, "state", node);
+export const collabState = (testApi: APIRequestContext, node: string) =>
+	callTestHook<CollabState>(testApi, "state", node);
 
 /** How big a document's compacted state is counted. */
-export const stateBytes = (api: APIRequestContext, node: string) =>
-	hook<number>(api, "state_bytes", node);
+export const stateBytes = (testApi: APIRequestContext, node: string) =>
+	callTestHook<number>(testApi, "state_bytes", node);
 
-export const logId = (api: APIRequestContext, node: string) => hook<string>(api, "log_id", node);
+export const logId = (testApi: APIRequestContext, node: string) =>
+	callTestHook<string>(testApi, "log_id", node);
 
 /** Hold a document for an admin; `why` is the judge's cause, and `bad_checkpoint` puts the whole document in question. */
 export async function holdDocument(
-	api: APIRequestContext,
+	testApi: APIRequestContext,
 	node: string,
 	why: string,
 ): Promise<CollabState> {
-	const response = await api.post("/api/method/suite.writer.content.e2e_api.hold", {
+	const response = await testApi.post("/api/method/suite.writer.content.e2e_api.hold", {
 		form: { node, why },
 	});
 	return frappeData(response);
 }
 
 /** Clear a held document, as an admin does. */
-export const releaseDocument = (api: APIRequestContext, node: string) =>
-	hook<CollabState>(api, "release", node);
+export const releaseDocument = (testApi: APIRequestContext, node: string) =>
+	callTestHook<CollabState>(testApi, "release", node);
 
 /** Quarantine a document's last row, as a judge that finds it bad does. */
 export async function quarantineLast(
-	api: APIRequestContext,
+	testApi: APIRequestContext,
 	node: string,
 	why: string,
 ): Promise<CollabState> {
-	const response = await api.post("/api/method/suite.writer.content.e2e_api.quarantine_last", {
+	const response = await testApi.post("/api/method/suite.writer.content.e2e_api.quarantine_last", {
 		form: { node, why },
 	});
 	return frappeData(response);
 }
 
 /** Count a document's state as big as its tail leaves room for, so its next adding push waits for a compaction. */
-export const leaveNoRoom = (api: APIRequestContext, node: string) =>
-	hook<CollabState>(api, "leave_no_room", node);
+export const leaveNoRoom = (testApi: APIRequestContext, node: string) =>
+	callTestHook<CollabState>(testApi, "leave_no_room", node);
 
 /** Count a document as big as one may be, so the server takes no more adding changes. */
-export const fillUp = (api: APIRequestContext, node: string) =>
-	hook<CollabState>(api, "fill_up", node);
+export const fillDocument = (testApi: APIRequestContext, node: string) =>
+	callTestHook<CollabState>(testApi, "fill_up", node);
 
 /** Mark a document as written from here on by a Writer one schema newer than this site's. */
-export const writeNewerSchema = (api: APIRequestContext, node: string) =>
-	hook<CollabState>(api, "write_newer_schema", node);
+export const writeNewerSchema = (testApi: APIRequestContext, node: string) =>
+	callTestHook<CollabState>(testApi, "write_newer_schema", node);
 
 /** How many rows each collab table holds for a log, keyed by table kind. */
-export async function logRows(
-	api: APIRequestContext,
+export async function logRowCounts(
+	testApi: APIRequestContext,
 	log: string,
 ): Promise<Record<string, number>> {
-	const response = await api.post("/api/method/suite.writer.content.e2e_api.log_rows", {
+	const response = await testApi.post("/api/method/suite.writer.content.e2e_api.log_rows", {
 		form: { log },
 	});
 	return frappeData(response);
 }
 
 /** The text of each top-level block, as the server would serve it. */
-export const serverText = (api: APIRequestContext, node: string) =>
-	hook<string[]>(api, "server_text", node);
+export const serverBlocks = (testApi: APIRequestContext, node: string) =>
+	callTestHook<string[]>(testApi, "server_text", node);
 
 /** The text of each top-level block in the editor, without other people's carets. */
 export function editorBlocks(page: Page): Promise<string[]> {
@@ -135,28 +136,30 @@ export async function typeParagraph(page: Page, text: string): Promise<void> {
 
 /** Wait until every page shows the same blocks as the server, and those blocks hold every text. */
 export async function expectConverged(
-	api: APIRequestContext,
+	testApi: APIRequestContext,
 	node: string,
 	pages: Page[],
 	texts: string[],
 	timeout?: number,
 ): Promise<string[]> {
-	let blocks: string[] = [];
+	let lastStoredBlocks: string[] = [];
 	const compareWithServer = async () => {
-		const server = await serverText(api, node);
-		const shown = await Promise.all(pages.map(editorBlocks));
-		blocks = server;
-		const matchesServer = shown.every((page) => JSON.stringify(page) === JSON.stringify(server));
-		const missing = texts.filter((text) => !server.join("\n").includes(text));
+		const storedBlocks = await serverBlocks(testApi, node);
+		const shownBlocks = await Promise.all(pages.map(editorBlocks));
+		lastStoredBlocks = storedBlocks;
+		const matchesServer = shownBlocks.every(
+			(pageBlocks) => JSON.stringify(pageBlocks) === JSON.stringify(storedBlocks),
+		);
+		const missing = texts.filter((text) => !storedBlocks.join("\n").includes(text));
 		return { matchesServer, missing };
 	};
 
 	await expect.poll(compareWithServer, { timeout }).toEqual({ matchesServer: true, missing: [] });
-	return blocks;
+	return lastStoredBlocks;
 }
 
 /** Store the document's current bytes as a named version, through Drive's versions route; answers its seq. */
-export async function takeVersion(
+export async function saveNamedVersion(
 	request: APIRequestContext,
 	node: string,
 	label: string,
@@ -184,19 +187,19 @@ export async function pastePicture(page: Page): Promise<void> {
 
 // Runs in the page, so it reads nothing from this module
 function pasteDot(editor: Element) {
-	const png =
+	const pngBase64 =
 		"iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGklEQVR4nGP4z8BAEhrVMKphVMOohlENQ1UDAOWw/wF6FG3VAAAAAElFTkSuQmCC";
-	const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+	const bytes = Uint8Array.from(atob(pngBase64), (char) => char.charCodeAt(0));
 	const picture = new File([bytes], "dot.png", { type: "image/png" });
-	const data = new DataTransfer();
-	data.items.add(picture);
+	const clipboard = new DataTransfer();
+	clipboard.items.add(picture);
 
-	const pasted: ClipboardEventInit = {
-		clipboardData: data,
+	const pasteInit: ClipboardEventInit = {
+		clipboardData: clipboard,
 		bubbles: true,
 		cancelable: true,
 	};
-	const paste = new ClipboardEvent("paste", pasted);
+	const paste = new ClipboardEvent("paste", pasteInit);
 	editor.dispatchEvent(paste);
 }
 
@@ -209,15 +212,15 @@ export async function pasteText(page: Page, text: string): Promise<void> {
 
 // Runs in the page, so it reads nothing from this module
 function pastePlainText(editor: Element, text: string) {
-	const data = new DataTransfer();
-	data.setData("text/plain", text);
+	const clipboard = new DataTransfer();
+	clipboard.setData("text/plain", text);
 
-	const pasted: ClipboardEventInit = {
-		clipboardData: data,
+	const pasteInit: ClipboardEventInit = {
+		clipboardData: clipboard,
 		bubbles: true,
 		cancelable: true,
 	};
-	const paste = new ClipboardEvent("paste", pasted);
+	const paste = new ClipboardEvent("paste", pasteInit);
 	editor.dispatchEvent(paste);
 }
 
@@ -230,94 +233,97 @@ export function picturesLoaded(page: Page): Promise<boolean[]> {
 		);
 }
 
-function framed(header: object, bytes: Buffer): Buffer {
-	const json = Buffer.from(JSON.stringify(header));
-	const length = Buffer.alloc(4);
-	length.writeUInt32BE(json.length);
-	return Buffer.concat([length, json, bytes]);
+function buildFrame(header: object, bytes: Buffer): Buffer {
+	const headerJson = Buffer.from(JSON.stringify(header));
+	const headerLength = Buffer.alloc(4);
+	headerLength.writeUInt32BE(headerJson.length);
+	return Buffer.concat([headerLength, headerJson, bytes]);
 }
 
-/** Add a paragraph of `length` letters to `node` as `user`, staged over the piece route in reverse order and then pushed; `whole` sends it in the push itself. */
+/** Add a paragraph of `length` letters to `node` as `user`, staged over the piece route in reverse order and then pushed; `sendWhole` sends it in the push itself. */
 export async function pushInPieces(
-	request: APIRequestContext,
-	api: APIRequestContext,
+	userRequest: APIRequestContext,
+	testApi: APIRequestContext,
 	node: string,
 	user: string,
 	length: number,
-	whole = false,
+	sendWhole = false,
 ): Promise<PushOutcome> {
-	const base = `/api/suite/content/${encodeURIComponent(node)}`;
+	const contentUrl = `/api/suite/content/${encodeURIComponent(node)}`;
 	const headers = {
 		"X-Collab-Principal": user,
 		"Content-Type": "application/octet-stream",
 	};
-	const sid = randomUUID().replaceAll("-", "");
+	const sessionId = randomUUID().replaceAll("-", "");
 
-	const sessionJson = JSON.stringify({ sid });
-	const session = await request.post(`${base}/sessions`, {
+	const sessionJson = JSON.stringify({ sid: sessionId });
+	const sessionResponse = await userRequest.post(`${contentUrl}/sessions`, {
 		headers,
 		data: Buffer.from(sessionJson),
 	});
-	expect(session.ok(), await session.text()).toBe(true);
-	const sessionReply = (await session.json()) as { client_id: number };
-	const cid = sessionReply.client_id;
+	expect(sessionResponse.ok(), await sessionResponse.text()).toBe(true);
+	const sessionReply = (await sessionResponse.json()) as { client_id: number };
+	const clientId = sessionReply.client_id;
 
 	const paragraph = {
 		node,
-		client_id: String(cid),
+		client_id: String(clientId),
 		length: String(length),
 	};
-	const madeResponse = await api.post("/api/method/suite.writer.content.e2e_api.paragraph_change", {
-		form: paragraph,
-	});
-	const made = await frappeData<ParagraphChange>(madeResponse);
+	const changeResponse = await testApi.post(
+		"/api/method/suite.writer.content.e2e_api.paragraph_change",
+		{
+			form: paragraph,
+		},
+	);
+	const paragraphChange = await frappeData<ParagraphChange>(changeResponse);
 
-	const change = Buffer.from(made.change, "hex");
-	const sha = createHash("sha256").update(change).digest("hex");
-	const stage = randomUUID().replaceAll("-", "");
-	const size = 256 * 1024;
-	const pieces = whole ? 0 : Math.ceil(change.length / size);
-	for (let idx = pieces - 1; idx >= 0; idx--) {
+	const changeBytes = Buffer.from(paragraphChange.change, "hex");
+	const changeSha = createHash("sha256").update(changeBytes).digest("hex");
+	const stageId = randomUUID().replaceAll("-", "");
+	const pieceSize = 256 * 1024;
+	const pieces = sendWhole ? 0 : Math.ceil(changeBytes.length / pieceSize);
+	for (let pieceIndex = pieces - 1; pieceIndex >= 0; pieceIndex--) {
 		const pieceHeader = {
-			lineage: made.lineage,
+			lineage: paragraphChange.lineage,
 			principal: user,
-			sid,
+			sid: sessionId,
 			from: 1,
 			to: 1,
-			total_len: change.length,
-			sha_total: sha,
+			total_len: changeBytes.length,
+			sha_total: changeSha,
 		};
-		const piece = change.subarray(idx * size, (idx + 1) * size);
-		const put = await request.put(`${base}/stage/${stage}/${idx}`, {
+		const piece = changeBytes.subarray(pieceIndex * pieceSize, (pieceIndex + 1) * pieceSize);
+		const stageResponse = await userRequest.put(`${contentUrl}/stage/${stageId}/${pieceIndex}`, {
 			headers,
-			data: framed(pieceHeader, piece),
+			data: buildFrame(pieceHeader, piece),
 		});
-		expect(put.status(), await put.text()).toBe(200);
+		expect(stageResponse.status(), await stageResponse.text()).toBe(200);
 	}
 
 	const pushHeader = {
-		lineage: made.lineage,
+		lineage: paragraphChange.lineage,
 		principal: user,
-		sid,
+		sid: sessionId,
 		from: 1,
 		to: 1,
-		cid,
-		seen_rev: made.head_rev,
+		cid: clientId,
+		seen_rev: paragraphChange.head_rev,
 		schema: 1,
-		shas: [sha],
-		...(whole ? {} : { stage_id: stage }),
+		shas: [changeSha],
+		...(sendWhole ? {} : { stage_id: stageId }),
 	};
-	const pushBody = whole ? change : Buffer.alloc(0);
-	const push = await request.post(`${base}/updates`, {
+	const pushBody = sendWhole ? changeBytes : Buffer.alloc(0);
+	const pushResponse = await userRequest.post(`${contentUrl}/updates`, {
 		headers,
-		data: framed(pushHeader, pushBody),
+		data: buildFrame(pushHeader, pushBody),
 	});
-	const status = push.status();
-	if (push.ok()) {
+	const status = pushResponse.status();
+	if (pushResponse.ok()) {
 		return { pieces, status };
 	}
 
-	const refusal = (await push.json()) as { collab: string };
+	const refusal = (await pushResponse.json()) as { collab: string };
 	return {
 		pieces,
 		status,
@@ -326,17 +332,17 @@ export async function pushInPieces(
 }
 
 /** A proxy in front of `target` that refuses request bodies over `limit` bytes with 413, as nginx's `client_max_body_size 1m` does.
- * A `bare` refusal has no body, as some load balancers send. */
-export async function bodyLimitProxy(target: string, limit = 2 ** 20, bare = false) {
+ * With `bareRefusal` the 413 has no body, as some load balancers send. */
+export async function bodyLimitProxy(target: string, limit = 2 ** 20, bareRefusal = false) {
 	const upstream = new URL(target);
-	const seen = {
+	const traffic = {
 		largest: 0,
 		refused: 0,
 	};
 
 	const refuse = (outgoing: ServerResponse) => {
-		seen.refused++;
-		if (bare) {
+		traffic.refused++;
+		if (bareRefusal) {
 			outgoing.writeHead(413).end();
 		} else {
 			outgoing
@@ -349,7 +355,7 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20, bare = fal
 		const chunks: Buffer[] = [];
 		const forwardBody = () => {
 			const body = Buffer.concat(chunks);
-			seen.largest = Math.max(seen.largest, body.length);
+			traffic.largest = Math.max(traffic.largest, body.length);
 			if (body.length > limit) {
 				refuse(outgoing);
 				return;
@@ -362,13 +368,13 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20, bare = fal
 				path: incoming.url,
 				headers: incoming.headers,
 			};
-			const passBack = (answer: IncomingMessage) => {
-				outgoing.writeHead(answer.statusCode ?? 502, answer.headers);
-				answer.pipe(outgoing);
+			const passBack = (upstreamResponse: IncomingMessage) => {
+				outgoing.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+				upstreamResponse.pipe(outgoing);
 			};
-			const sent = forward(upstreamRequest, passBack);
-			sent.on("error", () => outgoing.writeHead(502).end());
-			sent.end(body);
+			const forwarded = forward(upstreamRequest, passBack);
+			forwarded.on("error", () => outgoing.writeHead(502).end());
+			forwarded.end(body);
 		};
 
 		incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -379,7 +385,7 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20, bare = fal
 	await new Promise<void>((listening) => server.listen(0, listening));
 	const { port } = server.address() as AddressInfo;
 
-	const lift = () => {
+	const liftLimit = () => {
 		limit = Infinity;
 	};
 	const shutDown = (closed: () => void) => {
@@ -388,5 +394,5 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20, bare = fal
 	};
 	const close = () => new Promise<void>(shutDown);
 	const origin = `${upstream.protocol}//${upstream.hostname}:${port}`;
-	return { origin, seen, lift, close };
+	return { origin, traffic, liftLimit, close };
 }

@@ -2,131 +2,133 @@
 // so no listener or timer here may throw or leave a promise unhandled.
 const crypto = require("node:crypto");
 
-const ROOM = /^sc:[A-Za-z0-9_-]{32}$/;
+const ROOM_PATTERN = /^sc:[A-Za-z0-9_-]{32}$/;
 const ROOMS_MAX = 8;
-const STATE_MAX = 2048;
+const STATE_BYTES_MAX = 2048;
 const FLUSH_MS = 100;
-const RATE_PER_SECOND = 50;
+const MESSAGES_PER_SECOND = 50;
 const CARETS_MAX = 50;
 const GUEST_CARETS_MAX = 10;
 const ROSTER_MAX = 50;
 const WRITES_PER_SECOND = 20000;
-const JOINABLE_MS = 30000;
+const JOINABLE_CACHE_MS = 30000;
 
 // Per site: room -> Map(pid -> entry), and room -> the pids changed since the last flush
 const sites = new Map();
 // Per site: whether sockets may join, asked of the site at most every 30 s
-const allowed = new Map();
-let timer = null;
+const joinableBySite = new Map();
+let flushTimer = null;
 
-const is_room = (room) => typeof room === "string" && ROOM.test(room);
+const is_room = (room) => typeof room === "string" && ROOM_PATTERN.test(room);
 
 const collab_handlers = (socket) => {
 	const pid = 2 ** 31 + crypto.randomInt(2 ** 31);
 	const user = socket.user;
-	const guest = !user || user === "Guest";
-	const joined = new Set();
-	const rate = { second: 0, count: 0 };
-	let asked = 0;
+	const isGuest = !user || user === "Guest";
+	const joinedRooms = new Set();
+	const rateWindow = { second: 0, count: 0 };
+	let roomRequests = 0;
 
 	socket.on("suite_collab_rooms", (payload, acknowledge) => {
 		try {
-			if (!spend()) {
-				answer(acknowledge, { error: "rate_limited" });
+			if (!within_rate()) {
+				send_reply(acknowledge, { error: "rate_limited" });
 				return;
 			}
 
 			const rooms = payload?.rooms;
-			const valid = Array.isArray(rooms) && rooms.length <= ROOMS_MAX && rooms.every(is_room);
-			if (!valid) {
-				answer(acknowledge, { error: "invalid_request" });
+			const roomsValid = Array.isArray(rooms) && rooms.length <= ROOMS_MAX && rooms.every(is_room);
+			if (!roomsValid) {
+				send_reply(acknowledge, { error: "invalid_request" });
 				return;
 			}
 
-			const ask = ++asked;
+			const thisRequest = ++roomRequests;
 			const enterIfJoinable = (canJoin) => {
-				if (ask !== asked) return;
+				if (thisRequest !== roomRequests) return;
 
 				if (!canJoin) {
-					enter([]);
-					answer(acknowledge, { error: "disabled" });
+					set_rooms([]);
+					send_reply(acknowledge, { error: "disabled" });
 					return;
 				}
 
-				enter(rooms);
-				answer(acknowledge, ack(rooms));
+				set_rooms(rooms);
+				send_reply(acknowledge, join_reply(rooms));
 			};
-			joinable(socket)
+			site_allows_join(socket)
 				.then(enterIfJoinable)
-				.catch(() => answer(acknowledge, { error: "failed" }));
+				.catch(() => send_reply(acknowledge, { error: "failed" }));
 		} catch {
-			answer(acknowledge, { error: "failed" });
+			send_reply(acknowledge, { error: "failed" });
 		}
 	});
 
 	socket.on("suite_collab_presence", (payload) => {
 		try {
-			if (!spend()) return;
+			if (!within_rate()) return;
 
 			const rooms = payload?.rooms;
 			const roomCount = Array.isArray(rooms) ? rooms.length : 0;
 			if (!roomCount || roomCount > ROOMS_MAX) return;
 
-			const named = new Set(rooms);
-			const allJoined = [...named].every((room) => joined.has(room));
+			const namedRooms = new Set(rooms);
+			const allJoined = [...namedRooms].every((room) => joinedRooms.has(room));
 			if (!allJoined) return;
 
 			const state = payload?.state;
 			const isObject = !!state && typeof state === "object" && !Array.isArray(state);
 			if (!isObject) return;
 
-			const small = fits(state, STATE_MAX) && Buffer.byteLength(JSON.stringify(state)) <= STATE_MAX;
-			if (!small) return;
+			const stateFits =
+				json_fits(state, STATE_BYTES_MAX) &&
+				Buffer.byteLength(JSON.stringify(state)) <= STATE_BYTES_MAX;
+			if (!stateFits) return;
 
 			const site = site_of(socket);
-			for (const room of named) {
+			for (const room of namedRooms) {
 				const members = site.rooms.get(room);
 				const entry = members?.get(pid);
 				if (!entry) continue;
 
-				const caret = state.cursor != null && has_caret_slot(members, entry);
-				entry.state = caret || state.cursor == null ? state : { ...state, cursor: null };
-				entry.caret = caret;
-				entry.n++;
+				const hasCaret = state.cursor != null && has_caret_slot(members, entry);
+				entry.state = hasCaret || state.cursor == null ? state : { ...state, cursor: null };
+				entry.hasCaret = hasCaret;
+				entry.updates++;
 				if (!site.dirty.has(room)) {
 					site.dirty.set(room, new Set());
 				}
 				site.dirty.get(room).add(pid);
 			}
-			schedule();
+			schedule_flush();
 		} catch {}
 	});
 
 	// Room sets and presence share one budget per socket
-	function spend() {
+	function within_rate() {
 		const now = Math.floor(Date.now() / 1000);
-		if (rate.second !== now) {
-			rate.second = now;
-			rate.count = 0;
+		if (rateWindow.second !== now) {
+			rateWindow.second = now;
+			rateWindow.count = 0;
 		}
-		return ++rate.count <= RATE_PER_SECOND;
+		return ++rateWindow.count <= MESSAGES_PER_SECOND;
 	}
 
 	socket.on("disconnect", () => {
 		try {
-			asked++;
-			enter([]);
+			roomRequests++;
+			set_rooms([]);
 		} catch {}
 	});
 
-	function enter(rooms) {
+	function set_rooms(rooms) {
 		const site = site_of(socket);
 		const wanted = new Set(rooms);
 
-		for (const room of [...joined]) {
+		for (const room of [...joinedRooms]) {
 			if (wanted.has(room)) continue;
 
-			joined.delete(room);
+			joinedRooms.delete(room);
 			const members = site.rooms.get(room);
 			members?.delete(pid);
 			site.dirty.get(room)?.delete(pid);
@@ -138,19 +140,19 @@ const collab_handlers = (socket) => {
 		}
 
 		for (const room of wanted) {
-			if (joined.has(room)) continue;
+			if (joinedRooms.has(room)) continue;
 
-			joined.add(room);
+			joinedRooms.add(room);
 			if (!site.rooms.has(room)) {
 				site.rooms.set(room, new Map());
 			}
 			const entry = {
 				pid,
 				user,
-				guest,
+				isGuest,
 				state: null,
-				caret: false,
-				n: 0,
+				hasCaret: false,
+				updates: 0,
 			};
 			site.rooms.get(room).set(pid, entry);
 			socket.join(room);
@@ -162,7 +164,7 @@ const collab_handlers = (socket) => {
 		}
 	}
 
-	function ack(rooms) {
+	function join_reply(rooms) {
 		const site = site_of(socket);
 		const roster = [];
 		const carets = [];
@@ -181,7 +183,7 @@ const collab_handlers = (socket) => {
 					roster.push(member);
 				}
 				if (entry.state) {
-					carets.push({ room, ...sent(entry) });
+					carets.push({ room, ...presence_state(entry) });
 				}
 			}
 		}
@@ -190,39 +192,39 @@ const collab_handlers = (socket) => {
 };
 
 function has_caret_slot(members, entry) {
-	if (entry.caret) return true;
+	if (entry.hasCaret) return true;
 
-	let carets = 0;
-	let guests = 0;
+	let caretCount = 0;
+	let guestCaretCount = 0;
 	for (const other of members.values()) {
-		if (!other.caret) continue;
+		if (!other.hasCaret) continue;
 
-		carets++;
-		if (other.guest) {
-			guests++;
+		caretCount++;
+		if (other.isGuest) {
+			guestCaretCount++;
 		}
 	}
 
-	const guestFits = !entry.guest || guests < GUEST_CARETS_MAX;
-	return carets < CARETS_MAX && guestFits;
+	const guestFits = !entry.isGuest || guestCaretCount < GUEST_CARETS_MAX;
+	return caretCount < CARETS_MAX && guestFits;
 }
 
 // Whether a value's JSON can fit in `budget` bytes, reading no further than that
-function fits(value, budget) {
+function json_fits(value, budget) {
 	const pending = [value];
 	while (pending.length && budget >= 0) {
-		const item = pending.pop();
+		const part = pending.pop();
 		budget -= 2;
-		if (typeof item === "string") {
-			budget -= item.length > budget ? item.length : Buffer.byteLength(item);
-		} else if (Array.isArray(item)) {
-			for (let at = 0; at < item.length && budget >= 0; at++, budget--) {
-				pending.push(item[at]);
+		if (typeof part === "string") {
+			budget -= part.length > budget ? part.length : Buffer.byteLength(part);
+		} else if (Array.isArray(part)) {
+			for (let at = 0; at < part.length && budget >= 0; at++, budget--) {
+				pending.push(part[at]);
 			}
-		} else if (item && typeof item === "object") {
-			for (const key in item) {
+		} else if (part && typeof part === "object") {
+			for (const key in part) {
 				budget -= key.length + 4;
-				pending.push(item[key]);
+				pending.push(part[key]);
 				if (budget < 0) break;
 			}
 		}
@@ -230,9 +232,9 @@ function fits(value, budget) {
 	return budget >= 0;
 }
 
-function joinable(socket) {
+function site_allows_join(socket) {
 	const now = Date.now();
-	const known = allowed.get(socket.nsp.name);
+	const known = joinableBySite.get(socket.nsp.name);
 	if (known && known.until > now) return known.answer;
 
 	const answer = socket
@@ -242,9 +244,9 @@ function joinable(socket) {
 		.catch(() => false);
 	const cached = {
 		answer,
-		until: now + JOINABLE_MS,
+		until: now + JOINABLE_CACHE_MS,
 	};
-	allowed.set(socket.nsp.name, cached);
+	joinableBySite.set(socket.nsp.name, cached);
 	return answer;
 }
 
@@ -261,73 +263,77 @@ function site_of(socket) {
 	return sites.get(name);
 }
 
-function sent(entry) {
+function presence_state(entry) {
 	return {
 		pid: entry.pid,
 		user: entry.user,
-		n: entry.n,
+		n: entry.updates,
 		state: entry.state,
 	};
 }
 
-function schedule() {
-	if (!timer) {
-		timer = setTimeout(flush, FLUSH_MS);
+function schedule_flush() {
+	if (!flushTimer) {
+		flushTimer = setTimeout(flush_presence, FLUSH_MS);
 	}
 }
 
 // One combined message per changed room; past the write budget the rest wait for the next tick
-function flush() {
-	timer = null;
+function flush_presence() {
+	flushTimer = null;
 	try {
-		let budget = (WRITES_PER_SECOND * FLUSH_MS) / 1000;
-		let flushed = false;
-		for (const [name, site] of sites) {
+		let writeBudget = (WRITES_PER_SECOND * FLUSH_MS) / 1000;
+		let sentAny = false;
+		for (const [siteName, site] of sites) {
 			for (const [room, pids] of [...site.dirty]) {
 				const members = site.rooms.get(room);
-				const writes = site.nsp.adapter?.rooms?.get(room)?.size ?? members?.size ?? 0;
-				if (flushed && writes > budget) continue;
+				const recipients = site.nsp.adapter?.rooms?.get(room)?.size ?? members?.size ?? 0;
+				if (sentAny && recipients > writeBudget) continue;
 
 				site.dirty.delete(room);
 				const states = [...pids]
 					.map((pid) => members?.get(pid))
 					.filter(Boolean)
-					.map(sent);
+					.map(presence_state);
 				if (!states.length) continue;
 
-				budget -= writes;
-				flushed = true;
+				writeBudget -= recipients;
+				sentAny = true;
 				site.nsp.to(room).emit("suite_collab_presence", { room, states });
 			}
 			if (!site.rooms.size && !site.dirty.size) {
-				sites.delete(name);
+				sites.delete(siteName);
 			}
 		}
 	} catch {}
 
 	try {
 		if ([...sites.values()].some((site) => site.dirty.size)) {
-			schedule();
+			schedule_flush();
 		}
 	} catch {}
 }
 
-function answer(acknowledge, value) {
+function send_reply(acknowledge, reply) {
 	if (typeof acknowledge !== "function") return;
 
 	try {
-		Promise.resolve(acknowledge(value)).catch(() => {});
+		Promise.resolve(acknowledge(reply)).catch(() => {});
 	} catch {}
 }
 
 // Entries a site holds: one per room and one per pid, in both its dirty and member maps
-function held_in(site) {
-	const dirty = [...site.dirty.values()].reduce((count, pids) => count + 1 + pids.size, 0);
-	const rooms = [...site.rooms.values()].reduce((count, members) => count + 1 + members.size, 0);
-	return dirty + rooms;
+function entries_held_in(site) {
+	const dirtyEntries = [...site.dirty.values()].reduce((count, pids) => count + 1 + pids.size, 0);
+	const memberEntries = [...site.rooms.values()].reduce(
+		(count, members) => count + 1 + members.size,
+		0,
+	);
+	return dirtyEntries + memberEntries;
 }
 
-const held = () => [...sites.values()].reduce((sum, site) => sum + held_in(site), 0);
+const held_entries = () =>
+	[...sites.values()].reduce((sum, site) => sum + entries_held_in(site), 0);
 
 module.exports = collab_handlers;
-module.exports.held = held;
+module.exports.held_entries = held_entries;
