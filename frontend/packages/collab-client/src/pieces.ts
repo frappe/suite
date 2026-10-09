@@ -32,12 +32,12 @@ export function stageFor(previous: Staging | null, { sid, from, to }: PieceHeade
 // Stages every piece of `update`; the answer that stopped it, or null once the push may name the stage
 export async function putPieces(
   endpoints: CollabEndpoints,
-  stage: string,
+  stageId: string,
   header: PieceHeader,
   update: Uint8Array,
 ): Promise<Reply | null> {
   const { lineage, principal, sid, from, to } = header
-  const described = {
+  const pieceHeader = {
     lineage,
     principal,
     sid,
@@ -47,10 +47,14 @@ export async function putPieces(
     sha_total: hex(digest(update)),
   }
 
-  for (let at = 0, idx = 0; at < update.byteLength; at += PIECE_BYTES, idx++) {
-    const piece = update.subarray(at, at + PIECE_BYTES)
-    const body = encodePush(described, piece)
-    const answer = await endpoints.stage(stage, idx, body)
+  for (
+    let offset = 0, pieceIndex = 0;
+    offset < update.byteLength;
+    offset += PIECE_BYTES, pieceIndex++
+  ) {
+    const piece = update.subarray(offset, offset + PIECE_BYTES)
+    const body = encodePush(pieceHeader, piece)
+    const answer = await endpoints.stage(stageId, pieceIndex, body)
     const reply = readReply(answer)
     if (reply.status !== 200) return reply
 

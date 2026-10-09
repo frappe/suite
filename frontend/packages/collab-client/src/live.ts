@@ -9,7 +9,7 @@ const JOIN_MS = 5000
 // A push's own row should come back over the socket within this long
 const OWN_ROW_MS = 2000
 // After this many own rows missed in a row, the room polls instead
-const MISSES = 3
+const MAX_MISSED_OWN_ROWS = 3
 // A missing rev is pulled once it has been missing this long
 const HOLE_MS = 1000
 // A peer's caret can ask for a pull this often at most
@@ -19,16 +19,16 @@ const HEARD_MAX = 256
 
 export interface LiveHooks {
   // Rows heard over the socket, with the schema of the editor that wrote them
-  rows(rows: Row[], schema?: number): void
+  heardRows(rows: Row[], schema?: number): void
   pull(): void
   changed(): void
   // This tab's applied_through, and whether it shows its caret
-  at(): number
-  sends(): boolean
+  appliedThrough(): number
+  showsCaret(): boolean
 }
 
 // What the realtime service answers to a join
-type JoinAck = { pid?: unknown; count?: number } | null
+type JoinAnswer = { pid?: unknown; count?: number } | null
 
 // A row as the realtime service relays it
 type HeardRow = Partial<Record<'lineage' | 'rev' | 'schema' | 'u', unknown>> | null
@@ -43,23 +43,23 @@ export class Live {
 
   // The room keys, and server seconds minus this browser's
   private keys: RoomKeys | null = null
-  private offset = 0
+  private clockOffset = 0
 
   // Whether the realtime service took this tab's join, and for how long the room still waits for it
-  private acked = false
+  private joinAccepted = false
   private joinUntil = Date.now() + JOIN_MS
-  private members = 1
+  private memberCount = 1
 
   // Own rows heard, and those still awaited
-  private misses = 0
-  private readonly heard = new Set<number>()
-  private readonly awaiting = new Map<number, ReturnType<typeof setTimeout>>()
+  private missedOwnRows = 0
+  private readonly heardRevs = new Set<number>()
+  private readonly awaitedRevs = new Map<number, ReturnType<typeof setTimeout>>()
 
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
   private repairTimer: ReturnType<typeof setTimeout> | null = null
   private holeTimer: ReturnType<typeof setTimeout> | null = null
-  private caretPulled = -Infinity
+  private lastCaretPullAt = -Infinity
 
   constructor(
     private readonly socket: LiveSocket,
@@ -67,23 +67,23 @@ export class Live {
     private readonly hooks: LiveHooks,
   ) {
     const presenceHooks: PresenceHooks = {
-      mine: (room) => this.current().includes(room),
-      at: () => hooks.at(),
-      sends: () => hooks.sends(),
-      ahead: (at) => this.ahead(at),
+      isOwnRoom: (room) => this.currentKeys().includes(room),
+      appliedThrough: () => hooks.appliedThrough(),
+      showsCaret: () => hooks.showsCaret(),
+      peerAhead: (peerAppliedThrough) => this.onPeerAhead(peerAppliedThrough),
     }
     this.presence = new Presence(socket, presenceHooks)
 
-    this.hub = Hub.of(socket)
+    this.hub = Hub.forSocket(socket)
     this.hub.members.add(this)
 
-    socket.on('suite_collab_row', this.row)
-    socket.on('suite_collab_ctl', this.ctl)
+    socket.on('suite_collab_row', this.onRowHeard)
+    socket.on('suite_collab_ctl', this.onControl)
     window.addEventListener('online', this.wake)
     window.addEventListener('focus', this.wake)
-    document.addEventListener('visibilitychange', this.visible)
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
 
-    this.after(JOIN_MS, () => this.update())
+    this.runAfter(JOIN_MS, () => this.updateState())
   }
 
   get live() {
@@ -91,16 +91,16 @@ export class Live {
   }
 
   // The rooms an open or a pull named; a fresh pair is asked for early in the next epoch
-  refresh(keys: RoomKeys) {
+  setRoomKeys(keys: RoomKeys) {
     if (this.closed) return
 
-    this.offset = keys.server_time - Date.now() / 1000
+    this.clockOffset = keys.server_time - Date.now() / 1000
     if (this.keys?.keys.join() === keys.keys.join()) return
 
     this.keys = keys
 
-    const next = (keys.epoch + 1) * keys.epoch_seconds
-    const at = next + Math.random() * 0.8 * keys.epoch_seconds
+    const nextEpochStart = (keys.epoch + 1) * keys.epoch_seconds
+    const refreshAt = nextEpochStart + Math.random() * 0.8 * keys.epoch_seconds
     const pullIfVisible = () => {
       this.refreshTimer = null
       if (document.visibilityState === 'visible') {
@@ -110,65 +110,65 @@ export class Live {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer)
     }
-    this.refreshTimer = setTimeout(pullIfVisible, this.untilServer(at))
+    this.refreshTimer = setTimeout(pullIfVisible, this.msUntilServerTime(refreshAt))
 
     // Each key leaves the set when its epoch ends
     const dropEndedKey = () => {
-      this.hub.send()
-      this.update()
+      this.hub.sendRoomSet()
+      this.updateState()
     }
-    for (const end of [next, next + keys.epoch_seconds]) {
-      this.after(this.untilServer(end + GRACE_S), dropEndedKey)
+    for (const epochEnd of [nextEpochStart, nextEpochStart + keys.epoch_seconds]) {
+      this.runAfter(this.msUntilServerTime(epochEnd + GRACE_S), dropEndedKey)
     }
 
-    this.hub.send()
+    this.hub.sendRoomSet()
   }
 
   // The keys still in use now
-  current(): string[] {
+  currentKeys(): string[] {
     if (!this.keys || this.closed) return []
 
-    const now = Date.now() / 1000 + this.offset
-    const { epoch, epoch_seconds: span, keys } = this.keys
-    return keys.filter((_, at) => now < (epoch + at + 1) * span + GRACE_S)
+    const now = Date.now() / 1000 + this.clockOffset
+    const { epoch, epoch_seconds: epochSeconds, keys } = this.keys
+    return keys.filter((_, at) => now < (epoch + at + 1) * epochSeconds + GRACE_S)
   }
 
   // A push of this tab's was committed as `rev`; its row should come back over the socket
   pushed(rev: number) {
-    if (!this.acked || this.closed) return
+    if (!this.joinAccepted || this.closed) return
 
-    if (this.heard.has(rev)) {
-      this.hit()
+    if (this.heardRevs.has(rev)) {
+      this.ownRowHeard()
       return
     }
 
     const missed = () => {
-      this.awaiting.delete(rev)
-      this.misses++
-      this.update()
+      this.awaitedRevs.delete(rev)
+      this.missedOwnRows++
+      this.updateState()
     }
     const timer = setTimeout(missed, OWN_ROW_MS)
-    this.awaiting.set(rev, timer)
+    this.awaitedRevs.set(rev, timer)
   }
 
   // Rows wait in order behind a missing rev; if it is still missing in a second it is pulled
-  hole(open: () => boolean) {
+  pullHoleLater(stillMissing: () => boolean) {
     if (this.holeTimer || this.closed) return
 
-    const repairIfOpen = () => {
+    const repairIfStillMissing = () => {
       this.holeTimer = null
-      if (open()) {
+      if (stillMissing()) {
         this.repair()
       }
     }
-    this.holeTimer = setTimeout(repairIfOpen, HOLE_MS)
+    this.holeTimer = setTimeout(repairIfStillMissing, HOLE_MS)
   }
 
   // One pull, after a random share of a delay that grows with the room
   repair() {
     if (this.repairTimer || this.closed) return
 
-    const spread = Math.min(30_000, 50 * this.members)
+    const spread = Math.min(30_000, 50 * this.memberCount)
     const pull = () => {
       this.repairTimer = null
       this.hooks.pull()
@@ -176,39 +176,39 @@ export class Live {
     this.repairTimer = setTimeout(pull, Math.random() * spread)
   }
 
-  answered(ack: unknown, rooms: string[]) {
-    const answer = ack as JoinAck
-    const mine = this.current()
+  answered(rawAnswer: unknown, rooms: string[]) {
+    const answer = rawAnswer as JoinAnswer
+    const ownKeys = this.currentKeys()
     const joined = !!answer && typeof answer.pid === 'number'
-    const inAllRooms = mine.length > 0 && mine.every((key) => rooms.includes(key))
+    const inAllRooms = ownKeys.length > 0 && ownKeys.every((key) => rooms.includes(key))
 
-    this.acked = joined && inAllRooms
-    if (this.acked) {
-      this.members = 1 + (answer!.count ?? 0)
+    this.joinAccepted = joined && inAllRooms
+    if (this.joinAccepted) {
+      this.memberCount = 1 + (answer!.count ?? 0)
     }
 
     if (joined) {
-      this.presence.answered(ack, rooms)
+      this.presence.answered(rawAnswer, rooms)
     } else {
       this.presence.clear()
     }
-    this.update()
+    this.updateState()
   }
 
   connected() {
-    this.acked = false
+    this.joinAccepted = false
     this.joinUntil = Date.now() + JOIN_MS
-    this.after(JOIN_MS, () => this.update())
+    this.runAfter(JOIN_MS, () => this.updateState())
     this.repair()
-    this.update()
+    this.updateState()
   }
 
   dropped() {
-    this.acked = false
+    this.joinAccepted = false
     this.presence.clear()
     this.joinUntil = Date.now() + JOIN_MS
-    this.after(JOIN_MS, () => this.update())
-    this.update()
+    this.runAfter(JOIN_MS, () => this.updateState())
+    this.updateState()
   }
 
   close() {
@@ -216,13 +216,13 @@ export class Live {
 
     this.closed = true
 
-    this.socket.off('suite_collab_row', this.row)
-    this.socket.off('suite_collab_ctl', this.ctl)
+    this.socket.off('suite_collab_row', this.onRowHeard)
+    this.socket.off('suite_collab_ctl', this.onControl)
     window.removeEventListener('online', this.wake)
     window.removeEventListener('focus', this.wake)
-    document.removeEventListener('visibilitychange', this.visible)
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
 
-    for (const timer of [...this.timers, ...this.awaiting.values()]) {
+    for (const timer of [...this.timers, ...this.awaitedRevs.values()]) {
       clearTimeout(timer)
     }
     for (const timer of [this.refreshTimer, this.repairTimer, this.holeTimer]) {
@@ -235,42 +235,42 @@ export class Live {
     this.hub.leave(this)
   }
 
-  private row = (heard: unknown) => {
+  private onRowHeard = (heard: unknown) => {
     const message = heard as HeardRow
     const ours = message?.lineage === this.lineage
     if (this.closed || !ours || typeof message?.rev !== 'number') return
 
     const rev = message.rev
 
-    this.heard.add(rev)
-    if (this.heard.size > HEARD_MAX) {
-      this.heard.delete(Math.min(...this.heard))
+    this.heardRevs.add(rev)
+    if (this.heardRevs.size > HEARD_MAX) {
+      this.heardRevs.delete(Math.min(...this.heardRevs))
     }
 
-    const timer = this.awaiting.get(rev)
+    const timer = this.awaitedRevs.get(rev)
     if (timer !== undefined) {
       clearTimeout(timer)
-      this.awaiting.delete(rev)
-      this.hit()
+      this.awaitedRevs.delete(rev)
+      this.ownRowHeard()
     }
 
     // A row without its bytes, or with bytes that aren't base64, is pulled instead
     let bytes: Uint8Array | null = null
     if (typeof message.u === 'string' && typeof message.schema === 'number') {
       try {
-        bytes = decode(message.u)
+        bytes = decodeBase64(message.u)
       } catch {}
     }
 
     if (bytes) {
-      this.hooks.rows([{ rev, bytes }], message.schema as number)
+      this.hooks.heardRows([{ rev, bytes }], message.schema as number)
     } else {
       this.repair()
     }
   }
 
   // A quarantine, a hold or its release, or room a compaction freed: the pull says what changed
-  private ctl = (heard: unknown) => {
+  private onControl = (heard: unknown) => {
     const message = heard as { lineage?: unknown } | null
     if (this.closed || message?.lineage !== this.lineage) return
 
@@ -278,22 +278,26 @@ export class Live {
   }
 
   // A peer's caret says it has applied a row this tab has not heard
-  private ahead(at: number) {
-    if (!Number.isSafeInteger(at) || at <= this.hooks.at()) return
+  private onPeerAhead(peerAppliedThrough: number) {
+    if (
+      !Number.isSafeInteger(peerAppliedThrough) ||
+      peerAppliedThrough <= this.hooks.appliedThrough()
+    )
+      return
 
-    if (Date.now() - this.caretPulled < CARET_PULL_MS) return
+    if (Date.now() - this.lastCaretPullAt < CARET_PULL_MS) return
 
-    this.caretPulled = Date.now()
-    this.hole(() => this.hooks.at() < at)
+    this.lastCaretPullAt = Date.now()
+    this.pullHoleLater(() => this.hooks.appliedThrough() < peerAppliedThrough)
   }
 
-  private hit() {
-    this.misses = 0
-    this.update()
+  private ownRowHeard() {
+    this.missedOwnRows = 0
+    this.updateState()
   }
 
   // Socket.io stops reconnecting after a few tries, so the poll loop asks again while live updates are down
-  retry() {
+  reconnect() {
     if (!this.closed && !this.socket.connected) {
       this.socket.connect?.()
     }
@@ -302,22 +306,22 @@ export class Live {
   private wake = () => {
     if (this.closed) return
 
-    this.retry()
+    this.reconnect()
     this.repair()
   }
 
-  private visible = () => {
+  private onVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
       this.wake()
     }
   }
 
-  private update() {
+  private updateState() {
     if (this.closed) return
 
-    const hearing = this.misses < MISSES && this.current().length > 0
+    const hearing = this.missedOwnRows < MAX_MISSED_OWN_ROWS && this.currentKeys().length > 0
     let state: LiveState = 'polling'
-    if (this.acked && hearing) {
+    if (this.joinAccepted && hearing) {
       state = 'live'
     } else if (Date.now() < this.joinUntil) {
       state = 'joining'
@@ -329,14 +333,14 @@ export class Live {
     this.hooks.changed()
   }
 
-  private untilServer(at: number) {
-    return Math.max(0, (at - this.offset) * 1000 - Date.now())
+  private msUntilServerTime(serverSeconds: number) {
+    return Math.max(0, (serverSeconds - this.clockOffset) * 1000 - Date.now())
   }
 
-  private after(ms: number, run: () => void) {
+  private runAfter(ms: number, callback: () => void) {
     const runOnce = () => {
       this.timers.delete(timer)
-      run()
+      callback()
     }
     const timer = setTimeout(runOnce, ms)
     this.timers.add(timer)
@@ -347,9 +351,9 @@ export class Live {
 class Hub {
   private static hubs = new WeakMap<LiveSocket, Hub>()
   readonly members = new Set<Live>()
-  private asked = 0
+  private roomSetVersion = 0
 
-  static of(socket: LiveSocket) {
+  static forSocket(socket: LiveSocket) {
     let hub = Hub.hubs.get(socket)
     if (!hub) {
       hub = new Hub(socket)
@@ -363,10 +367,10 @@ class Hub {
       for (const member of this.members) {
         member.connected()
       }
-      this.send()
+      this.sendRoomSet()
     }
     const dropped = () => {
-      this.asked++
+      this.roomSetVersion++
       for (const member of this.members) {
         member.dropped()
       }
@@ -375,17 +379,17 @@ class Hub {
     socket.on('disconnect', dropped)
   }
 
-  send() {
-    const keys = [...this.members].flatMap((member) => member.current())
+  sendRoomSet() {
+    const keys = [...this.members].flatMap((member) => member.currentKeys())
     const rooms = [...new Set(keys)].slice(0, ROOMS_MAX)
-    const ask = ++this.asked
+    const version = ++this.roomSetVersion
     if (!this.socket.connected) return
 
-    const answered = (ack: unknown) => {
-      if (ask !== this.asked) return
+    const answered = (rawAnswer: unknown) => {
+      if (version !== this.roomSetVersion) return
 
       for (const member of this.members) {
-        member.answered(ack, rooms)
+        member.answered(rawAnswer, rooms)
       }
     }
     this.socket.emit('suite_collab_rooms', { rooms }, answered)
@@ -393,15 +397,15 @@ class Hub {
 
   leave(member: Live) {
     this.members.delete(member)
-    this.send()
+    this.sendRoomSet()
   }
 }
 
-function decode(base64: string) {
-  const text = atob(base64)
-  const bytes = new Uint8Array(text.length)
-  for (let at = 0; at < text.length; at++) {
-    bytes[at] = text.charCodeAt(at)
+function decodeBase64(base64: string) {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let at = 0; at < binary.length; at++) {
+    bytes[at] = binary.charCodeAt(at)
   }
   return bytes
 }

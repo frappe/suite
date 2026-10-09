@@ -22,8 +22,8 @@ export interface CollabEndpoints {
   // `epoch`: the last quarantine this tab heard of, so the server can tell it to rebuild
   pull(since: number, epoch: number): Promise<Answer>
   push(body: Uint8Array<ArrayBuffer>, options?: { keepalive?: boolean }): Promise<Answer>
-  // One piece of a change too big for one push, kept under `stage` until a push names it
-  stage(stage: string, idx: number, body: Uint8Array<ArrayBuffer>): Promise<Answer>
+  // One piece of a change too big for one push, kept under `stageId` until a push names it
+  stage(stageId: string, pieceIndex: number, body: Uint8Array<ArrayBuffer>): Promise<Answer>
   session(sid: string, claim?: Claim): Promise<Answer>
   // Rev `rev` failed to apply in this tab
   suspect(rev: number): Promise<Answer>
@@ -77,7 +77,7 @@ export type SaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 export type Blocked =
   'signed_out' | 'locked' | 'offline' | 'stale_session' | 'other_user' | 'lost_edit' | 'lost_read'
 
-export const recoverable = (blocked: Blocked) =>
+export const isRecoverable = (blocked: Blocked) =>
   blocked === 'signed_out' || blocked === 'locked' || blocked === 'offline'
 
 export interface CollabRoom {

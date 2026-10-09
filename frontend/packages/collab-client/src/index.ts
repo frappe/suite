@@ -14,7 +14,7 @@ export { sizeCheck } from './limits'
 export { openCollabRoom } from './open'
 export { REMOTE } from './room'
 export {
-  recoverable,
+  isRecoverable,
   type Answer,
   type Blocked,
   type CollabEndpoints,

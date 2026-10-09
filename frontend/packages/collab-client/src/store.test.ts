@@ -6,9 +6,9 @@ import { openDeviceStore, type DeviceStore } from './store'
 const stores: DeviceStore[] = []
 afterEach(() => stores.splice(0).forEach((store) => store.close()))
 
-let opened = 0
-async function fresh() {
-  const store = (await openDeviceStore(`store-test-${opened++}`))!
+let storeCount = 0
+async function freshStore() {
+  const store = (await openDeviceStore(`store-test-${storeCount++}`))!
   stores.push(store)
   return store
 }
@@ -21,7 +21,7 @@ function typed(text: string, at = 0, base?: Y.Doc) {
   return { doc, update }
 }
 
-function read(bytes: Uint8Array) {
+function textOf(bytes: Uint8Array) {
   const doc = new Y.Doc()
   Y.applyUpdate(doc, bytes)
   return doc.getText('t').toString()
@@ -44,7 +44,7 @@ const entry = (sid: string, seq: number, bytes: Uint8Array) => ({
 
 describe('device store', () => {
   it('a quarantine replaces the copy, and a copy from before it is not written over the new one', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     const copy = (rev: number, epoch: number) => ({
       lineage: 'L',
       rev,
@@ -56,11 +56,11 @@ describe('device store', () => {
     await store.commit('D', copy(3, 0), typed('late').update)
 
     const kept = (await store.copy('D'))!
-    expect([read(kept.bytes), kept.rev, kept.epoch]).toEqual(['rebuilt', 1, 1])
+    expect([textOf(kept.bytes), kept.rev, kept.epoch]).toEqual(['rebuilt', 1, 1])
   })
 
   it('a save acknowledged to a tab from before a quarantine is not added to the copy rebuilt after it', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     const late = typed('late')
     await store.capture(session('s'), [entry('s', 1, late.update)])
     const rebuilt = {
@@ -71,62 +71,62 @@ describe('device store', () => {
     }
     await store.commit('D', rebuilt, typed('rebuilt').update)
 
-    await store.ack('D', 's', 1, late.update, 'L', 0)
+    await store.acknowledge('D', 's', 1, late.update, 'L', 0)
 
-    expect(read((await store.copy('D'))!.bytes)).toBe('rebuilt')
+    expect(textOf((await store.copy('D'))!.bytes)).toBe('rebuilt')
     expect(await store.entries('D', 's')).toEqual([])
   })
 
   it('releases a session only once it holds no entries', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     const one = typed('one')
     await store.capture(session('s'), [entry('s', 1, one.update)])
     expect(await store.release('D', 's')).toBe(false)
     expect(await store.sessions('D')).toHaveLength(1)
 
-    await store.ack('D', 's', 1, one.update, 'L', 0)
+    await store.acknowledge('D', 's', 1, one.update, 'L', 0)
     expect(await store.release('D', 's')).toBe(true)
     expect(await store.sessions('D')).toHaveLength(0)
   })
 
   it('keeps captured entries until acknowledged, then keeps their text in the device copy', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     const one = typed('one ')
     const two = typed('two', 4, one.doc)
     await store.commit('D', { lineage: 'L', rev: 0, canWrite: true }, null)
     await store.capture(session('s'), [entry('s', 1, one.update), entry('s', 2, two.update)])
 
-    await store.ack('D', 's', 1, one.update, 'L', 0)
+    await store.acknowledge('D', 's', 1, one.update, 'L', 0)
 
     expect((await store.entries('D', 's')).map((stored) => stored.seq)).toEqual([2])
-    expect(read((await store.copy('D'))!.bytes)).toBe('one ')
+    expect(textOf((await store.copy('D'))!.bytes)).toBe('one ')
   })
 
   it('replaces the device copy when the document starts a new lineage', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     await store.commit('D', { lineage: 'L', rev: 1, canWrite: true }, typed('old').update)
 
     await store.commit('D', { lineage: 'M', rev: 1, canWrite: false }, typed('new').update)
 
     const copy = (await store.copy('D'))!
-    expect([copy.lineage, copy.canWrite, read(copy.bytes)]).toEqual(['M', false, 'new'])
+    expect([copy.lineage, copy.canWrite, textOf(copy.bytes)]).toEqual(['M', false, 'new'])
   })
 
   it('work acknowledged under a replaced lineage stays out of the newer device copy', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     await store.commit('D', { lineage: 'M', rev: 1, canWrite: true }, typed('new').update)
     await store.capture(session('s'), [entry('s', 1, typed('old').update)])
 
-    await store.ack('D', 's', 1, typed('old').update, 'L', 0)
+    await store.acknowledge('D', 's', 1, typed('old').update, 'L', 0)
 
-    expect([read((await store.copy('D'))!.bytes), await store.entries('D', 's')]).toEqual([
+    expect([textOf((await store.copy('D'))!.bytes), await store.entries('D', 's')]).toEqual([
       'new',
       [],
     ])
   })
 
   it('a long-lived device copy is merged into fewer pieces without losing text', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     const doc = new Y.Doc()
     for (let at = 0; at < 100; at++) {
       const copy = {
@@ -137,11 +137,11 @@ describe('device store', () => {
       await store.commit('D', copy, typed('x', at, doc).update)
     }
 
-    expect(read((await store.copy('D'))!.bytes)).toBe('x'.repeat(100))
+    expect(textOf((await store.copy('D'))!.bytes)).toBe('x'.repeat(100))
   })
 
   it('moves a session’s unsent work to a recovery record and forgets the session', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     await store.saveSession({ doc: 'D', sid: 's', lineage: 'L', cid: 5, bound: true })
     await store.capture(session('s'), [entry('s', 1, typed('a').update)])
 
@@ -156,7 +156,7 @@ describe('device store', () => {
   })
 
   it('refuses a second session of the document with the same client id', async () => {
-    const store = await fresh()
+    const store = await freshStore()
     await store.saveSession({ doc: 'D', sid: 's', lineage: 'L', cid: 5, bound: true })
 
     await expect(

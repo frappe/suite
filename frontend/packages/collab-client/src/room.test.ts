@@ -26,24 +26,24 @@ function frame(
     8 +
     checkpoint.length +
     rows.reduce((sum, row) => sum + 12 + row.bytes.length, 0)
-  const out = new Uint8Array(size)
-  const view = new DataView(out.buffer)
+  const frameBytes = new Uint8Array(size)
+  const view = new DataView(frameBytes.buffer)
   let at = 0
   view.setUint32(at, json.length)
-  out.set(json, (at += 4))
+  frameBytes.set(json, (at += 4))
   at += json.length
   view.setUint32(at, checkpoint.length)
-  out.set(checkpoint, (at += 4))
+  frameBytes.set(checkpoint, (at += 4))
   at += checkpoint.length
   view.setUint32(at, rows.length)
   at += 4
   for (const row of rows) {
     view.setBigUint64(at, BigInt(row.rev))
     view.setUint32((at += 8), row.bytes.length)
-    out.set(row.bytes, (at += 4))
+    frameBytes.set(row.bytes, (at += 4))
     at += row.bytes.length
   }
-  return { status: 200, bytes: out }
+  return { status: 200, bytes: frameBytes }
 }
 
 // The server's rules: one gap-free order, a seq range must continue the session's ack.
@@ -88,7 +88,7 @@ function fakeServer(state = 'live', lineage = 'L') {
       .filter((row) => row.rev > checkpoint.base)
       .reduce((sum, row) => sum + row.bytes.byteLength, 0),
   })
-  const split = (body: Uint8Array) => {
+  const splitPush = (body: Uint8Array) => {
     const length = new DataView(body.buffer, body.byteOffset).getUint32(0)
     const header = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + length)))
     return { length, header, bytes: body.slice(4 + length) }
@@ -112,13 +112,13 @@ function fakeServer(state = 'live', lineage = 'L') {
     realtime.sockets.push(created)
     return created
   }
-  const reach = (call: string) => {
+  const recordCall = (call: string) => {
     if (!access.online) throw new TypeError('Failed to fetch')
     calls.push(call)
   }
   const endpoints = (): CollabEndpoints => ({
     async open() {
-      reach('open')
+      recordCall('open')
       const tail = state === 'live' ? rows.filter((row) => row.rev > checkpoint.base) : []
       const header = {
         state,
@@ -134,7 +134,7 @@ function fakeServer(state = 'live', lineage = 'L') {
       return frame(header, tail, checkpoint.bytes)
     },
     async pull(since, seen) {
-      reach('pull')
+      recordCall('pull')
       pulls.push(since)
       epoch.sent.push(seen)
       if (access.refuse) return access.refuse
@@ -156,7 +156,7 @@ function fakeServer(state = 'live', lineage = 'L') {
       )
     },
     async session(sid, claim) {
-      reach(claim ? 'claim' : 'session')
+      recordCall(claim ? 'claim' : 'session')
       if (!access.canWrite) return reply(403, { collab: 'forbidden' })
       if (claim) {
         if (claim.lineage !== lineage) return reply(200, { claim: 'lineage' })
@@ -172,14 +172,14 @@ function fakeServer(state = 'live', lineage = 'L') {
       return reply(200, { client_id: sessions.get(sid)!.cid })
     },
     async suspect(rev) {
-      reach('suspect')
+      recordCall('suspect')
       judge.reports.push(rev)
       return judge.answer()
     },
     async stage(stage, idx, body) {
-      reach('stage')
+      recordCall('stage')
       if (access.refuse) return access.refuse
-      const { header, bytes } = split(body)
+      const { header, bytes } = splitPush(body)
       pieces.push({ stage, idx })
       if ((sessions.get(header.sid)?.acked ?? 0) >= header.to) return reply(200, { dup: true })
       if (!stages.has(stage)) stages.set(stage, new Map())
@@ -188,10 +188,10 @@ function fakeServer(state = 'live', lineage = 'L') {
       return reply(200, { staged: idx })
     },
     async push(body) {
-      reach('push')
+      recordCall('push')
       if (access.refuse) return access.refuse
       if (judge.held) return reply(423, { collab: 'paused', reason: 'suspect', retry_ms: 300_000 })
-      const { length, header, bytes: inline } = split(body)
+      const { length, header, bytes: inline } = splitPush(body)
       finals.push(header.final)
       schemas.push(header.schema)
       const session = sessions.get(header.sid)
@@ -226,8 +226,8 @@ function fakeServer(state = 'live', lineage = 'L') {
       header.shas.forEach((sha: string, index: number) => (session.shas[header.from + index] = sha))
       rows.push({ rev: rows.length + 1, bytes })
       session.acked = header.to
-      const u = bytes.byteLength <= 32 * 1024 ? base64(bytes) : null
-      publish('suite_collab_row', { rev: rows.length, schema: header.schema, u })
+      const encodedRow = bytes.byteLength <= 32 * 1024 ? base64(bytes) : null
+      publish('suite_collab_row', { rev: rows.length, schema: header.schema, u: encodedRow })
       return reply(200, { rev: rows.length, head: rows.length, acked: header.to })
     },
   })
@@ -375,23 +375,23 @@ async function device() {
 describe('collab room', () => {
   it('stamps every push with the schema of the editor that wrote it', async () => {
     const server = fakeServer()
-    const a = await join(server.endpoints(), { schema: 3 })
-    a.doc.getText('t').insert(0, 'one')
-    await a.flush()
-    a.doc.getText('t').insert(3, ' two')
-    await a.flush()
+    const room = await join(server.endpoints(), { schema: 3 })
+    room.doc.getText('t').insert(0, 'one')
+    await room.flush()
+    room.doc.getText('t').insert(3, ' two')
+    await room.flush()
 
     expect(server.schemas).toEqual([3, 3])
   })
 
   it('marks only the push of a closing tab as final', async () => {
     const server = fakeServer()
-    const a = await join(server.endpoints())
-    a.doc.getText('t').insert(0, 'kept ')
-    await a.flush()
-    a.doc.getText('t').insert(5, 'on close')
+    const room = await join(server.endpoints())
+    room.doc.getText('t').insert(0, 'kept ')
+    await room.flush()
+    room.doc.getText('t').insert(5, 'on close')
 
-    await a.close()
+    await room.close()
 
     expect(server.finals).toEqual([false, true])
     expect(server.rows).toHaveLength(2)
@@ -416,32 +416,32 @@ describe('collab room', () => {
 
   it('opens from the checkpoint plus the rows after it, and pulls on from there', async () => {
     const server = fakeServer()
-    const a = await join(server.endpoints())
-    a.doc.getText('t').insert(0, 'one ')
-    await a.flush()
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'one ')
+    await writer.flush()
     server.compact()
-    a.doc.getText('t').insert(4, 'two ')
-    await a.flush()
+    writer.doc.getText('t').insert(4, 'two ')
+    await writer.flush()
 
-    const b = await join(server.endpoints())
-    expect(text(b)).toBe('one two ')
+    const opened = await join(server.endpoints())
+    expect(text(opened)).toBe('one two ')
 
-    a.doc.getText('t').insert(8, 'three')
-    await a.flush()
+    writer.doc.getText('t').insert(8, 'three')
+    await writer.flush()
     server.pulls.length = 0
-    await b.pull()
+    await opened.pull()
     expect(server.pulls).toEqual([2])
-    expect(text(b)).toBe('one two three')
+    expect(text(opened)).toBe('one two three')
   })
 
   it('a quarantined rev holds its place in the order and applies nothing', async () => {
     const server = fakeServer()
-    const a = await join(server.endpoints())
-    a.doc.getText('t').insert(0, 'one ')
-    await a.flush()
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'one ')
+    await writer.flush()
     const behind = await join(server.endpoints())
-    a.doc.getText('t').insert(4, 'two ')
-    await a.flush()
+    writer.doc.getText('t').insert(4, 'two ')
+    await writer.flush()
     // The server keeps the rev and drops its payload
     server.rows[1].bytes = new Uint8Array()
 
@@ -456,25 +456,25 @@ describe('collab room', () => {
 
   it('a tab that may hold a quarantined change stops following and asks to be rebuilt', async () => {
     const server = fakeServer()
-    const a = await join(server.endpoints())
-    const b = await join(server.endpoints())
-    a.doc.getText('t').insert(0, 'bad')
-    await a.flush()
-    await b.pull()
-    expect([text(b), b.needsRebuild]).toEqual(['bad', false])
+    const writer = await join(server.endpoints())
+    const reader = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'bad')
+    await writer.flush()
+    await reader.pull()
+    expect([text(reader), reader.needsRebuild]).toEqual(['bad', false])
     server.quarantine(1)
     const heard = vi.fn()
-    b.onChange(heard)
+    reader.onChange(heard)
 
-    await b.pull()
+    await reader.pull()
 
-    expect([b.needsRebuild, heard.mock.calls.length > 0, server.epoch.sent.at(-1)]).toEqual([
+    expect([reader.needsRebuild, heard.mock.calls.length > 0, server.epoch.sent.at(-1)]).toEqual([
       true,
       true,
       0,
     ])
     server.calls.length = 0
-    await b.pull()
+    await reader.pull()
     expect(server.calls).toEqual([])
     const rebuilt = await join(server.endpoints())
     const later = await join(server.endpoints())
@@ -490,32 +490,34 @@ describe('collab room', () => {
 
   it('a row that fails to apply is reported, and the tab sends nothing until the verdict', async () => {
     const server = fakeServer('live', 'apply-1')
-    const a = await join(server.endpoints())
-    breaksOn(a, 'boom')
-    const b = await join(server.endpoints())
-    b.doc.getText('t').insert(0, 'boom')
-    await b.flush()
+    const room = await join(server.endpoints())
+    breaksOn(room, 'boom')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'boom')
+    await writer.flush()
 
-    await a.pull()
+    await room.pull()
 
-    expect([server.judge.reports, a.canWrite, a.paused, a.appliedThrough]).toEqual([
+    expect([server.judge.reports, room.canWrite, room.paused, room.appliedThrough]).toEqual([
       [1],
       false,
       'suspect',
       0,
     ])
-    a.doc.getText('t').insert(0, 'mine ')
+    room.doc.getText('t').insert(0, 'mine ')
     server.calls.length = 0
-    await a.flush()
+    await room.flush()
     await new Promise((resolve) => setTimeout(resolve, 10))
-    await a.pull()
-    expect([server.calls, a.unsent, a.needsRebuild]).toEqual([['pull'], 1, false])
+    await room.pull()
+    expect([server.calls, room.unsent, room.needsRebuild]).toEqual([['pull'], 1, false])
     server.judge.judged++
     server.judge.verdict = 'clean'
-    await a.pull()
-    expect([a.needsRebuild, a.stopped]).toEqual([true, null])
+    await room.pull()
+    expect([room.needsRebuild, room.stopped]).toEqual([true, null])
     // Work held nowhere else goes out from this copy before it is rebuilt
-    await vi.waitFor(() => expect([a.unsent, a.paused, server.rows.length]).toEqual([0, null, 2]))
+    await vi.waitFor(() =>
+      expect([room.unsent, room.paused, server.rows.length]).toEqual([0, null, 2]),
+    )
   })
 
   it('a server failing to answer the report is asked again, and never counts against this browser', async () => {
@@ -558,14 +560,18 @@ describe('collab room', () => {
     signedIn = 'Guest'
 
     await room.pull()
-    const out = room.blocked
+    const blockedWhileSignedOut = room.blocked
     signedIn = 'a@x.com'
     await vi.advanceTimersByTimeAsync(31_000)
     server.judge.judged++
     server.judge.verdict = 'quarantined'
     await room.pull()
 
-    expect([out, server.judge.reports.length, room.needsRebuild]).toEqual(['signed_out', 2, true])
+    expect([blockedWhileSignedOut, server.judge.reports.length, room.needsRebuild]).toEqual([
+      'signed_out',
+      2,
+      true,
+    ])
   })
 
   it('a verdict from before the report is not taken for this one', async () => {
@@ -818,31 +824,31 @@ describe('collab room', () => {
 
   it('two writers converge on the server order after a poll', async () => {
     const server = fakeServer()
-    const [a, b] = [await join(server.endpoints()), await join(server.endpoints())]
+    const [first, second] = [await join(server.endpoints()), await join(server.endpoints())]
 
-    a.doc.getText('t').insert(0, 'alpha ')
-    b.doc.getText('t').insert(0, 'beta ')
-    await Promise.all([a.flush(), b.flush()])
-    await Promise.all([a.pull(), b.pull()])
+    first.doc.getText('t').insert(0, 'alpha ')
+    second.doc.getText('t').insert(0, 'beta ')
+    await Promise.all([first.flush(), second.flush()])
+    await Promise.all([first.pull(), second.pull()])
 
-    expect(text(a)).toBe(text(b))
-    expect(text(a)).toContain('alpha ')
-    expect(text(a)).toContain('beta ')
+    expect(text(first)).toBe(text(second))
+    expect(text(first)).toContain('alpha ')
+    expect(text(first)).toContain('beta ')
     expect(server.rows.map((row) => row.rev)).toEqual([1, 2])
-    expect([a.saveState, b.saveState, a.appliedThrough]).toEqual(['clean', 'clean', 2])
+    expect([first.saveState, second.saveState, first.appliedThrough]).toEqual(['clean', 'clean', 2])
   })
 
   it('a tab learns how full the document is when it opens, and again on every pull', async () => {
     const server = fakeServer()
-    const [a, b] = [await join(server.endpoints()), await join(server.endpoints())]
-    a.doc.getText('t').insert(0, 'alpha ')
-    await a.flush()
+    const [writer, reader] = [await join(server.endpoints()), await join(server.endpoints())]
+    writer.doc.getText('t').insert(0, 'alpha ')
+    await writer.flush()
     const opened = (await join(server.endpoints())).limits
 
-    await b.pull()
+    await reader.pull()
 
     const row = server.rows[0].bytes.byteLength
-    expect([opened?.tail_bound, b.limits?.tail_bound, b.limits?.edit_max]).toEqual([
+    expect([opened?.tail_bound, reader.limits?.tail_bound, reader.limits?.edit_max]).toEqual([
       row,
       row,
       4 * 2 ** 20,
@@ -851,9 +857,9 @@ describe('collab room', () => {
 
   it('a tab opened later sees everything typed before', async () => {
     const server = fakeServer()
-    const a = await join(server.endpoints())
-    a.doc.getText('t').insert(0, 'kept')
-    await a.flush()
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'kept')
+    await writer.flush()
 
     expect(text(await join(server.endpoints()))).toBe('kept')
   })
@@ -863,11 +869,11 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const push = endpoints.push
-    let drop = true
+    let dropNextAnswer = true
     endpoints.push = async (body, options) => {
       const answer = await push(body, options)
-      if (drop) {
-        drop = false
+      if (dropNextAnswer) {
+        dropNextAnswer = false
         throw new TypeError('connection reset')
       }
       return answer
@@ -886,11 +892,11 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const push = endpoints.push
-    let drop = true
+    let dropNextAnswer = true
     endpoints.push = async (body, options) => {
       const answer = await push(body, options)
-      if (drop) {
-        drop = false
+      if (dropNextAnswer) {
+        dropNextAnswer = false
         for (const session of server.sessions.values()) session.shas[1] = 'f'.repeat(64)
         throw new TypeError('connection reset')
       }
@@ -923,9 +929,9 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const push = endpoints.push
-    let busy = 5
+    let busyAnswersLeft = 5
     endpoints.push = async (body, options) =>
-      busy-- > 0 ? reply(423, { collab: 'busy', retry_ms: 1000 }) : push(body, options)
+      busyAnswersLeft-- > 0 ? reply(423, { collab: 'busy', retry_ms: 1000 }) : push(body, options)
     const room = await join(endpoints)
 
     for (let at = 0; at < 130; at++) room.doc.getText('t').insert(at, 'x')
@@ -1005,11 +1011,11 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const push = endpoints.push
-    let busy = 2
+    let busyAnswersLeft = 2
     let calls = 0
     endpoints.push = async (body, options) => {
       calls++
-      if (busy-- > 0) return reply(423, { collab: 'busy', retry_ms: 1000 })
+      if (busyAnswersLeft-- > 0) return reply(423, { collab: 'busy', retry_ms: 1000 })
       return push(body, options)
     }
     const room = await join(endpoints)
@@ -1046,10 +1052,10 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const push = endpoints.push
-    let lose = true
+    let loseStagedPiece = true
     endpoints.push = async (body, options) => {
-      if (lose) server.stages.forEach((staged) => staged.delete(1))
-      lose = false
+      if (loseStagedPiece) server.stages.forEach((staged) => staged.delete(1))
+      loseStagedPiece = false
       return push(body, options)
     }
     const room = await join(endpoints)
@@ -1088,10 +1094,10 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const stage = endpoints.stage
-    let full = true
+    let stageFull = true
     endpoints.stage = async (id, idx, body) => {
-      if (!full) return stage(id, idx, body)
-      full = false
+      if (!stageFull) return stage(id, idx, body)
+      stageFull = false
       return reply(423, { collab: 'stage_full', retry_ms: 60_000 })
     }
     const room = await join(endpoints)
@@ -1121,9 +1127,9 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const stage = endpoints.stage
-    let proxy = true
+    let proxyRefuses = true
     endpoints.stage = async (id, idx, body) =>
-      proxy
+      proxyRefuses
         ? {
             status: 413,
             bytes: new TextEncoder().encode('<html>413 Request Entity Too Large</html>'),
@@ -1134,7 +1140,7 @@ describe('collab room', () => {
 
     await vi.advanceTimersByTimeAsync(500)
     const refused = [room.paused, room.stopped, room.unsent, server.rows.length]
-    proxy = false
+    proxyRefuses = false
     await vi.advanceTimersByTimeAsync(31_000)
 
     expect([refused, [room.paused, room.saveState, server.rows.length]]).toEqual([
@@ -1148,11 +1154,11 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const push = endpoints.push
-    let drop = true
+    let dropNextAnswer = true
     endpoints.push = async (body, options) => {
       const answer = await push(body, options)
-      if (drop) {
-        drop = false
+      if (dropNextAnswer) {
+        dropNextAnswer = false
         throw new TypeError('connection reset')
       }
       return answer
@@ -1189,11 +1195,11 @@ describe('collab room', () => {
     const server = fakeServer()
     const endpoints = server.endpoints()
     const push = endpoints.push
-    let drop = true
+    let dropNextAnswer = true
     endpoints.push = async (body, options) => {
       const answer = await push(body, options)
-      if (drop) {
-        drop = false
+      if (dropNextAnswer) {
+        dropNextAnswer = false
         throw new TypeError('connection reset')
       }
       return answer
@@ -1215,10 +1221,10 @@ describe('collab room', () => {
     const push = endpoints.push
     let release!: () => void
     const held = new Promise<void>((resolve) => (release = resolve))
-    let first = true
+    let holdFirstPush = true
     endpoints.push = async (body, options) => {
-      if (first) {
-        first = false
+      if (holdFirstPush) {
+        holdFirstPush = false
         await held
       }
       return push(body, options)
@@ -1308,11 +1314,13 @@ describe('collab room', () => {
     const endpoints = server.endpoints()
     const sent: (boolean | undefined)[] = []
     const push = endpoints.push
-    let lose = () => {}
+    let failFirstPush = () => {}
     endpoints.push = (body, options) => {
       sent.push(options?.keepalive)
       if (sent.length > 1) return push(body, options)
-      return new Promise((_, reject) => (lose = () => reject(new TypeError('Failed to fetch'))))
+      return new Promise(
+        (_, reject) => (failFirstPush = () => reject(new TypeError('Failed to fetch'))),
+      )
     }
     const room = await join(endpoints)
     room.doc.getText('t').insert(0, 'typed during a slow save')
@@ -1320,7 +1328,7 @@ describe('collab room', () => {
 
     window.dispatchEvent(new Event('pagehide'))
     await vi.waitFor(() => expect(sent).toEqual([undefined, true]))
-    lose()
+    failFirstPush()
 
     expect(text(await join(server.endpoints()))).toBe('typed during a slow save')
   })
@@ -1556,10 +1564,10 @@ describe('collab room on a device', () => {
       let release = () => {}
       const held = new Promise<void>((resolve) => (release = resolve))
       const slow = { ...server.endpoints() }
-      const pass = slow.push
+      const push = slow.push
       slow.push = async (body, request) => {
         await held
-        return pass(body, request)
+        return push(body, request)
       }
       const first = await join(offline, { device: kept })
       cut.off = true
@@ -1689,12 +1697,12 @@ describe('collab room on a device', () => {
     const kept = await device()
     await (await join(server.endpoints(), { device: kept })).close()
     server.access.online = false
-    const full = Object.create(kept.store)
-    full.saveSession = () => Promise.reject(new DOMException('full', 'QuotaExceededError'))
+    const fullStore = Object.create(kept.store)
+    fullStore.saveSession = () => Promise.reject(new DOMException('full', 'QuotaExceededError'))
 
-    await expect(join(server.endpoints(), { device: { store: full, doc: 'D' } })).rejects.toThrow(
-      'Failed to fetch',
-    )
+    await expect(
+      join(server.endpoints(), { device: { store: fullStore, doc: 'D' } }),
+    ).rejects.toThrow('Failed to fetch')
   })
 
   it('a tab closed while its claim is answered takes on no other tab’s work', async () => {
@@ -1829,13 +1837,13 @@ describe('collab room on a device', () => {
     server.counted.state = 4 * 2 ** 20
     const room = await join(server.endpoints())
     const opened = room.atLimit
-    let told = 0
-    room.onChange(() => told++)
+    let changeCount = 0
+    room.onChange(() => changeCount++)
 
     server.counted.state = null
     await room.pull()
 
-    expect([opened, room.atLimit, told > 0]).toEqual([true, false, true])
+    expect([opened, room.atLimit, changeCount > 0]).toEqual([true, false, true])
   })
 
   it('a document is at its limit once its saved changes fill what its state leaves', async () => {
@@ -1853,17 +1861,17 @@ describe('collab room on a device', () => {
   it('a rebuild leaves no quarantined change in the device copy', async () => {
     const server = fakeServer()
     const kept = await device()
-    const a = await join(server.endpoints())
-    a.doc.getText('t').insert(0, 'one ')
-    await a.flush()
-    const b = await join(server.endpoints(), { device: kept })
-    a.doc.getText('t').insert(4, 'bad')
-    await a.flush()
-    await b.pull()
-    expect(text(b)).toBe('one bad')
+    const writer = await join(server.endpoints())
+    writer.doc.getText('t').insert(0, 'one ')
+    await writer.flush()
+    const reader = await join(server.endpoints(), { device: kept })
+    writer.doc.getText('t').insert(4, 'bad')
+    await writer.flush()
+    await reader.pull()
+    expect(text(reader)).toBe('one bad')
     server.quarantine(2)
-    await b.pull()
-    await b.close()
+    await reader.pull()
+    await reader.close()
 
     expect(text(await join(server.endpoints(), { device: kept }))).toBe('one ')
     server.access.online = false
@@ -1948,8 +1956,8 @@ describe('collab room on a device', () => {
 
 describe('collab room live', () => {
   const type = (room: CollabRoom, word: string) => {
-    const t = room.doc.getText('t')
-    t.insert(t.length, word)
+    const ytext = room.doc.getText('t')
+    ytext.insert(ytext.length, word)
     return room.flush()
   }
   const row = (server: ReturnType<typeof fakeServer>, rev: number, extra: object = {}) => ({
@@ -1998,11 +2006,11 @@ describe('collab room live', () => {
     server.realtime.sockets.forEach((socket) => socket.drop())
     await type(writer, 'missed')
     await vi.advanceTimersByTimeAsync(5000)
-    const down = [reader.live, text(reader)]
+    const whileDown = [reader.live, text(reader)]
     server.realtime.sockets.forEach((socket) => socket.back())
     await vi.advanceTimersByTimeAsync(100)
 
-    expect(down).toEqual(['polling', ''])
+    expect(whileDown).toEqual(['polling', ''])
     expect([reader.live, text(reader)]).toEqual(['live', 'missed'])
   })
 
@@ -2060,10 +2068,10 @@ describe('collab room live', () => {
     const ordered = text(reader)
     socket.hear('suite_collab_row', row(server, 4))
     await vi.advanceTimersByTimeAsync(900)
-    const held = [text(reader), server.pulls.length - pulls]
+    const whileHeld = [text(reader), server.pulls.length - pulls]
     await vi.advanceTimersByTimeAsync(200)
 
-    expect([waiting, ordered, held]).toEqual(['', 'ab', ['ab', 0]])
+    expect([waiting, ordered, whileHeld]).toEqual(['', 'ab', ['ab', 0]])
     expect([text(reader), server.pulls.length - pulls]).toEqual(['abcd', 1])
   })
 
@@ -2129,12 +2137,12 @@ describe('collab room live', () => {
 
     server.hold('kernel_failed')
     await vi.advanceTimersByTimeAsync(200)
-    const held = [room.held, room.canWrite]
+    const whileHeld = [room.held, room.canWrite]
     server.hold()
     await vi.advanceTimersByTimeAsync(200)
 
     expect(room.live).toBe('live')
-    expect(held).toEqual(['kernel_failed', false])
+    expect(whileHeld).toEqual(['kernel_failed', false])
     expect([room.held, room.canWrite]).toEqual([null, true])
   })
 
@@ -2214,12 +2222,12 @@ describe('collab room live', () => {
       claim(n, [2.5, -3, 2 ** 60][n % 3])
       await vi.advanceTimersByTimeAsync(100)
     }
-    const odd = server.pulls.length
+    const oddPulls = server.pulls.length
     for (let n = 21; n <= 270; n++) {
       claim(n, 1e9)
       await vi.advanceTimersByTimeAsync(100)
     }
 
-    expect([reader.live, odd, server.pulls.length]).toEqual(['live', 0, 3])
+    expect([reader.live, oddPulls, server.pulls.length]).toEqual(['live', 0, 3])
   })
 })

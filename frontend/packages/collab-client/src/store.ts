@@ -48,7 +48,7 @@ export interface DeviceStore {
   capture(session: StoredSession, entries: StoredEntry[]): Promise<void>
   // Drops entries up to `through` and keeps their bytes in the device copy, in one transaction,
   // unless the copy has moved to another lineage or was rebuilt after a later quarantine
-  ack(
+  acknowledge(
     doc: string,
     sid: string,
     through: number,
@@ -68,7 +68,7 @@ export interface DeviceStore {
   close(): void
 }
 
-const VERSION = 1
+const DB_VERSION = 1
 // The device copy is merged back into one piece once it holds this many
 const MAX_PIECES = 64
 const EMPTY_UPDATE = Y.encodeStateAsUpdate(new Y.Doc())
@@ -87,7 +87,7 @@ export function openDeviceStore(name: string, timeoutMs = 3000): Promise<DeviceS
     const timer = setTimeout(() => resolve(null), timeoutMs)
     let request: IDBOpenDBRequest
     try {
-      request = indexedDB.open(name, VERSION)
+      request = indexedDB.open(name, DB_VERSION)
     } catch {
       clearTimeout(timer)
       resolve(null)
@@ -156,8 +156,8 @@ class IndexedDeviceStore implements DeviceStore {
     const metaRequest = tx.objectStore('meta').get(doc)
     const piecesRequest = tx.objectStore('copies').index('doc').getAll(doc)
     const [meta, pieces] = await Promise.all([
-      done<CopyMeta | undefined>(metaRequest),
-      done<StoredPiece[]>(piecesRequest),
+      requestResult<CopyMeta | undefined>(metaRequest),
+      requestResult<StoredPiece[]>(piecesRequest),
     ])
     if (!meta) return null
 
@@ -185,7 +185,7 @@ class IndexedDeviceStore implements DeviceStore {
     return this.write(['sessions', 'entries'], putAll)
   }
 
-  ack(
+  acknowledge(
     doc: string,
     sid: string,
     through: number,
@@ -197,11 +197,11 @@ class IndexedDeviceStore implements DeviceStore {
       const acked = IDBKeyRange.bound([doc, sid, 0], [doc, sid, through])
       tx.objectStore('entries').delete(acked)
 
-      const meta = tx.objectStore('meta').get(doc)
-      meta.onsuccess = () => {
-        const was = meta.result
+      const metaRequest = tx.objectStore('meta').get(doc)
+      metaRequest.onsuccess = () => {
+        const storedMeta = metaRequest.result
         // As in `commit`: a tab from before a quarantine may build on the quarantined change
-        const sameCopy = was?.lineage === lineage && (was.epoch ?? 0) <= epoch
+        const sameCopy = storedMeta?.lineage === lineage && (storedMeta.epoch ?? 0) <= epoch
         if (bytes.byteLength && sameCopy) {
           addPiece(tx, doc, bytes)
         }
@@ -212,24 +212,24 @@ class IndexedDeviceStore implements DeviceStore {
 
   commit(doc: string, copy: CopyMeta, bytes: Uint8Array | null) {
     const addToCopy = (tx: IDBTransaction) => {
-      const meta = tx.objectStore('meta')
-      const stored = meta.get(doc)
-      stored.onsuccess = () => {
-        const was = stored.result
-        const sameLineage = was?.lineage === copy.lineage
-        const storedEpoch = was?.epoch ?? 0
+      const metaStore = tx.objectStore('meta')
+      const metaRequest = metaStore.get(doc)
+      metaRequest.onsuccess = () => {
+        const storedMeta = metaRequest.result
+        const sameLineage = storedMeta?.lineage === copy.lineage
+        const storedEpoch = storedMeta?.epoch ?? 0
         const newEpoch = copy.epoch ?? 0
         // A tab that has not heard of a quarantine yet may still hold the quarantined change
         if (sameLineage && storedEpoch > newEpoch) return
 
-        const outdated = was && (!sameLineage || storedEpoch < newEpoch)
+        const outdated = storedMeta && (!sameLineage || storedEpoch < newEpoch)
         if (outdated) {
           const pieces = tx.objectStore('copies')
           const keys = pieces.index('doc').getAllKeys(doc)
           keys.onsuccess = () => keys.result.forEach((key) => pieces.delete(key))
         }
 
-        meta.put({ doc, ...copy })
+        metaStore.put({ doc, ...copy })
         if (bytes?.byteLength) {
           addPiece(tx, doc, bytes)
         }
@@ -241,19 +241,19 @@ class IndexedDeviceStore implements DeviceStore {
   recover(doc: string, sid: string, reason: string, extra: StoredEntry[] = []) {
     const moveToRecovery = (tx: IDBTransaction) => {
       const entries = tx.objectStore('entries')
-      const left = entries.getAll(sessionRange(doc, sid))
-      left.onsuccess = () => {
-        const stored: StoredEntry[] = left.result
+      const remainingRequest = entries.getAll(sessionRange(doc, sid))
+      remainingRequest.onsuccess = () => {
+        const stored: StoredEntry[] = remainingRequest.result
         const seen = new Set(stored.map((entry) => entry.seq))
         const unseen = extra.filter((entry) => !seen.has(entry.seq))
-        const all = [...stored, ...unseen]
-        if (all.length) {
+        const allEntries = [...stored, ...unseen]
+        if (allEntries.length) {
           const record: RecoveryRecord = {
             doc,
             sid,
             reason,
             created: Date.now(),
-            entries: all,
+            entries: allEntries,
           }
           tx.objectStore('recovery').add(record)
         }
@@ -268,9 +268,9 @@ class IndexedDeviceStore implements DeviceStore {
   async release(doc: string, sid: string) {
     let dropped = false
     const dropIfEmpty = (tx: IDBTransaction) => {
-      const left = tx.objectStore('entries').count(sessionRange(doc, sid))
-      left.onsuccess = () => {
-        dropped = !left.result
+      const remainingCount = tx.objectStore('entries').count(sessionRange(doc, sid))
+      remainingCount.onsuccess = () => {
+        dropped = !remainingCount.result
         if (dropped) {
           tx.objectStore('sessions').delete([doc, sid])
         }
@@ -286,7 +286,7 @@ class IndexedDeviceStore implements DeviceStore {
 
   private async read<T>(store: string, request: (tx: IDBTransaction) => IDBRequest): Promise<T> {
     const tx = this.db.transaction(store)
-    return done<T>(request(tx))
+    return requestResult<T>(request(tx))
   }
 
   private write(stores: string[], work: (tx: IDBTransaction) => unknown): Promise<void> {
@@ -309,13 +309,13 @@ class IndexedDeviceStore implements DeviceStore {
 function addPiece(tx: IDBTransaction, doc: string, bytes: Uint8Array) {
   const pieces = tx.objectStore('copies')
   pieces.add({ doc, bytes })
-  const count = pieces.index('doc').count(doc)
-  count.onsuccess = () => {
-    if (count.result <= MAX_PIECES) return
+  const countRequest = pieces.index('doc').count(doc)
+  countRequest.onsuccess = () => {
+    if (countRequest.result <= MAX_PIECES) return
 
-    const all = pieces.index('doc').getAll(doc)
-    all.onsuccess = () => {
-      const stored: StoredPiece[] = all.result
+    const allRequest = pieces.index('doc').getAll(doc)
+    allRequest.onsuccess = () => {
+      const stored: StoredPiece[] = allRequest.result
       for (const piece of stored) {
         pieces.delete(piece.id)
       }
@@ -328,7 +328,7 @@ function addPiece(tx: IDBTransaction, doc: string, bytes: Uint8Array) {
   }
 }
 
-function done<T>(request: IDBRequest): Promise<T> {
+function requestResult<T>(request: IDBRequest): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)

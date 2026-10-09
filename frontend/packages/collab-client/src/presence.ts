@@ -19,20 +19,20 @@ const COLORS = [
 
 export interface PresenceHooks {
   // Whether a room is one of this document's
-  mine(room: string): boolean
+  isOwnRoom(room: string): boolean
   // This tab's applied_through, sent with its caret so a peer that is behind pulls
-  at(): number
+  appliedThrough(): number
   // Whether this tab may show its caret: writers only
-  sends(): boolean
+  showsCaret(): boolean
   // A peer has applied rows this tab has not
-  ahead(at: number): void
+  peerAhead(peerAppliedThrough: number): void
 }
 
 // Another tab, by the user the realtime service verified and the rooms it shares with this one
 type Member = { user: string; rooms: Set<string> }
 
 // What the realtime service answers to this socket's room set
-type RosterAck = { pid?: unknown; roster?: unknown; carets?: unknown } | null
+type RosterAnswer = { pid?: unknown; roster?: unknown; carets?: unknown } | null
 
 // Caret states the realtime service relays for one room
 type CaretBatch = { room?: unknown; states?: unknown } | null
@@ -61,9 +61,9 @@ export class Presence {
   private readonly members = new Map<number, Member>()
   private readonly listeners = new Set<() => void>()
   private pid = 0
-  private joined: string[] = []
-  private timer: ReturnType<typeof setTimeout> | null = null
-  private sent = 0
+  private joinedRooms: string[] = []
+  private sendTimer: ReturnType<typeof setTimeout> | null = null
+  private lastSentAt = 0
   private closed = false
 
   constructor(
@@ -73,10 +73,10 @@ export class Presence {
     const scratch = new Y.Doc()
     scratch.clientID = 0
     this.awareness = new Awareness(scratch)
-    this.awareness.on('update', this.local)
-    socket.on('suite_collab_presence', this.batch)
-    socket.on('suite_collab_presence_join', this.join)
-    socket.on('suite_collab_presence_gone', this.gone)
+    this.awareness.on('update', this.onLocalUpdate)
+    socket.on('suite_collab_presence', this.onCaretBatch)
+    socket.on('suite_collab_presence_join', this.onJoin)
+    socket.on('suite_collab_presence_gone', this.onGone)
   }
 
   // Everyone else in the document now, one entry per tab
@@ -95,79 +95,79 @@ export class Presence {
   }
 
   // The answer to this socket's room set: who is already here, and their carets
-  answered(ack: unknown, rooms: string[]) {
-    const answer = ack as RosterAck
+  answered(rawAnswer: unknown, rooms: string[]) {
+    const answer = rawAnswer as RosterAnswer
     if (typeof answer?.pid !== 'number') {
       this.clear()
       return
     }
 
     this.pid = answer.pid
-    this.joined = rooms.filter((room) => this.hooks.mine(room))
+    this.joinedRooms = rooms.filter((room) => this.hooks.isOwnRoom(room))
 
-    const before = new Set(this.members.keys())
+    const previousPids = new Set(this.members.keys())
     this.members.clear()
-    for (const entry of list(answer.roster)) {
-      this.enter(entry)
+    for (const entry of objectsIn(answer.roster)) {
+      this.addMember(entry)
     }
-    const departed = [...before].filter((pid) => !this.members.has(pid))
-    this.drop(departed)
+    const departed = [...previousPids].filter((pid) => !this.members.has(pid))
+    this.removeCarets(departed)
 
-    this.apply(list(answer.carets))
-    this.send()
-    this.emit()
+    this.applyCarets(objectsIn(answer.carets))
+    this.sendCaret()
+    this.notifyListeners()
   }
 
   // The socket dropped, and with it every room
   clear() {
-    this.joined = []
-    this.drop([...this.members.keys()])
+    this.joinedRooms = []
+    this.removeCarets([...this.members.keys()])
     this.members.clear()
-    this.emit()
+    this.notifyListeners()
   }
 
   close() {
     if (this.closed) return
 
     this.closed = true
-    if (this.timer) {
-      clearTimeout(this.timer)
+    if (this.sendTimer) {
+      clearTimeout(this.sendTimer)
     }
-    this.socket.off('suite_collab_presence', this.batch)
-    this.socket.off('suite_collab_presence_join', this.join)
-    this.socket.off('suite_collab_presence_gone', this.gone)
-    this.awareness.off('update', this.local)
+    this.socket.off('suite_collab_presence', this.onCaretBatch)
+    this.socket.off('suite_collab_presence_join', this.onJoin)
+    this.socket.off('suite_collab_presence_gone', this.onGone)
+    this.awareness.off('update', this.onLocalUpdate)
     this.awareness.destroy()
     this.listeners.clear()
   }
 
-  private batch = (heard: unknown) => {
+  private onCaretBatch = (heard: unknown) => {
     if (this.closed) return
 
     const message = heard as CaretBatch
     const room = message?.room
-    const forThisDocument = typeof room === 'string' && this.hooks.mine(room)
+    const forThisDocument = typeof room === 'string' && this.hooks.isOwnRoom(room)
     if (!forThisDocument) return
 
     const inRoom = (state: object) => ({
       ...state,
       room,
     })
-    const states = list(message!.states).map(inRoom)
+    const states = objectsIn(message!.states).map(inRoom)
     for (const state of states) {
-      this.enter(state)
+      this.addMember(state)
     }
-    this.apply(states)
-    this.emit()
+    this.applyCarets(states)
+    this.notifyListeners()
   }
 
-  private join = (heard: unknown) => {
-    if (this.closed || !this.enter(heard)) return
+  private onJoin = (heard: unknown) => {
+    if (this.closed || !this.addMember(heard)) return
 
-    this.emit()
+    this.notifyListeners()
   }
 
-  private gone = (heard: unknown) => {
+  private onGone = (heard: unknown) => {
     const message = heard as Departure
     if (this.closed || typeof message?.pid !== 'number') return
 
@@ -178,14 +178,14 @@ export class Presence {
     if (member.rooms.size) return
 
     this.members.delete(message.pid)
-    this.drop([message.pid])
-    this.emit()
+    this.removeCarets([message.pid])
+    this.notifyListeners()
   }
 
   // A roster entry or caret state naming one of this document's rooms
-  private enter(entry: unknown) {
+  private addMember(entry: unknown) {
     const { room, pid, user } = (entry ?? {}) as RosterEntry
-    if (typeof room !== 'string' || !this.hooks.mine(room)) return false
+    if (typeof room !== 'string' || !this.hooks.isOwnRoom(room)) return false
 
     const otherTab = typeof pid === 'number' && pid !== this.pid
     const named = typeof user === 'string'
@@ -201,7 +201,7 @@ export class Presence {
   }
 
   // One awareness update for the whole batch, clocked by the service's count
-  private apply(states: object[]) {
+  private applyCarets(states: object[]) {
     const accepted: Clocked[] = []
     for (const entry of states) {
       const { pid, n, state } = entry as CaretEntry
@@ -210,7 +210,7 @@ export class Presence {
 
       const { cursor, at } = (state ?? {}) as CaretState
       if (typeof at === 'number') {
-        this.hooks.ahead(at)
+        this.hooks.peerAhead(at)
       }
 
       const user = {
@@ -219,7 +219,7 @@ export class Presence {
       }
       const shown = {
         user,
-        cursor: caret(cursor),
+        cursor: sanitizeCaret(cursor),
       }
       accepted.push([pid, n, shown])
     }
@@ -229,43 +229,43 @@ export class Presence {
     applyAwarenessUpdate(this.awareness, update, 'remote')
   }
 
-  private drop(pids: number[]) {
-    const held = pids.filter((pid) => this.awareness.getStates().has(pid))
-    if (held.length) {
-      removeAwarenessStates(this.awareness, held, 'remote')
+  private removeCarets(pids: number[]) {
+    const shownPids = pids.filter((pid) => this.awareness.getStates().has(pid))
+    if (shownPids.length) {
+      removeAwarenessStates(this.awareness, shownPids, 'remote')
     }
   }
 
   // The cursor plugin moved this tab's caret, or the awareness renewed it
-  private local = (_: unknown, origin: unknown) => {
-    if (origin !== 'local' || this.closed || this.timer) return
+  private onLocalUpdate = (_: unknown, origin: unknown) => {
+    if (origin !== 'local' || this.closed || this.sendTimer) return
 
     const sendNow = () => {
-      this.timer = null
-      this.send()
+      this.sendTimer = null
+      this.sendCaret()
     }
-    const wait = Math.max(0, this.sent + SEND_MS - Date.now())
-    this.timer = setTimeout(sendNow, wait)
+    const wait = Math.max(0, this.lastSentAt + SEND_MS - Date.now())
+    this.sendTimer = setTimeout(sendNow, wait)
   }
 
-  private send() {
-    if (this.closed || !this.joined.length || !this.hooks.sends()) return
+  private sendCaret() {
+    if (this.closed || !this.joinedRooms.length || !this.hooks.showsCaret()) return
     if (document.visibilityState !== 'visible') return
 
     const cursor = this.awareness.getLocalState()?.cursor ?? null
-    this.sent = Date.now()
+    this.lastSentAt = Date.now()
     const state = {
       cursor,
-      at: this.hooks.at(),
+      at: this.hooks.appliedThrough(),
     }
     const caretMessage = {
-      rooms: this.joined,
+      rooms: this.joinedRooms,
       state,
     }
     this.socket.emit('suite_collab_presence', caretMessage)
   }
 
-  private emit() {
+  private notifyListeners() {
     for (const listener of this.listeners) {
       listener()
     }
@@ -286,50 +286,50 @@ function encodeStates(accepted: Clocked[]) {
   return encoding.toUint8Array(encoder)
 }
 
-function list(value: unknown): object[] {
-  if (!Array.isArray(value)) return []
+function objectsIn(raw: unknown): object[] {
+  if (!Array.isArray(raw)) return []
 
-  return value.filter((item) => item && typeof item === 'object')
+  return raw.filter((element) => element && typeof element === 'object')
 }
 
 // Only the numbers a relative position needs reach the cursor plugin
-function caret(cursor: unknown) {
-  const { anchor, head } = (cursor ?? {}) as CaretRange
-  const from = position(anchor)
-  const to = position(head)
-  if (!from || !to) return null
+function sanitizeCaret(cursor: unknown) {
+  const { anchor: rawAnchor, head: rawHead } = (cursor ?? {}) as CaretRange
+  const anchor = sanitizePosition(rawAnchor)
+  const head = sanitizePosition(rawHead)
+  if (!anchor || !head) return null
 
   return {
-    anchor: from,
-    head: to,
+    anchor,
+    head,
   }
 }
 
-function position(value: unknown) {
-  const { type, tname, item, assoc } = (value ?? {}) as Record<string, unknown>
-  const at = id(item)
-  const parent = id(type)
-  if (at === undefined || parent === undefined) return null
+function sanitizePosition(raw: unknown) {
+  const { type, tname, item, assoc } = (raw ?? {}) as Record<string, unknown>
+  const itemId = sanitizeItemId(item)
+  const typeId = sanitizeItemId(type)
+  if (itemId === undefined || typeId === undefined) return null
 
   const strayName = tname !== undefined && tname !== null && typeof tname !== 'string'
   if (strayName) return null
 
   // No item, no parent type and no root type name leaves nothing to anchor to
-  const unanchored = !at && !parent && typeof tname !== 'string'
+  const unanchored = !itemId && !typeId && typeof tname !== 'string'
   if (unanchored) return null
 
   return {
-    type: parent,
+    type: typeId,
     tname: tname ?? null,
-    item: at,
+    item: itemId,
     assoc: typeof assoc === 'number' ? assoc : 0,
   }
 }
 
-function id(value: unknown) {
-  if (value === null || value === undefined) return null
+function sanitizeItemId(raw: unknown) {
+  if (raw === null || raw === undefined) return null
 
-  const { client, clock } = value as ItemId
+  const { client, clock } = raw as ItemId
   if (!Number.isInteger(client) || !Number.isInteger(clock)) return undefined
 
   return { client, clock }

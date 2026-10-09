@@ -1,7 +1,7 @@
 import type { Answer, OpenOptions } from './types'
 
 // What the server's JSON answers carry: `collab` names a refusal, the rest is per route
-export interface Body {
+export interface ReplyBody {
   collab?: string
   exc_type?: string
   client_id?: number
@@ -17,7 +17,7 @@ export interface Body {
   verdict?: string
 }
 
-export type Reply = Body & { status: number }
+export type Reply = ReplyBody & { status: number }
 
 // An answer that is not JSON reads as a bare status
 export function readReply(answer: Answer): Reply {
@@ -34,7 +34,7 @@ export function readReply(answer: Answer): Reply {
 }
 
 // Frappe refuses a token from before the browser signed in again; only a reload brings the new one
-export const staleSession = (reply: Reply) =>
+export const isStaleSession = (reply: Reply) =>
   reply.status === 400 && reply.exc_type === 'CSRFTokenError'
 
 export class CollabOpenError extends Error {
@@ -47,9 +47,9 @@ export class CollabOpenError extends Error {
   }
 }
 
-export function openError(answer: Answer, options: OpenOptions) {
+export function toOpenError(answer: Answer, options: OpenOptions) {
   const reply = readReply(answer)
-  if (staleSession(reply)) {
+  if (isStaleSession(reply)) {
     return new CollabOpenError(reply.status, 'stale_session')
   }
 

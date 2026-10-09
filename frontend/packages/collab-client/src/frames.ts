@@ -60,39 +60,39 @@ export function decodeFrame<Header>(bytes: Uint8Array): {
   rows: Row[]
 } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  let at = 0
+  let offset = 0
 
-  const need = (length: number) => {
-    if (at + length > bytes.byteLength) throw new RangeError('Truncated collab frame')
+  const requireBytes = (length: number) => {
+    if (offset + length > bytes.byteLength) throw new RangeError('Truncated collab frame')
   }
 
-  const u32 = () => {
-    need(4)
-    at += 4
-    return view.getUint32(at - 4)
+  const readUint32 = () => {
+    requireBytes(4)
+    offset += 4
+    return view.getUint32(offset - 4)
   }
 
-  const take = (length: number) => {
-    need(length)
-    at += length
-    return bytes.slice(at - length, at)
+  const readBytes = (length: number) => {
+    requireBytes(length)
+    offset += length
+    return bytes.slice(offset - length, offset)
   }
 
-  const headerBytes = take(u32())
+  const headerBytes = readBytes(readUint32())
   const headerText = new TextDecoder().decode(headerBytes)
   // Trusted as the collab server's own reply, not checked field by field
   const header = JSON.parse(headerText) as Header
 
-  const checkpoint = take(u32())
+  const checkpoint = readBytes(readUint32())
 
   const rows: Row[] = []
-  for (let count = u32(); count > 0; count--) {
-    need(8)
-    const rev = Number(view.getBigUint64(at))
-    at += 8
+  for (let count = readUint32(); count > 0; count--) {
+    requireBytes(8)
+    const rev = Number(view.getBigUint64(offset))
+    offset += 8
     rows.push({
       rev,
-      bytes: take(u32()),
+      bytes: readBytes(readUint32()),
     })
   }
 
@@ -107,10 +107,10 @@ export function encodePush(
   header: Record<string, unknown>,
   update: Uint8Array,
 ): Uint8Array<ArrayBuffer> {
-  const json = new TextEncoder().encode(JSON.stringify(header))
-  const body = new Uint8Array(4 + json.byteLength + update.byteLength)
-  new DataView(body.buffer).setUint32(0, json.byteLength)
-  body.set(json, 4)
-  body.set(update, 4 + json.byteLength)
+  const headerBytes = new TextEncoder().encode(JSON.stringify(header))
+  const body = new Uint8Array(4 + headerBytes.byteLength + update.byteLength)
+  new DataView(body.buffer).setUint32(0, headerBytes.byteLength)
+  body.set(headerBytes, 4)
+  body.set(update, 4 + headerBytes.byteLength)
   return body
 }

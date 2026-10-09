@@ -32,7 +32,7 @@ export class Outbox {
   }
 
   // The next seq's entry, not yet queued
-  mint(bytes: Uint8Array): Entry {
+  createEntry(bytes: Uint8Array): Entry {
     const sha = hex(digest(bytes))
     return {
       seq: this.nextSeq++,
@@ -42,13 +42,13 @@ export class Outbox {
   }
 
   add(bytes: Uint8Array): Entry {
-    const entry = this.mint(bytes)
+    const entry = this.createEntry(bytes)
     this.pending.push(entry)
     return entry
   }
 
   // The server holds everything up to `through`; returns what that newly committed, merged
-  ack(through: number): Uint8Array | null {
+  acknowledge(through: number): Uint8Array | null {
     this.acked = Math.max(this.acked, through)
     const committed = this.pending.filter((entry) => entry.seq <= this.acked)
     if (!committed.length) return null
@@ -58,46 +58,46 @@ export class Outbox {
   }
 
   // Pending work no longer continues from what the server acknowledged
-  get gap() {
+  get hasGap() {
     return this.pending.length > 0 && this.pending[0].seq !== this.acked + 1
   }
 
   // The longest leading run of pending entries that fits one push
-  batch(maxBytes: number): Entry[] {
-    const run: Entry[] = []
+  nextBatch(maxBytes: number): Entry[] {
+    const batch: Entry[] = []
     let size = 0
     for (const entry of this.pending) {
-      const tooMany = run.length >= MAX_ENTRIES
+      const tooMany = batch.length >= MAX_ENTRIES
       const tooBig = size + entry.bytes.byteLength > maxBytes
-      if (run.length && (tooMany || tooBig)) {
+      if (batch.length && (tooMany || tooBig)) {
         break
       }
-      run.push(entry)
+      batch.push(entry)
       size += entry.bytes.byteLength
     }
-    return run
+    return batch
   }
 
-  stored(doc: string, entries: Entry[] = this.pending): StoredEntry[] {
-    const toStored = (entry: Entry): StoredEntry => ({
+  toStoredEntries(doc: string, entries: Entry[] = this.pending): StoredEntry[] {
+    const withSession = (entry: Entry): StoredEntry => ({
       doc,
       sid: this.sid,
       ...entry,
     })
-    return entries.map(toStored)
+    return entries.map(withSession)
   }
 }
 
 // Web Locks only cut duplicate sends between tabs; where they are missing, every session counts as free
 export function holdLock(name: string): Promise<(() => void) | null> {
   const locks = globalThis.navigator?.locks
-  const free = () => {}
-  if (!locks) return Promise.resolve(free)
+  const releaseNothing = () => {}
+  if (!locks) return Promise.resolve(releaseNothing)
 
   return new Promise((resolve) => {
     const options: LockOptions = { ifAvailable: true }
     // The lock is held until the promise it returns settles, which is when the caller releases it
-    const hold = (lock: Lock | null) => {
+    const holdUntilReleased = (lock: Lock | null) => {
       if (!lock) {
         resolve(null)
         return
@@ -106,8 +106,8 @@ export function holdLock(name: string): Promise<(() => void) | null> {
       return new Promise<void>((release) => resolve(release))
     }
 
-    const lockFailed = () => resolve(free)
-    void locks.request(name, options, hold).catch(lockFailed)
+    const lockFailed = () => resolve(releaseNothing)
+    void locks.request(name, options, holdUntilReleased).catch(lockFailed)
   })
 }
 
@@ -115,7 +115,7 @@ export function hex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export function randomHex(bytes: number) {
-  const random = crypto.getRandomValues(new Uint8Array(bytes))
-  return hex(random)
+export function randomHex(byteCount: number) {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(byteCount))
+  return hex(randomBytes)
 }

@@ -11,7 +11,7 @@ export type Fault = (doc: Y.Doc) => string | null
  * throws leaves the document partly applied.
  */
 export function judge(checkpoint: Uint8Array | null, rows: Uint8Array[], fault: Fault): Verdict {
-  const probe = (count: number): string | null => {
+  const faultAfter = (count: number): string | null => {
     const doc = new Y.Doc()
     try {
       if (checkpoint) {
@@ -28,35 +28,35 @@ export function judge(checkpoint: Uint8Array | null, rows: Uint8Array[], fault: 
     }
   }
 
-  if (!probe(rows.length)) return { verdict: 'clean' }
+  if (!faultAfter(rows.length)) return { verdict: 'clean' }
 
-  const before = probe(0)
-  if (before) {
+  const checkpointFault = faultAfter(0)
+  if (checkpointFault) {
     return {
       verdict: 'bad',
       index: -1,
-      reason: before,
+      reason: checkpointFault,
     }
   }
 
-  // Every prefix up to `good` is fine and the prefix of `bad` rows is not
-  let good = 0
-  let bad = rows.length
+  // Every prefix up to `cleanPrefix` is fine and the prefix of `badPrefix` rows is not
+  let cleanPrefix = 0
+  let badPrefix = rows.length
   let reason = ''
-  while (bad - good > 1) {
-    const middle = Math.floor((good + bad) / 2)
-    const found = probe(middle)
-    if (found) {
-      bad = middle
-      reason = found
+  while (badPrefix - cleanPrefix > 1) {
+    const middle = Math.floor((cleanPrefix + badPrefix) / 2)
+    const middleFault = faultAfter(middle)
+    if (middleFault) {
+      badPrefix = middle
+      reason = middleFault
     } else {
-      good = middle
+      cleanPrefix = middle
     }
   }
 
   return {
     verdict: 'bad',
-    index: bad - 1,
-    reason: reason || probe(bad)!,
+    index: badPrefix - 1,
+    reason: reason || faultAfter(badPrefix)!,
   }
 }

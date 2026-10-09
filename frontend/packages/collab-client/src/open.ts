@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 
-import { openError, readReply } from './answers'
+import { readReply, toOpenError } from './answers'
 import { decodeFrame, type OpenHeader } from './frames'
 import { randomHex } from './outbox'
 import { REMOTE, Room, type Opening, type RoomInit } from './room'
@@ -8,14 +8,14 @@ import type { DeviceCopy, StoredSession } from './store'
 import type { Opened, OpenOptions } from './types'
 
 // Server-issued clientIDs sit below this; a tab offline picks its own above it
-const DEVICE_IDS = 2 ** 30
+const DEVICE_ID_FLOOR = 2 ** 30
 
 export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
   const { endpoints, device } = options
 
-  let opened
+  let openAnswer
   try {
-    opened = await endpoints.open()
+    openAnswer = await endpoints.open()
   } catch (error) {
     if (!device) throw error
 
@@ -26,9 +26,9 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     return { state: 'live', room }
   }
 
-  if (opened.status !== 200) throw openError(opened, options)
+  if (openAnswer.status !== 200) throw toOpenError(openAnswer, options)
 
-  const { header, checkpoint, rows } = decodeFrame<OpenHeader>(opened.bytes)
+  const { header, checkpoint, rows } = decodeFrame<OpenHeader>(openAnswer.bytes)
   if (header.state !== 'live') return { state: header.state }
 
   const doc = new Y.Doc()
@@ -42,7 +42,7 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
     } else if (answer.status === 403 || answer.status === 404) {
       canWrite = false
     } else {
-      throw openError(answer, options)
+      throw toOpenError(answer, options)
     }
   }
 
@@ -68,12 +68,12 @@ export async function openCollabRoom(options: OpenOptions): Promise<Opened> {
 }
 
 // The device copy, bound only once the server accepts the claim
-async function openOffline(copy: DeviceCopy, options: OpenOptions, unreachable: unknown) {
+async function openOffline(copy: DeviceCopy, options: OpenOptions, openFailure: unknown) {
   const doc = new Y.Doc()
   Y.applyUpdate(doc, copy.bytes, REMOTE)
   const sid = randomHex(16)
   if (copy.canWrite) {
-    doc.clientID = await claimClientId(doc, copy, options, sid, unreachable)
+    doc.clientID = await claimClientId(doc, copy, options, sid, openFailure)
   }
 
   // A viewer has nothing to claim
@@ -102,34 +102,34 @@ async function claimClientId(
   copy: DeviceCopy,
   options: OpenOptions,
   sid: string,
-  unreachable: unknown,
+  openFailure: unknown,
 ): Promise<number> {
-  const { store, doc: key } = options.device!
+  const { store, doc: docName } = options.device!
 
   // Another tab took the same clientID between reading the sessions and saving this one
   for (let attempt = 0; ; attempt++) {
-    const used = new Set(Y.decodeStateVector(Y.encodeStateVector(doc)).keys())
-    for (const session of await store.sessions(key)) {
-      used.add(session.cid)
+    const usedClientIds = new Set(Y.decodeStateVector(Y.encodeStateVector(doc)).keys())
+    for (const session of await store.sessions(docName)) {
+      usedClientIds.add(session.cid)
     }
 
-    let cid = 0
-    while (!cid || used.has(cid)) {
-      cid = DEVICE_IDS + Math.floor(Math.random() * DEVICE_IDS)
+    let clientId = 0
+    while (!clientId || usedClientIds.has(clientId)) {
+      clientId = DEVICE_ID_FLOOR + Math.floor(Math.random() * DEVICE_ID_FLOOR)
     }
 
     const session: StoredSession = {
-      doc: key,
+      doc: docName,
       sid,
       lineage: copy.lineage,
-      cid,
+      cid: clientId,
       bound: false,
     }
     try {
       await store.saveSession(session)
-      return cid
+      return clientId
     } catch (error) {
-      if ((error as Error)?.name !== 'ConstraintError' || attempt === 2) throw unreachable
+      if ((error as Error)?.name !== 'ConstraintError' || attempt === 2) throw openFailure
     }
   }
 }
