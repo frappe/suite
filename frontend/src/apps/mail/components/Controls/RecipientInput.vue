@@ -74,7 +74,7 @@
         <Avatar :image="item.image" :label="item.display_name || item.email || query" size="lg" />
       </template>
       <template #item-label="{ item }">
-        <ContactOption :contact="item" />
+        <ContactOption :contact="item" :query="searchText" />
       </template>
       <template #item-create="{ query }"> {{ query }} </template>
     </Combobox>
@@ -101,7 +101,7 @@
             @click="pickSuggestion(option)"
           >
             <Avatar :image="option.image" :label="option.display_name || option.email" size="lg" />
-            <ContactOption :contact="option" />
+            <ContactOption :contact="option" :query="searchText" />
           </button>
         </li>
       </ul>

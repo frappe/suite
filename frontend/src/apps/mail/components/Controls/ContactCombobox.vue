@@ -15,8 +15,9 @@
       <ContactOption
         :contact="{
           email: typeof item.value === 'string' ? item.value : '',
-          display_name: item.label,
+          display_name: item.display_name,
         }"
+        :query="searchText"
       />
     </template>
     <template #item-create="{ query }"> {{ query }} </template>
