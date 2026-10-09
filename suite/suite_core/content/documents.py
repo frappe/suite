@@ -17,6 +17,7 @@ JUDGE = "suite.suite_core.content.documents.judge"
 DELETE_PURGED = "suite.suite_core.content.documents.delete_purged"
 # A push tells the app at most this often; the sweep tells it about the edits after
 TOUCH_EVERY = timedelta(minutes=10)
+TOUCH_BATCH = 100
 
 
 def ensure_tables() -> None:
@@ -169,8 +170,8 @@ def sweep() -> None:
         scheduling.sweep(name, COMPACT, purge_method=DELETE_PURGED, judge_method=JUDGE)
         for (doc_id,) in frappe.db.sql(
             f"""SELECT `id` FROM `{table(name, "doc")}` WHERE `touched_at` <= %s AND `head_rev` > `touched_rev`
-            AND `mode` != 'purged' LIMIT 100""",
-            now_datetime() - TOUCH_EVERY,
+            AND `mode` != 'purged' ORDER BY `touched_at` LIMIT %s""",
+            (now_datetime() - TOUCH_EVERY, TOUCH_BATCH),
         ):
             touch(name, doc_id)
 

@@ -660,3 +660,35 @@ class TestWriterDriveCallbacks(CheckpointCase):
             documents.sweep()
 
         self.assertEqual(self.changed(node), before)
+
+    def test_the_sweep_touches_the_longest_waiting_documents_first(self):
+        start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+        nodes = [self.new_document(), self.new_document()]
+        for minutes in (0, 5):
+            for node in nodes:
+                with self.clock(start + timedelta(minutes=minutes)):
+                    self.type_into(node, ["one"])
+        ids = dict(
+            frappe.db.sql(
+                "SELECT `node`, `id` FROM `__writer_content_doc` WHERE `node` IN %s", (tuple(nodes),)
+            )
+        )
+        # The one a plain id scan reaches last
+        waiting = max(nodes, key=ids.get)
+        frappe.db.sql(
+            "UPDATE `__writer_content_doc` SET `touched_at` = '2000-01-01' WHERE `node` = %s", waiting
+        )
+        frappe.db.commit()
+
+        frappe.set_user("Administrator")
+        with (
+            self.clock(start + timedelta(minutes=10)),
+            patch.object(scheduling, "enqueue"),
+            patch.object(documents, "TOUCH_BATCH", 1),
+        ):
+            documents.sweep()
+
+        self.assertEqual(
+            {node: self.changed(node) for node in nodes},
+            {node: start + timedelta(minutes=10) if node == waiting else start for node in nodes},
+        )
