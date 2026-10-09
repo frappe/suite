@@ -12,32 +12,30 @@ import { cellId } from '../../utils/cells.js'
  *   3. `onSplitApply` commits the current preview to an op and closes.
  *   4. `onSplitCancel` (or Esc / outside-click) reverts to the original values.
  *
+ * Previews are written to the cells as they are picked, so the user sees the
+ * real result. The original inputs are read once (and widened when a later
+ * separator overflows further right); each preview is the original with the
+ * split tokens on top, written as one edit.
+ *
  * @param {{
- *   getSheet:       () => object,
+ *   readInputs:     (rect: object, sheetName: string) => Promise<Record<string, string>>,
+ *   writeInputs:    (sheetName: string, map: Record<string, string>) => void,
  *   getGrid:        () => object | null,
  *   getGridWrap:    () => HTMLElement | null,
  *   contextMenu:    { open: boolean },
  *   currentSheet:   import('vue').Ref<string>,
- *   queueOp:        (op: object) => void,
- *   markEdited:     () => void,
- *   repopulateGrid: () => void,
- *   syncFlags:      () => void,
- *   captureRange:   (rect: object, sheetName: string) => Record<string, any>,
- *   diffRefs:       (before: object, after: object) => string[],
+ *   pushEditOp:     (sheetName: string, before: object, after: object, summary: string) => void,
+ *   blockProtected: (rect: object, sheetName: string) => boolean,
  * }} deps
  */
 export function useSplitText({
-  getSheet,
+  readInputs,
+  writeInputs,
   getGrid,
   getGridWrap,
   contextMenu,
   currentSheet,
-  queueOp,
-  markEdited,
-  repopulateGrid,
-  syncFlags,
-  captureRange,
-  diffRefs,
+  pushEditOp,
   blockProtected, // (rect, sheet) => boolean — true (and flashes) if protected
 }) {
   // Reactive state consumed by SplitTextPopover.vue
@@ -46,9 +44,12 @@ export function useSplitText({
     anchor: null, // { x, y } pixel position for the popover
     range: null, // { r0, c0, r1, c1 } — user's selection
     choice: 'auto', // active separator choice
-    original: null, // { id → value } snapshot before the first preview
+    original: null, // { id → input } before the first preview
     writeRect: null, // widest rect any preview has written — needed for cancel
+    current: null, // { id → input } the preview now in the cells
   })
+  // Only the newest preview may write; picking separators fast fires several.
+  let _previewSeq = 0
 
   // ── public entry-point ──────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ export function useSplitText({
     splitText.choice = 'auto'
     splitText.original = null
     splitText.writeRect = null
+    splitText.current = null
 
     const rect = grid.getCellRect?.(range.r0, range.c0)
     if (rect) {
@@ -80,40 +82,32 @@ export function useSplitText({
     splitText.open = true
 
     // Show a live preview immediately so the user can compare separators.
-    _previewSplit('auto')
+    _preview('auto')
   }
 
   // ── separator-picker callbacks ──────────────────────────────────────────────
 
   function onSplitChoose(choice) {
     splitText.choice = typeof choice === 'string' ? choice : 'custom'
-    _previewSplit(choice)
+    _preview(choice)
   }
 
   // ── commit / cancel ─────────────────────────────────────────────────────────
 
   function onSplitApply() {
-    if (!splitText.open || !splitText.writeRect || !splitText.original) {
-      splitText.open = false
-      return
+    // A preview still reading has not written anything yet: nothing to keep.
+    _previewSeq++
+    if (splitText.open && splitText.original && splitText.current) {
+      const n = Object.keys(splitText.current).filter(
+        (id) => splitText.current[id] !== (splitText.original[id] ?? ''),
+      ).length
+      pushEditOp(
+        currentSheet.value,
+        { ...splitText.original },
+        { ...splitText.current },
+        `Split text into ${n} cell${n === 1 ? '' : 's'}`,
+      )
     }
-    const sheet = getSheet()
-    const subSheetName = currentSheet.value
-    const after = captureRange(splitText.writeRect, subSheetName)
-    const before = splitText.original
-    const refs = diffRefs(before, after)
-
-    if (refs.length) {
-      queueOp({
-        opType: 'edit',
-        subSheet: subSheetName,
-        cellRefs: refs,
-        before,
-        after,
-        summary: `Split text into ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
-      })
-    }
-    markEdited()
     _closeSplit()
   }
 
@@ -129,53 +123,48 @@ export function useSplitText({
     splitText.range = null
     splitText.original = null
     splitText.writeRect = null
+    splitText.current = null
   }
 
   /**
-   * Revert the live preview by writing the captured original snapshot back.
+   * Revert the live preview by writing the original inputs back.
    * No op log, no history push — the user never committed to anything.
    */
   function _revertSplitPreview() {
-    if (!splitText.original) return
-    const sheet = getSheet()
-    const subSheetName = currentSheet.value
-    for (const [id, value] of Object.entries(splitText.original)) {
-      sheet.setCell(id, value == null ? '' : value, subSheetName)
-    }
-    repopulateGrid()
-    syncFlags()
+    _previewSeq++
+    if (!splitText.original || !splitText.current) return
+    writeInputs(currentSheet.value, { ...splitText.original })
+    splitText.current = null
+  }
+
+  function _preview(choice) {
+    _previewSplit(choice).catch((e) => console.error('[sheets] split preview failed', e))
   }
 
   /**
    * Render a live (non-committed) split preview using `choice` as the
-   * separator hint.  Called on open and every time the user changes the
-   * separator radio button.
-   *
-   * The first call captures `splitText.original` so subsequent calls always
-   * parse the user's original cell values — not the previous preview output.
-   * If a new separator produces a wider split than the first preview, the
-   * snapshot is grown to cover the extra columns so Cancel can restore them.
+   * separator hint. Always parses the original inputs, never a previous
+   * preview's output.
    */
-  function _previewSplit(choice) {
+  async function _previewSplit(choice) {
     if (!splitText.range) return
-    const sheet = getSheet()
+    const mine = ++_previewSeq
     const subSheetName = currentSheet.value
     const selectionRange = splitText.range
 
-    // Collect source values for every cell in the selection.  When a snapshot
-    // exists we always read from it so toggling separators parses the original
-    // input, not a previous preview output.
+    if (!splitText.original) {
+      const original = await readInputs(selectionRange, subSheetName)
+      if (mine !== _previewSeq) return
+      splitText.original = original
+      splitText.writeRect = { ...selectionRange }
+    }
+
+    // Collect source values for every cell in the selection, skipping formulas.
     const sourceCells = []
     for (let row = selectionRange.r0; row <= selectionRange.r1; row++) {
       for (let col = selectionRange.c0; col <= selectionRange.c1; col++) {
-        const id = cellId(row, col)
-        const raw = splitText.original ? splitText.original[id] : sheet.getCell(id, subSheetName)
-
-        if (typeof raw === 'string' && raw.startsWith('=')) {
-          sourceCells.push({ row, col, value: null }) // skip formula cells
-        } else {
-          sourceCells.push({ row, col, value: raw == null ? '' : String(raw) })
-        }
+        const raw = splitText.original[cellId(row, col)] ?? ''
+        sourceCells.push({ row, col, value: raw.startsWith('=') ? null : raw })
       }
     }
 
@@ -215,48 +204,32 @@ export function useSplitText({
       return
     }
 
-    // Capture original snapshot once; grow it if a later preview overflows
-    // further right than the first one.
-    if (!splitText.original) {
-      splitText.original = captureRange(newRect, subSheetName)
-      splitText.writeRect = { ...newRect }
-    } else if (newRect.c1 > splitText.writeRect.c1) {
-      const extraColumns = captureRange(
-        {
-          r0: selectionRange.r0,
-          r1: selectionRange.r1,
-          c0: splitText.writeRect.c1 + 1,
-          c1: newRect.c1,
-        },
+    // A wider split than any before: read the extra columns' originals. No
+    // preview has written there yet, so the cells still hold them.
+    if (newRect.c1 > splitText.writeRect.c1) {
+      const extra = await readInputs(
+        { r0: newRect.r0, r1: newRect.r1, c0: splitText.writeRect.c1 + 1, c1: newRect.c1 },
         subSheetName,
       )
-      Object.assign(splitText.original, extraColumns)
+      if (mine !== _previewSeq) return
+      Object.assign(splitText.original, extra)
       splitText.writeRect.c1 = newRect.c1
     }
 
-    // Restore snapshot before writing the new preview so prior (wider) splits
-    // don't leave stale tokens at the tail end.
-    for (const [id, value] of Object.entries(splitText.original)) {
-      sheet.setCell(id, value == null ? '' : value, subSheetName)
-    }
-
-    // Write splits left-to-right.  When two selected cells in the same row
-    // collide (cell A's overflow lands on cell B's column), cell B's first
-    // token wins because it is processed second — same as Google Sheets.
+    // The original everywhere any preview wrote, so a narrower split clears a
+    // wider one's tail, then the tokens left to right. When two selected cells
+    // in the same row collide (cell A's overflow lands on cell B's column),
+    // cell B's first token wins because it is processed second — same as
+    // Google Sheets.
+    const next = { ...splitText.original }
     for (const split of splits) {
       if (split.tokens == null) continue
-      for (let tokenIndex = 0; tokenIndex < split.tokens.length; tokenIndex++) {
-        const id = cellId(split.row, split.col + tokenIndex)
-        const token = split.tokens[tokenIndex]
-        sheet.setCell(id, token != null ? token : '', subSheetName)
-      }
+      split.tokens.forEach((token, i) => {
+        next[cellId(split.row, split.col + i)] = token != null ? String(token) : ''
+      })
     }
-
-    // Force canvas refresh — sheet.setCell only pokes the engine; without
-    // this, single-column previews can land in the data model but never
-    // repaint until the user clicks or scrolls.
-    repopulateGrid()
-    syncFlags()
+    writeInputs(subSheetName, next)
+    splitText.current = next
   }
 
   return {

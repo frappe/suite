@@ -224,3 +224,23 @@ describe('worker host — findCells', () => {
     expect(ok('findCells', { sheet: 'Sheet1', query: '' }).cells).toEqual([])
   })
 })
+
+describe('worker host — rangeStats', () => {
+  it('counts non-empty cells and sums the numbers, formula results included', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', {
+      commands: [
+        setInput('Sheet1', 1, 1, '5'),
+        setInput('Sheet1', 2, 1, 'hi'),
+        setInput('Sheet1', 3, 1, '=2*3'),
+        setInput('Sheet1', 4, 1, '50%'),
+        setInput('Sheet1', 5, 2, '100'), // outside the columns asked for
+      ],
+    })
+    expect(ok('rangeStats', { sheet: 'Sheet1', r1: 1, c1: 1, r2: 1048576, c2: 1 })).toEqual({
+      count: 4,
+      numCount: 3,
+      sum: 11.5,
+    })
+  })
+})

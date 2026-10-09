@@ -2618,11 +2618,7 @@ function _applyFormatMap(map, sheetName) {
     if (fmt && Object.keys(fmt).length) formats.set(id, fmt, sn)
     else formats.clear(id, sn)
   }
-  for (const id of Object.keys(map)) {
-    const f = formats.get(id, sn)
-    const dv = sheet.getDisplayValue(id, sn)
-    grid?.setCell(id, f.numberFormat ? applyNumberFmt(dv, f.numberFormat) : dv)
-  }
+  grid?.render?.() // the grid applies number formats as it paints
 }
 
 // Apply a { colIdx|rowIdx: format|null } diff to the column or row format
@@ -3270,7 +3266,7 @@ async function onAskSubmit(promptText) {
     const actions = Array.isArray(res?.actions) ? res.actions : []
     const answers = actions.filter((a) => a.type === 'answer')
     if (answers.length) askAnswer.value = answers.map((a) => a.text).join('\n\n')
-    const applied = _applyAiActions(actions)
+    const applied = await _applyAiActions(actions)
     if (applied > 0)
       aiPending.value = {
         count: applied,
@@ -3285,7 +3281,7 @@ async function onAskSubmit(promptText) {
 
 // Apply setCell actions as ONE undoable op (mirrors the fill/paste path).
 // Returns the number of cells written.
-function _applyAiActions(actions) {
+async function _applyAiActions(actions) {
   const sn = currentSheet.value
   let setCells = actions.filter((a) => a.type === 'setCell')
   // Drop writes that land on protected cells (rest still apply).
@@ -3295,11 +3291,15 @@ function _applyAiActions(actions) {
   if (!setCells.length) return 0
   const before = {}
   const after = {}
-  for (const a of setCells) before[a.cell] = sheet.getCell(a.cell, sn) ?? ''
-  for (const a of setCells) {
-    sheet.setCell(a.cell, a.formula, sn)
-    after[a.cell] = a.formula
-  }
+  Object.assign(
+    before,
+    await _readIds(
+      setCells.map((a) => a.cell),
+      sn,
+    ),
+  )
+  for (const a of setCells) after[a.cell] = String(a.formula ?? '')
+  _writeInputs(sn, after)
   const refs = setCells.map((a) => a.cell)
 
   // Undo (op-based, like fill) + server sync (op-log on next save).
@@ -3485,24 +3485,10 @@ function selectionIds() {
 // selection change (arrow nav, click, drag-extend, Enter advancing), so
 // it has to be cheap.
 //
-// Old impl walked Object.entries(sheet.getRawData()) — every cell in the
-// whole sheet — and parseCellId-tested each one against the rect. On a
-// 5k-row sheet that was ~25k cells × regex match per call, fires twice
-// per keyup (once from onSelect, once from the keyup listener), so each
-// arrow press paid ~50k cell scans. The perf trace pinned this at 886 ms
-// in onSelect.
-//
-// New impl iterates the *selection rect* directly via sheet.getCell. For
-// a 5×5 selection that's 25 reads instead of 25k. Worst case is Ctrl+A
-// (whole sheet) which is the same as before. RAF-coalesced so a drag-
-// extend that fires onSelect 1000× still computes stats once per frame.
-// Stats run ASYNC and chunked. Selecting to the end of a big sheet
-// (Cmd+Shift+Down → ~2M cells) used to compute Count/Sum/Avg synchronously in
-// one RAF, freezing the interaction for ~6s. The status bar is a non-critical
-// readout, so we yield every CHUNK_CELLS and bail the instant a newer
-// selection supersedes us — the selection paints immediately and the numbers
-// fill in a moment later.
-const _STATS_CHUNK_CELLS = 50000
+// The worker adds the range up (rangeStats), visiting only rows that hold
+// data, so a whole-column selection costs the used rows. RAF-coalesced so a
+// drag-extend that fires onSelect 1000× still asks once per frame, and a
+// newer selection's token drops an older answer.
 let _statsRAF = null
 let _statsToken = 0
 function computeSelectionStats() {
@@ -3522,42 +3508,17 @@ async function _computeSelectionStatsAsync(token) {
     return
   }
   const sn = currentSheet.value
-  // Precompute column labels once instead of rebuilding each cell id's prefix
-  // 2M times (colLabel walks characters per call).
-  const labels = []
-  for (let c = c0; c <= c1; c++) labels.push(colLabel(c))
-  const rowWidth = c1 - c0 + 1
-  let count = 0,
-    numCount = 0,
-    sum = 0,
-    since = 0
-  for (let r = r0; r <= r1; r++) {
-    const rowSuffix = r + 1
-    for (let c = c0; c <= c1; c++) {
-      const id = labels[c - c0] + rowSuffix
-      const raw = sheet.getCell(id, sn)
-      if (raw === '' || raw == null) continue
-      count++
-      // Aggregate the computed value, not the raw text: a formula cell holds
-      // "=SUM(...)" in getCell but evaluates to a number via getCellValue, so
-      // parseFloat on the raw string would drop it from Sum/Avg (but not Count).
-      const val = sheet.getCellValue(id, sn)
-      const n = typeof val === 'number' ? val : parseFloat(val)
-      if (!isNaN(n)) {
-        numCount++
-        sum += n
-      }
-    }
-    since += rowWidth
-    if (since >= _STATS_CHUNK_CELLS) {
-      since = 0
-      await new Promise((res) => setTimeout(res, 0))
-      if (token !== _statsToken) return // a newer selection took over
-    }
-  }
+  if (!_engine) return
+  const { count, numCount, sum } = await _engine.client.rangeStats({
+    sheet: sn,
+    r1: r0 + 1,
+    c1: c0 + 1,
+    r2: r1 + 1,
+    c2: c1 + 1,
+  })
   if (token !== _statsToken) return
   selectionStats.value =
-    count === 0 && numCount === 0
+    count === 0
       ? null
       : {
           count,
@@ -3599,10 +3560,9 @@ function adjustDecimals(delta) {
         },
         sh,
       )
-      const raw = sheet.getDisplayValue(id)
-      grid?.setCell(id, applyNumberFmt(raw, next))
     }
   })
+  grid?.render?.() // the grid applies number formats as it paints
   _syncNumberFormat(activeCell.value)
   syncFlags()
   isDirty.value = true
@@ -4106,17 +4066,13 @@ const {
   revertSplitPreview: _revertSplitPreview,
   closeSplit: _closeSplit,
 } = useSplitText({
-  getSheet: () => sheet,
+  readInputs: (rect, sn) => _readInputs(rect, sn),
+  writeInputs: (sn, map) => _writeInputs(sn, map),
   getGrid: () => grid,
   getGridWrap: () => gridWrapRef.value,
   contextMenu,
   currentSheet,
-  queueOp: _queueOp,
-  markEdited,
-  repopulateGrid: _repopulateGrid,
-  syncFlags,
-  captureRange: _captureRange,
-  diffRefs: _diffRefs,
+  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
   blockProtected: (rect, sn) => _rectBlocked(rect, sn),
 })
 
@@ -5122,21 +5078,6 @@ function _queueOp({
   })
 }
 
-// Snapshot {id → value} for a rectangular cell range, used before/after each
-// write so ops carry their own diff.  Caller passes the active sub-sheet.
-function _captureRange(rect, sheetName) {
-  const out = {}
-  if (!rect) return out
-  const sn = sheetName || currentSheet.value
-  for (let r = rect.r0; r <= rect.r1; r++) {
-    for (let c = rect.c0; c <= rect.c1; c++) {
-      const id = cellId(r, c)
-      out[id] = sheet.getCell(id, sn)
-    }
-  }
-  return out
-}
-
 // Snapshot {id → format} for the rect. Used by paste/fill ops so undo
 // can revert the format changes too — without this the value-only op
 // shape would leave pasted formats stuck on undo, contradicting the
@@ -6137,10 +6078,7 @@ function onNumberFormatChange(value) {
       sn,
     ),
   )
-  for (const id of ids) {
-    const raw = sheet.getDisplayValue(id)
-    grid?.setCell(id, value ? applyNumberFmt(raw, value) : raw)
-  }
+  grid?.render?.() // the grid applies number formats as it paints
   _syncNumberFormat(activeCell.value)
   syncFlags()
   isDirty.value = true
@@ -6339,7 +6277,7 @@ function _draftEdit() {
       }
     : _typedCell
   if (!target) return null
-  const committed = sheet.getCell(target.cell, target.sheet)
+  const committed = _inputAt(target.cell, target.sheet) ?? ''
   if (String(committed ?? '') === String(formulaValue.value ?? '')) return null
   return {
     ...target,
@@ -6444,7 +6382,7 @@ async function focusListItem(i) {
   await nextTick()
   vdListEl.value?.querySelectorAll('.sn-vd-item-input')?.[i]?.focus()
 }
-function confirmValidation() {
+async function confirmValidation() {
   const ids = selectionIds()
   const sn = currentSheet.value
   const msg = validationDialog.message.trim() || undefined
@@ -6494,32 +6432,49 @@ function confirmValidation() {
       severity,
     }
   }
-  for (const id of ids) validation.set(id, rule, sn)
-
+  validationDialog.open = false
+  if (validationDialog.type !== 'checkbox') {
+    for (const id of ids) validation.set(id, rule, sn)
+    grid?.render()
+    history.push()
+    isDirty.value = true
+    return
+  }
   // Checkbox cells need a concrete value to render as unchecked and to feed
   // formulas (SUM / COUNTIF) right away — fill blanks with FALSE, à la Sheets.
-  // The rule + these values ride in the single history.push() snapshot below,
-  // so one undo reverts the whole "apply checkboxes" action.
-  if (validationDialog.type === 'checkbox') {
-    const filled = []
-    for (const id of ids) {
-      const cur = sheet.getCell(id, sn)
-      if (cur == null || String(cur) === '') {
-        sheet.setCell(id, 'FALSE', sn)
-        filled.push({
-          id,
-          value: 'FALSE',
-        })
-      }
-    }
-    if (filled.length) {
-      broadcastBatchChange(sn, filled)
-      recomputePivotsForSheet(sn)
-    }
+  // The rule and these values are one op, so one undo reverts both.
+  const inputs = await _readIds(ids, sn)
+  const beforeValidation = {}
+  const afterValidation = {}
+  for (const id of ids) {
+    beforeValidation[id] = validation.get(id, sn) || null
+    validation.set(id, rule, sn)
+    afterValidation[id] = rule
   }
-  validationDialog.open = false
+  const blanks = ids.filter((id) => (inputs[id] ?? '') === '')
+  const before = Object.fromEntries(blanks.map((id) => [id, '']))
+  const after = Object.fromEntries(blanks.map((id) => [id, 'FALSE']))
+  if (blanks.length) _writeInputs(sn, after)
+  const op = {
+    opType: 'edit',
+    subSheet: sn,
+    cellRefs: blanks,
+    before,
+    after,
+    beforeValidation,
+    afterValidation,
+    summary: 'Insert checkboxes',
+  }
+  if (blanks.length) {
+    _queueOp(op)
+    broadcastBatchChange(
+      sn,
+      blanks.map((id) => ({ id, value: 'FALSE' })),
+    )
+  }
+  history.pushOp(op)
   grid?.render()
-  history.push() // rule + any FALSE-fill live in the snapshot; record for undo
+  syncFlags()
   isDirty.value = true
 }
 function removeValidation() {
@@ -7670,13 +7625,12 @@ function _maybeAutoLink(cells, sn) {
 }
 function openHyperlinkDialog() {
   const id = activeCell.value
-  const cur = sheet.getCell(id)
   const fmt = formats.get(id, currentSheet.value)
-  hyperlinkText.value = String(cur ?? '')
+  hyperlinkText.value = _inputAt(id) ?? ''
   hyperlinkUrl.value = fmt.hyperlink || ''
   showHyperlinkDialog.value = true
 }
-function confirmHyperlink() {
+async function confirmHyperlink() {
   const url = (hyperlinkUrl.value || '').trim()
   if (!url) {
     showHyperlinkDialog.value = false
@@ -7688,7 +7642,17 @@ function confirmHyperlink() {
     showHyperlinkDialog.value = false
     return
   }
-  if (hyperlinkText.value !== sheet.getCell(id)) sheet.setCell(id, hyperlinkText.value)
+  showHyperlinkDialog.value = false
+  // The text and the link are one undo step.
+  const text = hyperlinkText.value
+  const before = { [id]: await _readInput(id, sh) }
+  const after = { [id]: text }
+  const fmtOf = () => {
+    const f = formats.getCellFormat(id, sh)
+    return f ? { ...f } : null
+  }
+  const beforeFormats = { [id]: fmtOf() }
+  if (text !== before[id]) _writeInputs(sh, after)
   formats.applyToRange(
     [id],
     {
@@ -7696,7 +7660,18 @@ function confirmHyperlink() {
     },
     sh,
   )
-  history.push() // post-mutate
+  const op = {
+    opType: 'edit',
+    subSheet: sh,
+    cellRefs: [id],
+    before,
+    after,
+    beforeFormats,
+    afterFormats: { [id]: fmtOf() },
+    summary: 'Insert link',
+  }
+  _queueOp(op)
+  history.pushOp(op)
   refreshActiveFormat()
   grid?.render()
   syncFlags()
@@ -7806,7 +7781,7 @@ function _openLinkCard(info) {
     linkCard.offerReplace =
       !readOnly.value &&
       !!res.title &&
-      isAutoLinkText(sheet.getCell(linkCard.id), linkCard.url) &&
+      isAutoLinkText(_inputAt(linkCard.id) ?? '', linkCard.url) &&
       !_cellSilentlyProtected(linkCard.id)
   })
 }
@@ -8229,6 +8204,10 @@ async function _startEngine(snapshotBytes = null) {
   const offSheets = client.onSheets(() => syncNames())
   // Edits change the values a filter's lists show.
   const offVersion = client.onVersion(() => {
+    // Range rules (colour scales, data bars) cache min/max, and charts
+    // cache their source matrix: both are stale after any edit.
+    condFormat?.invalidate()
+    chartDataVersion.value++
     const sn = currentSheet.value
     if (!sortFilter.hasFilter(sn)) return
     sortFilter
@@ -8343,6 +8322,20 @@ async function _readInputs(rect, sn = currentSheet.value) {
   for (let r = rect.r0; r <= rect.r1; r++)
     for (let c = rect.c0; c <= rect.c1; c++)
       out[cellId(r, c)] = inputs[r - rect.r0]?.[c - rect.c0] ?? ''
+  return out
+}
+
+// Inputs of scattered cells, {cellId: input}, in one round trip.
+async function _readIds(ids, sn = currentSheet.value) {
+  const out = {}
+  const cells = []
+  for (const id of ids) {
+    const p = parseCellId(id)
+    if (p) cells.push({ row: p.row + 1, col: p.col + 1 })
+  }
+  if (!_engine || !cells.length) return out
+  const res = await _engine.client.readCells({ sheet: sn, cells, what: ['input'] })
+  for (const c of res.cells) out[cellId(c.row - 1, c.col - 1)] = c.input ?? ''
   return out
 }
 

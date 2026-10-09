@@ -76,6 +76,24 @@ export interface FoundCell {
   input: string
 }
 
+export interface RangeStats {
+  /** Non-empty cells. */
+  count: number
+  /** Cells holding a number (a formula result included). */
+  numCount: number
+  sum: number
+}
+
+// IronCalc's cell type for a number (getCellType).
+const NUMBER_CELL = 1
+
+// A number cell's value from its shown text: IronCalc exposes no raw value,
+// so drop grouping and currency marks and read a trailing % as /100.
+export function numberFromShown(shown: string): number {
+  const t = shown.replace(/[,\s$€£¥₹]/g, '')
+  return t.endsWith('%') ? parseFloat(t) / 100 : parseFloat(t)
+}
+
 export interface Workbook {
   apply(cmd: unknown): VersionResult
   undo(): VersionResult
@@ -95,6 +113,8 @@ export interface Workbook {
    * order (row by row), at most `limit` of them.
    */
   findInputs(sheet: string, query: string, limit: number): FoundCell[]
+  /** Count / numeric count / sum over a range (1-based, inclusive). */
+  rangeStats(sheet: string, r1: number, c1: number, r2: number, c2: number): RangeStats
   toBytes(): Uint8Array
   getVersion(): number
 }
@@ -367,6 +387,27 @@ export function createWorkbook({
           }
         }
         return found
+      }),
+    // The status bar's Count / Sum / Avg. Same row scan as findInputs, so a
+    // whole-column selection costs the used rows, not a million reads.
+    rangeStats: (sheet, r1, c1, r2, c2) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const stats: RangeStats = { count: 0, numCount: 0, sum: 0 }
+        for (let row = Math.max(1, r1); row <= Math.min(r2, MAX_ROWS); row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            // A styled but empty cell is listed too.
+            if (col < c1 || col > c2 || model.getCellContent(idx, row, col) === '') continue
+            stats.count++
+            if (model.getCellType(idx, row, col) !== NUMBER_CELL) continue
+            const n = numberFromShown(model.getFormattedCellValue(idx, row, col))
+            if (Number.isFinite(n)) {
+              stats.numCount++
+              stats.sum += n
+            }
+          }
+        }
+        return stats
       }),
     toBytes: () => read(() => model.toBytes()),
     getVersion: () => version,
