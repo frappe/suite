@@ -244,6 +244,10 @@ export default defineConfig(({ mode }) => ({
       '@tiptap/pm/state',
       '@tiptap/pm/tables',
       '@tiptap/pm/view',
+      // Linked to packages/collab-prosemirror. The optimized collaboration
+      // extensions bundle their own copy otherwise, and a sync-plugin key
+      // from one copy reads no state from the other, so no caret is sent.
+      '@tiptap/y-tiptap',
       // The same for CodeMirror, which frappe-ui's code editor imports. Vite
       // never discovers a dep from an importer inside node_modules, so without
       // this list `@codemirror/language` and `@lezer/highlight` load raw for
