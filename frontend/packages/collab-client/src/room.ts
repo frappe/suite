@@ -669,8 +669,9 @@ export class Room implements CollabRoom {
       clearTimeout(this.sendTimer)
     }
 
-    const sendDelay = this.options.sendDelayMs ?? 1000
-    const sendBy = this.firstUnsentAt + (this.options.sendMaxDelayMs ?? 3000)
+    // By default an edit goes out at once; edits made while a push is in flight go out together after it
+    const sendDelay = this.options.sendDelayMs ?? 0
+    const sendBy = this.firstUnsentAt + (this.options.sendMaxDelayMs ?? 0)
     const delay = Math.min(sendDelay, sendBy - now)
     const sendQueued = () => {
       this.sendTimer = null
