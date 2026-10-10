@@ -77,7 +77,7 @@ def publish(adapter: str, doc_id: str, lineage: str, event: str, message: dict) 
         pass
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 def joinable() -> bool:
     """Whether the realtime service may let sockets into collab rooms: only while collaboration is on."""
     from suite.suite_core.content.log import enabled

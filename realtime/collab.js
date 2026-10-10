@@ -236,7 +236,7 @@ function joinable(socket) {
 	if (known && known.until > now) return known.answer;
 
 	const answer = socket
-		.frappe_request("/api/v2/method/suite.suite_core.content.live.joinable", {}, { method: "POST" })
+		.frappe_request("/api/v2/method/suite.suite_core.content.live.joinable")
 		.then((response) => response.json())
 		.then((body) => body?.data === true)
 		.catch(() => false);
