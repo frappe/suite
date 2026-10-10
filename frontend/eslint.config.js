@@ -16,6 +16,8 @@ export default defineConfigWithVueTs(
     ignores: [
       'dist/**',
       'dist-recorder/**',
+      // A vendored build, kept as published.
+      'packages/collab-prosemirror/dist/**',
       'node_modules/**',
       'auto-imports.d.ts',
       'components.d.ts',

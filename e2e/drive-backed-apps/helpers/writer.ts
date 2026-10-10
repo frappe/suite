@@ -4,6 +4,11 @@ import { createDocument, grantAccess, revokeAccess, ROLE, type DriveNode } from 
 /** The Drive content doctype that Writer documents are stored as. */
 const WRITER_DOCTYPE = "Writer Document";
 
+/** The part of the editor `placeCaretIn` reads. */
+type CaretEditor = {
+	state: { selection: { $from: { parent: { textContent: string } } } };
+};
+
 export function uniqueWriterTitle(runId: string, scenario: string): string {
 	return `E2E Writer ${scenario} ${runId} ${Date.now().toString(36)}`;
 }
@@ -46,6 +51,19 @@ export async function openWriterDocument(page: Page, node: string): Promise<void
 
 export function writerEditor(page: Page): Locator {
 	return page.getByRole("textbox", { name: "Document editor" });
+}
+
+/** Click into the block that shows `text`, and wait until the editor has its caret there. */
+export async function placeCaretIn(page: Page, text: string): Promise<void> {
+	await writerEditor(page).getByText(text).click();
+	// The editor reads a click's caret on the browser's next selection event, which can come after the next keys
+	await expect.poll(() => page.evaluate(caretBlockText)).toBe(text);
+}
+
+// Runs in the page, so it reads nothing from this module
+function caretBlockText() {
+	const root = document.querySelector(".ProseMirror") as { editor?: CaretEditor } | null;
+	return root?.editor?.state.selection.$from.parent.textContent;
 }
 
 /** The document title field in the header; renames on Enter, reverts on Escape. */

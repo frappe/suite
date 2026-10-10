@@ -1,0 +1,208 @@
+"""Staged pieces of a change too big for one request body (4f).
+
+A change is cut into pieces of exactly `PIECE_MAX` bytes, the last one
+shorter, each sent on its own and kept here. The push that names the stage
+assembles them and checks the exact length and sha256 before anything parses
+the bytes, so a piece never reaches the parser or pycrdt.
+"""
+
+import hashlib
+import json
+import struct
+from datetime import datetime, timedelta
+
+import frappe
+
+from suite.suite_core.content import capacity
+from suite.suite_core.content.tables import table
+
+PIECE_MAX = 256 * 2**10
+HEADER_MAX = 4096
+DOC_MAX = 16 * 2**20
+EXPIRY = timedelta(minutes=15)
+FULL_RETRY_MS = 60_000
+
+
+class Malformed(Exception):
+    pass
+
+
+class TooLarge(Exception):
+    pass
+
+
+class Conflict(Exception):
+    """The piece disagrees with what is staged at its index or with the stage's other pieces."""
+
+
+class Full(Exception):
+    """The principal has `DOC_MAX` bytes staged on the document already."""
+
+
+class Incomplete(Exception):
+    """The stage lacks a piece, or its bytes don't match its length and sha256."""
+
+
+def valid_id(value) -> bool:
+    return isinstance(value, str) and len(value) == 32 and value.isalnum() and value.isascii()
+
+
+def piece_count(total_len: int) -> int:
+    return -(-total_len // PIECE_MAX)
+
+
+def parse_piece(body: bytes, index_text: str) -> tuple[dict, int, bytes]:
+    """Split `u32 hlen | header JSON | piece` and check the piece's place in its change."""
+    if len(body) < 4:
+        raise Malformed
+
+    (length,) = struct.unpack(">I", body[:4])
+    if length > HEADER_MAX or len(body) < 4 + length:
+        raise Malformed
+
+    try:
+        header = json.loads(body[4 : 4 + length])
+        sha_total = bytes.fromhex(header["sha_total"])
+    except (ValueError, TypeError, KeyError):
+        raise Malformed from None
+
+    if not isinstance(header, dict):
+        raise Malformed
+
+    seqs_are_ints = all(type(header.get(key)) is int for key in ("from", "to", "total_len"))
+    if not seqs_are_ints:
+        raise Malformed
+
+    lineage_valid = isinstance(header.get("lineage"), str)
+    sid_valid = valid_id(header.get("sid"))
+    sha_valid = len(sha_total) == 32
+    if not (lineage_valid and sid_valid and sha_valid):
+        raise Malformed
+
+    if header["from"] < 1 or header["to"] < header["from"] or header["total_len"] < 1:
+        raise Malformed
+
+    if header["total_len"] > capacity.edit_max():
+        raise TooLarge
+
+    if not index_text.isdigit() or int(index_text) >= piece_count(header["total_len"]):
+        raise Malformed
+
+    index = int(index_text)
+    piece = body[4 + length :]
+    expected_len = min(PIECE_MAX, header["total_len"] - index * PIECE_MAX)
+    if len(piece) != expected_len:
+        raise Malformed
+
+    header["sha_total"] = sha_total
+    return header, index, piece
+
+
+def store_piece(
+    adapter: str, doc_id: str, stage_id: str, index: int, header: dict, piece: bytes, principal: str
+) -> None:
+    """Keep one piece. The same bytes again at an index change nothing but the stage's age. Each
+    principal has its own `DOC_MAX`, so one editor's pieces never block another's."""
+    stage_table = table(adapter, "stage")
+    stage_shape = (header["sid"], header["from"], header["to"], header["total_len"], header["sha_total"])
+    staged_pieces = frappe.db.sql(
+        f"""SELECT `idx`, `sid`, `seq_from`, `seq_to`, `total_len`, `sha_total`, `bytes` = UNHEX(%s) AS `same`
+        FROM `{stage_table}` WHERE `doc_id` = %s AND `stage_id` = %s""",
+        (piece.hex(), doc_id, stage_id),
+        as_dict=True,
+    )
+    for row in staged_pieces:
+        if (row.sid, row.seq_from, row.seq_to, row.total_len, bytes(row.sha_total)) != stage_shape:
+            raise Conflict
+
+        if row.idx == index:
+            if not row.same:
+                raise Conflict
+
+            return refresh_expiry(adapter, doc_id, stage_id)
+
+    # Locked, so a principal's puts take turns and each sees what the one before it kept
+    staged = frappe.db.sql(
+        f"""SELECT COALESCE(SUM(LENGTH(`stage`.`bytes`)), 0) FROM `{stage_table}` `stage`
+        JOIN `{table(adapter, "session")}` `session`
+            ON `session`.`doc_id` = `stage`.`doc_id` AND `session`.`sid` = `stage`.`sid`
+        WHERE `stage`.`doc_id` = %s AND `session`.`principal` = %s FOR UPDATE""",
+        (doc_id, principal),
+    )
+    staged_bytes = int(staged[0][0])
+    if staged_bytes + len(piece) > DOC_MAX:
+        raise Full
+
+    frappe.db.sql(
+        f"""INSERT IGNORE INTO `{stage_table}`
+        (`doc_id`, `stage_id`, `idx`, `purpose`, `sid`, `seq_from`, `seq_to`, `total_len`, `sha_total`, `bytes`, `created`)
+        VALUES (%s, %s, %s, 'save', %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), %s)""",
+        (
+            doc_id,
+            stage_id,
+            index,
+            *stage_shape[:4],
+            stage_shape[4].hex(),
+            piece.hex(),
+            frappe.utils.now_datetime(),
+        ),
+    )
+    refresh_expiry(adapter, doc_id, stage_id)
+
+
+def refresh_expiry(adapter: str, doc_id: str, stage_id: str) -> None:
+    """Restart the expiry of every piece of the stage, so a slow upload loses none of its early pieces."""
+    frappe.db.sql(
+        f"UPDATE `{table(adapter, 'stage')}` SET `created` = %s WHERE `doc_id` = %s AND `stage_id` = %s",
+        (frappe.utils.now_datetime(), doc_id, stage_id),
+    )
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+
+def assemble(adapter: str, doc_id: str, stage_id: str, header: dict) -> bytes:
+    """The staged change the push names, whole and checked. A stage whose bytes are wrong is dropped
+    so the tab can stage it again; one that only lacks pieces keeps them."""
+    rows = frappe.db.sql(
+        f"""SELECT `idx`, `sid`, `seq_from`, `seq_to`, `total_len`, `sha_total`, `bytes`
+        FROM `{table(adapter, "stage")}` WHERE `doc_id` = %s AND `stage_id` = %s ORDER BY `idx`""",
+        (doc_id, stage_id),
+        as_dict=True,
+    )
+    if not rows:
+        raise Incomplete
+
+    first_piece = rows[0]
+    if (first_piece.sid, first_piece.seq_from, first_piece.seq_to) != (
+        header["sid"],
+        header["from"],
+        header["to"],
+    ):
+        raise Conflict
+
+    expected_indexes = list(range(piece_count(first_piece.total_len)))
+    if [row.idx for row in rows] != expected_indexes:
+        raise Incomplete
+
+    payload = b"".join(bytes(row.bytes) for row in rows)
+    length_wrong = len(payload) != first_piece.total_len
+    sha_wrong = hashlib.sha256(payload).digest() != bytes(first_piece.sha_total)
+    if length_wrong or sha_wrong:
+        drop_stage(adapter, doc_id, stage_id)
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+        raise Incomplete
+
+    return payload
+
+
+def drop_stage(adapter: str, doc_id: str, stage_id: str) -> None:
+    frappe.db.sql(
+        f"DELETE FROM `{table(adapter, 'stage')}` WHERE `doc_id` = %s AND `stage_id` = %s", (doc_id, stage_id)
+    )
+
+
+def expire_pieces(adapter: str, now: datetime) -> None:
+    """Delete save pieces older than `EXPIRY`; their tab still holds the change and can stage it again."""
+    frappe.db.sql(
+        f"DELETE FROM `{table(adapter, 'stage')}` WHERE `purpose` = 'save' AND `created` < %s", now - EXPIRY
+    )
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit

@@ -2,9 +2,11 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { canJoin } from '@tiptap/pm/transform'
 
+import { changedRanges, touches } from './received-content-guard'
+
 // Deleting a block between two lists, or lifting an item out, leaves adjacent
 // same-type list nodes that ProseMirror never merges, so the second list
-// restarts its numbering. Join them back into one node after every change.
+// restarts its numbering. Join them back into one node where an edit made them meet.
 const JOINABLE = new Set(['orderedList', 'bulletList'])
 
 export const JoinAdjacentLists = Extension.create({
@@ -17,6 +19,8 @@ export const JoinAdjacentLists = Extension.create({
         appendTransaction(transactions, oldState, newState) {
           if (!transactions.some((tr) => tr.docChanged)) return
 
+          const editedRanges = changedRanges(transactions)
+
           // Boundary position (start of `child`) for every pair of adjacent
           // same-type list siblings. `descendants` skips the doc node itself,
           // so collect its direct children explicitly (content starts at 0).
@@ -24,8 +28,12 @@ export const JoinAdjacentLists = Extension.create({
           const collect = (node, pos) => {
             node.forEach((child, offset, index) => {
               if (index === 0) return
-              if (JOINABLE.has(child.type.name) && child.type === node.child(index - 1).type) {
-                boundaries.push(pos + 1 + offset)
+
+              const boundary = pos + 1 + offset
+              const sameListType =
+                JOINABLE.has(child.type.name) && child.type === node.child(index - 1).type
+              if (sameListType && touches(editedRanges, boundary - 1, boundary + 1)) {
+                boundaries.push(boundary)
               }
             })
           }

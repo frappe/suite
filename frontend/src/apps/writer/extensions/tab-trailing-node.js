@@ -1,6 +1,8 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
+import { changedRanges, touches } from './received-content-guard'
+
 const TabTrailingNode = Extension.create({
   name: 'tabTrailingNode',
 
@@ -10,14 +12,26 @@ const TabTrailingNode = Extension.create({
         key: new PluginKey('tabTrailingNode'),
         appendTransaction(transactions, oldState, newState) {
           const { doc, tr, schema } = newState
+          const editedRanges = changedRanges(transactions)
           let modified = false
 
-          doc.forEach((node, offset) => {
+          doc.forEach((node, offset, index) => {
             if (node.type.name === 'tab') {
               const lastChild = node.lastChild
-              if (lastChild.type === schema.nodes.table) {
-                const endPos = offset + node.nodeSize - 1
-                tr.insert(endPos, schema.nodes.paragraph.create())
+              const endPos = offset + node.nodeSize - 1
+              if (lastChild.type === schema.nodes.table && touches(editedRanges, endPos)) {
+                const insertAt = tr.mapping.map(endPos)
+                tr.insert(insertAt, schema.nodes.paragraph.create())
+                modified = true
+              }
+            } else {
+              const tableEnd = offset + node.nodeSize
+              const isTable = node.type === schema.nodes.table
+              const tabFollows = doc.maybeChild(index + 1)?.type.name === 'tab'
+              if (isTable && tabFollows && touches(editedRanges, tableEnd)) {
+                // The first tab's content ends here, before the other tabs
+                const insertAt = tr.mapping.map(tableEnd)
+                tr.insert(insertAt, schema.nodes.paragraph.create())
                 modified = true
               }
             }

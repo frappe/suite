@@ -9,7 +9,6 @@ import * as Y from 'yjs'
 
 import { rebuild } from '@/apps/writer/extensions/comments'
 import type { WriterDocument, WriterDocumentRow } from '@/apps/writer/surface/writerDocument'
-import { useSessionStore } from '@/boot/session'
 
 import { reportSaveError } from './saveError'
 import { SERVER_ORIGIN, trackUnsaved } from './unsaved'
@@ -127,10 +126,6 @@ export function useYjs(
   // WebRTC for real-time P2P collaboration
   const provider = new WebrtcProvider(roomName, doc, REALTIME_CONFIG)
   const { peers, cleanup: cleanupPeers } = useCollaborationUsers(provider.awareness)
-  const permanentUserData = new Y.PermanentUserData(doc)
-  // null (guest) as a user key crashes yjs' PermanentUserData map observer
-  permanentUserData.setUserMapping(doc, doc.clientID, useSessionStore().user || 'Guest')
-
   // Comments
   const { cleanup: cleanupComments, ...commentsData } = useComments(document, editor)
   return {
@@ -144,7 +139,6 @@ export function useYjs(
     save,
     provider,
     peers,
-    permanentUserData,
     loaded,
     ...commentsData,
   }

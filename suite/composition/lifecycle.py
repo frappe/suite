@@ -49,11 +49,13 @@ def after_install():
     from suite.mail.install import after_install as mail_after_install
     from suite.meet.install import after_install as meet_after_install
     from suite.slides.install import seed_system_templates
+    from suite.suite_core.content.documents import ensure_tables as ensure_content_tables
     from suite.suite_core.file_size import set_default_max_file_size
 
     _run("mail.after_install", mail_after_install)
     _run("calendar.after_install", calendar_after_install)
     _run("meet.after_install", meet_after_install)
+    _run("suite_core.content.ensure_tables", ensure_content_tables)
     _run("suite_core.set_default_max_file_size", set_default_max_file_size)
     _run("drive.index_group_membership", index_group_membership)
     # A fresh install never migrates, so it needs the same boot validation.
@@ -68,8 +70,10 @@ def after_migrate():
     from suite.drive.install import index_group_membership
     from suite.mail.install import after_migrate as mail_after_migrate
     from suite.slides.install import seed_system_templates
+    from suite.suite_core.content.documents import ensure_tables as ensure_content_tables
 
     _run("mail.after_migrate", mail_after_migrate)
+    _run("suite_core.content.ensure_tables", ensure_content_tables)
     _run("drive.index_group_membership", index_group_membership)
     _run("drive.validate_content_registry", validate_content_registry)
     _run("slides.seed_system_templates", seed_system_templates)

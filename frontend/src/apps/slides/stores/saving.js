@@ -5,47 +5,34 @@ import {
   presentationDoc,
   presentationId,
   savePresentationDoc,
+  viewOnly,
 } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
+import { openDraftsDb, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { cloneObj } from '@/apps/slides/utils/helpers'
-import { DRAFTS_DB_NAME } from '@/apps/slides/utils/slidesCaches'
+import { draftsDbName } from '@/apps/slides/utils/slidesCaches'
 import { getSessionUser } from '@/boot/session'
 
-const DB_VERSION = 1
 const STORE = 'presentations'
 
 let db = null
+let dbOwner = null
 
-const openDB = () => {
-  if (db) {
-    return Promise.resolve(db)
+const draftsOwner = () => getSessionUser() || 'Guest'
+
+const openDB = async () => {
+  const user = draftsOwner()
+  if (db && dbOwner === user) return db
+
+  db?.close()
+  db = await openDraftsDb(draftsDbName(user))
+  dbOwner = user
+  // a database being deleted or upgraded waits on this connection
+  db.onversionchange = () => {
+    db.close()
+    db = null
   }
-
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DRAFTS_DB_NAME, DB_VERSION)
-
-    req.onupgradeneeded = () => {
-      const db = req.result
-
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' })
-      }
-    }
-
-    req.onsuccess = () => {
-      db = req.result
-      // another user taking over deletes the database, which waits on this connection
-      db.onversionchange = () => {
-        db.close()
-        db = null
-      }
-      resolve(db)
-    }
-
-    req.onerror = () => {
-      reject(req.error)
-    }
-  })
+  return db
 }
 
 // `allowed` is asked right before the transaction opens: IndexedDB runs
@@ -112,7 +99,7 @@ const getPresentationFromLocalDB = async (id) => {
 
   const db = await openDB()
 
-  return new Promise((resolve, reject) => {
+  const record = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
     const store = tx.objectStore(STORE)
 
@@ -129,6 +116,9 @@ const getPresentationFromLocalDB = async (id) => {
       reject(req.error)
     }
   })
+  if (record || viewOnly.value) return record ?? null
+
+  return takeUnownedDraft(id, draftsOwner()).catch(() => null)
 }
 
 // explicit dirty flag set by every mutation path

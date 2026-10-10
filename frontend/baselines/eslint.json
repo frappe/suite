@@ -223,7 +223,7 @@
   "src/apps/writer/components/TextEditor.vue|vue/block-lang": 1,
   "src/apps/writer/components/ToC.vue|@typescript-eslint/no-unused-vars": 2,
   "src/apps/writer/components/ToC.vue|vue/block-lang": 1,
-  "src/apps/writer/components/ToC.vue|vue/require-v-for-key": 2,
+  "src/apps/writer/components/ToC.vue|vue/require-v-for-key": 1,
   "src/apps/writer/components/ToCMobile.vue|vue/block-lang": 1,
   "src/apps/writer/components/UsersBar.vue|vue/block-lang": 1,
   "src/apps/writer/components/core-editor/DropdownMenuGroup.vue|vue/block-lang": 1,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { resolveDocumentLeave, type DocumentSaveState } from './navigation'
+import { resolveDocumentLeave, resolveDocumentUnload, type DocumentSaveState } from './navigation'
 
 describe('document leave decisions', () => {
   it('leaves a clean document without prompting', async () => {
@@ -43,5 +43,45 @@ describe('document leave decisions', () => {
       }),
     ).toBe(false)
     expect(retainRecovery).toHaveBeenCalledOnce()
+  })
+})
+
+describe('closing the tab', () => {
+  it('asks the browser to confirm and keeps a recovery copy while work is unsaved', () => {
+    for (const state of ['unsaved', 'saving', 'failed'] as const) {
+      const retainRecovery = vi.fn()
+      const event = new Event('beforeunload', { cancelable: true })
+      const guard = {
+        state: () => state,
+        retainRecovery,
+      }
+      resolveDocumentUnload(guard, event)
+      expect([event.defaultPrevented, retainRecovery.mock.calls.length]).toEqual([true, 1])
+    }
+  })
+
+  it("still asks when the recovery copy can't be written", () => {
+    const event = new Event('beforeunload', { cancelable: true })
+    const retainRecovery = () => {
+      throw new DOMException('full', 'QuotaExceededError')
+    }
+    const guard = {
+      state: () => 'unsaved' as const,
+      retainRecovery,
+    }
+
+    expect(() => resolveDocumentUnload(guard, event)).toThrow()
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('closes a clean document without asking', () => {
+    const retainRecovery = vi.fn()
+    const event = new Event('beforeunload', { cancelable: true })
+    const guard = {
+      state: () => 'clean' as const,
+      retainRecovery,
+    }
+    resolveDocumentUnload(guard, event)
+    expect([event.defaultPrevented, retainRecovery.mock.calls.length]).toEqual([false, 0])
   })
 })

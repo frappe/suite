@@ -171,6 +171,13 @@ jobs:
           COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
           TYPE: server
 
+      - name: Compare Collab Compaction With Yjs
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          ./env/bin/python apps/suite/suite/suite_core/content/tests/differential/compact.py "$RUNNER_TEMP/compacted.json"
+          node apps/suite/suite/suite_core/content/tests/differential/judge.cjs "$RUNNER_TEMP/compacted.json"
+
       - name: Check Background Worker
         if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
         working-directory: /home/runner/frappe-bench

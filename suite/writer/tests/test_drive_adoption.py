@@ -260,8 +260,11 @@ class TestWriterDeclaration(UnitTestCase):
                 writer._version_payload(raw)
 
     def test_version_bytes_captures_collaboration_mode(self):
-        row = frappe._dict(content="body", html="<p>x</p>", collab=0)
-        with patch.object(writer.frappe.db, "get_value", return_value=row):
+        row = frappe._dict(node="node-1", content="body", html="<p>x</p>", collab=0)
+        with (
+            patch.object(writer.frappe.db, "get_value", return_value=row),
+            patch.object(writer.documents, "live_checkpoint", return_value=None),
+        ):
             stream, mime = writer.version_bytes("WR-1")
         self.assertEqual(mime, writer.VERSION_MIME)
         self.assertEqual(json.loads(stream.read())["collab"], 0)
@@ -338,9 +341,9 @@ class TestWriterDeclaration(UnitTestCase):
         self.assertIsInstance(refused.exception, frappe.ValidationError)
 
     def test_a_body_that_applies_and_then_panics_still_refuses_as_a_validation_error(self):
-        # `apply_update` is not the only pycrdt call that panics. A body whose
-        # root was written as a `Text` or an `Array` applies cleanly and panics
-        # on the first child read, which is past the one guarded call.
+        # A body whose root was written as a `Text` or an `Array` applies
+        # cleanly. pycrdt 0.12 panicked on the first child read, and 0.14 reads
+        # it as a fragment with no children; either way it is no Writer body.
         for value in (pycrdt.Text("hello"), pycrdt.Array([1, 2])):
             with self.subTest(root=type(value).__name__):
                 body = rooted_body(value)
@@ -383,10 +386,15 @@ class TestLegacyEmbedReferences(UnitTestCase):
             '<img src="/api/method/drive.api.embed.get_file_content'
             '?parent_entity_name=WR-1&embed_name=third">'
         )
-        with patch.object(writer, "frappe") as frappe_mock:
-            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+        with (
+            patch.object(writer, "frappe") as frappe_mock,
+            patch.object(writer.documents, "live_state", return_value=None),
+        ):
+            frappe_mock.db.get_value.return_value = SimpleNamespace(node="node-1", content=None, html=html)
             self.assertEqual(writer.used_nodes("WR-1"), {"first", "second", "third"})
-        frappe_mock.db.get_value.assert_called_once_with(DOCTYPE, "WR-1", ("content", "html"), as_dict=True)
+        frappe_mock.db.get_value.assert_called_once_with(
+            DOCTYPE, "WR-1", ("node", "content", "html"), as_dict=True
+        )
 
     def test_remap_changes_only_the_old_embed_media_id(self):
         html = (
@@ -403,7 +411,7 @@ class TestLegacyEmbedReferences(UnitTestCase):
             "embed_name=file", "embed_name=other"
         )
         with patch.object(writer, "frappe") as frappe_mock:
-            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+            frappe_mock.db.get_value.return_value = SimpleNamespace(node="node-1", content=None, html=html)
             writer.remap_media("WR-1", {"old": "new", "file": "other"})
         frappe_mock.db.set_value.assert_called_once_with(
             DOCTYPE, "WR-1", {"html": expected}, update_modified=False
@@ -452,6 +460,12 @@ class TestWriterInDrive(IntegrationTestCase):
         activation = activated()
         activation.__enter__()
         self.addCleanup(activation.__exit__, None, None, None)
+        # These tests keep the body in the document row, so no document may start a collab log
+        saved_mode = frappe.db.get_single_value("Suite Collab Settings", "mode") or "off"
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(frappe.db.set_single_value, "Suite Collab Settings", "mode", saved_mode)
+        frappe.db.set_single_value("Suite Collab Settings", "mode", "off")
+
         # Registered before the first row exists, so a `setUp` that dies half
         # way still hands its roots back.
         self.addCleanup(self._remove_fixture_rows)

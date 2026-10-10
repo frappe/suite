@@ -145,6 +145,10 @@ drive_content_types = [
     "suite.sheets.drive.SPEC",
 ]
 
+# Dotted paths to `suite.suite_core.content.adapters.ContentAdapterSpec` objects,
+# one per app whose documents the content layer keeps.
+suite_content_adapters = ["suite.writer.content.SPEC"]
+
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
@@ -307,6 +311,9 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
     ],
+    "all": [
+        "suite.suite_core.content.documents.sweep",
+    ],
     "cron": {
         "* * * * *": [
             "suite.meet.api.recording.reconcile_pending_recordings",
@@ -333,6 +340,7 @@ extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 after_request = [
     "suite.mail.framework.close_mail_clients",
     "suite.drive.framework.allow_embedding",
+    "suite.suite_core.build.after_request",
 ]
 after_job = "suite.mail.framework.close_mail_clients"
 

@@ -1,0 +1,79 @@
+<template>
+  <CoreEditor
+    ref="textEditor"
+    v-model:show-settings="showSettings"
+    v-model:edited="edited"
+    :file
+    :document
+    :settings
+    :editable
+    :comments
+    :extensions
+    @save="save"
+  >
+    <template v-for="(_, name) in $slots" #[name]>
+      <slot :name="name" />
+    </template>
+  </CoreEditor>
+</template>
+
+<script setup lang="ts">
+import type { CollabRoom } from '@suite/collab-client'
+import Collaboration from '@tiptap/extension-collaboration'
+import { toast } from 'frappe-ui'
+import { computed, onBeforeUnmount, provide, ref, shallowRef } from 'vue'
+import * as Y from 'yjs'
+
+import { BODY_FIELD, withinTenSeconds } from '@/apps/writer/collab'
+import { Carets, peopleOf } from '@/apps/writer/collab/carets'
+import { PasteSizeGuard } from '@/apps/writer/extensions/paste-size-guard'
+
+import CoreEditor from './CoreEditor.vue'
+
+const props = defineProps<{
+  room: CollabRoom
+  file: object
+  document: object
+  settings: object
+  editable: boolean
+}>()
+
+const showSettings = defineModel('showSettings')
+
+const edited = ref(false)
+const textEditor = ref<InstanceType<typeof CoreEditor> | null>(null)
+
+const editor = computed(() => textEditor.value?.editor)
+provide('editor', editor)
+
+const presence = props.room.presence
+const roster = shallowRef(presence?.peers ?? [])
+const stopListening = presence?.onChange(() => (roster.value = presence.peers))
+onBeforeUnmount(() => stopListening?.())
+
+const peers = computed(() => peopleOf(roster.value))
+defineExpose({ editor, peers })
+
+// Collaborative documents carry no comments yet
+const comments = new Y.Doc().getMap('comments')
+
+const extensions = [
+  Collaboration.configure({ document: props.room.doc, field: BODY_FIELD }),
+  Carets.configure({ presence }),
+  PasteSizeGuard.configure({
+    limits: () => props.room.limits,
+    atLimit: () => props.room.atLimit,
+    onTooLarge: () => toast.error('This is too large to add in one go. Add it in smaller parts.'),
+    onNearFull: () => toast.warning('This document is nearly full. Some changes may not save.'),
+  }),
+]
+
+async function save(_manual: boolean, _html: string | null, done?: () => void) {
+  await withinTenSeconds(props.room.flush())
+  if (props.room.saveState === 'clean') {
+    done?.()
+  } else if (done) {
+    toast.warning('Not saved yet. Your changes are kept in this tab.')
+  }
+}
+</script>

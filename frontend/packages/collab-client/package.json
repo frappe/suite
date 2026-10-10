@@ -1,0 +1,16 @@
+{
+  "name": "@suite/collab-client",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Sync client for Suite's collaborative documents: open, apply committed rows in order, push local changes",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "lib0": "^0.2.99",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.30"
+  }
+}

@@ -64,19 +64,19 @@ test("imports a .docx into a new tab, leaving existing content untouched", async
 
 	await importDocx(owner.page);
 
-	// Importing wraps the existing content into its own ("Untitled") tab and
-	// switches to a new tab named after the file for the imported content.
-	// Inactive tabs stay mounted (display: none) rather than being removed
-	// from the DOM (see TabView.vue), so assertions must scope to the
-	// visible tab; toContainText matches hidden text too, unlike innerText.
+	// The existing content stays as the first ("Untitled") tab and the imported
+	// content opens in a new tab named after the file. Inactive tabs stay in the
+	// DOM hidden, so assertions read the rendered text only.
 	const tocTabs = owner.page.locator('[draggable="true"]');
-	await expect(tocTabs).toHaveCount(2);
-	const activeTab = editor.locator("[data-tab-id]:visible");
-	await expect(activeTab).toContainText("E2E DOCX Import Fixture");
+	await expect(tocTabs).toHaveText(["Untitled", "import-sample"]);
+	await expect(editor).toContainText("E2E DOCX Import Fixture", { useInnerText: true });
+	await expect(editor).not.toContainText("Existing content before import", {
+		useInnerText: true,
+	});
 
 	await tocTabs.filter({ hasText: "Untitled" }).click();
-	await expect(activeTab).toContainText("Existing content before import");
-	await expect(activeTab).not.toContainText("E2E DOCX Import Fixture");
+	await expect(editor).toContainText("Existing content before import", { useInnerText: true });
+	await expect(editor).not.toContainText("E2E DOCX Import Fixture", { useInnerText: true });
 
 	await discardNode(owner.page.request, file.name);
 });

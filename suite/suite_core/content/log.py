@@ -1,0 +1,727 @@
+"""The update log: every committed change to a collaborative document, in one order.
+
+Pushes take the control row with `SKIP LOCKED` as the first statement of a fresh
+transaction, so a web thread never waits on a document: a held lock answers
+`busy` at once. Each row gets the next gap-free `rev` and extends a hash chain,
+and is committed before the push answers. A push that repeats seqs already
+committed gets their original answer back, checked against each seq's sha, so a
+lost answer costs one request and never a second row.
+"""
+
+import base64
+import contextlib
+import gzip
+import hashlib
+import json
+import secrets
+import struct
+from collections.abc import Sequence
+
+import frappe
+from frappe.utils import now_datetime
+
+from suite.suite_core.content import capacity, ingest, live, scheduling, stage
+from suite.suite_core.content.adapters import spec_of
+from suite.suite_core.content.tables import table
+
+PROTOCOL_VERSION = 1
+PACE_MS = 1000
+CLIENT_ID_MAX = 2**30
+PURGE_BATCH = 500
+# A push stamped by a newer build than this server waits out the deploy
+UPGRADING_RETRY_MS = 30_000
+SUSPECT_RETRY_MS = 5 * 60_000
+
+
+class Refusal(Exception):
+    """A collab answer other than success, sent as `{"collab": reason, ...}`."""
+
+    def __init__(self, status: int, collab: str, /, **extra):
+        super().__init__(collab)
+        self.status = status
+        self.body = {"collab": collab, **extra}
+
+
+def enabled() -> bool:
+    return frappe.db.get_single_value("Suite Collab Settings", "mode") == "on"
+
+
+class ChainBroken(Exception):
+    reason = "chain_break"
+
+
+def require_enabled() -> None:
+    if not enabled():
+        raise Refusal(409, "disabled")
+
+
+def chain_seed(lineage: str) -> bytes:
+    return hashlib.sha256(lineage.encode()).digest()
+
+
+def chain_next(previous: bytes, rev: int, payload_sha: bytes) -> bytes:
+    return hashlib.sha256(previous + struct.pack(">Q", rev) + payload_sha).digest()
+
+
+def find(adapter: str, node: str) -> frappe._dict | None:
+    """`node`'s log, or None when it has none or its log is purged."""
+    rows = frappe.db.sql(
+        f"""SELECT `id`, `lineage`, `head_rev`, `head_chain`, `q_epoch`, `verdict`, `judged`, `schema_steps`,
+        `suspect_held`, `state_bytes`, `tail_bound` FROM `{table(adapter, "doc")}` WHERE `node` = %s AND `mode` != 'purged'""",
+        node,
+        as_dict=True,
+    )
+    return rows[0] if rows else None
+
+
+def create(adapter: str, node: str) -> str:
+    """Start an empty log for `node` in the caller's transaction; answers its id."""
+    doc_id = frappe.generate_hash(length=20)
+    lineage = secrets.token_hex(16)
+    frappe.db.sql(
+        f"""INSERT INTO `{table(adapter, "doc")}` (`id`, `node`, `lineage`, `head_rev`, `head_chain`, `start_clocks`, `created`)
+        VALUES (%s, %s, %s, 0, UNHEX(%s), '{{}}', %s)""",
+        (doc_id, node, lineage, chain_seed(lineage).hex(), now_datetime()),
+    )
+    return doc_id
+
+
+def mark_purged(adapter: str, node: str) -> str | None:
+    """Mark `node`'s log purged in the caller's transaction, for `delete_purged` to remove; answers its id."""
+    doc = find(adapter, node)
+    if not doc:
+        return None
+
+    frappe.db.sql(f"UPDATE `{table(adapter, 'doc')}` SET `mode` = 'purged' WHERE `id` = %s", doc.id)
+    return doc.id
+
+
+def delete_purged(adapter: str, doc_id: str) -> None:
+    """Delete a purged log's rows in batches, each committed, then its control row. Safe to run again."""
+    doc_table = table(adapter, "doc")
+    purged = frappe.db.sql(f"SELECT 1 FROM `{doc_table}` WHERE `id` = %s AND `mode` = 'purged'", doc_id)
+    if not purged:
+        return
+
+    for kind in ("update", "checkpoint", "session", "stage", "recovery"):
+        while True:
+            frappe.db.sql(
+                f"DELETE FROM `{table(adapter, kind)}` WHERE `doc_id` = %s LIMIT %s", (doc_id, PURGE_BATCH)
+            )
+            deleted = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+            frappe.db.commit()  # nosemgrep: frappe-manual-commit
+            if deleted < PURGE_BATCH:
+                break
+
+    frappe.db.sql(f"DELETE FROM `{doc_table}` WHERE `id` = %s AND `mode` = 'purged'", doc_id)
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+
+def rows_after(adapter: str, doc_id: str, since: int) -> list[tuple[int, bytes]]:
+    """Committed rows after `since`, in rev order, a quarantined one empty. One statement, so one snapshot."""
+    stored_rows = frappe.db.sql(
+        f"SELECT `rev`, `payload` FROM `{table(adapter, 'update')}` WHERE `doc_id` = %s AND `rev` > %s ORDER BY `rev`",
+        (doc_id, since),
+    )
+    return [(int(rev), bytes(payload)) for rev, payload in stored_rows]
+
+
+def with_tombstones(log_read: dict) -> list[tuple[int, bytes]]:
+    """A read's rows with each quarantined rev as an empty row, which no real row is, in rev order."""
+    tombstones = [(rev, b"") for rev in log_read["quarantined"]]
+    return sorted([*log_read["rows"], *tombstones])
+
+
+def encode_frame(
+    header: dict, rows: Sequence[tuple[int, bytes]] = (), checkpoint: bytes | None = None
+) -> bytes:
+    """`u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`"""
+    header_json = json.dumps(header, separators=(",", ":")).encode()
+    checkpoint = checkpoint or b""
+    parts = [
+        struct.pack(">I", len(header_json)),
+        header_json,
+        struct.pack(">I", len(checkpoint)),
+        checkpoint,
+        struct.pack(">I", len(rows)),
+    ]
+    for rev, payload in rows:
+        parts += [struct.pack(">QI", rev, len(payload)), payload]
+    return b"".join(parts)
+
+
+def open_header(log_read: dict, *, can_write: bool) -> dict:
+    return {
+        "state": "live",
+        "proto": PROTOCOL_VERSION,
+        "lineage": log_read["lineage"],
+        "base": log_read["base"],
+        "can_write": can_write,
+        "pace_ms": PACE_MS,
+        "q_epoch": log_read["q_epoch"],
+        "schema": log_read["schema"],
+    }
+
+
+def limits(doc: frappe._dict) -> dict:
+    """The sizes a tab checks a change against before it enters the document."""
+    return {
+        "fragment": stage.PIECE_MAX,
+        "edit_max": capacity.edit_max(),
+        "state_max": scheduling.STATE_MAX,
+        "state_bytes": int(doc.state_bytes),
+        "tail_bound": int(doc.tail_bound),
+    }
+
+
+def load_session(adapter: str, doc_id: str, sid: str, principal: str):
+    """The session row for `sid`, or None. Refused if it belongs to another principal."""
+    rows = frappe.db.sql(
+        f"SELECT `client_id`, `principal`, `acked_seq`, `next_clock`, `closed` FROM `{table(adapter, 'session')}` WHERE `doc_id` = %s AND `sid` = %s",
+        (doc_id, sid),
+        as_dict=True,
+    )
+    if rows and rows[0].principal != principal:
+        raise Refusal(409, "session_owner")
+
+    return rows[0] if rows else None
+
+
+def insert_session(adapter: str, doc_id: str, sid: str, client_id: int, principal: str) -> bool:
+    """Commit a new session row. False if the sid or the clientID is already taken, by a session or
+    by a writer of the start state. The doc lock keeps the start from changing under the check."""
+    doc = frappe.db.sql(
+        f"SELECT `start_clocks` FROM `{table(adapter, 'doc')}` WHERE `id` = %s FOR UPDATE",
+        doc_id,
+        as_dict=True,
+    )[0]
+    if client_id in start_clocks(doc):
+        return False
+
+    try:
+        frappe.db.sql(
+            f"""INSERT INTO `{table(adapter, "session")}` (`doc_id`, `sid`, `client_id`, `principal`, `acked_seq`, `next_clock`, `created`)
+            VALUES (%s, %s, %s, %s, 0, 0, %s)""",
+            (doc_id, sid, client_id, principal, now_datetime()),
+        )
+    except Exception as error:
+        if frappe.db.is_duplicate_entry(error):
+            return False
+
+        raise
+
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    return True
+
+
+def issue_session(adapter: str, doc_id: str, sid: str, principal: str) -> int:
+    """Bind a fresh clientID to `sid` before the tab reveals or uses it. Idempotent per sid."""
+    existing = load_session(adapter, doc_id, sid, principal)
+    if existing:
+        return int(existing.client_id)
+
+    for _attempt in range(8):
+        client_id = secrets.randbelow(CLIENT_ID_MAX - 1) + 1
+        if insert_session(adapter, doc_id, sid, client_id, principal):
+            return client_id
+
+    raise busy_refusal()
+
+
+def claim_session(adapter: str, doc: dict, sid: str, claim, principal: str) -> str:
+    """Bind the clientID a tab opened offline chose itself: `ok`, `clash` or `lineage`. Mints nothing."""
+    client_id = claim.get("cid") if isinstance(claim, dict) else None
+    lineage = claim.get("lineage") if isinstance(claim, dict) else None
+    client_id_is_int = isinstance(client_id, int) and not isinstance(client_id, bool)
+    if not client_id_is_int or not isinstance(lineage, str):
+        raise Refusal(400, "malformed")
+
+    if not CLIENT_ID_MAX <= client_id < 2 * CLIENT_ID_MAX:
+        raise Refusal(400, "malformed")
+
+    if lineage != doc["lineage"]:
+        return "lineage"
+
+    def existing_binding() -> str | None:
+        row = load_session(adapter, doc["id"], sid, principal)
+        if not row:
+            return None
+
+        if int(row.client_id) == client_id:
+            return "ok"
+
+        return "clash"
+
+    binding = existing_binding()
+    if binding:
+        return binding
+
+    if insert_session(adapter, doc["id"], sid, client_id, principal):
+        return "ok"
+
+    return existing_binding() or "clash"  # lost a race for the sid or the clientID
+
+
+def parse_push(body: bytes) -> tuple[dict, bytes]:
+    """Split `u32 hlen | header JSON | Yjs update`."""
+    if len(body) < 4:
+        raise Refusal(400, "malformed")
+
+    (header_length,) = struct.unpack(">I", body[:4])
+    header_too_long = header_length > stage.HEADER_MAX
+    body_truncated = len(body) < 4 + header_length
+    if header_too_long or body_truncated:
+        raise Refusal(400, "malformed")
+
+    try:
+        header = json.loads(body[4 : 4 + header_length])
+    except ValueError:
+        raise Refusal(400, "malformed") from None
+
+    payload = body[4 + header_length :]
+    # A bigger change is staged in pieces first
+    if len(payload) > stage.PIECE_MAX:
+        raise Refusal(413, "too_large")
+
+    required_types = {
+        "lineage": str,
+        "sid": str,
+        "from": int,
+        "to": int,
+        "cid": int,
+        "seen_rev": int,
+        "schema": int,
+        "shas": list,
+    }
+    if not isinstance(header, dict):
+        raise Refusal(400, "malformed")
+
+    mistyped = any(
+        not isinstance(header.get(key), expected_type) or isinstance(header.get(key), bool)
+        for key, expected_type in required_types.items()
+    )
+    if mistyped:
+        raise Refusal(400, "malformed")
+
+    seq_range_invalid = header["from"] < 1 or header["to"] < header["from"]
+    schema_invalid = header["schema"] < 1
+    if seq_range_invalid or schema_invalid:
+        raise Refusal(400, "malformed")
+
+    # A staged change comes with no bytes of its own
+    is_staged = "stage_id" in header
+    stage_invalid = is_staged and (payload or not stage.valid_id(header["stage_id"]))
+    no_change = not (payload or is_staged)
+    if stage_invalid or no_change:
+        raise Refusal(400, "malformed")
+
+    seq_count = header["to"] - header["from"] + 1
+    if len(header["shas"]) != seq_count:
+        raise Refusal(400, "malformed")
+
+    try:
+        header["shas"] = [bytes.fromhex(sha) for sha in header["shas"]]
+    except (TypeError, ValueError):
+        raise Refusal(400, "malformed") from None
+
+    if any(len(sha) != 32 for sha in header["shas"]):
+        raise Refusal(400, "malformed")
+
+    return header, payload
+
+
+def session_for(adapter: str, doc_id: str, header: dict, principal: str):
+    """The pushing session, refused unless it is this principal's, bound to this clientID and open."""
+    session = load_session(adapter, doc_id, header["sid"], principal)
+    if session is None:
+        raise Refusal(409, "session_unknown")
+
+    if int(session.client_id) != header["cid"]:
+        raise Refusal(409, "client_conflict")
+
+    if session.closed:
+        # Before any replay: an acked seq of a closed session may be quarantined
+        raise Refusal(409, "client_closed")
+
+    return session
+
+
+def replay(adapter: str, doc_id: str, header: dict, acked_seq: int, head_rev: int) -> dict | None:
+    """The original answer for a push that starts inside the committed seqs, if every sha matches."""
+    if header["from"] > acked_seq:
+        return None
+
+    last_seq = min(header["to"], acked_seq)
+    rows = frappe.db.sql(
+        f"""SELECT `rev`, `seq_from`, `seq_to`, `seq_shas`, `chain` FROM `{table(adapter, "update")}`
+        WHERE `doc_id` = %s AND `sid` = %s AND `seq_to` >= %s AND `seq_from` <= %s ORDER BY `rev`""",
+        (doc_id, header["sid"], header["from"], last_seq),
+        as_dict=True,
+    )
+
+    stored_seqs = {}
+    for row in rows:
+        shas = bytes(row.seq_shas)
+        for index, seq in enumerate(range(int(row.seq_from), int(row.seq_to) + 1)):
+            stored_seqs[seq] = (shas[32 * index : 32 * index + 32], row)
+
+    for seq in range(header["from"], last_seq + 1):
+        sha, _row = stored_seqs.get(seq, (None, None))
+        if sha != header["shas"][seq - header["from"]]:
+            raise Refusal(409, "seq_conflict")
+
+    # Every seq from `from` through `last_seq` matched a stored row, so `last_seq` has one
+    last_row = stored_seqs[last_seq][1]
+    return {
+        "dup": True,
+        "rev": int(last_row.rev),
+        "chain": bytes(last_row.chain).hex(),
+        "acked": acked_seq,
+        "head": head_rev,
+        "pace_ms": PACE_MS,
+    }
+
+
+def busy_refusal() -> Refusal:
+    retry_ms = PACE_MS // 2 + secrets.randbelow(PACE_MS // 2 + 1)
+    return Refusal(423, "busy", retry_ms=retry_ms)
+
+
+def push(
+    adapter: str, doc_id: str, header: dict, payload: bytes, principal: str, schema: ingest.EditorSchema
+) -> dict:
+    """Commit one session's contiguous seq range as the next rev, or refuse it."""
+    session = session_for(adapter, doc_id, header, principal)
+    head = frappe.db.sql(f"SELECT `head_rev` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id)[0][0]
+    replayed = replay(adapter, doc_id, header, int(session.acked_seq), int(head))
+    if replayed:
+        return replayed
+
+    if header["schema"] > schema.version:
+        raise Refusal(423, "upgrading", retry_ms=UPGRADING_RETRY_MS)
+
+    if "stage_id" in header:
+        payload = assembled_payload(adapter, doc_id, header)
+
+    try:
+        row = ingest.check_row(payload, header["cid"])
+    except ValueError:
+        raise Refusal(400, "malformed") from None
+
+    names_allowed = schema.allows(row.update.names, header["schema"])
+    if not names_allowed or not schema.could_write(row.update):
+        raise Refusal(409, "poison")
+
+    row_bound = capacity.row_bound(row.update, len(payload))
+    # The lock must be the first statement of a fresh transaction
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    locked_rows = frappe.db.sql(
+        f"""SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps`, `suspect_held`,
+        `state_bytes`, `tail_rows`, `tail_bound`, `next_compaction_at`, `last_compaction_ms`
+        FROM `{table(adapter, "doc")}` WHERE `id` = %s FOR UPDATE SKIP LOCKED""",
+        doc_id,
+        as_dict=True,
+    )
+    if not locked_rows:
+        raise busy_refusal()
+
+    doc = locked_rows[0]
+    try:
+        if doc.mode == "purged":
+            raise Refusal(404, "not_found")
+
+        if header["lineage"] != doc.lineage:
+            raise Refusal(409, "lineage")
+
+        # The rows stay on the device until an admin reviews the document
+        if doc.suspect_held:
+            raise Refusal(423, "paused", reason="suspect", retry_ms=SUSPECT_RETRY_MS)
+
+        session = session_for(adapter, doc_id, header, principal)
+        acked = int(session.acked_seq)
+        head = int(doc.head_rev)
+        replayed = replay(adapter, doc_id, header, acked, head)
+        if replayed:
+            frappe.db.rollback()
+            return replayed
+
+        if header["from"] != acked + 1:
+            raise Refusal(409, "seq", acked=acked)
+
+        if header["seen_rev"] > head:
+            raise Refusal(409, "diverged")
+
+        try:
+            capacity.admit(doc, row.update, row_bound, now_datetime())
+        except capacity.Full as full:
+            raise Refusal(423, full.reason, retry_ms=full.retry_ms) from None
+
+        try:
+            ingest.check_closed(adapter, doc_id, row, header["cid"], start_clocks(doc))
+        except ingest.Unclosed as unclosed:
+            raise Refusal(409, unclosed.reason, **unclosed.extra) from None
+
+        rev = head + 1
+        schema_steps = json.loads(doc.schema_steps)
+        if header["schema"] > schema_steps[-1][1]:
+            schema_steps.append([rev, header["schema"]])
+
+        payload_sha = hashlib.sha256(payload).digest()
+        chain = chain_next(bytes(doc.head_chain), rev, payload_sha)
+        now = now_datetime()
+        frappe.db.sql(
+            f"""INSERT INTO `{table(adapter, "update")}`
+            (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`, `schema`, `payload`, `bound`, `sha256`, `seq_shas`, `chain`, `created`)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, UNHEX(%s), %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), %s)""",
+            (
+                doc_id,
+                rev,
+                header["sid"],
+                header["from"],
+                header["to"],
+                header["cid"],
+                header["schema"],
+                payload.hex(),
+                row_bound,
+                payload_sha.hex(),
+                b"".join(header["shas"]).hex(),
+                chain.hex(),
+                now,
+            ),
+        )
+        frappe.db.sql(
+            f"""UPDATE `{table(adapter, "doc")}` SET `head_rev` = %s, `head_chain` = UNHEX(%s),
+            `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s, `tail_bound` = `tail_bound` + %s,
+            `schema_steps` = %s WHERE `id` = %s""",
+            (rev, chain.hex(), len(payload), row_bound, json.dumps(schema_steps), doc_id),
+        )
+        if "stage_id" in header:
+            stage.drop_stage(adapter, doc_id, header["stage_id"])
+
+        next_clock = row.clock_to if row.update.structs else session.next_clock
+        frappe.db.sql(
+            f"""UPDATE `{table(adapter, "session")}` SET `acked_seq` = %s, `next_clock` = %s, `last_push_at` = %s
+            WHERE `doc_id` = %s AND `sid` = %s""",
+            (
+                header["to"],
+                next_clock,
+                now,
+                doc_id,
+                header["sid"],
+            ),
+        )
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    except BaseException:
+        frappe.db.rollback()
+        raise
+
+    live.publish_row(adapter, doc_id, doc.lineage, rev, header["schema"], payload)
+    return {
+        "rev": rev,
+        "head": rev,
+        "chain": chain.hex(),
+        "acked": header["to"],
+        "pace_ms": PACE_MS,
+    }
+
+
+def assembled_payload(adapter: str, doc_id: str, header: dict) -> bytes:
+    try:
+        return stage.assemble(adapter, doc_id, header["stage_id"], header)
+    except stage.Conflict:
+        raise Refusal(409, "stage_conflict") from None
+    except stage.Incomplete:
+        raise Refusal(409, "stage_incomplete") from None
+
+
+def parse_piece(body: bytes, stage_id: str, index_text: str) -> tuple[dict, int, bytes]:
+    """Split `u32 hlen | header JSON | piece`; the header names the change the piece belongs to."""
+    if not stage.valid_id(stage_id):
+        raise Refusal(400, "malformed")
+
+    try:
+        return stage.parse_piece(body, index_text)
+    except stage.Malformed:
+        raise Refusal(400, "malformed") from None
+    except stage.TooLarge:
+        raise Refusal(413, "too_large") from None
+
+
+def put_piece(
+    adapter: str, doc_id: str, stage_id: str, header: dict, index: int, piece: bytes, principal: str
+) -> dict:
+    """Stage one piece of a big change for this principal's session. A piece of a change the
+    session already committed is answered as a duplicate and not kept."""
+    doc = frappe.db.sql(
+        f"SELECT `lineage`, `mode` FROM `{table(adapter, 'doc')}` WHERE `id` = %s", doc_id, as_dict=True
+    )[0]
+    if doc.mode == "purged":
+        raise Refusal(404, "not_found")
+
+    if header["lineage"] != doc.lineage:
+        raise Refusal(409, "lineage")
+
+    session = load_session(adapter, doc_id, header["sid"], principal)
+    if session is None:
+        raise Refusal(409, "session_unknown")
+
+    if session.closed:
+        raise Refusal(409, "client_closed")
+
+    if int(session.acked_seq) >= header["to"]:
+        return {"dup": True}
+
+    try:
+        stage.store_piece(adapter, doc_id, stage_id, index, header, piece, principal)
+    except stage.Conflict:
+        raise Refusal(409, "stage_conflict") from None
+    except stage.Full:
+        raise Refusal(423, "stage_full", retry_ms=stage.FULL_RETRY_MS) from None
+
+    return {"staged": index}
+
+
+def start_clocks(doc: frappe._dict) -> dict[int, int]:
+    clocks = json.loads(doc.start_clocks or "{}")
+    return {int(client): clock for client, clock in clocks.items()}
+
+
+def read(adapter: str, doc_id: str, *, integrated: bool = False, own_snapshot: bool = True) -> dict | None:
+    """The base and every row after it through the head, from one snapshot, chain checked.
+    The base is the app row's checked body, or a fallback newer than it unless `integrated`.
+    `rows` leaves out quarantined rows; `quarantined` lists their revs. None when the log is
+    purged or the app has no row for it.
+
+    Rows are gap-free and commit-ordered, so a break means the store changed under
+    the read or was rewound; the read is tried once more before it gives up.
+    A Drive callback may not commit, so it passes `own_snapshot=False` and reads in Drive's transaction.
+    """
+    for _try in range(2):
+        with repeatable_read() if own_snapshot else contextlib.nullcontext():
+            control_rows = frappe.db.sql(
+                f"""SELECT `node`, `lineage`, `head_rev`, `head_chain`, `body_rev`, `body_chain`, `body_sha`,
+                `schema_steps`, `q_epoch` FROM `{table(adapter, "doc")}` WHERE `id` = %s AND `mode` != 'purged'""",
+                doc_id,
+                as_dict=True,
+            )
+            app_row = body_row(adapter, control_rows[0].node) if control_rows else None
+            if app_row is None:
+                return None
+
+            doc = control_rows[0]
+            base = int(doc.body_rev)
+            checkpoint = None
+            chain = chain_seed(doc.lineage)
+            body_intact = True
+            if base:
+                checkpoint = app_row.body
+                chain = bytes(doc.body_chain or b"")
+                body_sha = doc.body_sha
+                body_intact = body_sha is not None and hashlib.sha256(checkpoint).digest() == bytes(body_sha)
+
+            fallback_rows = None
+            if not integrated:
+                fallback_rows = frappe.db.sql(
+                    f"""SELECT `through_rev`, `gz`, `chain`, `sha256` FROM `{table(adapter, "checkpoint")}`
+                    WHERE `doc_id` = %s AND `through_rev` > %s ORDER BY `through_rev` DESC LIMIT 1""",
+                    (doc_id, base),
+                )
+
+            if fallback_rows:
+                through, compressed_state, stored_chain, stored_sha = fallback_rows[0]
+                state = gzip.decompress(bytes(compressed_state))
+                # A fallback that fails its sha is passed over; every edit after the body is still there
+                if hashlib.sha256(state).digest() == bytes(stored_sha):
+                    base = int(through)
+                    checkpoint = state
+                    chain = bytes(stored_chain)
+                    body_intact = True
+
+            stored = frappe.db.sql(
+                f"""SELECT `rev`, `payload`, `sha256`, `state` FROM `{table(adapter, "update")}`
+                WHERE `doc_id` = %s AND `rev` > %s ORDER BY `rev`""",
+                (doc_id, base),
+            )
+
+        rows, quarantined = [], []
+        for rev, payload, sha, row_state in stored:
+            rev, payload = int(rev), bytes(payload)
+            if row_state == "quarantined":
+                quarantined.append(rev)
+                chain = chain_next(chain, rev, bytes(sha))
+            else:
+                rows.append((rev, payload))
+                chain = chain_next(chain, rev, hashlib.sha256(payload).digest())
+
+        revs = [int(row[0]) for row in stored]
+        gap_free = revs == list(range(base + 1, int(doc.head_rev) + 1))
+        chain_matches = chain == bytes(doc.head_chain)
+        if body_intact and gap_free and chain_matches:
+            steps = json.loads(doc.schema_steps)
+            return {
+                "lineage": doc.lineage,
+                "head_rev": int(doc.head_rev),
+                "head_chain": chain,
+                "schema": steps[-1][1],
+                "base": base,
+                "checkpoint": checkpoint,
+                "rows": rows,
+                "quarantined": quarantined,
+                "q_epoch": int(doc.q_epoch),
+            }
+
+    raise ChainBroken
+
+
+def body_row(adapter: str, node: str, *, lock: bool = False) -> frappe._dict | None:
+    """The app's row for `node`, with its body decoded, or None when it has none."""
+    spec = spec_of(adapter)
+    found = frappe.db.sql(
+        f"""SELECT `name`, `{spec.body_field}` AS `body`, `modified` FROM `tab{spec.content_type}`
+        WHERE `{spec.node_field}` = %s ORDER BY `name` LIMIT 1{" FOR UPDATE" if lock else ""}""",
+        node,
+        as_dict=True,
+    )
+    if not found:
+        return None
+
+    row = found[0]
+    try:
+        row.body = base64.b64decode(row.body or "", validate=True)
+    except ValueError:
+        # Answered as a body no stamp matches
+        row.body = b""
+
+    return row
+
+
+def fallback_rev(adapter: str, doc_id: str) -> int:
+    """The rev the document's fallback runs through, 0 when it has none."""
+    found = frappe.db.sql(
+        f"SELECT COALESCE(MAX(`through_rev`), 0) FROM `{table(adapter, 'checkpoint')}` WHERE `doc_id` = %s",
+        doc_id,
+    )
+    return int(found[0][0])
+
+
+@contextlib.contextmanager
+def repeatable_read():
+    """Run the reads in one REPEATABLE READ snapshot. The level applies from the next transaction."""
+    previous_level = isolation_level()
+    frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    try:
+        yield
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    finally:
+        if previous_level and previous_level != "REPEATABLE-READ":
+            frappe.db.sql(f"SET SESSION TRANSACTION ISOLATION LEVEL {previous_level.replace('-', ' ')}")
+
+
+def isolation_level() -> str | None:
+    for variable in ("@@transaction_isolation", "@@tx_isolation"):
+        try:
+            return frappe.db.sql(f"SELECT {variable}")[0][0]
+        except Exception:
+            continue
+    return None

@@ -67,6 +67,40 @@ describe('transport', () => {
     expect(new Headers(init?.headers).has('X-Drive-Links')).toBe(false)
   })
 
+  it('sends and returns binary bodies byte for byte, with the same headers, whatever the status', async () => {
+    window.csrf_token = 'csrf'
+    const sentBytes = new Uint8Array([0, 255, 128, 10, 13, 0])
+    const fetcher = vi.fn<typeof fetch>(
+      async () => new Response(new Uint8Array([255, 0, 1]), { status: 409 }),
+    )
+    const client = createTransport({ fetch: fetcher })
+    const pushOperation: Operation = {
+      ...getNode,
+      method: 'POST',
+      path: 'nodes/{node}/bytes',
+    }
+
+    const bytesOptions = {
+      body: sentBytes,
+      keepalive: true,
+      headers: { 'X-Drive-Links': 'c1' },
+    }
+    const bytesResponse = await client.requestBytes(pushOperation, { node: 'n1' }, bytesOptions)
+
+    expect([bytesResponse.status, [...bytesResponse.bytes]]).toEqual([409, [255, 0, 1]])
+    const [url, init] = fetcher.mock.calls[0]!
+    expect(url).toBe('/api/suite/drive/nodes/n1/bytes')
+    const sentBody = await new Response(init?.body).arrayBuffer()
+    expect([...new Uint8Array(sentBody)]).toEqual([...sentBytes])
+    expect(init?.keepalive).toBe(true)
+    const headers = new Headers(init?.headers)
+    expect([
+      headers.get('Content-Type'),
+      headers.get('X-Frappe-CSRF-Token'),
+      headers.get('X-Drive-Links'),
+    ]).toEqual(['application/octet-stream', 'csrf', 'c1'])
+  })
+
   it('classifies errors by errors[0].type instead of status', async () => {
     const client = createTransport({
       fetch: async () => response({ errors: [{ type: 'DriveConflict', message: 'Changed' }] }, 417),

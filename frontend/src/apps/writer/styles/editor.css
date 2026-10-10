@@ -53,8 +53,19 @@ b {
   padding: 0.15rem 0.3rem;
   position: absolute;
   top: -1.4em;
+  transition: opacity 0.3s;
   user-select: none;
   white-space: nowrap;
+}
+
+.collaboration-carets__label--idle {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collaboration-carets__label {
+    transition: none;
+  }
 }
 
 .selection {

@@ -4,6 +4,7 @@ import { ref } from 'vue'
 const presentationId = ref('p1')
 const presentationDoc = ref<any>({ modified: 'M1' })
 const inReadonlyMode = ref(false)
+const viewOnly = ref(false)
 const slides = ref<any[]>([{ clientId: 'c1', background: '#ff0000ff', elements: [] }])
 
 let serverSave: (
@@ -17,6 +18,7 @@ vi.mock('@/apps/slides/stores/presentation', () => ({
   presentationId,
   presentationDoc,
   inReadonlyMode,
+  viewOnly,
   savePresentationDoc: (id: string, content: any, baseModified?: string, cancel?: AbortSignal) =>
     serverSave(id, content, baseModified, cancel),
 }))
@@ -397,6 +399,26 @@ describe('drafts', () => {
 
     sessionUser = 'me@example.com'
     expect(await getPresentationFromLocalDB('p-user')).toBeNull()
+  })
+
+  it('offers a draft with no known owner only to someone who can edit', async () => {
+    const { openDraftsDb } = await import('@/apps/slides/utils/drafts')
+    const legacyDb = await openDraftsDb('slides-db')
+    const tx = legacyDb.transaction('presentations', 'readwrite')
+    const unowned = {
+      id: 'p-shared',
+      content: [],
+      dirty: true,
+    }
+    tx.objectStore('presentations').put(unowned)
+    await new Promise((resolve) => (tx.oncomplete = resolve))
+    legacyDb.close()
+
+    viewOnly.value = true
+    expect(await getPresentationFromLocalDB('p-shared')).toBeNull()
+
+    viewOnly.value = false
+    expect(await getPresentationFromLocalDB('p-shared')).toMatchObject({ id: 'p-shared' })
   })
 })
 

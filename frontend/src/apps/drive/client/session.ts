@@ -2,6 +2,7 @@ import { computed, readonly, ref, type Ref } from 'vue'
 
 import { api, client } from '@/api'
 import type { ImperativeClient } from '@/platform/server-state/types'
+import { getCookieSessionUser } from '@/platform/session'
 import { TransportError, type RequestContext, type RequestScope } from '@/platform/transport'
 
 import { onAccessChange } from './accessChanges'
@@ -107,6 +108,7 @@ interface SessionDependencies {
   node?: DriveNode
   share?: ShareOpener
   window?: Window
+  signedIn?: () => string | null
   setInterval?: typeof globalThis.setInterval
   clearInterval?: typeof globalThis.clearInterval
 }
@@ -115,6 +117,7 @@ export async function openDriveDocumentSession(
   dependencies: SessionDependencies = {},
 ): Promise<DocumentSession> {
   const requester = dependencies.client ?? client
+  const signedIn = dependencies.signedIn ?? getCookieSessionUser
   const controller = new AbortController()
   const node =
     dependencies.node ??
@@ -170,7 +173,15 @@ export async function openDriveDocumentSession(
       title.value = fresh.title
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
-    } catch {
+    } catch (error) {
+      const status = error instanceof TransportError ? error.status : 0
+      const isRefusal = status >= 400 && status < 500
+      const isTransient = status === 408 || status === 429
+      if (!isRefusal || isTransient) return
+
+      // A guest is refused everything; that says nothing about this person's access
+      if (!signedIn()) return
+
       state.value = 'Refused'
       access.value = {}
     }

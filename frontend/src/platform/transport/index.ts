@@ -126,6 +126,17 @@ export interface TransportOptions {
   headers?: HeadersInit
 }
 
+export interface BytesOptions extends TransportOptions {
+  body?: Uint8Array<ArrayBuffer>
+  keepalive?: boolean
+}
+
+export interface BytesResponse {
+  status: number
+  headers: Headers
+  bytes: Uint8Array
+}
+
 export interface Transport {
   request<Input, Output, ErrorType extends string = string>(
     operation: Operation<Input, Output, ErrorType>,
@@ -152,7 +163,17 @@ type ErrorEnvelope = {
 
 const DEFAULT_RETRIES = 2
 
-export function createTransport(options: CreateTransportOptions = {}): Transport {
+interface BytesTransport extends Transport {
+  // Answers every status as it came: the caller reads its own verdicts. Only a
+  // network failure throws, and nothing is retried
+  requestBytes(
+    operation: Operation,
+    input: Record<string, unknown>,
+    options?: BytesOptions,
+  ): Promise<BytesResponse>
+}
+
+export function createTransport(options: CreateTransportOptions = {}): BytesTransport {
   const fetcher = options.fetch ?? globalThis.fetch
   const maxRetries = options.maxRetries ?? DEFAULT_RETRIES
   const retryBaseMs = options.retryBaseMs ?? 100
@@ -270,7 +291,65 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
         attempt += 1
       }
     },
+
+    async requestBytes(operation, input, requestOptions = {}) {
+      validateOperation(operation)
+      const url = buildUrl(operation, input)
+
+      const headers = new Headers(requestOptions.headers)
+      headers.set('Accept', 'application/octet-stream, application/json')
+      const csrf = readCsrfToken()
+      if (csrf) {
+        headers.set('X-Frappe-CSRF-Token', csrf)
+      }
+
+      const init: RequestInit = {
+        method: operation.method,
+        headers,
+        credentials: 'same-origin',
+        signal: requestOptions.signal,
+        keepalive: requestOptions.keepalive,
+      }
+      if (requestOptions.body) {
+        headers.set('Content-Type', 'application/octet-stream')
+        init.body = requestOptions.body
+      }
+
+      let response: Response
+      try {
+        response = await fetcher(url, init)
+      } catch (cause) {
+        if (isAbort(cause)) throw cause
+
+        const failure = {
+          type: 'NetworkError',
+          message: networkMessage(cause),
+          status: 0,
+        }
+        throw new TransportError(failure)
+      }
+
+      const body = await response.arrayBuffer()
+      return {
+        status: response.status,
+        headers: response.headers,
+        bytes: new Uint8Array(body),
+      }
+    },
   }
+}
+
+// What to tell a person when a request failed before the server could answer it properly; null for any other status
+export function describeFailure(status: number | null): string | null {
+  if (status === 0) return "Couldn't reach the server. Check your connection and try again."
+
+  if (status === 408 || status === 429) return 'The server is busy. Try again in a moment.'
+
+  if (status !== null && status >= 500) {
+    return 'The server had a problem opening this document. Try again in a moment.'
+  }
+
+  return null
 }
 
 const failureListeners = new Set<(error: TransportError) => void>()

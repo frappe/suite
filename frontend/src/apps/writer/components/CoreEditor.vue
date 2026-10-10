@@ -1,90 +1,91 @@
 <template>
   <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
-    <TextEditorFixedMenu
-      v-if="editable"
-      class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
-      :editor="editor"
-      :items="menuButtons"
-    />
-    <div class="relative flex flex-1 overflow-hidden">
-      <ToC v-if="editor" :editor :anchors />
-      <div
-        id="editor-scroll-container"
-        class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
-      >
+    <slot name="toolbar">
+      <TextEditorFixedMenu
+        v-if="editable"
+        class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
+        :editor="editor"
+        :items="menuButtons"
+      />
+    </slot>
+    <div class="flex flex-1 overflow-hidden">
+      <ToC v-if="editor" :editor :anchors :class="$slots.cover && 'invisible'" />
+      <div class="relative flex flex-1 min-w-0">
         <div
-          class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
-          :style="gridStyle"
-          @click="onBackgroundClick"
+          v-show="!$slots.cover"
+          id="editor-scroll-container"
+          class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
         >
-          <div class="hidden md:block" />
-          <div class="flex flex-col grow min-w-0">
-            <FTextEditor
-              ref="textEditor"
-              v-model="localContent"
-              :upload-function="uploadFunction"
-              :autofocus="true"
-              placeholder="Start thinking…"
-              :extensions="editorExtensions"
-              :editable
-              @change="handleEditorChange"
-            >
-              <template #default="{ editor }">
-                <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
-                <EditorTableMenu :editor />
-                <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
-                  <EditorContent
-                    :editor
-                    role="textbox"
-                    aria-label="Document editor"
-                    aria-multiline="true"
-                    class="grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
-                    :class="isPainting && 'cursor-crosshair'"
-                    :style="editorStyle"
-                  />
-                </EditorDropZone>
-              </template>
-            </FTextEditor>
-          </div>
-          <div class="relative hidden md:block min-w-0">
-            <FloatingComments
-              v-if="commentsPainted"
-              v-model:active-comment="activeComment"
-              :y-comments="comments"
-              :file
-              :show-comments
-              :show-resolved
-              :show-unanchored
-              :editor
-              @save="saveComments"
-            />
+          <div
+            class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
+            :style="gridStyle"
+            @click="onBackgroundClick"
+          >
+            <div class="hidden md:block" />
+            <div class="flex flex-col grow min-w-0">
+              <FTextEditor
+                ref="textEditor"
+                v-model="localContent"
+                :upload-function="uploadFunction"
+                :autofocus="true"
+                placeholder="Start thinking…"
+                :extensions="editorExtensions"
+                :editable
+                @change="handleEditorChange"
+              >
+                <template #default="{ editor }">
+                  <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
+                  <EditorTableMenu :editor />
+                  <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
+                    <EditorContent
+                      :editor
+                      role="textbox"
+                      aria-label="Document editor"
+                      aria-multiline="true"
+                      :class="[EDITOR_TEXT_CLASS, isPainting && 'cursor-crosshair']"
+                      :style="editorStyle"
+                    />
+                  </EditorDropZone>
+                </template>
+              </FTextEditor>
+            </div>
+            <div class="relative hidden md:block min-w-0">
+              <FloatingComments
+                v-if="commentsPainted"
+                v-model:active-comment="activeComment"
+                :y-comments="comments"
+                :file
+                :show-comments
+                :show-resolved
+                :show-unanchored
+                :editor
+                @save="saveComments"
+              />
+            </div>
           </div>
         </div>
+        <slot name="cover" />
+        <div
+          v-if="commentsPainted && comments._map.size && !$slots.cover"
+          class="hidden md:block absolute top-4 right-4"
+        >
+          <Dropdown :options="commentFilterOptions" align="end">
+            <Button
+              :icon="LucideMessageSquareQuote"
+              variant="outline"
+              label="Comment visibility"
+              tooltip="Comment visibility"
+            />
+          </Dropdown>
+        </div>
       </div>
-      <div
-        v-if="commentsPainted && comments._map.size"
-        class="hidden md:block absolute top-4 right-4"
-      >
-        <Dropdown :options="commentFilterOptions" align="end">
-          <Button
-            :icon="LucideMessageSquareQuote"
-            variant="outline"
-            label="Comment visibility"
-            tooltip="Comment visibility"
-          />
-        </Dropdown>
-      </div>
+      <slot name="aside" />
     </div>
-    <ToCMobile v-if="editor" :editor />
+    <ToCMobile v-if="editor && !$slots.cover" :editor />
   </div>
 </template>
 
 <script setup>
-import {
-  getHierarchicalIndexes,
-  default as TableOfContents,
-} from '@tiptap/extension-table-of-contents'
-import { CharacterCount, Selection } from '@tiptap/extensions'
 import { TextSelection } from '@tiptap/pm/state'
 import { onKeyDown } from '@vueuse/core'
 import LucideMessageSquareQuote from '~icons/lucide/message-square-quote'
@@ -95,7 +96,6 @@ import {
   EditorDropZone,
   EditorTableMenu,
   Editor as FTextEditor,
-  RichTextKit,
   EditorFixedMenu as TextEditorFixedMenu,
 } from 'frappe-ui/editor'
 import { v4 as uuidv4 } from 'uuid'
@@ -104,21 +104,17 @@ import { computed, inject, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { hasDefaultDocumentTitle } from '@/apps/drive'
 import { reportSaveError } from '@/apps/writer/composables/saveError'
 import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
+import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 import emitter from '@/apps/writer/emitter'
-import CleanStyles from '@/apps/writer/extensions/clean-styles'
-import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
-import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
-import { DOCUMENT_MEDIA, DriveMedia } from '@/apps/writer/extensions/drive-media'
-import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
-import MediaDownload from '@/apps/writer/extensions/media-download'
-import { MentionSearch } from '@/apps/writer/extensions/mention-search'
-import OldCommentExtension from '@/apps/writer/extensions/old-comment'
-import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
-import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
-import { TabsExtension } from '@/apps/writer/extensions/tabs'
+import { rebuild } from '@/apps/writer/extensions/comments'
+import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
-import { COMMON_EXTENSIONS, isModKey, printDoc } from '@/apps/writer/utils'
-import { cssLineHeight } from '@/apps/writer/utils/typography'
+import { isModKey, printDoc } from '@/apps/writer/utils'
+import {
+  EDITOR_TEXT_CLASS,
+  editorColumns,
+  editorTextStyle,
+} from '@/apps/writer/utils/editor-layout'
 import { useSessionStore } from '@/boot/session'
 import { useRootStore } from '@/stores/root'
 
@@ -142,6 +138,7 @@ const props = defineProps({
   saveComments: Function,
   rawContent: String,
 })
+
 const emit = defineEmits(['save', 'editor-change', 'cleanup'])
 
 const showSettings = defineModel('showSettings')
@@ -149,6 +146,7 @@ const edited = defineModel('edited')
 const root = useRootStore()
 
 const localContent = ref(props.rawContent ?? '')
+
 watch(
   () => props.rawContent,
   (val) => {
@@ -177,6 +175,7 @@ const scrollParent = computed(() => document.querySelector('#editor-scroll-conta
 // The format painter keeps its flag in plain editor storage, which Vue does
 // not track. Read it again after each transaction.
 const isPainting = ref(false)
+
 watch(
   editor,
   (instance, _previous, onCleanup) => {
@@ -243,54 +242,24 @@ const hasCollaboration = props.extensions?.some((ext) => ext?.name === 'collabor
 const { users } = useUsers()
 const renameDocument = inject(RENAME_DOCUMENT, null)
 
-const editorExtensions = [
-  RichTextKit.configure({
-    starterKit: {
-      trailingNode: { node: 'paragraph', notAfter: 'tab' },
-      paragraph: false,
-      gapcursor: false,
-      ...(hasCollaboration && { undoRedo: false }),
-    },
-    mention: { items: () => users.value },
-    // The Paint Styles button arms the format painter.
-    styleClipboard: {},
-  }),
-  MentionSearch.configure({ onQuery: searchMentions }),
-  ...COMMON_EXTENSIONS,
-  CoreEditorExtension,
-  PageBreakExtension,
-  CharacterCount,
-  Selection,
-  CleanStyles.configure({
-    allowProperty: (_prop, value) => value !== '',
-    validators: {
-      lineHeight: (value) => !value.endsWith('%'),
-      fontFamily: (value) => value.trim() !== '""',
-    },
-  }),
-  TabsExtension,
-  TabTrailingNode,
-  JoinAdjacentLists,
-  OldCommentExtension.configure({ onCommentActivated }),
-  TableOfContents.configure({
-    onUpdate: (val) => (anchors.value = val),
-    getIndex: getHierarchicalIndexes,
-    scrollParent: () => scrollParent.value,
-  }),
-  MediaDownload,
-  DriveMedia.configure({ media: inject(DOCUMENT_MEDIA, null) }),
-  CommentExtension.configure({
-    comments: props.comments,
-    doc: props.yjsDoc,
-    activeComment,
-    showComments,
-    showResolved,
-    edited,
-    onActivated: onCommentActivated,
-    onDecorationsPainted: () => (commentsPainted.value = true),
-  }),
-  ...props.extensions,
-]
+const writerEditorOptions = {
+  collaborative: hasCollaboration,
+  mentionItems: () => users.value,
+  onMentionQuery: searchMentions,
+  onCommentActivated,
+  onAnchors: (val) => (anchors.value = val),
+  scrollParent: () => scrollParent.value,
+  media: inject(DOCUMENT_MEDIA, null),
+  comments: props.comments,
+  ydoc: props.yjsDoc,
+  activeComment,
+  showComments,
+  showResolved,
+  edited,
+  onCommentsPainted: () => (commentsPainted.value = true),
+}
+
+const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...props.extensions]
 
 const menuButtons = computed(() =>
   buildMenuButtons({
@@ -311,19 +280,9 @@ const bubbleMenuButtons = [
 
 const bubbleMenuOpts = computed(() => bubbleMenuOptions({ editor, comments: props.comments }))
 
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${
-    props.settings?.wide ? '100ch' : '48rem'
-  }) minmax(0, 1fr)`,
-}))
+const gridStyle = computed(() => editorColumns(props.settings))
 
-const editorStyle = computed(() => ({
-  fontFamily: props.settings?.font_family && `var(--font-${props.settings.font_family})`,
-  '--editor-font-size': `${props.settings?.font_size || 15}px`,
-  '--editor-line-height': cssLineHeight(props.settings?.line_height),
-  '--paragraph-spacing-before': `${props.settings?.paragraph_spacing_before || 0}px`,
-  '--paragraph-spacing-after': `${props.settings?.paragraph_spacing_after || 0}px`,
-}))
+const editorStyle = computed(() => editorTextStyle(props.settings))
 
 const uploadFunction = (file) => {
   const fileUpload = useFileUpload()
@@ -353,6 +312,7 @@ const autoversion = async () => {
   if (!html || html === '<p></p>') return
   await props.document.newVersion.run({ data: html })
 }
+
 const autoversionInterval = setInterval(() => {
   void autoversion().catch(reportSaveError)
 }, AUTOVERSION_INTERVAL_MS)
@@ -435,6 +395,7 @@ emitter.on('print-file', () => {
     printDoc(editor.value.commands.getCurrentTabHTML(), props.settings)
   }
 })
+
 emitter.on('manual-save', manualSave)
 
 onBeforeUnmount(() => {

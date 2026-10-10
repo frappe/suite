@@ -21,7 +21,11 @@
     "
     @save="(manual, html, onSuccess) => save(manual, html, onSuccess).catch(reportSaveError)"
     @cleanup="commentsDetail.cleanup"
-  />
+  >
+    <template v-for="(_, name) in $slots" #[name]>
+      <slot :name="name" />
+    </template>
+  </CoreEditor>
 </template>
 
 <script setup>
@@ -34,28 +38,36 @@ import { useComments } from '@/apps/writer/composables/useYjs'
 import CoreEditor from './CoreEditor.vue'
 
 const showSettings = defineModel('showSettings')
+
 const edited = defineModel('dirty', {
   default: false,
 })
+
 const props = defineProps({
   file: Object,
   document: Object,
   settings: Object,
   editable: Boolean,
 })
+
 const rawContent = ref(props.document.doc.html)
 const contentReady = ref(!props.file.write)
 defineEmits(['saveComment', 'saveDocument'])
 const textEditor = ref('textEditor')
+
 const editor = computed(() => {
   const editor = textEditor.value?.editor
   return editor
 })
+
 provide('editor', editor)
+
 defineExpose({
   editor,
 })
+
 const commentsDetail = useComments(props.document, editor)
+
 const save = async (manual, html, onSuccess) => {
   const content = rawContent.value
   await props.document.saveHtml.run({
@@ -64,12 +76,14 @@ const save = async (manual, html, onSuccess) => {
   if (rawContent.value === content) edited.value = false
   onSuccess?.()
 }
+
 const autosave = debounce(() => {
   void save().catch(reportSaveError)
 }, 5000)
 
 // Local saving with IndexedDB
 const db = ref(null)
+
 if (props.file.write) {
   const request = window.indexedDB.open('Writer', 1)
   request.onupgradeneeded = () => {

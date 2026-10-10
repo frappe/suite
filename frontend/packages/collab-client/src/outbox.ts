@@ -1,0 +1,121 @@
+import { digest } from 'lib0/hash/sha256'
+import * as Y from 'yjs'
+
+import type { StoredEntry } from './store'
+
+// Each sha adds 67 bytes to the push header, which the server caps at 4 KiB
+const MAX_ENTRIES = 48
+export const MAX_PUSH_BYTES = 256 * 1024
+// Browsers refuse keepalive bodies over 64 KiB
+export const MAX_KEEPALIVE_BYTES = 60 * 1024
+
+// `sha` lets the server tell a resent seq from a different one under the same number
+export type Entry = { seq: number; bytes: Uint8Array; sha: string }
+
+// One session's unsent work: this tab's own, or one adopted from a tab that closed
+export class Outbox {
+  pending: Entry[]
+  nextSeq: number
+  acked: number
+
+  constructor(
+    readonly sid: string,
+    readonly cid: number,
+    public release: () => void,
+    readonly adopted = false,
+    // What a closed tab left on the device
+    stored: StoredEntry[] = [],
+  ) {
+    this.pending = stored.map(({ seq, bytes, sha }) => ({ seq, bytes, sha }))
+    this.nextSeq = stored.length ? stored[stored.length - 1].seq + 1 : 1
+    this.acked = stored.length ? stored[0].seq - 1 : 0
+  }
+
+  // The next seq's entry, not yet queued
+  createEntry(bytes: Uint8Array): Entry {
+    const sha = hex(digest(bytes))
+    return {
+      seq: this.nextSeq++,
+      bytes,
+      sha,
+    }
+  }
+
+  add(bytes: Uint8Array): Entry {
+    const entry = this.createEntry(bytes)
+    this.pending.push(entry)
+    return entry
+  }
+
+  // The server holds everything up to `through`; returns what that newly committed, merged
+  acknowledge(through: number): Uint8Array | null {
+    this.acked = Math.max(this.acked, through)
+    const committed = this.pending.filter((entry) => entry.seq <= this.acked)
+    if (!committed.length) return null
+
+    this.pending = this.pending.filter((entry) => entry.seq > this.acked)
+    return Y.mergeUpdates(committed.map((entry) => entry.bytes))
+  }
+
+  // Pending work no longer continues from what the server acknowledged
+  get hasGap() {
+    return this.pending.length > 0 && this.pending[0].seq !== this.acked + 1
+  }
+
+  // The longest leading run of pending entries that fits one push
+  nextBatch(maxBytes: number): Entry[] {
+    const batch: Entry[] = []
+    let size = 0
+    for (const entry of this.pending) {
+      const tooMany = batch.length >= MAX_ENTRIES
+      const tooBig = size + entry.bytes.byteLength > maxBytes
+      if (batch.length && (tooMany || tooBig)) {
+        break
+      }
+      batch.push(entry)
+      size += entry.bytes.byteLength
+    }
+    return batch
+  }
+
+  toStoredEntries(doc: string, entries: Entry[] = this.pending): StoredEntry[] {
+    const withSession = (entry: Entry): StoredEntry => ({
+      doc,
+      sid: this.sid,
+      ...entry,
+    })
+    return entries.map(withSession)
+  }
+}
+
+// Web Locks only cut duplicate sends between tabs; where they are missing, every session counts as free
+export function holdLock(name: string): Promise<(() => void) | null> {
+  const locks = globalThis.navigator?.locks
+  const releaseNothing = () => {}
+  if (!locks) return Promise.resolve(releaseNothing)
+
+  return new Promise((resolve) => {
+    const options: LockOptions = { ifAvailable: true }
+    // The lock is held until the promise it returns settles, which is when the caller releases it
+    const holdUntilReleased = (lock: Lock | null) => {
+      if (!lock) {
+        resolve(null)
+        return
+      }
+
+      return new Promise<void>((release) => resolve(release))
+    }
+
+    const lockFailed = () => resolve(releaseNothing)
+    void locks.request(name, options, holdUntilReleased).catch(lockFailed)
+  })
+}
+
+export function hex(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export function randomHex(byteCount: number) {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(byteCount))
+  return hex(randomBytes)
+}

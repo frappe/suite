@@ -12,7 +12,11 @@
       }
     "
     @cleanup="cleanup"
-  />
+  >
+    <template v-for="(_, name) in $slots" #[name]>
+      <slot :name="name" />
+    </template>
+  </CoreEditor>
 </template>
 
 <script setup>
@@ -42,19 +46,27 @@ const props = defineProps({
   settings: Object,
   editable: Boolean,
 })
+
 const emit = defineEmits(['saveComment'])
 
 const textEditor = ref('textEditor')
+
 const editor = computed(() => {
   const editor = textEditor.value?.editor
   return editor
 })
+
 provide('editor', editor)
 
 // `useYjs` owns the unsaved flag: it sets `edited` on each change to store
 // and clears it when a save lands (`composables/unsaved.ts`).
-const { doc, save, cleanup, provider, permanentUserData, loaded, peers, ...commentsDetail } =
-  useYjs(props.file.doc.name, props.document, editor, edited)
+const { doc, save, cleanup, provider, loaded, peers, ...commentsDetail } = useYjs(
+  props.file.doc.name,
+  props.document,
+  editor,
+  edited,
+)
+
 defineExpose({ editor, peers })
 watch(loaded, () => rebuild(editor.value))
 
@@ -62,9 +74,6 @@ const extensions = [
   Collaboration.configure({
     document: doc,
     field: 'default',
-    ySyncOptions: {
-      permanentUserData,
-    },
   }),
   CollaborationCaret.configure({
     provider,

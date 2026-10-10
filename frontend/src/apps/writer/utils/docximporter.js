@@ -1,8 +1,9 @@
+import { createNodeFromContent } from '@tiptap/core'
 import { toast as nToast, useFileUpload } from 'frappe-ui'
 import { v4 as uuidv4 } from 'uuid'
 
 import { purgeNodes } from '@/apps/writer/drive'
-import { findTab, tabsIn } from '@/apps/writer/extensions/tabs'
+import { findTab } from '@/apps/writer/extensions/tabs'
 
 const IMAGE_EXTENSIONS = {
   'image/png': 'png',
@@ -130,21 +131,27 @@ export async function _convertDocxToHtml(file, fileId, uploaded) {
   return { html: html ? _normaliseHtml(html) : html, messages }
 }
 
-function _insertAtEnd(editor, html) {
-  editor.chain().focus().insertContentAt(editor.state.doc.content.size, html).run()
+function _insertAtEnd(editor, content) {
+  editor.chain().focus().insertContentAt(editor.state.doc.content.size, content).run()
 }
 
-// Put the imported content in a new tab. If the document has no tabs yet, its
-// current content is moved into one first so nothing already written is lost.
-// createTab() focuses the new tab by itself.
-function _insertInNewTab(editor, html, label) {
-  if (!tabsIn(editor.state.doc).length) editor.commands.wrapInTab()
+// Put the imported content in a new tab; the current content stays as the
+// first tab. createTab() focuses the new tab by itself.
+function _insertInNewTab(editor, content, label) {
   const id = uuidv4()
   editor.commands.createTab({ id, label })
   const tab = findTab(editor.state.doc, id)
-  if (!tab) return _insertAtEnd(editor, html) // shouldn't happen; don't lose content
+  if (!tab) {
+    // shouldn't happen; don't lose content
+    return _insertAtEnd(editor, content)
+  }
+
   // createTab() adds an empty paragraph — swap it for the imported content.
-  editor.commands.insertContentAt({ from: tab.pos + 1, to: tab.pos + tab.node.nodeSize - 1 }, html)
+  const emptyParagraph = {
+    from: tab.pos + 1,
+    to: tab.pos + tab.node.nodeSize - 1,
+  }
+  editor.commands.insertContentAt(emptyParagraph, content)
 }
 
 /**
@@ -164,8 +171,24 @@ export async function importDocx(file, { editor, currentFileId }) {
       nToast.error('The document appears to be empty.')
       return
     }
-    if (ed.isEmpty) _insertAtEnd(ed, html)
-    else _insertInNewTab(ed, html, file.name.replace(/\.docx$/i, ''))
+    // Parsed as the insert would, so what is measured is what goes in
+    const parseOptions = {
+      preserveWhitespace: 'full',
+      ...ed.options.parseOptions,
+    }
+    const content = createNodeFromContent(html, ed.schema, { parseOptions })
+    const reportTooLarge = () => nToast.error('This file is too large to import.')
+    // Only a collaborative document has a size limit
+    if (ed.storage.pasteSizeGuard?.refuses(content, reportTooLarge)) {
+      await _discardUploads(uploaded)
+      return
+    }
+
+    if (ed.isEmpty) {
+      _insertAtEnd(ed, content)
+    } else {
+      _insertInNewTab(ed, content, file.name.replace(/\.docx$/i, ''))
+    }
 
     if (messages?.some((m) => m.type === 'error')) {
       nToast.error('Document imported, but some content could not be converted.')

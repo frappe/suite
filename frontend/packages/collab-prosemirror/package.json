@@ -1,0 +1,83 @@
+{
+  "name": "@tiptap/y-tiptap",
+  "version": "3.0.5",
+  "description": "Tiptap prosemirror bindings for Yjs",
+  "main": "./dist/y-tiptap.js",
+  "module": "./dist/y-tiptap.js",
+  "type": "module",
+  "types": "./dist/src/y-tiptap.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "clean": "rm -rf dist",
+    "changeset": "changeset",
+    "dist": "npm run clean && rollup -c && tsc",
+    "test": "npm run lint && rollup -c && node dist/test.cjs",
+    "lint": "standard && tsc",
+    "watch": "rollup -wc",
+    "debug": "concurrently '0serve -o test.html' 'npm run watch'",
+    "preversion": "npm run lint && npm run dist && npm run test",
+    "version": "changeset version && npm install --package-lock-only",
+    "release": "npm publish --access public",
+    "publish:manual": "npm run preversion && npm publish --access public",
+    "publish:pre": "npm run preversion && npm publish --access public --tag beta",
+    "start": "concurrently '0serve -o demo/prosemirror.html' 'npm run watch'"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/y-tiptap.d.ts",
+      "import": "./dist/y-tiptap.js"
+    }
+  },
+  "files": [
+    "dist/*"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ueberdosis/y-tiptap.git"
+  },
+  "keywords": [
+    "Yjs"
+  ],
+  "license": "MIT",
+  "standard": {
+    "ignore": [
+      "/dist",
+      "/node_modules",
+      "/docs"
+    ]
+  },
+  "dependencies": {
+    "lib0": "^0.2.100"
+  },
+  "peerDependencies": {
+    "prosemirror-model": "^1.7.1",
+    "prosemirror-state": "^1.2.3",
+    "prosemirror-view": "^1.9.10",
+    "y-protocols": "^1.0.1",
+    "yjs": "^13.5.38"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.30.0",
+    "@rollup/plugin-commonjs": "^21.0.1",
+    "@rollup/plugin-node-resolve": "^13.0.6",
+    "concurrently": "^4.1.0",
+    "http-server": "^0.12.3",
+    "jsdom": "^15.1.1",
+    "prosemirror-example-setup": "^1.2.1",
+    "prosemirror-model": "^1.18.1",
+    "prosemirror-schema-basic": "^1.2.0",
+    "prosemirror-state": "^1.4.1",
+    "prosemirror-transform": "^1.6.0",
+    "prosemirror-view": "^1.26.2",
+    "rollup": "^2.59.0",
+    "standard": "^17.0.0",
+    "typescript": "^5.4.5",
+    "y-protocols": "^1.0.5",
+    "y-webrtc": "^10.2.0",
+    "yjs": "^13.5.38"
+  },
+  "engines": {
+    "npm": ">=8.0.0",
+    "node": ">=16.0.0"
+  }
+}

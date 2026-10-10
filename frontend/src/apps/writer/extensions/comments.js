@@ -65,6 +65,18 @@ const createDecorations = (state, yDoc, comments, active, showResolved) => {
 export const CommentExtension = Extension.create({
   name: 'commentExtension',
 
+  /**
+   * @returns {{
+   *   comments: unknown
+   *   doc: unknown
+   *   activeComment: unknown
+   *   showComments?: unknown
+   *   showResolved?: unknown
+   *   edited?: unknown
+   *   onActivated: ((id: string) => void) | null
+   *   onDecorationsPainted: (() => void) | null
+   * }}
+   */
   addOptions() {
     return {
       comments: [],
