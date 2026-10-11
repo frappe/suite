@@ -34,14 +34,13 @@ vi.mock('frappe-ui', async () => {
         h('div', attrs, slots.default?.()),
   })
   return {
-    MobileNav: (
-      await import('../../../node_modules/frappe-ui/src/components/MobileNav/MobileNav.vue')
-    ).default,
+    MobileNav: (await import('../../node_modules/frappe-ui/src/components/MobileNav/MobileNav.vue'))
+      .default,
     MobileNavItem: (
-      await import('../../../node_modules/frappe-ui/src/components/MobileNav/MobileNavItem.vue')
+      await import('../../node_modules/frappe-ui/src/components/MobileNav/MobileNavItem.vue')
     ).default,
     BottomSheet: (
-      await import('../../../node_modules/frappe-ui/src/components/BottomSheet/BottomSheet.vue')
+      await import('../../node_modules/frappe-ui/src/components/BottomSheet/BottomSheet.vue')
     ).default,
     Avatar: passthrough,
     ScrollArea: passthrough,

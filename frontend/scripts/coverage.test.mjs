@@ -19,8 +19,9 @@ test('coverage retains untested TypeScript and Vue sources with package subpaths
   ]
   try {
     const result = spawnSync(
-      'yarn',
+      'pnpm',
       [
+        'exec',
         'vitest',
         'run',
         '--config',

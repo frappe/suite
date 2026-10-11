@@ -8,9 +8,9 @@ import { createTransport } from '@/platform/transport'
 import RenameDialog from './RenameDialog.vue'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Button')),
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Dialog')),
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/FormControl')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/Button')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/Dialog')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/FormControl')),
 }))
 
 const mocks = vi.hoisted(() => ({ useMutation: vi.fn<typeof import('@/api').useMutation>() }))

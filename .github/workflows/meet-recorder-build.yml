@@ -29,7 +29,8 @@ on:
       - "suite/meet/recorder-server/**"
       - "suite/meet/types/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/meet-recorder-build.yml"
   workflow_dispatch:
     inputs:
