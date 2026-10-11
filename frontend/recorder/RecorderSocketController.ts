@@ -921,7 +921,8 @@ export class RecorderSocketController {
     return new Promise((resolve, reject) =>
       this.channel.emit(event, data, (value) => {
         const response = parseRequestResponse(value)
-        response?.success ? resolve() : reject(new Error(response?.error || `${event} failed`))
+        if (response?.success) resolve()
+        else reject(new Error(response?.error || `${event} failed`))
       }),
     )
   }
@@ -941,7 +942,8 @@ export class RecorderSocketController {
           reject(this.failProjection('Invalid recorder projection snapshot'))
           return
         }
-        response.success ? resolve(response.snapshot) : reject(new Error(response.error))
+        if (response.success) resolve(response.snapshot)
+        else reject(new Error(response.error))
       }),
     )
   }
@@ -949,9 +951,8 @@ export class RecorderSocketController {
     return new Promise((resolve, reject) =>
       this.channel.emit('recording:proof', { protocol_version: 1, signature }, (value) => {
         const response = parseRecordingProofResponse(value)
-        response?.success
-          ? resolve()
-          : reject(new Error(response?.diagnostic || 'recording:proof failed'))
+        if (response?.success) resolve()
+        else reject(new Error(response?.diagnostic || 'recording:proof failed'))
       }),
     )
   }
