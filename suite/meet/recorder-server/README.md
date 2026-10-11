@@ -91,7 +91,7 @@ mapping are unchanged.
 Build the recorder browser assets, then run the recorder-server tests:
 
 ```sh
-pnpm --filter @suite/frontend build:recorder
+pnpm build:recorder
 CHROMIUM_EXECUTABLE=/usr/bin/chromium RECORDER_CHROMIUM_NO_SANDBOX=1 yarn --cwd suite/meet/recorder-server test
 ```
 
