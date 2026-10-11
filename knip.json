@@ -8,22 +8,29 @@
   ],
   "workspaces": {
     ".": {
-      "entry": ["realtime/handlers.js", "suite/public/js/ff_integration.bundle.js", "suite/public/js/file.js"],
-      "project": ["realtime/**/*.js", "suite/public/js/**/*.{js,ts,vue}", "suite/meet/type-policy/**/*.mjs"],
-      "github-actions": false
-    },
-    "frontend": {
       "entry": [
-        "recorder/main.ts",
-        "recorder/frappeUi.ts",
-        "src/apps/mail/sw.ts",
-        "src/apps/sheets/engine/difftest/compare-engines.js",
-        "src/apps/sheets/engine/difftest/run.js",
+        "realtime/handlers.js",
+        "suite/public/js/ff_integration.bundle.js",
+        "suite/public/js/file.js",
+        "frontend/recorder/main.ts",
+        "frontend/recorder/frappeUi.ts",
+        "frontend/src/apps/mail/sw.ts",
+        "frontend/src/apps/sheets/engine/difftest/compare-engines.js",
+        "frontend/src/apps/sheets/engine/difftest/run.js",
         "scripts/generate-pwa-assets.mjs"
       ],
-      "project": ["src/**/*.{js,ts,tsx,vue}", "recorder/**/*.{js,ts,tsx,vue}", "scripts/**/*.{js,mjs,cjs,ts}", "*.{js,mjs,cjs,ts}"],
+      "project": [
+        "realtime/**/*.js",
+        "suite/public/js/**/*.{js,ts,vue}",
+        "suite/meet/type-policy/**/*.mjs",
+        "frontend/src/**/*.{js,ts,tsx,vue}",
+        "frontend/recorder/**/*.{js,ts,tsx,vue}",
+        "scripts/**/*.{js,mjs,cjs,ts}",
+        "*.{js,mjs,cjs,ts}"
+      ],
       "ignoreDependencies": ["@noble/hashes", "hyperformula"],
-      "ignoreUnresolved": ["~icons/lucide/*"]
+      "ignoreUnresolved": ["~icons/lucide/*"],
+      "github-actions": false
     },
     "e2e": {
       "entry": [

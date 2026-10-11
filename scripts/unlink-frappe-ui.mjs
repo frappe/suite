@@ -9,9 +9,9 @@ import { lstatSync, readlinkSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const checkout = resolve(frontendDir, '../frappe-ui')
-const linkPath = resolve(frontendDir, 'node_modules/frappe-ui')
+const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const checkout = resolve(appRoot, 'frappe-ui')
+const linkPath = resolve(appRoot, 'node_modules/frappe-ui')
 const stat = lstatSync(linkPath, { throwIfNoEntry: false })
 
 if (stat?.isSymbolicLink() && resolve(dirname(linkPath), readlinkSync(linkPath)) === checkout) {
@@ -19,6 +19,6 @@ if (stat?.isSymbolicLink() && resolve(dirname(linkPath), readlinkSync(linkPath))
   // unlinkSync removes the symlink itself; never follows it into the checkout.
   unlinkSync(linkPath)
   // Relink the published frappe-ui from the lockfile.
-  execSync('pnpm install --frozen-lockfile', { cwd: frontendDir, stdio: 'inherit' })
+  execSync('pnpm install --frozen-lockfile', { cwd: appRoot, stdio: 'inherit' })
   console.log('✓ frappe-ui restored from the registry')
 }

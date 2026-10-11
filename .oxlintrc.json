@@ -61,5 +61,5 @@
     "vue/valid-define-props": "error",
     "vue/valid-next-tick": "error"
   },
-  "ignorePatterns": ["src/**/generated.ts"]
+  "ignorePatterns": ["frontend/src/**/generated.ts"]
 }

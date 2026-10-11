@@ -11,9 +11,9 @@ import { createTransport, type MutationRef } from '@/platform/transport'
 import { ContextMenu, Dropdown } from './index'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../node_modules/frappe-ui/src/components/Dropdown')),
-  ...(await import('../../../node_modules/frappe-ui/src/components/ContextMenu')),
-  ...(await import('../../../node_modules/frappe-ui/src/components/BottomSheet')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Dropdown')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/ContextMenu')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/BottomSheet')),
   toast: { error: vi.fn() },
   dialog: {},
   FrappeUIProvider: {},

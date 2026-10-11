@@ -2,11 +2,14 @@ import path from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
+const frontend = path.resolve(__dirname, 'frontend')
+
 export default defineConfig({
+  root: frontend,
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
+      '@': path.resolve(frontend, 'src'),
       // More specific first: a bare "frappe-ui" alias also matches "frappe-ui/…" imports.
       'frappe-ui/list': path.resolve(
         __dirname,
@@ -16,25 +19,25 @@ export default defineConfig({
         __dirname,
         'node_modules/frappe-ui/src/molecules/code-editor/index.ts',
       ),
-      'frappe-ui/experimental': path.resolve(__dirname, 'src/test/frappe-ui-experimental-stub.ts'),
-      'frappe-ui': path.resolve(__dirname, 'recorder/frappeUi.ts'),
-      '~icons/lucide/scan': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/chevron-down': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/clock': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/download': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/external-link': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/square-arrow-out-up-right': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/eye': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/info': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/link-2': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/arrow-left-right': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/rotate-ccw': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/share-2': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/square-pen': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/corner-left-up': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/monitor-cog': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/star': path.resolve(__dirname, 'src/test/icon-stub.ts'),
-      '~icons/lucide/trash': path.resolve(__dirname, 'src/test/icon-stub.ts'),
+      'frappe-ui/experimental': path.resolve(frontend, 'src/test/frappe-ui-experimental-stub.ts'),
+      'frappe-ui': path.resolve(frontend, 'recorder/frappeUi.ts'),
+      '~icons/lucide/scan': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/chevron-down': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/clock': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/download': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/external-link': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/square-arrow-out-up-right': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/eye': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/info': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/link-2': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/arrow-left-right': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/rotate-ccw': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/share-2': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/square-pen': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/corner-left-up': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/monitor-cog': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/star': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/trash': path.resolve(frontend, 'src/test/icon-stub.ts'),
     },
   },
   test: {

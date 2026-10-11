@@ -1,6 +1,3 @@
-packages:
-  - frontend
-
 # Was `resolutions` in package.json under Yarn 1. Pins one tiptap core/pm/vue-3
 # so every extension shares a single ProseMirror schema.
 overrides:

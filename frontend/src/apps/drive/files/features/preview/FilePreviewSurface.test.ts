@@ -16,10 +16,10 @@ import type { FilePreviewSession } from './session'
 
 vi.mock('frappe-ui', async () => ({
   Button: (
-    await import('../../../../../../node_modules/frappe-ui/src/components/Button/Button.vue')
+    await import('../../../../../../../node_modules/frappe-ui/src/components/Button/Button.vue')
   ).default,
   TabButtons: (
-    await import('../../../../../../node_modules/frappe-ui/src/components/TabButtons/TabButtons.vue')
+    await import('../../../../../../../node_modules/frappe-ui/src/components/TabButtons/TabButtons.vue')
   ).default,
   Spinner: defineComponent({ setup: () => () => h('div', { role: 'status' }) }),
   Dropdown: defineComponent({

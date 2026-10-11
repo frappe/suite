@@ -26,22 +26,22 @@
   },
   "include": [
     // The app's globals (window.csrf_token, …).
-    "src/env.d.ts",
-    "src/apps/sheets/core/**/*.ts",
-    "src/apps/sheets/utils/*.ts",
+    "frontend/src/env.d.ts",
+    "frontend/src/apps/sheets/core/**/*.ts",
+    "frontend/src/apps/sheets/utils/*.ts",
     // engine/: the modules converted so far; the rest are still .js.
-    "src/apps/sheets/engine/*.ts",
-    "src/apps/sheets/engine/patterns/*.ts",
+    "frontend/src/apps/sheets/engine/*.ts",
+    "frontend/src/apps/sheets/engine/patterns/*.ts",
     // Not services/: it imports @/api, which would pull the platform layer
     // (not written for these flags) into this check.
-    "src/apps/sheets/canvas/*.ts",
-    "src/apps/sheets/canvas/input/*.ts",
-    "src/apps/sheets/canvas/painters/*.ts"
+    "frontend/src/apps/sheets/canvas/*.ts",
+    "frontend/src/apps/sheets/canvas/input/*.ts",
+    "frontend/src/apps/sheets/canvas/painters/*.ts"
   ],
   // Canvas, utils and engine tests predate the strict config; the policy covers source.
   "exclude": [
-    "src/apps/sheets/canvas/**/*.test.ts",
-    "src/apps/sheets/utils/*.test.ts",
-    "src/apps/sheets/engine/*.test.ts"
+    "frontend/src/apps/sheets/canvas/**/*.test.ts",
+    "frontend/src/apps/sheets/utils/*.test.ts",
+    "frontend/src/apps/sheets/engine/*.test.ts"
   ]
 }

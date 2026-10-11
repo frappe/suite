@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { format, resolveConfig } from 'prettier'
 
-const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../frontend')
 const sourceRoot = path.join(frontendRoot, 'src')
 
 const schemaNames = new WeakMap()

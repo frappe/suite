@@ -12,7 +12,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-export const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+export const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const updating = process.argv.includes('--update-baseline')
 
@@ -24,7 +24,7 @@ const updating = process.argv.includes('--update-baseline')
  * is refused otherwise. Returns true when the check failed.
  */
 export function compareBaseline(label, actual, name, files) {
-  const file = path.join(frontendRoot, 'baselines', name)
+  const file = path.join(appRoot, 'baselines', name)
   const counts = new Map([...actual].map(([key, details]) => [key, details.length]))
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0)
 
@@ -37,7 +37,7 @@ export function compareBaseline(label, actual, name, files) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, `${JSON.stringify(sorted, null, 2)}\n`)
     console.log(
-      `Wrote ${path.relative(frontendRoot, file)}: ${counts.size} entries, ${total} ${label} findings.`,
+      `Wrote ${path.relative(appRoot, file)}: ${counts.size} entries, ${total} ${label} findings.`,
     )
     return false
   }

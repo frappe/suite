@@ -11,22 +11,24 @@ import path from 'node:path'
 import process from 'node:process'
 import { ESLint } from 'eslint'
 
-import { compareBaseline, frontendRoot } from './baseline.mjs'
+import { appRoot, compareBaseline } from './baseline.mjs'
 
 const fix = process.argv.includes('--fix')
 const files = process.argv
   .slice(2)
   .filter((arg) => !arg.startsWith('--'))
-  .map((arg) => relativeToFrontend(path.resolve(arg)))
+  .map((arg) => relativeToApp(path.resolve(arg)))
 
-const eslint = new ESLint({ cwd: frontendRoot, fix })
-const results = await eslint.lintFiles(files.length ? files : ['.'])
+const eslint = new ESLint({ cwd: appRoot, fix })
+const results = await eslint.lintFiles(
+  files.length ? files : ['frontend', 'scripts', '*.js', '*.ts'],
+)
 if (fix) await ESLint.outputFixes(results)
 
 const errors = new Map()
 let warnings = 0
 for (const result of results) {
-  const file = relativeToFrontend(result.filePath)
+  const file = relativeToApp(result.filePath)
   for (const message of result.messages) {
     if (message.severity !== 2) {
       warnings += 1
@@ -48,6 +50,6 @@ const failed = compareBaseline(
 )
 if (failed) process.exitCode = 1
 
-function relativeToFrontend(absolute) {
-  return path.relative(frontendRoot, absolute).replaceAll('\\', '/')
+function relativeToApp(absolute) {
+  return path.relative(appRoot, absolute).replaceAll('\\', '/')
 }

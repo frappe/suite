@@ -1,4 +1,4 @@
-// Symlink node_modules/frappe-ui -> the local ../frappe-ui checkout so EVERY
+// Symlink node_modules/frappe-ui -> the local frappe-ui/ checkout so EVERY
 // resolver consumes one copy: Vite (JS), Node (Tailwind's config loader,
 // frappe-ui/vite plugin), and vue-tsc all follow the same files. This replaces
 // the old Vite-alias approach, which only covered the Vite door and left
@@ -10,9 +10,9 @@ import { existsSync, lstatSync, readlinkSync, rmSync, symlinkSync, unlinkSync } 
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const checkout = resolve(frontendDir, '../frappe-ui')
-const linkPath = resolve(frontendDir, 'node_modules/frappe-ui')
+const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const checkout = resolve(appRoot, 'frappe-ui')
+const linkPath = resolve(appRoot, 'node_modules/frappe-ui')
 const relTarget = relative(dirname(linkPath), checkout)
 
 /** lstat without throwing on a missing path (returns null instead). */

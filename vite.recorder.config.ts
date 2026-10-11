@@ -4,7 +4,7 @@ import frappeui from 'frappe-ui/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  root: __dirname,
+  root: path.resolve(__dirname, 'frontend'),
   base: './',
   plugins: [
     frappeui({
@@ -17,10 +17,10 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: '@', replacement: path.resolve(__dirname, 'src') },
+      { find: '@', replacement: path.resolve(__dirname, 'frontend/src') },
       {
         find: '~icons/lucide/chevron-down',
-        replacement: path.resolve(__dirname, 'src/test/icon-stub.ts'),
+        replacement: path.resolve(__dirname, 'frontend/src/test/icon-stub.ts'),
       },
     ],
   },
@@ -28,6 +28,6 @@ export default defineConfig({
     outDir: 'dist-recorder',
     emptyOutDir: true,
     target: 'esnext',
-    rollupOptions: { input: path.resolve(__dirname, 'recorder.html') },
+    rollupOptions: { input: path.resolve(__dirname, 'frontend/recorder.html') },
   },
 })

@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 
-import { compareBaseline, frontendRoot } from './baseline.mjs'
+import { appRoot, compareBaseline } from './baseline.mjs'
 
 // Type-checks the unified frontend: the folders `tsconfig.typecheck.json`
 // includes. The compiler also reads every legacy file those folders import,
@@ -13,9 +13,9 @@ import { compareBaseline, frontendRoot } from './baseline.mjs'
 // types one file at a time and never gain an error unnoticed.
 
 const configName = 'tsconfig.typecheck.json'
-const config = JSON.parse(fs.readFileSync(path.join(frontendRoot, configName), 'utf8'))
+const config = JSON.parse(fs.readFileSync(path.join(appRoot, configName), 'utf8'))
 
-// "src/apps/*/surface/**/*.vue" -> /^src\/apps\/[^/]+\/surface\//
+// "frontend/src/apps/*/surface/**/*.vue" -> /^frontend\/src\/apps\/[^/]+\/surface\//
 const scope = config.include.map((pattern) => {
   const folder = pattern.split('/**')[0]
   const source = folder
@@ -27,7 +27,7 @@ const scope = config.include.map((pattern) => {
 
 // The whole program no longer fits in Node's default 2 GB heap.
 const run = spawnSync('pnpm', ['exec', 'vue-tsc', '-p', configName, '--pretty', 'false'], {
-  cwd: frontendRoot,
+  cwd: appRoot,
   encoding: 'utf8',
   maxBuffer: 256 * 1024 * 1024,
   env: {

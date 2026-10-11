@@ -25,7 +25,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../frontend')
 
 /** Logo edge as a fraction of the canvas' SHORT edge, so it reads the same in
  *  both orientations and on both phones and tablets. iOS home screen icons sit

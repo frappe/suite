@@ -25,13 +25,13 @@ export default defineConfig({
   define: { 'process.env.NODE_ENV': '"production"' },
   plugins: [guardServedOutput()],
   build: {
-    outDir: '../suite/www',
+    outDir: 'suite/www',
     emptyOutDir: false,
     minify: false,
     sourcemap: false,
     target: 'es2020',
     lib: {
-      entry: path.resolve(__dirname, 'src/apps/slides/service-worker.js'),
+      entry: path.resolve(__dirname, 'frontend/src/apps/slides/service-worker.js'),
       formats: ['iife'],
       name: 'slidesServiceWorker',
       fileName: () => 'service-worker.js',

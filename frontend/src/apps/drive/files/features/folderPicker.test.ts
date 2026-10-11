@@ -13,12 +13,12 @@ import {
 import FolderPicker from './FolderPicker.vue'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/Breadcrumbs')),
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/Button')),
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/Dialog')),
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/Skeleton')),
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/TabButtons')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Breadcrumbs')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Button')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Dialog')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Skeleton')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/TabButtons')),
 }))
 
 // My files holds Projects and Archive. Projects holds Launch, where the report is, and Launch holds Assets.

@@ -5,14 +5,14 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 
-const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const outputRoot = path.resolve(frontendRoot, '../suite/public/frontend')
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const outputRoot = path.resolve(appRoot, 'suite/public/frontend')
 const manifestName = '.vite/bundle-budget-manifest.json'
 const manifestPath = path.join(outputRoot, manifestName)
 const limit = 200 * 1024
 
 const build = spawnSync('pnpm', ['exec', 'vite', 'build', '--manifest', manifestName], {
-  cwd: frontendRoot,
+  cwd: appRoot,
   stdio: 'inherit',
 })
 if (build.status !== 0) process.exit(build.status || 1)

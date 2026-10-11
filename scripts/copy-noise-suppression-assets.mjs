@@ -15,11 +15,10 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const appRoot = path.resolve(frontendRoot, '..')
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 // The package manager decides where the package lives, so ask Node.
-const require = createRequire(path.join(frontendRoot, 'package.json'))
+const require = createRequire(path.join(appRoot, 'package.json'))
 const source = path.join(
   path.dirname(require.resolve('@workadventure/noise-suppression/package.json')),
   'dist/assets/audio-worklet-processor.js',

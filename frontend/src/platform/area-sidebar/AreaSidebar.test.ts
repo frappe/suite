@@ -13,15 +13,16 @@ import {
 // real components.
 vi.mock('frappe-ui', async () => ({
   BottomSheet: (
-    await import('../../../node_modules/frappe-ui/src/components/BottomSheet/BottomSheet.vue')
+    await import('../../../../node_modules/frappe-ui/src/components/BottomSheet/BottomSheet.vue')
   ).default,
   ScrollArea: (
-    await import('../../../node_modules/frappe-ui/src/components/ScrollArea/ScrollArea.vue')
+    await import('../../../../node_modules/frappe-ui/src/components/ScrollArea/ScrollArea.vue')
   ).default,
-  Sidebar: (await import('../../../node_modules/frappe-ui/src/components/Sidebar/Sidebar.vue'))
+  Sidebar: (await import('../../../../node_modules/frappe-ui/src/components/Sidebar/Sidebar.vue'))
     .default,
-  Skeleton: (await import('../../../node_modules/frappe-ui/src/components/Skeleton/Skeleton.vue'))
-    .default,
+  Skeleton: (
+    await import('../../../../node_modules/frappe-ui/src/components/Skeleton/Skeleton.vue')
+  ).default,
 }))
 
 let cleanup: (() => void) | undefined

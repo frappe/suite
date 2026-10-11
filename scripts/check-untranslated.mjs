@@ -11,7 +11,7 @@ import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescri
 import { ESLint } from 'eslint'
 import pluginVue from 'eslint-plugin-vue'
 
-import { compareBaseline, frontendRoot } from './baseline.mjs'
+import { appRoot, compareBaseline } from './baseline.mjs'
 
 const RULE = 'vue/no-bare-strings-in-template'
 
@@ -33,13 +33,13 @@ const ATTRIBUTES = {
 }
 
 const eslint = new ESLint({
-  cwd: frontendRoot,
+  cwd: appRoot,
   overrideConfigFile: true,
   // The Vue parser plus the TypeScript parser for `<script lang="ts">`, and
   // no rules but this one.
   overrideConfig: defineConfigWithVueTs(
     // Legacy Drive code is being deleted, not translated.
-    { ignores: ['src/apps/drive/legacy/**'] },
+    { ignores: ['frontend/src/apps/drive/legacy/**'] },
     pluginVue.configs['flat/base'],
     vueTsConfigs.base,
     {
@@ -49,10 +49,10 @@ const eslint = new ESLint({
   ),
 })
 
-const results = await eslint.lintFiles(['src/**/*.vue'])
+const results = await eslint.lintFiles(['frontend/src/**/*.vue'])
 const findings = new Map()
 for (const result of results) {
-  const file = path.relative(frontendRoot, result.filePath).replaceAll('\\', '/')
+  const file = path.relative(appRoot, result.filePath).replaceAll('\\', '/')
   for (const message of result.messages) {
     if (message.ruleId !== RULE) {
       if (message.fatal) throw new Error(`${file}:${message.line} ${message.message}`)

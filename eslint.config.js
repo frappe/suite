@@ -16,15 +16,15 @@ import globals from 'globals'
 const config = defineConfigWithVueTs(
   {
     ignores: [
-      'dist/**',
-      'dist-recorder/**',
+      'frontend/dist/**',
+      'frontend/dist-recorder/**',
       'node_modules/**',
-      'auto-imports.d.ts',
-      'components.d.ts',
+      'frontend/auto-imports.d.ts',
+      'frontend/components.d.ts',
       // Generated from contract.json by `pnpm generate:contract`.
-      'src/**/generated.ts',
+      'frontend/src/**/generated.ts',
       // Legacy Drive code is being deleted, not brought in line.
-      'src/apps/drive/legacy/**',
+      'frontend/src/apps/drive/legacy/**',
     ],
   },
   {

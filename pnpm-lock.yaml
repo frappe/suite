@@ -196,19 +196,6 @@ importers:
 
   .:
     dependencies:
-      vue:
-        specifier: ^3.5.38
-        version: 3.5.39(typescript@6.0.3)
-    devDependencies:
-      knip:
-        specifier: ^6.4.1
-        version: 6.18.0
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  frontend:
-    dependencies:
       '@codemirror/commands':
         specifier: ^6.0.0
         version: 6.10.4
@@ -516,6 +503,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)
+      knip:
+        specifier: ^6.4.1
+        version: 6.18.0
       oxlint:
         specifier: ^1.87.0
         version: 1.87.0(oxlint-tsgolint@7.0.2003)
@@ -531,6 +521,9 @@ importers:
       tailwindcss:
         specifier: ^3.4.19
         version: 3.4.19(yaml@2.9.0)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       unplugin-icons:
         specifier: ^22.5.0
         version: 22.5.0(@vue/compiler-sfc@3.5.42)(supports-color@10.2.2)

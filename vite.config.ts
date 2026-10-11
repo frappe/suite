@@ -17,15 +17,15 @@ import { VitePWA } from 'vite-plugin-pwa'
 // node and globs `node_modules/frappe-ui/src`, so with the submodule ahead of the
 // pin, components come from the checkout while tokens come from the package. Run
 // `pnpm dev:frappe-ui` to point node at the checkout too and keep them in step.
-const frappeUIPath = path.resolve(__dirname, '../frappe-ui/src/index.ts')
-const frappeUIExperimentalPath = path.resolve(__dirname, '../frappe-ui/experimental.ts')
+const frappeUIPath = path.resolve(__dirname, 'frappe-ui/src/index.ts')
+const frappeUIExperimentalPath = path.resolve(__dirname, 'frappe-ui/experimental.ts')
 
 const emitSlidesServiceWorker = () => ({
   name: 'slides-service-worker',
   apply: 'build' as const,
   writeBundle() {
-    const swSource = path.resolve(__dirname, 'src/apps/slides/service-worker.js')
-    const swOutput = path.resolve(__dirname, '../suite/www/service-worker.js')
+    const swSource = path.resolve(__dirname, 'frontend/src/apps/slides/service-worker.js')
+    const swOutput = path.resolve(__dirname, 'suite/www/service-worker.js')
     fs.mkdirSync(path.dirname(swOutput), { recursive: true })
     fs.copyFileSync(swSource, swOutput)
   },
@@ -33,7 +33,7 @@ const emitSlidesServiceWorker = () => ({
 
 /** Serve suite/public/noise-suppression at /noise-suppression in Vite dev (not via publicDir — that would re-emit 17MB into the SPA build). */
 const serveNoiseSuppressionAssets = () => {
-  const noiseDir = path.resolve(__dirname, '../suite/public/noise-suppression')
+  const noiseDir = path.resolve(__dirname, 'suite/public/noise-suppression')
   return {
     name: 'serve-noise-suppression-assets',
     apply: 'serve' as const,
@@ -87,7 +87,7 @@ const dropFrappeUICodeLanguagesEsbuildPlugin = (): Plugin => ({
   },
 })
 
-const benchRoot = path.resolve(__dirname, '../../..')
+const benchRoot = path.resolve(__dirname, '../..')
 const commonSiteConfigPath = path.join(benchRoot, 'sites/common_site_config.json')
 // Allow static tooling to load this config in a standalone checkout/worktree.
 const commonSiteConfig = fs.existsSync(commonSiteConfigPath)
@@ -97,13 +97,14 @@ const defaultSite = commonSiteConfig.default_site || 'localhost'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
+  root: path.resolve(__dirname, 'frontend'),
   define: {
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
     __SITE_NAME__: JSON.stringify(defaultSite),
     __SOCKETIO_PORT__: JSON.stringify(commonSiteConfig.socketio_port || 9000),
   },
   // Served by Frappe at /assets/suite/frontend/ (build output lands in
-  // ../suite/public/frontend -> exposed as /assets/suite/frontend).
+  // suite/public/frontend -> exposed as /assets/suite/frontend).
   base: mode === 'production' ? '/assets/suite/frontend/' : '/',
   plugins: [
     // Noise-suppression worklet lives under suite/public/noise-suppression
@@ -121,9 +122,10 @@ export default defineConfig(({ mode }) => ({
       lucideIcons: true,
       jinjaBootData: true,
       buildConfig: {
-        outDir: '../suite/public/frontend',
+        // Absolute: the plugin copies index.html relative to the working directory.
+        outDir: path.resolve(__dirname, 'suite/public/frontend'),
         baseUrl: '/assets/suite/frontend/',
-        indexHtmlPath: '../suite/www/suite.html',
+        indexHtmlPath: path.resolve(__dirname, 'suite/www/suite.html'),
         emptyOutDir: true,
         sourcemap: true,
       },
@@ -159,7 +161,7 @@ export default defineConfig(({ mode }) => ({
   ],
   resolve: {
     alias: [
-      { find: '@', replacement: path.resolve(__dirname, 'src') },
+      { find: '@', replacement: path.resolve(__dirname, 'frontend/src') },
       {
         find: 'tailwind.config.js',
         replacement: path.resolve(__dirname, 'tailwind.config.js'),
@@ -216,7 +218,7 @@ export default defineConfig(({ mode }) => ({
     ],
     fs: {
       // Allow the bench + frappe-ui source paths used by the dev proxy/build.
-      allow: ['..', 'node_modules', '../../..', '../frappe-ui'],
+      allow: [__dirname, benchRoot],
     },
   },
   optimizeDeps: {

@@ -6,9 +6,9 @@ import ts from 'typescript'
 
 import { checkApiClient } from './check-api-client.mjs'
 
-const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const sourceRoot = path.join(frontendRoot, 'src')
-const deskScriptRoot = path.join(frontendRoot, '..', 'suite', 'public', 'js')
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const sourceRoot = path.join(appRoot, 'frontend', 'src')
+const deskScriptRoot = path.join(appRoot, 'suite', 'public', 'js')
 const appsRoot = path.join(sourceRoot, 'apps')
 const sourceExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx', '.vue'])
 const products = new Set(
@@ -606,7 +606,7 @@ function scanLegacyCalls() {
   if (!fs.existsSync(deskScriptRoot))
     throw new Error(`Desk script root is missing: ${deskScriptRoot}`)
   for (const file of walk(deskScriptRoot)) {
-    const relative = path.relative(path.join(frontendRoot, '..'), file).split(path.sep).join('/')
+    const relative = path.relative(appRoot, file).split(path.sep).join('/')
     found.push(...legacyCallsInSource(relative, fs.readFileSync(file, 'utf8')))
   }
   return found.sort((left, right) => left.path.localeCompare(right.path) || left.line - right.line)

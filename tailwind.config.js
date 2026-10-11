@@ -7,9 +7,9 @@ export default {
   // 7 apps. Per-app tailwind configs are dropped in favor of this one.
   presets: [frappeUIPreset],
   content: [
-    './index.html',
-    './recorder/**/*.{vue,js,ts,jsx,tsx}',
-    './src/**/*.{vue,js,ts,jsx,tsx}',
+    './frontend/index.html',
+    './frontend/recorder/**/*.{vue,js,ts,jsx,tsx}',
+    './frontend/src/**/*.{vue,js,ts,jsx,tsx}',
     // frappe-ui's own source globs, resolved from wherever the package is
     // installed. Presets do not merge `content`, so the app must list them.
     ...frappeUIContent,

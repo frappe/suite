@@ -5,7 +5,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const frontendRoot = path.join(appRoot, 'frontend')
 const manifestPath = path.join(frontendRoot, 'test-manifest', 'legacy-failures.json')
 const reportPath = path.join(os.tmpdir(), `suite-legacy-vitest-${process.pid}.json`)
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
@@ -13,7 +14,7 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 const result = spawnSync(
   'pnpm',
   ['exec', 'vitest', 'run', '--project', 'legacy', '--reporter=json', `--outputFile=${reportPath}`],
-  { cwd: frontendRoot, encoding: 'utf8' },
+  { cwd: appRoot, encoding: 'utf8' },
 )
 
 if (result.stdout) process.stdout.write(result.stdout)
