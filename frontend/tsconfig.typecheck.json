@@ -18,6 +18,7 @@
     },
     "types": ["unplugin-icons/types/vue", "vite/client"],
     "allowJs": true,
+    "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "include": [
