@@ -6,7 +6,7 @@
   // `tsc --noEmit` to the rewritten sheets core, so new code is checked
   // from the first commit and the checked surface grows per phase.
   //
-  // Run: yarn workspace @suite/frontend typecheck
+  // Run: pnpm typecheck:sheets (also part of pnpm typecheck)
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,

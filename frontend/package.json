@@ -15,7 +15,6 @@
     "watch:service-worker": "vite build --config vite.sw.config.ts --watch",
     "dev:recorder": "vite --config vite.recorder.config.ts --host",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.sheets.json",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
     "test:unified": "vitest run --project unified --passWithNoTests",
@@ -29,7 +28,8 @@
     "check:untranslated": "node scripts/check-untranslated.mjs",
     "check:import-boundaries": "node scripts/check-import-boundaries.mjs",
     "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
+    "typecheck": "pnpm typecheck:sheets && node scripts/typecheck.mjs",
+    "typecheck:sheets": "tsc --noEmit -p tsconfig.sheets.json",
     "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"
   },
   "dependencies": {
