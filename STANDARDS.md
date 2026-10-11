@@ -138,7 +138,7 @@ suite/<product>/
 - Clients never name bytes. No route accepts a blob id, a storage key or a
   byte count as an instruction; bytes arrive through an upload session.
 - The route table is exported as `frontend/src/apps/<owner>/client/contract.json`
-  by `suite.composition.contract.write_all`, and `yarn generate:contract`
+  by `suite.composition.contract.write_all`, and `pnpm generate:contract`
   turns that into `generated.ts`. Change the table, regenerate both, commit
   all three.
 
@@ -261,7 +261,7 @@ frontend/src/
 - Server shapes come from `client/generated.ts` and `client/types.ts`; a
   component types its props with them, not with a copy.
 - **Target:** every folder under strict typecheck. `tsconfig.typecheck.json`
-  lists the folders `yarn typecheck` fails on; add a folder there when it is
+  lists the folders `pnpm typecheck` fails on; add a folder there when it is
   clean. Errors outside the list are counted per file in
   `baselines/typecheck.json`, which only shrinks.
 
@@ -279,7 +279,7 @@ frontend/src/
   `useTheme()` for the app (`platform/theme`, `platform/session`,
   `platform/server-state`). No Pinia in unified code.
 - Lazy-load anything not needed for first paint: `defineAsyncComponent`,
-  `() => import(...)` in routes and heavy helpers. `yarn check:bundle-budget`
+  `() => import(...)` in routes and heavy helpers. `pnpm check:bundle-budget`
   caps the initial JavaScript graph at 200 KiB gzip.
 
 ### Server state
@@ -340,7 +340,7 @@ frontend/src/
 - Interactive elements carry an accessible name (`aria-label="Select all"`);
   tests select by it.
 - **Target:** every string a user reads goes through `__()` from
-  `@/platform/translation`. `yarn check:untranslated` counts bare template
+  `@/platform/translation`. `pnpm check:untranslated` counts bare template
   text and user-facing attributes (`label`, `placeholder`, `title`,
   `aria-label`, ...) per file in `baselines/untranslated.json`, which only
   shrinks. It cannot see strings built in `<script>` (toast titles, confirm
@@ -349,7 +349,7 @@ frontend/src/
 ### Tests
 
 - Vitest, jsdom, colocated `*.test.ts`. The `unified` project runs the strict
-  folders; `yarn test <file>` runs one file.
+  folders; `pnpm test <file>` runs one file.
 - Fake the boundary: stub `globalThis.fetch` with a small in-memory server
   that keeps state (`features/trash/useTrashActions.test.ts`), or pass a fake
   `Transport` into `createApiClient` (`client/nodes.test.ts`). Mock a module
@@ -368,19 +368,19 @@ frontend/src/
   settings (two-space indent, single quotes, no semicolons, trailing commas)
   at 100 columns. `@ianvs/prettier-plugin-sort-imports` orders imports as:
   Node builtins and libraries, blank line, `@/` modules, blank line, relative
-  imports. `yarn format` writes, `yarn format:check` fails CI, and the
+  imports. `pnpm format` writes, `pnpm format:check` fails CI, and the
   pre-commit hook formats staged files. Generated files and Markdown are
   ignored (`.prettierignore`).
 - ESLint (`frontend/eslint.config.js`: `eslint-plugin-vue` recommended,
   `@vue/eslint-config-typescript` recommended, layout rules off) checks
-  correctness. `yarn lint` compares errors to `baselines/eslint.json`, keyed
-  `file|rule`; warnings are advisory and `yarn lint:fix` clears the fixable
+  correctness. `pnpm lint` compares errors to `baselines/eslint.json`, keyed
+  `file|rule`; warnings are advisory and `pnpm lint:fix` clears the fixable
   ones. The pre-commit hook autofixes staged files and compares only their
   baseline entries; CI runs the whole tree. **Target:** an empty ESLint
   baseline; `no-explicit-any` and `vue/block-lang` (a `<script>` without
   `lang="ts"`) are most of it.
-- **Target:** the first `yarn format` over the tree has not landed yet, so
-  the `yarn format:check` CI step is `continue-on-error` until the reformat
+- **Target:** the first `pnpm format` over the tree has not landed yet, so
+  the `pnpm format:check` CI step is `continue-on-error` until the reformat
   commit in `.git-blame-ignore-revs` exists.
 
 ## Checks
@@ -398,13 +398,13 @@ lives under `frontend/baselines/` and is rewritten by the check's
 | Architecture (imports, Drive table writes) | `bench --site <site> run-tests --module suite.tests.test_architecture` | exact baseline |
 | Backend tests | `bench --site <site> run-tests --app suite` | enforced |
 | HTTP contract, Python to JSON | `bench --site <site> execute suite.composition.contract.write_all`, then `git diff` | enforced in the backend CI job |
-| HTTP contract, JSON to TypeScript | `yarn check:contract` | enforced |
-| Frontend format | `yarn format:check` | enforced once the first reformat lands; `continue-on-error` until then |
-| Frontend lint | `yarn lint` | errors: count baseline; warnings advisory |
-| Untranslated text | `yarn check:untranslated` | count baseline; CI only, no pre-commit hook |
-| Frontend types | `yarn typecheck` | folders in `tsconfig.typecheck.json` enforced; elsewhere count baseline |
-| Import boundaries, unstable frappe-ui, legacy calls | `yarn check:import-boundaries` | exact baseline |
-| Bundle budget | `yarn check:bundle-budget` | 200 KiB gzip |
-| Frontend tests | `yarn test`, `yarn test:unified` | enforced |
-| Dead code | `yarn knip:frontend --exclude exports,types` | enforced once the current findings are fixed; `continue-on-error` until then |
-| Unused exports and types | `yarn knip:frontend --include exports,types` | target; runs, does not fail CI |
+| HTTP contract, JSON to TypeScript | `pnpm check:contract` | enforced |
+| Frontend format | `pnpm format:check` | enforced once the first reformat lands; `continue-on-error` until then |
+| Frontend lint | `pnpm lint` | errors: count baseline; warnings advisory |
+| Untranslated text | `pnpm check:untranslated` | count baseline; CI only, no pre-commit hook |
+| Frontend types | `pnpm typecheck` | folders in `tsconfig.typecheck.json` enforced; elsewhere count baseline |
+| Import boundaries, unstable frappe-ui, legacy calls | `pnpm check:import-boundaries` | exact baseline |
+| Bundle budget | `pnpm check:bundle-budget` | 200 KiB gzip |
+| Frontend tests | `pnpm test`, `pnpm test:unified` | enforced |
+| Dead code | `pnpm knip:frontend --exclude exports,types` | enforced once the current findings are fixed; `continue-on-error` until then |
+| Unused exports and types | `pnpm knip:frontend --include exports,types` | target; runs, does not fail CI |

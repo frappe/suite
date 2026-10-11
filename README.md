@@ -146,8 +146,8 @@ In a separate terminal, install frontend dependencies and start the development 
 
 ```bash
 cd apps/suite
-yarn install
-yarn dev
+pnpm install
+pnpm dev
 ```
 
 To create a production build instead:

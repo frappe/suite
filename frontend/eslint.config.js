@@ -19,7 +19,7 @@ export default defineConfigWithVueTs(
       'node_modules/**',
       'auto-imports.d.ts',
       'components.d.ts',
-      // Generated from contract.json by `yarn generate:contract`.
+      // Generated from contract.json by `pnpm generate:contract`.
       'src/**/generated.ts',
       // Legacy Drive code is being deleted, not brought in line.
       'src/apps/drive/legacy/**',
