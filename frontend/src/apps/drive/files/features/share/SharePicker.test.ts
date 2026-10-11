@@ -7,10 +7,10 @@ import type { PickedPerson } from './shareModel'
 import SharePicker from './SharePicker.vue'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Button')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Checkbox')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Combobox')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Select')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Button')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Checkbox')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Combobox')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Select')),
 }))
 
 const directoryRequest = vi.hoisted(() =>

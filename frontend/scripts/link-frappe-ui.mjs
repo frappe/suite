@@ -4,7 +4,7 @@
 // the old Vite-alias approach, which only covered the Vite door and left
 // Node-loaded tooling (Tailwind preset, etc.) resolving the published package.
 //
-// Run via `yarn dev:frappe-ui`. Idempotent. `yarn dev` (or `yarn install`)
+// Run via `pnpm dev:frappe-ui`. Idempotent. `pnpm dev` (or `pnpm install`)
 // restores the published package, so switching back is automatic.
 import { existsSync, lstatSync, readlinkSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
@@ -22,7 +22,7 @@ function lstatOrNull(p) {
 
 if (!existsSync(checkout)) {
   console.error(`✗ No local frappe-ui checkout at ${checkout}`)
-  console.error('  Clone/checkout frappe-ui there, or use `yarn dev` for the published package.')
+  console.error('  Clone/checkout frappe-ui there, or use `pnpm dev` for the published package.')
   process.exit(1)
 }
 

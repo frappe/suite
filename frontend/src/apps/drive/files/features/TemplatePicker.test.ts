@@ -9,12 +9,12 @@ import { createTransport } from '@/platform/transport'
 import TemplatePicker from './TemplatePicker.vue'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Button')),
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Dialog')),
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/FormControl')),
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Skeleton')),
-  ...(await import('../../../../../../node_modules/frappe-ui/src/components/TabButtons')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/Button')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/Dialog')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/FormControl')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/Skeleton')),
+  ...(await import('../../../../../node_modules/frappe-ui/src/components/TabButtons')),
 }))
 const mocks = vi.hoisted(() => ({
   useMutation: vi.fn<typeof import('@/api').useMutation>(),

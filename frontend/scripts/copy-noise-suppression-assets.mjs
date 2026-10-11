@@ -11,15 +11,18 @@
  * README); only this single file is required for the worklet path.
  */
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const appRoot = path.resolve(frontendRoot, '..')
 
+// The package manager decides where the package lives, so ask Node.
+const require = createRequire(path.join(frontendRoot, 'package.json'))
 const source = path.join(
-  appRoot,
-  'node_modules/@workadventure/noise-suppression/dist/assets/audio-worklet-processor.js',
+  path.dirname(require.resolve('@workadventure/noise-suppression/package.json')),
+  'dist/assets/audio-worklet-processor.js',
 )
 
 const dest = path.join(appRoot, 'suite/public/noise-suppression/audio-worklet-processor.js')
@@ -27,7 +30,7 @@ const dest = path.join(appRoot, 'suite/public/noise-suppression/audio-worklet-pr
 if (!fs.existsSync(source)) {
   console.error(
     `[copy-noise-suppression-assets] Source missing: ${source}\n` +
-      'Install @workadventure/noise-suppression first (yarn install).',
+      'Install @workadventure/noise-suppression first (pnpm install).',
   )
   process.exit(1)
 }

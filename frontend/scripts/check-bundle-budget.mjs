@@ -11,7 +11,7 @@ const manifestName = '.vite/bundle-budget-manifest.json'
 const manifestPath = path.join(outputRoot, manifestName)
 const limit = 200 * 1024
 
-const build = spawnSync('yarn', ['vite', 'build', '--manifest', manifestName], {
+const build = spawnSync('pnpm', ['exec', 'vite', 'build', '--manifest', manifestName], {
   cwd: frontendRoot,
   stdio: 'inherit',
 })

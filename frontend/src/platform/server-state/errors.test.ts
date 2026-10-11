@@ -13,7 +13,7 @@ import {
 import { createApiClient, installApiErrorHandler } from './index'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../node_modules/frappe-ui/src/components/Dialog')),
+  ...(await import('../../../node_modules/frappe-ui/src/components/Dialog')),
 }))
 
 const command: MutationRef<Record<never, never>, string> = {

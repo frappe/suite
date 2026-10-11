@@ -12,8 +12,9 @@ fs.mkdirSync(path.dirname(reportPath), { recursive: true })
 fs.rmSync(reportPath, { force: true })
 
 const result = spawnSync(
-  'yarn',
+  'pnpm',
   [
+    'exec',
     'vitest',
     'run',
     '--project',

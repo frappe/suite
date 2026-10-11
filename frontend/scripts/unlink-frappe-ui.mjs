@@ -1,22 +1,24 @@
-// Restore the PUBLISHED frappe-ui. If node_modules/frappe-ui is a symlink to a
-// local checkout (created by `yarn dev:frappe-ui`), remove it and reinstall the
-// package from the lockfile. This runs before plain `yarn dev`, so switching
+// Restore the PUBLISHED frappe-ui. If node_modules/frappe-ui is a symlink to the
+// local checkout (created by `pnpm dev:frappe-ui`), remove it and reinstall the
+// package from the lockfile. This runs before plain `pnpm dev`, so switching
 // back from local-frappe-ui work is automatic. No-op (and cheap) when nothing
-// is linked.
+// is linked. pnpm always installs node_modules/frappe-ui as a symlink into its
+// store, so only a link that points at the checkout counts as "linked".
 import { execSync } from 'node:child_process'
-import { lstatSync, unlinkSync } from 'node:fs'
+import { lstatSync, readlinkSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const checkout = resolve(frontendDir, '../frappe-ui')
 const linkPath = resolve(frontendDir, 'node_modules/frappe-ui')
 const stat = lstatSync(linkPath, { throwIfNoEntry: false })
 
-if (stat?.isSymbolicLink()) {
+if (stat?.isSymbolicLink() && resolve(dirname(linkPath), readlinkSync(linkPath)) === checkout) {
   console.log('↩  Unlinking local frappe-ui; restoring the published package…')
   // unlinkSync removes the symlink itself; never follows it into the checkout.
   unlinkSync(linkPath)
-  // Reinstall just what's missing from the lockfile (the published frappe-ui).
-  execSync('yarn install --check-files', { cwd: frontendDir, stdio: 'inherit' })
+  // Relink the published frappe-ui from the lockfile.
+  execSync('pnpm install --frozen-lockfile', { cwd: frontendDir, stdio: 'inherit' })
   console.log('✓ frappe-ui restored from the registry')
 }
