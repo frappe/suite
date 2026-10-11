@@ -50,7 +50,8 @@ on:
       - "suite/hooks.py"
       - "suite/tests/ci_smoke.py"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "pyproject.toml"
       - "knip.json"
       - ".github/workflows/drive-backed-apps-e2e.yml"
@@ -98,7 +99,8 @@ on:
       - "suite/hooks.py"
       - "suite/tests/ci_smoke.py"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "pyproject.toml"
       - "knip.json"
       - ".github/workflows/drive-backed-apps-e2e.yml"
@@ -204,12 +206,7 @@ jobs:
           rm -rf apps/suite sites/drive-writer.test sites/assets/suite
           git clone "$GITHUB_WORKSPACE" apps/suite
           uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
-          cache_key=$(cd apps/suite && { node --version; yarn --version; sha256sum package.json yarn.lock frontend/package.json; } | sha256sum | cut -d ' ' -f 1)
-          if [ -f /var/cache/suite-node-modules/key ] && [ "$cache_key" = "$(cat /var/cache/suite-node-modules/key)" ]; then
-            tar -xzf /var/cache/suite-node-modules/node_modules.tar.gz -C apps/suite
-          else
-            yarn --cwd apps/suite install --check-files
-          fi
+          corepack pnpm --dir apps/suite install --frozen-lockfile
           python -c 'from bench.bench import Bench; Bench(".").apps.sync(app_name="suite", app_dir="suite")'
           bench build --app suite
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"

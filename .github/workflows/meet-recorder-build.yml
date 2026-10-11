@@ -28,7 +28,8 @@ on:
       - "frontend/vite.recorder.config.ts"
       - "suite/meet/recorder-server/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/meet-recorder-build.yml"
   workflow_dispatch:
     inputs:

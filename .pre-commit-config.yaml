@@ -34,7 +34,7 @@ repos:
     hooks:
       - id: prettier-frontend
         name: Prettier (frontend)
-        entry: bash -c 'cd frontend && ../node_modules/.bin/prettier --write "${@/#frontend\//}"' --
+        entry: bash -c 'cd frontend && node_modules/.bin/prettier --write "${@/#frontend\//}"' --
         language: system
         files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue|css|json|html)$
         exclude: |
@@ -63,7 +63,7 @@ repos:
 
       - id: knip-e2e
         name: Knip (E2E)
-        entry: yarn knip:e2e
+        entry: pnpm knip:e2e
         language: system
         pass_filenames: false
         files: |
@@ -71,12 +71,12 @@ repos:
               e2e/.*|
               knip\.json|
               package\.json|
-              yarn\.lock
+              pnpm-lock\.yaml
           )$
 
       - id: knip-sfu-server
         name: Knip (SFU Server)
-        entry: yarn knip:sfu-server
+        entry: pnpm knip:sfu-server
         language: system
         pass_filenames: false
         files: |
@@ -84,12 +84,12 @@ repos:
               suite/meet/sfu-server/.*|
               knip\.json|
               package\.json|
-              yarn\.lock
+              pnpm-lock\.yaml
           )$
 
       - id: knip-sheets-collab
         name: Knip (Sheets Collab Server)
-        entry: yarn knip:sheets-collab
+        entry: pnpm knip:sheets-collab
         language: system
         pass_filenames: false
         files: |
@@ -97,7 +97,7 @@ repos:
               suite/sheets/collab-server/.*|
               knip\.json|
               package\.json|
-              yarn\.lock
+              pnpm-lock\.yaml
           )$
 
       - id: biome-sfu-server
@@ -114,7 +114,7 @@ repos:
 
       - id: meet-type-policy
         name: Meet Type Policy
-        entry: yarn check:meet-types
+        entry: pnpm check:meet-types
         language: system
         pass_filenames: false
         files: |
@@ -125,7 +125,7 @@ repos:
               suite/meet/type-policy/.*|
               e2e/meet/.*\.(ts|tsx)|
               package\.json|
-              yarn\.lock
+              pnpm-lock\.yaml
           )$
 
 ci:

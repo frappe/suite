@@ -8,8 +8,8 @@ import { createTransport } from '@/platform/transport'
 import InviteStep from './InviteStep.vue'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../node_modules/frappe-ui/src/components/FormControl')),
-  ...(await import('../../../node_modules/frappe-ui/src/components/ErrorMessage')),
+  ...(await import('../../node_modules/frappe-ui/src/components/FormControl')),
+  ...(await import('../../node_modules/frappe-ui/src/components/ErrorMessage')),
 }))
 const mocks = vi.hoisted(() => ({ useMutation: vi.fn<typeof import('@/api').useMutation>() }))
 vi.mock('@/api', async (original) => ({

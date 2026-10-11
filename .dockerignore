@@ -1,10 +1,10 @@
 *
 !package.json
-!yarn.lock
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
 !frontend/
 frontend/*
 !frontend/package.json
-!frontend/yarn.lock
 !frontend/recorder.html
 !frontend/postcss.config.js
 !frontend/tailwind.config.js

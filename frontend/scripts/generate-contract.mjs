@@ -21,7 +21,7 @@ for (const contractPath of contracts) {
     const formatted = await format(source, { ...(await resolveConfig(target)), filepath: target })
     if (checking) {
       if ((await fs.readFile(target, 'utf8').catch(() => '')) !== formatted)
-        throw new Error(`${target}: contract drift; run yarn generate:contract`)
+        throw new Error(`${target}: contract drift; run pnpm generate:contract`)
     } else await fs.writeFile(target, formatted)
   }
 }

@@ -2,12 +2,16 @@
   "name": "suite",
   "version": "0.0.1",
   "private": true,
-  "workspaces": [
-    "frontend"
-  ],
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.10.1",
+      "onFail": "download"
+    }
+  },
   "scripts": {
-    "build": "yarn workspace @suite/frontend build",
-    "dev": "yarn workspace @suite/frontend dev",
+    "build": "corepack pnpm --filter @suite/frontend build",
+    "dev": "pnpm --filter @suite/frontend dev",
     "test:e2e": "yarn --cwd e2e test",
     "test:e2e:drive-backed-apps": "yarn --cwd e2e test:drive-backed-apps",
     "test:e2e:meet": "yarn --cwd e2e test:meet",
@@ -20,11 +24,6 @@
     "knip": "knip",
     "check:meet-types": "node suite/meet/type-policy/check.mjs",
     "test:meet-type-policy": "node --test suite/meet/type-policy/check.test.mjs"
-  },
-  "resolutions": {
-    "@tiptap/core": "3.26.0",
-    "@tiptap/pm": "3.26.0",
-    "@tiptap/vue-3": "3.26.0"
   },
   "dependencies": {
     "vue": "^3.5.38"

@@ -8,14 +8,14 @@ import ShareLinkDialog from './ShareLinkDialog.vue'
 import { useShare } from './useShare'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Button')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/DatePicker')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Dialog')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Password')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Select')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Switch')),
-  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/TextInput')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Button')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/DatePicker')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Dialog')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Password')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Select')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Switch')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/TextInput')),
 }))
 
 vi.mock('@/platform/feedback', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))

@@ -9,7 +9,8 @@ on:
       - "frontend/**"
       - "e2e/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "knip.json"
       - "pyproject.toml"
       - ".github/scripts/**"
@@ -91,46 +92,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v6
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: yarn
-          cache-dependency-path: yarn.lock
+          cache: pnpm
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       # Unused files, dependencies, unresolved imports and duplicate exports fail.
       # Phase 2 of the tooling work fixes the current findings and removes
       # `continue-on-error` here.
       - name: Check frontend dead code
         continue-on-error: true
-        run: yarn knip:frontend --exclude exports,types
+        run: pnpm knip:frontend --exclude exports,types
 
       # Unused exports and types are evidence-only until that baseline is clean.
       - name: Report frontend unused exports
         continue-on-error: true
-        run: yarn knip:frontend --include exports,types
+        run: pnpm knip:frontend --include exports,types
 
       # Existing findings make these evidence-only until their baselines are clean.
       - name: Check E2E dead code
         continue-on-error: true
-        run: yarn knip:e2e
+        run: pnpm knip:e2e
 
       - name: Check SFU dead code
         continue-on-error: true
-        run: yarn knip:sfu-server
+        run: pnpm knip:sfu-server
 
       - name: Check Sheets collaboration dead code
         continue-on-error: true
-        run: yarn knip:sheets-collab
+        run: pnpm knip:sheets-collab
 
       - name: Audit production dependencies
         continue-on-error: true
         run: |
           mkdir -p test-results
           status=0
-          yarn audit --groups dependencies --level high 2>&1 | tee test-results/yarn-audit.txt || status=1
+          pnpm audit --prod --audit-level high 2>&1 | tee test-results/yarn-audit.txt || status=1
           yarn --cwd suite/meet/sfu-server audit --groups dependencies --level high 2>&1 | tee -a test-results/yarn-audit.txt || status=1
           yarn --cwd suite/meet/recorder-server audit --groups dependencies --level high 2>&1 | tee -a test-results/yarn-audit.txt || status=1
           exit "$status"

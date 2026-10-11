@@ -26,7 +26,7 @@ const scope = config.include.map((pattern) => {
 })
 
 // The whole program no longer fits in Node's default 2 GB heap.
-const run = spawnSync('yarn', ['--silent', 'vue-tsc', '-p', configName, '--pretty', 'false'], {
+const run = spawnSync('pnpm', ['exec', 'vue-tsc', '-p', configName, '--pretty', 'false'], {
   cwd: frontendRoot,
   encoding: 'utf8',
   maxBuffer: 256 * 1024 * 1024,

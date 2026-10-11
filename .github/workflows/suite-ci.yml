@@ -9,7 +9,8 @@ on:
       - "frontend/**"
       - "realtime/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "pyproject.toml"
       - ".github/scripts/**"
       - ".github/workflows/suite-ci.yml"
@@ -259,6 +260,10 @@ jobs:
           echo "Run meet sfu server tests: $run_meet"
           echo "Run meet recorder server tests: $run_recorder"
 
+      - name: Setup pnpm
+        if: steps.node-server-changes.outputs.run_recorder == '1'
+        uses: pnpm/action-setup@v6
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -300,8 +305,8 @@ jobs:
       - name: Build Meet Recorder UI
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
         run: |
-          yarn install --frozen-lockfile --ignore-scripts
-          yarn workspace @suite/frontend build:recorder
+          pnpm install --frozen-lockfile
+          pnpm --filter @suite/frontend build:recorder
 
       - name: Run Meet Recorder Server Tests
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
@@ -651,50 +656,53 @@ jobs:
             run_frontend=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|yarn\.lock|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
               changed_files="$(git diff --name-only HEAD~1 HEAD)"
             else
               changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
             fi
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|yarn\.lock|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           fi
 
           echo "run=$run_frontend" >> $GITHUB_OUTPUT
           echo "Run frontend: $run_frontend"
+
+      - name: Setup pnpm
+        if: steps.frontend-changes.outputs.run == '1'
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         if: steps.frontend-changes.outputs.run == '1'
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: "yarn"
-          cache-dependency-path: yarn.lock
+          cache: pnpm
 
       - name: Install dependencies
         if: steps.frontend-changes.outputs.run == '1'
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Check frontend formatting
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
-        run: yarn format:check
+        run: pnpm format:check
 
       - name: Lint frontend
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
-        run: yarn lint
+        run: pnpm lint
 
       - name: Check untranslated text
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
-        run: yarn check:untranslated
+        run: pnpm check:untranslated
 
       - name: Check generated contract types
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
-        run: yarn check:contract
+        run: pnpm check:contract
 
       - name: Create bench site config
         if: steps.frontend-changes.outputs.run == '1'
@@ -705,29 +713,29 @@ jobs:
       - name: Check frontend import boundaries
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
-        run: yarn check:import-boundaries
+        run: pnpm check:import-boundaries
 
       - name: Typecheck frontend
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
-        run: yarn typecheck
+        run: pnpm typecheck
 
       - name: Check frontend bundle budget
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
-        run: yarn check:bundle-budget
+        run: pnpm check:bundle-budget
 
       - name: Build
         if: steps.frontend-changes.outputs.run == '1'
-        run: yarn build
+        run: pnpm build
 
       - name: Test
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
         run: |
           mkdir -p test-results
-          yarn test:unified
-          yarn test:legacy
+          pnpm test:unified
+          pnpm test:legacy
 
       - name: Upload Frontend Evidence
         if: always() && steps.frontend-changes.outputs.run == '1'

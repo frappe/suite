@@ -1,0 +1,20 @@
+packages:
+  - frontend
+
+# Was `resolutions` in package.json under Yarn 1. Pins one tiptap core/pm/vue-3
+# so every extension shares a single ProseMirror schema.
+overrides:
+  '@tiptap/core': 3.26.0
+  '@tiptap/pm': 3.26.0
+  '@tiptap/vue-3': 3.26.0
+
+# Dependency install scripts. None is needed:
+# - @firebase/util: reads FIREBASE_WEBAPP_CONFIG for Firebase App Hosting only.
+# - @parcel/watcher: builds from source only when no prebuilt binary exists.
+# - protobufjs: prints a version check.
+# - vue-demi: switches to the Vue 2 build; the shipped default is Vue 3.
+allowBuilds:
+  '@firebase/util': false
+  '@parcel/watcher': false
+  protobufjs: false
+  vue-demi: false

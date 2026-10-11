@@ -11,8 +11,8 @@ const reportPath = path.join(os.tmpdir(), `suite-legacy-vitest-${process.pid}.js
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 
 const result = spawnSync(
-  'yarn',
-  ['vitest', 'run', '--project', 'legacy', '--reporter=json', `--outputFile=${reportPath}`],
+  'pnpm',
+  ['exec', 'vitest', 'run', '--project', 'legacy', '--reporter=json', `--outputFile=${reportPath}`],
   { cwd: frontendRoot, encoding: 'utf8' },
 )
 

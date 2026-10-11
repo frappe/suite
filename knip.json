@@ -22,8 +22,8 @@
         "scripts/generate-pwa-assets.mjs"
       ],
       "project": ["src/**/*.{js,ts,tsx,vue}", "recorder/**/*.{js,ts,tsx,vue}", "scripts/**/*.{js,mjs,cjs,ts}", "*.{js,mjs,cjs,ts}"],
-      "ignoreDependencies": ["@workadventure/noise-suppression", "@noble/hashes", "hyperformula"],
-      "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"]
+      "ignoreDependencies": ["@noble/hashes", "hyperformula"],
+      "ignoreUnresolved": ["~icons/lucide/*"]
     },
     "e2e": {
       "entry": [

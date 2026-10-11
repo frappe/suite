@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 // Reaches past the alias on purpose: every other test resolves `frappe-ui` to the stub in
 // recorder/frappeUi.ts, which carries no toast at all.
-import { toast } from '../../../node_modules/frappe-ui/src/components/Toast/toast'
+import { toast } from '../../node_modules/frappe-ui/src/components/Toast/toast'
 
 /**
  * The toast surface mail's and calendar's helpers depend on.
