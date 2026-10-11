@@ -19,7 +19,7 @@ conflict, this spec chooses quality.
 Settled 2026-09-02. These override the design brief where they differ.
 
 1. **Strict TypeScript.** All rewritten code is `.ts`. `tsc --noEmit -p
-   frontend/tsconfig.sheets.json` gates it, wired into pre-commit and CI the
+   tsconfig.sheets.json` gates it, wired into pre-commit and CI the
    way `check:meet-types` already is. Frontend-wide checking is not viable
    against the untyped prototype, so the `include` list grows each phase.
    Beyond `strict`: `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
@@ -547,7 +547,7 @@ Acceptance criteria:
   headless-Chrome harness).
 - Zero main-thread wasm imports; typing does nothing (read-only) but never
   blocks.
-- `pnpm --filter @suite/frontend typecheck:sheets` passes, and runs in pre-commit
+- `pnpm typecheck:sheets` passes, and runs in pre-commit
   and CI.
 
 ### P2: solo editing
@@ -644,7 +644,7 @@ From ADR 0001; each maps to a mitigation in this spec.
 
 ## 9. Test strategy
 
-- Type gate. `tsc --noEmit -p frontend/tsconfig.sheets.json` runs in
+- Type gate. `tsc --noEmit -p tsconfig.sheets.json` runs in
   pre-commit and CI. Each phase adds its new directories to the `include`
   list, so the checked surface only grows.
 - Unit tests per module. Every new `core/` and `canvas/` file ships with a

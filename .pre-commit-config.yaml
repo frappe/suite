@@ -34,32 +34,33 @@ repos:
     hooks:
       - id: prettier-frontend
         name: Prettier (frontend)
-        entry: bash -c 'cd frontend && node_modules/.bin/prettier --write "${@/#frontend\//}"' --
+        entry: node_modules/.bin/prettier --write
         language: system
-        files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue|css|json|html)$
+        files: ^(frontend/.*|scripts/.*|baselines/.*|[^/]+)\.(js|mjs|cjs|ts|mts|tsx|vue|css|json|html)$
         exclude: |
-          (?x)^frontend/(
-              src/.*/contract\.json|
-              src/.*/generated\.ts|
-              auto-imports\.d\.ts|
-              components\.d\.ts|
-              public/.*
+          (?x)^(
+              frontend/src/.*/contract\.json|
+              frontend/src/.*/generated\.ts|
+              frontend/auto-imports\.d\.ts|
+              frontend/components\.d\.ts|
+              frontend/public/.*|
+              knip\.json
           )$
 
       - id: oxlint-frontend
         name: oxlint (frontend)
-        entry: bash -c 'cd frontend && node_modules/.bin/oxlint --quiet "${@/#frontend\//}"' --
+        entry: node_modules/.bin/oxlint --quiet
         language: system
-        files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue)$
+        files: ^(frontend/.*|scripts/.*|[^/]+)\.(js|mjs|cjs|ts|mts|tsx|vue)$
         exclude: ^frontend/src/.*/generated\.ts$
 
       # Staged files only: autofixes are applied, and the baseline comparison
       # is limited to these files. CI runs the whole tree.
       - id: eslint-frontend
         name: ESLint (frontend)
-        entry: node frontend/scripts/lint.mjs --fix
+        entry: node scripts/lint.mjs --fix
         language: system
-        files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue)$
+        files: ^(frontend/.*|scripts/.*|[^/]+)\.(js|mjs|cjs|ts|mts|tsx|vue)$
         exclude: |
           (?x)^frontend/(
               src/.*/generated\.ts|

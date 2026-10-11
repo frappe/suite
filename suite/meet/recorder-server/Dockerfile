@@ -4,10 +4,10 @@ FROM node:${NODE_VERSION} AS frontend
 WORKDIR /repo
 RUN corepack enable pnpm && corepack prepare pnpm@12.10.1 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY frontend/package.json ./frontend/package.json
 RUN pnpm install --frozen-lockfile
+COPY vite.recorder.config.ts postcss.config.js tailwind.config.js tsconfig*.json ./
 COPY frontend ./frontend
-RUN pnpm --filter @suite/frontend build:recorder
+RUN pnpm build:recorder
 
 FROM node:${NODE_VERSION} AS server
 WORKDIR /repo/suite/meet/recorder-server

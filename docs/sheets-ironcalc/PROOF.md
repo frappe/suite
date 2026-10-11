@@ -5,7 +5,6 @@ Don't take my word for any of this. Run it.
 ## Verify the gates yourself (no extra setup)
 
 ```bash
-cd frontend
 npx vitest run src/apps/sheets/engine   # runs the automated checks
 ```
 
@@ -19,9 +18,8 @@ new one:
 ## Run the side-by-side comparison (optional reference engine)
 
 ```bash
-cd frontend
 pnpm add -D hyperformula        # the independent reference engine (dev-only, never shipped)
-node src/apps/sheets/engine/difftest/compare-engines.js 8000
+node frontend/src/apps/sheets/engine/difftest/compare-engines.js 8000
 ```
 
 ```

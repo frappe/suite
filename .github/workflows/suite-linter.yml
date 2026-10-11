@@ -7,6 +7,10 @@ on:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "scripts/**"
+      - "*.js"
+      - "*.ts"
+      - "tsconfig*.json"
       - "e2e/**"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -107,12 +111,12 @@ jobs:
       # `continue-on-error` here.
       - name: Check frontend dead code
         continue-on-error: true
-        run: pnpm knip:frontend --exclude exports,types
+        run: pnpm knip:root --exclude exports,types
 
       # Unused exports and types are evidence-only until that baseline is clean.
       - name: Report frontend unused exports
         continue-on-error: true
-        run: pnpm knip:frontend --include exports,types
+        run: pnpm knip:root --include exports,types
 
       # Existing findings make these evidence-only until their baselines are clean.
       - name: Check E2E dead code

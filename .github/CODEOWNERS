@@ -30,7 +30,7 @@
 /frontend/src/composition/ @netchampfaris
 /frontend/src/shell/ @netchampfaris
 /frontend/src/platform/ @netchampfaris
-/frontend/scripts/ @netchampfaris
+/scripts/ @netchampfaris
 /e2e/unified-frontend/shell/ @netchampfaris
 /e2e/unified-frontend/home/ @netchampfaris
 /frontend/src/apps/drive/ @BreadGenie @netchampfaris

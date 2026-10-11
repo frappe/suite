@@ -7,6 +7,14 @@ on:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "scripts/**"
+      - "baselines/**"
+      - "*.js"
+      - "*.ts"
+      - "tsconfig*.json"
+      - ".oxlintrc.json"
+      - ".prettierrc"
+      - ".prettierignore"
       - "realtime/**"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -306,7 +314,7 @@ jobs:
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @suite/frontend build:recorder
+          pnpm build:recorder
 
       - name: Run Meet Recorder Server Tests
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
@@ -656,14 +664,14 @@ jobs:
             run_frontend=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|scripts/|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
               changed_files="$(git diff --name-only HEAD~1 HEAD)"
             else
               changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
             fi
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|scripts/|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           fi
 
           echo "run=$run_frontend" >> $GITHUB_OUTPUT
@@ -686,22 +694,18 @@ jobs:
 
       - name: Check frontend formatting
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: pnpm format:check
 
       - name: Lint frontend
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: pnpm lint
 
       - name: Check untranslated text
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: pnpm check:untranslated
 
       - name: Check generated contract types
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: pnpm check:contract
 
       - name: Create bench site config
@@ -712,17 +716,14 @@ jobs:
 
       - name: Check frontend import boundaries
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: pnpm check:import-boundaries
 
       - name: Typecheck frontend
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: pnpm typecheck
 
       - name: Check frontend bundle budget
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: pnpm check:bundle-budget
 
       - name: Build
@@ -731,9 +732,8 @@ jobs:
 
       - name: Test
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: |
-          mkdir -p test-results
+          mkdir -p frontend/test-results
           pnpm test:unified
           pnpm test:legacy
 

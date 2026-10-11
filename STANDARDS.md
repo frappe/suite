@@ -59,9 +59,9 @@ to a baseline.
 9. **Every user-facing string is translated** with `_()` in Python and `__()`
    in the frontend, written in sentence case.
 10. **Debt is explicit.** Every architecture check (`suite/tests/test_architecture.py`,
-    `frontend/scripts/check-import-boundaries.mjs`) carries an exact baseline
+    `scripts/check-import-boundaries.mjs`) carries an exact baseline
     whose entries name an owner and a removal condition. The count baselines
-    under `frontend/baselines/` (ESLint errors, out-of-scope type errors,
+    under `baselines/` (ESLint errors, out-of-scope type errors,
     untranslated text) and the mypy `ignore_errors` list in `pyproject.toml`
     follow the same rule. The baseline shrinks; a new violation fails the
     check, and so does a fix that leaves its entry behind (run the check with
@@ -364,18 +364,18 @@ frontend/src/
 
 ### Formatting and lint
 
-- Prettier formats the frontend (`frontend/.prettierrc`): frappe-ui's
+- Prettier formats the frontend (`.prettierrc`): frappe-ui's
   settings (two-space indent, single quotes, no semicolons, trailing commas)
   at 100 columns. `@ianvs/prettier-plugin-sort-imports` orders imports as:
   Node builtins and libraries, blank line, `@/` modules, blank line, relative
   imports. `pnpm format` writes, `pnpm format:check` fails CI, and the
   pre-commit hook formats staged files. Generated files and Markdown are
   ignored (`.prettierignore`).
-- oxlint (`frontend/.oxlintrc.json`, type-aware) runs first in `pnpm lint`.
+- oxlint (`.oxlintrc.json`, type-aware) runs first in `pnpm lint`.
   Its errors fail the check with no baseline; its correctness warnings are
   advisory. ESLint skips every rule oxlint runs (`eslint-plugin-oxlint`), so
   a rule that ESLint enforced must be an error in `.oxlintrc.json`.
-- ESLint (`frontend/eslint.config.js`: `eslint-plugin-vue` recommended,
+- ESLint (`eslint.config.js`: `eslint-plugin-vue` recommended,
   `@vue/eslint-config-typescript` recommended, layout rules off) checks
   correctness. `pnpm lint` compares errors to `baselines/eslint.json`, keyed
   `file|rule`; warnings are advisory and `pnpm lint:fix` clears the fixable
@@ -389,9 +389,9 @@ frontend/src/
 
 ## Checks
 
-Frontend commands run from `frontend/`; `knip` runs from the repository root;
-Python commands run from the app directory inside a bench. A count baseline
-lives under `frontend/baselines/` and is rewritten by the check's
+Frontend commands and `knip` run from the repository root; Python commands
+run from the app directory inside a bench. A count baseline lives under
+`baselines/` and is rewritten by the check's
 `--update-baseline` flag.
 
 | Check | Command | Scope |
@@ -410,5 +410,5 @@ lives under `frontend/baselines/` and is rewritten by the check's
 | Import boundaries, unstable frappe-ui, legacy calls | `pnpm check:import-boundaries` | exact baseline |
 | Bundle budget | `pnpm check:bundle-budget` | 200 KiB gzip |
 | Frontend tests | `pnpm test`, `pnpm test:unified` | enforced |
-| Dead code | `pnpm knip:frontend --exclude exports,types` | enforced once the current findings are fixed; `continue-on-error` until then |
-| Unused exports and types | `pnpm knip:frontend --include exports,types` | target; runs, does not fail CI |
+| Dead code | `pnpm knip:root --exclude exports,types` | enforced once the current findings are fixed; `continue-on-error` until then |
+| Unused exports and types | `pnpm knip:root --include exports,types` | target; runs, does not fail CI |
