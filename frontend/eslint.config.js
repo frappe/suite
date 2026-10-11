@@ -6,12 +6,14 @@
 // runs that one rule on its own against a baseline, so untranslated text is
 // tracked as a shrinking count rather than failing every legacy file at once.
 
+import path from 'node:path'
 import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
 import prettier from 'eslint-config-prettier'
+import oxlint from 'eslint-plugin-oxlint'
 import pluginVue from 'eslint-plugin-vue'
 import globals from 'globals'
 
-export default defineConfigWithVueTs(
+const config = defineConfigWithVueTs(
   {
     ignores: [
       'dist/**',
@@ -51,3 +53,12 @@ export default defineConfigWithVueTs(
   },
   prettier,
 )
+
+// oxlint (`.oxlintrc.json`) runs first in `pnpm lint`. Turn off every rule it
+// already runs; each of those that ESLint enforced is an error there too.
+// This stays outside defineConfigWithVueTs, which would read the type-aware
+// rules it turns off as a request for slow type-aware linting.
+export default [
+  ...config,
+  ...oxlint.buildFromOxlintConfigFile(path.join(import.meta.dirname, '.oxlintrc.json')),
+]

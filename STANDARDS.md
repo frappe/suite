@@ -371,6 +371,10 @@ frontend/src/
   imports. `pnpm format` writes, `pnpm format:check` fails CI, and the
   pre-commit hook formats staged files. Generated files and Markdown are
   ignored (`.prettierignore`).
+- oxlint (`frontend/.oxlintrc.json`, type-aware) runs first in `pnpm lint`.
+  Its errors fail the check with no baseline; its correctness warnings are
+  advisory. ESLint skips every rule oxlint runs (`eslint-plugin-oxlint`), so
+  a rule that ESLint enforced must be an error in `.oxlintrc.json`.
 - ESLint (`frontend/eslint.config.js`: `eslint-plugin-vue` recommended,
   `@vue/eslint-config-typescript` recommended, layout rules off) checks
   correctness. `pnpm lint` compares errors to `baselines/eslint.json`, keyed
@@ -400,7 +404,7 @@ lives under `frontend/baselines/` and is rewritten by the check's
 | HTTP contract, Python to JSON | `bench --site <site> execute suite.composition.contract.write_all`, then `git diff` | enforced in the backend CI job |
 | HTTP contract, JSON to TypeScript | `pnpm check:contract` | enforced |
 | Frontend format | `pnpm format:check` | enforced once the first reformat lands; `continue-on-error` until then |
-| Frontend lint | `pnpm lint` | errors: count baseline; warnings advisory |
+| Frontend lint | `pnpm lint` | oxlint errors enforced; ESLint errors: count baseline; warnings advisory |
 | Untranslated text | `pnpm check:untranslated` | count baseline; CI only, no pre-commit hook |
 | Frontend types | `pnpm typecheck` | folders in `tsconfig.typecheck.json` enforced; elsewhere count baseline |
 | Import boundaries, unstable frappe-ui, legacy calls | `pnpm check:import-boundaries` | exact baseline |
