@@ -16,7 +16,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Note this covers the Vite door only: tailwind.config.js loads the preset through
 // node and globs `node_modules/frappe-ui/src`, so with the submodule ahead of the
 // pin, components come from the checkout while tokens come from the package. Run
-// `yarn dev:frappe-ui` to point node at the checkout too and keep them in step.
+// `pnpm dev:frappe-ui` to point node at the checkout too and keep them in step.
 const frappeUIPath = path.resolve(__dirname, '../frappe-ui/src/index.ts')
 const frappeUIExperimentalPath = path.resolve(__dirname, '../frappe-ui/experimental.ts')
 
@@ -220,12 +220,17 @@ export default defineConfig(({ mode }) => ({
     },
   },
   optimizeDeps: {
+    // Name transitive deps by their importer (`a > b`). pnpm does not hoist them, so a bare
+    // name does not resolve from this package and Vite skips it.
     include: [
-      'debug',
+      'mediasoup-client > debug',
       // Imported from @iframe-resizer/vue's raw .vue source, which is never pre-bundled, so
       // left alone Vite resolves it through its `browser` field to a UMD build that has no
       // default export, and the page fails to load.
-      '@iframe-resizer/core',
+      '@iframe-resizer/vue > @iframe-resizer/core',
+      // The frappe-ui plugin lists these two by bare name, which pnpm cannot resolve here.
+      'frappe-ui > highlight.js/lib/core',
+      'frappe-ui > vue-sonner',
       'frappe-ui > lowlight',
       'yjs',
       'tailwind.config.js',
@@ -243,7 +248,7 @@ export default defineConfig(({ mode }) => ({
       // bundles its own copy. A grammar from one copy and a highlighter from
       // the other produce no token spans, so TypeScript previews show plain
       // text. List every package so they all share one pre-bundled copy.
-      '@codemirror/autocomplete',
+      'frappe-ui > @codemirror/autocomplete',
       '@codemirror/commands',
       '@codemirror/language',
       '@codemirror/search',
