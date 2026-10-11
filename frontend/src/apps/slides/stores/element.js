@@ -77,6 +77,7 @@ const activeElement = computed(() => {
   } else if (activeElementIds.value.length == 1) {
     return activeElements.value[0]
   }
+  return undefined
 })
 
 const isMultiSelection = computed(() => activeElementIds.value.length > 1)
