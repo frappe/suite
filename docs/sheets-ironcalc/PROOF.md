@@ -20,7 +20,7 @@ new one:
 
 ```bash
 cd frontend
-yarn add -D hyperformula        # the independent reference engine (dev-only, never shipped)
+pnpm add -D hyperformula        # the independent reference engine (dev-only, never shipped)
 node src/apps/sheets/engine/difftest/compare-engines.js 8000
 ```
 
