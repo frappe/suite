@@ -547,7 +547,7 @@ Acceptance criteria:
   headless-Chrome harness).
 - Zero main-thread wasm imports; typing does nothing (read-only) but never
   blocks.
-- `yarn workspace @suite/frontend typecheck` passes, and runs in pre-commit
+- `pnpm --filter @suite/frontend typecheck:sheets` passes, and runs in pre-commit
   and CI.
 
 ### P2: solo editing
