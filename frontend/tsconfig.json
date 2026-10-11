@@ -13,7 +13,6 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "lib": ["esnext", "dom", "dom.iterable", "webworker"],
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     },
