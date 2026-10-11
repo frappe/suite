@@ -1,5 +1,4 @@
 {
-  "../node_modules/frappe-ui/src/index.ts": 5,
   "src/apps/calendar/components/AppSidebar.vue": 9,
   "src/apps/calendar/components/EventDetail.vue": 14,
   "src/apps/calendar/components/MiniMonth.vue": 2,
