@@ -20,7 +20,7 @@ import {
   Users,
   X,
 } from 'lucide-vue-next'
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useMutation } from '@/api'
@@ -81,6 +81,12 @@ const userParticipant = computed(() =>
 // an answer (mail's popover over an invite) would otherwise go on showing the old one.
 const answered = ref<string>()
 const userResponse = computed(() => answered.value ?? userParticipant.value?.participation_status)
+// Until the event itself says otherwise: fresh participants (the calendar's reload, or an answer
+// given elsewhere) are the truth again.
+watch(
+  () => userParticipant.value?.participation_status,
+  () => (answered.value = undefined),
+)
 
 const RSVP_OPTIONS = [
   { label: __('Yes'), value: 'ACCEPTED' },

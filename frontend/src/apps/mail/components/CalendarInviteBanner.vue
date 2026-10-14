@@ -76,7 +76,7 @@
 <script setup lang="ts">
 import { Button, TabButtons } from 'frappe-ui'
 import { ArrowRight } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
@@ -106,6 +106,14 @@ const confirmed = ref<{
   blob: string
   value: InviteDetails
 }>()
+// Stands in only until the server shows the event: once a refetch finds it, that copy is newer than
+// ours (an answer given from the event's panel, say) and takes over.
+watch(
+  () => details.data,
+  (data) => {
+    if (data?.exists) confirmed.value = undefined
+  },
+)
 const currentDetails = computed(() =>
   confirmed.value?.account === account && confirmed.value.blob === attachment.blob_id
     ? confirmed.value.value
