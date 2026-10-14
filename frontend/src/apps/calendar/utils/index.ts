@@ -14,16 +14,20 @@ export const raiseToast = (message: string, type = 'success') => {
   toast.error(text)
 }
 
-export const isUrl = (str: string) => {
-  if (typeof str !== 'string' || !str.trim()) return false
+/**
+ * The web address a location opens, or null when it is a place. Invites often
+ * write the address without its scheme (`zoom.us/j/1`), which a link would
+ * otherwise read as a path in this app, so it gets the https it left out.
+ */
+export const locationUrl = (str: string): string | null => {
+  if (typeof str !== 'string' || !str.trim()) return null
   str = str.trim()
   try {
     const url = new URL(/^https?:\/\//i.test(str) ? str : 'https://' + str)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
     const parts = url.hostname.split('.')
-    return parts.length >= 2 && parts.every((p) => p.length > 0)
+    return parts.length >= 2 && parts.every((p) => p.length > 0) ? url.href : null
   } catch {
-    return false
+    return null
   }
 }
 

@@ -31,7 +31,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 import {
   getMeetUrl,
   getReorderedParticipants,
-  isUrl,
+  locationUrl,
   participationStatusDisplay,
 } from '@/apps/calendar/utils'
 import { canEditEvent } from '@/apps/calendar/utils/calendars'
@@ -724,12 +724,12 @@ const openInDesk = () =>
               class="flex items-start gap-2.5 px-4.5 py-2"
             >
               <component
-                :is="isUrl(location._name) ? Globe : MapPin"
+                :is="locationUrl(location._name) ? Globe : MapPin"
                 class="icon text-ink-gray-5 mt-0.5 size-4 shrink-0"
               />
               <a
-                v-if="isUrl(location._name)"
-                :href="location._name"
+                v-if="locationUrl(location._name)"
+                :href="locationUrl(location._name)!"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="text-ink-blue-6 text-p-sm min-w-0 break-all hover:underline"
