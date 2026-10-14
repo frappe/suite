@@ -31,7 +31,7 @@
           :calendar-event="selectedEvent"
           @close="selectedEvent = null"
           @edit="openEventInCalendar"
-          @email-participants="emailParticipants"
+          @email-participants="emailEventParticipants"
         />
       </EventPopover>
       <!-- Compose prefilled with the event's participants; keyed so each
@@ -163,6 +163,13 @@ const openCompose = (details: ComposeMailData) => {
 
 const emailParticipants = (emails: string[]) =>
   openCompose({ to: emails.map((email) => ({ email })) })
+
+// From the event's popover: writing to everyone is where attention goes next, so the popover
+// steps aside rather than sitting over the page beside the composer.
+const emailEventParticipants = (emails: string[]) => {
+  selectedEvent.value = null
+  emailParticipants(emails)
+}
 
 // A `mailto:` link clicked inside a message. It comes through shared state because the
 // message body is an iframe — several components deep, and across a document boundary.

@@ -154,10 +154,13 @@ const whenLabel = computed(() =>
       })
     : '',
 )
+// Places only: a location that is just a link (a Meet room, a video call) is already in the mail
+// the strip sits on, and a bare URL here says nothing a reader can use at a glance.
+const isLink = (name: string) => /^https?:\/\//i.test(name.trim())
 const locationLabel = computed(() =>
   (invite.value?.event.locations || [])
-    .map((location) => location._name)
-    .filter(Boolean)
+    .map((location) => String(location._name ?? ''))
+    .filter((name) => name && !isLink(name))
     .join(', '),
 )
 const addInvite = useMutation(api.calendar.invites.add)
