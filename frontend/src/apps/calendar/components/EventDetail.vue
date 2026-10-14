@@ -539,10 +539,6 @@ const deskName = computed(() => {
 })
 const openInDesk = () =>
   window.open(`/desk/calendar-event/${encodeURIComponent(deskName.value!)}`, '_blank')?.focus()
-
-const openUrl = (location: string) => {
-  if (isUrl(location)) window.open(location, '_blank')
-}
 </script>
 
 <template>
@@ -553,7 +549,7 @@ const openUrl = (location: string) => {
     :class="
       variant === 'sheet'
         ? 'relative flex max-h-[90dvh] min-h-[50dvh] w-full flex-col overflow-hidden text-left'
-        : 'relative flex max-h-[min(var(--reka-popover-content-available-height),40rem)] w-[352px] flex-col overflow-hidden text-left outline-none'
+        : 'relative flex max-h-[min(var(--reka-popover-content-available-height),40rem)] w-96 flex-col overflow-hidden text-left outline-none'
     "
   >
     <!-- The two pages, one in the flow at a time, the other sliding through:
@@ -725,17 +721,22 @@ const openUrl = (location: string) => {
             <div
               v-for="location in calendarEvent.locations"
               :key="location.uid"
-              class="flex items-center gap-2.5 px-4.5 py-2"
+              class="flex items-start gap-2.5 px-4.5 py-2"
             >
               <component
                 :is="isUrl(location._name) ? Globe : MapPin"
-                class="icon text-ink-gray-5 size-4 shrink-0"
+                class="icon text-ink-gray-5 mt-0.5 size-4 shrink-0"
               />
-              <span
-                class="text-ink-gray-7 min-w-0 break-words text-sm"
-                :class="{ 'text-ink-blue-6 cursor-pointer hover:underline': isUrl(location._name) }"
-                @click="openUrl(location._name)"
+              <a
+                v-if="isUrl(location._name)"
+                :href="location._name"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-ink-blue-6 text-p-sm min-w-0 break-all hover:underline"
               >
+                {{ location._name }}
+              </a>
+              <span v-else class="text-ink-gray-7 text-p-sm min-w-0 break-words">
                 {{ location._name }}
               </span>
             </div>
