@@ -24,6 +24,9 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY server.py protocol.py resampling.py runtime.py context_bias.py ./
 
+# Import the real service without loading the model or requiring a GPU.
+RUN python -c "import server"
+
 RUN useradd --create-home --uid 10001 stt \
     && mkdir -p /models/huggingface /models/nemo /models/torch \
     && chown -R stt:stt /app /models

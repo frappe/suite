@@ -4,6 +4,8 @@ setuptools<82
 # The 25.06 base image constrains Torch to 2.8.0a0+nv25.6; <2.8 rejects that prerelease.
 torch>=2.6.0,<2.9.0
 numpy==1.26.4
+# PyArrow 26 requires NumPy 2; keep the version used by the working runtime.
+pyarrow==25.0.1
 soundfile==0.13.1
 soxr==0.5.0.post1
 # Nemotron 3.5 ASR requires prompt-aware RNNT classes that may not be in PyPI NeMo yet.
