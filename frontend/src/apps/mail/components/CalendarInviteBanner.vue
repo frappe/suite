@@ -267,12 +267,17 @@ const openEventDetail = (e: MouseEvent) => {
   if (!canViewEvent.value || !event) return
   if (isMobile.value) router.push(eventDayRoute(event, account))
   else if (isOpen.value) selectedEvent.value = null
+  // As the calendar's own rows name it: the event panel answers, deletes and links by `event_id`
+  // (a grid row's `id` is one occurrence's), and the invite's event is the stored event itself.
   else if (e.currentTarget instanceof Element)
-    openEvent(event, {
-      anchor: {
-        element: e.currentTarget,
-        side: 'bottom',
+    openEvent(
+      { ...event, event_id: event.id },
+      {
+        anchor: {
+          element: e.currentTarget,
+          side: 'bottom',
+        },
       },
-    })
+    )
 }
 </script>

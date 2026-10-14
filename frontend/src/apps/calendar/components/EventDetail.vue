@@ -522,11 +522,9 @@ const dropdownOptions = computed(() => [
 ])
 
 const session = useSession()
-// The Desk record is the series, not one occurrence of it: `account|id`. The grid's rows name it
-// by `master_id`/`event_id` (their own `id` is per occurrence); an event opened from a mail's
-// invite is the stored event itself, and its `id` is the one.
+// The Desk record is the series, not one occurrence of it: `account|id`.
 const deskName = computed(() => {
-  const id = serverEventId(calendarEvent) || calendarEvent.id
+  const id = serverEventId(calendarEvent)
   return calendarEvent.account && id ? `${calendarEvent.account}|${id}` : null
 })
 const openInDesk = () =>
