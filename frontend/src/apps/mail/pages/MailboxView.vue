@@ -954,7 +954,9 @@ watch(
     // loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
     // every account, so a mere account switch mustn't reset it — keep the results and scroll position.
     if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
-    isMailboxLoaded.value = false
+    // Loaded already when the list is cached (back to the Inbox, say): its status never leaves
+    // 'success' then, so the watcher above, which only hears changes, would leave the spinner up.
+    isMailboxLoaded.value = threads.status !== 'pending'
     tabSwitched.value = false
     reloadFilter()
     focusedRowKey.value = undefined
