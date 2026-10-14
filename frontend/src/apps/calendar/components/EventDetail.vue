@@ -77,7 +77,10 @@ const userParticipant = computed(() =>
     participantIdentities.data?.some((id) => id.email === p.email),
   ),
 )
-const userResponse = computed(() => userParticipant.value?.participation_status)
+// The answer the server has just taken, shown at once: a host that doesn't reload its events after
+// an answer (mail's popover over an invite) would otherwise go on showing the old one.
+const answered = ref<string>()
+const userResponse = computed(() => answered.value ?? userParticipant.value?.participation_status)
 
 const RSVP_OPTIONS = [
   { label: __('Yes'), value: 'ACCEPTED' },
@@ -98,6 +101,7 @@ async function respond(response: string, scope: RecurringScope) {
     response: response.toLowerCase(),
     recurrence_id: scope === 'instance' ? calendarEvent.recurrence_id : null,
   })
+  answered.value = response
   emit('reloadEvents')
 }
 

@@ -13,7 +13,8 @@ const effects: Readonly<Record<string, Effects>> = {
   create_calendar: { invalidates: ['get_calendars_with_shared'] },
   edit_calendar: { invalidates: ['get_calendars_with_shared', ...eventReaders] },
   delete_calendar: { invalidates: ['get_calendars_with_shared', ...eventReaders] },
-  rsvp_calendar_event: { invalidates: eventReaders },
+  // An answer from the event panel also refreshes a mail's invite strip for the same event.
+  rsvp_calendar_event: { invalidates: [...eventReaders, 'get_invite_details'] },
   add_calendar_event: { invalidates: eventReaders },
   update_calendar_event: { invalidates: eventReaders },
   update_calendar_event_instance: { invalidates: eventReaders },
