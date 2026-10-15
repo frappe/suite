@@ -499,7 +499,7 @@ const {
   isLoading,
   isRecipientsEmpty,
   moveRecipient,
-  updateOriginalMail,
+  onOpened,
   saveDraft,
   payListDebt,
   sendMail,
@@ -575,11 +575,7 @@ const toggleCcBcc = () => {
 // a calendar invite's participants — and the To field otherwise. The delay is the dialog's: focusing
 // during its transition doesn't take.
 onMounted(() => {
-  // What it opened with counts as saved, so only an edit saves it — except a draft Undo brought
-  // back, whose text may never have reached the server: that is saved now, or closing it unedited
-  // lost the last of it, and a draft never saved at all went with the window.
-  if (mailDetails?.restored) void saveDraft()
-  else updateOriginalMail()
+  onOpened()
   if (mailDetails?.in_reply_to) return textEditor.value.editor.commands.focus()
 
   // Deferred, and the choice made from inside: TextEditor renders nothing until it has built its

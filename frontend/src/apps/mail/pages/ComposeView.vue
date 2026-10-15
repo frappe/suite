@@ -353,7 +353,7 @@ const {
   mentionExtensions,
   editorContent,
   onEditorChange,
-  updateOriginalMail,
+  onOpened,
 } = useComposeMail({
   mailDetails,
   reloadMails: () => {},
@@ -527,7 +527,7 @@ const ACTIONS = [
 // with the thread), the subject when the draft arrived addressed but unnamed (a `mailto:` link, or a
 // calendar invite's participants), and To otherwise.
 onMounted(() => {
-  updateOriginalMail()
+  onOpened()
 
   // Deferred: TextEditor renders nothing until it has built its editor on its own mounted hook, so
   // none of these exist yet at this point.

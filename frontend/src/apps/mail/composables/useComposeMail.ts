@@ -322,6 +322,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     },
   )
 
+  /**
+   * The composer is on screen. What it opened with counts as saved, so only an edit saves it —
+   * except a draft Undo brought back, whose text may never have reached the server: that is saved
+   * now, or closing it unedited lost the last of it, and a draft never saved at all went with it.
+   * Every composer calls this once mounted: the window, a thread's reply and the phone's page.
+   */
+  const onOpened = () => (mailDetails?.restored ? void saveDraft() : updateOriginalMail())
+
   // The Undo toast lives for the period the server actually held delivery for (it echoes it back
   // with the send result; the hold is that plus a few seconds' grace, so a last-moment Undo still
   // lands in time). The user's own setting is only a fallback for a result without one: the
@@ -715,6 +723,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     identities,
     getIdentity,
     updateOriginalMail,
+    onOpened,
     isDraftUpdated,
     isRecipientsEmpty,
     moveRecipient,
