@@ -414,14 +414,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         if (thread) {
           // Under whichever id the list still has it, it reopens as the editor had it — and the
           // list is brought up to date, off the ids the saves have since replaced.
-          const copy = { ...draft, account }
+          const copy = { ...draft, account, restored: true }
           heldIds.forEach((id) => restoreDraft(id, copy))
           requestListReload()
           if (router.currentRoute.value.fullPath !== thread) void router.push(thread)
           return
         }
         heldIds.forEach(releaseDraft)
-        requestCompose({ ...draft, account })
+        requestCompose({ ...draft, account, restored: true })
       },
       // Reopening a draft needs no particular list on screen, so its Cmd/Ctrl+Z outlives the view.
       undoSlot: {
