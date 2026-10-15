@@ -20,12 +20,18 @@ describe('canonical route metadata', () => {
       '/drive/starred',
       '/drive/shared-with-me',
       '/drive/trash',
+      '/drive/recovery',
       '/mail/:pathMatch(.*)*',
       '/calendar/:pathMatch(.*)*',
       '/people/:pathMatch(.*)*',
       '/meet/:pathMatch(.*)*',
       '/d/:node/:slug?',
     ])
+  })
+
+  it('names the recovery copies page before its routes load', () => {
+    const recovery = canonicalRoutes.find((route) => route.path === '/drive/recovery')
+    expect(recovery?.meta?.title).toBe('Recovery copies')
   })
 
   it.each(['mail', 'calendar', 'people', 'meet'])('renders %s in the shell', (area) => {

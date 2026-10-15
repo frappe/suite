@@ -3,7 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "workspaces": [
-    "frontend"
+    "frontend",
+    "frontend/packages/collab-client"
   ],
   "scripts": {
     "build": "yarn workspace @suite/frontend build",
@@ -24,7 +25,8 @@
   "resolutions": {
     "@tiptap/core": "3.26.0",
     "@tiptap/pm": "3.26.0",
-    "@tiptap/vue-3": "3.26.0"
+    "@tiptap/vue-3": "3.26.0",
+    "@tiptap/y-tiptap": "link:./frontend/packages/collab-prosemirror"
   },
   "dependencies": {
     "vue": "^3.5.38"

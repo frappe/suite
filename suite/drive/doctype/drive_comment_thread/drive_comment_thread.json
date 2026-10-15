@@ -6,6 +6,7 @@
  "field_order": [
   "node",
   "anchor",
+  "client_id",
   "resolved",
   "resolved_by",
   "resolved_at"
@@ -24,6 +25,14 @@
    "label": "Anchor",
    "length": 255,
    "reqd": 1
+  },
+  {
+   "description": "The writing client's own id for this write, so a resend returns the first answer",
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "length": 64,
+   "read_only": 1
   },
   {
    "default": "0",

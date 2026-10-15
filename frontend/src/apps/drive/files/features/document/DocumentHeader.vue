@@ -1,5 +1,6 @@
 <template>
   <header
+    ref="headerElement"
     class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5"
   >
     <div class="flex min-w-0 flex-1 items-center gap-1">
@@ -107,6 +108,7 @@
         :tooltip="PANEL_BUTTONS[name].label"
         :aria-label="PANEL_BUTTONS[name].label"
         :aria-pressed="panel === name"
+        :data-panel="name"
         @click="panel = panel === name ? null : name"
       />
       <template v-if="session.canShare.value">
@@ -185,6 +187,7 @@ const emit = defineEmits<{ downloadChanges: [] }>()
 const panel = defineModel<DocumentPanel | null>('panel', { default: null })
 
 const online = useOnline()
+const headerElement = ref<HTMLElement | null>(null)
 const titleInput = ref<InstanceType<typeof TextInput> | null>(null)
 const titleDraft = ref(props.session.title.value)
 const trashed = computed(() => props.session.state.value === 'Trashed')
@@ -293,6 +296,10 @@ defineExpose({
     take()
     document.addEventListener('focusin', take, { once: true })
     setTimeout(() => document.removeEventListener('focusin', take), 250)
+  },
+  /** Focuses a side panel's toggle, for a panel closed from inside itself. */
+  focusPanelToggle(name: DocumentPanel) {
+    headerElement.value?.querySelector<HTMLElement>('[data-panel="' + name + '"]')?.focus()
   },
 })
 </script>

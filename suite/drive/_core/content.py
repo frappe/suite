@@ -202,6 +202,11 @@ class ContentTypeSpec:
     # days.
     remap_media: Callable[[str, dict[str, str]], None] | None = None
 
+    # comments. (node) -> None, after a comment write on the node commits.
+    # Lets the app tell the document's open tabs to read the threads again.
+    # It runs outside the write, so a failure is logged and never undoes it.
+    threads_changed: Callable[[str], None] | None = None
+
 
 REQUIRED_CALLBACKS = ("create_empty", "duplicate", "on_purge")
 OPTIONAL_CALLBACKS = (
@@ -211,6 +216,7 @@ OPTIONAL_CALLBACKS = (
     "restore_version",
     "used_nodes",
     "remap_media",
+    "threads_changed",
 )
 
 

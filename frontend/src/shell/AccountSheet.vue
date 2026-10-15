@@ -67,8 +67,12 @@ function setTheme(value: string | number) {
   if (option) void theme.set(option.value)
 }
 
-function showSettings() {
+function close() {
   emit('update:open', false)
+}
+
+function showSettings() {
+  close()
   openSettings()
 }
 

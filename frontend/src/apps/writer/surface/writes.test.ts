@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { reactive, ref } from 'vue'
 
 import type { SessionState } from '@/apps/drive'
+import { reportSaveError } from '@/apps/writer/composables/saveError'
+import { reportMutationError } from '@/platform/feedback'
 
 import { createWriteGate, type DocumentWrite } from './writes'
+
+vi.mock('@/platform/feedback', () => ({ reportMutationError: vi.fn() }))
 
 function fakeSession(role: number, state: SessionState = 'Active') {
   const session = {
@@ -115,5 +119,50 @@ describe('Writer write gate', () => {
 
     expect(gate.writable.value).toBe(true)
     expect(session.refreshAccess).not.toHaveBeenCalled()
+  })
+
+  it('stops every later write once a save is refused because the document saves as it is edited', async () => {
+    const session = fakeSession(40)
+    const onClose = vi.fn()
+    const gate = createWriteGate(session, onClose)
+    const refusal = Object.assign(new Error('Saves as you edit'), {
+      type: 'LoggedDocumentConflict',
+    })
+    const { document, sent } = fakeDocument(async () => Promise.reject(refusal))
+    const guarded = gate.guard(document, ['saveDoc', 'newVersion'])
+
+    await expect(guarded.saveDoc.run({ data: 'old body' })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    await expect(guarded.newVersion.run({})).rejects.toMatchObject({ name: 'AbortError' })
+
+    expect([gate.refusedForGood.value, sent.length, onClose.mock.calls.length]).toEqual([
+      true,
+      1,
+      0,
+    ])
+  })
+
+  it('reports nothing for the refused save, as the stop strip says why', async () => {
+    const gate = createWriteGate(fakeSession(40), vi.fn())
+    const refusal = Object.assign(new Error('CONFLICT'), { type: 'LoggedDocumentConflict' })
+    const { document } = fakeDocument(async () => Promise.reject(refusal))
+    const guarded = gate.guard(document, ['saveDoc'])
+
+    await guarded.saveDoc.run({ data: 'old body' }).catch(reportSaveError)
+
+    expect(reportMutationError).not.toHaveBeenCalled()
+  })
+
+  it('keeps writing after any other conflict', async () => {
+    const gate = createWriteGate(fakeSession(40), vi.fn())
+    const conflict = Object.assign(new Error('No bytes to version'), { type: 'DriveConflict' })
+    const { document, sent } = fakeDocument(async () => Promise.reject(conflict))
+    const guarded = gate.guard(document, ['saveDoc', 'newVersion'])
+
+    await expect(guarded.newVersion.run({})).rejects.toBe(conflict)
+    await expect(guarded.saveDoc.run({ data: 'body' })).rejects.toBe(conflict)
+
+    expect([gate.refusedForGood.value, sent.length]).toEqual([false, 2])
   })
 })

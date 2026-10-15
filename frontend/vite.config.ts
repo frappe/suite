@@ -94,6 +94,8 @@ const commonSiteConfig = fs.existsSync(commonSiteConfigPath)
   ? JSON.parse(fs.readFileSync(commonSiteConfigPath, 'utf-8'))
   : {}
 const defaultSite = commonSiteConfig.default_site || 'localhost'
+// Ordered, so a product can name the oldest build that may still edit it
+const suiteBuild = String(Date.now())
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -101,6 +103,7 @@ export default defineConfig(({ mode }) => ({
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
     __SITE_NAME__: JSON.stringify(defaultSite),
     __SOCKETIO_PORT__: JSON.stringify(commonSiteConfig.socketio_port || 9000),
+    __SUITE_BUILD__: JSON.stringify(suiteBuild),
   },
   // Served by Frappe at /assets/suite/frontend/ (build output lands in
   // ../suite/public/frontend -> exposed as /assets/suite/frontend).
@@ -130,6 +133,11 @@ export default defineConfig(({ mode }) => ({
     }),
     dropFrappeUICodeLanguagesEsbuildPlugin(),
     vue(),
+    {
+      name: 'suite-build-stamp',
+      transformIndexHtml: (html) =>
+        html.replace('</head>', `<meta name="suite-build" content="${suiteBuild}">\n</head>`),
+    },
     emitSlidesServiceWorker(),
     // Bundles mail's Firebase Cloud Messaging service worker (src/apps/mail/sw.ts)
     // into sw.js at the build root -> served at /assets/suite/frontend/sw.js, which
@@ -236,6 +244,10 @@ export default defineConfig(({ mode }) => ({
       '@tiptap/pm/state',
       '@tiptap/pm/tables',
       '@tiptap/pm/view',
+      // Linked to packages/collab-prosemirror. The optimized collaboration
+      // extensions bundle their own copy otherwise, and a sync-plugin key
+      // from one copy reads no state from the other, so no caret is sent.
+      '@tiptap/y-tiptap',
       // The same for CodeMirror, which frappe-ui's code editor imports. Vite
       // never discovers a dep from an importer inside node_modules, so without
       // this list `@codemirror/language` and `@lezer/highlight` load raw for

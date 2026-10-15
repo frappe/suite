@@ -2152,6 +2152,7 @@ export type NodeThreadCreateInput = {
   anchor: string
   text: string
   author_name?: string
+  client_id?: string
   node: string
 }
 
@@ -2186,6 +2187,62 @@ const operationNodeThreadCreate: MutationRef<
   entity: null,
   errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveForbidden', 'DriveConflict'],
   loadValidators: async () => (await import('./validators')).operationNodeThreadCreate,
+}
+
+export type NodeThreadsReanchorOutputCommentShape = {
+  name: string
+  thread: string
+  node: string
+  content: string
+  author: string
+  author_name: string | null
+  person?: NodeThreadsReanchorOutputPerson
+  mentions: Array<string>
+  creation: string | null
+  modified: string | null
+}
+
+export type NodeThreadsReanchorOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
+export type NodeThreadsReanchorOutputThreadShape = {
+  name: string
+  node: string
+  anchor: string
+  resolved: boolean
+  resolved_by: string | null
+  resolved_at: string | null
+  creation: string | null
+  comments: Array<NodeThreadsReanchorOutputCommentShape>
+}
+
+export type NodeThreadsReanchorInput = { anchors: { [key: string]: string }; node: string }
+
+export type NodeThreadsReanchorOutput = { threads: Array<NodeThreadsReanchorOutputThreadShape> }
+
+export type NodeThreadsReanchorError =
+  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveForbidden' | 'DriveConflict'
+
+const operationNodeThreadsReanchor: MutationRef<
+  NodeThreadsReanchorInput,
+  NodeThreadsReanchorOutput,
+  NodeThreadsReanchorError
+> = {
+  id: 'node_threads_reanchor',
+  owner: 'drive',
+  kind: 'mutation',
+  publicName: 'threads.reanchor',
+  method: 'PATCH',
+  path: 'nodes/{node}/threads',
+  prefix: '/api/suite/drive/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveForbidden', 'DriveConflict'],
+  loadValidators: async () => (await import('./validators')).operationNodeThreadsReanchor,
 }
 
 export type ThreadPatchOutputCommentShape = {
@@ -2239,7 +2296,12 @@ export type ThreadCommentCreateOutputPerson = {
   user_image: string | null
 }
 
-export type ThreadCommentCreateInput = { text: string; author_name?: string; thread: string }
+export type ThreadCommentCreateInput = {
+  text: string
+  author_name?: string
+  client_id?: string
+  thread: string
+}
 
 export type ThreadCommentCreateOutput = {
   name: string
@@ -2862,6 +2924,7 @@ export const api = {
   threads: {
     list: operationNodeThreads,
     create: operationNodeThreadCreate,
+    reanchor: operationNodeThreadsReanchor,
     resolve: operationThreadPatch,
   },
   comments: {

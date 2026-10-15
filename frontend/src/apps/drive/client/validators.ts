@@ -75,6 +75,8 @@ import type {
   NodeThreadCreateOutput,
   NodeThreadsInput,
   NodeThreadsOutput,
+  NodeThreadsReanchorInput,
+  NodeThreadsReanchorOutput,
   NodeVersionContentInput,
   NodeVersionContentOutput,
   NodeVersionCreateInput,
@@ -3521,6 +3523,7 @@ export const operationNodeThreadCreate: Validators<NodeThreadCreateInput, NodeTh
             anchor: { title: 'Anchor', type: 'string' },
             text: { title: 'Text', type: 'string' },
             author_name: { title: 'Author Name', type: 'string' },
+            client_id: { title: 'Client Id', type: 'string' },
             node: { type: 'string' },
           },
           required: ['anchor', 'text', 'node'],
@@ -3603,6 +3606,109 @@ export const operationNodeThreadCreate: Validators<NodeThreadCreateInput, NodeTh
       )
     },
   }
+
+export const operationNodeThreadsReanchor: Validators<
+  NodeThreadsReanchorInput,
+  NodeThreadsReanchorOutput
+> = {
+  validateInput(value: unknown): asserts value is NodeThreadsReanchorInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          anchors: { additionalProperties: { type: 'string' }, title: 'Anchors', type: 'object' },
+          node: { type: 'string' },
+        },
+        required: ['anchors', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'node_threads_reanchor input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is NodeThreadsReanchorOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          CommentShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              thread: { title: 'Thread', type: 'string' },
+              node: { title: 'Node', type: 'string' },
+              content: { title: 'Content', type: 'string' },
+              author: { title: 'Author', type: 'string' },
+              author_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Author Name' },
+              person: { $ref: '#/$defs/Person' },
+              mentions: { items: { type: 'string' }, title: 'Mentions', type: 'array' },
+              creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+              modified: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Modified' },
+            },
+            required: [
+              'name',
+              'thread',
+              'node',
+              'content',
+              'author',
+              'author_name',
+              'mentions',
+              'creation',
+              'modified',
+            ],
+            title: 'CommentShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+          ThreadShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              node: { title: 'Node', type: 'string' },
+              anchor: { title: 'Anchor', type: 'string' },
+              resolved: { title: 'Resolved', type: 'boolean' },
+              resolved_by: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Resolved By' },
+              resolved_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Resolved At' },
+              creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+              comments: {
+                items: { $ref: '#/$defs/CommentShape' },
+                title: 'Comments',
+                type: 'array',
+              },
+            },
+            required: [
+              'name',
+              'node',
+              'anchor',
+              'resolved',
+              'resolved_by',
+              'resolved_at',
+              'creation',
+              'comments',
+            ],
+            title: 'ThreadShape',
+            type: 'object',
+          },
+        },
+        properties: {
+          threads: { items: { $ref: '#/$defs/ThreadShape' }, title: 'Threads', type: 'array' },
+        },
+        required: ['threads'],
+        title: 'ThreadList',
+        type: 'object',
+      },
+      'node_threads_reanchor output',
+    )
+  },
+}
 
 export const operationThreadPatch: Validators<ThreadPatchInput, ThreadPatchOutput> = {
   validateInput(value: unknown): asserts value is ThreadPatchInput {
@@ -3704,6 +3810,7 @@ export const operationThreadCommentCreate: Validators<
         properties: {
           text: { title: 'Text', type: 'string' },
           author_name: { title: 'Author Name', type: 'string' },
+          client_id: { title: 'Client Id', type: 'string' },
           thread: { type: 'string' },
         },
         required: ['text', 'thread'],

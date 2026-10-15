@@ -22,6 +22,7 @@ HTTP_OWNERS = {
     "drive": "suite.drive.framework.HTTP",
     "mail": "suite.mail.http.framework.HTTP",
     "calendar": "suite.calendar.http.framework.HTTP",
+    "content": "suite.composition.content.HTTP",
     "writer": "suite.writer.http.framework.HTTP",
     "sheets": "suite.sheets.http.framework.HTTP",
     "slides": "suite.slides.http.framework.HTTP",

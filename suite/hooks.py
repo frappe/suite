@@ -145,6 +145,12 @@ drive_content_types = [
     "suite.sheets.drive.SPEC",
 ]
 
+# Dotted paths to `suite.suite_core.content.adapters.ContentAdapterSpec` objects,
+# one per app whose documents the content layer keeps.
+suite_content_adapters = ["suite.writer.content.SPEC"]
+# The one `suite.suite_core.content.adapters.NodeHooks`: what the layer asks Drive about a node.
+suite_content_nodes = ["suite.composition.content.NODES"]
+
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
@@ -300,12 +306,17 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
     "hourly": [
+        # content
+        "suite.suite_core.content.documents.trim_logs",
         # drive
         "suite.drive.webdav.locks.purge_expired_locks",
         # mail
         "suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
+    ],
+    "all": [
+        "suite.suite_core.content.documents.sweep",
     ],
     "cron": {
         "* * * * *": [
@@ -333,6 +344,7 @@ extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 after_request = [
     "suite.mail.framework.close_mail_clients",
     "suite.drive.framework.allow_embedding",
+    "suite.suite_core.build.after_request",
 ]
 after_job = "suite.mail.framework.close_mail_clients"
 

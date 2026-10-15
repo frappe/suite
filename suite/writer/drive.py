@@ -39,7 +39,8 @@ cleanly and panics on the first child read.
 ## Versions
 
 `version_bytes` writes one `writer-document/1` JSON envelope carrying the Yjs
-body, its HTML mirror, and the collaboration mode. `restore_version` also
+body, its HTML mirror, and the collaboration mode. A collab document's version
+is `writer-document/2`, built from its log by `suite.writer.content`. `restore_version` also
 accepts the exact UTF-8 HTML bytes §14.6 copies from a legacy `Writer Version`.
 That legacy form becomes a non-collaborative body: Writer cannot reconstruct a
 historical Yjs document from HTML, and leaving the current Yjs state behind
@@ -67,7 +68,6 @@ import base64
 import binascii
 import io
 import json
-import re
 from contextlib import contextmanager
 
 import frappe
@@ -75,13 +75,15 @@ import pycrdt
 from frappe import _
 
 from suite import drive
+from suite.suite_core import content
+from suite.suite_core.content import compaction, documents, live
+from suite.writer import content as writer_content
+from suite.writer.content import ADAPTER, version_payload
+from suite.writer.content.files import BODY_FRAGMENT, elements, ids_in, load, remap_text, remapped_attribute
 
 DOCTYPE = "Writer Document"
 MIME = "frappe/writer"
 NODE_FIELD = "node"
-
-# The Yjs root fragment the editor binds to.
-BODY_FRAGMENT = "default"
 
 # `Writer Document.content`'s own default: one empty Yjs update, base64.
 EMPTY_BODY = "AAA="
@@ -99,26 +101,6 @@ VERSION_MIME = "application/json"
 # own. `Writer Document.content` and `.html` are both LONGTEXT.
 MAX_VERSION_BYTES = 64 * 1024 * 1024
 
-# A media reference inside a body is a node id carried in an attribute. Three
-# spellings are read: the embed URL Writer writes, the old Drive embed URL
-# (`embed_name=`, relative or absolute), both with and without the `suite.`
-# prefix the standalone apps used, and the plain node attribute the Drive
-# media route uses.
-#
-# The URLs and the plain attribute are not symmetrical. In `html` an attribute
-# is text, so every pattern reads it. In the Yjs body an attribute is a name and a value
-# held apart, and the plain spelling puts the bare id in the value with
-# `data-node` nowhere in it, so the pattern alone would never see it. That is
-# what `_attribute_ids` and `_remapped_attribute` are for.
-NODE_ATTRIBUTE = "data-node"
-MEDIA_ID = r"[A-Za-z0-9_-]{1,140}"
-MEDIA_PATTERNS = (
-    re.compile(rf"(?:suite\.)?writer\.api\.embed\.get\?id=({MEDIA_ID})"),
-    re.compile(rf"(?:suite\.)?drive\.api\.embed\.get_file_content\?[^\"'<>\s]*?\bembed_name=({MEDIA_ID})"),
-    re.compile(rf'{NODE_ATTRIBUTE}="({MEDIA_ID})"'),
-)
-BARE_MEDIA_ID = re.compile(MEDIA_ID)
-
 DEFAULT_SETTINGS = '{"collab": true}'
 
 
@@ -135,6 +117,7 @@ def create_empty(node: str) -> str:
     document.settings = DEFAULT_SETTINGS
     document.collab = 1
     document.insert(ignore_permissions=True)
+    documents.start_log(ADAPTER, node)
     return document.name
 
 
@@ -142,10 +125,11 @@ def duplicate(source_docname: str, node: str) -> str:
     """Copy one Writer body under a new node, for copy and new-from-template.
 
     The body, its HTML mirror, and the editor settings are carried. The
-    comment blob is not: §8.9 gives a copy no history and no comments.
+    comment blob is not: §8.9 gives a copy no history and no comments. A collab
+    document's log is copied as its state now, under a new lineage.
     """
     source = frappe.db.get_value(
-        DOCTYPE, source_docname, ("content", "html", "settings", "collab"), as_dict=True
+        DOCTYPE, source_docname, ("node", "content", "html", "settings", "collab"), as_dict=True
     )
     if not source:
         frappe.throw(_("The Writer document to copy was not found"), frappe.DoesNotExistError)
@@ -156,24 +140,59 @@ def duplicate(source_docname: str, node: str) -> str:
     document.settings = source.settings or DEFAULT_SETTINGS
     document.collab = source.collab
     document.insert(ignore_permissions=True)
+    try:
+        documents.copy_log(ADAPTER, source.node, node)
+    except (content.ChainBroken, compaction.CompactionFailed) as unready:
+        raise drive.DriveConflict(_("This document cannot be copied right now")) from unready
     return document.name
 
 
 def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
-    """Stream one document as HTML. `default_export` is None, so DAV never asks."""
+    """Stream one document as HTML, which Drive's Download asks for by default.
+
+    A collab document is exported from its checked readable copy, and only while
+    that copy covers the head; otherwise the person opens it to render a new one.
+    """
     if format != HTML_FORMAT:
         frappe.throw(_("Writer exports {0} only").format(HTML_FORMAT), frappe.ValidationError)
-    html = frappe.db.get_value(DOCTYPE, docname, "html")
-    if html is None and not frappe.db.exists(DOCTYPE, docname):
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "html"), as_dict=True)
+    if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
-    return io.BytesIO((html or "").encode("utf-8")), HTML_MIME
+
+    html = row.html or ""
+    doc = content.find(ADAPTER, row.node)
+    if doc:
+        html = content.readable_copy(ADAPTER, doc.id)
+        if html is None:
+            raise drive.DriveConflict(_("Open the document to refresh its export"))
+
+    html_bytes = html.encode("utf-8")
+    return io.BytesIO(html_bytes), HTML_MIME
 
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
-    """Return the bytes Drive stores as one immutable version."""
-    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html", "collab"), as_dict=True)
+    """Return the bytes Drive stores as one immutable version.
+
+    A collab document's version is its log's state, with the pictures it shows.
+    """
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html", "collab"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
+
+    try:
+        live_checkpoint = documents.live_checkpoint(ADAPTER, row.node)
+    except (content.ChainBroken, compaction.CompactionFailed) as unready:
+        raise drive.DriveConflict(
+            _("Version history is not available for this document right now")
+        ) from unready
+    if live_checkpoint is not None:
+        snapshot, state = live_checkpoint
+        payload = version_payload(snapshot, state)
+        with _readable_body():
+            payload["media"] = sorted(writer_content.SPEC.file_values(state))
+        payload_bytes = json.dumps(payload).encode("utf-8")
+        return io.BytesIO(payload_bytes), VERSION_MIME
+
     payload = {
         "schema": VERSION_SCHEMA,
         "content": row.content or EMPTY_BODY,
@@ -189,7 +208,12 @@ def restore_version(docname: str, stream) -> None:
     Drive has already taken a version of the current state, so this is not
     destructive. Native envelopes restore every body field. Exact legacy HTML
     bytes restore as a non-collaborative document with an empty Yjs body.
+    A collab document's body is its log, so it is restored in the editor instead.
     """
+    node = frappe.db.get_value(DOCTYPE, docname, "node")
+    if content.find(ADAPTER, node):
+        raise drive.DriveConflict(_("Open the document to restore this version"))
+
     payload = _version_payload(_read_bounded(stream))
     frappe.db.set_value(
         DOCTYPE,
@@ -213,8 +237,12 @@ def on_purge(docname: str) -> None:
     the whole row as JSON in `Deleted Document`
     (`frappe/model/delete_doc.py:add_to_deleted_document`), so the body, its
     HTML, and the comment blob would all outlive the §8.8 purge that was meant
-    to remove them.
+    to remove them. A collab log is marked purged first, before the row, in the order a
+    compaction locks them, and deleted by a job.
     """
+    node = frappe.db.get_value(DOCTYPE, docname, "node")
+    if node:
+        documents.purge_log(ADAPTER, node)
     frappe.delete_doc(
         DOCTYPE,
         docname,
@@ -226,25 +254,50 @@ def on_purge(docname: str) -> None:
 
 
 def used_nodes(docname: str) -> set[str]:
-    """Answer the media node ids this body still names (§10.6)."""
-    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html"), as_dict=True)
+    """Answer the media node ids this body still names (§10.6).
+
+    A collab document's body lives in its log, so its live state is read instead of the
+    row's. A log that cannot be read raises, and Drive's sweep skips the document.
+    """
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         return set()
-    return _ids_in(row.html or "") | _body_ids(row.content)
+
+    html_ids = ids_in(row.html or "")
+    with _readable_body():
+        state = documents.live_state(ADAPTER, row.node)
+        if state is None:
+            return html_ids | _body_ids(row.content)
+
+        return html_ids | writer_content.SPEC.file_values(state.get_update())
 
 
 def remap_media(docname: str, mapping: dict[str, str]) -> None:
     """Repoint this body at the media nodes Drive copied for it (§8.9)."""
     if not mapping:
         return
-    row = frappe.db.get_value(DOCTYPE, docname, ("content", "html"), as_dict=True)
+    row = frappe.db.get_value(DOCTYPE, docname, ("node", "content", "html"), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
-    values = {"html": _remap_text(row.html or "", mapping)}
-    body = _remap_body(row.content, mapping)
+
+    log_row = content.find(ADAPTER, row.node)
+    values = {"html": remap_text(row.html or "", mapping)}
+    body = None if log_row else _remap_body(row.content, mapping)
     if body is not None:
         values["content"] = body
     frappe.db.set_value(DOCTYPE, docname, values, update_modified=False)
+    if log_row:
+        try:
+            documents.remap_log(ADAPTER, row.node, writer_content.SPEC.rewrite_files(mapping))
+        except (ValueError, compaction.CompactionFailed) as refused:
+            raise drive.DriveConflict(_("The copy's pictures could not be moved to it")) from refused
+
+
+def threads_changed(node: str) -> None:
+    """Tell the document's open tabs to read its comment threads again."""
+    log_row = content.find(ADAPTER, node)
+    if log_row:
+        live.publish_control(ADAPTER, log_row.id, log_row.lineage, kind="threads")
 
 
 SPEC = drive.ContentTypeSpec(
@@ -252,9 +305,8 @@ SPEC = drive.ContentTypeSpec(
     mime=MIME,
     node_field=NODE_FIELD,
     listing_type="document",
-    # §10.7, accepted 2026-09-05: Writer stays hidden over WebDAV, and the
-    # explicit HTML export stays available through the content API's format.
-    default_export=None,
+    # Drive's Download sends no format; WebDAV hides documents by their node kind
+    default_export=HTML_FORMAT,
     export_formats=(HTML_FORMAT,),
     create_empty=create_empty,
     duplicate=duplicate,
@@ -266,6 +318,7 @@ SPEC = drive.ContentTypeSpec(
     satellites=(),
     used_nodes=used_nodes,
     remap_media=remap_media,
+    threads_changed=threads_changed,
 )
 
 
@@ -310,6 +363,10 @@ def _version_payload(raw: bytes) -> dict:
     # restore its own source text as HTML.
     if not isinstance(payload, dict):
         return {"content": EMPTY_BODY, "html": text, "collab": 0}
+
+    if payload.get("schema") == "writer-document/2":
+        raise drive.DriveConflict(_("This version can be restored only while collaboration is on"))
+
     if payload.get("schema") != VERSION_SCHEMA:
         frappe.throw(
             _("This Writer version declares an unknown schema"),
@@ -329,68 +386,19 @@ def _version_payload(raw: bytes) -> dict:
     return {"content": content, "html": html, "collab": int(collab)}
 
 
-def _ids_in(text: str) -> set[str]:
-    return {match.group(1) for pattern in MEDIA_PATTERNS for match in pattern.finditer(text)}
-
-
-def _attribute_ids(key: str, value: str) -> set[str]:
-    """Answer the media node ids one live element attribute names.
-
-    `data-node` holds the bare id, with the attribute name held apart from it,
-    so the text patterns never see it inside a Yjs body. Reading the name is
-    what makes the two spellings symmetrical between `html` and `content`.
-    """
-    if key == NODE_ATTRIBUTE and BARE_MEDIA_ID.fullmatch(value):
-        return {value}
-    return _ids_in(value)
-
-
-def _remapped_attribute(key: str, value: str, mapping: dict[str, str]) -> str:
-    """Rewrite one live element attribute, in whichever spelling it uses."""
-    if key == NODE_ATTRIBUTE:
-        return mapping.get(value, value)
-    return _remap_text(value, mapping)
-
-
-def _remap_text(text: str, mapping: dict[str, str]) -> str:
-    def swap(match: re.Match) -> str:
-        found = match.group(1)
-        replacement = mapping.get(found)
-        if replacement is None:
-            return match.group(0)
-        start, end = match.span(1)
-        start -= match.start()
-        end -= match.start()
-        return match.group(0)[:start] + replacement + match.group(0)[end:]
-
-    for pattern in MEDIA_PATTERNS:
-        text = pattern.sub(swap, text)
-    return text
-
-
 def _body_ids(content: str | None) -> set[str]:
     """Read the live attributes of one Yjs body, never its tombstones."""
     try:
         raw = _decoded_body(content)
         if raw is None:
             return set()
-        _, fragment = _loaded_body(raw)
         with _readable_body():
-            found = _fragment_ids(fragment)
+            found = writer_content.SPEC.file_values(raw)
     except UnreadableBody:
         # An unreadable body must never cost somebody a picture, so fall back
         # to a raw scan. It over-reports, which only keeps media alive.
         frappe.log_error("Writer: could not read a document body for the media sweep", frappe.get_traceback())
-        return _ids_in(_raw_text(content))
-    return found
-
-
-def _fragment_ids(fragment) -> set[str]:
-    found: set[str] = set()
-    for element in _elements(fragment):
-        for key, value in dict(element.attributes).items():
-            if isinstance(value, str):
-                found |= _attribute_ids(key, value)
+        return ids_in(_raw_text(content))
     return found
 
 
@@ -412,11 +420,11 @@ def _remap_body(content: str | None, mapping: dict[str, str]) -> str | None:
     with _readable_body():
         changed = False
         with document.transaction():
-            for element in _elements(fragment):
+            for element in elements(fragment):
                 for key, value in dict(element.attributes).items():
                     if not isinstance(value, str):
                         continue
-                    rewritten = _remapped_attribute(key, value, mapping)
+                    rewritten = remapped_attribute(key, value, mapping)
                     if rewritten != value:
                         element.attributes[key] = rewritten
                         changed = True
@@ -463,10 +471,11 @@ def _readable_body():
     alone it passes straight through every `except Exception` between here and
     the request, including the rollback that closes Drive's copy savepoint.
 
-    `apply_update` is not the only call that panics. A body whose root
-    fragment was written as a `Text` or an `Array` applies cleanly and panics
-    on the first child read instead, so the traversal and the rewrite are
-    guarded too. Every pycrdt call this module makes runs inside this block.
+    `apply_update` is not the only call that can panic, so the traversal and
+    the rewrite are guarded too. Every pycrdt call this module makes runs
+    inside this block. A body whose root fragment was written as a `Text` or
+    an `Array` applies cleanly and reads as a fragment with no children; it is
+    refused here rather than read as empty.
     """
     try:
         yield
@@ -477,18 +486,5 @@ def _readable_body():
 
 
 def _loaded_body(raw: bytes):
-    document = pycrdt.Doc()
-    fragment = pycrdt.XmlFragment()
-    document[BODY_FRAGMENT] = fragment
     with _readable_body():
-        document.apply_update(raw)
-    return document, fragment
-
-
-def _elements(fragment):
-    stack = list(fragment.children)
-    while stack:
-        node = stack.pop()
-        if isinstance(node, pycrdt.XmlElement):
-            yield node
-            stack.extend(node.children)
+        return load(raw)

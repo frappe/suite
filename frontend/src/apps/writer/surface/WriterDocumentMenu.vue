@@ -4,7 +4,7 @@ import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
-import { orderedTabs } from '@/apps/writer/extensions/tabs'
+import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
@@ -30,7 +30,9 @@ const DOCX_TYPES = '.docx,application/vnd.openxmlformats-officedocument.wordproc
 const hasTabs = ref(false)
 
 function noteTabs(open: boolean) {
-  if (open && props.editor) hasTabs.value = orderedTabs(props.editor.state.doc).length > 1
+  if (open && props.editor) {
+    hasTabs.value = listTabs(props.editor).length > 1
+  }
 }
 
 type Download = (html: string) => Promise<void>

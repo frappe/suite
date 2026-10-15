@@ -1,6 +1,8 @@
 import inspect
 import json
 import pathlib
+from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -14,15 +16,17 @@ from suite.drive._core.comments import (
     create_thread,
     delete_comment,
     edit_comment,
+    reanchor_threads,
     reply,
     resolve,
     threads,
 )
-from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, READ
 from suite.drive._core.roots import create_root
+from suite.drive.http import routes
 from suite.drive.patches.build import comments as build_comments
 from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.tests.utils import ensure_user, stub_db
@@ -102,6 +106,166 @@ class TestCommentWorkflows(IntegrationTestCase):
             frappe.db.count("Drive Activity", {"node": self.document.name, "action": "comment"}),
             3,
         )
+
+    def test_a_resent_thread_or_reply_answers_the_first_and_writes_nothing(self):
+        first = create_thread(self.commenter, self.document.name, "anchor", "Hello", client_id="t-1")
+        again = create_thread(self.commenter, self.document.name, "anchor", "Hello", client_id="t-1")
+        replied = reply(self.owner, first.name, "Hi", client_id="r-1")
+        replied_again = reply(self.owner, first.name, "Hi", client_id="r-1")
+
+        self.assertEqual((again.name, replied_again.name), (first.name, replied.name))
+        listed = threads(self.owner, self.document.name)
+        self.assertEqual([row.content for row in listed[0].comments], ["Hello", "Hi"])
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(
+            frappe.db.count("Drive Activity", {"node": self.document.name, "action": "comment"}),
+            2,
+        )
+
+    def test_a_reply_id_used_in_another_thread_is_refused(self):
+        one = create_thread(self.commenter, self.document.name, "one", "First").name
+        two = create_thread(self.commenter, self.document.name, "two", "Second").name
+        reply(self.commenter, one, "Answer", client_id="r-1")
+
+        with self.assertRaises(DriveConflict):
+            reply(self.commenter, two, "Answer", client_id="r-1")
+
+        _first, second = threads(self.owner, self.document.name)
+        self.assertEqual(len(second.comments), 1)
+
+    def test_writes_without_a_client_id_never_collide(self):
+        create_thread(self.commenter, self.document.name, "anchor", "Same")
+        create_thread(self.commenter, self.document.name, "anchor", "Same")
+
+        self.assertEqual(len(threads(self.owner, self.document.name)), 2)
+
+    def test_a_malformed_client_id_is_refused(self):
+        for client_id in ("", "has space", "x" * 65, 7):
+            with self.subTest(client_id=client_id), self.assertRaises(frappe.ValidationError):
+                create_thread(self.commenter, self.document.name, "anchor", "Text", client_id=client_id)
+
+    def test_the_database_keeps_a_client_id_unique_per_node(self):
+        create_thread(self.commenter, self.document.name, "anchor", "Text", client_id="t-1")
+
+        with self.assertRaises(frappe.UniqueValidationError):
+            frappe.get_doc(
+                {
+                    "doctype": "Drive Comment Thread",
+                    "node": self.document.name,
+                    "anchor": "other",
+                    "client_id": "t-1",
+                }
+            ).insert(ignore_permissions=True)
+
+    def test_each_comment_write_tells_the_content_app_after_it_commits(self):
+        heard: list[str] = []
+        with self.content_app(heard.append):
+            thread = create_thread(self.commenter, self.document.name, "anchor", "First", client_id="t-1")
+            create_thread(self.commenter, self.document.name, "anchor", "First", client_id="t-1")
+            answer = reply(self.owner, thread.name, "Second")
+            resolve(self.owner, thread.name)
+            resolve(self.owner, thread.name)
+            edit_comment(self.owner, answer.name, "Edited")
+            delete_comment(self.owner, answer.name)
+            self.assertEqual(heard, [])
+            frappe.db.commit()
+
+        self.assertEqual(heard, [self.document.name] * 5)
+
+    def test_a_refused_comment_write_tells_nothing(self):
+        heard: list[str] = []
+        with self.content_app(heard.append):
+            with self.assertRaises(DriveNotFound):
+                create_thread(self.outsider, self.document.name, "anchor", "No")
+
+            frappe.db.commit()
+
+        self.assertEqual(heard, [])
+
+    def test_a_failing_content_app_leaves_the_comment_written(self):
+        def fail(node):
+            raise RuntimeError("down")
+
+        with self.content_app(fail):
+            thread = create_thread(self.commenter, self.document.name, "anchor", "Kept")
+            frappe.db.commit()
+
+        self.assertTrue(frappe.db.exists("Drive Comment Thread", thread.name))
+
+    def test_reanchoring_moves_only_the_anchor(self):
+        thread = create_thread(self.commenter, self.document.name, "old", "First").name
+        reply(self.owner, thread, "Second")
+        resolve(self.commenter, thread)
+        fields = ["resolved", "resolved_by", "resolved_at", "creation", "modified", "modified_by"]
+        before = frappe.db.get_value("Drive Comment Thread", thread, fields, as_dict=True)
+        [listed_before] = threads(self.owner, self.document.name)
+        activity = frappe.db.count("Drive Activity", {"node": self.document.name})
+
+        moved = reanchor_threads(self.owner, self.document.name, {thread: "new"})
+
+        after = frappe.db.get_value("Drive Comment Thread", thread, fields, as_dict=True)
+        [listed] = threads(self.owner, self.document.name)
+        self.assertEqual([(row.name, row.anchor) for row in moved], [(thread, "new")])
+        self.assertEqual((after, listed.anchor, listed.comments), (before, "new", listed_before.comments))
+        self.assertEqual(frappe.db.count("Drive Activity", {"node": self.document.name}), activity)
+
+    def test_reanchoring_tells_the_content_app_once_and_an_empty_move_nothing(self):
+        thread = create_thread(self.commenter, self.document.name, "old", "First").name
+        heard: list[str] = []
+        with self.content_app(heard.append):
+            reanchor_threads(self.owner, self.document.name, {})
+            frappe.db.commit()
+            self.assertEqual(heard, [])
+            reanchor_threads(self.owner, self.document.name, {thread: "new"})
+            self.assertEqual(heard, [])
+            frappe.db.commit()
+
+        self.assertEqual(heard, [self.document.name])
+
+    def test_reanchoring_needs_edit_access(self):
+        thread = create_thread(self.commenter, self.document.name, "old", "First").name
+
+        with self.assertRaises(DriveForbidden):
+            reanchor_threads(self.commenter, self.document.name, {thread: "new"})
+
+        self.assertEqual(frappe.db.get_value("Drive Comment Thread", thread, "anchor"), "old")
+
+    def test_a_thread_of_another_node_refuses_the_whole_move(self):
+        other = frappe.copy_doc(self.document).insert(ignore_permissions=True)
+        self.addCleanup(frappe.db.delete, "Drive Node", {"name": other.name})
+        self.addCleanup(frappe.db.delete, "Drive Comment Thread", {"node": other.name})
+        self.addCleanup(frappe.db.delete, "Drive Comment", {"node": other.name})
+        mine = create_thread(self.owner, self.document.name, "mine", "First").name
+        theirs = create_thread(self.owner, other.name, "theirs", "First").name
+
+        with self.assertRaises(DriveNotFound):
+            reanchor_threads(self.owner, self.document.name, {mine: "new", theirs: "new"})
+
+        anchors = [frappe.db.get_value("Drive Comment Thread", name, "anchor") for name in (mine, theirs)]
+        self.assertEqual(anchors, ["mine", "theirs"])
+
+    def test_reanchoring_takes_at_most_one_batch_of_threads(self):
+        anchors = {f"thread-{index}": "anchor" for index in range(201)}
+
+        with self.assertRaisesRegex(frappe.ValidationError, "at most 200"):
+            reanchor_threads(self.owner, self.document.name, anchors)
+
+    def test_the_reanchor_route_refuses_anchors_that_are_not_text(self):
+        thread = create_thread(self.owner, self.document.name, "old", "First").name
+        frappe.set_user(OWNER)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        with self.assertRaisesRegex(frappe.ValidationError, "anchors"):
+            routes.node_threads_reanchor(node=self.document.name, anchors={thread: 7})
+
+        self.assertEqual(frappe.db.get_value("Drive Comment Thread", thread, "anchor"), "old")
+
+    @contextmanager
+    def content_app(self, threads_changed):
+        frappe.db.set_value("Drive Node", self.document.name, "content_doctype", "Comment Test Doc")
+        app = SimpleNamespace(threads_changed=threads_changed)
+        with patch.object(comments.content, "registry", return_value={"Comment Test Doc": app}):
+            yield
 
     def test_author_can_edit_at_read_but_non_author_cannot(self):
         thread = create_thread(self.commenter, self.document.name, "anchor", "Original").name

@@ -13,7 +13,7 @@
         if (db)
           db.transaction(['content'], 'readwrite')
             .objectStore('content')
-            .put({ val, saved: new Date() }, props.file.name)
+            .put({ val, saved: new Date() }, props.file.doc.name)
         if (!editable) return
         edited = true
         autosave()
@@ -21,41 +21,55 @@
     "
     @save="(manual, html, onSuccess) => save(manual, html, onSuccess).catch(reportSaveError)"
     @cleanup="commentsDetail.cleanup"
-  />
+  >
+    <template v-for="(_, name) in $slots" #[name]>
+      <slot :name="name" />
+    </template>
+  </CoreEditor>
 </template>
 
 <script setup>
 import { debounce } from 'frappe-ui'
-import { computed, provide, ref } from 'vue'
+import { computed, onBeforeUnmount, provide, ref } from 'vue'
 
+import { useAutoversion } from '@/apps/writer/composables/autoversion'
 import { reportSaveError } from '@/apps/writer/composables/saveError'
 import { useComments } from '@/apps/writer/composables/useYjs'
 
 import CoreEditor from './CoreEditor.vue'
 
 const showSettings = defineModel('showSettings')
+
 const edited = defineModel('dirty', {
   default: false,
 })
+
 const props = defineProps({
   file: Object,
   document: Object,
   settings: Object,
   editable: Boolean,
 })
+
 const rawContent = ref(props.document.doc.html)
-const contentReady = ref(!props.file.write)
+const contentReady = ref(!props.file.doc.write)
 defineEmits(['saveComment', 'saveDocument'])
 const textEditor = ref('textEditor')
+
 const editor = computed(() => {
   const editor = textEditor.value?.editor
   return editor
 })
+
 provide('editor', editor)
+
 defineExpose({
   editor,
 })
+
 const commentsDetail = useComments(props.document, editor)
+useAutoversion(editor, edited, props.document)
+
 const save = async (manual, html, onSuccess) => {
   const content = rawContent.value
   await props.document.saveHtml.run({
@@ -64,13 +78,18 @@ const save = async (manual, html, onSuccess) => {
   if (rawContent.value === content) edited.value = false
   onSuccess?.()
 }
+
 const autosave = debounce(() => {
   void save().catch(reportSaveError)
 }, 5000)
 
+// A late save from an editor a restore replaced would write the old text back
+onBeforeUnmount(() => autosave.cancel())
+
 // Local saving with IndexedDB
 const db = ref(null)
-if (props.file.write) {
+
+if (props.file.doc.write) {
   const request = window.indexedDB.open('Writer', 1)
   request.onupgradeneeded = () => {
     if (!request.result.objectStoreNames.contains('content'))
@@ -79,12 +98,12 @@ if (props.file.write) {
   request.onsuccess = (event) => {
     const database = event.target.result
     db.value = database
-    database.transaction(['content']).objectStore('content').get(props.file.name).onsuccess = (
+    database.transaction(['content']).objectStore('content').get(props.file.doc.name).onsuccess = (
       val,
     ) => {
       if (
         val.target.result?.val?.length > 20 &&
-        val.target.result.saved > new Date(props.file.modified)
+        val.target.result.saved > new Date(props.file.doc.modified)
       )
         rawContent.value = val.target.result.val
       contentReady.value = true

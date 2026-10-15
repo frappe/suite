@@ -32,6 +32,7 @@ def save_comments(doc: str, data: str):
     """
     document = frappe.get_doc(DOCTYPE, doc)
     document.drive_check(drive.COMMENT)
+    document.refuse_if_logged()
     for mentioned in comments.new_mentions(document.ycomments, data):
         drive.record_comment(
             document.node,

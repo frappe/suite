@@ -28,6 +28,7 @@ from suite.drive._core.access import grant
 from suite.drive._core.nodes import purge, update
 from suite.drive._core.roots import provision_personal_root
 from suite.drive.framework import principals_for
+from suite.suite_core import content as collab
 from suite.tests.utils import ensure_user
 
 OWNER = "framework-link-owner@example.com"
@@ -76,6 +77,11 @@ class TestShareLinkOpensContentDocuments(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        # A Writer document with a log refuses save_html, so these start without one
+        saved_mode = collab.mode("writer")
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(collab.set_mode, "writer", saved_mode)
+        collab.set_mode("writer", "off")
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
         root = provision_personal_root(OWNER)
