@@ -1624,10 +1624,12 @@ const syncFlagged = (ids: string[], flagged: boolean) =>
   })
 // Filing the thread in a folder or taking it out, from the toolbar's Folders menu: the thread's
 // mail shows it at once, so the menu's tick follows the click rather than the list's next refresh,
-// and the request goes up behind it. A refused one is corrected by that refresh.
+// and the request goes up behind it. A refused one is corrected by that refresh. The list is told
+// first: it notes the folders as they were, for Undo, and the pane shares those folders with it —
+// changed first, the note already held the new one, and Undo left the thread in it.
 const fileThread = (mailboxId: string, add: boolean) => {
-  syncMailboxMembership(mailboxId, add)
   emit(add ? 'addThreadToMailbox' : 'removeThreadFromMailbox', mailboxId)
+  syncMailboxMembership(mailboxId, add)
 }
 const syncMailboxMembership = (mailboxId: string, add: boolean) => {
   if (add) {
