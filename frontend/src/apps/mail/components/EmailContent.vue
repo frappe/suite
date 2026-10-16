@@ -164,7 +164,7 @@ const srcdoc = computed(() => {
   collapseQuotes(doc)
   const transformedContent = doc.documentElement.outerHTML
 
-   
+  /* eslint-disable no-useless-escape */
   return `
 		<!DOCTYPE html>
 		<html>
