@@ -47,6 +47,7 @@ export function threadRow(row: WireThread | SearchRow, account: string): Thread 
     account: row.account ?? account,
     account_name: row.account_name,
     inbox: row.inbox ?? undefined,
+    sent: row.sent ?? undefined,
     archive: row.archive ?? undefined,
     trash: row.trash ?? undefined,
     from_name: row.from_name ?? '',

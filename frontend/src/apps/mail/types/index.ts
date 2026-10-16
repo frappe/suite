@@ -164,6 +164,7 @@ export interface Thread {
   account_name?: string
   view_mailbox?: string
   inbox?: string
+  sent?: string
   archive?: string
   trash?: string
   id: string

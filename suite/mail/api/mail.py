@@ -556,6 +556,10 @@ def get_unified_threads(
                 thread["account"] = account_id
                 thread["account_name"] = account["_name"]
                 thread["view_mailbox"] = view_mailbox
+                # The account's own folders, which the row is filed by (see suite.mail.filing): the
+                # merged list spans accounts, and Sent tells your mail from what you received.
+                thread["inbox"] = ids_by_role.get("inbox")
+                thread["sent"] = ids_by_role.get("sent")
                 thread["archive"] = ids_by_role.get("archive")
                 thread["trash"] = ids_by_role.get("trash")
                 merged.append(thread)
@@ -1556,6 +1560,7 @@ def _tag_search_results(account: str, mails: list[dict], account_name: str | Non
         account_name = frappe.db.get_value("JMAP Account", account, "_name")
 
     inbox_id = get_mailbox_id_by_role(account, "inbox")
+    sent_id = get_mailbox_id_by_role(account, "sent")
     archive_id = get_mailbox_id_by_role(account, "archive")
     trash_id = get_mailbox_id_by_role(account, "trash")
 
@@ -1563,6 +1568,7 @@ def _tag_search_results(account: str, mails: list[dict], account_name: str | Non
         mail["account"] = account
         mail["account_name"] = account_name
         mail["inbox"] = inbox_id
+        mail["sent"] = sent_id
         mail["archive"] = archive_id
         mail["trash"] = trash_id
 

@@ -5238,6 +5238,7 @@ export type GetThreadsOutputThread = {
   account_name?: string
   view_mailbox?: string
   inbox?: string | null
+  sent?: string | null
   archive?: string | null
   trash?: string | null
   unscreened_senders?: Array<string>
@@ -5374,6 +5375,7 @@ export type GetUnifiedThreadsOutputThread = {
   account_name?: string
   view_mailbox?: string
   inbox?: string | null
+  sent?: string | null
   archive?: string | null
   trash?: string | null
   unscreened_senders?: Array<string>
@@ -5664,6 +5666,7 @@ export type SearchMailsOutputSearchRow = {
   account_name?: string
   view_mailbox?: string
   inbox?: string | null
+  sent?: string | null
   archive?: string | null
   trash?: string | null
   name: string

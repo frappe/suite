@@ -7054,6 +7054,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               account_name: { title: 'Account Name', type: 'string' },
               view_mailbox: { title: 'View Mailbox', type: 'string' },
               inbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Inbox' },
+              sent: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Sent' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
               unscreened_senders: {
@@ -7320,6 +7321,7 @@ export const operationGetUnifiedThreads: Validators<
               account_name: { title: 'Account Name', type: 'string' },
               view_mailbox: { title: 'View Mailbox', type: 'string' },
               inbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Inbox' },
+              sent: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Sent' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
               unscreened_senders: {
@@ -7832,6 +7834,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               account_name: { title: 'Account Name', type: 'string' },
               view_mailbox: { title: 'View Mailbox', type: 'string' },
               inbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Inbox' },
+              sent: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Sent' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
               name: { title: 'Name', type: 'string' },

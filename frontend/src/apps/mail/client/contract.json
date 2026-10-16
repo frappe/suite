@@ -15277,6 +15277,17 @@
                 ],
                 "title": "Inbox"
               },
+              "sent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Sent"
+              },
               "archive": {
                 "anyOf": [
                   {
@@ -16071,6 +16082,17 @@
                   }
                 ],
                 "title": "Inbox"
+              },
+              "sent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Sent"
               },
               "archive": {
                 "anyOf": [
@@ -17422,6 +17444,17 @@
                   }
                 ],
                 "title": "Inbox"
+              },
+              "sent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Sent"
               },
               "archive": {
                 "anyOf": [

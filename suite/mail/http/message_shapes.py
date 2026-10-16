@@ -76,6 +76,7 @@ class AccountTag(TypedDict, total=False):
     account_name: str
     view_mailbox: str
     inbox: str | None
+    sent: str | None
     archive: str | None
     trash: str | None
 
