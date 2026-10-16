@@ -5649,10 +5649,51 @@ export type SearchMailsOutputAttachment = {
   location?: string | null
 }
 
+export type SearchMailsOutputCopy = {
+  name: string
+  id: string
+  thread_id: string
+  from_name: string | null
+  from_email: string
+  received_at: string
+  mailboxes: Array<SearchMailsOutputMailboxRef>
+  seen: 0 | 1
+  junk: 0 | 1
+  flagged: 0 | 1
+  draft: 0 | 1
+  unscreened?: 0 | 1
+}
+
 export type SearchMailsOutputMailboxRef = {
   mailbox: string
   mailbox_id: string
   mailbox_name: string | null
+}
+
+export type SearchMailsOutputMessage = {
+  name: string
+  id: string
+  thread_id: string
+  from_name: string | null
+  from_email: string
+  received_at: string
+  mailboxes: Array<SearchMailsOutputMailboxRef>
+  seen: 0 | 1
+  junk: 0 | 1
+  flagged: 0 | 1
+  draft: 0 | 1
+  unscreened?: 0 | 1
+  message_id: string | null
+  subject: string | null
+  html_body: string | null
+  text_body: string | null
+  preview: string
+  recipients: Array<SearchMailsOutputRecipient>
+  reply_to: Array<SearchMailsOutputReplyAddress>
+  attachments: Array<SearchMailsOutputAttachment>
+  dsn_blob_id: string | null
+  duplicates?: Array<SearchMailsOutputCopy>
+  user_image?: string | null
 }
 
 export type SearchMailsOutputRecipient = {
@@ -5661,7 +5702,21 @@ export type SearchMailsOutputRecipient = {
   display_name: string | null
 }
 
+export type SearchMailsOutputReplyAddress = { email: string; display_name: string | null }
+
 export type SearchMailsOutputSearchRow = {
+  name: string
+  id: string
+  thread_id: string
+  from_name: string | null
+  from_email: string
+  received_at: string
+  mailboxes: Array<SearchMailsOutputMailboxRef>
+  seen: 0 | 1
+  junk: 0 | 1
+  flagged: 0 | 1
+  draft: 0 | 1
+  unscreened?: 0 | 1
   account?: string
   account_name?: string
   view_mailbox?: string
@@ -5669,20 +5724,14 @@ export type SearchMailsOutputSearchRow = {
   sent?: string | null
   archive?: string | null
   trash?: string | null
-  name: string
-  id: string
+  unscreened_senders?: Array<string>
   subject: string | null
   preview: string
   recipients: Array<SearchMailsOutputRecipient>
-  sent_at: string | null
-  received_at: string
-  from_name: string | null
-  from_email: string
-  thread_id: string
-  mailboxes: Array<SearchMailsOutputMailboxRef>
   attachments: Array<SearchMailsOutputAttachment>
-  seen: 0 | 1
+  messages: Array<SearchMailsOutputMessage>
   user_image?: string | null
+  match_id: string
 }
 
 export type SearchMailsInput = {

@@ -321,6 +321,7 @@
           :thread-i-d
           :threads="threadIDs"
           :messages="currentThread?.messages"
+          :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
           :can-go-next="canGoNext"
           @slide-done="threadSlide = ''"
           @reload-mails="resetThreads"

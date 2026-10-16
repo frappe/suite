@@ -815,6 +815,19 @@ def fetch_threads(
     across all mailboxes), ordered oldest to newest.
     """
 
+    return query_threads(account, filter, position, limit)[0]
+
+
+def query_threads(
+    account: str,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    calculate_total: bool = False,
+) -> tuple[dict[str, list[dict]], dict[str, str], int]:
+    """A page of threads matching the filter, as `fetch_threads` returns them, with each thread's
+    newest message that matched (by id, keyed by thread) and, if asked, how many threads match."""
+
     client = get_account_client(account)
     with client.batch() as b:
         q = b.mail.email.query(
@@ -823,15 +836,19 @@ def fetch_threads(
             collapseThreads=True,
             position=position,
             limit=limit,
+            calculate_total=calculate_total,
         )
-        g = b.mail.email.get(ids=q.ref_ids(), properties=["threadId"])
+        g = b.mail.email.get(ids=q.ref_ids(), properties=["id", "threadId"])
         t = b.mail.thread.get(ids=g.ref_list("threadId"), properties=["id", "emailIds"])
 
+    # One match per thread: the query collapses each to its newest matching message.
+    matches = {email["threadId"]: email["id"] for email in (e.to_wire() for e in g.result.items)}
+    total = q.result.total or 0
     thread_email_ids = {
         thread["id"]: thread.get("emailIds", []) for thread in (th.to_wire() for th in t.result.items)
     }
     if not thread_email_ids:
-        return {}
+        return {}, matches, total
 
     # Fetch every message in the page's threads once, then group them back by thread.
     threads: dict[str, list[dict]] = {thread_id: [] for thread_id in thread_email_ids}
@@ -841,10 +858,11 @@ def fetch_threads(
             threads[message["thread_id"]].append(message)
 
     # Order each conversation oldest to newest so callers don't have to re-sort.
-    return {
+    conversations = {
         thread_id: sorted(messages, key=lambda message: message["received_at"])
         for thread_id, messages in threads.items()
     }
+    return conversations, matches, total
 
 
 def fetch_thread(account: str, thread_id: str, sort: Literal["asc", "desc"] = "asc") -> list[dict]:
@@ -865,34 +883,6 @@ def get_thread_email_ids(account: str, thread_ids: list[str]) -> dict[str, list[
     )
 
     return {thread["id"]: thread.get("emailIds", []) for thread in (th.to_wire() for th in threads)}
-
-
-def search_messages(
-    account: str, filter: dict, position: int = 0, limit: int = 20, sort: list[dict] | None = None
-) -> tuple[list[dict], int]:
-    """Returns a list of messages and total count based on the provided search filter."""
-
-    if not account or not filter:
-        frappe.throw(_("Account and filter are required."))
-
-    fields = [
-        "name",
-        "id",
-        "subject",
-        "preview",
-        "recipients",
-        "sent_at",
-        "received_at",
-        "from_name",
-        "from_email",
-        "thread_id",
-        "mailboxes",
-        "attachments",
-        "seen",
-    ]
-
-    messages, total = fetch_messages(account, filter=filter, position=position, limit=limit, sort=sort)
-    return [{field: message[field] for field in fields} for message in messages], total
 
 
 def get_messages(account: str, ids: list[str]) -> list[dict]:

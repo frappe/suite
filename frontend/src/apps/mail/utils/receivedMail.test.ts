@@ -5,6 +5,7 @@ import {
   holdsReceivedMail,
   isReceived,
   receivedFolders,
+  searchFolders,
   unarchivable,
 } from './receivedMail'
 
@@ -61,4 +62,20 @@ it('names where your own outreach is filed, when nothing was received', () => {
   const boxes = { sent: 'sent', inbox: 'inbox', drafts: 'drafts' }
   const outreach = [{ mailboxes: in_('sent', 'clients') }]
   expect(receivedFolders(outreach, boxes, 'sent').map((f) => f.mailbox_id)).toEqual(['clients'])
+})
+
+it('says where a found conversation is, the Inbox included, never your Sent beside received mail', () => {
+  const boxes = { sent: 'sent', drafts: 'drafts' }
+  const conversation = [
+    { mailboxes: in_('inbox', 'projects') },
+    { mailboxes: in_('sent') },
+    { draft: 1, mailboxes: in_('drafts') },
+  ]
+  expect(searchFolders(conversation, boxes).map((f) => f.mailbox_id)).toEqual(['inbox', 'projects'])
+})
+
+it('answers Sent for a found conversation of only your own mail', () => {
+  const boxes = { sent: 'sent', drafts: 'drafts' }
+  const outreach = [{ mailboxes: in_('sent') }, { draft: 1, mailboxes: in_('drafts') }]
+  expect(searchFolders(outreach, boxes).map((f) => f.mailbox_id)).toEqual(['sent'])
 })

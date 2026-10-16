@@ -31,3 +31,33 @@ export function highlightSegments(text: string, term: string): HighlightSegment[
   if (last < text.length) segments.push({ text: text.slice(last), hit: false })
   return segments
 }
+
+/** Marks the term's words in a document's text, as `highlightSegments` cuts it, each hit wrapped in
+ * a `<mark>`. Text inside scripts, styles and form fields is left alone. */
+export function highlightDocument(root: ParentNode & Node, term: string): void {
+  if (!term.trim()) return
+  const doc = root.ownerDocument ?? (root as Document)
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.parentElement?.closest('script, style, textarea, title')
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  })
+  const nodes: Text[] = []
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+  for (const node of nodes) {
+    const segments = highlightSegments(node.data, term)
+    if (!segments.some((segment) => segment.hit)) continue
+    const fragment = doc.createDocumentFragment()
+    for (const segment of segments) {
+      if (!segment.hit) {
+        fragment.append(segment.text)
+        continue
+      }
+      const mark = doc.createElement('mark')
+      mark.textContent = segment.text
+      fragment.append(mark)
+    }
+    node.replaceWith(fragment)
+  }
+}

@@ -17,6 +17,7 @@
             :text="block.text"
             class="border-outline-gray-2 text-ink-gray-6 my-1 border-l pl-3"
             :style="{ marginLeft: (block.depth - 1) * 12 + 'px' }"
+            :term
           />
         </div>
       </template>
@@ -24,8 +25,9 @@
         v-else-if="segment.kind === 'signature'"
         :text="segment.blocks[0].text"
         class="text-ink-gray-5 mt-3"
+        :term
       />
-      <LinkifiedText v-else :text="segment.blocks[0].text" />
+      <LinkifiedText v-else :text="segment.blocks[0].text" :term />
     </template>
   </div>
 </template>
@@ -36,7 +38,8 @@ import { computed, ref, watch } from 'vue'
 import { groupPlainText } from '@/apps/mail/utils/plainTextBlocks'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 
-const { text } = defineProps<{ text?: string | null }>()
+// `term`: the words a search found the message by, marked in it.
+const { text, term } = defineProps<{ text?: string | null; term?: string }>()
 const segments = computed(() => groupPlainText(text ?? ''))
 const expanded = ref(new Set<number>())
 

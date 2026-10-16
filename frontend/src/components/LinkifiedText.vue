@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import HighlightedText from '@/components/HighlightedText.vue'
+
 // Matches URLs (http/https/www) and email addresses in plain text.
 const URL_OR_EMAIL_REGEX =
   /(https?:\/\/[^\s<]+|www\.[^\s<]+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi
@@ -15,7 +17,8 @@ interface Segment {
   href?: string
 }
 
-const props = defineProps<{ text?: string | null }>()
+// `term`: the words a search found this by, marked where they appear.
+const props = defineProps<{ text?: string | null; term?: string }>()
 
 // Splits the text into plain runs and link runs. Rendered as <span>/<a> elements with the text in
 // {{ }} (auto-escaped), so the body can never be interpreted as markup — for rich HTML bodies use
@@ -64,9 +67,9 @@ const segments = computed<Segment[]>(() => {
         target="_blank"
         rel="noopener noreferrer"
         class="text-ink-blue-6 hover:underline"
-        >{{ segment.text }}</a
-      >
-      <span v-else>{{ segment.text }}</span>
+        ><HighlightedText :text="segment.text" :term="term"
+      /></a>
+      <span v-else><HighlightedText :text="segment.text" :term="term" /></span>
     </template>
   </div>
 </template>

@@ -17355,6 +17355,103 @@
             "title": "Attachment",
             "type": "object"
           },
+          "Copy": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "thread_id": {
+                "title": "Thread Id",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "title": "From Email",
+                "type": "string"
+              },
+              "received_at": {
+                "title": "Received At",
+                "type": "string"
+              },
+              "mailboxes": {
+                "items": {
+                  "$ref": "#/$defs/MailboxRef"
+                },
+                "title": "Mailboxes",
+                "type": "array"
+              },
+              "seen": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Seen",
+                "type": "integer"
+              },
+              "junk": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Junk",
+                "type": "integer"
+              },
+              "flagged": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Flagged",
+                "type": "integer"
+              },
+              "draft": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "unscreened": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Unscreened",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "id",
+              "thread_id",
+              "from_name",
+              "from_email",
+              "received_at",
+              "mailboxes",
+              "seen",
+              "junk",
+              "flagged",
+              "draft"
+            ],
+            "title": "Copy",
+            "type": "object"
+          },
           "MailboxRef": {
             "properties": {
               "mailbox": {
@@ -17383,6 +17480,210 @@
               "mailbox_name"
             ],
             "title": "MailboxRef",
+            "type": "object"
+          },
+          "Message": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "thread_id": {
+                "title": "Thread Id",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "title": "From Email",
+                "type": "string"
+              },
+              "received_at": {
+                "title": "Received At",
+                "type": "string"
+              },
+              "mailboxes": {
+                "items": {
+                  "$ref": "#/$defs/MailboxRef"
+                },
+                "title": "Mailboxes",
+                "type": "array"
+              },
+              "seen": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Seen",
+                "type": "integer"
+              },
+              "junk": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Junk",
+                "type": "integer"
+              },
+              "flagged": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Flagged",
+                "type": "integer"
+              },
+              "draft": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "unscreened": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Unscreened",
+                "type": "integer"
+              },
+              "message_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Message Id"
+              },
+              "subject": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Subject"
+              },
+              "html_body": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Html Body"
+              },
+              "text_body": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Text Body"
+              },
+              "preview": {
+                "title": "Preview",
+                "type": "string"
+              },
+              "recipients": {
+                "items": {
+                  "$ref": "#/$defs/Recipient"
+                },
+                "title": "Recipients",
+                "type": "array"
+              },
+              "reply_to": {
+                "items": {
+                  "$ref": "#/$defs/ReplyAddress"
+                },
+                "title": "Reply To",
+                "type": "array"
+              },
+              "attachments": {
+                "items": {
+                  "$ref": "#/$defs/Attachment"
+                },
+                "title": "Attachments",
+                "type": "array"
+              },
+              "dsn_blob_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dsn Blob Id"
+              },
+              "duplicates": {
+                "items": {
+                  "$ref": "#/$defs/Copy"
+                },
+                "title": "Duplicates",
+                "type": "array"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "name",
+              "id",
+              "thread_id",
+              "from_name",
+              "from_email",
+              "received_at",
+              "mailboxes",
+              "seen",
+              "junk",
+              "flagged",
+              "draft",
+              "message_id",
+              "subject",
+              "html_body",
+              "text_body",
+              "preview",
+              "recipients",
+              "reply_to",
+              "attachments",
+              "dsn_blob_id"
+            ],
+            "title": "Message",
             "type": "object"
           },
           "Recipient": {
@@ -17420,8 +17721,111 @@
             "title": "Recipient",
             "type": "object"
           },
+          "ReplyAddress": {
+            "properties": {
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "display_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Display Name"
+              }
+            },
+            "required": [
+              "email",
+              "display_name"
+            ],
+            "title": "ReplyAddress",
+            "type": "object"
+          },
           "SearchRow": {
             "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "thread_id": {
+                "title": "Thread Id",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "title": "From Email",
+                "type": "string"
+              },
+              "received_at": {
+                "title": "Received At",
+                "type": "string"
+              },
+              "mailboxes": {
+                "items": {
+                  "$ref": "#/$defs/MailboxRef"
+                },
+                "title": "Mailboxes",
+                "type": "array"
+              },
+              "seen": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Seen",
+                "type": "integer"
+              },
+              "junk": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Junk",
+                "type": "integer"
+              },
+              "flagged": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Flagged",
+                "type": "integer"
+              },
+              "draft": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Draft",
+                "type": "integer"
+              },
+              "unscreened": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Unscreened",
+                "type": "integer"
+              },
               "account": {
                 "title": "Account",
                 "type": "string"
@@ -17478,13 +17882,12 @@
                 ],
                 "title": "Trash"
               },
-              "name": {
-                "title": "Name",
-                "type": "string"
-              },
-              "id": {
-                "title": "Id",
-                "type": "string"
+              "unscreened_senders": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Unscreened Senders",
+                "type": "array"
               },
               "subject": {
                 "anyOf": [
@@ -17508,47 +17911,6 @@
                 "title": "Recipients",
                 "type": "array"
               },
-              "sent_at": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Sent At"
-              },
-              "received_at": {
-                "title": "Received At",
-                "type": "string"
-              },
-              "from_name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "From Name"
-              },
-              "from_email": {
-                "title": "From Email",
-                "type": "string"
-              },
-              "thread_id": {
-                "title": "Thread Id",
-                "type": "string"
-              },
-              "mailboxes": {
-                "items": {
-                  "$ref": "#/$defs/MailboxRef"
-                },
-                "title": "Mailboxes",
-                "type": "array"
-              },
               "attachments": {
                 "items": {
                   "$ref": "#/$defs/Attachment"
@@ -17556,13 +17918,12 @@
                 "title": "Attachments",
                 "type": "array"
               },
-              "seen": {
-                "enum": [
-                  0,
-                  1
-                ],
-                "title": "Seen",
-                "type": "integer"
+              "messages": {
+                "items": {
+                  "$ref": "#/$defs/Message"
+                },
+                "title": "Messages",
+                "type": "array"
               },
               "user_image": {
                 "anyOf": [
@@ -17574,22 +17935,30 @@
                   }
                 ],
                 "title": "User Image"
+              },
+              "match_id": {
+                "title": "Match Id",
+                "type": "string"
               }
             },
             "required": [
               "name",
               "id",
+              "thread_id",
+              "from_name",
+              "from_email",
+              "received_at",
+              "mailboxes",
+              "seen",
+              "junk",
+              "flagged",
+              "draft",
               "subject",
               "preview",
               "recipients",
-              "sent_at",
-              "received_at",
-              "from_name",
-              "from_email",
-              "thread_id",
-              "mailboxes",
               "attachments",
-              "seen"
+              "messages",
+              "match_id"
             ],
             "title": "SearchRow",
             "type": "object"

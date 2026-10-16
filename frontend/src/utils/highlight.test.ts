@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { highlightSegments } from './highlight'
+import { highlightDocument, highlightSegments } from './highlight'
 
 describe('highlightSegments', () => {
   it('marks each word of the term, ignoring case', () => {
@@ -27,5 +27,21 @@ describe('highlightSegments', () => {
       { text: 'Q3 ', hit: false },
       { text: '(draft)', hit: true },
     ])
+  })
+})
+
+describe('highlightDocument', () => {
+  it("marks the term's words in a body's text, not in its styles", () => {
+    const doc = new DOMParser().parseFromString(
+      '<style>.board{}</style><p>The <b>board</b> meets: board meeting</p>',
+      'text/html',
+    )
+    highlightDocument(doc.body, 'board')
+    expect([...doc.querySelectorAll('mark')].map((mark) => mark.textContent)).toEqual([
+      'board',
+      'board',
+    ])
+    expect(doc.querySelector('style')?.textContent).toBe('.board{}')
+    expect(doc.querySelector('p')?.textContent).toBe('The board meets: board meeting')
   })
 })

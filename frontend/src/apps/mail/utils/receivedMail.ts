@@ -54,17 +54,37 @@ export const receivedFolders = <F extends { mailbox_id: string }>(
   mails: (Filed & { mailboxes: F[] })[],
   boxes: { sent?: string; inbox?: string; drafts?: string },
   shown: string,
+): F[] => foldersOf(mails, boxes.sent, [boxes.inbox, boxes.sent, boxes.drafts, shown])
+
+/**
+ * Where a search result's conversation is: the folders the mail you received is in, the Inbox
+ * among them, since a search has no usual place. Sent only for a conversation of nothing but your
+ * own mail, where it is the one answer.
+ */
+export const searchFolders = <F extends { mailbox_id: string }>(
+  mails: (Filed & { mailboxes: F[] })[],
+  boxes: { sent?: string; drafts?: string },
+): F[] =>
+  foldersOf(
+    mails,
+    boxes.sent,
+    holdsReceivedMail(mails, boxes.sent) ? [boxes.sent, boxes.drafts] : [boxes.drafts],
+  )
+
+const foldersOf = <F extends { mailbox_id: string }>(
+  mails: (Filed & { mailboxes: F[] })[],
+  sent: string | undefined,
+  skipped: (string | undefined)[],
 ): F[] => {
-  const usual = [boxes.inbox, boxes.sent, boxes.drafts, shown]
   // A conversation of nothing but your own mail has no received mail to describe: then it is your
   // sent mail that says where you filed it.
-  const described = holdsReceivedMail(mails, boxes.sent)
-    ? mails.filter((mail) => isReceived(mail, boxes.sent))
+  const described = holdsReceivedMail(mails, sent)
+    ? mails.filter((mail) => isReceived(mail, sent))
     : mails.filter((mail) => !mail.draft)
   const folders = new Map<string, F>()
   for (const mail of described)
     for (const folder of mail.mailboxes)
-      if (!usual.includes(folder.mailbox_id) && !folders.has(folder.mailbox_id))
+      if (!skipped.includes(folder.mailbox_id) && !folders.has(folder.mailbox_id))
         folders.set(folder.mailbox_id, folder)
   return [...folders.values()]
 }
