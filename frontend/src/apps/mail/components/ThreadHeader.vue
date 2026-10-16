@@ -222,14 +222,12 @@ const moreActions = computed((): Action[] => [
         mailboxIds.value,
       ),
   },
-  // Archive reversed, in Archive's place once the received mail is archived. Not in All Inboxes
-  // yet, whose list files by its own paths.
+  // Archive reversed, in Archive's place once the received mail is archived.
   {
     label: __('Unarchive'),
     onClick: () => emit('unarchiveThread'),
     icon: ArchiveRestore,
     condition: () =>
-      route.name !== UNIFIED_THREAD_ROUTE &&
       !inDrafts.value &&
       unarchivable(
         (thread ?? []).filter((mail: Mail) => mail.id),

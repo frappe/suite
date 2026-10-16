@@ -121,7 +121,7 @@ const actions = computed(() =>
         (unarchive
           ? threads.some((t) =>
               archivable(t.messages?.length ? t.messages : [t], {
-                sent: mailboxIds.sent,
+                sent: t.sent ?? mailboxIds.sent,
                 archive: archiveId.value,
                 inbox: t.inbox ?? mailboxIds.inbox,
               }),
@@ -137,7 +137,7 @@ const actions = computed(() =>
         !drafts &&
         threads.some((t) =>
           unarchivable(t.messages?.length ? t.messages : [t], {
-            sent: mailboxIds.sent,
+            sent: t.sent ?? mailboxIds.sent,
             archive: archiveId.value,
             inbox: t.inbox ?? mailboxIds.inbox,
           }),

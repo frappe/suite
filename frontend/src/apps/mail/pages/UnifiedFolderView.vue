@@ -174,7 +174,9 @@
                     :data-row-key="row.key"
                     @toggle="toggleStack(row)"
                     @set-seen="(seen: boolean) => setThreadsSeen(row.threads, seen)"
+                    :unarchive="true"
                     @archive-threads="archiveThreads(row.threads)"
+                    @unarchive-threads="unarchiveThreads(row.threads)"
                     @trash-threads="trashThreads(row.threads)"
                     @delete-threads="confirmDelete(row.threads)"
                     @set-selected="
@@ -198,7 +200,9 @@
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
+                    :unarchive="true"
                     @archive-thread="handleArchive(row.thread)"
+                    @unarchive-thread="handleUnarchive(row.thread)"
                     @trash-thread="handleTrash(row.thread)"
                     @delete-thread="confirmDelete([row.thread])"
                     @set-flagged="(flagged: boolean) => handleSetFlagged(row.thread, flagged)"
@@ -242,12 +246,11 @@
             (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
           "
           @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
-          @delete-thread="isTrashFolder ? confirmDelete([openRow!]) : handleTrash(openRow!)"
-          @archive-thread="
-            folder === 'sent' && openRow?.archive
-              ? handleAddToMailbox(openRow.archive)
-              : handleArchive(openRow!)
+          @delete-thread="
+            isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
           "
+          @archive-thread="handleArchive(openRow!)"
+          @unarchive-thread="handleUnarchive(openRow!)"
           @sync-unseen="handleSyncUnseen"
           @add-thread-to-mailbox="handleAddToMailbox"
           @remove-thread-from-mailbox="handleRemoveFromMailbox"
@@ -344,6 +347,12 @@ import {
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { mailCopies, mailCopyIds, threadStarIds } from '@/apps/mail/utils/mailCopies'
+import {
+  archivable,
+  holdsReceivedMail,
+  isReceived,
+  unarchivable,
+} from '@/apps/mail/utils/receivedMail'
 import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import {
@@ -657,17 +666,21 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
     handleSetSeen(thread, e.shiftKey)
     return true
   }
+  // Archive and Unarchive share a place, so E does whichever it shows, and nothing where neither
+  // has anything to do.
+  const messages = thread.messages?.length ? thread.messages : [thread]
   if (key === 'e') {
     e.preventDefault()
-    handleArchive(thread)
+    if (archivable(messages, thread)) handleArchive(thread)
+    else if (unarchivable(messages, thread)) handleUnarchive(thread)
     return true
   }
 
-  // Junk needs no mailbox id of its own (set_mails_spam_status takes the account and the mails), so
-  // unlike a move it works from a merged row.
+  // Junk takes only mail you received; Not junk, in Junk, whatever is there.
   if (key === '!') {
     e.preventDefault()
-    handleSetSpamStatus(!isJunkFolder.value, thread)
+    if (isJunkFolder.value) handleSetSpamStatus(false, thread)
+    else if (holdsReceivedMail(messages, thread.sent)) handleSetSpamStatus(true, thread)
     return true
   }
   return false
@@ -778,17 +791,7 @@ const openThread = (key: string) => {
 // Archive and Trash already have optimistic list removal; anything else is a plain move.
 const moveOpenThread = (mailboxId: string) => {
   const row = openRow.value
-  if (!row) return
-  if (mailboxId === row.archive) return handleArchive(row)
-  if (mailboxId === row.trash) return handleTrash(row)
-  goToNextThreadOrClose(threadKey(row))
-  const restore = refreshThreads
-  const folder = folderName(mailboxId)
-  raiseOptimisticToast(
-    moveThreadOut(row, mailboxId, restore),
-    folder ? __('Thread moved to {0}.', [folder]) : __('Thread moved.'),
-    withUndo(row, restore, __('Thread moved back.')),
-  )
+  if (row) fileThreads([row], 'move', { target: mailboxId })
 }
 
 // Keep infinite scroll alive while the rendered list is too short to scroll (see topUpIfShort). Must
@@ -826,22 +829,7 @@ type PaneCommand =
         mailbox_id: string
       }
     }
-  | {
-      kind: 'spam'
-      input: {
-        ids: string[]
-        spam: boolean
-        screen_action?: string | null
-      }
-    }
-  | {
-      kind: 'move'
-      input: {
-        ids: string[]
-        mailbox: string
-        clear_junk?: boolean
-      }
-    }
+
 function runPaneCommand(command: PaneCommand, account?: string) {
   const acting = account ?? openRow.value?.account
   if (!acting) return Promise.reject(new Error(__('Thread is no longer in the list.')))
@@ -853,16 +841,6 @@ function runPaneCommand(command: PaneCommand, account?: string) {
       })
     case 'remove':
       return client.mutation(api.mail.messages.removeFromFolder, {
-        ...command.input,
-        account: acting,
-      })
-    case 'spam':
-      return client.mutation(api.mail.messages.spam, {
-        ...command.input,
-        account: acting,
-      })
-    case 'move':
-      return client.mutation(api.mail.messages.move, {
         ...command.input,
         account: acting,
       })
@@ -940,7 +918,15 @@ const handleAddToMailbox = (mailboxId: string) => {
       {
         kind: 'add',
         input: {
-          ids: messageIdsOf(thread),
+          // Not a draft, ever; and your own mail never into the Inbox or Archive (see filing.py).
+          ids: (thread.messages ?? [])
+            .flatMap(mailCopies)
+            .filter(
+              (m) =>
+                !m.draft &&
+                (![thread.inbox, thread.archive].includes(mailboxId) || isReceived(m, thread.sent)),
+            )
+            .map((m) => m.id),
           mailbox_id: mailboxId,
         },
       },
@@ -987,27 +973,9 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 }
 const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
   const thread = target ?? openRow.value
-  if (!thread) return
-  goToNextThreadOrClose(threadKey(thread))
-  const restore = refreshThreads
-  raiseOptimisticToast(
-    runPaneCommand(
-      {
-        kind: 'spam',
-        input: {
-          ids: messageIdsOf(thread),
-          spam,
-        },
-      },
-      thread.account,
-    ).catch((error) => {
-      restore()
-      throw error
-    }),
-    __('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')]),
-    // Undo flips the junk status back — name the resulting state, like the forward toast does.
-    withUndo(thread, restore, __('Thread marked as {0}.', [spam ? __('Not Junk') : __('Junk')])),
-  )
+  // Not junk accepts the sender, in the same request, as a single account's list does.
+  if (thread)
+    fileThreads([thread], spam ? 'junk' : 'not_junk', { screenAction: spam ? null : 'Accepted' })
 }
 
 // Per-message actions from a message's own menu, on the shared orchestration (see useMailRemoval).
@@ -1035,23 +1003,23 @@ const undoMail = (mail: Mail, account: string | undefined, undoSuccess: string) 
     undoSuccess,
   }
 }
+// One message and its copies, by the same rules as a conversation (see fileThreads).
+const fileMail = (mail: Mail, account: string | undefined, action: Filing, target?: string) =>
+  account
+    ? client.mutation(api.mail.messages.file, {
+        account,
+        ids: mailCopyIds(mail),
+        action,
+        mailbox: target ?? null,
+        screen_action: action === 'not_junk' ? 'Accepted' : null,
+      })
+    : Promise.reject(new Error(__('Thread is no longer in the list.')))
 const handleMailMove = (mail: Mail, target: string) => {
   const account = openRow.value?.account
   const folder = folderName(target)
   runMailRemoval(
     mail,
-    () =>
-      runPaneCommand(
-        {
-          kind: 'move',
-          input: {
-            ids: [mail.id],
-            mailbox: target,
-            clear_junk: mail.junk === 1 && target !== paneScope.mailboxIds.value.junk,
-          },
-        },
-        account,
-      ),
+    () => fileMail(mail, account, 'move', target),
     folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
     undoMail(mail, account, __('Mail moved back.')),
   )
@@ -1060,17 +1028,7 @@ const handleMailSpam = (mail: Mail, spam: boolean) => {
   const account = openRow.value?.account
   runMailRemoval(
     mail,
-    () =>
-      runPaneCommand(
-        {
-          kind: 'spam',
-          input: {
-            ids: [mail.id],
-            spam,
-          },
-        },
-        account,
-      ),
+    () => fileMail(mail, account, spam ? 'junk' : 'not_junk'),
     spam ? __('Mail marked as Junk.') : __('Mail marked as Not Junk.'),
     // Undo flips the junk status back — name the resulting state, like the forward toast does.
     undoMail(mail, account, __('Mail marked as {0}.', [spam ? __('Not Junk') : __('Junk')])),
@@ -1186,52 +1144,89 @@ const restoreMails = (account: string, mails: ReturnType<typeof mailSnapshot>[])
     })
     .then(refreshCounts)
 
-// Offered on the toast and on Cmd/Ctrl+Z, matching the mailbox list. `undoSuccess` is the caller's,
-// because the mailbox list names the state the undo lands in ("Thread moved back.", "Thread marked
-// as Not Junk.") rather than confirming it generically.
-const withUndo = (thread: Thread, restore: () => void, undoSuccess: string) => {
-  const snapshot = threadSnapshot(thread)
-  const undoAction = () => {
-    restore()
-    raiseOptimisticToast(restoreMails(thread.account, snapshot), undoSuccess)
+// Archive, Unarchive, Move, Junk, Not junk and Trash, on one thread or several, by the filing rules
+// (suite/mail/filing.py), as in a single account's list: mail you received goes where it is filed,
+// your sent mail never leaves Sent but by Trash, a draft is never filed. One request per account,
+// carrying every copy of every message; one Undo puts back exactly what each account's request moved.
+type Filing = 'archive' | 'unarchive' | 'move' | 'junk' | 'not_junk' | 'trash'
+// Whether the conversation leaves this folder's list. Sent and Starred keep it whatever is filed:
+// your sent mail stays, and so may the star.
+const leavesFolder = (action: Filing, thread: Thread, target?: string) => {
+  if (action === 'trash') return !isTrashFolder.value
+  if (folder === 'sent' || folder === STARRED_FOLDER) return false
+  if (action === 'archive') return [INBOX_FOLDER, 'junk', 'trash'].includes(folder)
+  if (action === 'unarchive') return folder === 'archive'
+  if (action === 'junk') return !isJunkFolder.value
+  if (action === 'not_junk') return isJunkFolder.value
+  return target !== thread.view_mailbox
+}
+const fileThreads = (
+  threads: Thread[],
+  action: Filing,
+  { target, screenAction }: { target?: string; screenAction?: string | null } = {},
+) => {
+  if (!threads.length) return
+  const leaves = leavesFolder(action, threads[0], target)
+  if (leaves) goToNextThreadOrClose(threads.map(threadKey))
+  if (action === 'trash' || action === 'junk') closeComposeWindowFor(copyIds(threads))
+  const one = threads.length === 1
+  const folderOfTarget = target ? folderName(target) : undefined
+  const done = (answers: unknown[]) => {
+    if (action === 'archive')
+      return !answers.some((a) => (a as { left_inbox?: boolean })?.left_inbox)
+        ? __('Added to Archive.')
+        : one
+          ? __('Thread archived.')
+          : __('Threads archived.')
+    if (action === 'unarchive') return one ? __('Thread unarchived.') : __('Threads unarchived.')
+    if (action === 'trash')
+      return one ? __('Thread moved to Trash.') : __('Threads moved to Trash.')
+    if (action === 'junk' || action === 'not_junk') {
+      const state = action === 'junk' ? __('Junk') : __('Not Junk')
+      return one ? __('Thread marked as {0}.', [state]) : __('Threads marked as {0}.', [state])
+    }
+    return folderOfTarget
+      ? one
+        ? __('Thread moved to {0}.', [folderOfTarget])
+        : __('Threads moved to {0}.', [folderOfTarget])
+      : __('Thread moved.')
   }
-  setUndoAction(undoAction)
-  return undoAction
-}
-const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) => {
-  closeComposeWindowFor(messageIds(thread))
-  return client
-    .mutation(api.mail.messages.move, {
-      account: thread.account,
-      ids: messageIds(thread),
-      mailbox,
-      clear_junk: true,
-    })
-    .then(refreshCounts, (error) => {
-      restore()
-      throw error
-    })
-}
-const handleArchive = (thread: Thread) => {
-  if (!thread.archive) return raiseToast(__('No Archive folder for this account.'), 'error')
-  goToNextThreadOrClose(threadKey(thread))
-  const restore = refreshThreads
-  raiseOptimisticToast(
-    moveThreadOut(thread, thread.archive!, restore),
-    __('Thread archived.'),
-    withUndo(thread, restore, __('Thread moved back.')),
+  const undone =
+    action === 'junk'
+      ? one
+        ? __('Thread marked as Not Junk.')
+        : __('Threads marked as Not Junk.')
+      : action === 'not_junk'
+        ? one
+          ? __('Thread marked as Junk.')
+          : __('Threads marked as Junk.')
+        : one
+          ? __('Thread moved back.')
+          : __('Threads moved back.')
+  actPerAccount(
+    threads,
+    (account, rows) =>
+      client
+        .mutation(api.mail.messages.file, {
+          account,
+          ids: copyIds(rows),
+          action,
+          mailbox: target ?? null,
+          screen_action: screenAction ?? null,
+          leaves: leaves ? folder : null,
+        })
+        .then((filed) => {
+          // A list that keeps the rows reads them again for their new folders.
+          if (!leaves) refreshThreads()
+          return filed
+        }),
+    done,
+    undone,
   )
 }
-const handleTrash = (thread: Thread) => {
-  if (!thread.trash) return raiseToast(__('No Trash folder for this account.'), 'error')
-  goToNextThreadOrClose(threadKey(thread))
-  const restore = refreshThreads
-  raiseOptimisticToast(
-    moveThreadOut(thread, thread.trash!, restore),
-    __('Thread moved to Trash.'),
-    withUndo(thread, restore, __('Thread moved back.')),
-  )
-}
+const handleArchive = (thread: Thread) => fileThreads([thread], 'archive')
+const handleUnarchive = (thread: Thread) => fileThreads([thread], 'unarchive')
+const handleTrash = (thread: Thread) => fileThreads([thread], 'trash')
 
 // Actions on several threads at once: a stack's run, or the ticked threads. They can span accounts,
 // so each runs once per account, with that account's own folder ids, and one Undo puts every
@@ -1260,7 +1255,7 @@ const copySnapshot = (threads: Thread[]) =>
 const actPerAccount = (
   threads: Thread[],
   request: (account: string, rows: Thread[]) => Promise<unknown>,
-  done: string,
+  done: string | ((answers: unknown[]) => string),
   undoSuccess: string,
 ) => {
   const groups = byAccount(threads)
@@ -1285,7 +1280,9 @@ const actPerAccount = (
     refreshCounts()
     const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
     const undo = { label: __('Undo'), onClick: undoAction }
-    if (!failure) return raiseToast(done, 'success', undo)
+    const answers = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+    if (!failure)
+      return raiseToast(typeof done === 'string' ? done : done(answers), 'success', undo)
     refreshThreads()
     const someLanded = results.some((r) => r.status === 'fulfilled')
     raiseToast(
@@ -1335,46 +1332,13 @@ const setThreadsFlagged = (threads: Thread[], flagged: boolean) => {
   })
 }
 
-const moveThreadsOut = (
-  threads: Thread[],
-  folderOf: (thread: Thread) => string | undefined,
-  done: string,
-) => {
-  if (threads.some((t) => !folderOf(t)))
-    return raiseToast(__('No such folder for this account.'), 'error')
-  goToNextThreadOrClose(threads.map(threadKey))
-  closeComposeWindowFor(copyIds(threads))
-  actPerAccount(
-    threads,
-    (account, rows) =>
-      client.mutation(api.mail.messages.move, {
-        account,
-        ids: copyIds(rows),
-        mailbox: folderOf(rows[0])!,
-        clear_junk: true,
-      }),
-    done,
-    __('Threads moved back.'),
-  )
-}
-
-const setThreadsSpam = (threads: Thread[], spam: boolean) => {
-  goToNextThreadOrClose(threads.map(threadKey))
-  actPerAccount(
-    threads,
-    (account, rows) =>
-      client.mutation(api.mail.messages.spam, { account, ids: copyIds(rows), spam }),
-    __('Threads marked as {0}.', [spam ? __('Junk') : __('Not Junk')]),
-    // Undo flips the junk status back — name the resulting state, like the forward toast does.
-    __('Threads marked as {0}.', [spam ? __('Not Junk') : __('Junk')]),
-  )
-}
+const setThreadsSpam = (threads: Thread[], spam: boolean) =>
+  fileThreads(threads, spam ? 'junk' : 'not_junk', { screenAction: spam ? null : 'Accepted' })
 
 // Plurals of the single-thread messages, as the mailbox list does — it never prefixes a count.
-const archiveThreads = (threads: Thread[]) =>
-  moveThreadsOut(threads, (t) => t.archive, __('Threads archived.'))
-const trashThreads = (threads: Thread[]) =>
-  moveThreadsOut(threads, (t) => t.trash, __('Threads moved to Trash.'))
+const archiveThreads = (threads: Thread[]) => fileThreads(threads, 'archive')
+const unarchiveThreads = (threads: Thread[]) => fileThreads(threads, 'unarchive')
+const trashThreads = (threads: Thread[]) => fileThreads(threads, 'trash')
 
 // The ticked threads, taken: an action on them clears the selection, as in a single account's list.
 const takeSelected = () => {
@@ -1397,6 +1361,7 @@ const selectActions = buildSelectActions(
     star: () => setThreadsFlagged(takeSelected(), true),
     unstar: () => setThreadsFlagged(takeSelected(), false),
     archive: archiveSelected,
+    unarchive: () => unarchiveThreads(takeSelected()),
     junk: () => setThreadsSpam(takeSelected(), true),
     notJunk: () => setThreadsSpam(takeSelected(), false),
     trash: trashSelected,

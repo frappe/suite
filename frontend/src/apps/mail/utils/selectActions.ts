@@ -61,8 +61,15 @@ export const selectActions = (
   const some = (test: (thread: Thread) => boolean) => () => selected().some(test)
   // Drafts offers only Discard: a draft isn't filed, starred or read.
   const notDrafts = (test: (thread: Thread) => boolean) => () => !folder().drafts && some(test)()
-  const received = (thread: Thread) =>
-    holdsReceivedMail(thread.messages?.length ? thread.messages : [thread], folder().sent)
+  // Each row's own account's folders where it carries them (a merged list spans accounts), the
+  // list's otherwise.
+  const boxesOf = (thread: Thread) => ({
+    sent: thread.sent ?? folder().sent,
+    archive: thread.archive ?? folder().archiveId,
+    inbox: thread.inbox ?? folder().inboxId,
+  })
+  const messagesOf = (thread: Thread) => (thread.messages?.length ? thread.messages : [thread])
+  const received = (thread: Thread) => holdsReceivedMail(messagesOf(thread), boxesOf(thread).sent)
   return [
     {
       label: __('Star'),
@@ -87,13 +94,7 @@ export const selectActions = (
       condition: () =>
         !folder().archive &&
         notDrafts((t) =>
-          folder().archiveId
-            ? archivable(t.messages?.length ? t.messages : [t], {
-                sent: folder().sent,
-                archive: folder().archiveId,
-                inbox: folder().inboxId,
-              })
-            : received(t),
+          boxesOf(t).archive ? archivable(messagesOf(t), boxesOf(t)) : received(t),
         )(),
     },
     {
@@ -103,14 +104,7 @@ export const selectActions = (
       icon: ArchiveRestore,
       condition: () =>
         !!run.unarchive &&
-        !!folder().archiveId &&
-        notDrafts((t) =>
-          unarchivable(t.messages?.length ? t.messages : [t], {
-            sent: folder().sent,
-            archive: folder().archiveId,
-            inbox: folder().inboxId,
-          }),
-        )(),
+        notDrafts((t) => !!boxesOf(t).archive && unarchivable(messagesOf(t), boxesOf(t)))(),
     },
     {
       label: __('Mark as Junk (!)'),
