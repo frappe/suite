@@ -1076,6 +1076,9 @@ const landingMail = (data: Mail[]): Mail | null | undefined => {
     foldedAway.value = foldedAway.value.filter((name) => name !== match.name)
     return match
   }
+  // A search's match comes with its row, which can arrive after the thread (opened from the command
+  // palette, or on a reload): it waits for it rather than settling on the top.
+  if (mailbox === 'search') return undefined
   // On a fresh page the folders can arrive after the thread, and until then it can't be told
   // whether this is Drafts — so it waits for them rather than deciding it isn't.
   if (!mailboxIds.value.drafts) return undefined
@@ -1115,7 +1118,7 @@ const scrollToLanding = (data: Mail[]): boolean => {
   return true
 }
 watch(
-  () => mailboxIds.value.drafts,
+  () => [mailboxIds.value.drafts, landOn],
   () => {
     if (landsPending && thread.value.length && scrollToLanding(thread.value)) landsPending = false
   },

@@ -184,7 +184,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
-import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import { mailCopies } from '@/apps/mail/utils/mailCopies'
 import {
   threadAvatarLabel,
   threadDisplayName,
@@ -318,8 +318,12 @@ const attachments = computed(
 //
 // Search results are the exception: a row there is described by the conversation's newest match,
 // so it is that message that answers — a mail you sent, found in search, goes by who you sent it to.
+// The exact copy that matched: a mail sent to yourself is one message with two copies, and the one
+// in Sent is yours though the copy delivery filed stands for it in the thread.
 const match = computed(() =>
-  mail.match_id ? mail.messages?.find((m) => mailCopyIds(m).includes(mail.match_id!)) : undefined,
+  mail.match_id
+    ? mail.messages?.flatMap(mailCopies).find((copy) => copy.id === mail.match_id)
+    : undefined,
 )
 const isOutgoing = computed(() => {
   if (outgoing !== undefined) return outgoing
