@@ -277,9 +277,15 @@
                               @update:open="(open: boolean) => !open && (senderCardFor = null)"
                             >
                               <template #trigger>
+                                <!-- self-start: stacked over the recipients, it would stretch to
+												     the full width, and the empty space after the address opened
+												     the card too. -->
                                 <div
-                                  class="flex items-center space-x-1.5"
-                                  :class="{ 'cursor-pointer': !isCollapsed(mail) && !isMobile }"
+                                  class="flex max-w-full items-center space-x-1.5"
+                                  :class="{
+                                    'cursor-pointer': !isCollapsed(mail) && !isMobile,
+                                    'self-start': !isCollapsed(mail) || isMobile,
+                                  }"
                                   @pointerdown="noteSenderCardPress(mail)"
                                   @click="toggleSenderCard(mail, $event)"
                                 >

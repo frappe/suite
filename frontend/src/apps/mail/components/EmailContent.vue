@@ -556,6 +556,10 @@ const DOMPURIFY_CONFIG = {
     // Suite's own templates opt out of the dark-mode remap with this (see
     // declaresFixedPalette); stripping it would silently re-enable remapping.
     'data-fixed-palette',
+    // Apple Mail and Thunderbird mark a quoted trail with <blockquote type="cite">, the one thing
+    // that tells it apart from a quote the writer made (see findQuoteRoots); without it the trail
+    // was never folded away.
+    'type',
     'xmlns',
     'content',
     'name',
