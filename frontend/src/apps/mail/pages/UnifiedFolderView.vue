@@ -690,7 +690,13 @@ const handleSelectionShortcut = (e: KeyboardEvent, key: string) => {
     [isMac ? 'backspace' : 'delete']:
       isTrashFolder.value || folder === 'drafts' ? deleteSelected : trashSelected,
     u: () => setThreadsSeen(takeSelected(), e.shiftKey),
-    e: archiveSelected,
+    // As on one thread: whichever of Archive and Unarchive the toolbar shows.
+    e: () => {
+      const rows = selectedRows.value
+      const messagesOf = (t: Thread) => (t.messages?.length ? t.messages : [t])
+      if (rows.some((t) => archivable(messagesOf(t), t))) archiveSelected()
+      else if (rows.some((t) => unarchivable(messagesOf(t), t))) unarchiveThreads(takeSelected())
+    },
     '!': () => setThreadsSpam(takeSelected(), !isJunkFolder.value),
   }[key]
   if (!action) return false
@@ -899,6 +905,16 @@ const syncFolderTag = (mailboxId: string, add: boolean) => {
 const handleAddToMailbox = (mailboxId: string) => {
   const thread = openRow.value
   if (!thread) return
+  // Not a draft, ever; and your own mail never into the Inbox or Archive (see filing.py).
+  const ids = (thread.messages ?? [])
+    .flatMap(mailCopies)
+    .filter(
+      (m) =>
+        !m.draft &&
+        (![thread.inbox, thread.archive].includes(mailboxId) || isReceived(m, thread.sent)),
+    )
+    .map((m) => m.id)
+  if (!ids.length) return
   const folder = folderName(mailboxId)
   const snapshot = threadSnapshot(thread)
   syncFolderTag(mailboxId, true)
@@ -918,15 +934,7 @@ const handleAddToMailbox = (mailboxId: string) => {
       {
         kind: 'add',
         input: {
-          // Not a draft, ever; and your own mail never into the Inbox or Archive (see filing.py).
-          ids: (thread.messages ?? [])
-            .flatMap(mailCopies)
-            .filter(
-              (m) =>
-                !m.draft &&
-                (![thread.inbox, thread.archive].includes(mailboxId) || isReceived(m, thread.sent)),
-            )
-            .map((m) => m.id),
+          ids,
           mailbox_id: mailboxId,
         },
       },
@@ -997,9 +1005,10 @@ const paneScope = useAccountScope(() => openRow.value?.account)
 const folderName = (mailboxId: string) =>
   paneScope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)?._name
 const undoMail = (mail: Mail, account: string | undefined, undoSuccess: string) => {
-  const snapshot = mailSnapshot(mail)
+  // Every copy, as filing moved them all (see fileMail).
+  const snapshots = mailCopies(mail).map(mailSnapshot)
   return {
-    undoReq: () => restoreMails(account!, [snapshot]),
+    undoReq: () => restoreMails(account!, snapshots),
     undoSuccess,
   }
 }
