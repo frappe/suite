@@ -206,6 +206,13 @@
         </div>
       </div>
 
+      <SheetUpgradeBanner
+        v-if="legacyUpgrade && !upgradeBannerClosed"
+        :upgrade="legacyUpgrade"
+        :read-only="readOnly"
+        @close="upgradeBannerClosed = true"
+      />
+
       <!-- Canvas grid + filter overlay -->
       <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
          which any scroll invalidates — hide it rather than let it float. -->
@@ -844,6 +851,7 @@ import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
 import SheetTopbar from './SheetTopbar.vue'
 import SheetTopbarActions from './SheetTopbarActions.vue'
+import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
 import { buildAlignOptions, buildBorderOptions, buildMoreToolbarOptions } from './toolbar.config.js'
@@ -1913,13 +1921,19 @@ const {
   saveError,
   canWrite,
   loadError,
+  legacyUpgrade,
   loadSheet,
   autoCreate,
   saveExisting,
   retrySave,
   workbookJson,
 } = usePersistence({
-  engine: { start: _startEngine, toBytes: _engineBytes },
+  engine: {
+    start: _startEngine,
+    toBytes: _engineBytes,
+    client: _client,
+    syncDefinedNames: _syncDefinedNames,
+  },
   formats,
   merge,
   comments,
@@ -2810,8 +2824,9 @@ async function _loadInitialData() {
     // so a saved filter still shows its hidden rows on first load.
     _applyHiddenRows()
     syncNames()
-    // Reopen the tab this browser had open last.
-    const last = _lastTab()
+    // Reopen the tab this browser had open last (a converted develop sheet:
+    // the one that editor had open).
+    const last = _lastTab() ?? legacyUpgrade.value?.current
     if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
     _rememberTab = true
     activeCell.value = 'A1'
@@ -2824,6 +2839,8 @@ async function _loadInitialData() {
     // blank the sheet on the first snapshot-based undo (e.g. insert column).
     history.reset()
     syncFlags()
+    // A develop sheet converted on open is saved in the IronCalc format.
+    if (legacyUpgrade.value?.save && !readOnly.value) isDirty.value = true
   } else {
     // A new sheet starts as an empty workbook.
     await _startEngine()
@@ -2844,6 +2861,8 @@ async function _loadInitialData() {
 // surfaced a load error — flipped in a finally so a thrown exception
 // never strands the editor with a permanent spinner.
 const isInitialLoad = ref(true)
+// The develop-sheet upgrade banner, closed by its ×.
+const upgradeBannerClosed = ref(false)
 onMounted(async () => {
   _setupGridInstance()
   _setupEventListeners()
